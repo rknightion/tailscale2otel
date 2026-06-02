@@ -11,7 +11,7 @@ import (
 // until ctx is cancelled, so the exporter's liveness is observable even when no
 // collector has produced data yet.
 func runHeartbeat(ctx context.Context, e telemetry.Emitter, interval time.Duration) {
-	emit := func() { e.Gauge("tailscale2otel.up", "1", "exporter is running (1) ", 1, nil) }
+	emit := func() { e.Gauge("tailscale2otel.up", "1", "exporter is running (1)", 1, nil) }
 	emit()
 	t := time.NewTicker(interval)
 	defer t.Stop()

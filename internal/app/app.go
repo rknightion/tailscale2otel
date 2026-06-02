@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/audit"
@@ -24,8 +26,9 @@ const heartbeatInterval = 15 * time.Second
 // App is the assembled, runnable service.
 type App struct {
 	cfg      *config.Config
-	provider *telemetry.Provider
 	emitter  telemetry.Emitter
+	shutdown func(context.Context) error // flushes telemetry on stop
+	restore  func()                      // restores the prior otel error handler
 	client   *tsapi.Client
 	cache    *enrich.DeviceCache
 	registry *collector.Registry
@@ -36,6 +39,7 @@ type App struct {
 	auditProc  *audit.Processor
 	streamSrv  *stream.Server
 	webhookSrv *webhook.Server
+	adminSrv   *http.Server
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -48,7 +52,13 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if err != nil {
 		return nil, err
 	}
-	client, err := tsapi.NewClient(tsapiOptions(cfg))
+	emitter := provider.Emitter()
+
+	tsOpts := tsapiOptions(cfg)
+	if cfg.SelfObservability.Enabled {
+		tsOpts.OnRequest = apiObserver(emitter)
+	}
+	client, err := tsapi.NewClient(tsOpts)
 	if err != nil {
 		_ = provider.Shutdown(ctx)
 		return nil, err
@@ -59,27 +69,53 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		return nil, err
 	}
 
-	emitter := provider.Emitter()
+	return newApp(cfg, version, logger, emitter, provider.Shutdown, client, store), nil
+}
+
+// newApp assembles an App from already-constructed dependencies. It is the seam
+// the integration test drives with an in-memory emitter and a stub Tailscale
+// client.
+func newApp(
+	cfg *config.Config,
+	version string,
+	logger *slog.Logger,
+	emitter telemetry.Emitter,
+	shutdown func(context.Context) error,
+	client *tsapi.Client,
+	store collector.CheckpointStore,
+) *App {
 	a := &App{
 		cfg:      cfg,
-		provider: provider,
 		emitter:  emitter,
+		shutdown: shutdown,
 		client:   client,
 		cache:    enrich.NewDeviceCache(),
 		registry: collector.NewRegistry(),
-		sched:    collector.NewScheduler(emitter, store, collector.WithLogger(logger)),
-		logger:   logger,
+		sched: collector.NewScheduler(emitter, store,
+			collector.WithLogger(logger),
+			collector.WithSelfObs(cfg.SelfObservability.Enabled)),
+		logger: logger,
+	}
+	if cfg.SelfObservability.Enabled {
+		a.restore = telemetry.InstallExportErrorHandler(emitter)
+		telemetry.EmitBuildInfo(emitter, version, runtime.Version())
 	}
 	a.flowProc = flowlog.NewProcessor(a.cache, flowOptions(cfg))
 	a.auditProc = audit.NewProcessor()
 	a.registerCollectors()
 	a.buildReceivers()
-	return a, nil
+	if cfg.Admin.Enabled {
+		a.adminSrv = newAdminServer(cfg.Admin.Listen)
+	}
+	return a
 }
 
 // Run starts the heartbeat and scheduler, blocks until ctx is cancelled, then
 // drains and flushes telemetry.
 func (a *App) Run(ctx context.Context) error {
+	if a.restore != nil {
+		defer a.restore()
+	}
 	if a.cfg.SelfObservability.Enabled {
 		go runHeartbeat(ctx, a.emitter, heartbeatInterval)
 	}
@@ -98,16 +134,26 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		}()
 	}
+	if a.adminSrv != nil {
+		go a.runAdmin(ctx)
+	}
 
 	done := make(chan error, 1)
 	go func() { done <- a.sched.Run(ctx, a.registry) }()
 
 	<-ctx.Done()
 	schedErr := <-done
+	// The scheduler returns the operator-controlled context's error on stop
+	// (SIGINT/SIGTERM cancel it, a deadline expires it); collector failures are
+	// isolated and logged, never returned. So any context error here is the
+	// normal, clean shutdown signal — not something to report.
+	if errors.Is(schedErr, context.Canceled) || errors.Is(schedErr, context.DeadlineExceeded) {
+		schedErr = nil
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return errors.Join(schedErr, a.provider.Shutdown(shutdownCtx))
+	return errors.Join(schedErr, a.shutdown(shutdownCtx))
 }
 
 func checkpointStore(cfg *config.Config) (collector.CheckpointStore, error) {

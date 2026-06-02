@@ -113,6 +113,94 @@ func TestCollectWindow_ErrorPropagatesZeroTime(t *testing.T) {
 	}
 }
 
+func TestCollectWindow_BoundaryEventDedupedAcrossWindows(t *testing.T) {
+	// A boundary event at exactly `to` is returned by two adjacent, overlapping
+	// windows. It must be emitted (counter + log) only once.
+	boundary := audit.Event{
+		EventTime:    to,
+		Type:         "CONFIG",
+		EventGroupID: "g-boundary",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com", DisplayName: "Alice"},
+		Target:       audit.Target{ID: "n1", Name: "node.ts.net", Type: "NODE"},
+		Action:       "CREATE",
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{
+		Version: "v1",
+		Tailnet: "example.com",
+		Logs:    []audit.Event{boundary},
+	}}
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0)
+
+	// First window [from, to] sees the boundary event.
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow (window 1): unexpected error: %v", err)
+	}
+	// Second, adjacent window [to, to+1m] also includes the boundary event
+	// because the API window is inclusive of both ends.
+	if _, err := c.CollectWindow(context.Background(), to, to.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow (window 2): unexpected error: %v", err)
+	}
+
+	pts := rec.MetricPoints(audit.MetricAuditEvents)
+	var total float64
+	for _, p := range pts {
+		total += p.Value
+	}
+	if total != 1 {
+		t.Fatalf("%s total = %v across %d points, want 1", audit.MetricAuditEvents, total, len(pts))
+	}
+	if logs := rec.LogRecords(); len(logs) != 1 {
+		t.Fatalf("LogRecords = %d, want 1 (boundary event emitted once)", len(logs))
+	}
+}
+
+func TestCollectWindow_DistinctEmptyGroupIDNotCollapsed(t *testing.T) {
+	// Two distinct events that share an event time but have no eventGroupID must
+	// not be collapsed into one: the dedup key must incorporate action/target.
+	t0 := from.Add(30 * time.Second)
+	a := audit.Event{
+		EventTime: t0,
+		Type:      "CONFIG",
+		Origin:    "admin-console",
+		Actor:     audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:    audit.Target{ID: "n1", Name: "node-a.ts.net", Type: "NODE"},
+		Action:    "CREATE",
+	}
+	b := audit.Event{
+		EventTime: t0,
+		Type:      "CONFIG",
+		Origin:    "admin-console",
+		Actor:     audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:    audit.Target{ID: "n2", Name: "node-b.ts.net", Type: "NODE"},
+		Action:    "DELETE",
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{
+		Version: "v1",
+		Tailnet: "example.com",
+		Logs:    []audit.Event{a, b},
+	}}
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+
+	pts := rec.MetricPoints(audit.MetricAuditEvents)
+	var total float64
+	for _, p := range pts {
+		total += p.Value
+	}
+	if total != 2 {
+		t.Fatalf("%s total = %v, want 2 (distinct events not collapsed)", audit.MetricAuditEvents, total)
+	}
+	if logs := rec.LogRecords(); len(logs) != 2 {
+		t.Fatalf("LogRecords = %d, want 2 (distinct events not collapsed)", len(logs))
+	}
+}
+
 func TestName(t *testing.T) {
 	c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), 0, 0)
 	if got := c.Name(); got != "auditlogs" {

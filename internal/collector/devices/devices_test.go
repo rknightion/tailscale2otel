@@ -5,89 +5,114 @@ import (
 	"testing"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/collector/devices"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
-// fakeLister returns a canned device list, satisfying the collector's lister.
-type fakeLister struct {
-	devices []tsclient.Device
-	err     error
-	calls   int
+// fakeAPI returns a canned rich-device list and posture map, satisfying the
+// collector's narrow api interface.
+type fakeAPI struct {
+	devices     []tsapi.RichDevice
+	err         error
+	calls       int
+	posture     map[string]map[string]any
+	postureErr  error
+	postureIDs  []string
+	postureFail string // device ID whose posture call should return postureErr
 }
 
-func (f *fakeLister) Devices(_ context.Context) ([]tsclient.Device, error) {
+func (f *fakeAPI) DevicesRich(_ context.Context) ([]tsapi.RichDevice, error) {
 	f.calls++
 	return f.devices, f.err
 }
 
-// now is the deterministic clock used across tests.
+func (f *fakeAPI) DevicePostureAttributes(_ context.Context, deviceID string) (map[string]any, error) {
+	f.postureIDs = append(f.postureIDs, deviceID)
+	if deviceID == f.postureFail {
+		return nil, f.postureErr
+	}
+	return f.posture[deviceID], nil
+}
+
+// now anchors the deterministic timestamps used in fixtures.
 var now = time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
 
-func tsTime(t time.Time) tsclient.Time { return tsclient.Time{Time: t} }
-
-// sampleDevices returns three devices exercising the metric and cache paths.
-func sampleDevices() []tsclient.Device {
-	return []tsclient.Device{
+// sampleDevices returns three rich devices exercising the metric, route, DERP
+// and cache paths: one online linux box (DERP latency + distro + routes), one
+// offline windows box, one external phone.
+func sampleDevices() []tsapi.RichDevice {
+	return []tsapi.RichDevice{
 		{
-			// Online (seen 1m ago), key expires, no update, linux, authorized, internal.
-			ID:                "n-laptop",
-			Name:              "laptop.tail1a2b.ts.net",
-			Hostname:          "laptop",
-			OS:                "linux",
-			User:              "alice@example.com",
-			Tags:              []string{"tag:server"},
-			Addresses:         []string{"100.64.0.1", "fd7a:115c:a1e0::1"},
-			Authorized:        true,
-			IsExternal:        false,
-			KeyExpiryDisabled: false,
-			Expires:           tsTime(now.Add(48 * time.Hour)),
-			LastSeen:          tsTime(now.Add(-1 * time.Minute)),
-			UpdateAvailable:   false,
+			// Online (ConnectedToControl), key expires, no update, linux,
+			// authorized, internal, DERP latency, distro, advertised+enabled routes.
+			ID:                 "3690401478992208",
+			NodeID:             "nDdiLaptopCNTRL",
+			Name:               "laptop.tail1a2b.ts.net",
+			Hostname:           "laptop",
+			OS:                 "linux",
+			User:               "alice@example.com",
+			Addresses:          []string{"100.64.0.1", "fd7a:115c:a1e0::1"},
+			Authorized:         true,
+			IsExternal:         false,
+			KeyExpiryDisabled:  false,
+			ConnectedToControl: true,
+			UpdateAvailable:    false,
+			Expires:            now.Add(48 * time.Hour),
+			LastSeen:           now.Add(-1 * time.Minute),
+			AdvertisedRoutes:   []string{"0.0.0.0/0", "10.0.0.0/24"},
+			EnabledRoutes:      []string{"10.0.0.0/24"},
+			Distro:             tsapi.DistroInfo{Name: "ubuntu", Version: "24.04", CodeName: "noble"},
+			DERPLatency: map[string]tsapi.DERPRegion{
+				"Frankfurt": {Preferred: true, LatencyMs: 12.5},
+				"Amsterdam": {Preferred: false, LatencyMs: 8.0},
+			},
 		},
 		{
-			// Offline (seen 2h ago), key expiry disabled, update available, windows, authorized, internal.
-			ID:                "n-desktop",
-			Name:              "desktop.tail1a2b.ts.net",
-			Hostname:          "desktop",
-			OS:                "windows",
-			User:              "bob@example.com",
-			Addresses:         []string{"100.64.0.2"},
-			Authorized:        true,
-			IsExternal:        false,
-			KeyExpiryDisabled: true,
-			Expires:           tsTime(now.Add(72 * time.Hour)),
-			LastSeen:          tsTime(now.Add(-2 * time.Hour)),
-			UpdateAvailable:   true,
+			// Offline (not connected), key expiry disabled, update available,
+			// windows, authorized, internal, no DERP, no routes.
+			ID:                 "n-desktop",
+			NodeID:             "nDdiDesktopCNTRL",
+			Name:               "desktop.tail1a2b.ts.net",
+			Hostname:           "desktop",
+			OS:                 "windows",
+			User:               "bob@example.com",
+			Addresses:          []string{"100.64.0.2"},
+			Authorized:         true,
+			IsExternal:         false,
+			KeyExpiryDisabled:  true,
+			ConnectedToControl: false,
+			UpdateAvailable:    true,
+			Expires:            now.Add(72 * time.Hour),
+			LastSeen:           now.Add(-2 * time.Hour),
 		},
 		{
-			// Never seen (zero LastSeen -> offline), zero Expires, linux, unauthorized, external.
-			ID:                "n-phone",
-			Name:              "phone.tail1a2b.ts.net",
-			Hostname:          "phone",
-			OS:                "linux",
-			User:              "carol@example.com",
-			Addresses:         []string{"100.64.0.3"},
-			Authorized:        false,
-			IsExternal:        true,
-			KeyExpiryDisabled: false,
-			// LastSeen left zero (never seen) and Expires left zero.
-			UpdateAvailable: false,
+			// External phone, never seen (zero LastSeen), zero Expires, linux,
+			// unauthorized, offline, no distro version.
+			ID:                 "n-phone",
+			NodeID:             "nDdiPhoneCNTRL",
+			Name:               "phone.tail1a2b.ts.net",
+			Hostname:           "phone",
+			OS:                 "linux",
+			User:               "carol@example.com",
+			Addresses:          []string{"100.64.0.3"},
+			Authorized:         false,
+			IsExternal:         true,
+			KeyExpiryDisabled:  false,
+			ConnectedToControl: false,
+			UpdateAvailable:    false,
 		},
 	}
 }
 
-func newCollector(t *testing.T, devs []tsclient.Device) (*devices.Collector, *enrich.DeviceCache, *fakeLister) {
+func newCollector(t *testing.T, devs []tsapi.RichDevice) (*devices.Collector, *enrich.DeviceCache, *fakeAPI) {
 	t.Helper()
 	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
-	lister := &fakeLister{devices: devs}
-	c := devices.New(lister, cache, 0)
-	devices.SetClock(c, func() time.Time { return now })
-	return c, cache, lister
+	api := &fakeAPI{devices: devs}
+	c := devices.New(api, cache, 0, false, false)
+	return c, cache, api
 }
 
 // pointByAttr finds the single metric point whose attrs match all of want.
@@ -117,16 +142,16 @@ func TestNameAndDefaultInterval(t *testing.T) {
 	}
 
 	cache := enrich.NewDeviceCache()
-	c2 := devices.New(&fakeLister{}, cache, 30*time.Second)
+	c2 := devices.New(&fakeAPI{}, cache, 30*time.Second, false, false)
 	if got := c2.DefaultInterval(); got != 30*time.Second {
 		t.Fatalf("DefaultInterval() = %v, want 30s (explicit)", got)
 	}
 }
 
-func TestCollect_ReturnsListerError(t *testing.T) {
+func TestCollect_ReturnsAPIError(t *testing.T) {
 	cache := enrich.NewDeviceCache()
-	lister := &fakeLister{err: context.DeadlineExceeded}
-	c := devices.New(lister, cache, 0)
+	api := &fakeAPI{err: context.DeadlineExceeded}
+	c := devices.New(api, cache, 0, false, false)
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
 		t.Fatal("Collect() error = nil, want non-nil")
@@ -146,7 +171,7 @@ func TestCollect_Online(t *testing.T) {
 		t.Fatalf("online points = %d, want 3", len(pts))
 	}
 
-	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "n-laptop"})
+	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"})
 	if !ok {
 		t.Fatalf("no online point for laptop; points=%+v", pts)
 	}
@@ -157,7 +182,7 @@ func TestCollect_Online(t *testing.T) {
 		t.Fatalf("online kind = %q, want gauge", laptop.Kind)
 	}
 	if laptop.Value != 1 {
-		t.Fatalf("laptop online = %v, want 1 (seen 1m ago)", laptop.Value)
+		t.Fatalf("laptop online = %v, want 1 (connected to control)", laptop.Value)
 	}
 	// Device-identity attrs.
 	if laptop.Attrs[semconv.HostName] != "laptop" {
@@ -165,6 +190,9 @@ func TestCollect_Online(t *testing.T) {
 	}
 	if laptop.Attrs[semconv.OSType] != "linux" {
 		t.Fatalf("online os.type = %q, want linux", laptop.Attrs[semconv.OSType])
+	}
+	if laptop.Attrs[semconv.OSVersion] != "24.04" {
+		t.Fatalf("online os.version = %q, want 24.04", laptop.Attrs[semconv.OSVersion])
 	}
 	if laptop.Attrs[semconv.AttrUser] != "alice@example.com" {
 		t.Fatalf("online tailscale.user = %q, want alice@example.com", laptop.Attrs[semconv.AttrUser])
@@ -175,7 +203,11 @@ func TestCollect_Online(t *testing.T) {
 		t.Fatal("no online point for desktop")
 	}
 	if desktop.Value != 0 {
-		t.Fatalf("desktop online = %v, want 0 (seen 2h ago)", desktop.Value)
+		t.Fatalf("desktop online = %v, want 0 (not connected)", desktop.Value)
+	}
+	// A device with empty distro version must omit os.version entirely.
+	if _, present := desktop.Attrs[semconv.OSVersion]; present {
+		t.Fatalf("desktop os.version present = %q, want omitted", desktop.Attrs[semconv.OSVersion])
 	}
 }
 
@@ -192,7 +224,7 @@ func TestCollect_LastSeen(t *testing.T) {
 	if len(pts) != 2 {
 		t.Fatalf("last_seen points = %d, want 2 (phone skipped)", len(pts))
 	}
-	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "n-laptop"})
+	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"})
 	if !ok {
 		t.Fatal("no last_seen point for laptop")
 	}
@@ -222,8 +254,8 @@ func TestCollect_KeyExpiry(t *testing.T) {
 		t.Fatalf("key.expiry points = %d, want 1 (only laptop)", len(pts))
 	}
 	laptop := pts[0]
-	if laptop.Attrs[semconv.HostID] != "n-laptop" {
-		t.Fatalf("key.expiry host.id = %q, want n-laptop", laptop.Attrs[semconv.HostID])
+	if laptop.Attrs[semconv.HostID] != "3690401478992208" {
+		t.Fatalf("key.expiry host.id = %q, want laptop id", laptop.Attrs[semconv.HostID])
 	}
 	if laptop.Unit != semconv.UnitSeconds {
 		t.Fatalf("key.expiry unit = %q, want s", laptop.Unit)
@@ -256,9 +288,57 @@ func TestCollect_UpdateAvailable(t *testing.T) {
 	if desktop.Value != 1 {
 		t.Fatalf("desktop update_available = %v, want 1", desktop.Value)
 	}
-	laptop, _ := pointByAttr(pts, map[string]string{semconv.HostID: "n-laptop"})
+	laptop, _ := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"})
 	if laptop.Value != 0 {
 		t.Fatalf("laptop update_available = %v, want 0", laptop.Value)
+	}
+}
+
+func TestCollect_DERPLatency(t *testing.T) {
+	devs := sampleDevices()
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device.derp.latency")
+	// Only the laptop has DERP latency: two regions.
+	if len(pts) != 2 {
+		t.Fatalf("derp.latency points = %d, want 2; points=%+v", len(pts), pts)
+	}
+
+	frankfurt, ok := pointByAttr(pts, map[string]string{
+		semconv.HostID:             "3690401478992208",
+		"tailscale.derp.region":    "Frankfurt",
+		"tailscale.derp.preferred": "true",
+	})
+	if !ok {
+		t.Fatalf("no derp.latency point for Frankfurt (preferred); points=%+v", pts)
+	}
+	if frankfurt.Unit != semconv.UnitSeconds {
+		t.Fatalf("derp.latency unit = %q, want s", frankfurt.Unit)
+	}
+	if frankfurt.Kind != "gauge" {
+		t.Fatalf("derp.latency kind = %q, want gauge", frankfurt.Kind)
+	}
+	if frankfurt.Value != 12.5/1000 {
+		t.Fatalf("Frankfurt latency = %v, want %v (ms/1000)", frankfurt.Value, 12.5/1000)
+	}
+	if frankfurt.Attrs[semconv.HostName] != "laptop" {
+		t.Fatalf("derp.latency host.name = %q, want laptop", frankfurt.Attrs[semconv.HostName])
+	}
+
+	amsterdam, ok := pointByAttr(pts, map[string]string{
+		semconv.HostID:             "3690401478992208",
+		"tailscale.derp.region":    "Amsterdam",
+		"tailscale.derp.preferred": "false",
+	})
+	if !ok {
+		t.Fatalf("no derp.latency point for Amsterdam; points=%+v", pts)
+	}
+	if amsterdam.Value != 8.0/1000 {
+		t.Fatalf("Amsterdam latency = %v, want %v", amsterdam.Value, 8.0/1000)
 	}
 }
 
@@ -271,10 +351,6 @@ func TestCollect_DevicesCount(t *testing.T) {
 	}
 
 	pts := rec.MetricPoints("tailscale.devices.count")
-	// Distinct (os.type, authorized, external) combos among the 3 devices:
-	//   linux/true/false  (laptop)        -> 1
-	//   windows/true/false (desktop)      -> 1
-	//   linux/false/true  (phone)         -> 1
 	if len(pts) != 3 {
 		t.Fatalf("devices.count points = %d, want 3 distinct combos; points=%+v", len(pts), pts)
 	}
@@ -324,6 +400,154 @@ func TestCollect_DevicesCount(t *testing.T) {
 	}
 }
 
+func TestCollect_RoutesDisabledByDefault(t *testing.T) {
+	devs := sampleDevices()
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.routes.advertised"); len(pts) != 0 {
+		t.Fatalf("routes.advertised points = %d, want 0 (collectRoutes off)", len(pts))
+	}
+	if pts := rec.MetricPoints("tailscale.device.routes.enabled"); len(pts) != 0 {
+		t.Fatalf("routes.enabled points = %d, want 0 (collectRoutes off)", len(pts))
+	}
+}
+
+func TestCollect_RoutesEnabled(t *testing.T) {
+	devs := sampleDevices()
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{devices: devs}
+	c := devices.New(api, cache, 0, true, false)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	adv := rec.MetricPoints("tailscale.device.routes.advertised")
+	if len(adv) != 3 {
+		t.Fatalf("routes.advertised points = %d, want 3 (one per device)", len(adv))
+	}
+	laptopAdv, ok := pointByAttr(adv, map[string]string{semconv.HostID: "3690401478992208"})
+	if !ok {
+		t.Fatal("no routes.advertised point for laptop")
+	}
+	if laptopAdv.Unit != semconv.UnitRoutes {
+		t.Fatalf("routes.advertised unit = %q, want %q", laptopAdv.Unit, semconv.UnitRoutes)
+	}
+	if laptopAdv.Value != 2 {
+		t.Fatalf("laptop routes.advertised = %v, want 2", laptopAdv.Value)
+	}
+	if laptopAdv.Attrs[semconv.HostName] != "laptop" {
+		t.Fatalf("routes.advertised host.name = %q, want laptop", laptopAdv.Attrs[semconv.HostName])
+	}
+
+	en := rec.MetricPoints("tailscale.device.routes.enabled")
+	laptopEn, ok := pointByAttr(en, map[string]string{semconv.HostID: "3690401478992208"})
+	if !ok {
+		t.Fatal("no routes.enabled point for laptop")
+	}
+	if laptopEn.Value != 1 {
+		t.Fatalf("laptop routes.enabled = %v, want 1", laptopEn.Value)
+	}
+	desktopAdv, _ := pointByAttr(adv, map[string]string{semconv.HostID: "n-desktop"})
+	if desktopAdv.Value != 0 {
+		t.Fatalf("desktop routes.advertised = %v, want 0", desktopAdv.Value)
+	}
+}
+
+func TestCollect_PostureDisabledByDefault(t *testing.T) {
+	devs := sampleDevices()
+	c, _, api := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if len(api.postureIDs) != 0 {
+		t.Fatalf("posture API called %d times, want 0 (collectPosture off)", len(api.postureIDs))
+	}
+	if recs := rec.LogRecords(); len(recs) != 0 {
+		t.Fatalf("log records = %d, want 0 (collectPosture off)", len(recs))
+	}
+}
+
+func TestCollect_PostureEnabled(t *testing.T) {
+	devs := sampleDevices()
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{
+			"3690401478992208": {"custom:foo": "bar", "node:os": "linux"},
+			"n-desktop":        {"custom:foo": "baz"},
+			"n-phone":          {},
+		},
+	}
+	c := devices.New(api, cache, 0, false, true)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	// One posture API call per device.
+	if len(api.postureIDs) != 3 {
+		t.Fatalf("posture API calls = %d, want 3", len(api.postureIDs))
+	}
+
+	recs := rec.LogRecords()
+	if len(recs) != 3 {
+		t.Fatalf("posture log events = %d, want 3", len(recs))
+	}
+	var laptop *telemetrytest.LogRecord
+	for i := range recs {
+		if recs[i].Attrs[semconv.HostID] == "3690401478992208" {
+			laptop = &recs[i]
+		}
+	}
+	if laptop == nil {
+		t.Fatalf("no posture event for laptop; recs=%+v", recs)
+	}
+	if laptop.EventName != "tailscale.device.posture" {
+		t.Fatalf("posture event.name = %q, want tailscale.device.posture", laptop.EventName)
+	}
+	if laptop.Attrs[semconv.HostName] != "laptop" {
+		t.Fatalf("posture host.name = %q, want laptop", laptop.Attrs[semconv.HostName])
+	}
+	if laptop.Attrs["custom:foo"] != "bar" {
+		t.Fatalf("posture custom:foo = %q, want bar", laptop.Attrs["custom:foo"])
+	}
+	if laptop.Attrs["node:os"] != "linux" {
+		t.Fatalf("posture node:os = %q, want linux", laptop.Attrs["node:os"])
+	}
+	if laptop.Body == "" {
+		t.Fatal("posture event body is empty, want a summary")
+	}
+}
+
+func TestCollect_PostureContinuesOnError(t *testing.T) {
+	devs := sampleDevices()
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{
+			"3690401478992208": {"custom:foo": "bar"},
+			"n-phone":          {"custom:foo": "qux"},
+		},
+		postureFail: "n-desktop",
+		postureErr:  context.DeadlineExceeded,
+	}
+	c := devices.New(api, cache, 0, false, true)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (per-device posture errors are non-fatal)", err)
+	}
+	// The failing device emits no event; the other two still do.
+	recs := rec.LogRecords()
+	if len(recs) != 2 {
+		t.Fatalf("posture log events = %d, want 2 (desktop failed)", len(recs))
+	}
+}
+
 func TestCollect_PopulatesCache(t *testing.T) {
 	devs := sampleDevices()
 	c, cache, _ := newCollector(t, devs)
@@ -345,5 +569,45 @@ func TestCollect_PopulatesCache(t *testing.T) {
 	// IPv6 Tailscale address resolves too.
 	if got := cache.ResolveName("[fd7a:115c:a1e0::1]:443"); got != "laptop" {
 		t.Fatalf("ResolveName(ipv6 laptop) = %q, want laptop", got)
+	}
+	// The cache must key by the NodeID (control-plane node id used in flow
+	// logs), not the numeric device ID.
+	if _, ok := cache.LookupNode("nDdiLaptopCNTRL"); !ok {
+		t.Fatal("LookupNode(nDdiLaptopCNTRL) not found; cache must key by NodeID")
+	}
+	m, _ := cache.LookupNode("nDdiLaptopCNTRL")
+	if m.OSVersion != "24.04" {
+		t.Fatalf("cached laptop OSVersion = %q, want 24.04", m.OSVersion)
+	}
+}
+
+func TestCollect_CacheSelfObs(t *testing.T) {
+	devs := sampleDevices()
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	age := rec.MetricPoints("tailscale2otel.enrich.cache_age")
+	if len(age) != 1 {
+		t.Fatalf("cache_age points = %d, want 1", len(age))
+	}
+	if age[0].Unit != semconv.UnitSeconds {
+		t.Fatalf("cache_age unit = %q, want s", age[0].Unit)
+	}
+	if age[0].Kind != "gauge" {
+		t.Fatalf("cache_age kind = %q, want gauge", age[0].Kind)
+	}
+
+	size := rec.MetricPoints("tailscale2otel.enrich.cache_size")
+	if len(size) != 1 {
+		t.Fatalf("cache_size points = %d, want 1", len(size))
+	}
+	if size[0].Unit != semconv.UnitDimensionless {
+		t.Fatalf("cache_size unit = %q, want 1", size[0].Unit)
+	}
+	if size[0].Value != float64(len(devs)) {
+		t.Fatalf("cache_size = %v, want %d", size[0].Value, len(devs))
 	}
 }

@@ -21,6 +21,14 @@ type Config struct {
 	Streaming         StreamingConfig         `yaml:"streaming"`
 	Webhook           WebhookConfig           `yaml:"webhook"`
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
+	Admin             AdminConfig             `yaml:"admin"`
+}
+
+// AdminConfig configures the optional always-on admin HTTP server that exposes
+// liveness/readiness endpoints (/healthz, /readyz).
+type AdminConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Listen  string `yaml:"listen"`
 }
 
 // TailscaleConfig holds Tailscale API connection settings.
@@ -49,6 +57,9 @@ type OAuthConfig struct {
 type TailscaleHTTPConfig struct {
 	Timeout Duration    `yaml:"timeout"`
 	Retry   RetryConfig `yaml:"retry"`
+	// RateLimit caps the global request rate (requests/second) across every
+	// collector. Zero (the default) means unlimited.
+	RateLimit float64 `yaml:"rate_limit"`
 }
 
 // RetryConfig configures exponential backoff retries.

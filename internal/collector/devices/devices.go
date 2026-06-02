@@ -1,78 +1,93 @@
 // Package devices implements the "devices" snapshot collector. On each tick it
-// lists every device in the tailnet, emits per-device and aggregate metrics,
-// and repopulates the shared enrich.DeviceCache so flow and audit records can be
-// resolved to human-readable device identity.
+// lists every device in the tailnet via a single GET /devices?fields=all (the
+// rich field set), emits per-device and aggregate metrics, and repopulates the
+// shared enrich.DeviceCache so flow and audit records can be resolved to
+// human-readable device identity.
 //
-// Notes on the pinned tailscale-client-go/v2 (v2.0.0-20250129222324): the
-// Device type is a flat struct with no ClientConnectivity field and timestamps
-// are value types (tsclient.Time embedding time.Time), not pointers. As a
-// result:
-//   - There is no live "connected to control" flag, so device online state is
-//     derived from LastSeen recency within onlineWindow (default 5m).
-//   - There is no DERP region/latency data on the device, so the per-region
-//     DERP latency gauge has no source in this version and is not emitted.
-//   - Nil-guards are expressed via tsclient.Time.IsZero() rather than nil
-//     pointer checks. OSVersion is not present on the device and is left empty.
+// The rich device record carries a real connected-to-control flag, per-region
+// DERP latency, inline advertised/enabled routes, and OS distribution details
+// (os.version) with no per-device fan-out. The optional route gauges read the
+// inline route slices (no extra API calls); posture collection, when enabled,
+// makes one additional API call per device and is therefore off by default.
 package devices
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
+	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
-// Metric names emitted by this collector.
+// Compile-time assertions: *Collector is a SnapshotCollector and *tsapi.Client
+// satisfies the narrow api surface this collector depends on.
+var (
+	_ collector.SnapshotCollector = (*Collector)(nil)
+	_ api                         = (*tsapi.Client)(nil)
+)
+
+// Metric and event names emitted by this collector.
 const (
-	metricOnline          = "tailscale.device.online"
-	metricLastSeen        = "tailscale.device.last_seen"
-	metricKeyExpiry       = "tailscale.device.key.expiry"
-	metricUpdateAvailable = "tailscale.device.update_available"
-	metricDevicesCount    = "tailscale.devices.count"
+	metricOnline           = "tailscale.device.online"
+	metricLastSeen         = "tailscale.device.last_seen"
+	metricKeyExpiry        = "tailscale.device.key.expiry"
+	metricUpdateAvailable  = "tailscale.device.update_available"
+	metricDERPLatency      = "tailscale.device.derp.latency"
+	metricRoutesAdvertised = "tailscale.device.routes.advertised"
+	metricRoutesEnabled    = "tailscale.device.routes.enabled"
+	metricDevicesCount     = "tailscale.devices.count"
+
+	metricCacheAge  = "tailscale2otel.enrich.cache_age"
+	metricCacheSize = "tailscale2otel.enrich.cache_size"
+
+	eventPosture = "tailscale.device.posture"
 )
 
-// Attribute keys specific to the aggregate device count.
+// Attribute keys specific to this collector.
 const (
-	attrAuthorized = "tailscale.authorized"
-	attrExternal   = "tailscale.external"
+	attrAuthorized    = "tailscale.authorized"
+	attrExternal      = "tailscale.external"
+	attrDERPRegion    = "tailscale.derp.region"
+	attrDERPPreferred = "tailscale.derp.preferred"
 )
 
-const (
-	defaultInterval = 60 * time.Second
-	// defaultOnlineWindow is how recently a device must have been seen to be
-	// considered online, given the API exposes no live connection flag.
-	defaultOnlineWindow = 5 * time.Minute
-)
+const defaultInterval = 60 * time.Second
 
-// lister is the subset of the Tailscale API this collector needs. It is
-// satisfied by *tsapi.Client.
-type lister interface {
-	Devices(ctx context.Context) ([]tsclient.Device, error)
+// api is the subset of the Tailscale API this collector needs. It is satisfied
+// by *tsapi.Client.
+type api interface {
+	DevicesRich(ctx context.Context) ([]tsapi.RichDevice, error)
+	DevicePostureAttributes(ctx context.Context, deviceID string) (map[string]any, error)
 }
 
 // Collector implements collector.SnapshotCollector for the device inventory.
 type Collector struct {
-	api          lister
-	cache        *enrich.DeviceCache
-	interval     time.Duration
-	onlineWindow time.Duration
-	now          func() time.Time
+	api            api
+	cache          *enrich.DeviceCache
+	interval       time.Duration
+	collectRoutes  bool
+	collectPosture bool
 }
 
-// New returns a devices Collector that lists via api, repopulates cache, and
-// uses interval as its poll cadence (a non-positive interval defaults to 60s).
-func New(api lister, cache *enrich.DeviceCache, interval time.Duration) *Collector {
+// New returns a devices Collector that lists via the rich devices endpoint,
+// repopulates cache, and uses interval as its poll cadence (a non-positive
+// interval defaults to 60s). When collectRoutes is true the per-device route
+// gauges are emitted (read from the inline route slices, no extra API call).
+// When collectPosture is true the collector additionally calls
+// DevicePostureAttributes once per device (N API calls per tick) and emits a
+// posture log event per device; it is off by default.
+func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool) *Collector {
 	return &Collector{
-		api:          api,
-		cache:        cache,
-		interval:     interval,
-		onlineWindow: defaultOnlineWindow,
-		now:          time.Now,
+		api:            api,
+		cache:          cache,
+		interval:       interval,
+		collectRoutes:  collectRoutes,
+		collectPosture: collectPosture,
 	}
 }
 
@@ -87,16 +102,20 @@ func (c *Collector) DefaultInterval() time.Duration {
 	return defaultInterval
 }
 
-// Collect lists devices, repopulates the cache, and emits metrics.
+// Collect lists devices, repopulates the cache, and emits metrics (and, when
+// enabled, route gauges and posture log events).
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
-	devs, err := c.api.Devices(ctx)
+	devs, err := c.api.DevicesRich(ctx)
 	if err != nil {
 		return err
 	}
 
 	c.cache.Replace(toMetas(devs))
+	e.Gauge(metricCacheAge, semconv.UnitSeconds, "age of the enrichment device cache (seconds since last replace)",
+		c.cache.Age().Seconds(), nil)
+	e.Gauge(metricCacheSize, semconv.UnitDimensionless, "number of devices in the enrichment cache",
+		float64(c.cache.Len()), nil)
 
-	now := c.now()
 	type countKey struct {
 		os         string
 		authorized bool
@@ -112,12 +131,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			semconv.OSType:   d.OS,
 			semconv.AttrUser: d.User,
 		}
-
-		online := 0.0
-		if !d.LastSeen.IsZero() && now.Sub(d.LastSeen.Time) <= c.onlineWindow {
-			online = 1
+		if d.Distro.Version != "" {
+			idAttrs[semconv.OSVersion] = d.Distro.Version
 		}
-		e.Gauge(metricOnline, semconv.UnitDimensionless, "device seen within the online window", online, idAttrs)
+
+		e.Gauge(metricOnline, semconv.UnitDimensionless, "device connected to the control plane (0/1)",
+			boolToFloat(d.ConnectedToControl), idAttrs)
 
 		if !d.LastSeen.IsZero() {
 			e.Gauge(metricLastSeen, semconv.UnitSeconds, "device last-seen time (unix seconds)",
@@ -131,6 +150,31 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 		e.Gauge(metricUpdateAvailable, semconv.UnitDimensionless, "client update available (0/1)",
 			boolToFloat(d.UpdateAvailable), idAttrs)
+
+		for region, derp := range d.DERPLatency {
+			e.Gauge(metricDERPLatency, semconv.UnitSeconds, "device round-trip latency to a DERP region (seconds)",
+				derp.LatencyMs/1000, telemetry.Attrs{
+					semconv.HostName:  d.Hostname,
+					semconv.HostID:    d.ID,
+					attrDERPRegion:    region,
+					attrDERPPreferred: derp.Preferred,
+				})
+		}
+
+		if c.collectRoutes {
+			routeAttrs := telemetry.Attrs{
+				semconv.HostName: d.Hostname,
+				semconv.HostID:   d.ID,
+			}
+			e.Gauge(metricRoutesAdvertised, semconv.UnitRoutes, "number of routes advertised by the device",
+				float64(len(d.AdvertisedRoutes)), routeAttrs)
+			e.Gauge(metricRoutesEnabled, semconv.UnitRoutes, "number of advertised routes enabled for the device",
+				float64(len(d.EnabledRoutes)), routeAttrs)
+		}
+
+		if c.collectPosture {
+			c.emitPosture(ctx, e, d)
+		}
 
 		counts[countKey{os: d.OS, authorized: d.Authorized, external: d.IsExternal}]++
 	}
@@ -147,9 +191,33 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	return nil
 }
 
-// toMetas converts API devices to the cache's normalized DeviceMeta form,
-// parsing each address and skipping any that fail to parse.
-func toMetas(devs []tsclient.Device) []enrich.DeviceMeta {
+// emitPosture fetches the posture attributes for one device and emits a single
+// posture log event. Per-device errors are non-fatal: the device is skipped and
+// collection continues.
+func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice) {
+	attrs, err := c.api.DevicePostureAttributes(ctx, d.ID)
+	if err != nil {
+		return
+	}
+	evAttrs := telemetry.Attrs{
+		semconv.HostName: d.Hostname,
+		semconv.HostID:   d.ID,
+	}
+	for k, v := range attrs {
+		evAttrs[k] = fmt.Sprint(v)
+	}
+	e.LogEvent(telemetry.Event{
+		Name:     eventPosture,
+		Severity: telemetry.SeverityInfo,
+		Body:     fmt.Sprintf("device %q has %d posture attribute(s)", d.Hostname, len(attrs)),
+		Attrs:    evAttrs,
+	})
+}
+
+// toMetas converts rich API devices to the cache's normalized DeviceMeta form,
+// parsing each address and skipping any that fail to parse. NodeID is set to the
+// control-plane node id (used in flow logs), not the numeric device ID.
+func toMetas(devs []tsapi.RichDevice) []enrich.DeviceMeta {
 	metas := make([]enrich.DeviceMeta, 0, len(devs))
 	for i := range devs {
 		d := &devs[i]
@@ -162,13 +230,12 @@ func toMetas(devs []tsclient.Device) []enrich.DeviceMeta {
 			addrs = append(addrs, a)
 		}
 		metas = append(metas, enrich.DeviceMeta{
-			NodeID:    d.ID,
+			NodeID:    d.NodeID,
 			Name:      d.Name,
 			Hostname:  d.Hostname,
 			OS:        d.OS,
-			OSVersion: "", // not exposed by the pinned client
+			OSVersion: d.Distro.Version,
 			User:      d.User,
-			Tags:      d.Tags,
 			Addrs:     addrs,
 			External:  d.IsExternal,
 		})

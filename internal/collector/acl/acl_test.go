@@ -2,6 +2,7 @@ package acl
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -121,5 +122,122 @@ func TestCollectPropagatesError(t *testing.T) {
 	rec := telemetrytest.New()
 	if err := New(api, 0, time.Now).Collect(context.Background(), rec.Emitter()); err == nil {
 		t.Fatal("Collect: expected error, got nil")
+	}
+}
+
+// ruleCounts indexes tailscale.acl.rules points by their section attribute.
+func ruleCounts(t *testing.T, rec *telemetrytest.Recorder) map[string]float64 {
+	t.Helper()
+	out := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.acl.rules") {
+		if p.Kind != "gauge" {
+			t.Fatalf("rules kind = %q, want gauge", p.Kind)
+		}
+		if p.Unit != "1" {
+			t.Fatalf("rules unit = %q, want 1", p.Unit)
+		}
+		sec := p.Attrs["tailscale.acl.section"]
+		if sec == "" {
+			t.Fatalf("rules point missing tailscale.acl.section attr: %+v", p.Attrs)
+		}
+		if _, dup := out[sec]; dup {
+			t.Fatalf("duplicate rules point for section %q", sec)
+		}
+		out[sec] = p.Value
+	}
+	return out
+}
+
+// size returns the single tailscale.acl.size gauge value.
+func size(t *testing.T, rec *telemetrytest.Recorder) float64 {
+	t.Helper()
+	pts := rec.MetricPoints("tailscale.acl.size")
+	if len(pts) != 1 {
+		t.Fatalf("size points = %d, want 1", len(pts))
+	}
+	if pts[0].Unit != "By" {
+		t.Fatalf("size unit = %q, want By", pts[0].Unit)
+	}
+	return pts[0].Value
+}
+
+func TestRuleCountsFromRealACL(t *testing.T) {
+	huJSON, err := os.ReadFile("../../../.capture/acl.json")
+	if err != nil {
+		t.Skipf("real ACL fixture unavailable: %v", err)
+	}
+
+	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: string(huJSON), ETag: "etag-real"}}
+	c := New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// size + last_changed must still be present.
+	if got := size(t, rec); got != float64(len(huJSON)) {
+		t.Fatalf("size = %v, want %d", got, len(huJSON))
+	}
+	if got := lastChanged(t, rec); got != float64(time.Unix(1_000_000, 0).Unix()) {
+		t.Fatalf("last_changed = %v, want %v", got, 1_000_000)
+	}
+
+	got := ruleCounts(t, rec)
+	// Counts taken directly from .capture/acl.json: array sections use the
+	// element count, object sections use the key count.
+	want := map[string]float64{
+		"acls":          4,
+		"grants":        14,
+		"ssh":           1,
+		"postures":      0,
+		"autoApprovers": 3,
+		"tagOwners":     11,
+		"hosts":         1,
+		"groups":        0,
+		"nodeAttrs":     2,
+	}
+	for sec, w := range want {
+		g, ok := got[sec]
+		if !ok {
+			t.Fatalf("missing rules point for section %q", sec)
+		}
+		if g != w {
+			t.Fatalf("section %q count = %v, want %v", sec, g, w)
+		}
+	}
+
+	// "tests" is absent from the fixture, so no point should be emitted for it.
+	if _, ok := got["tests"]; ok {
+		t.Fatalf("unexpected rules point for absent section %q", "tests")
+	}
+	// "ipsets" / "randomizeClientPort" are not recognized sections.
+	if _, ok := got["ipsets"]; ok {
+		t.Fatal("unexpected rules point for non-recognized section ipsets")
+	}
+	if _, ok := got["randomizeClientPort"]; ok {
+		t.Fatal("unexpected rules point for scalar randomizeClientPort")
+	}
+}
+
+func TestMalformedHuJSONStillEmitsSizeAndLastChanged(t *testing.T) {
+	// Unterminated object: not valid HuJSON, so Standardize must fail.
+	bad := `{"acls": [`
+	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: bad, ETag: "etag-bad"}}
+	c := New(api, 0, func() time.Time { return time.Unix(2_000_000, 0).UTC() })
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect must not error on malformed HuJSON: %v", err)
+	}
+
+	if got := size(t, rec); got != float64(len(bad)) {
+		t.Fatalf("size = %v, want %d", got, len(bad))
+	}
+	if got := lastChanged(t, rec); got != float64(time.Unix(2_000_000, 0).Unix()) {
+		t.Fatalf("last_changed = %v, want %v", got, 2_000_000)
+	}
+	if pts := rec.MetricPoints("tailscale.acl.rules"); len(pts) != 0 {
+		t.Fatalf("rules points on malformed HuJSON = %d, want 0", len(pts))
 	}
 }

@@ -18,6 +18,7 @@ type Scheduler struct {
 	now     func() time.Time
 	jitter  float64
 	logger  *slog.Logger
+	selfObs bool
 }
 
 // SchedulerOption configures a Scheduler.
@@ -33,6 +34,11 @@ func WithClock(now func() time.Time) SchedulerOption { return func(s *Scheduler)
 // WithLogger sets the logger used for collector errors.
 func WithLogger(l *slog.Logger) SchedulerOption { return func(s *Scheduler) { s.logger = l } }
 
+// WithSelfObs toggles per-collector self-observability scrape metrics
+// (tailscale2otel.scrape.*). It defaults to enabled; passing false suppresses
+// all scrape metric emission, leaving behavior identical to having no self-obs.
+func WithSelfObs(enabled bool) SchedulerOption { return func(s *Scheduler) { s.selfObs = enabled } }
+
 // NewScheduler returns a Scheduler that drives collectors with the given
 // emitter and checkpoint store.
 func NewScheduler(e telemetry.Emitter, store CheckpointStore, opts ...SchedulerOption) *Scheduler {
@@ -42,6 +48,7 @@ func NewScheduler(e telemetry.Emitter, store CheckpointStore, opts ...SchedulerO
 		now:     time.Now,
 		jitter:  0.1,
 		logger:  slog.Default(),
+		selfObs: true,
 	}
 	for _, o := range opts {
 		o(s)
@@ -94,19 +101,35 @@ func (s *Scheduler) initialDelay(interval time.Duration) time.Duration {
 }
 
 // runTick executes one collection, recovering from panics so a single bad
-// collector run never crashes the scheduler.
+// collector run never crashes the scheduler. The whole run is timed and, when
+// self-obs is enabled, the per-collector scrape.* metrics are emitted — even on
+// the panic-recovery path, which records success=0 plus an errors{panic} count.
 func (s *Scheduler) runTick(ctx context.Context, e Entry) {
+	started := time.Now() // monotonic: used for duration only
+	var runErr error
+	panicked := false
 	defer func() {
 		if r := recover(); r != nil {
+			panicked = true
 			s.logger.Error("collector panicked", "collector", e.Collector.Name(), "panic", r)
+		}
+		if s.selfObs {
+			emitScrapeMetrics(s.emitter, scrapeResult{
+				collector:  e.Collector.Name(),
+				duration:   time.Since(started),
+				finishedAt: s.now(),
+				err:        runErr,
+				panicked:   panicked,
+			})
 		}
 	}()
 	switch c := e.Collector.(type) {
 	case WindowCollector:
-		s.runWindow(ctx, c, e)
+		runErr = s.runWindow(ctx, c, e)
 	case SnapshotCollector:
-		if err := c.Collect(ctx, s.emitter); err != nil {
-			s.logger.Warn("collector failed", "collector", c.Name(), "error", err)
+		runErr = c.Collect(ctx, s.emitter)
+		if runErr != nil {
+			s.logger.Warn("collector failed", "collector", c.Name(), "error", runErr)
 		}
 	default:
 		s.logger.Warn("collector implements neither SnapshotCollector nor WindowCollector",
@@ -114,18 +137,21 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry) {
 	}
 }
 
-func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) {
+// runWindow polls a window collector's next [from, to] range and advances the
+// checkpoint on success. It returns the collector's error (nil on success or
+// when there is no new window to poll) so the caller can record scrape metrics.
+func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) error {
 	last, hasLast := s.store.Get(c.Name())
 	from, to, ok := nextWindow(last, hasLast, s.now(), c.Lag(), e.InitialLookback, e.MaxWindow)
 	if !ok {
-		return
+		return nil
 	}
 	hwm, err := c.CollectWindow(ctx, from, to, s.emitter)
 	if err != nil {
 		// Do not advance the checkpoint: the next tick retries the same window
 		// (at-least-once, no gaps).
 		s.logger.Warn("window collector failed", "collector", c.Name(), "error", err)
-		return
+		return err
 	}
 	if hwm.IsZero() {
 		hwm = to
@@ -133,4 +159,5 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) {
 	if err := s.store.Set(c.Name(), hwm); err != nil {
 		s.logger.Warn("checkpoint persist failed", "collector", c.Name(), "error", err)
 	}
+	return nil
 }

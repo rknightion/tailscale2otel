@@ -1,0 +1,276 @@
+package collector_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
+	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+)
+
+// runRecorderScheduler starts a Scheduler wired to the given Recorder's emitter
+// with jitter disabled and a fixed clock, returning the recorder for assertions.
+func runRecorderScheduler(t *testing.T, r *collector.Registry, rec *telemetrytest.Recorder, now time.Time, opts ...collector.SchedulerOption) {
+	t.Helper()
+	base := []collector.SchedulerOption{
+		collector.WithJitter(0),
+		collector.WithClock(func() time.Time { return now }),
+	}
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(), append(base, opts...)...)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = s.Run(ctx, r); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
+// findPoint returns the first metric point for name carrying the given collector
+// attribute, and whether one was found.
+func findPoint(rec *telemetrytest.Recorder, name, coll string) (telemetrytest.MetricPoint, bool) {
+	for _, p := range rec.MetricPoints(name) {
+		if p.Attrs[semconv.AttrCollector] == coll {
+			return p, true
+		}
+	}
+	return telemetrytest.MetricPoint{}, false
+}
+
+func TestSelfObs_SuccessfulSnapshotEmitsScrapeMetrics(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "ok", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		return nil
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now)
+
+	waitFor(t, func() bool {
+		_, ok := findPoint(rec, collector.MetricScrapeSuccess, "ok")
+		return ok
+	}, 2*time.Second)
+
+	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "ok")
+	if !ok {
+		t.Fatalf("%s not emitted for collector ok", collector.MetricScrapeSuccess)
+	}
+	if success.Kind != "gauge" || success.Value != 1 {
+		t.Fatalf("success = %+v, want gauge value 1", success)
+	}
+	if success.Unit != semconv.UnitDimensionless {
+		t.Fatalf("success unit = %q, want %q", success.Unit, semconv.UnitDimensionless)
+	}
+
+	dur, ok := findPoint(rec, collector.MetricScrapeDuration, "ok")
+	if !ok {
+		t.Fatalf("%s not emitted", collector.MetricScrapeDuration)
+	}
+	if dur.Kind != "gauge" || dur.Unit != semconv.UnitSeconds || dur.Value < 0 {
+		t.Fatalf("duration = %+v, want non-negative gauge in seconds", dur)
+	}
+
+	ts, ok := findPoint(rec, collector.MetricScrapeLastTimestamp, "ok")
+	if !ok {
+		t.Fatalf("%s not emitted", collector.MetricScrapeLastTimestamp)
+	}
+	if ts.Kind != "gauge" || ts.Unit != semconv.UnitSeconds {
+		t.Fatalf("last_timestamp = %+v, want gauge in seconds", ts)
+	}
+	if want := float64(now.Unix()); ts.Value != want {
+		t.Fatalf("last_timestamp value = %v, want %v (clock unix)", ts.Value, want)
+	}
+
+	// A clean run must not record any scrape errors.
+	if pts := rec.MetricPoints(collector.MetricScrapeErrors); len(pts) != 0 {
+		t.Fatalf("scrape errors emitted on success: %+v", pts)
+	}
+}
+
+func TestSelfObs_FailingSnapshotRecordsErrorAndZeroSuccess(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "bad", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		return errors.New("boom")
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now)
+
+	waitFor(t, func() bool {
+		p, ok := findPoint(rec, collector.MetricScrapeErrors, "bad")
+		return ok && p.Value >= 1
+	}, 2*time.Second)
+
+	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "bad")
+	if !ok || success.Value != 0 {
+		t.Fatalf("success = %+v (ok=%v), want gauge value 0", success, ok)
+	}
+
+	errPt, ok := findPoint(rec, collector.MetricScrapeErrors, "bad")
+	if !ok {
+		t.Fatalf("%s not emitted", collector.MetricScrapeErrors)
+	}
+	if errPt.Kind != "sum" || !errPt.Monotonic {
+		t.Fatalf("errors = %+v, want monotonic sum (counter)", errPt)
+	}
+	if errPt.Unit != semconv.UnitDimensionless {
+		t.Fatalf("errors unit = %q, want %q", errPt.Unit, semconv.UnitDimensionless)
+	}
+	if errPt.Attrs["error.type"] != "error" {
+		t.Fatalf("error.type = %q, want \"error\"", errPt.Attrs["error.type"])
+	}
+
+	// Duration and last_timestamp must still be emitted on failure.
+	if _, ok := findPoint(rec, collector.MetricScrapeDuration, "bad"); !ok {
+		t.Fatalf("%s not emitted on failure", collector.MetricScrapeDuration)
+	}
+	if _, ok := findPoint(rec, collector.MetricScrapeLastTimestamp, "bad"); !ok {
+		t.Fatalf("%s not emitted on failure", collector.MetricScrapeLastTimestamp)
+	}
+}
+
+func TestSelfObs_TimeoutErrorIsClassifiedAsTimeout(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "slow", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		return context.DeadlineExceeded
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now)
+
+	waitFor(t, func() bool {
+		p, ok := findPoint(rec, collector.MetricScrapeErrors, "slow")
+		return ok && p.Attrs["error.type"] == "timeout"
+	}, 2*time.Second)
+
+	p, ok := findPoint(rec, collector.MetricScrapeErrors, "slow")
+	if !ok || p.Attrs["error.type"] != "timeout" {
+		t.Fatalf("error.type = %q (ok=%v), want \"timeout\"", p.Attrs["error.type"], ok)
+	}
+}
+
+func TestSelfObs_PanickingSnapshotRecordsPanic(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "panicker", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		panic("kaboom")
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now)
+
+	waitFor(t, func() bool {
+		p, ok := findPoint(rec, collector.MetricScrapeErrors, "panicker")
+		return ok && p.Attrs["error.type"] == "panic"
+	}, 2*time.Second)
+
+	errPt, ok := findPoint(rec, collector.MetricScrapeErrors, "panicker")
+	if !ok || errPt.Attrs["error.type"] != "panic" {
+		t.Fatalf("error.type = %q (ok=%v), want \"panic\"", errPt.Attrs["error.type"], ok)
+	}
+
+	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "panicker")
+	if !ok || success.Value != 0 {
+		t.Fatalf("success = %+v (ok=%v), want gauge value 0 on panic", success, ok)
+	}
+	// Duration and last_timestamp must still be emitted on panic.
+	if _, ok := findPoint(rec, collector.MetricScrapeDuration, "panicker"); !ok {
+		t.Fatalf("%s not emitted on panic", collector.MetricScrapeDuration)
+	}
+	if _, ok := findPoint(rec, collector.MetricScrapeLastTimestamp, "panicker"); !ok {
+		t.Fatalf("%s not emitted on panic", collector.MetricScrapeLastTimestamp)
+	}
+}
+
+func TestSelfObs_WindowCollectorEmitsScrapeMetrics(t *testing.T) {
+	now := time.Unix(2_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	r.RegisterWindow(winFunc{name: "win", def: time.Millisecond, lag: time.Minute,
+		fn: func(_ context.Context, from, to time.Time, _ telemetry.Emitter) (time.Time, error) {
+			return to, nil
+		}}, time.Millisecond, 5*time.Minute, time.Hour)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now)
+
+	waitFor(t, func() bool {
+		_, ok := findPoint(rec, collector.MetricScrapeSuccess, "win")
+		return ok
+	}, 2*time.Second)
+
+	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "win")
+	if !ok || success.Value != 1 {
+		t.Fatalf("window success = %+v (ok=%v), want gauge value 1", success, ok)
+	}
+	if _, ok := findPoint(rec, collector.MetricScrapeDuration, "win"); !ok {
+		t.Fatalf("%s not emitted for window collector", collector.MetricScrapeDuration)
+	}
+	if _, ok := findPoint(rec, collector.MetricScrapeLastTimestamp, "win"); !ok {
+		t.Fatalf("%s not emitted for window collector", collector.MetricScrapeLastTimestamp)
+	}
+}
+
+func TestSelfObs_FailingWindowRecordsError(t *testing.T) {
+	now := time.Unix(2_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	r.RegisterWindow(winFunc{name: "win", def: time.Millisecond, lag: time.Minute,
+		fn: func(_ context.Context, from, to time.Time, _ telemetry.Emitter) (time.Time, error) {
+			return time.Time{}, context.DeadlineExceeded
+		}}, time.Millisecond, 5*time.Minute, time.Hour)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now)
+
+	waitFor(t, func() bool {
+		p, ok := findPoint(rec, collector.MetricScrapeErrors, "win")
+		return ok && p.Attrs["error.type"] == "timeout"
+	}, 2*time.Second)
+
+	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "win")
+	if !ok || success.Value != 0 {
+		t.Fatalf("window success = %+v (ok=%v), want gauge value 0 on error", success, ok)
+	}
+}
+
+func TestSelfObs_DisabledEmitsNoScrapeMetrics(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	var calls = make(chan struct{}, 1)
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "ok", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		select {
+		case calls <- struct{}{}:
+		default:
+		}
+		return nil
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	runRecorderScheduler(t, r, rec, now, collector.WithSelfObs(false))
+
+	// Wait until the collector has actually run at least once.
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collector never ran")
+	}
+	// Give a couple more ticks a chance to emit anything erroneously.
+	time.Sleep(20 * time.Millisecond)
+
+	for _, name := range []string{
+		collector.MetricScrapeDuration,
+		collector.MetricScrapeSuccess,
+		collector.MetricScrapeErrors,
+		collector.MetricScrapeLastTimestamp,
+	} {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Fatalf("WithSelfObs(false): %s emitted %d points, want 0", name, len(pts))
+		}
+	}
+}

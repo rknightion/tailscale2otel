@@ -1,0 +1,20 @@
+tailscale2otel has been deployed as {{ include "tailscale2otel.fullname" . }}.
+
+It is a singleton poller that ships Tailscale observability data to your OTLP
+endpoint ({{ .Values.otlp.endpoint }}) every {{ .Values.otlp.metricInterval }}.
+
+1. Confirm it started:
+   kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+2. Credentials:
+{{- if .Values.existingSecret }}
+   Using existing Secret "{{ .Values.existingSecret }}" — ensure it exposes
+   TS_OAUTH_CLIENT_ID / TS_OAUTH_CLIENT_SECRET (or TS_API_KEY) and
+   GC_INSTANCE_ID / GC_OTLP_TOKEN.
+{{- else }}
+   Rendered into Secret "{{ include "tailscale2otel.fullname" . }}". Set values via
+   --set secret.TS_OAUTH_CLIENT_ID=... etc., or point existingSecret at your own.
+{{- end }}
+
+3. In Grafana Cloud Explore, look for metrics like tailscale.device.online,
+   tailscale.network.io, and tailscale2otel.up.

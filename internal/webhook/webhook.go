@@ -270,7 +270,7 @@ func parseSignatureHeader(header string) (time.Time, []string, error) {
 		haveTS bool
 		sigs   []string
 	)
-	for _, pair := range strings.Split(header, ",") {
+	for pair := range strings.SplitSeq(header, ",") {
 		k, v, ok := strings.Cut(pair, "=")
 		if !ok {
 			return time.Time{}, nil, errors.New("malformed signature element")
