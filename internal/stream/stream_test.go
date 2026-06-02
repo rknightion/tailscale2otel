@@ -131,13 +131,13 @@ const hecFlowBody = `{
     "start": "2024-06-06T15:25:26Z",
     "end": "2024-06-06T15:26:26Z",
     "virtualTraffic": [
-      {"proto": "tcp", "src": "100.64.0.1:443", "dst": "100.64.0.2:51820", "txPkts": 10, "txBytes": 1000, "rxPkts": 8, "rxBytes": 800}
+      {"proto": 6, "src": "100.64.0.1:443", "dst": "100.64.0.2:51820", "txPkts": 10, "txBytes": 1000, "rxPkts": 8, "rxBytes": 800}
     ]
   }
 }`
 
 // A bare flow record (no wrapper).
-const bareFlowRecord = `{"logged":"2024-06-06T15:27:26Z","nodeId":"nLaptop","virtualTraffic":[{"proto":"tcp","src":"100.64.0.1:443","dst":"100.64.0.2:51820","txBytes":1000,"rxBytes":800}]}`
+const bareFlowRecord = `{"logged":"2024-06-06T15:27:26Z","nodeId":"nLaptop","virtualTraffic":[{"proto":6,"src":"100.64.0.1:443","dst":"100.64.0.2:51820","txBytes":1000,"rxBytes":800}]}`
 
 // A bare audit event record.
 const bareAuditRecord = `{"eventTime":"2026-06-02T12:00:30Z","type":"CONFIG","eventGroupID":"g1","origin":"admin-console","actor":{"id":"u1","loginName":"alice@example.com","displayName":"Alice"},"target":{"id":"n1","name":"node.ts.net","type":"NODE"},"action":"CREATE"}`

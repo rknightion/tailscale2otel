@@ -35,6 +35,16 @@ type Options struct {
 	BaseDelay   time.Duration
 	MaxDelay    time.Duration
 
+	// OnRequest, when non-nil, is invoked once after each logical API request
+	// completes with a low-cardinality endpoint label (e.g. "devices",
+	// "logging/network"), the final HTTP status (0 on transport error) and the
+	// total attempt count (1 if the first try succeeded). For self-observability.
+	OnRequest func(endpoint string, status int, attempts int)
+
+	// RateLimit caps the request rate, in requests per second, across the whole
+	// client. Zero means unlimited (pure pass-through).
+	RateLimit float64
+
 	// HTTPClient, when set, is used as-is (tests); auth/retry are not applied.
 	HTTPClient *http.Client
 }
