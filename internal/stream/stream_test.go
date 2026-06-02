@@ -142,6 +142,157 @@ const bareFlowRecord = `{"logged":"2024-06-06T15:27:26Z","nodeId":"nLaptop","vir
 // A bare audit event record.
 const bareAuditRecord = `{"eventTime":"2026-06-02T12:00:30Z","type":"CONFIG","eventGroupID":"g1","origin":"admin-console","actor":{"id":"u1","loginName":"alice@example.com","displayName":"Alice"},"target":{"id":"n1","name":"node.ts.net","type":"NODE"},"action":"CREATE"}`
 
+// captureFlowRecord mirrors the exact shape of a network-flow record from a
+// real capture (.capture/logging_network.json): a NUMERIC "proto" (here 6 =
+// TCP), srcNode/dstNodes node descriptors, and both virtualTraffic and
+// physicalTraffic arrays. The receiver must ignore the descriptive node fields
+// and route this to the flow processor on the strength of nodeId + traffic.
+const captureFlowRecord = `{"logged":"2026-06-02T19:00:01.346001489Z","nodeId":"nxrsyR7CNTRL","start":"2026-06-02T18:59:54.278418352Z","end":"2026-06-02T18:59:59.279306235Z","srcNode":{"nodeId":"nxrsyR7CNTRL","name":"camden.saga-turtle.ts.net","addresses":["100.91.77.97"],"tags":["tag:servers"]},"dstNodes":[{"nodeId":"nrx7wUpMaa11CNTRL","name":"mbp16.saga-turtle.ts.net","addresses":["100.88.109.22"],"os":"macOS","user":"rob@m7kni.io"}],"virtualTraffic":[{"proto":6,"src":"100.91.77.97:22","dst":"100.88.109.22:58544","txPkts":51,"txBytes":6420}],"physicalTraffic":[{"src":"100.88.109.22:0","dst":"10.0.0.183:57532","txPkts":53,"txBytes":8708,"rxPkts":53,"rxBytes":7004}]}`
+
+// captureAuditRecord mirrors the exact shape of a configuration-audit record
+// from a real capture (.capture/logging_config.json): an UPDATE whose "new" is
+// a JSON ARRAY ("new":["tag:grafana-pdc"]) and whose "old" is an empty STRING.
+// These polymorphic old/new values (string|object|array|null) must not derail
+// classification or decoding.
+const captureAuditRecord = `{"eventTime":"2026-06-02T19:00:05.558444283Z","type":"CONFIG","eventGroupID":"d3c5dde026b27ddd2e5601788dbecec6","origin":"NODE","actor":{"id":"uiffmH5CNTRL","type":"USER","loginName":"rob@m7kni.io","displayName":"Rob Knight"},"target":{"id":"n5FKuyvTaV11CNTRL","name":"grafanacloud-1217581-tailscale-grafana-pdc-48.saga-turtle.ts.net","type":"NODE","isEphemeral":true,"property":"ACL_TAGS"},"action":"UPDATE","old":"","new":["tag:grafana-pdc"]}`
+
+// assertFlowAndAuditOnce asserts that exactly one flow and one audit record
+// were processed and that no records were rejected.
+func assertFlowAndAuditOnce(t *testing.T, rec *telemetrytest.Recorder) {
+	t.Helper()
+	// captureFlowRecord carries both virtualTraffic and physicalTraffic, so the
+	// flow processor emits four MetricIO points (two traffic classes, each with
+	// a transmit and a receive direction).
+	if io := rec.MetricPoints(flowlog.MetricIO); len(io) != 4 {
+		t.Fatalf("MetricIO points = %d, want 4 (one capture flow processed) (%+v)", len(io), io)
+	}
+	if ev := rec.MetricPoints(audit.MetricAuditEvents); len(ev) != 1 {
+		t.Fatalf("%s points = %d, want 1 (%+v)", audit.MetricAuditEvents, len(ev), ev)
+	}
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
+		t.Fatalf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+// TestEnvelope_BareRecord pins the "bare single record" envelope using the
+// real capture flow shape (numeric proto): a lone JSON object routes to the
+// flow processor.
+func TestEnvelope_BareRecord(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(captureFlowRecord))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+	// captureFlowRecord has virtualTraffic + physicalTraffic: four MetricIO
+	// points (two traffic classes x transmit/receive).
+	if io := rec.MetricPoints(flowlog.MetricIO); len(io) != 4 {
+		t.Fatalf("MetricIO points = %d, want 4 (capture flow processed) (%+v)", len(io), io)
+	}
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+// TestEnvelope_NDJSONBatch pins the NDJSON-batch envelope using real capture
+// shapes: one flow record then one audit record, newline-delimited.
+func TestEnvelope_NDJSONBatch(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	body := captureFlowRecord + "\n" + captureAuditRecord + "\n"
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+	assertFlowAndAuditOnce(t, rec)
+}
+
+// TestEnvelope_SplunkEventWrapper pins the Splunk-HEC {"event":<record>}
+// envelope using the real capture audit shape (array-valued "new").
+func TestEnvelope_SplunkEventWrapper(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	body := `{"event":` + captureAuditRecord + `,"sourcetype":"tailscale","time":1717354805}`
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+	if ev := rec.MetricPoints(audit.MetricAuditEvents); len(ev) != 1 {
+		t.Fatalf("%s points = %d, want 1 (%+v)", audit.MetricAuditEvents, len(ev), ev)
+	}
+	recs := rec.MetricPoints(metricRecords)
+	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
+		t.Fatalf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
+	}
+	// The array-valued "new" must have been rendered onto the audit log record.
+	var sawNew bool
+	for _, lr := range rec.LogRecords() {
+		if strings.Contains(lr.Attrs["tailscale.audit.new"], "tag:grafana-pdc") {
+			sawNew = true
+		}
+	}
+	if !sawNew {
+		t.Fatalf("audit log record with new containing tag:grafana-pdc not found in %+v", rec.LogRecords())
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+// TestEnvelope_NDJSONSalvagesMalformedLine pins the line-by-line salvage path:
+// when one NDJSON line is malformed, the surrounding valid lines must still be
+// parsed and routed. This exercises the split-by-newline fallback (the loop
+// converted to strings.SplitSeq in P2-1).
+func TestEnvelope_NDJSONSalvagesMalformedLine(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	// A valid flow, a torn/garbage line, then a valid audit. The decoder cannot
+	// cleanly stream all three, forcing the newline-split salvage path.
+	body := captureFlowRecord + "\n" + `{"oops": broken json` + "\n" + captureAuditRecord + "\n"
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+	// Both valid records survived the malformed middle line.
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
+		t.Fatalf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
+	}
+}
+
+// TestEnvelope_TailscaleLogsWrapper pins the Tailscale {"logs":[...]} batch
+// envelope (the shape the .capture files themselves use at top level) carrying
+// one flow + one audit record from the real capture shapes.
+func TestEnvelope_TailscaleLogsWrapper(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	body := `{"logs":[` + captureFlowRecord + `,` + captureAuditRecord + `]}`
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+	assertFlowAndAuditOnce(t, rec)
+}
+
 func TestHandler_HECFlowRecord(t *testing.T) {
 	s, rec := newServer(t, stream.Options{Token: testToken})
 

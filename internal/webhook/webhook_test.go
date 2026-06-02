@@ -131,6 +131,44 @@ func TestHandler_ValidSignatureEmitsEventsAndCounter(t *testing.T) {
 	}
 }
 
+func TestHandler_MultiSignatureRotationVerifies(t *testing.T) {
+	ts := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
+
+	// During secret rotation Tailscale signs with multiple secrets and emits a
+	// v1=<hex> entry per secret. Only the entry computed from our configured
+	// secret is valid; a bogus one precedes it. Verification must succeed by
+	// matching any single v1 value.
+	valid := signBody(testSecret, ts, twoEventBody)
+	// valid is "t=<ts>,v1=<hex>"; extract just the v1 hex to build a multi-sig header.
+	_, validHex, ok := strings.Cut(valid, "v1=")
+	if !ok {
+		t.Fatalf("could not parse signed header %q", valid)
+	}
+	bogusHex := flipLast(validHex)
+
+	// Cover both orderings: the valid signature may appear before or after the
+	// bogus one. Both must verify, which only holds if every v1 entry is kept.
+	cases := map[string]string{
+		"valid_first": fmt.Sprintf("t=%d,v1=%s,v1=%s", ts.Unix(), validHex, bogusHex),
+		"valid_last":  fmt.Sprintf("t=%d,v1=%s,v1=%s", ts.Unix(), bogusHex, validHex),
+	}
+	for name, multiSig := range cases {
+		t.Run(name, func(t *testing.T) {
+			s, rec := newTestServer(t)
+			resp := doPost(t, s.Handler(), "/webhook", twoEventBody, multiSig)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+			}
+			if len(rec.LogRecords()) != 2 {
+				t.Errorf("LogRecords len = %d, want 2", len(rec.LogRecords()))
+			}
+			if rej := rec.MetricPoints("tailscale.webhook.rejected"); len(rej) != 0 {
+				t.Errorf("unexpected rejected metric points on rotation header: %+v", rej)
+			}
+		})
+	}
+}
+
 func TestHandler_TamperedSignatureRejected(t *testing.T) {
 	s, rec := newTestServer(t)
 

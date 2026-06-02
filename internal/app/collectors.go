@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"github.com/rknightion/tailscale2otel/internal/collector/acl"
 	"github.com/rknightion/tailscale2otel/internal/collector/auditlogs"
 	"github.com/rknightion/tailscale2otel/internal/collector/devices"
@@ -20,6 +22,22 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		LogMode:      cfg.Collectors.Flowlogs.LogMode,
 		IncludePorts: cfg.Cardinality.FlowIncludePorts,
 		NodeDims:     cfg.Cardinality.FlowNodeDims,
+		// collapse_external=true (the default) keeps unresolved/external addresses
+		// bucketed as external/unknown; false preserves the raw IP on flow logs.
+		KeepExternalAddrs: !cfg.Cardinality.CollapseExternal,
+	}
+}
+
+// flowFeatureCheck reports whether network flow logging is enabled on the
+// tailnet, so the flowlogs collector can self-disable (emit feature.enabled=0
+// and idle) instead of error-spamming when the feature is off or plan-gated.
+func (a *App) flowFeatureCheck() flowlogs.FeatureCheck {
+	return func(ctx context.Context) (bool, error) {
+		s, err := a.client.TailnetSettings(ctx)
+		if err != nil {
+			return false, err
+		}
+		return s.NetworkFlowLoggingOn, nil
 	}
 }
 
@@ -36,7 +54,8 @@ func (a *App) registerCollectors() {
 	c := &a.cfg.Collectors
 
 	if c.Devices.Enabled {
-		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D()), c.Devices.Interval.D())
+		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
+			c.Devices.CollectRoutes, c.Devices.CollectPosture), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
 		a.registry.Register(users.New(a.client, c.Users.Interval.D()), c.Users.Interval.D())
@@ -54,7 +73,7 @@ func (a *App) registerCollectors() {
 		a.registry.Register(dns.New(a.client, c.Dns.Interval.D()), c.Dns.Interval.D())
 	}
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
-		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D())
+		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck())
 		a.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
 	}
 	if c.Auditlogs.Enabled && pollSource(c.Auditlogs.Source) {

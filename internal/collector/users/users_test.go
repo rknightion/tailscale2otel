@@ -10,18 +10,27 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
-// fakeLister returns a canned slice of users (or an error).
+// fakeLister returns a canned slice of users and user invites (or an error).
 type fakeLister struct {
-	users []tsclient.User
-	err   error
-	calls int
+	users       []tsclient.User
+	invites     []tsapi.UserInvite
+	err         error
+	invitesErr  error
+	calls       int
+	inviteCalls int
 }
 
 func (f *fakeLister) Users(context.Context) ([]tsclient.User, error) {
 	f.calls++
 	return f.users, f.err
+}
+
+func (f *fakeLister) UserInvites(context.Context) ([]tsapi.UserInvite, error) {
+	f.inviteCalls++
+	return f.invites, f.invitesErr
 }
 
 // findPoint returns the first MetricPoint whose attrs match every key/value in
@@ -209,6 +218,87 @@ func TestCollect_PropagatesError(t *testing.T) {
 	rec := telemetrytest.New()
 	wantErr := errors.New("boom")
 	c := users.New(&fakeLister{err: wantErr}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
+		t.Fatalf("Collect err = %v, want %v", err, wantErr)
+	}
+}
+
+func sampleInvites() []tsapi.UserInvite {
+	return []tsapi.UserInvite{
+		{ID: "i1", Role: "member", Accepted: false},
+		{ID: "i2", Role: "member", Accepted: false},
+		{ID: "i3", Role: "member", Accepted: true},
+		{ID: "i4", Role: "admin", Accepted: false},
+	}
+}
+
+func TestCollect_UserInvitesGroupedCounts(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites()}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.user_invites.count")
+	// Three distinct (role, accepted) combos:
+	//   (member,false)=2, (member,true)=1, (admin,false)=1.
+	if len(pts) != 3 {
+		t.Fatalf("invite count points = %d, want 3 (%+v)", len(pts), pts)
+	}
+	for _, p := range pts {
+		if p.Kind != "gauge" {
+			t.Fatalf("invite count kind = %q, want gauge", p.Kind)
+		}
+		if p.Unit != "1" {
+			t.Fatalf("invite count unit = %q, want 1", p.Unit)
+		}
+	}
+
+	memberPending := findPoint(t, pts, map[string]string{
+		"tailscale.user_invite.role":     "member",
+		"tailscale.user_invite.accepted": "false",
+	})
+	if memberPending.Value != 2 {
+		t.Fatalf("member/false invite count = %v, want 2", memberPending.Value)
+	}
+	memberAccepted := findPoint(t, pts, map[string]string{
+		"tailscale.user_invite.role":     "member",
+		"tailscale.user_invite.accepted": "true",
+	})
+	if memberAccepted.Value != 1 {
+		t.Fatalf("member/true invite count = %v, want 1", memberAccepted.Value)
+	}
+	adminPending := findPoint(t, pts, map[string]string{
+		"tailscale.user_invite.role":     "admin",
+		"tailscale.user_invite.accepted": "false",
+	})
+	if adminPending.Value != 1 {
+		t.Fatalf("admin/false invite count = %v, want 1", adminPending.Value)
+	}
+}
+
+func TestCollect_NullInvitesNoSeriesNoError(t *testing.T) {
+	rec := telemetrytest.New()
+	// A null/empty invite list (the real tailnet returns null) must emit no
+	// invite series and must not error.
+	c := users.New(&fakeLister{users: sampleUsers(), invites: nil}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if pts := rec.MetricPoints("tailscale.user_invites.count"); len(pts) != 0 {
+		t.Fatalf("invite count points = %d, want 0 (%+v)", len(pts), pts)
+	}
+	// Existing user metrics must still be emitted unchanged.
+	if pts := rec.MetricPoints("tailscale.users.count"); len(pts) != 2 {
+		t.Fatalf("users.count points = %d, want 2 (%+v)", len(pts), pts)
+	}
+}
+
+func TestCollect_PropagatesInviteError(t *testing.T) {
+	rec := telemetrytest.New()
+	wantErr := errors.New("invite boom")
+	c := users.New(&fakeLister{users: sampleUsers(), invitesErr: wantErr}, 0)
 	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
 		t.Fatalf("Collect err = %v, want %v", err, wantErr)
 	}

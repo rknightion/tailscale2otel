@@ -1,0 +1,72 @@
+# Default values for tailscale2otel.
+
+image:
+  repository: ghcr.io/rknightion/tailscale2otel
+  tag: ""              # defaults to .Chart.appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 1        # keep at 1 — this is a singleton poller (no leader election)
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- Secrets ---
+# Provide credentials either inline here (rendered into a Secret) OR reference an
+# existing Secret via existingSecret. Inline values win only when existingSecret is "".
+existingSecret: ""     # name of a pre-created Secret exposing the env keys below
+secret:
+  TS_OAUTH_CLIENT_ID: ""
+  TS_OAUTH_CLIENT_SECRET: ""
+  TS_API_KEY: ""
+  GC_INSTANCE_ID: ""
+  GC_OTLP_TOKEN: ""
+
+# --- Tailscale ---
+tailscale:
+  tailnet: "-"         # "-" = the auth principal's default tailnet
+  authMethod: oauth    # oauth | apikey
+
+# --- OTLP ---
+otlp:
+  protocol: http       # http | grpc | stdout
+  endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+  metricInterval: 60s
+
+# Full app config. This is rendered verbatim into a ConfigMap as config.yaml and
+# supports ${ENV} expansion against the Secret above. Leave null to use the
+# templated default (built from the values above); set to override entirely.
+config: null
+
+selfObservability:
+  enabled: true

@@ -5,21 +5,34 @@
 // internal/audit) used by the polling collectors, so streamed and polled data
 // produce identical OTEL metrics and log records.
 //
-// # Empirical-pinning TODO
+// # Envelope is PROVISIONAL (no live capture)
 //
 // Tailscale does NOT publicly document the exact JSON envelope it POSTs to a
-// Splunk-HEC sink. The parsing here is therefore DEFENSIVE: the precise
-// on-the-wire envelope must be pinned empirically by capturing a live stream
-// (point a Tailscale log-streaming configuration at this endpoint, dump the raw
-// request bodies, and tighten the parser / add fixtures accordingly). Until
-// then, the receiver accepts the union of shapes it is plausible to receive:
+// Splunk-HEC sink, and the envelope handled here therefore remains PROVISIONAL
+// pending a live capture. Truly pinning it empirically would require pointing a
+// Tailscale log-streaming configuration at this endpoint and dumping the raw
+// request bodies — i.e. reconfiguring the production lab tailnet's streaming.
+// That is intentionally OUT OF SCOPE: live capture and any "auto_configure"
+// helper that would mutate the tailnet's logstream settings are deliberately
+// DEFERRED so this package never alters the production tailnet.
+//
+// What we CAN pin is the per-record shape, because streamed records match the
+// poll API's network-flow and configuration-audit records exactly (verified
+// against the real captures in .capture/logging_network.json and
+// .capture/logging_config.json). Accordingly: flow records carry a NUMERIC
+// "proto" (e.g. "proto":6 for TCP), and audit "old"/"new" values are
+// polymorphic (string, object, array, or null). The parser is hardened and
+// fixture-tested against those real shapes.
+//
+// Because the wrapping envelope is not pinned, the parser stays DEFENSIVE and
+// accepts the union of shapes it is plausible to receive:
 //
 //   - a single JSON object;
 //   - newline-delimited JSON (NDJSON), the HEC norm — one JSON object per line;
 //   - a Splunk-HEC wrapper {"event": <record>, ...} — the "event" field is
 //     unwrapped and classified;
 //   - a Tailscale batch wrapper {"logs": [<record>, ...]} — each element is
-//     classified.
+//     classified (this is also the shape the .capture files use at top level).
 //
 // Each extracted record object is CLASSIFIED by shape, not by a declared type:
 //
@@ -344,14 +357,15 @@ func extractRecords(raw []byte) ([]json.RawMessage, error) {
 	if len(values) == 0 {
 		// Fallback: split on newlines and parse each non-empty line. This
 		// salvages NDJSON where one line is malformed without discarding the
-		// rest.
-		for _, line := range bytes.Split(trimmed, []byte{'\n'}) {
-			line = bytes.TrimSpace(line)
+		// rest. strings.SplitSeq (Go 1.24+) iterates the lines lazily without
+		// allocating an intermediate slice.
+		for line := range strings.SplitSeq(string(trimmed), "\n") {
+			line = strings.TrimSpace(line)
 			if len(line) == 0 {
 				continue
 			}
-			if json.Valid(line) {
-				values = append(values, append(json.RawMessage(nil), line...))
+			if json.Valid([]byte(line)) {
+				values = append(values, json.RawMessage(line))
 			}
 		}
 		if len(values) == 0 {

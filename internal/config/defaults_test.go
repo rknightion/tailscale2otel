@@ -46,8 +46,8 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.OTLP.Endpoint != "https://otlp-gateway-prod-us-central-0.grafana.net/otlp" {
 		t.Errorf("OTLP.Endpoint = %q, want default grafana endpoint", cfg.OTLP.Endpoint)
 	}
-	if cfg.OTLP.MetricInterval.D() != 30*time.Second {
-		t.Errorf("MetricInterval = %v, want default 30s", cfg.OTLP.MetricInterval.D())
+	if cfg.OTLP.MetricInterval.D() != 60*time.Second {
+		t.Errorf("MetricInterval = %v, want default 60s", cfg.OTLP.MetricInterval.D())
 	}
 	if cfg.Enrichment.CacheTTL.D() != 5*time.Minute {
 		t.Errorf("Enrichment.CacheTTL = %v, want default 5m", cfg.Enrichment.CacheTTL.D())

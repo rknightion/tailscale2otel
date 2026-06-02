@@ -30,11 +30,13 @@ func Default() *Config {
 			},
 		},
 		OTLP: OTLPConfig{
-			Protocol:       "http",
-			Endpoint:       "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
-			Headers:        map[string]string{},
-			TLS:            TLSConfig{Insecure: false},
-			MetricInterval: dur(30 * time.Second),
+			Protocol: "http",
+			Endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
+			Headers:  map[string]string{},
+			TLS:      TLSConfig{Insecure: false},
+			// 60s aligns the OTLP push cadence with the default collector scrape
+			// interval (1 data-point-per-minute), avoiding Grafana Cloud DPM churn.
+			MetricInterval: dur(60 * time.Second),
 		},
 		Enrichment: EnrichmentConfig{
 			CacheTTL: dur(5 * time.Minute),
@@ -108,6 +110,10 @@ func Default() *Config {
 		},
 		SelfObservability: SelfObservabilityConfig{
 			Enabled: true,
+		},
+		Admin: AdminConfig{
+			Enabled: false,
+			Listen:  ":9090",
 		},
 	}
 }
