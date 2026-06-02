@@ -14,3 +14,4 @@ config.smoke.yaml
 /.capture/
 
 .DS_Store
+config.lowlog.yaml
