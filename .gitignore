@@ -1,0 +1,5 @@
+/tailscale2otel
+/bin/
+*.out
+.smoke.yaml
+/checkpoints.json

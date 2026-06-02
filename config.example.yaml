@@ -1,0 +1,73 @@
+# tailscale2otel example configuration.
+# Strings support ${ENV} / $ENV expansion, so keep secrets in environment variables.
+
+log_level: info                      # debug | info | warn | error
+
+tailscale:
+  # Your tailnet's name, or "-" for the default tailnet of the auth principal.
+  tailnet: "${TS_TAILNET}"
+  auth:
+    method: oauth                    # oauth (recommended) | apikey
+    oauth:
+      client_id: "${TS_OAUTH_CLIENT_ID}"
+      client_secret: "${TS_OAUTH_CLIENT_SECRET}"
+      scopes: ["all:read"]           # least-privilege read scopes
+      token_url: "https://api.tailscale.com/api/v2/oauth/token"
+    apikey: "${TS_API_KEY}"          # used only when method: apikey
+  http:
+    timeout: 30s
+    retry: { max_attempts: 4, base_delay: 500ms, max_delay: 10s }
+
+otlp:
+  protocol: http                     # http | grpc | stdout (stdout = local debug)
+  endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+  # Convenience for Grafana Cloud: expands to an "Authorization: Basic <base64(instance:token)>" header.
+  grafana_cloud:
+    instance_id: "${GC_INSTANCE_ID}"
+    token: "${GC_OTLP_TOKEN}"
+  headers: {}                        # extra raw headers (alternative to grafana_cloud)
+  tls: { insecure: false, ca_file: "", cert_file: "", key_file: "" }
+  metric_interval: 30s               # how often metrics are pushed
+
+enrichment:
+  cache_ttl: 5m                      # staleness alarm threshold for the device cache
+
+cardinality:
+  flow_include_ports: false          # keep ports OFF flow metrics (always on flow logs)
+  flow_node_dims: true               # include src/dst device names on flow metrics
+  collapse_external: true            # bucket unresolved IPs as external/unknown
+
+collectors:
+  # source: poll | stream | both  (stream uses the receiver below)
+  devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
+  flowlogs:  { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h, log_mode: per_connection }
+  auditlogs: { enabled: true, source: poll, interval: 60s, lag: 60s,  initial_lookback: 5m, max_window: 6h }
+  users:     { enabled: true, interval: 300s }
+  keys:      { enabled: true, interval: 300s, expiry_warn: 168h }   # warn when a key expires within 7d
+  settings:  { enabled: true, interval: 600s }
+  acl:       { enabled: true, interval: 600s }
+  dns:       { enabled: true, interval: 600s }
+
+checkpoint:
+  store: memory                      # memory | file
+  file_path: "/var/lib/tailscale2otel/checkpoints.json"
+
+# Optional Splunk-HEC-compatible receiver for streamed logs (set a collector's source to stream).
+streaming:
+  enabled: false
+  listen: ":8088"
+  path: "/services/collector/event"
+  token: "${TS_STREAM_HEC_TOKEN}"    # expected as 'Authorization: Splunk <token>'
+  tls: { cert_file: "", key_file: "" }   # HTTPS is required by Tailscale; a `tailscale cert` works for private endpoints
+  decompress: auto                   # auto | gzip | zstd | none
+  auto_configure: false
+
+# Optional webhook receiver for real-time Tailscale events.
+webhook:
+  enabled: false
+  listen: ":8089"
+  path: "/tailscale/webhook"
+  secret: "${TS_WEBHOOK_SECRET}"     # HMAC-SHA256 verification
+
+self_observability:
+  enabled: true                      # emit the exporter's own health metrics
