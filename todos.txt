@@ -254,7 +254,6 @@ LOG RECORDS (event.name — when):
 [x] M7 HTTP receivers: Splunk-HEC stream + HMAC webhook (off by default)
 [x] M8 packaging: Dockerfile, config.example.yaml, README, .dockerignore, .gitignore
 [partial] self-observability: only tailscale2otel.up exists (see TODO P0-1)
-[ ] Grafana dashboards (see TODO P1-1)
 
 --------------------------------------------------------------------------------
 7. PENDING / TODO  (prioritized; each item is actionable for an LLM)
@@ -307,7 +306,8 @@ P1-1  GRAFANA DASHBOARD(S) in deploy/grafana/*.json: device fleet (online/last-s
       update-available/count), flow throughput by node/transport/traffic_type
       (tailscale.network.io rate), audit event stream (logs), key-expiry table,
       and exporter self-health (tailscale2otel.up + scrape metrics). Can be built
-      with the gcx create-dashboard tooling. Update README to reference it.
+      with the gcx create-dashboard tooling. Update README to reference it. Make heavy
+      use of Grafana 13's Dynamic Dashboards functionality.
 
 P1-2  STREAMING ENVELOPE PINNING. The HEC parser in internal/stream is defensive
       against an UNDOCUMENTED Tailscale payload. Configure a real tailnet to stream
@@ -315,7 +315,8 @@ P1-2  STREAMING ENVELOPE PINNING. The HEC parser in internal/stream is defensive
       capture an actual POST body, add it as a fixture, and tighten the parser.
       Also: streaming.auto_configure (PUT /tailnet/{tailnet}/logging/{type}/stream to
       self-register the receiver as a sink; needs log_streaming scope) is NOT
-      implemented — add it (off by default).
+      implemented — add it (off by default). You must not change the streaming of the 
+      existing tailnet used for testing
 
 P1-3  MISSING DATA SOURCES from the plan:
       - user-invites: tailscale.user_invites.count (add tsapi method + emit in users).
@@ -347,11 +348,17 @@ P2-2  Helm chart + docker-compose example; a metrics-reference doc (docs/metrics
 P2-3  build_info metric (version/commit/go version) and a /healthz endpoint (only if
       a receiver server is running, or a tiny always-on admin server).
 P2-4  Per-device Resource option (D4 alternative) for large tailnets / entity modeling.
-P2-5  S3/GCS object-reader ingestion path (deferred alternative to HEC streaming).
 P2-6  When the OTEL log SDK gains Record.EventName, switch from the "event.name"
-      attribute to the native field (internal/telemetry/emitter.go LogEvent).
-P2-7  Node-local client metrics (tailscaled per-node /metrics) as an optional richer
-      data source (different architecture: per-node scrape, not central API).
+      attribute to the native field (internal/telemetry/emitter.go LogEvent). 
+
+P3  Node-local client metrics (tailscaled per-node /metrics) as an optional richer
+      data source (different architecture: per-node scrape, not central API). Tailscale
+      has this today subject to it being enabled on the tailnet and ACLs set up (research first)
+      and our collector can act as a prometheus scraper then transform to OTEL and send all
+      the tailscale node metrics centrally. Match the configured default scrape interval.
+
+P4  Change the default DPM/scrape interval to 60s. It should be configurable but 60s is sensible default
+    This should be aligned with OTEL pushes to avoid hitting grafana cloud DPM issues.
 
 --------------------------------------------------------------------------------
 8. HOW TO CONTINUE (workflow for the LLM)
@@ -367,8 +374,7 @@ P2-7  Node-local client metrics (tailscaled per-node /metrics) as an optional ri
 5. Keep packages small + single-purpose; collectors take a narrow client interface +
    fake it in tests; assert via telemetrytest.Recorder.
 6. After each unit: `go build ./... && go vet ./... && gofmt -l . && go test -race ./...`.
-7. Independent units can be parallelized across subagents (each owns one package,
-   no go.mod edits). Add new dependencies up front (with the human's OK) so agents
-   don't contend on go.mod/go.sum.
-8. Do not commit unless asked. Branch is feat/initial-implementation.
+7. Independent units should be parallelized across subagents (each owns one package,
+   no go.mod edits). Add new dependencies up front so agents   don't contend on go.mod/go.sum.
+8. You can commit to main and push at any time. This project is new and not being used yet.
 ================================================================================
