@@ -15,13 +15,17 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	wrapRetry := func(base http.RoundTripper) http.RoundTripper {
-		return &retryTransport{
+	// wrap composes the transport stack: a rate limiter (outermost, when
+	// configured) around the retrying transport around base.
+	wrap := func(base http.RoundTripper) http.RoundTripper {
+		rt := &retryTransport{
 			base:      base,
 			max:       max(opts.MaxAttempts, 1),
 			baseDelay: orDuration(opts.BaseDelay, 500*time.Millisecond),
 			maxDelay:  orDuration(opts.MaxDelay, 10*time.Second),
+			onRequest: opts.OnRequest,
 		}
+		return wrapRateLimit(rt, opts.RateLimit)
 	}
 
 	switch {
@@ -35,12 +39,12 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 			BaseURL:      opts.BaseURL,
 		}.HTTPClient()
 		oc.Timeout = timeout
-		oc.Transport = wrapRetry(oc.Transport)
+		oc.Transport = wrap(oc.Transport)
 		return oc, nil
 	case opts.APIKey != "":
 		return &http.Client{
 			Timeout:   timeout,
-			Transport: wrapRetry(&authKeyTransport{base: http.DefaultTransport, key: opts.APIKey}),
+			Transport: wrap(&authKeyTransport{base: http.DefaultTransport, key: opts.APIKey}),
 		}, nil
 	default:
 		return nil, errors.New("tsapi: no authentication configured (set APIKey or OAuth client credentials)")

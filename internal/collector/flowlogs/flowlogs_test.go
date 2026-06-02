@@ -52,7 +52,7 @@ func oneTCPResponse() flowlog.NetworkResponse {
 				Logged: time.Date(2026, 6, 2, 12, 1, 5, 0, time.UTC),
 				VirtualTraffic: []flowlog.ConnectionCounts{
 					{
-						Proto:   "tcp",
+						Proto:   6, // tcp (numeric IANA protocol number, per real API)
 						Src:     "100.64.0.1:12345",
 						Dst:     "100.64.0.2:443",
 						TxPkts:  10,

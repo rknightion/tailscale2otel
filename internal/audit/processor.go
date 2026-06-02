@@ -1,6 +1,8 @@
 package audit
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/rknightion/tailscale2otel/internal/semconv"
@@ -74,11 +76,11 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	if ev.Error != "" {
 		attrs[attrError] = ev.Error
 	}
-	if ev.Old != "" {
-		attrs[attrOld] = ev.Old
+	if s, ok := renderRaw(ev.Old); ok {
+		attrs[attrOld] = s
 	}
-	if ev.New != "" {
-		attrs[attrNew] = ev.New
+	if s, ok := renderRaw(ev.New); ok {
+		attrs[attrNew] = s
 	}
 	if ev.ActionDetails != "" {
 		attrs[attrDetails] = ev.ActionDetails
@@ -96,6 +98,33 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		attrAction: ev.Action,
 		attrOrigin: ev.Origin,
 	})
+}
+
+// renderRaw turns a polymorphic audit old/new value into a string attribute
+// value. It reports ok=false (attribute omitted) when the raw value is nil,
+// empty, or the JSON literal null. A JSON string is returned unquoted; any
+// other JSON (object, array, number, bool) is returned as compact raw JSON.
+func renderRaw(raw json.RawMessage) (string, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "", false
+	}
+	if trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err == nil {
+			if s == "" {
+				return "", false
+			}
+			return s, true
+		}
+		// Malformed string literal: fall through to raw rendering.
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, trimmed); err != nil {
+		// Not valid JSON; emit the trimmed bytes verbatim.
+		return string(trimmed), true
+	}
+	return buf.String(), true
 }
 
 // summary builds the human-readable log body, e.g.

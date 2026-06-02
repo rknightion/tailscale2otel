@@ -3,3 +3,14 @@
 *.out
 .smoke.yaml
 /checkpoints.json
+
+# Local secrets and credentials — NEVER commit. (see .secrets/)
+.secrets/
+*.local.env
+.env.local
+config.local.yaml
+config.smoke.yaml
+# Captured real-tailnet data used only for local fixture authoring.
+/.capture/
+
+.DS_Store

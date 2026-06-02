@@ -1,6 +1,7 @@
 package flowlog_test
 
 import (
+	"encoding/json"
 	"net/netip"
 	"strings"
 	"testing"
@@ -41,6 +42,12 @@ outer:
 	return telemetrytest.MetricPoint{}
 }
 
+// protoTCP and protoUDP are the IANA protocol numbers the API returns.
+const (
+	protoTCP = 6
+	protoUDP = 17
+)
+
 func virtualTCPFlow() flowlog.FlowLog {
 	return flowlog.FlowLog{
 		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
@@ -48,8 +55,59 @@ func virtualTCPFlow() flowlog.FlowLog {
 		Start:  time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
 		End:    time.Date(2024, 6, 6, 15, 26, 26, 0, time.UTC),
 		VirtualTraffic: []flowlog.ConnectionCounts{
-			{Proto: "TCP", Src: "100.64.0.1:443", Dst: "100.64.0.2:51820", TxPkts: 10, TxBytes: 1000, RxPkts: 8, RxBytes: 800},
+			{Proto: protoTCP, Src: "100.64.0.1:443", Dst: "100.64.0.2:51820", TxPkts: 10, TxBytes: 1000, RxPkts: 8, RxBytes: 800},
 		},
+	}
+}
+
+// realNetworkBody mirrors the captured GET /logging/network shape: proto is a
+// NUMBER, and the absent-proto physical entry decodes to 0. Covers 6=tcp,
+// 17=udp, 1=icmp, 99 (no IANA name -> decimal string), and absent -> unknown.
+const realNetworkBody = `{
+  "logs": [
+    {
+      "logged": "2026-06-02T19:00:01.346001489Z",
+      "nodeId": "nLaptop",
+      "start": "2026-06-02T18:59:54.278418352Z",
+      "end": "2026-06-02T18:59:59.279306235Z",
+      "virtualTraffic": [
+        {"proto":6,"src":"100.64.0.1:22","dst":"100.64.0.2:58544","txPkts":51,"txBytes":6420}
+      ],
+      "subnetTraffic": [
+        {"proto":17,"src":"100.64.0.1:53","dst":"100.64.0.2:60980","txPkts":1,"txBytes":115},
+        {"proto":99,"src":"100.64.0.1:0","dst":"100.64.0.2:0","txPkts":10,"txBytes":270},
+        {"proto":1,"src":"100.64.0.1:0","dst":"100.64.0.2:0","txPkts":2,"txBytes":40}
+      ],
+      "physicalTraffic": [
+        {"src":"100.64.0.2:0","dst":"10.0.0.183:57532","txPkts":53,"txBytes":8708}
+      ]
+    }
+  ]
+}`
+
+// TestProcessNumericProtoTransport is the regression for the real-data bug:
+// proto arrives as a number, and the processor must map it to a transport name
+// used on every metric/log. It decodes the captured shape with NO error.
+func TestProcessNumericProtoTransport(t *testing.T) {
+	var resp flowlog.NetworkResponse
+	if err := json.Unmarshal([]byte(realNetworkBody), &resp); err != nil {
+		t.Fatalf("unmarshal real-shaped body: %v", err)
+	}
+
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{})
+	p.ProcessAll(resp, rec.Emitter())
+
+	flows := rec.MetricPoints(flowlog.MetricFlows)
+	got := make(map[string]bool)
+	for _, f := range flows {
+		got[f.Attrs[semconv.NetworkTransport]] = true
+	}
+	// 6->tcp, 17->udp, 1->icmp, 99->"99" (no IANA name), absent->unknown.
+	for _, want := range []string{"tcp", "udp", "icmp", "99", "unknown"} {
+		if !got[want] {
+			t.Fatalf("missing transport %q in flows; got %v", want, got)
+		}
 	}
 }
 
@@ -237,7 +295,7 @@ func TestProcessExternalDstResolvesViaCache(t *testing.T) {
 		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
 		NodeID: "nLaptop",
 		ExitTraffic: []flowlog.ConnectionCounts{
-			{Proto: "udp", Src: "100.64.0.1:53", Dst: "8.8.8.8:53", TxPkts: 1, TxBytes: 60, RxPkts: 1, RxBytes: 120},
+			{Proto: protoUDP, Src: "100.64.0.1:53", Dst: "8.8.8.8:53", TxPkts: 1, TxBytes: 60, RxPkts: 1, RxBytes: 120},
 		},
 	}
 	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true})
@@ -260,13 +318,84 @@ func TestProcessExternalDstResolvesViaCache(t *testing.T) {
 	}
 }
 
+// externalFlow has one exit connection to a non-Tailscale destination (8.8.8.8)
+// from a known tailnet source (100.64.0.1 -> laptop).
+func externalFlow() flowlog.FlowLog {
+	return flowlog.FlowLog{
+		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
+		NodeID: "nLaptop",
+		ExitTraffic: []flowlog.ConnectionCounts{
+			{Proto: protoUDP, Src: "100.64.0.1:53", Dst: "8.8.8.8:53", TxPkts: 1, TxBytes: 60, RxPkts: 1, RxBytes: 120},
+		},
+	}
+}
+
+func TestProcessKeepExternalAddrsFalseCollapses(t *testing.T) {
+	// Zero value: an external destination collapses to "external".
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true, KeepExternalAddrs: false})
+	p.Process(externalFlow(), rec.Emitter())
+
+	io := rec.MetricPoints(flowlog.MetricIO)
+	tx := findPoint(t, io, map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstNode] != "external" {
+		t.Fatalf("dst.node = %q, want external with KeepExternalAddrs=false", tx.Attrs[semconv.AttrDstNode])
+	}
+	if tx.Attrs[semconv.AttrSrcNode] != "laptop" {
+		t.Fatalf("src.node = %q, want laptop", tx.Attrs[semconv.AttrSrcNode])
+	}
+}
+
+func TestProcessKeepExternalAddrsTrueKeepsRawIP(t *testing.T) {
+	// KeepExternalAddrs=true: an external destination resolves to its raw host.
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true, KeepExternalAddrs: true})
+	p.Process(externalFlow(), rec.Emitter())
+
+	io := rec.MetricPoints(flowlog.MetricIO)
+	tx := findPoint(t, io, map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstNode] != "8.8.8.8" {
+		t.Fatalf("dst.node = %q, want raw IP 8.8.8.8 with KeepExternalAddrs=true", tx.Attrs[semconv.AttrDstNode])
+	}
+	// Known tailnet source still resolves to its hostname.
+	if tx.Attrs[semconv.AttrSrcNode] != "laptop" {
+		t.Fatalf("src.node = %q, want laptop", tx.Attrs[semconv.AttrSrcNode])
+	}
+}
+
+func TestProcessKeepExternalAddrsTrueUnknownTailnet(t *testing.T) {
+	// A Tailscale-range address not in the cache is "unknown" by default but
+	// becomes its raw IP when KeepExternalAddrs=true.
+	flow := flowlog.FlowLog{
+		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
+		NodeID: "nLaptop",
+		VirtualTraffic: []flowlog.ConnectionCounts{
+			{Proto: protoTCP, Src: "100.64.0.1:443", Dst: "100.64.0.9:51820", TxBytes: 10, RxBytes: 20},
+		},
+	}
+
+	recOff := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true}).Process(flow, recOff.Emitter())
+	txOff := findPoint(t, recOff.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if txOff.Attrs[semconv.AttrDstNode] != "unknown" {
+		t.Fatalf("dst.node = %q, want unknown for uncached tailnet addr", txOff.Attrs[semconv.AttrDstNode])
+	}
+
+	recOn := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true, KeepExternalAddrs: true}).Process(flow, recOn.Emitter())
+	txOn := findPoint(t, recOn.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if txOn.Attrs[semconv.AttrDstNode] != "100.64.0.9" {
+		t.Fatalf("dst.node = %q, want raw IP 100.64.0.9 with KeepExternalAddrs=true", txOn.Attrs[semconv.AttrDstNode])
+	}
+}
+
 func TestProcessNetworkTypeIPv6(t *testing.T) {
 	rec := telemetrytest.New()
 	flow := flowlog.FlowLog{
 		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
 		NodeID: "nLaptop",
 		VirtualTraffic: []flowlog.ConnectionCounts{
-			{Proto: "tcp", Src: "[fd7a:115c:a1e0::1]:443", Dst: "[fd7a:115c:a1e0::2]:51820", TxBytes: 5, RxBytes: 7},
+			{Proto: protoTCP, Src: "[fd7a:115c:a1e0::1]:443", Dst: "[fd7a:115c:a1e0::2]:51820", TxBytes: 5, RxBytes: 7},
 		},
 	}
 	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{LogMode: "per_connection"})
@@ -326,10 +455,10 @@ func TestProcessPerRecordLog(t *testing.T) {
 		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
 		NodeID: "nLaptop",
 		VirtualTraffic: []flowlog.ConnectionCounts{
-			{Proto: "tcp", Src: "100.64.0.1:443", Dst: "100.64.0.2:51820", TxBytes: 1000, RxBytes: 800},
+			{Proto: protoTCP, Src: "100.64.0.1:443", Dst: "100.64.0.2:51820", TxBytes: 1000, RxBytes: 800},
 		},
 		ExitTraffic: []flowlog.ConnectionCounts{
-			{Proto: "udp", Src: "100.64.0.1:53", Dst: "8.8.8.8:53", TxBytes: 60, RxBytes: 120},
+			{Proto: protoUDP, Src: "100.64.0.1:53", Dst: "8.8.8.8:53", TxBytes: 60, RxBytes: 120},
 		},
 	}
 	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: "per_record"})

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/enrich"
@@ -22,11 +22,11 @@ const (
 // eventNameFlow is the OTEL LogRecord event name for a per-connection flow log.
 const eventNameFlow = "tailscale.network.flow"
 
-// Log modes for Options.LogMode.
+// Log modes for Options.LogMode. Any other value (including "off") suppresses
+// log emission while still producing metrics.
 const (
 	logPerConnection = "per_connection"
 	logPerRecord     = "per_record"
-	logOff           = "off"
 )
 
 // Options configures a Processor.
@@ -38,16 +38,21 @@ type Options struct {
 	IncludePorts bool
 	// NodeDims adds tailscale.src.node/tailscale.dst.node to metric attributes.
 	NodeDims bool
+	// KeepExternalAddrs, when true, resolves an unrecognized address to its raw
+	// host (IP) instead of collapsing it to "external"/"unknown". The zero value
+	// (false) preserves the collapsing behavior.
+	KeepExternalAddrs bool
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
 // is stateless per call and safe to share between the polling collector and the
 // streaming receiver; all mutable accumulation lives in the Emitter.
 type Processor struct {
-	cache   *enrich.DeviceCache
-	logMode string
-	ports   bool
-	nodes   bool
+	cache        *enrich.DeviceCache
+	logMode      string
+	ports        bool
+	nodes        bool
+	keepExternal bool
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -58,10 +63,11 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		mode = logPerConnection
 	}
 	return &Processor{
-		cache:   cache,
-		logMode: mode,
-		ports:   opts.IncludePorts,
-		nodes:   opts.NodeDims,
+		cache:        cache,
+		logMode:      mode,
+		ports:        opts.IncludePorts,
+		nodes:        opts.NodeDims,
+		keepExternal: opts.KeepExternalAddrs,
 	}
 }
 
@@ -111,12 +117,12 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 // processConn emits metrics (and, in per_connection mode, a log) for one
 // ConnectionCounts entry.
 func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, e telemetry.Emitter) {
-	transport := strings.ToLower(cc.Proto)
+	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitHostPort(cc.Src)
 	dstAddr, dstPort := splitHostPort(cc.Dst)
 	netType := networkType(srcAddr)
-	srcNode := p.resolve(cc.Src)
-	dstNode := p.resolve(cc.Dst)
+	srcNode := p.resolve(cc.Src, srcAddr)
+	dstNode := p.resolve(cc.Dst, dstAddr)
 
 	// Metric attributes shared by io + packets points.
 	metricAttrs := telemetry.Attrs{
@@ -214,12 +220,21 @@ func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txP
 }
 
 // resolve maps an "addr:port" to a device hostname via the cache. A nil cache
-// yields "unknown".
-func (p *Processor) resolve(addrPort string) string {
+// yields "unknown". host is the already-split host part of addrPort. When
+// keepExternal is set and the cache misses (collapsing to "external"/"unknown"),
+// the raw host is returned instead of the collapsed sentinel.
+func (p *Processor) resolve(addrPort, host string) string {
 	if p.cache == nil {
+		if p.keepExternal && host != "" {
+			return host
+		}
 		return "unknown"
 	}
-	return p.cache.ResolveName(addrPort)
+	name := p.cache.ResolveName(addrPort)
+	if p.keepExternal && (name == "external" || name == "unknown") && host != "" {
+		return host
+	}
+	return name
 }
 
 // logTimestamp prefers the record's logged time, falling back to its window end.
@@ -241,6 +256,34 @@ func splitHostPort(s string) (host, port string) {
 		return s, ""
 	}
 	return h, p
+}
+
+// protoNames maps IANA protocol numbers the API returns to their lowercase
+// transport names.
+var protoNames = map[int]string{
+	1:   "icmp",
+	2:   "igmp",
+	6:   "tcp",
+	17:  "udp",
+	47:  "gre",
+	50:  "esp",
+	51:  "ah",
+	58:  "ipv6-icmp",
+	89:  "ospf",
+	132: "sctp",
+}
+
+// transportName maps an IANA protocol number to its transport name. Zero (the
+// absent/null case) yields "unknown"; numbers without a known name yield their
+// decimal string.
+func transportName(proto int) string {
+	if proto == 0 {
+		return "unknown"
+	}
+	if name, ok := protoNames[proto]; ok {
+		return name
+	}
+	return strconv.Itoa(proto)
 }
 
 // networkType classifies an address as ipv4 or ipv6. Unparseable addresses

@@ -41,7 +41,7 @@ func TestNetworkFlowLogs_DecodesAndSendsWindowAndAuth(t *testing.T) {
 			http.Error(w, "missing window", http.StatusBadRequest)
 			return
 		}
-		_, _ = w.Write([]byte(`{"logs":[{"nodeId":"n1","virtualTraffic":[{"proto":"tcp","src":"100.64.0.1:1","dst":"100.64.0.2:2","txBytes":5,"rxBytes":7}]}]}`))
+		_, _ = w.Write([]byte(`{"logs":[{"nodeId":"n1","virtualTraffic":[{"proto":6,"src":"100.64.0.1:1","dst":"100.64.0.2:2","txBytes":5,"rxBytes":7}]}]}`))
 	}))
 	defer srv.Close()
 

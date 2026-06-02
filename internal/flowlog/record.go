@@ -24,9 +24,11 @@ type FlowLog struct {
 }
 
 // ConnectionCounts is bidirectional traffic for a single 5-tuple in a window.
-// Src and Dst are "addr:port" strings.
+// Src and Dst are "addr:port" strings. Proto is the IANA protocol number (e.g.
+// 6=tcp, 17=udp); the API omits it for some physical-traffic entries, decoding
+// to zero.
 type ConnectionCounts struct {
-	Proto   string `json:"proto"`
+	Proto   int    `json:"proto"`
 	Src     string `json:"src"`
 	Dst     string `json:"dst"`
 	TxPkts  int64  `json:"txPkts"`

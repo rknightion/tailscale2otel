@@ -1,0 +1,36 @@
+# Minimal docker-compose for tailscale2otel.
+#
+# Usage:
+#   1. Put your secrets in a .env file next to this compose file (gitignored), e.g.:
+#        TS_TAILNET=example.com
+#        TS_OAUTH_CLIENT_ID=...
+#        TS_OAUTH_CLIENT_SECRET=...
+#        GC_INSTANCE_ID=...
+#        GC_OTLP_TOKEN=...
+#   2. docker compose -f deploy/docker-compose.yaml up --build
+#
+# The image bakes config.example.yaml at /etc/tailscale2otel/config.yaml, which
+# reads every secret from the environment via ${ENV} expansion.
+services:
+  tailscale2otel:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        VERSION: ${VERSION:-compose}
+    image: ghcr.io/rknightion/tailscale2otel:latest
+    restart: unless-stopped
+    environment:
+      TS_TAILNET: ${TS_TAILNET:--}
+      TS_OAUTH_CLIENT_ID: ${TS_OAUTH_CLIENT_ID:-}
+      TS_OAUTH_CLIENT_SECRET: ${TS_OAUTH_CLIENT_SECRET:-}
+      TS_API_KEY: ${TS_API_KEY:-}
+      GC_INSTANCE_ID: ${GC_INSTANCE_ID:-}
+      GC_OTLP_TOKEN: ${GC_OTLP_TOKEN:-}
+    # Uncomment to mount a custom config instead of the baked-in example.
+    # volumes:
+    #   - ./config.yaml:/etc/tailscale2otel/config.yaml:ro
+    # Streaming (HEC) + webhook receivers, only if enabled in config:
+    # ports:
+    #   - "8088:8088"
+    #   - "8089:8089"
