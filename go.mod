@@ -3,20 +3,22 @@ module github.com/rknightion/tailscale2otel
 go 1.26.0
 
 require (
+	github.com/klauspost/compress v1.18.6
 	github.com/tailscale/tailscale-client-go/v2 v2.0.0-20250129222324-74c8fc3cb4d7
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.6.0
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.6.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.44.0
 	go.opentelemetry.io/otel/exporters/stdout/stdoutlog v0.6.0
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.44.0
-	go.opentelemetry.io/otel/log v0.6.0
+	go.opentelemetry.io/otel/log v0.19.0
 	go.opentelemetry.io/otel/metric v1.44.0
 	go.opentelemetry.io/otel/sdk v1.44.0
-	go.opentelemetry.io/otel/sdk/log v0.6.0
+	go.opentelemetry.io/otel/sdk/log v0.19.0
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
 	google.golang.org/grpc v1.81.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -27,7 +29,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/tailscale/hujson v0.0.0-20220506213045-af5ed07155e5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
@@ -39,5 +40,4 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
