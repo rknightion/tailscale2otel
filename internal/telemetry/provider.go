@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -109,6 +110,20 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	return resource.New(ctx, resource.WithAttributes(attrs...), resource.WithTelemetrySDK())
 }
 
+// otlpHTTPURL appends the OTLP/HTTP per-signal path (/v1/metrics, /v1/logs) to a
+// base endpoint. The OTEL Go otlphttp exporter's WithEndpointURL uses the URL
+// path as-is, so a base gateway endpoint (e.g. Grafana Cloud's ".../otlp") must
+// have the signal path appended or the gateway returns 404. A base that already
+// ends with the signal path is returned unchanged (no double-append).
+func otlpHTTPURL(base, signal string) string {
+	base = strings.TrimRight(base, "/")
+	suffix := "/v1/" + signal
+	if strings.HasSuffix(base, suffix) {
+		return base
+	}
+	return base + suffix
+}
+
 func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, error) {
 	switch opts.Protocol {
 	case "stdout":
@@ -120,7 +135,7 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 	case "", "http":
 		o := []otlpmetrichttp.Option{}
 		if opts.Endpoint != "" {
-			o = append(o, otlpmetrichttp.WithEndpointURL(opts.Endpoint))
+			o = append(o, otlpmetrichttp.WithEndpointURL(otlpHTTPURL(opts.Endpoint, "metrics")))
 		}
 		if len(opts.Headers) > 0 {
 			o = append(o, otlpmetrichttp.WithHeaders(opts.Headers))
@@ -165,7 +180,7 @@ func newLogExporter(ctx context.Context, opts Options) (sdklog.Exporter, error) 
 	case "", "http":
 		o := []otlploghttp.Option{}
 		if opts.Endpoint != "" {
-			o = append(o, otlploghttp.WithEndpointURL(opts.Endpoint))
+			o = append(o, otlploghttp.WithEndpointURL(otlpHTTPURL(opts.Endpoint, "logs")))
 		}
 		if len(opts.Headers) > 0 {
 			o = append(o, otlploghttp.WithHeaders(opts.Headers))
