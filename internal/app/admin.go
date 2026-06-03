@@ -27,7 +27,7 @@ func newAdminServer(listen string) *http.Server {
 	}
 }
 
-// runAdmin serves the admin endpoints until ctx is cancelled, then shuts down
+// runAdmin serves the admin endpoints until ctx is canceled, then shuts down
 // gracefully. Errors other than the expected close are logged.
 func (a *App) runAdmin(ctx context.Context) {
 	errCh := make(chan error, 1)

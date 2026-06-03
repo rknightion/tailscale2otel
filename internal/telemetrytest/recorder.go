@@ -204,7 +204,7 @@ func attrMap(set attribute.Set) map[string]string {
 func flattenLogRecord(rec sdklog.Record) LogRecord {
 	attrs := map[string]string{}
 	rec.WalkAttributes(func(kv log.KeyValue) bool {
-		attrs[string(kv.Key)] = kv.Value.AsString()
+		attrs[kv.Key] = kv.Value.AsString()
 		return true
 	})
 	return LogRecord{

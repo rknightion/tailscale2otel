@@ -1,0 +1,111 @@
+# GoReleaser v2 — https://goreleaser.com
+#
+#   goreleaser check                       # validate this config
+#   goreleaser release --snapshot --clean  # local dry run (binaries/archives)
+#
+# Real releases run in .github/workflows/release.yml on a `v*` tag and produce:
+# cross-compiled binaries, a SHA256SUMS file, per-archive SBOMs, a multi-arch
+# GHCR image (with image SBOM + SLSA provenance) + keyless cosign signatures.
+version: 2
+
+project_name: tailscale2otel
+
+builds:
+  - id: tailscale2otel
+    main: ./cmd/tailscale2otel
+    binary: tailscale2otel
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      # Matches deploy/Dockerfile. {{ .Version }} is the tag without the leading
+      # "v" (e.g. 1.2.3), aligning the binary's reported version with the image
+      # tags produced below.
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      # Match the previous release matrix (no windows/arm64 build).
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: tailscale2otel
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+
+sboms:
+  - id: archives
+    artifacts: archive
+
+dockers_v2:
+  - id: tailscale2otel
+    dockerfile: deploy/Dockerfile.goreleaser
+    images:
+      - ghcr.io/rknightion/tailscale2otel
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - config.example.yaml
+    # Image build pushes provenance + SBOM attestations, which need a registry
+    # push — so skip it during snapshot/PR validation; tag releases build + push.
+    disable: "{{ .IsSnapshot }}"
+    annotations:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.description: "Polls the Tailscale API and exports OpenTelemetry metrics + logs."
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.source: "https://github.com/rknightion/tailscale2otel"
+      org.opencontainers.image.licenses: "Apache-2.0"
+
+# Keyless cosign signatures (GitHub OIDC). Requires id-token: write and cosign
+# v3+ on PATH (sigstore/cosign-installer in release.yml).
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+docker_signs:
+  # Empty `artifacts` (the default) targets images built by dockers_v2.
+  - cmd: cosign
+    args:
+      - sign
+      - "${artifact}@${digest}"
+      - "--yes"
+    output: true
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  draft: false
+  prerelease: auto

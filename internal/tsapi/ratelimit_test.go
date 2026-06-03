@@ -2,6 +2,7 @@ package tsapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -62,7 +63,7 @@ func TestRateLimit_SlowsRapidRequests(t *testing.T) {
 
 func TestLimiter_WaitReturnsCtxErrOnCancel(t *testing.T) {
 	// 1 token, then 1 token/sec. Drain the initial token, then a second Wait
-	// blocks; cancelling the context must make it return the ctx error.
+	// blocks; canceling the context must make it return the ctx error.
 	l := newLimiter(1)
 	if err := l.Wait(context.Background()); err != nil {
 		t.Fatalf("first Wait: %v", err)
@@ -76,7 +77,7 @@ func TestLimiter_WaitReturnsCtxErrOnCancel(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Wait returned nil, want ctx error")
 	}
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Wait err = %v, want context.Canceled", err)
 	}
 }
@@ -118,7 +119,7 @@ func TestLimiter_WaitRespectsDeadline(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
-	if err := l.Wait(ctx); err != context.DeadlineExceeded {
+	if err := l.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Wait err = %v, want DeadlineExceeded", err)
 	}
 }

@@ -141,7 +141,7 @@ func newApp(
 	return a
 }
 
-// Run starts the heartbeat and scheduler, blocks until ctx is cancelled, then
+// Run starts the heartbeat and scheduler, blocks until ctx is canceled, then
 // drains and flushes telemetry.
 func (a *App) Run(ctx context.Context) error {
 	if a.restore != nil {
@@ -176,7 +176,7 @@ func (a *App) Run(ctx context.Context) error {
 		}()
 	}
 	if a.adminSrv != nil {
-		go a.runAdmin(ctx)
+		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
 	}
 
 	done := make(chan error, 1)

@@ -8,7 +8,7 @@ import (
 )
 
 // runHeartbeat emits tailscale2otel.up=1 immediately and then on each interval
-// until ctx is cancelled, so the exporter's liveness is observable even when no
+// until ctx is canceled, so the exporter's liveness is observable even when no
 // collector has produced data yet.
 func runHeartbeat(ctx context.Context, e telemetry.Emitter, interval time.Duration) {
 	emit := func() { e.Gauge(docUp.Name, docUp.Unit, docUp.Description, 1, nil) }

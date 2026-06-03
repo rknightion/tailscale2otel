@@ -5,15 +5,23 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
-  packages: write
+  contents: write # create the GitHub release + upload artifacts
+  packages: write # push images to ghcr.io
+  id-token: write # keyless cosign signing via GitHub OIDC
 
 jobs:
-  docker:
-    name: build & push image
+  goreleaser:
+    name: goreleaser (binaries + multi-arch image)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the changelog is complete
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -21,53 +29,42 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
 
-  binaries:
-    name: cross-compiled binaries
+      # cosign (keyless image + checksum signing) and syft (SBOMs).
+      - uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: 'v3.0.6'
+      - uses: anchore/sbom-action/download-syft@v0
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  helm-chart:
+    name: publish Helm chart (OCI)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
-          - { goos: darwin, goarch: amd64 }
-          - { goos: darwin, goarch: arm64 }
-          - { goos: windows, goarch: amd64 }
+    # Publish after the image exists, since the chart defaults its image tag to
+    # the chart appVersion we set below.
+    needs: goreleaser
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: build
+
+      - uses: azure/setup-helm@v4
+
+      - name: Package + push chart to ghcr.io (OCI)
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
+          TAG: ${{ github.ref_name }}
         run: |
-          name="tailscale2otel-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then name="${name}.exe"; fi
-          mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
-            -o "dist/${name}" ./cmd/tailscale2otel
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          fail_on_unmatched_files: true
+          version="${TAG#v}"  # strip leading v: v1.2.3 -> 1.2.3
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # Keep the chart's own version (Chart.yaml); pin appVersion to this
+          # release so the chart deploys the matching image tag by default.
+          helm package deploy/helm/tailscale2otel \
+            --app-version "$version" \
+            --destination /tmp/helm-pkg
+          helm push /tmp/helm-pkg/tailscale2otel-*.tgz oci://ghcr.io/rknightion/charts
