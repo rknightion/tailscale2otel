@@ -3,12 +3,14 @@ package nodemetrics_test
 import (
 	"context"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -899,5 +901,325 @@ func TestPrune_StaleBaselineEvicted(t *testing.T) {
 	}
 	if total != 50 {
 		t.Fatalf("m total delta = %v, want 50 (stale baseline must be evicted so the re-add is a fresh baseline, not a +10 reset)", total)
+	}
+}
+
+// --- Dynamic discovery test infrastructure ---------------------------------
+
+// fakeDiscoverer is a controllable nodemetrics.Discoverer. targets/err are the
+// values returned by Discover; calls counts invocations. It is mutex-guarded so
+// a test can mutate err between scrapes and read calls without a race even if a
+// future Collect calls Discover off the test goroutine.
+type fakeDiscoverer struct {
+	mu      sync.Mutex
+	targets []nodemetrics.Target
+	err     error
+	calls   int
+}
+
+func (f *fakeDiscoverer) Discover(context.Context) ([]nodemetrics.Target, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	return f.targets, f.err
+}
+
+func (f *fakeDiscoverer) setErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
+func (f *fakeDiscoverer) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// countingServer is an httptest server that serves a fixed Prometheus-text body
+// and counts the requests it received.
+func countingServer(t *testing.T, body string) (*httptest.Server, func() int) {
+	t.Helper()
+	var mu sync.Mutex
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		n++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte(body))
+	}))
+	return srv, func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return n
+	}
+}
+
+// TestStaticOnly_NoDiscovererUnchanged: with no Discoverer, a single static
+// httptest target scrapes and emits exactly as today (the whole existing suite
+// also asserts the static-only path is byte-for-byte preserved).
+func TestStaticOnly_NoDiscovererUnchanged(t *testing.T) {
+	body := "# TYPE g gauge\ng 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "node-a"}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	g := rec.MetricPoints("g")
+	if len(g) != 1 || g[0].Value != 1 || g[0].Attrs["instance"] != "node-a" {
+		t.Fatalf("g = %+v, want single value 1 instance node-a", g)
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 1 {
+		t.Fatalf("up = %+v, want single value 1", up)
+	}
+}
+
+// TestDiscovery_GatingHonorsInterval: a Discoverer is consulted only on its own
+// DiscoveryInterval. First Collect discovers (calls==1); a Collect 1m later does
+// NOT (not due); a Collect at/after the 5m interval discovers again (calls==2).
+func TestDiscovery_GatingHonorsInterval(t *testing.T) {
+	body := "# TYPE g gauge\ng 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	now := time.Unix(1_700_000_000, 0)
+	fake := &fakeDiscoverer{targets: []nodemetrics.Target{{URL: srv.URL, Instance: "disc"}}}
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Discoverer:        fake,
+		DiscoveryInterval: 5 * time.Minute,
+		Now:               func() time.Time { return now },
+	})
+
+	// First Collect: discovery is due (never run), so the discovered target is
+	// scraped.
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect 1 error = %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("discover calls after first Collect = %d, want 1", got)
+	}
+	if up := rec.MetricPoints("tailscale.node.up"); len(up) != 1 || up[0].Attrs["instance"] != "disc" {
+		t.Fatalf("up after first Collect = %+v, want single point instance disc", up)
+	}
+
+	// 1 minute later: not due, no new discovery.
+	now = now.Add(1 * time.Minute)
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("Collect 2 error = %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("discover calls after 1m = %d, want 1 (not due)", got)
+	}
+
+	// Advance to >= 5m total since the last successful discovery: now due again.
+	now = now.Add(4 * time.Minute)
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("Collect 3 error = %v", err)
+	}
+	if got := fake.callCount(); got != 2 {
+		t.Fatalf("discover calls after 5m = %d, want 2 (due again)", got)
+	}
+}
+
+// TestDiscovery_FirstRunUnionsStaticImmediately: with a static target and a
+// Discoverer returning [], the very first Collect still scrapes the static
+// target — active always includes static, even on the first (empty) discovery.
+func TestDiscovery_FirstRunUnionsStaticImmediately(t *testing.T) {
+	body := "# TYPE g gauge\ng 7\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	now := time.Unix(1_700_000_000, 0)
+	fake := &fakeDiscoverer{targets: nil} // discovers nothing
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:           []nodemetrics.Target{{URL: srv.URL, Instance: "static-a"}},
+		Discoverer:        fake,
+		DiscoveryInterval: 5 * time.Minute,
+		Now:               func() time.Time { return now },
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect error = %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("discover calls = %d, want 1 (ran on first Collect)", got)
+	}
+	g := rec.MetricPoints("g")
+	if len(g) != 1 || g[0].Value != 7 || g[0].Attrs["instance"] != "static-a" {
+		t.Fatalf("g = %+v, want single value 7 instance static-a (static scraped despite empty discovery)", g)
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Attrs["instance"] != "static-a" || up[0].Value != 1 {
+		t.Fatalf("up = %+v, want single point instance static-a value 1", up)
+	}
+}
+
+// TestDiscovery_UnionAndDedup: static target A and a discoverer returning A's
+// SAME URL (with different label/instance) plus a distinct target B. After one
+// Collect, A is scraped exactly once and still carries its STATIC label/instance
+// (static wins the dedup), B is scraped once, and tailscale.node.up has exactly
+// one point per distinct instance.
+func TestDiscovery_UnionAndDedup(t *testing.T) {
+	srvA, hitsA := countingServer(t, "# TYPE g gauge\ng 1\n")
+	defer srvA.Close()
+	srvB, hitsB := countingServer(t, "# TYPE g gauge\ng 2\n")
+	defer srvB.Close()
+
+	now := time.Unix(1_700_000_000, 0)
+	fake := &fakeDiscoverer{targets: []nodemetrics.Target{
+		// Same URL as the static A, but different instance/label: static must win.
+		{URL: srvA.URL, Instance: "discovered-A", Labels: map[string]string{"src": "discovery"}},
+		{URL: srvB.URL, Instance: "node-b", Labels: map[string]string{"src": "discovery"}},
+	}}
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:      srvA.URL,
+			Instance: "static-A",
+			Labels:   map[string]string{"src": "static"},
+		}},
+		Discoverer:        fake,
+		DiscoveryInterval: 5 * time.Minute,
+		Now:               func() time.Time { return now },
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect error = %v", err)
+	}
+
+	// A scraped exactly once (deduped), B exactly once.
+	if got := hitsA(); got != 1 {
+		t.Fatalf("A handler requests = %d, want 1 (deduped union)", got)
+	}
+	if got := hitsB(); got != 1 {
+		t.Fatalf("B handler requests = %d, want 1", got)
+	}
+
+	// A's emitted series carries the STATIC instance/label, not the discovered one.
+	g := rec.MetricPoints("g")
+	a, okA := pointByAttr(g, map[string]string{"instance": "static-A", "src": "static"})
+	if !okA || a.Value != 1 {
+		t.Fatalf("A g point = %+v (ok=%v), want value 1 instance static-A src static (static wins); g=%+v", a, okA, g)
+	}
+	if _, dup := pointByAttr(g, map[string]string{"instance": "discovered-A"}); dup {
+		t.Fatalf("found a discovered-A series; static should have won the dedup; g=%+v", g)
+	}
+	b, okB := pointByAttr(g, map[string]string{"instance": "node-b", "src": "discovery"})
+	if !okB || b.Value != 2 {
+		t.Fatalf("B g point = %+v (ok=%v), want value 2 instance node-b; g=%+v", b, okB, g)
+	}
+
+	// One up point per distinct instance (A static + B), both healthy.
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 2 {
+		t.Fatalf("up points = %d, want 2 (one per distinct instance); up=%+v", len(up), up)
+	}
+	upA, okUA := pointByAttr(up, map[string]string{"instance": "static-A"})
+	upB, okUB := pointByAttr(up, map[string]string{"instance": "node-b"})
+	if !okUA || upA.Value != 1 || !okUB || upB.Value != 1 {
+		t.Fatalf("up = %+v, want static-A=1 and node-b=1", up)
+	}
+}
+
+// TestDiscovery_FailureKeepsStaleTargets: when a due discovery FAILS, the prior
+// active set is retained (B keeps being scraped) and lastDiscACK is NOT advanced
+// (so the next tick's due check fires immediately). Clearing the error then
+// rediscovers. B is present throughout.
+func TestDiscovery_FailureKeepsStaleTargets(t *testing.T) {
+	srvB, hitsB := countingServer(t, "# TYPE g gauge\ng 5\n")
+	defer srvB.Close()
+
+	now := time.Unix(1_700_000_000, 0)
+	interval := time.Minute
+	fake := &fakeDiscoverer{targets: []nodemetrics.Target{{URL: srvB.URL, Instance: "node-b"}}}
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Discoverer:        fake,
+		DiscoveryInterval: interval,
+		Now:               func() time.Time { return now },
+	})
+
+	collectExpectB := func(label string) {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("%s: Collect error = %v", label, err)
+		}
+		g := rec.MetricPoints("g")
+		if p, ok := pointByAttr(g, map[string]string{"instance": "node-b"}); !ok || p.Value != 5 {
+			t.Fatalf("%s: B g point = %+v (ok=%v), want value 5; g=%+v", label, p, ok, g)
+		}
+	}
+
+	// First Collect: discovery succeeds, B scraped. calls==1.
+	collectExpectB("first")
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("calls after first = %d, want 1", got)
+	}
+	hitsAfterFirst := hitsB()
+	if hitsAfterFirst != 1 {
+		t.Fatalf("B hits after first = %d, want 1", hitsAfterFirst)
+	}
+
+	// Advance past the interval and make discovery fail: due, Discover called and
+	// errors -> prior active kept (B STILL scraped), lastDiscACK NOT advanced.
+	now = now.Add(interval)
+	fake.setErr(errors.New("boom"))
+	collectExpectB("during-failure")
+	if got := fake.callCount(); got != 2 {
+		t.Fatalf("calls after failure = %d, want 2 (discovery attempted)", got)
+	}
+	if got := hitsB(); got != hitsAfterFirst+1 {
+		t.Fatalf("B hits after failure = %d, want %d (still scraped from prior active)", got, hitsAfterFirst+1)
+	}
+
+	// Clear the error. Because lastDiscACK was NOT advanced by the failed attempt,
+	// the due check fires IMMEDIATELY at the same now -> rediscovers (calls==3).
+	fake.setErr(nil)
+	collectExpectB("after-recovery")
+	if got := fake.callCount(); got != 3 {
+		t.Fatalf("calls after recovery = %d, want 3 (lastDiscACK not advanced by failure, so due immediately)", got)
+	}
+}
+
+// TestDiscovery_AllDiscoveredFail_ReturnsError: with NO static targets and a
+// discoverer that returns one target whose server 500s, the active set is the
+// single discovered target; scraping it fails, so Collect returns a non-nil
+// error (every target failed) and emits tailscale.node.up=0 for it.
+func TestDiscovery_AllDiscoveredFail_ReturnsError(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+
+	now := time.Unix(1_700_000_000, 0)
+	fake := &fakeDiscoverer{targets: []nodemetrics.Target{{URL: bad.URL, Instance: "disc-bad"}}}
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Discoverer:        fake,
+		DiscoveryInterval: 5 * time.Minute,
+		Now:               func() time.Time { return now },
+	})
+	rec := telemetrytest.New()
+	err := c.Collect(context.Background(), rec.Emitter())
+	if err == nil {
+		t.Fatal("Collect() error = nil, want non-nil (all discovered targets failed)")
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 {
+		t.Fatalf("up points = %d, want 1; up=%+v", len(up), up)
+	}
+	if up[0].Attrs["instance"] != "disc-bad" || up[0].Value != 0 {
+		t.Fatalf("up = %+v, want instance disc-bad value 0", up[0])
 	}
 }
