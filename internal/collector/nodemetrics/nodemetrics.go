@@ -21,9 +21,12 @@ package nodemetrics
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,10 +65,33 @@ type prevEntry struct {
 // Target is a single Prometheus-text endpoint to scrape. Instance overrides the
 // default host:port "instance" label; Labels are passthrough attributes merged
 // onto every sample from this target (parsed metric labels win on key conflict).
+//
+// The optional auth/TLS fields cover PROXIED/HTTPS targets; native tailscaled
+// /metrics endpoints are plain HTTP with no auth/TLS, so leaving them unset keeps
+// the scrape a plain GET with no added headers. BearerTokenFile, when set, is read
+// fresh on every scrape (rotation-safe) and takes precedence over BearerToken; a
+// non-nil TLS config builds a dedicated client (see New).
 type Target struct {
 	URL      string
 	Instance string
 	Labels   map[string]string
+
+	BearerToken     string
+	BearerTokenFile string
+	Headers         map[string]string
+	TLS             *TLSClientConfig
+}
+
+// TLSClientConfig is the optional per-target TLS trust/identity for HTTPS targets.
+// A zero value (InsecureSkipVerify false, all paths empty) yields system defaults;
+// InsecureSkipVerify defaults to false so an HTTPS target is verified unless the
+// operator explicitly opts out (a deliberate footgun guard).
+type TLSClientConfig struct {
+	InsecureSkipVerify bool
+	CAFile             string
+	CertFile           string
+	KeyFile            string
+	ServerName         string
 }
 
 // Options configures a Collector.
@@ -80,6 +106,7 @@ type Options struct {
 // Collector implements collector.SnapshotCollector for node /metrics scraping.
 type Collector struct {
 	targets  []Target
+	clients  []*http.Client // parallel to targets: per-target client, or c.client when nil
 	interval time.Duration
 	client   *http.Client
 	now      func() time.Time
@@ -90,27 +117,80 @@ type Collector struct {
 }
 
 // New returns a nodemetrics Collector. A zero Interval defaults to 60s and a
-// zero Timeout defaults to 10s; an explicit Client (if non-nil) is used as-is.
+// zero Timeout defaults to 10s; an explicit Client (if non-nil) is used as-is for
+// targets without a TLS config.
+//
+// Each target carrying a non-nil TLS config gets a DEDICATED client whose
+// transport is a clone of http.DefaultTransport with a TLS config built from the
+// target's CA/cert/key (mirroring telemetry.tlsConfig). Targets without a TLS
+// config share the default client, so an injected opts.Client still applies to
+// them. A TLS config that fails to build (e.g. unreadable CAFile) leaves that
+// target on the default client, deferring the failure to scrape time where it is
+// surfaced as tailscale.node.up=0.
 func New(opts Options) *Collector {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	client := opts.Client
 	if client == nil {
-		timeout := opts.Timeout
-		if timeout <= 0 {
-			timeout = defaultTimeout
-		}
 		client = &http.Client{Timeout: timeout}
 	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now
 	}
+	clients := make([]*http.Client, len(opts.Targets))
+	for i := range opts.Targets {
+		tls := opts.Targets[i].TLS
+		if tls == nil {
+			continue
+		}
+		tc, err := buildTLSConfig(tls)
+		if err != nil {
+			continue // fall back to default client; scrape will fail and report up=0
+		}
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.TLSClientConfig = tc
+		clients[i] = &http.Client{Timeout: timeout, Transport: tr}
+	}
 	return &Collector{
 		targets:  opts.Targets,
+		clients:  clients,
 		interval: opts.Interval,
 		client:   client,
 		now:      now,
 		prev:     make(map[string]prevEntry),
 	}
+}
+
+// buildTLSConfig builds a *tls.Config from a per-target TLSClientConfig, mirroring
+// telemetry.tlsConfig: RootCAs from CAFile, a client certificate from
+// CertFile+KeyFile, plus InsecureSkipVerify and ServerName passthrough.
+func buildTLSConfig(t *TLSClientConfig) (*tls.Config, error) {
+	cfg := &tls.Config{
+		InsecureSkipVerify: t.InsecureSkipVerify, //nolint:gosec // operator opt-in for proxied/self-signed targets; defaults false
+		ServerName:         t.ServerName,
+	}
+	if t.CAFile != "" {
+		pem, err := os.ReadFile(t.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("no certificates found in CA file %s", t.CAFile)
+		}
+		cfg.RootCAs = pool
+	}
+	if t.CertFile != "" && t.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load client cert/key: %w", err)
+		}
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+	return cfg, nil
 }
 
 // Name returns the stable collector identifier.
@@ -138,7 +218,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	c.gen++
 	var failures int
 	for i := range c.targets {
-		if err := c.scrapeTarget(ctx, &c.targets[i], e); err != nil {
+		if err := c.scrapeTarget(ctx, &c.targets[i], c.clientFor(i), e); err != nil {
 			failures++
 		}
 	}
@@ -161,15 +241,24 @@ func (c *Collector) pruneStale() {
 	}
 }
 
+// clientFor returns the dedicated per-target client for index i, falling back to
+// the shared default client when the target has no (or a failed) TLS config.
+func (c *Collector) clientFor(i int) *http.Client {
+	if i < len(c.clients) && c.clients[i] != nil {
+		return c.clients[i]
+	}
+	return c.client
+}
+
 // scrapeTarget fetches and re-emits one target. It always emits the per-target
 // tailscale.node.up health gauge (1 on success, 0 on any GET/read/parse error)
 // and returns a non-nil error on failure so Collect can count it.
-func (c *Collector) scrapeTarget(ctx context.Context, t *Target, e telemetry.Emitter) error {
+func (c *Collector) scrapeTarget(ctx context.Context, t *Target, client *http.Client, e telemetry.Emitter) error {
 	instance := t.Instance
 	if instance == "" {
 		instance = hostPort(t.URL)
 	}
-	if err := c.fetchAndEmit(ctx, t, instance, e); err != nil {
+	if err := c.fetchAndEmit(ctx, t, client, instance, e); err != nil {
 		e.Gauge(metricUp, "1", "node metrics scrape up (1) or down (0)", 0, telemetry.Attrs{attrInstance: instance})
 		return err
 	}
@@ -179,12 +268,15 @@ func (c *Collector) scrapeTarget(ctx context.Context, t *Target, e telemetry.Emi
 
 // fetchAndEmit performs the GET, parses the body, and emits every sample. It
 // returns an error on any transport, status, read, or parse failure.
-func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, instance string, e telemetry.Emitter) error {
+func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, client *http.Client, instance string, e telemetry.Emitter) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.URL, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := c.client.Do(req)
+	if err := applyAuthHeaders(req, t); err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -199,6 +291,27 @@ func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, instance string
 	}
 	for i := range samples {
 		c.emitSample(&samples[i], t, instance, e)
+	}
+	return nil
+}
+
+// applyAuthHeaders sets the target's custom headers and bearer Authorization on
+// the request. A BearerTokenFile is read fresh on every call (rotation-safe) and
+// takes precedence over a static BearerToken; a file read error fails the scrape.
+// With no auth fields set the request is left unchanged (plain GET).
+func applyAuthHeaders(req *http.Request, t *Target) error {
+	for k, v := range t.Headers {
+		req.Header.Set(k, v)
+	}
+	switch {
+	case t.BearerTokenFile != "":
+		b, err := os.ReadFile(t.BearerTokenFile)
+		if err != nil {
+			return fmt.Errorf("nodemetrics: read bearer token file %s: %w", t.BearerTokenFile, err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(b)))
+	case t.BearerToken != "":
+		req.Header.Set("Authorization", "Bearer "+t.BearerToken)
 	}
 	return nil
 }
