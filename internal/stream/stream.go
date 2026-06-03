@@ -5,27 +5,31 @@
 // internal/audit) used by the polling collectors, so streamed and polled data
 // produce identical OTEL metrics and log records.
 //
-// # Envelope is PROVISIONAL (no live capture)
+// # Envelope (PINNED by a live capture — S4-10)
 //
-// Tailscale does NOT publicly document the exact JSON envelope it POSTs to a
-// Splunk-HEC sink, and the envelope handled here therefore remains PROVISIONAL
-// pending a live capture. Truly pinning it empirically would require pointing a
-// Tailscale log-streaming configuration at this endpoint and dumping the raw
-// request bodies — i.e. reconfiguring the production lab tailnet's streaming.
-// That is intentionally OUT OF SCOPE: live capture and any "auto_configure"
-// helper that would mutate the tailnet's logstream settings are deliberately
-// DEFERRED so this package never alters the production tailnet.
+// The exact wire format was captured from the real TailscaleLogStreamPublisher
+// against the example lab (2026-06-03). Each POST body is one-or-more concatenated
+// Splunk-HEC objects with NO separators, each shaped:
 //
-// What we CAN pin is the per-record shape, because streamed records match the
-// poll API's network-flow and configuration-audit records exactly (verified
-// against the real captures in .capture/logging_network.json and
-// .capture/logging_config.json). Accordingly: flow records carry a NUMERIC
-// "proto" (e.g. "proto":6 for TCP), and audit "old"/"new" values are
-// polymorphic (string, object, array, or null). The parser is hardened and
-// fixture-tested against those real shapes.
+//	{"time":<unixFloat>,"event":{<record>},"fields":{"recorded":<rfc3339>}}
 //
-// Because the wrapping envelope is not pinned, the parser stays DEFENSIVE and
-// accepts the union of shapes it is plausible to receive:
+// i.e. one network-flow or configuration-audit record per "event", many such
+// objects per request (a network POST observed ~73). Authentication is HTTP
+// Basic auth, base64("<user>:<token>") — NOT "Authorization: Splunk <token>" —
+// where the password is the configured token (see authorized). Bodies arrive
+// chunked (Transfer-Encoding: chunked), which Go's net/http decodes transparently.
+//
+// The per-record shapes match the poll API exactly: flow records carry a NUMERIC
+// "proto" (e.g. 6 for TCP, 99 here) plus srcNode/dstNodes, and audit records use
+// "actionDetails" with polymorphic "old"/"new". KNOWN MINOR GAP: a streamed audit
+// record has NO inner "eventTime" (the timestamp lives in the HEC "time" /
+// "fields.recorded", siblings of "event"); this receiver does not map that onto
+// the record, so streamed audit log records take the OTEL ingest time (off by the
+// streaming latency, ~seconds). Flow records are unaffected (they carry start/end).
+//
+// The parser stays DEFENSIVE and accepts the union of plausible shapes (the HEC
+// "event" wrapper above plus the variants below) so an unexpected sender or a
+// future format change degrades gracefully rather than dropping everything:
 //
 //   - a single JSON object;
 //   - newline-delimited JSON (NDJSON), the HEC norm — one JSON object per line;
@@ -48,6 +52,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -263,14 +268,21 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 // authorized reports whether the request carries the configured token. When no
 // token is configured, all requests are authorized.
+//
+// Tailscale log streaming authenticates with HTTP Basic auth — base64(user:<token>),
+// where the password is the configured token — NOT "Authorization: Splunk <token>"
+// (verified via a live capture of the TailscaleLogStreamPublisher; S4-10). Accept
+// Basic auth first, then the Splunk-HEC scheme other HEC senders use. The token
+// comparison is constant-time.
 func (s *Server) authorized(r *http.Request) bool {
 	if s.token == "" {
 		return true
 	}
-	h := r.Header.Get("Authorization")
-	// Accept "Splunk <token>" (the HEC scheme), case-insensitive on the scheme.
-	if fields := strings.Fields(h); len(fields) == 2 && strings.EqualFold(fields[0], authScheme) {
-		return fields[1] == s.token
+	if _, pass, ok := r.BasicAuth(); ok {
+		return subtle.ConstantTimeCompare([]byte(pass), []byte(s.token)) == 1
+	}
+	if fields := strings.Fields(r.Header.Get("Authorization")); len(fields) == 2 && strings.EqualFold(fields[0], authScheme) {
+		return subtle.ConstantTimeCompare([]byte(fields[1]), []byte(s.token)) == 1
 	}
 	return false
 }

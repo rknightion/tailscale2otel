@@ -40,10 +40,12 @@ Verified END-TO-END against the real example.com lab + Grafana Cloud in session 
 WHAT REMAINS (see section 7 for detail):
   • S4-9  DONE (2026-06-03 live-verified vs example + Grafana Cloud; H7). Native
           EventName → Loki key `event_name` (no dashboard migration needed).
-  • S4-10 LIVE stream-envelope capture (lab-authorized) → tighten the parser.
-          Also carries S4-9(2): poll+stream cross-dedup live check.
+  • S4-10 DONE (2026-06-03 live capture; H7). Envelope pinned = concatenated HEC
+          {time,event,fields}; FIXED the auth bug (Basic user:token, not Splunk).
+          S4-9(2) poll+stream cross-dedup live check still DEFERRED (needs both on).
   • S4-11 Webhook enrichment: (a) severity SET + (b) misconfig alert DONE (S4-11a/b);
-          (c/d/e) dedup-map/subjectID/payload-typing → bundled with the S4-10 capture.
+          (c/d/e) dedup-map/subjectID/payload-typing → from the authoritative KB catalog
+          (the S4-10 log-stream capture does NOT include webhooks — separate data path).
   • Helm CI baseline: DONE — comprehensive `# --` config references for every key
     (README regenerated; schema unchanged/fail-on-diff safe; configcheck passes).
 
@@ -271,14 +273,31 @@ S4-9 [P0 / LIVE] DONE (live-verified 2026-06-03 against example + Grafana Cloud;
      gcx gotcha: `gcx logs query` needs BOTH --from AND --to. nodemetrics live check
      stays DEFERRED — scraping is disabled on the lab.
 
-S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING (finishes D8/P1-2's deferred capture;
-     lab-AUTHORIZED). Stand up the stream receiver with an HTTPS endpoint reachable
-     over the tailnet (`tailscale cert` for the node's *.ts.net name), point the
-     example network+configuration log streaming at it (manually, or exercise
-     streaming.auto_configure against the LAB ONLY), capture a REAL Splunk-HEC POST
-     body → .capture/ (gitignored) → a SANITIZED testdata fixture, and TIGHTEN the
-     defensive parser in internal/stream (TDD). Also captures real webhook events to
-     unblock S4-11(d) subjectID + S4-3 live tuning.
+S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING — DONE (2026-06-03 live capture vs example; H7).
+     Captured the REAL TailscaleLogStreamPublisher wire format (private log streaming,
+     src logstream@tailscale; KB 1255). FINDINGS:
+     - Envelope = concatenated Splunk-HEC objects, NO separators, one record per object:
+       {"time":<float>,"event":{<record>},"fields":{"recorded":<rfc3339>}} (~73/network POST).
+       The parser's existing unwrap("event") + successive-value decode ALREADY handle this →
+       locked in by TestEnvelope_RealTailscaleHEC (sanitized inline fixture realHECStreamBody).
+     - AUTH BUG FIXED (TDD): Tailscale uses HTTP Basic auth base64(user:<token>), NOT
+       "Authorization: Splunk <token>". The old authorized() rejected ALL real deliveries when a
+       token was set. Now accepts Basic (password==token, constant-time) + Splunk for compat.
+     - proto numeric + srcNode/dstNodes confirmed; audit uses actionDetails. KNOWN MINOR GAP:
+       streamed audit events carry NO inner eventTime (it's the HEC time/fields.recorded) → audit
+       log records take OTEL ingest time (~seconds off). Flow unaffected (start/end inside event).
+       Documented in stream.go; not fixed (would need to thread envelope time through the parser).
+     - Bodies arrive Transfer-Encoding: chunked (Go net/http decodes transparently; only the
+       throwaway python capture server needed manual chunk decoding).
+     NOT verified live: S4-9(2) poll+stream cross-dedup (would need both running simultaneously;
+       mechanism is unit-tested) — still DEFERRED.
+     OPS (all reverted): redirected lab network+config streams to a capture receiver on node-b;
+       needed an ADDED ACL grant (logstream→node-b IPv4:443, then :8443 v4+v6) because the user's
+       pre-existing grant was IPv6-only and `tailscale serve` self-dial is unobservable (macOS
+       won't hairpin own tailnet IPs). Final teardown: ACL restored to original; serve off;
+       capture servers stopped; streaming DISABLED (the original vector sink node was removed from
+       the tailnet, so its config could not be restored — repoint streaming at the real
+       tailscale2otel deployment when ready).
 
 S4-11 [P1] WEBHOOK ENRICHMENT — severity, data-field pinning, dedup-map correctness.
      (Researched 2026-06-03; evidence H6.) Generic dispatch in webhook.go (one log +
@@ -571,10 +590,21 @@ HELM CI BASELINE [DONE]: expanded values.yaml collector flow-maps to block style
   --draft 7, no use-helm-docs → byte-identical, fail-on-diff safe). helm lint/template +
   configcheck on the rendered ConfigMap all pass. 0 blank rows in the README values table.
 
-S4-10 [IN PROGRESS]: stood up a raw-dump HEC capture server (127.0.0.1:8088) fronted by
-  `tailscale serve --https=443` (valid node-b cert), redirected the lab's network+configuration
-  log streams to https://node-b.example.ts.net (saved the prior vector.example.ts.net
-  config; vector is DECOMMISSIONED per user, so restore is non-critical). IPv4 self-test +
-  HTTPS both captured; awaiting a real lab batch (Tailscale streaming cadence). MUST restore
-  the original stream config + `tailscale serve --https=443 off` on teardown.
+S4-10 [DONE]: captured the real TailscaleLogStreamPublisher wire format and TIGHTENED the
+  parser. Wire format = concatenated Splunk-HEC {"time","event":{rec},"fields":{recorded}}
+  objects (no separators; ~73/network POST), chunked, HTTP Basic auth base64(user:token).
+  Fixed the auth bug (parser accepted only "Splunk <token>" → rejected ALL real deliveries
+  when a token was set; now Basic + Splunk, constant-time). Locked the envelope in with
+  TestEnvelope_RealTailscaleHEC. Known minor gap documented: streamed audit events lack an
+  inner eventTime (HEC time/fields.recorded sibling) → ingest-time fallback.
+  DEBUGGING JOURNEY (learnings): the lab uses PRIVATE log streaming (logstream@tailscale,
+  KB 1255); delivery needs an ACL grant logstream→<node>:port. The user pre-granted node-b
+  IPv6:443 only; `tailscale serve` answers but self-dial is UNOBSERVABLE on macOS (won't
+  hairpin own tailnet IPs over v4 OR v6), so reachability can't be tested locally — only a
+  real delivery confirms. ~50min of no-delivery was actually (a) the capture server dropping
+  chunked bodies (read Content-Length only → 0 bytes) AND (b) needing the right ACL grant.
+  Once a chunked-aware raw receiver was bound on node-b:8443 (+ ACL grant for :8443 v4+v6,
+  user-authorized) the backlog flushed. The green dots in the admin console mean "enabled",
+  not "delivering". TEARDOWN (all reverted): ACL→original, serve off, servers stopped,
+  streaming DISABLED (original vector sink node was removed from the tailnet → unrestorable).
 ================================================================================
