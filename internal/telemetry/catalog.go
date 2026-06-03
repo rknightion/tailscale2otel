@@ -1,0 +1,46 @@
+package telemetry
+
+import "github.com/rknightion/tailscale2otel/internal/metricdoc"
+
+// Catalog declarations are the SINGLE SOURCE OF TRUTH for this package's
+// self-observability metric documentation: name, unit, instrument, description,
+// and attribute keys. The emit sites (selfobs.go) reference these descriptors so
+// a description/unit cannot drift from what is documented, and the doc generator
+// (tools/metricscatalog, via internal/catalog) renders them into docs/metrics.md.
+// A consistency test (catalog_test.go) asserts what these helpers actually emit
+// matches these declarations.
+//
+// These metrics share the cross-cutting "Self-observability" doc section with
+// the scrape.* metrics (internal/collector), api.* + up (internal/app), and the
+// enrich.cache_* metrics (internal/collector/devices).
+const groupSelfObs = "Self-observability"
+
+var (
+	docBuildInfo = metricdoc.Metric{
+		Name:        "tailscale2otel.build_info",
+		Unit:        "1",
+		Instrument:  metricdoc.Gauge,
+		Description: "Constant `1` build-info gauge; version/runtime carried as labels.",
+		Attributes:  []string{"service.version", "go.version"},
+		Group:       groupSelfObs,
+	}
+	docExportFailures = metricdoc.Metric{
+		Name:        "tailscale2otel.export.failures",
+		Unit:        "1",
+		Instrument:  metricdoc.Counter,
+		Description: "OTLP export failures, by error class.",
+		Attributes:  []string{"error.type"},
+		Group:       groupSelfObs,
+	}
+)
+
+// Catalog returns the self-observability metrics this package emits, for the doc
+// generator.
+func Catalog() []metricdoc.Metric {
+	return []metricdoc.Metric{docBuildInfo, docExportFailures}
+}
+
+// LogCatalog returns the log events this package emits (none).
+func LogCatalog() []metricdoc.LogEvent {
+	return nil
+}
