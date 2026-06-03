@@ -21,27 +21,32 @@ import (
 // cross-source dedup actually suppresses in production. Until then it is
 // harmless: a non-matching key simply does not dedup. (S4-10 live capture.)
 var webhookActionMap = map[string]struct{ verb, subject string }{
-	"nodeCreated":     {"create", "node"},
-	"nodeDeleted":     {"delete", "node"},
-	"nodeApproved":    {"update", "node"},
-	"nodeAuthorized":  {"update", "node"}, // deprecated alias of nodeApproved (kb/1213)
-	"userCreated":     {"create", "user"},
-	"userDeleted":     {"delete", "user"},
-	"userApproved":    {"update", "user"},
-	"userSuspended":   {"update", "user"},
-	"userRoleUpdated": {"update", "user"},
+	"nodeCreated":    {"create", "node"},
+	"nodeDeleted":    {"delete", "node"},
+	"nodeApproved":   {"update", "node"},
+	"nodeAuthorized": {"update", "node"}, // deprecated alias of nodeApproved (kb/1213)
+	"userCreated":    {"create", "user"},
+	"userDeleted":    {"delete", "user"},
 }
 
-// NOTE on deliberately-UNMAPPED types (S4-11c, after the kb/1213 catalog +
-// live findings): policyUpdate carries NO node/user id in its data
-// ({newPolicy,oldPolicy,url,actor}), so it can never form an id-keyed cross-key —
-// mapping it would be inert. userNeedsApproval shows null data in the catalog
-// (no subject id either). nodeNeedsApproval / nodeNeedsAuthorization are
-// "needs-action" notifications with NO config-audit counterpart, so mapping them
-// risks SUPPRESSING a distinct real change (e.g. a same-second nodeCreated/
-// nodeApproved) — and D11 says never over-suppress. They are intentionally left
-// unmapped (never cross-deduped). userSuspended/userDeleted are kept pending a
-// live webhook subscription to confirm they exist (they are not in the catalog).
+// NOTE on deliberately-UNMAPPED types (S4-11c, after the kb/1213 catalog + live
+// findings + the session-5 adversarial review). D11: cross-source dedup must
+// NEVER over-suppress; default to no-dedup when uncertain.
+//   - userApproved / userSuspended / userRoleUpdated are THREE INDEPENDENT user
+//     changes that would all collapse to the same (update, user) cross-key. Once
+//     subjectID resolves the "user" field, the same user in the same time bucket
+//     would silently drop two of three distinct events — an over-suppression. They
+//     are also non-viable cross-SOURCE: an audit USER Target.ID is an internal id
+//     (…CNTRL form), not the login/email the webhook "user" field carries, so they
+//     can never byte-match the audit side anyway. Left unmapped.
+//   - policyUpdate carries NO node/user id ({newPolicy,oldPolicy,url,actor}) → an
+//     id-keyed cross-key is impossible (inert).
+//   - userNeedsApproval shows null data in the catalog (no subject id).
+//   - nodeNeedsApproval / nodeNeedsAuthorization are "needs-action" notifications
+//     with NO config-audit counterpart → mapping them risks suppressing a distinct
+//     same-second nodeCreated/nodeApproved.
+// userCreated/userDeleted are kept (distinct create/delete verbs → no cross-type
+// collision); in practice their catalog data is null so they stay inert.
 
 // subjectIDKeys are the webhook event Data keys consulted, in order, for the
 // subject identity used in the cross-source key. Per kb/1213 the only id fields
