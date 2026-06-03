@@ -41,8 +41,9 @@ const autoConfigureTimeout = 30 * time.Second
 type App struct {
 	cfg      *config.Config
 	emitter  telemetry.Emitter
-	shutdown func(context.Context) error // flushes telemetry on stop
-	restore  func()                      // restores the prior otel error handler
+	card     *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
+	shutdown func(context.Context) error   // flushes telemetry on stop
+	restore  func()                        // restores the prior otel error handler
 	client   *tsapi.Client
 	cache    *enrich.DeviceCache
 	registry *collector.Registry
@@ -84,7 +85,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		return nil, err
 	}
 
-	return newApp(cfg, version, logger, emitter, provider.Shutdown, client, store), nil
+	a := newApp(cfg, version, logger, emitter, provider.Shutdown, client, store)
+	a.card = provider.Cardinality()
+	return a, nil
 }
 
 // newApp assembles an App from already-constructed dependencies. It is the seam
@@ -149,6 +152,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.cfg.SelfObservability.Enabled {
 		go runHeartbeat(ctx, a.emitter, heartbeatInterval)
+		go runCardinalityReporter(ctx, a.emitter, a.card, a.cfg.OTLP.MetricInterval.D())
 	}
 
 	if a.streamSrv != nil {
