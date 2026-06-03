@@ -274,3 +274,41 @@ func TestValidateNodeMetricsDiscoveryEnabledZeroTargetsValid(t *testing.T) {
 		t.Errorf("discovery-enabled with zero static targets should be valid: %v", err)
 	}
 }
+
+func TestValidateNodeMetricsRejectsBadMetricAllowRegex(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n      - url: http://x:5252/metrics\n    metric_allow:\n      - \"node_(\"\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: invalid regex in metric_allow")
+	}
+	if !strings.Contains(err.Error(), "metric_allow") {
+		t.Errorf("error %q should mention metric_allow", err.Error())
+	}
+}
+
+func TestValidateNodeMetricsRejectsBadMetricDenyRegex(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n      - url: http://x:5252/metrics\n    metric_deny:\n      - \"*\"\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: invalid regex in metric_deny")
+	}
+	if !strings.Contains(err.Error(), "metric_deny") {
+		t.Errorf("error %q should mention metric_deny", err.Error())
+	}
+}
+
+func TestValidateNodeMetricsValidFilters(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n      - url: http://x:5252/metrics\n    metric_allow:\n      - \"node_.*\"\n    metric_deny:\n      - \"node_secret_.*\"\n    drop_labels:\n      - region\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("valid metric filters should be accepted: %v", err)
+	}
+}
+
+func TestValidateNodeMetricsDisabledIgnoresBadRegex(t *testing.T) {
+	// Filter validation is gated on Enabled: a disabled scraper with an invalid
+	// regex must not fail validation.
+	const y = "collectors:\n  node_metrics:\n    enabled: false\n    metric_allow:\n      - \"node_(\"\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("disabled node_metrics should not validate metric_allow regex: %v", err)
+	}
+}

@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,6 +124,14 @@ type Options struct {
 	Now               func() time.Time
 	Discoverer        Discoverer
 	DiscoveryInterval time.Duration
+
+	// Passthrough filters applied to forwarded samples only (never to
+	// tailscale.node.up or the discovery.* gauges). MetricAllow/MetricDeny are
+	// anchored against the metric NAME; DropLabels strips label keys (the
+	// instance label is never dropped). Empty = no filtering.
+	MetricAllow []string
+	MetricDeny  []string
+	DropLabels  []string
 }
 
 // resolvedTarget pairs a Target with the *http.Client to scrape it through,
@@ -142,6 +151,10 @@ type Collector struct {
 	discoverer        Discoverer
 	discoveryInterval time.Duration
 	timeout           time.Duration // resolved scrape timeout, for building discovered clients
+
+	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
+	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
+	dropLabels  map[string]struct{} // label keys stripped from forwarded series (never the instance label)
 
 	mu          sync.Mutex
 	active      []resolvedTarget     // current scrape set: static ∪ discovered (guarded by mu)
@@ -188,9 +201,43 @@ func New(opts Options) *Collector {
 		discoverer:        opts.Discoverer,
 		discoveryInterval: discoveryInterval,
 		timeout:           timeout,
+		metricAllow:       compileAnchored(opts.MetricAllow),
+		metricDeny:        compileAnchored(opts.MetricDeny),
+		dropLabels:        toSet(opts.DropLabels),
 		active:            static,
 		prev:              make(map[string]prevEntry),
 	}
+}
+
+// compileAnchored compiles each pattern in its ANCHORED form `^(?:pat)$` so a
+// metric-name filter matches the whole name, never a substring. A pattern that
+// fails to compile is SKIPPED defensively (config.Validate already guaranteed
+// every pattern compiles, so this is unreachable in practice).
+func compileAnchored(patterns []string) []*regexp.Regexp {
+	if len(patterns) == 0 {
+		return nil
+	}
+	out := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		re, err := regexp.Compile(fmt.Sprintf("^(?:%s)$", p))
+		if err != nil {
+			continue // defensive: Validate already rejected bad patterns
+		}
+		out = append(out, re)
+	}
+	return out
+}
+
+// toSet builds a lookup set from keys, or nil when there are none.
+func toSet(keys []string) map[string]struct{} {
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		out[k] = struct{}{}
+	}
+	return out
 }
 
 // resolveTargets pairs each Target with its dedicated *http.Client, or nil to
@@ -450,13 +497,58 @@ func applyAuthHeaders(req *http.Request, t *Target) error {
 // emitSample emits one parsed sample: cumulative series (counters and
 // histogram/summary _bucket/_sum/_count) become monotonic deltas; everything
 // else becomes a gauge of the current value.
+//
+// This is the SINGLE choke point for forwarded samples, so the passthrough
+// filters (metric_allow/metric_deny on the name; drop_labels on the attrs) are
+// applied here and nowhere else: tailscale.node.up and the discovery.* gauges,
+// emitted elsewhere, are never filtered.
 func (c *Collector) emitSample(s *sample, t *Target, instance string, e telemetry.Emitter) {
+	if !c.allowMetric(s.name) {
+		return
+	}
 	attrs := mergeAttrs(t.Labels, s.labels, instance)
+	c.applyDropLabels(attrs)
 	if s.cumulative {
 		c.emitDelta(s, attrs, e)
 		return
 	}
 	e.Gauge(s.name, "", s.help, s.value, attrs)
+}
+
+// allowMetric reports whether a forwarded metric NAME passes the passthrough
+// filters: when metricAllow is non-empty the name must match at least one
+// allow pattern, then any metricDeny match drops it (deny wins). Both pattern
+// sets are anchored (see compileAnchored).
+func (c *Collector) allowMetric(name string) bool {
+	if len(c.metricAllow) > 0 {
+		matched := false
+		for _, re := range c.metricAllow {
+			if re.MatchString(name) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	for _, re := range c.metricDeny {
+		if re.MatchString(name) {
+			return false
+		}
+	}
+	return true
+}
+
+// applyDropLabels deletes every dropLabels key from attrs, EXCEPT the instance
+// label which is never dropped (node identity must survive).
+func (c *Collector) applyDropLabels(attrs telemetry.Attrs) {
+	for k := range c.dropLabels {
+		if k == attrInstance {
+			continue
+		}
+		delete(attrs, k)
+	}
 }
 
 // emitDelta applies the per-series delta logic. NaN samples are skipped (a

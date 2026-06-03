@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 )
 
@@ -121,6 +122,18 @@ func (c *Config) Validate() error {
 		for i, t := range nm.Targets {
 			if t.URL == "" {
 				return fmt.Errorf("collectors.node_metrics.targets[%d].url is required", i)
+			}
+		}
+		// Passthrough metric-name filters are anchored regexes; compile them up
+		// front so a bad pattern is a config error rather than a silent no-op.
+		for i, p := range nm.MetricAllow {
+			if _, err := regexp.Compile(fmt.Sprintf("^(?:%s)$", p)); err != nil {
+				return fmt.Errorf("collectors.node_metrics.metric_allow[%d] %q: invalid regex: %w", i, p, err)
+			}
+		}
+		for i, p := range nm.MetricDeny {
+			if _, err := regexp.Compile(fmt.Sprintf("^(?:%s)$", p)); err != nil {
+				return fmt.Errorf("collectors.node_metrics.metric_deny[%d] %q: invalid regex: %w", i, p, err)
 			}
 		}
 		if d := nm.Discovery; d.Enabled {

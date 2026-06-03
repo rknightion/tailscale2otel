@@ -136,6 +136,12 @@ type NodeMetricsConfig struct {
 	Timeout   Duration             `yaml:"timeout"`
 	Targets   []NodeMetricsTarget  `yaml:"targets"`
 	Discovery NodeMetricsDiscovery `yaml:"discovery"`
+
+	// Passthrough filters on the FORWARDED Prometheus samples. They never affect
+	// tailscale.node.up or the discovery.* gauges. A zero value means no filtering.
+	MetricAllow []string `yaml:"metric_allow"` // anchored regex on the forwarded metric NAME; if non-empty, a name must match one to be forwarded
+	MetricDeny  []string `yaml:"metric_deny"`  // anchored regex; a name matching any is dropped (applied after allow)
+	DropLabels  []string `yaml:"drop_labels"`  // label keys stripped from every forwarded series (the `instance` label is never dropped)
 }
 
 // NodeMetricsDiscovery configures DYNAMIC scrape-target discovery from the
