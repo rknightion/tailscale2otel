@@ -1,952 +1,519 @@
 ================================================================================
 tailscale2otel — HANDOFF / CONTEXT / TODO  (for resuming with an LLM)
 ================================================================================
-Last updated: 2026-06-03 (session 4 — planning/research). This file is the single source of truth for
-picking up the project. Read it fully before changing code. The original design
-plan lives at: /Users/rob/.claude/plans/we-are-building-a-cosmic-star.md
-A detailed session log + learnings is in section 9 at the BOTTOM — read it.
+Last updated: 2026-06-03 (session 4 EXECUTION). Single source of truth.
+
+HOW TO READ THIS FILE:
+  • ACTIVE (sections 1–8): what a new session needs NOW — status, hard
+    constraints, agreed design decisions, the current package/telemetry maps,
+    the LIVE backlog (section 7), and how to work here. READ THIS HALF before
+    changing code.
+  • HISTORICAL REFERENCE (sections H1–H6, BOTTOM): completed work (one-liners),
+    the per-session execution logs, and the session-4 research evidence. Context
+    only — consult for the "why" behind a finished item or the research backing a
+    pending one. NOT active work.
+Original design plan: /Users/rob/.claude/plans/we-are-building-a-cosmic-star.md
+
+
+################################################################################
+#  ACTIVE                                                                       #
+################################################################################
 
 --------------------------------------------------------------------------------
-0. WHAT THIS PROJECT IS
+1. WHAT THIS PROJECT IS
 --------------------------------------------------------------------------------
 A lightweight Go service that polls the central Tailscale API
 (api.tailscale.com/api/v2) for every available kind of observability data and
 exports it as OTEL-native metrics + logs over OTLP. Optimized for Grafana Cloud
 but works with any OTEL backend. Reference inspiration: ktranslate
-(/Users/rob/repos/ktranslate) — sflow→OTEL; we apply the same pipeline shape to
-the Tailscale API.
-
-STATUS (after session 2): ALL P0 items are DONE and most of P1/P2. `go build ./...`,
-`go vet ./...`, `gofmt -l .`, and `go test -race ./...` are all green across 22
-packages (45 non-test .go files, 39 test files, ~200 test funcs). COMMITTED and
-pushed-ready on `main` (commits 701ce13, 859ba93, bbcfc42 on top of 297d887/6c40c81).
-VERIFIED END-TO-END against the REAL example.com lab tailnet AND the real Grafana Cloud
-OTLP endpoint: device/flow/audit/users/keys/settings/acl/dns metrics + flow & audit
-LOGS all arrive in Mimir + Loki; self-obs (scrape/api/build_info/cache) present;
-feature.enabled=1; DERP latency + routes emitted; flow throughput cross-checks
-(~66 KB/s); /healthz=200; graceful exit 0. Real testing FOUND AND FIXED 4
-production-breaking bugs (see section 9).
-SESSION 3 (2026-06-03): ALL remaining actionable items DONE. P1-1 dashboards, P1-2
-streaming auto_configure (PUT + wiring; live-capture pinning still deliberately
-skipped), P1-4 cross-component dedup, P2-1 lint, P2-2 docs/metrics.md, P3 node-local
-metrics scraper, P4 config.example.yaml, P5 flow nodeId->hostname all DONE and green
-(go build/vet/gofmt/test -race ./... all pass; binary smoke-tested). P2-4 per-device
-Resource is now a CLOSED DECISION: kept deferred (see P2-4 below for rationale).
-SESSION 4 (2026-06-03) was a PLANNING/RESEARCH session — NO code changed. It scoped +
-web-researched a new backlog (S4-1..S4-10) now in SECTION 7b, with full evidence,
-sources, and code snippets in SECTION 11. HEADLINE: P2-6 is now UNBLOCKED — a local
-go-doc probe + the OTEL changelog confirm log v0.20.0 adds Record.EventName()/
-SetEventName() and upgrades cleanly with core STAYING v1.44.0. Read sections 10
-(session-3 log), 7b (new backlog), and 11 (research) before implementing.
+(/Users/rob/repos/ktranslate) — sflow→OTEL; same pipeline shape on the TS API.
 
 --------------------------------------------------------------------------------
-1. CRITICAL CONTEXT FOR ANY LLM CONTINUING THIS
+2. CURRENT STATUS
 --------------------------------------------------------------------------------
-- Module path: github.com/rknightion/tailscale2otel  (also the OTEL
-  instrumentation scope name — keep them in sync).
-- Go: go.mod declares `go 1.26.0`; toolchain go1.26.x. Use 1.26 features freely
-  (e.g. testing/synctest, which is already used in internal/app/heartbeat_test.go).
-- Build/test:
-    go build ./...
-    go vet ./...
-    go test -race ./...
-    gofmt -l .            # must be empty
-- METHODOLOGY IS TDD (non-negotiable for this codebase): write a failing test
-  first, run it, watch it fail for the right reason, write minimal code to pass,
-  refactor green. Tests use ONLY stdlib `testing` (no testify).
-- Assertions about emitted telemetry go through internal/telemetrytest.Recorder
-  (an in-memory OTEL reader). Use it in every collector/processor test.
-- Dependencies are pinned; do NOT casually run `go get`/`go mod tidy`. Current set:
-    go.opentelemetry.io/otel v1.44.0 (+ /sdk, /sdk/metric, exporters otlpmetric{grpc,http}, stdout/stdoutmetric)
-    go.opentelemetry.io/otel/log v0.6.0 (+ /sdk/log, exporters otlplog{grpc,http}, stdout/stdoutlog)  [GA but pre-1.0]
-    github.com/tailscale/tailscale-client-go/v2 v2.0.0-20250129222324-74c8fc3cb4d7 (package `tsclient`)
-    golang.org/x/oauth2, gopkg.in/yaml.v3, github.com/klauspost/compress (zstd)
-- ARCHITECTURE PRINCIPLES: small single-purpose packages; collectors depend only
-  on the frozen contracts (telemetry.Emitter, collector interfaces,
-  enrich.DeviceCache, tsapi.Client, the flowlog/audit processors); each collector
-  declares a NARROW client interface it needs (satisfied by *tsapi.Client) and
-  fakes it in tests; the telemetry.Emitter facade is the ONLY thing that touches
-  OTLP so OTLP details never leak into collectors.
+Feature-complete and GREEN. ALL of P0–P6 (sessions 1–3) and S4-1…S4-8 (session 4
+execution) are DONE, committed, and PUSHED to origin/main (merge e1e8d59).
+`go build ./...`, `go vet ./...`, `gofmt -l .` (empty), `go test -race ./...` all
+pass; `helm lint`/`helm template` render; tools/configcheck builds+runs.
+Verified END-TO-END against the real example.com lab + Grafana Cloud in session 2.
+
+WHAT REMAINS (see section 7 for detail):
+  • S4-9  LIVE re-verify of the session-3/4 additions in Grafana Cloud (incl. the
+          S4-1 native-EventName Loki label + the audit dashboard/event_name
+          migration). Needs example lab creds + a user go-ahead.
+  • S4-10 LIVE stream-envelope capture (lab-authorized) → tighten the parser.
+  • S4-11 Webhook enrichment (severity/data-field/dedup-map correctness).
+  • Helm CI baseline: helm-docs + losisin schema first-run baselines.
 
 --------------------------------------------------------------------------------
-2. DESIGN DECISIONS ALREADY MADE (do not relitigate without reason)
+3. HARD CONSTRAINTS (evergreen — always read)
 --------------------------------------------------------------------------------
-User decisions:
-  - Language: Go (single static binary).
-  - Flow logs modeled as BOTH aggregated metrics AND full-fidelity OTEL logs.
-  - Export: OTLP push (gRPC/HTTP); stdout protocol for local debug.
-  - Scope: ALL Tailscale data sources.
-  - Webhook receiver: built, OFF by default.
-  - Flow-log default log verbosity: per_connection (configurable: per_record | off).
-  - Module/org: github.com/rknightion/tailscale2otel.
-  - Both ingestion methods for flow+audit logs: POLL and STREAM (Splunk-HEC-style
-    receiver). S3/GCS object-reader ingestion was DEFERRED (not built).
-  - Target Go 1.26 and use its features where helpful.
+3a. BUILD / TEST / METHODOLOGY
+  - Module path: github.com/rknightion/tailscale2otel (also the OTEL
+    instrumentation scope name — keep in sync).
+  - Go: go.mod declares `go 1.26.0`; toolchain go1.26.x. Use 1.26 features freely
+    (e.g. testing/synctest, used in internal/app/heartbeat_test.go).
+  - After EVERY unit: go build ./... && go vet ./... && gofmt -l . (must be empty)
+    && go test -race ./...   Commit a GREEN state between phases.
+  - METHODOLOGY IS TDD (non-negotiable): failing test → watch it fail for the
+    right reason → minimal code → green → refactor. stdlib `testing` ONLY (no
+    testify). Assert emitted telemetry via internal/telemetrytest.Recorder (an
+    in-memory OTEL reader) in every collector/processor test.
 
-Engineering decisions:
-  - D1 Hybrid Tailscale client: official tsclient for snapshot resources; a thin
-    custom HTTP doer (internal/tsapi/logs.go) for the two /logging endpoints the
-    client does not expose. Both share one authenticated, retrying *http.Client.
-  - D2 Use the official OTEL log SDK (NOT ktranslate's third-party logs lib).
-  - D3 Flow-log "tail" hazard: never poll up to now; always poll [checkpoint,
-    now-lag]. nextWindow() in internal/collector/window.go implements cold-start
-    lookback, lag, and max-window capping.
-  - D4 Device identity = METRIC ATTRIBUTES (host.name/host.id/os.type/...), not a
-    per-device Resource. (Per-device Resource is a possible v2 change.)
-  - D5 Synchronous instruments (Float64Counter.Add / Float64Gauge.Record), not
-    ktranslate's async observable-gauge+channel design.
-  - D7 Checkpoint store: in-memory (default) + file-backed (opt-in via
-    checkpoint.store: file). Atomic file writes (temp+rename).
-  - D8 Streaming ~= polling in content; the receiver emulates Splunk HEC
-    (POST /services/collector/event, `Authorization: Splunk <token>`). Tailscale
-    does NOT document the exact HEC payload envelope -> the parser is defensive
-    and the envelope MUST be pinned empirically by capturing a live stream.
-  - OTEL log SDK v0.6.0 has NO Record.EventName field; the event name is carried
-    as the "event.name" attribute on each log record. SWITCH to the native field
-    when the SDK adds it.
-  - semconv-compliant naming: dotted lowercase, no `_total` suffix, UCUM units
-    (By, {packet}, {flow}, {event}, s, d, 1). Low-cardinality dims on metrics;
-    full 5-tuple / high-cardinality only on log records.
+3b. PINNED DEPS (do NOT casually `go get`/`go mod tidy`)
+    go.opentelemetry.io/otel v1.44.0 (+ /sdk, /sdk/metric, /metric, /trace,
+      exporters otlpmetric{grpc,http}, stdout/stdoutmetric)
+    go.opentelemetry.io/otel/log v0.20.0 (+ /sdk/log, exporters otlplog{grpc,http},
+      stdout/stdoutlog)  [bumped from v0.6.0 in S4-1; has native Record.EventName]
+    github.com/tailscale/tailscale-client-go/v2 v2.0.0-20250129222324-74c8fc3cb4d7 (pkg `tsclient`)
+    golang.org/x/oauth2, gopkg.in/yaml.v3, github.com/klauspost/compress (zstd),
+    github.com/tailscale/hujson, google.golang.org/grpc v1.81.1.
+  Renovate groups ALL go.opentelemetry.io/otel{,/**} into ONE lockstep PR (core
+  v1.x + the 0.x log modules MUST move together or the build breaks). tools/
+  configcheck is a SEPARATE module (own go.mod + replace ../..) so `go build ./...`
+  never touches it; it is NOT a runtime dep.
 
---------------------------------------------------------------------------------
-3. HARD CONSTRAINTS DISCOVERED IN THE PINNED tailscale-client-go/v2
-   (these forced deviations; verify with `go doc` before assuming otherwise)
---------------------------------------------------------------------------------
-- tsclient.Device is FLAT and has NO ClientConnectivity field => NO DERP-latency
-  data source in this version. `tailscale.device.derp.latency` is NOT emitted.
-  (If the dep is upgraded to a Device with ClientConnectivity, add it back.)
-- Device has NO "connectedToControl" flag => `tailscale.device.online` is derived
-  from LastSeen recency within a window (default 5m) using an injectable clock
-  (devices/export_test.go SetClock seam).
-- Device field is `ID` (not `NodeID`); mapped to DeviceMeta.NodeID + host.id.
-- Device has NO OSVersion; left "".
-- Device timestamps (LastSeen/Created/Expires) are value type `tsclient.Time`
-  (embeds time.Time); guard with .IsZero(), read .Unix().
-- tsclient.Key has NO KeyType field => key "type" is derived from Capabilities
-  (ephemeral|reusable|onetime). Key HAS Revoked (time.Time) and Invalid (bool).
-- User.LastSeen and Key.Expires are plain time.Time (not the wrapper, not pointers).
-- User.Role/Status/Type are defined string types (convert via string()).
-- TailnetSettings bool fields that EXIST: DevicesApprovalOn, DevicesAutoUpdatesOn,
-  UsersApprovalOn, NetworkFlowLoggingOn, RegionalRoutingOn,
-  PostureIdentityCollectionOn (+ DevicesKeyDurationDays int). Fields that DO NOT
-  exist in this version: HTTPSEnabled, ACLsExternallyManagedOn (omitted).
-- RawACL has `HuJSON` (string) + `ETag` (string).
-- DNSPreferences has `MagicDNS` (bool) only — NO OverrideLocal => the
-  `tailscale.dns.override_local` metric is NOT emitted.
-- telemetrytest.Recorder stringifies int64 log attributes as "" (Value.AsString
-  on Int64 kind). int64 log attrs are still emitted correctly in production; tests
-  assert their presence and verify values via the human-readable log Body. (A
-  follow-up could improve the recorder to read int64 via Value.Emit/String.)
+3c. tsclient/v2 QUIRKS (verify with `go doc` before assuming otherwise)
+  - tsclient.Device is FLAT, NO ClientConnectivity field. The richer data (online
+    flag, per-DERP latency, advertised/enabled routes, distro/os.version, nodeId)
+    comes from the raw REST `GET /devices?fields=all` via tsapi.DevicesRich(), NOT
+    from tsclient.Device. The devices collector uses DevicesRich.
+  - Device field is `ID` (not NodeID) → DeviceMeta.NodeID + host.id. NO OSVersion
+    on tsclient.Device. Timestamps are value-type `tsclient.Time` (embeds
+    time.Time; guard .IsZero(), read .Unix()).
+  - device.online is derived from LastSeen recency (default 5m window, injectable
+    clock via devices/export_test.go SetClock).
+  - tsclient.Key has NO KeyType → "type" derived from Capabilities
+    (ephemeral|reusable|onetime). Key HAS Revoked (time.Time) + Invalid (bool).
+  - User.LastSeen + Key.Expires are plain time.Time. User.Role/Status/Type are
+    defined string types (string()).
+  - TailnetSettings bools that EXIST: DevicesApprovalOn, DevicesAutoUpdatesOn,
+    UsersApprovalOn, NetworkFlowLoggingOn, RegionalRoutingOn,
+    PostureIdentityCollectionOn (+ DevicesKeyDurationDays int). NOT present:
+    HTTPSEnabled, ACLsExternallyManagedOn.
+  - RawACL has HuJSON (string) + ETag (string). DNSPreferences has MagicDNS (bool)
+    only — NO OverrideLocal.
+  - telemetrytest.Recorder renders int64 LOG attributes as "" (Value.AsString on
+    Int64 kind). They emit correctly in prod; tests assert presence + verify the
+    value via the human-readable log Body.
+
+3d. ARCHITECTURE PRINCIPLES
+  - Small single-purpose packages. Collectors depend only on the frozen contracts
+    (telemetry.Emitter, collector interfaces, enrich.DeviceCache, tsapi.Client, the
+    flowlog/audit processors). Each collector declares a NARROW client interface it
+    needs (satisfied by *tsapi.Client) and fakes it in tests. The telemetry.Emitter
+    facade is the ONLY thing touching OTLP, so OTLP never leaks into collectors.
 
 --------------------------------------------------------------------------------
-4. PACKAGE INVENTORY (all under internal/ unless noted) + PUBLIC CONTRACTS
+4. AGREED DESIGN DECISIONS (do not relitigate without reason)
 --------------------------------------------------------------------------------
-cmd/tailscale2otel/main.go   - flags (-config), config.Load, slog setup, signal
-                               handling, app.New, app.Run. version via -ldflags
-                               "-X main.version=...".
-internal/config              - Config + nested structs (yaml tags), Load(path),
-                               Default(), (*Config).Validate(), Duration type
-                               (UnmarshalYAML + .D()). ${ENV}/$ENV expansion via
-                               os.Expand. Defaults-merge = Default() then Unmarshal
-                               on top (explicit `enabled: false` DOES override).
-internal/telemetry           - Emitter interface {Counter,Gauge,UpDownCounter,
-                               LogEvent}; Attrs=map[string]any; Event{Name,Body,
-                               Severity,Timestamp,Attrs}; Severity{Info,Warn,Error}.
-                               NewEmitter(meter,logger) Emitter (otel-backed).
-                               Provider: NewProvider(ctx, Options) (grpc|http|stdout
-                               exporters, Resource, MeterProvider+PeriodicReader,
-                               LoggerProvider+BatchProcessor); .Emitter(); .Shutdown().
-                               Options has StdoutWriter seam for tests.
-internal/telemetrytest        - Recorder.New(); .Emitter(); .MetricPoints(name)
-                               []MetricPoint{Name,Unit,Kind,Value,Monotonic,Attrs};
-                               .MetricNames(); .LogRecords() []LogRecord{Body,
-                               SeverityText,EventName,Severity,Attrs}. TEST HELPER.
-internal/semconv             - shared attribute keys, UCUM unit consts, enum values
-                               (DirectionTransmit/Receive, TrafficVirtual/.../Physical,
-                               NetworkTypeIPv4/IPv6). Collector-specific metric NAMES
-                               live with each collector, not here.
-internal/enrich              - DeviceCache: NewDeviceCache(opts...); Replace([]DeviceMeta);
-                               ResolveName("addr:port")->hostname|"external"|"unknown";
-                               LookupAddr/LookupNode; Len(); Age(); WithClock(). Knows
-                               Tailscale ranges 100.64.0.0/10 + fd7a:115c:a1e0::/48.
-internal/collector           - Collector/SnapshotCollector/WindowCollector interfaces;
-                               Registry (Register / RegisterWindow / Entries);
-                               CheckpointStore (NewMemoryStore / NewFileStore);
-                               Scheduler (NewScheduler(emitter,store,opts...); Run(ctx,reg);
-                               goroutine+ticker per collector, jitter, panic isolation,
-                               window cursor via nextWindow + no-advance-on-error).
-internal/flowlog             - record.go: NetworkResponse/FlowLog/ConnectionCounts.
-                               processor.go: NewProcessor(cache, Options{LogMode,
-                               IncludePorts,NodeDims}); Process(FlowLog,Emitter);
-                               ProcessAll(NetworkResponse,Emitter). Consts MetricIO/
-                               MetricPackets/MetricFlows. NOTE: NodeDims defaults
-                               false in Go zero-value; the app sets it explicitly.
-internal/audit               - record.go: ConfigurationResponse/Event/Actor/Target.
-                               processor.go: NewProcessor(); Process(Event,Emitter);
-                               ProcessAll(...). Const MetricAuditEvents.
-internal/tsapi               - NewClient(Options); snapshot methods Devices/Users/Keys/
-                               TailnetSettings/Webhooks/PolicyFileRaw/DNS*; log doers
-                               NetworkFlowLogs(ctx,start,end) / ConfigAuditLogs(...).
-                               auth.go (oauth|apikey), transport.go (retry 429/5xx +
-                               Bearer auth), logs.go (custom GET + window query).
-internal/collector/devices   - New(api lister, cache, interval). Feeds DeviceCache.
-internal/collector/users     - New(api, interval).
-internal/collector/keys      - New(api, interval, expiryWarn, now func()).
-internal/collector/settings  - New(api, interval).
-internal/collector/acl       - New(api, interval, now func()). Stateful (ETag).
-internal/collector/dns       - New(api, interval).
-internal/collector/flowlogs  - New(api, *flowlog.Processor, interval, lag). WindowCollector.
-internal/collector/auditlogs - New(api, *audit.Processor, interval, lag). WindowCollector.
-internal/stream              - New(Options{Listen,Path,Token,Decompress,TLSCertFile,
-                               TLSKeyFile}, flowProc, auditProc, emitter, logger);
-                               Handler() http.Handler; Run(ctx). HEC emulation,
-                               gzip/zstd, defensive parse, shape-based routing.
-internal/webhook             - New(Options{Listen,Path,Secret,Tolerance}, emitter,
-                               logger); Handler(); Run(ctx). Verified Tailscale
-                               HMAC scheme: header "t=<unix>,v1=<hex>", signed string
-                               "<t>.<body>", HMAC-SHA256, constant-time compare.
-internal/app                 - options.go (config->telemetry.Options incl. Grafana
-                               Cloud Basic-auth header; config->tsapi.Options);
-                               heartbeat.go (runHeartbeat -> tailscale2otel.up);
-                               app.go (New/Run, provider+client+cache+scheduler,
-                               graceful shutdown); collectors.go (registerCollectors
-                               source-gated; buildReceivers).
+USER decisions: Go single static binary; flow logs as BOTH aggregated metrics AND
+  full-fidelity OTEL logs; OTLP push (gRPC/HTTP) + stdout for local debug; scope =
+  ALL Tailscale data sources; webhook receiver built but OFF by default; flow-log
+  default verbosity per_connection (configurable per_record|off); BOTH poll AND
+  stream (Splunk-HEC-style receiver) ingestion (S3/GCS object-reader DEFERRED).
 
-Packaging: deploy/Dockerfile (multi-stage, distroless nonroot), config.example.yaml,
-README.md, .dockerignore, .gitignore.
+ENGINEERING decisions:
+  D1 Hybrid client: official tsclient for snapshots + a thin custom HTTP doer
+     (tsapi/logs.go) for the two /logging endpoints. One shared retrying client.
+  D2 Official OTEL log SDK (not ktranslate's third-party logs lib).
+  D3 Flow-log "tail" hazard: never poll up to now; poll [checkpoint, now-lag].
+     nextWindow() (collector/window.go) does cold-start lookback, lag, max-window cap.
+  D4 Device identity = METRIC ATTRIBUTES (host.name/host.id/os.type/os.version/
+     tailscale.user), NOT a per-device Resource. (See P2-4 closed decision.)
+  D5 Synchronous instruments (Float64Counter.Add / Float64Gauge.Record).
+  D7 Checkpoint store: in-memory default + file-backed opt-in (atomic temp+rename).
+  D8 Streaming ~= polling in content; receiver emulates Splunk HEC (POST
+     /services/collector/event, `Authorization: Splunk <token>`). TS does NOT
+     document the exact HEC envelope → parser is DEFENSIVE; envelope still to be
+     pinned by a live capture (S4-10).
+  D9 [S4-1] Event name uses the NATIVE log.Record.EventName (log v0.20.0+), not the
+     old "event.name" attribute. (Loki label re-verify pending — S4-9.)
+  D10 [S4-4] Cumulative temporality pinned explicitly on both OTLP metric exporters
+     (Grafana Cloud/Mimir accept cumulative ONLY; delta→HTTP 400). KEEP histogram
+     _bucket/_sum/_count flattening (matches Mimir's classic storage; do NOT
+     reconstruct native/exponential histograms — would lose explicit buckets).
+  D11 [S4-3] webhook↔audit cross-dedup is BEST-EFFORT and OFF by default
+     (webhook.dedup_audit_events). Shared dedup.Set, first-seen-wins; the
+     type↔action map / subjectID / time-bucket need live tuning (S4-10/S4-11). It
+     defaults to NO dedup whenever it can't confidently map (never over-suppresses).
+  D12 [S4-7] Flow-log volume guard caps LOG records per window with a VISIBLE
+     logs_dropped counter (no silent caps); metrics are NEVER capped. Stream body
+     is bounded (decompressed) → 413 on overflow (anti-OOM/zip-bomb).
+  - semconv naming: dotted lowercase, no `_total` suffix in source, UCUM units
+    (By, {packet}, {flow}, {event}, {record}, s, d, 1). Low-cardinality dims on
+    metrics; full 5-tuple / high cardinality only on log records.
+
+CLOSED decisions (do NOT reopen without a new reason):
+  - P2-4 PER-DEVICE RESOURCE = DEFERRED (user-confirmed). One Resource per
+    MeterProvider, so true per-device Resource needs N providers + a target_info
+    series per device = churn/cost for ~zero new capability (identity is already on
+    every metric via D4). Node-level metrics are delivered by the nodemetrics
+    scraper (label-based "instance"), not per-device Resource.
+  - NODE-METRICS identity = the "instance" LABEL, NOT a per-node Resource.
+  - P2-6 (no native EventName) = RESOLVED by S4-1 (D9).
 
 --------------------------------------------------------------------------------
-5. AS-BUILT TELEMETRY CATALOG (what is emitted today)
+5. PACKAGE INVENTORY (all under internal/ unless noted) + PUBLIC CONTRACTS
 --------------------------------------------------------------------------------
-METRICS (name [unit] — key attributes):
-  tailscale2otel.up [1]                        - heartbeat (self-obs).
-  tailscale.network.io [By]                    - network.io.direction, network.transport,
-                                                 tailscale.traffic_type, tailscale.src.node,
-                                                 tailscale.dst.node (+ ports if IncludePorts).
-  tailscale.network.packets [{packet}]         - same dims.
-  tailscale.network.flows [{flow}]             - network.transport, tailscale.traffic_type.
-  tailscale.config.audit.events [{event}]      - tailscale.audit.action, tailscale.audit.origin.
-  tailscale.device.online [1]                  - host.name, host.id, os.type, tailscale.user.
-  tailscale.device.last_seen [s]               - id dims.
-  tailscale.device.key.expiry [s]              - id dims.
-  tailscale.device.update_available [1]        - id dims.
-  tailscale.devices.count [1]                  - os.type, tailscale.authorized, tailscale.external.
-  tailscale.users.count [1]                    - tailscale.user.role/status/type.
-  tailscale.user.devices [1]                   - enduser.id, tailscale.user.login.
-  tailscale.user.connected [1]                 - id dims.
-  tailscale.user.last_seen [s]                 - id dims.
-  tailscale.key.expiry [s]                     - tailscale.key.id/type/description.
-  tailscale.keys.count [1]                     - tailscale.key.type/revoked/invalid.
-  tailscale.setting.enabled [1]                - tailscale.setting.name (6 bools).
-  tailscale.setting.devices_key_duration [d]   - (no attrs).
-  tailscale.acl.last_changed [s]               - (no attrs; on ETag change).
-  tailscale.acl.size [By]                      - raw HuJSON length.
-  tailscale.dns.nameservers.count [1]          -
-  tailscale.dns.search_paths.count [1]         -
-  tailscale.dns.split_zones.count [1]          -
-  tailscale.dns.magic_dns [1]                  -
-  tailscale.stream.records [Counter]           - type=flow|audit.
-  tailscale.stream.rejected [Counter]          - reason=auth|unparsable.
-  tailscale.webhook.events [Counter]           - tailscale.webhook.type.
-  tailscale.webhook.rejected [Counter]         - reason=...
-
-LOG RECORDS (event.name — when):
-  tailscale.network.flow      - per flow connection (LogMode per_connection) or per
-                                record (per_record); off disables. Carries 5-tuple,
-                                src/dst node, tx/rx bytes+packets, traffic_type.
-  tailscale.config.audit      - per audit event; WARN if event has an error.
-  tailscale.key.expiring      - WARN when a key expires within expiry_warn.
-  tailscale.webhook.<type>    - per webhook event; WARN for Expir/Suspend/NeedsApproval/Deleted.
-
---------------------------------------------------------------------------------
-6. COMPLETED (milestones from the plan)
---------------------------------------------------------------------------------
-[x] M0 skeleton + OTLP heartbeat (smoke-verified end to end)
-[x] M1 Tailscale client + auth (OAuth + API key, retry transport)
-[x] M2 collector/scheduler framework (registry, scheduler, checkpoints, window math)
-[x] M3 devices collector + enrichment cache (cache feeder)
-[x] M4 flow logs POLL + shared flowlog.Processor + checkpoint + aggregation
-[x] M5 audit logs POLL + shared audit.Processor
-[x] M6 snapshot collectors: users, keys, settings, acl, dns
-[x] M7 HTTP receivers: Splunk-HEC stream + HMAC webhook (off by default)
-[x] M8 packaging: Dockerfile, config.example.yaml, README, .dockerignore, .gitignore
-[x] self-observability: scrape.*, api.requests/retries, export.failures, build_info,
-    enrich.cache_age/size — all done in session 2 (P0-1).
-[x] real-tailnet + Grafana Cloud end-to-end verification (P0-4) — session 2.
-[x] CI/CD: .github/workflows/{ci,release}.yml (P0-5) — session 2.
-[x] Helm chart (deploy/helm/tailscale2otel) + docker-compose (deploy/docker-compose.yaml).
+cmd/tailscale2otel/main.go - flags (-config), config.Load, slog, signals, app.New/Run.
+internal/config       - Config + nested structs (yaml tags), Load(path), Default(),
+                        (*Config).Validate(), Duration (.D()). ${ENV} expansion.
+                        Defaults-merge = Default() then Unmarshal on top.
+internal/telemetry    - Emitter{Counter,Gauge,UpDownCounter,LogEvent}; Attrs=map[string]any;
+                        Event{Name,Body,Severity,Timestamp,Attrs}. NewEmitter(meter,logger).
+                        Provider: NewProvider(ctx,Options) (grpc|http|stdout; cumulative
+                        temporality pinned); .Emitter(); .Shutdown(). emitter.go uses
+                        native Record.SetEventName.
+internal/telemetrytest- Recorder.New(); .Emitter(); .MetricPoints(name)/.MetricNames();
+                        .LogRecords() []{Body,SeverityText,EventName,Severity,Attrs}.
+                        EventName reads the native field. TEST HELPER (no testing import).
+internal/semconv      - shared attribute keys, UCUM units, enum values.
+internal/dedup        - Set: bounded FIFO thread-safe de-dup set. New(cap); Add(key) bool.
+internal/enrich       - DeviceCache: Replace([]DeviceMeta); ResolveName/LookupAddr/
+                        LookupNode; Age()/Len()/WithClock(). Knows TS ranges.
+internal/collector    - Collector/SnapshotCollector/WindowCollector ifaces; Registry;
+                        CheckpointStore (Memory/File); Scheduler (goroutine+ticker per
+                        collector, jitter, panic isolation, window cursor).
+internal/flowlog      - record.go (NetworkResponse/FlowLog/ConnectionCounts);
+                        processor.go NewProcessor(cache,Options{LogMode,IncludePorts,
+                        NodeDims,KeepExternalAddrs,Dedup,MaxLogRecordsPerWindow}).
+                        Consts MetricIO/Packets/Flows/LogsDropped. Adds node.hostname
+                        via cache.LookupNode.
+internal/audit        - record.go (ConfigurationResponse/Event/Actor/Target);
+                        processor.go NewProcessor(opts...): WithDedup (eventGroupID-keyed,
+                        poll↔stream) + WithCrossDedup (webhook cross-source). DedupKey +
+                        NormalizedCrossKey/CrossSourceKey are the key-format homes.
+internal/tsapi        - NewClient(Options); Devices/DevicesRich/Users/Keys/TailnetSettings/
+                        Webhooks/PolicyFileRaw/DNS*; log doers NetworkFlowLogs/ConfigAuditLogs;
+                        ConfigureLogStream (PUT). auth.go, transport.go (retry+rate-limit+
+                        Bearer; GetBody rewind), logs.go.
+internal/collector/{devices,users,keys,settings,acl,dns,flowlogs,auditlogs,nodemetrics}
+                      - per-source collectors. nodemetrics: gated Prometheus-text scraper,
+                        Target{URL,Instance,Labels,BearerToken,BearerTokenFile,Headers,TLS},
+                        per-target *http.Client, counters→deltas, gauges, per-target node.up.
+internal/stream       - New(Options{Listen,Path,Token,Decompress,TLS*,MaxBodyBytes},flowProc,
+                        auditProc,emitter,logger); Handler/Run. HEC emulation, gzip/zstd,
+                        defensive parse, body cap → 413.
+internal/webhook      - New(Options{Listen,Path,Secret,Tolerance},emitter,logger,opts...);
+                        WithDedup (cross-source). HMAC: header "t=<unix>,v1=<hex>", signed
+                        "<t>.<body>", SHA256, constant-time. Empty Secret = SKIP verify.
+internal/app          - options.go (config→telemetry/tsapi/nodemetrics opts); app.go
+                        (New/Run, shared flowProc/auditProc + dedup sets, gated webhook
+                        cross-set, graceful shutdown); collectors.go (registerCollectors +
+                        buildReceivers); admin.go (/healthz,/readyz); heartbeat.go; selfobs.go.
+Packaging/ops: deploy/Dockerfile, deploy/helm/tailscale2otel (full config in values.yaml,
+  unconditional config helper, values.schema.json draft-07), deploy/docker-compose.yaml,
+  deploy/grafana/*.json (4 dashboards)+README, deploy/alerts/*.yaml (9 rules),
+  docs/metrics.md + docs/node-metrics.md, tools/configcheck (CI), .github/workflows/{ci,
+  release,helm}.yml, config.example.yaml.
 
 --------------------------------------------------------------------------------
-7. PENDING / TODO  (prioritized; each item is actionable for an LLM)
-   P0 = needed for production; P1 = important for feature-complete; P2 = nice-to-have
+6. AS-BUILT TELEMETRY CATALOG (current; OTLP→Prom normalization in docs/metrics.md)
 --------------------------------------------------------------------------------
-P0-1  [DONE session 2] SELF-OBSERVABILITY scrape metrics. Enhance
-      internal/collector/scheduler.go runTick/runWindow to emit, per collector
-      (attr tailscale.collector=<name>): tailscale2otel.scrape.duration [s] (or a
-      histogram), tailscale2otel.scrape.success [1] (1/0 last run),
-      tailscale2otel.scrape.errors [Counter] {error.type}, .scrape.last_timestamp [s].
-      Also surface tsapi request/retry counters (tailscale2otel.api.requests
-      {http.response.status_code,endpoint}, .api.retries) — likely via an Emitter
-      hook in tsapi/transport.go. And OTLP export failures via otel.SetErrorHandler
-      -> tailscale2otel.export.failures. Gate on cfg.SelfObservability.Enabled. TDD
-      with telemetrytest. Pass the Emitter into the scheduler (already has it).
-
-P0-2  [DONE session 2] CONFIG VALUES wired (note: collect_routes is now INLINE via
-      DevicesRich ?fields=all — NO per-device fan-out; cache_ttl emits cache_age/size
-      but the optional age>ttl WARN was not added). Original notes:
-      - enrichment.cache_ttl: nothing reads it. Emit tailscale2otel.enrich.cache_age
-        [s] (DeviceCache.Age()) + cache_size (Len()) from the devices collector or a
-        self-obs hook; optionally WARN when age>cache_ttl.
-      - cardinality.collapse_external: defined but NOT plumbed into flowlog.Processor
-        (Options lacks it; ResolveName always collapses). Either add the option +
-        honor it, or drop the config field. (flow_include_ports + flow_node_dims ARE
-        wired via app.flowOptions.)
-      - collectors.devices.collect_routes / collect_posture: defined but unused. Wire
-        them to call tsapi SubnetRoutes / posture (add tsapi methods) and emit
-        tailscale.device.routes.advertised/.enabled [{route}] and posture attrs.
-        These are per-device fan-out (N API calls); keep default false.
-
-P0-3  [DONE session 2] WINDOW BOUNDARY DEDUP (in both window collectors, via
-      internal/dedup bounded set; keys exactly as below). flowlogs/auditlogs return `to`
-      and next window starts at `to` (inclusive ranges) -> a boundary-timestamp
-      record can be emitted twice. Implement dedup-by-key (flows:
-      nodeId|start|end|proto|src|dst; audit: eventGroupID|eventTime) in the
-      collectors, or track lastSeen keys. Currently only mitigated by the lag window.
-
-P0-4  [DONE session 2 — fully verified in Grafana Cloud; feature self-disable
-      IMPLEMENTED via flowlogs.FeatureCheck closure reading NetworkFlowLoggingOn +
-      403 handling]. REAL-TAILNET END-TO-END. Run against a real tailnet with OAuth
-      client and a real Grafana Cloud OTLP endpoint. Verify: device/flow/audit
-      metrics+logs arrive; cross-check flow throughput vs the Tailscale admin
-      console; confirm graceful self-disable when networkFlowLoggingOn=false or on
-      403 (flow logs require Premium/Enterprise + the feature enabled). NOTE: the
-      "feature disabled -> idle + emit tailscale.feature.enabled=0" behavior from the
-      plan (§8) is NOT implemented yet — add it to the flowlogs collector (check
-      TailnetSettings.NetworkFlowLoggingOn or handle 403 gracefully).
-
-P0-5  [DONE session 2 — .github/workflows/ci.yml + release.yml]. CI: .github/workflows
-      for `go build`, `go vet`, `gofmt -l` (fail if
-      non-empty), `go test -race ./...`, and `govulncheck`. Add a release workflow
-      (goreleaser or docker buildx) building the image from deploy/Dockerfile.
-
-P1-1  [DONE session 3 — deploy/grafana/{tailscale-fleet,tailscale-network,tailscale-audit-events,
-      tailscale-exporter-health}.json (Grafana 13, DS_PROM/DS_LOKI vars, dynamic multi-value
-      variables) + deploy/grafana/README.md + README references]. Original notes:
-      now buildable against live data (gcx context
-      `example`, default prom ds `grafanacloud-prom`, loki `grafanacloud-logs`; metric
-      names are OTLP-normalized, e.g. tailscale.network.io -> tailscale_network_io_bytes_total,
-      unit-1 gauges get a _ratio suffix e.g. tailscale_device_online_ratio).
-      GRAFANA DASHBOARD(S) in deploy/grafana/*.json: device fleet (online/last-seen/
-      update-available/count), flow throughput by node/transport/traffic_type
-      (tailscale.network.io rate), audit event stream (logs), key-expiry table,
-      and exporter self-health (tailscale2otel.up + scrape metrics). Can be built
-      with the gcx create-dashboard tooling. Update README to reference it. Make heavy
-      use of Grafana 13's Dynamic Dashboards functionality.
-
-P1-2  [DONE session 3 — auto_configure PUT implemented (tsapi.ConfigureLogStream +
-      putJSON; retry transport now rewinds the body via GetBody) and wired in app
-      (App.autoConfigureStreaming, gated by streaming.auto_configure, requires
-      streaming.enabled + public_url, validated). LIVE-CAPTURE pinning STILL skipped by
-      design — never reconfigures the lab tailnet's streaming]. Original notes:
-      stream parser hardened + realistic fixtures (numeric proto,
-      polymorphic audit) added; LIVE-CAPTURE pinning intentionally SKIPPED (must NOT touch
-      the lab tailnet's streaming config). STILL TODO: streaming.auto_configure PUT
-      /tailnet/{tailnet}/logging/{type}/stream (off by default; add tsapi method + app wiring).
-      STREAMING ENVELOPE PINNING. The HEC parser in internal/stream is defensive
-      against an UNDOCUMENTED Tailscale payload. Configure a real tailnet to stream
-      to the receiver (private endpoint over the tailnet, HTTPS via `tailscale cert`),
-      capture an actual POST body, add it as a fixture, and tighten the parser.
-      Also: streaming.auto_configure (PUT /tailnet/{tailnet}/logging/{type}/stream to
-      self-register the receiver as a sink; needs log_streaming scope) is DONE (off by
-      default). The LIVE-CAPTURE envelope pinning is now UNBLOCKED and scheduled as S4-10
-      (§7b): the user removed the old HEC/webhook infra and AUTHORIZED reconfiguring the
-      LAB (example) tailnet's streaming for capture (this machine is on the tailnet). SAFETY
-      STILL STANDS: only the example LAB may be reconfigured; auto_configure must NEVER be
-      pointed at a real/production tailnet.
-
-P1-3  [DONE session 2] MISSING DATA SOURCES — user-invites (tailscale.user_invites.count),
-      device routes (inline via DevicesRich), acl.rules (hujson-parsed) all implemented.
-      Original notes:
-      - user-invites: tailscale.user_invites.count (add tsapi method + emit in users).
-      - device routes (per-device): see P0-2.
-      - acl.rules per-section counts: parse RawACL.HuJSON with github.com/tailscale/hujson
-        and emit tailscale.acl.rules {tailscale.acl.section}. (Currently only acl.size.)
-
-P1-4  [DONE session 3 — optional shared dedup.Set on BOTH processors: audit (WithDedup +
-      exported DedupKey) and flowlog (Options.Dedup, FlowLog-window keyed; flow records are
-      immutable once their window closes so window-granularity dedup is safe). App wires one
-      shared set per processor (flow cap 16384, audit cap 4096) so poll + stream don't
-      double-count. Webhook<->audit cross-dedup is best-effort/not covered: webhook events do
-      not flow through audit.Processor and may lack eventGroupID]. NOTE: poll-window boundary dedup IS done (P0-3, per-collector).
-      What remains is CROSS-component dedup. Because the app shares ONE flowProc/auditProc
-      between the poll collectors AND the stream receiver, the cleanest fix is an optional
-      shared dedup.Set on the PROCESSORS (keyed by eventGroupID|eventTime for audit). Webhook
-      payloads may NOT carry eventGroupID, so webhook<->audit cross-dedup is best-effort.
-      STREAM/WEBHOOK <-> AUDIT DEDUP. Webhook events overlap with audit-log events;
-      dedupe by eventGroupID (LRU set) so enabling both webhooks and auditlogs does
-      not double-count. (Plan §3j.)
-
-P1-5  [DONE session 2 — internal/app/app_test.go uses a newApp() seam with a recorder
-      emitter + stub client; asserts Run()+graceful shutdown returns nil and emits
-      heartbeat + build_info]. app-level integration test: build App with a recorder seam and
-      assert New()+Run(short ctx)+graceful Shutdown returns cleanly and emits the
-      heartbeat. (Currently only options + heartbeat are unit-tested; Run() is only
-      smoke-tested manually.) Consider adding a telemetry.Provider test seam or an
-      app.New variant that accepts a pre-built Emitter for assertion.
-
-P1-6  [DONE session 2 — global stdlib token-bucket rate limiter as the OUTERMOST tsapi
-      transport; config tailscale.http.rate_limit (req/s, 0=unlimited). Validated at 15 req/s
-      against the 89-device lab tailnet with no issues]. RATE LIMITS & PAGINATION. Tailscale API
-      has no pagination (full result sets) and undocumented rate limits; the retry
-      transport honors Retry-After. Validate under a large tailnet; consider a global
-      rate limiter across collectors.
-
-P2-1  [DONE session 3 — config/validate.go oneOf now uses slices.Contains; telemetrytest
-      recorder metric-attr rendering uses attribute.Value.String() (the non-deprecated
-      replacement for the deprecated .Emit(); identical output for our scalar attrs); also
-      maps.Copy in flowlog dirAttrs and strings.CutSuffix in the nodemetrics parser]. Earlier:
-      DONE: maps.Copy (app/options.go), strings.SplitSeq (stream+webhook),
-      removed dead logOff const. REMAINING (minor): slices.Contains in
-      internal/config/validate.go + telemetrytest test; deprecated kv.Value.Emit() in
-      internal/telemetrytest/recorder.go (use .String()) — NOTE recorder is a SHARED test
-      dep imported by ~everything, so change it ALONE (not concurrently with a swarm) and
-      run the FULL `go test -race ./...` to catch attr-rendering regressions.
-P2-2  [DONE session 3 — docs/metrics.md authored: naming conventions + OTLP->Prom
-      normalization rules, full metrics table, log-events table, node-metrics scraper
-      section, cross-source dedup note, and Grafana PromQL/LogQL query examples]. Helm
-      chart + docker-compose were already DONE in session 2.
-P2-3  [DONE session 2] build_info metric (tailscale2otel.build_info {service.version,go.version})
-      + always-on admin server (config `admin: {enabled,listen}`) serving /healthz + /readyz.
-P2-4  [DEFERRED — CLOSED DECISION, session 3 (user-confirmed)]. Per-device Resource
-      (D4 alternative) will NOT be implemented. Rationale: OTEL metrics have exactly one
-      Resource per MeterProvider, so true per-device Resource requires N per-device
-      MeterProviders/readers (86 on the lab tailnet) plus a target_info series per device =
-      churn/cost on Grafana Cloud, for ~zero new capability — device identity is ALREADY on
-      every metric as attributes (host.name/host.id/os.type/os.version/tailscale.user via
-      D4), which already supports per-device filter/group/alert. The user separately wanted
-      node-level metrics in OTEL; that is delivered by P3 (node-metrics scraper, label-based
-      "instance" identity), NOT by per-device Resource. If a host-centric Entity-Graph view is
-      ever needed, revisit then. (Was: significant data-model change, gated off by default.)
-P2-6  [NOW ACTIONABLE — implement via S4-1, see §7b + §11.1] pinned OTEL log SDK v0.6.0 had
-      NO Record.EventName field, so we carry the event name as the "event.name" attribute.
-      Session-4 research + a local `go doc` probe CONFIRMED log v0.20.0 adds
-      Record.EventName()/SetEventName() and bumps cleanly with core STAYING v1.44.0 (the
-      v0.20.0 log modules pin otel v1.44.0). Implement S4-1; then this is DONE.
-
-P3  [DONE session 3 — internal/collector/nodemetrics: gated SnapshotCollector that scrapes
-      a CONFIGURED list of Prometheus-text /metrics endpoints (config collectors.node_metrics
-      {enabled,interval,timeout,targets:[{url,instance,labels}]}) and re-emits VERBATIM names
-      via the Emitter — counters (and histogram/summary _bucket/_sum/_count) as DELTAS with
-      reset handling, gauges as gauges, plus a per-target tailscale.node.up gauge. Node
-      identity is the "instance" LABEL (user-confirmed: NOT per-node Resource), single
-      MeterProvider. Stdlib-only Prometheus text parser. Off by default; disabled with no
-      targets. App registers it when enabled && len(targets)>0]. NOTE: the lab tailnet ALREADY exposes tailscaled_*
-      metrics in Grafana (some existing scraper), so there is real precedent/value.
-      Design: a new gated collector (internal/collector/nodemetrics) that scrapes a
-      CONFIGURED list of Prometheus /metrics endpoints (no tailnet auto-discovery from
-      this exporter) and re-emits via the Emitter. CAREFUL with counter semantics: scraped
-      cumulative counters must be forwarded as DELTAS (track prev value per series, handle
-      resets) via Emitter.Counter, gauges as Gauge. Stdlib-only Prometheus text parser
-      (no new dep). Gate off by default (no targets = disabled).
-    Node-local client metrics (tailscaled per-node /metrics) as an optional richer
-      data source (different architecture: per-node scrape, not central API). Tailscale
-      has this today subject to it being enabled on the tailnet and ACLs set up (research first)
-      and our collector can act as a prometheus scraper then transform to OTEL and send all
-      the tailscale node metrics centrally. Match the configured default scrape interval.
-      I have disabled scraping on your approved test environment so you can avoid seeing all the old data.
-
-P4  [DONE session 2 + session 3] Default OTLP push interval changed 30s -> 60s
-    (config/defaults.go). config.example.yaml UPDATED in session 3: metric_interval 30s->60s,
-    added tailscale.http.rate_limit, admin.{enabled,listen}, streaming.public_url, and the
-    collectors.node_metrics section; a new config test loads+validates the example to prevent
-    drift. Collector intervals
-    already >=60s. Aligns push cadence with scrape to avoid Grafana Cloud DPM churn.
-
-P5. [DONE session 3 — flowlog.Processor now adds tailscale.node.hostname to flow log records
-    (both per_connection and per_record) via cache.LookupNode(flow.NodeID), only when the
-    cache resolves a non-empty hostname]. Enrich the flow-log nodeId with hostname from the device cache.
-    NOTE: the cache's byNode index is NOW keyed by the nDdi... NodeID (DevicesRich.NodeID),
-    which MATCHES flow.NodeID, so LookupNode(flow.NodeID) will hit. Add the hostname as an
-    attribute on the flow log/metric in flowlog.Processor (it currently passes flow.NodeID raw
-    as tailscale.node.id). The DeviceCache would need a LookupNode-by-flow-nodeId helper or
-    the processor calls cache.LookupNode(flow.NodeID).Hostname.
+SELF-OBS (gated on self_observability.enabled):
+  tailscale2otel.up[1] (heartbeat); .build_info[1]{service.version,go.version};
+  .scrape.{duration[s],success[1],errors[1]{error.type},last_timestamp[s]}{tailscale.collector};
+  .api.{requests[1]{endpoint,http.response.status_code},retries[1]{endpoint}};
+  .export.failures[1]{error.type}; .enrich.{cache_age[s],cache_size[1]}.
+NETWORK / FLOW:
+  tailscale.network.io[By], .packets[{packet}] {direction,transport,traffic_type,src/dst node,ports?};
+  .flows[{flow}] {transport,traffic_type}; .flow.logs_dropped[{record}] (S4-7 volume guard);
+  tailscale.config.audit.events[{event}] {audit.action,audit.origin}.
+DEVICES: device.online[1], .last_seen[s], .key.expiry[s], .update_available[1]
+  {host.name,host.id,os.type,tailscale.user}; .derp.latency[s] (gated collect_routes via
+  DevicesRich); .routes.{advertised,enabled}[{route}] (gated); devices.count[1].
+USERS: users.count[1]; user.devices[1]; user.connected[1]; user.last_seen[s];
+  user_invites.count[1]{role,accepted}.
+KEYS: key.expiry[s]{key.id/type/description}; keys.count[1]{type,revoked,invalid}.
+SETTINGS: setting.enabled[1]{setting.name}; setting.devices_key_duration[d].
+ACL: acl.last_changed[s]; acl.size[By]; acl.rules[1]{acl.section}.
+DNS: dns.{nameservers,search_paths,split_zones}.count[1]; dns.magic_dns[1].
+FEATURE: feature.enabled[1]{tailscale.feature} (e.g. flow logging on/off).
+RECEIVERS: stream.records{type=flow|audit}; stream.rejected{reason=auth|unparsable|too_large};
+  webhook.events{webhook.type}; webhook.rejected{reason}.
+NODEMETRICS (gated): tailscale.node.up[1]{instance} + every scraped tailscaled_* series
+  re-emitted VERBATIM (counters→deltas, gauges→gauges) keyed by the "instance" label.
+LOG RECORDS (native EventName): tailscale.network.flow (per conn/record); tailscale.config.audit
+  (WARN on error); tailscale.key.expiring (WARN); tailscale.webhook.<type> (WARN for
+  Expir/Suspend/NeedsApproval/Deleted — see S4-11 gap); tailscale.device.posture (gated).
 
 --------------------------------------------------------------------------------
-7b. SESSION-4 BACKLOG (planned 2026-06-03; research-backed). IMPLEMENTED in the
-    2026-06-03 session-4-EXECUTION run — see the §12 log. STATUS:
-      S4-1  DONE (code; Loki-label re-verify + dashboard/README/docs event_name migration
-            still PENDING the Phase-E live check folded into S4-9)
-      S4-2  DONE (nodemetrics per-target auth/TLS + config wiring + docs/node-metrics.md)
-      S4-3  DONE (mechanism, off by default; type<->action map + subjectID + time-bucket are
-            best-effort, flagged for live tuning in S4-10/S4-11)
-      S4-4  DONE      S4-5  DONE      S4-6  DONE (helm-docs/losisin schema baselines
-            regenerate on the first CI run — see §12 caveats)
-      S4-7  DONE (flowlog window cap + visible logs_dropped counter + stream body cap)
-      S4-8  DONE (deploy/alerts/, 9 rules, OTLP-normalized names)
-      S4-9, S4-10  PENDING — LIVE lab ops (need example creds + a user go-ahead); not yet run.
-      S4-11 PENDING — new backlog item added this run (webhook enrichment).
+7. PENDING TASKS (incl. partially completed — THE LIVE BACKLOG)
 --------------------------------------------------------------------------------
-Original framing (each item is actionable; supporting research + evidence + sources +
-code snippets are in SECTION 11 — read the matching 11.x before implementing). TDD,
-stdlib `testing` only, verify the WHOLE module green (build/vet/gofmt/test -race) + commit
-between units. NOTE: go.mod edits ARE IN-SCOPE for S4-1 + S4-5 — the "no go.mod edits"
-rule in section 8 was a parallel-swarm race guard; do dependency work SOLO (not
-concurrently with a leaf swarm) and run the full test suite after.
+Methodology reminder: TDD, stdlib testing only, verify the WHOLE module green +
+commit between units. Research evidence for these is in H6. Live-ops SAFETY: lab
+creds in .secrets/creds.local.env (`set -a; source .secrets/creds.local.env; set
++a`), gcx context example; only the example LAB may be reconfigured; auto_configure
+must NEVER target a real/production tailnet; NEVER commit .secrets/ or .capture/.
 
-S4-1 [P0 / low-risk / UNBLOCKS P2-6] UPGRADE OTEL LOG SDK v0.6.0 -> v0.20.0 + switch to
-     the native log EventName field. (Evidence/snippet: §11.1.)
-     - Bump ONLY these 5 go.mod lines to v0.20.0 (core v1.44.0 + ALL other deps stay
-       EXACTLY as-is — already latest; the v0.20.0 log modules pin otel v1.44.0 / grpc
-       v1.81.1 / protobuf v1.36.11 / proto-otlp v1.10.0, all already ours, so expect ZERO
-       core/indirect churn): otel/log, otel/sdk/log, exporters
-       otlp/otlplog/{otlploghttp,otlploggrpc}, exporters/stdout/stdoutlog.
-         go get go.opentelemetry.io/otel/log@v0.20.0 \
-           go.opentelemetry.io/otel/sdk/log@v0.20.0 \
-           go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp@v0.20.0 \
-           go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@v0.20.0 \
-           go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.20.0 ; go mod tidy
-     - provider.go: NO code changes (all constructors/With* options unchanged v0.6->v0.20).
-     - emitter.go: the ONLY code change — replace the event.name-attribute workaround
-       (`log.String("event.name", ev.Name)`) with `if ev.Name != "" { r.SetEventName(ev.Name) }`.
-     - Update telemetrytest.Recorder usage + any test asserting the "event.name" ATTRIBUTE
-       to assert Record.EventName() (the recorder already exposes LogRecord.EventName).
-     - DASHBOARD/LOKI MIGRATION (do together): deploy/grafana/tailscale-audit-events.json +
-       deploy/grafana/README.md filter on the `event_name` LABEL (derived from the event.name
-       attribute). Once it moves to the native EventName field the Loki label MAY change —
-       re-verify in Loki and update the event_name variable/queries + docs. Then P2-6 is DONE.
+S4-9 [P0 / LIVE] RE-VERIFY the session-3/4 additions end-to-end in Grafana Cloud
+     (only session-2's original telemetry was verified live). Confirm LIVE:
+     (1) flow log records carry tailscale.node.hostname;
+     (2) cross-source dedup (no double-count when poll + stream both on);
+     (3) the 4 dashboards render vs REAL series — ESPECIALLY OTLP-normalized metric
+         names match (highest-risk); add the new metrics (flow.logs_dropped, alerts);
+     (4) [S4-1 TAIL] the NATIVE EventName: re-verify what Loki label the native
+         EventName produces (Grafana Explore = source-of-truth), then migrate
+         deploy/grafana/tailscale-audit-events.json + deploy/grafana/README.md +
+         docs/metrics.md `event_name` variable/queries accordingly. Then P2-6/D9 done.
+     (5) auto_configure path (only if doing S4-10).
+     gcx gotcha: `gcx logs query` needs BOTH --from AND --to. Defer the nodemetrics
+     live check — scraping is disabled on the lab.
 
-S4-2 [P1] nodemetrics PER-TARGET AUTH/TLS + "how to expose tailscaled metrics" DOCS (ONE
-     combined task, per user). (Evidence/fields/doc-outline/example: §11.3.) Native tailscaled
-     endpoints are plain HTTP with NO auth/TLS — security is the tailnet ACL on port 5252 — so
-     the scraper's current plain GET is ALREADY correct for the common case. Add OPTIONAL
-     per-target fields for proxied/HTTPS targets: bearer_token, bearer_token_file,
-     headers{map}, tls{insecure_skip_verify, ca_file, cert_file, key_file, server_name}.
-     Mirror telemetry/provider.go tlsConfig(); build a per-target *http.Client/Transport in
-     nodemetrics.New (today ONE shared client); apply bearer/headers per-request. Add fields
-     to config.NodeMetricsTarget + nodemetrics.Target. Default (no fields) = plain GET.
-     Write docs/ "How to expose tailscaled metrics" (client metrics v1.78.0+ via
-     `tailscale set --webclient` -> :5252/metrics + quad-100 local; the port-5252 ACL grant;
-     the --debug endpoint; documented metric families; the `path`-label cardinality warning).
+S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING (finishes D8/P1-2's deferred capture;
+     lab-AUTHORIZED). Stand up the stream receiver with an HTTPS endpoint reachable
+     over the tailnet (`tailscale cert` for the node's *.ts.net name), point the
+     example network+configuration log streaming at it (manually, or exercise
+     streaming.auto_configure against the LAB ONLY), capture a REAL Splunk-HEC POST
+     body → .capture/ (gitignored) → a SANITIZED testdata fixture, and TIGHTEN the
+     defensive parser in internal/stream (TDD). Also captures real webhook events to
+     unblock S4-11(d) subjectID + S4-3 live tuning.
 
-S4-3 [P1] WEBHOOK <-> AUDIT CROSS-DEDUP (best-effort). Webhook events (internal/webhook
-     event = {timestamp,version,type,tailnet,message,data}) carry NO eventGroupID, so they
-     can't reuse audit.DedupKey directly. Give the webhook Server access to a shared dedup.Set
-     keyed by a NORMALIZED key derivable from BOTH sources. FIRST capture real overlapping
-     webhook + audit-log events for the SAME change (e.g. nodeCreated) and empirically map
-     webhook `type` <-> audit `action` + compare timestamps/target ids; THEN define the shared
-     key (likely action/type + rounded eventTime + target id). Document as best-effort (may
-     miss or over-suppress). TDD via telemetrytest. (Audit side already has WithDedup/DedupKey.)
+S4-11 [P1] WEBHOOK ENRICHMENT — severity, data-field pinning, dedup-map correctness.
+     (Researched 2026-06-03; evidence H6.) Generic dispatch in webhook.go (one log +
+     one counter per `type`) is SOUND and STAYS; this is severity + attrs + dedup
+     fixes from the authoritative catalog https://tailscale.com/kb/1213/webhooks#events.
+     VALUE: webhooks carry client-misconfig/health + Tailnet-Lock events with NO
+     log-streaming equivalent.
+     (a) WARN-HEURISTIC GAP: warnSubstrings {Expir,Suspend,NeedsApproval,Deleted}
+         MISSES exitNodeIPForwardingNotEnabled, subnetIPForwardingNotEnabled (the most
+         actionable health alerts → emit at INFO), nodeNeedsSignature, and deprecated
+         nodeNeedsAuthorization. Promote to WARN; prefer an explicit warn-type SET over
+         substring matching.
+     (b) ADDITIVE-VALUE EVENTS (no stream equivalent): exitNodeIPForwardingNotEnabled,
+         subnetIPForwardingNotEnabled, nodeNeedsSignature, nodeSigned. Add a deploy/alerts
+         rule on a nonzero rate of the two misconfig events (counter already keyed by type).
+     (c) DEDUP-MAP (internal/webhook/crossdedup.go webhookActionMap, speculative): verify
+         `userSuspended`+`userDeleted` against a live subscription and REMOVE if invalid
+         (not in the docs). ADD real overlapping types: policyUpdate ({update,policy|tailnet}),
+         nodeNeedsApproval ({create|update,node}), userNeedsApproval ({update,user}); +
+         deprecated aliases nodeAuthorized→nodeApproved, nodeNeedsAuthorization→nodeNeedsApproval.
+     (d) subjectIDKeys: node key is `nodeID` (ok) but the USER key is `user` (login/email
+         string), NOT userID/userId/loginName/email; deviceID/deviceId never appear. Fix to
+         {nodeID, user}. Documented data fields: node*={nodeID,deviceName,managedBy,actor,url};
+         nodeKey* adds {expiration}; user*={user,url,actor}; userRoleUpdated adds {oldRoles,
+         newRoles}; policyUpdate={newPolicy,oldPolicy,url,actor}; test=null. The `actor` field
+         matches the config-audit actor format — strongest cross-source JOIN key; evaluate it.
+     (e) PAYLOAD TYPING: webhook event.Data is map[string]string, but policyUpdate
+         (oldPolicy/newPolicy) + userRoleUpdated (oldRoles/newRoles) are NOT flat strings →
+         may fail to unmarshal/drop. Confirm shape in the S4-10 capture.
+     UNCONFIRMED → needs the S4-10 live capture: the two misconfig events' data payloads are
+     undocumented. No billing/connect-disconnect/route-change webhooks exist (FRs only:
+     tailscale/tailscale#15638, #11166). TDD via telemetrytest; pair with S4-10.
 
-S4-4 [P2] TEMPORALITY + HISTOGRAM FIDELITY. (Evidence/snippet: §11.2.) Mimir/Grafana Cloud
-     OTLP accepts CUMULATIVE ONLY (DELTA -> HTTP 400; no server-side conversion), so our
-     SDK-default cumulative export is CORRECT — leave it. OPTIONAL defensive hardening: pin
-     cumulative explicitly via otlpmetric{http,grpc}.WithTemporalitySelector in provider.go so
-     a future SDK default change / accidental delta path can't silently break ingestion.
-     HISTOGRAMS (reframed from "improve flattening"): RESEARCH SAYS DO NOT reconstruct native
-     OTEL histograms — they are EXPONENTIAL and would DISCARD tailscaled's explicit bucket
-     boundaries; the current _bucket/_sum/_count flattening already matches how Mimir stores
-     OTEL explicit-bucket histograms (classic series) and is queryable with histogram_quantile().
-     Only act if bucket-series CARDINALITY becomes a cost problem -> add a per-target metric
-     allow/deny list to drop high-cardinality histogram families at scrape time.
-
-S4-5 [P2] RENOVATE. (Full renovate.json: §11.4.) Add renovate.json at repo root:
-     config:best-practices; managers gomod (postUpdateOptions gomodTidy +
-     gomodUpdateImportPaths), github-actions, dockerfile, helmv3; CRITICAL packageRule groups
-     ALL go.opentelemetry.io/otel{,/**} modules into ONE lockstep PR (core v1.x + 0.x log
-     modules release together, automerge off); 0.x minors never automerged; osvVulnerabilityAlerts
-     on; automerge only patch/digest of actions+dockerfile and patch of indirect Go deps;
-     minimumReleaseAge 3 days. (All non-OTEL deps are ALREADY latest, so the first run should
-     be quiet apart from digest-pinning actions/Dockerfile.)
-
-S4-6 [P2] HELM CONFIG AUTOMATION — stop chart/config drift permanently. (Details: §11.5.)
-     (a) Make _helpers.tpl "tailscale2otel.config" UNCONDITIONAL: always render
-     `.Values.config | toYaml`, delete the hand-rolled else branch; move the FULL config (from
-     config.example.yaml, env placeholders for secrets) into values.yaml (Helm deep-merge keeps
-     single-key overrides working). Breaking -> bump chart version + note migration.
-     (b) Generate values.schema.json with losisin/helm-values-schema-json (draft-07 — Helm only
-     validates draft-07; do NOT use invopop/jsonschema: it emits 2020-12 and reads json tags
-     while our struct uses yaml tags). No new RUNTIME Go dep (generator is a CI tool).
-     (c) helm-docs for the chart README values table.
-     (d) CI: losisin action (fail-on-diff) + helm-docs+git-diff + a build-tagged
-     tools/configcheck that calls config.Load to validate BOTH the rendered chart configmap
-     config AND config.example.yaml (catches drift; carries the cross-field rules draft-07 can't).
-
-S4-7 [P2] HIGH FLOW-LOG VOLUME handling for large tailnets (the lab's logging_network capture
-     was ~13MB; per-connection logs scale fast). Consider: a max-records-per-window cap +
-     a log-volume/dropped counter so silent truncation is VISIBLE (no silent caps); confirm the
-     stream receiver's decompress+parse path is streaming (not whole-body buffering) under big
-     POSTs; document the per_connection vs per_record vs off tradeoff + expected DPM/Loki volume.
-     Cross-link the nodemetrics `path`-label cardinality note (§11.3).
-
-S4-8 [P1] ALERTING RULES to complement the 4 dashboards. Add deploy/alerts/ (Grafana or
-     Prometheus rule YAML, using OTLP-NORMALIZED names — see §5 + deploy/grafana/README.md):
-     exporter down (absent/0 tailscale2otel_up_ratio); scrape failures by collector
-     (tailscale2otel_scrape_success_ratio==0 / rate of scrape errors); OTLP export failures
-     (tailscale2otel_export_failures_total); device/auth key expiring soon
-     (tailscale_device_key_expiry_seconds - time() < threshold); flow logging silently OFF
-     (tailscale_feature_enabled_ratio==0); nodemetrics target down (tailscale_node_up==0).
-
-S4-9 [P0 / LIVE] RE-VERIFY the session-3 additions end-to-end in Grafana Cloud (the ORIGINAL
-     telemetry was verified live in session 2; the session-3 additions were only unit-tested +
-     stdout-smoked). Run against the example lab (`set -a; source .secrets/creds.local.env; set +a`),
-     gcx context example. Confirm LIVE: (1) flow log records now carry tailscale.node.hostname;
-     (2) cross-source dedup (no double-count when poll + stream both enabled); (3) the 4
-     dashboards render against REAL data — ESPECIALLY that the OTLP-normalized metric names in
-     the panels match live series (highest-risk); (4) the auto_configure path (only if doing
-     S4-10). gcx gotcha: `gcx logs query` needs BOTH --from AND --to; Grafana Explore is
-     source-of-truth. (Defer nodemetrics live check — scraping is disabled on the lab.)
-
-S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING — finishes P1-2's deferred live capture (now
-     AUTHORIZED on the lab). Stand up the stream receiver with an HTTPS endpoint reachable over
-     the tailnet (`tailscale cert` for the node's *.ts.net name), point the example tailnet's
-     network+configuration log streaming at it (manually, or exercise streaming.auto_configure
-     against the LAB ONLY), capture a REAL Splunk-HEC POST body, save it to .capture/ (gitignored)
-     -> a SANITIZED testdata fixture, and TIGHTEN the defensive parser in internal/stream to the
-     real envelope (TDD). SAFETY: reconfigure ONLY the example lab; auto_configure must NEVER be
-     pointed at any real/production tailnet. Then P1-2 is fully DONE.
-
-S4-11 [P1] WEBHOOK ENRICHMENT — health-event severity, data-field pinning, and dedup-map
-     correctness. (Researched session-4-cont 2026-06-03; user-prompted by the generic-webhooks
-     docs.) Generic dispatch in internal/webhook/webhook.go (one log + one counter per `type`) is
-     SOUND and STAYS — this is severity + attributes + dedup fixes, grounded in the authoritative
-     event catalog https://tailscale.com/kb/1213/webhooks#events (mirror
-     https://tailscale.com/docs/features/webhooks). VERDICT: enhancing adds real value — webhooks
-     carry client-misconfiguration/health + Tailnet-Lock events with NO log-streaming equivalent.
-     (a) WARN-HEURISTIC GAP: warnSubstrings {Expir,Suspend,NeedsApproval,Deleted} MISSES the two
-         client-misconfig/health events `exitNodeIPForwardingNotEnabled` +
-         `subnetIPForwardingNotEnabled` (emit at INFO), the Tailnet-Lock `nodeNeedsSignature`, and
-         deprecated `nodeNeedsAuthorization`. These are the most actionable webhook alerts and are
-         NOT in the flow OR config-audit streams. Promote to WARN; prefer an explicit warn-type SET
-         over substring matching so future types aren't silently missed.
-     (b) ADDITIVE-VALUE EVENTS (no log-streaming equivalent): exitNodeIPForwardingNotEnabled,
-         subnetIPForwardingNotEnabled, nodeNeedsSignature, nodeSigned — the core reason to keep
-         webhooks on alongside polling. Add an S4-8 alert on a nonzero rate of the two misconfig
-         events (counter already keyed by tailscale.webhook.type; no new metric).
-     (c) DEDUP-MAP CORRECTNESS (internal/webhook/crossdedup.go webhookActionMap, written
-         speculatively in S4-3): `userSuspended` + `userDeleted` are NOT in Tailscale's documented
-         catalog (UNCONFIRMED — userDeleted only in a Pulumi sample, userSuspended nowhere); verify
-         vs a live subscription and REMOVE if invalid. MISSING real overlapping types that DO appear
-         in the config-audit stream: `policyUpdate` (-> {update, policy|tailnet}), `nodeNeedsApproval`
-         ({create|update, node}), `userNeedsApproval` ({update, user}); plus deprecated aliases
-         nodeAuthorized->nodeApproved, nodeNeedsAuthorization->nodeNeedsApproval.
-     (d) DATA-FIELD PINNING for S4-3 subjectIDKeys: docs confirm node key is `nodeID` (already
-         first) but the USER key is `user` (login/email string) — NOT userID/userId/loginName/email,
-         and deviceID/deviceId never appear. Fix subjectIDKeys to {nodeID, user} and drop the
-         unsupported guesses. Documented data fields: node* = {nodeID,deviceName,managedBy,actor,url};
-         nodeKey* adds {expiration}; user* = {user,url,actor}; userRoleUpdated adds {oldRoles,newRoles};
-         policyUpdate = {newPolicy,oldPolicy,url,actor}; test = null. The `actor` field is documented
-         to MATCH the config-audit actor format — strongest cross-source JOIN key; evaluate using it
-         (not just subject id) once S4-10 capture lands.
-     (e) PAYLOAD-TYPING RISK: webhook event.Data is map[string]string, but policyUpdate
-         (oldPolicy/newPolicy = policy contents) and userRoleUpdated (oldRoles/newRoles = arrays)
-         are NOT flat strings -> may fail to unmarshal / drop silently. Confirm shape in S4-10 capture.
-     UNCONFIRMED / NEEDS LIVE CAPTURE: the data payloads of the two misconfig events are NOT
-     documented (no example) — capture real events before adding dedicated attributes. No billing,
-     connect/disconnect, or subnet-route-change webhooks exist (FRs only:
-     github.com/tailscale/tailscale/issues/15638 and /11166). TDD via telemetrytest; pair with S4-10.
+HELM CI BASELINE [P2 / chore] — .github/workflows/helm.yml runs helm-docs and
+     losisin/helm-values-schema-json in fail-on-diff mode. The committed README.md /
+     values.schema.json are hand-authored baselines; on the FIRST CI run let those tools
+     regenerate and commit the canonical output, after which fail-on-diff is stable.
+     (helm lint + helm template DO render cleanly today.)
 
 --------------------------------------------------------------------------------
 8. HOW TO CONTINUE (workflow for the LLM)
 --------------------------------------------------------------------------------
-1. Read this file + the plan at /Users/rob/.claude/plans/we-are-building-a-cosmic-star.md.
-2. Pick a TODO. For anything touching telemetry, FIRST read the frozen contracts:
-   internal/telemetry/types.go, internal/collector/collector.go,
+1. Read the ACTIVE half of this file + the plan at
+   /Users/rob/.claude/plans/we-are-building-a-cosmic-star.md.
+2. Pick a task from section 7. For anything touching telemetry, FIRST read the
+   frozen contracts: internal/telemetry/types.go, internal/collector/collector.go,
    internal/enrich/devicecache.go, internal/telemetrytest/recorder.go,
    internal/semconv/attrs.go, and the relevant processor.
-3. Confirm any tsclient field/method via `go doc github.com/tailscale/tailscale-client-go/v2.<Type>`
-   before using it (the pinned version differs from intuition — see section 3).
-4. TDD: failing test -> watch fail -> minimal impl -> green -> refactor.
-5. Keep packages small + single-purpose; collectors take a narrow client interface +
-   fake it in tests; assert via telemetrytest.Recorder.
-6. After each unit: `go build ./... && go vet ./... && gofmt -l . && go test -race ./...`.
-7. Independent units should be parallelized across subagents (each owns one package,
-   no go.mod edits). Add new dependencies up front so agents   don't contend on go.mod/go.sum.
-8. You can commit to main and push at any time. This project is new and not being used yet.
+3. Confirm any tsclient field/method via `go doc <type>` before using it (section 3c).
+4. TDD: failing test → watch fail → minimal impl → green → refactor.
+5. Keep packages small; collectors take a narrow client interface + fake it; assert
+   via telemetrytest.Recorder.
+6. After each unit: go build ./... && go vet ./... && gofmt -l . && go test -race ./...
+7. ORCHESTRATION (if swarming): phase by the IMPORT GRAPH. Do shared/foundational
+   packages (telemetry, config, app, dedup, telemetrytest) + any go.mod change SOLO,
+   THEN fan out import-INDEPENDENT leaves (each agent owns ONE package, builds only
+   its own). Re-verify the WHOLE module yourself after every workflow — leaf agents
+   passing in isolation does NOT mean the module builds.
+8. Commit to main freely; PUSH only when the user confirms.
+
+
+################################################################################
+#  HISTORICAL REFERENCE — completed work + logs (context only; NOT active)      #
+################################################################################
 
 --------------------------------------------------------------------------------
-9. SESSION LOG + LEARNINGS  (session 2, 2026-06-02 — READ THIS BEFORE CONTINUING)
+H1. COMPLETED MILESTONES (M0–M8)
 --------------------------------------------------------------------------------
-WHAT WAS DONE: All P0 + P1-3/P1-5/P1-6 + P2-2(partial)/P2-3 + P4, built by a phased
-parallel-workflow swarm (each agent owned ONE package; strict TDD), then app-layer
-integration done by hand. Commits on main: 701ce13 (Phase 1 foundations + bug fixes
-+ CI), 859ba93 (Phase 2+3 self-obs/rich-devices/dedup/app-wiring), bbcfc42 (OTLP 404 fix).
-
-REAL-TAILNET TESTING (the lab is example.com; read-only creds + Grafana Cloud OTLP creds
-are in the GITIGNORED .secrets/creds.local.env — `set -a; source .secrets/creds.local.env;
-set +a`. NEVER commit .secrets/, .capture/, or config.{local,smoke,lowlog}.yaml — all
-gitignored. Real API captures are in .capture/ for fixtures). Tailnet has 89 devices,
-flow logging ON, posture collection ON.
-
-4 PRODUCTION-BREAKING BUGS found ONLY by running against real data (would never have been
-caught by the unit tests against synthetic fixtures):
-  1. flow-log `proto` is a NUMBER on the wire (1/6/17/99/absent), not a string -> the old
-     `Proto string` made json.Decode FAIL outright -> flow polling silently produced NOTHING.
-     Fixed: ConnectionCounts.Proto int + transportName() IANA-number->name mapper.
-  2. audit `old`/`new` are POLYMORPHIC (string|object|array|null) -> old `string` type failed
-     to decode object/array values (ACL diffs, {"PostureDisabled":true}). Fixed: json.RawMessage.
-  3. OTLP/HTTP to Grafana Cloud 404'd: the OTEL otlphttp WithEndpointURL uses the URL path
-     AS-IS and does NOT append /v1/metrics, so a base ".../otlp" endpoint 404s. Fixed:
-     otlpHTTPURL() appends /v1/{metrics,logs} (telemetry/provider.go).
-  4. graceful SIGINT returned context.Canceled -> process exited non-zero. Fixed: app.Run
-     treats any ctx error from the scheduler as a clean stop (returns nil).
-
-KEY ARCHITECTURAL WIN: the raw REST `GET /devices?fields=all` returns FAR richer data than
-the pinned tsclient.Device — real `connectedToControl` online flag, per-DERP-region latency
-(the previously-"unavailable" DERP source — NOW EMITTED as tailscale.device.derp.latency),
-`advertisedRoutes`/`enabledRoutes` INLINE (so collect_routes needs NO per-device fan-out),
-`distro{name,version}` (os.version), and `nodeId` (nDdi form, used to key the cache byNode).
-tsapi.DevicesRich() wraps this (hybrid-doer pattern like tsapi/logs.go). The devices
-collector now uses it instead of tsclient.Devices().List.
-
-GRAFANA CLOUD VERIFICATION (gcx CLI, context `example`, Grafana 13.1.0):
-  - Metrics land in Mimir (default prom ds uid `grafanacloud-prom`). OTLP->Prom normalization:
-    dots->underscores, counters get `_total`, units get suffixes (By->_bytes, s->_seconds,
-    d->_days), and UNIT "1" gauges get a `_ratio` suffix (e.g. tailscale_device_online_ratio,
-    tailscale2otel_up_ratio). Account for this when writing dashboards/alerts.
-  - Logs land in Loki (ds uid `grafanacloud-logs`, label service_name="tailscale2otel").
-  - gcx GOTCHA: `gcx logs query` REQUIRES BOTH --from AND --to (it silently errors otherwise).
-    The CLI was flaky for me; Grafana Explore is the source of truth. Useful PromQL checks:
-    `tailscale2otel_up_ratio`, `count(tailscale_device_online_ratio==1)`,
-    `sum(rate(tailscale_network_io_bytes_total[2m]))` (~66 KB/s observed).
-
-NEW METRICS added this session (semconv units in []):
-  tailscale2otel.scrape.{duration[s],success[1],errors[1]{error.type},last_timestamp[s]}{tailscale.collector}
-  tailscale2otel.api.{requests[1]{endpoint,http.response.status_code},retries[1]{endpoint}}
-  tailscale2otel.export.failures[1]{error.type}, tailscale2otel.build_info[1]{service.version,go.version}
-  tailscale2otel.enrich.{cache_age[s],cache_size[1]}
-  tailscale.device.derp.latency[s]{host.name,host.id,tailscale.derp.region,tailscale.derp.preferred}
-  tailscale.device.routes.{advertised,enabled}[{route}]{host.name,host.id}  (gated collect_routes)
-  tailscale.feature.enabled[1]{tailscale.feature}, tailscale.user_invites.count[1]{role,accepted}
-  tailscale.acl.rules[1]{tailscale.acl.section}
-  NEW log event: tailscale.device.posture (gated collect_posture).
-
-NEW CONFIG: tailscale.http.rate_limit (req/s, 0=off); admin.{enabled,listen} (/healthz);
-  default otlp.metric_interval now 60s. config.example.yaml NOT yet updated for these — DO in
-  session 3 (it still shows metric_interval 30s and lacks rate_limit/admin keys).
-
-ORCHESTRATION NOTES for session 3 (this was an "ultracode" swarm session):
-  - Phase by the IMPORT GRAPH. Shared-dep packages (internal/telemetry, internal/collector
-    top-level, internal/telemetrytest, internal/config, internal/semconv) are imported by many
-    leaves; editing them CONCURRENTLY with leaf agents causes transient compile races. Sequence
-    shared-dep changes BEFORE the leaf fan-out (or do them inline), then fan out the leaves.
-  - Type changes ripple to CONSUMER test fixtures in OTHER packages the agent doesn't own
-    (e.g. Proto int broke collector/flowlogs + stream test fixtures). Fix consumers between phases.
-  - Always verify the WHOLE module (go build/vet/gofmt/test -race) + commit a GREEN state
-    between phases. Leaf agents passing in isolation does NOT mean the module builds.
-================================================================================
+[x] M0 skeleton + OTLP heartbeat   [x] M1 TS client + auth (OAuth/API key, retry)
+[x] M2 collector/scheduler framework (registry, scheduler, checkpoints, window math)
+[x] M3 devices collector + enrichment cache   [x] M4 flow logs POLL + flowlog.Processor
+[x] M5 audit logs POLL + audit.Processor   [x] M6 snapshot collectors (users/keys/settings/acl/dns)
+[x] M7 HTTP receivers: Splunk-HEC stream + HMAC webhook (off by default)
+[x] M8 packaging: Dockerfile, config.example.yaml, README, .dockerignore, .gitignore
+[x] self-obs, real-tailnet+Grafana Cloud verification, CI/CD, Helm chart, docker-compose.
 
 --------------------------------------------------------------------------------
-10. SESSION LOG + LEARNINGS  (session 3, 2026-06-03)
+H2. COMPLETED BACKLOG (one-liners; full detail in the session logs H3–H5)
 --------------------------------------------------------------------------------
-WHAT WAS DONE: every remaining actionable todo (P1-1, P1-2, P1-4, P2-1, P2-2, P3, P4, P5)
-plus the P2-4 closed-decision write-up. Built with a phased, import-graph-aware parallel
-workflow then app-layer wiring by hand. Module fully green: `go build ./...`, `go vet ./...`,
-`gofmt -l .` (empty), `go test -race ./...` all pass; the binary was smoke-tested
-(boot -> /healthz 200 -> tailscale2otel.up=1 + build_info on stdout -> clean SIGINT exit 0).
-
-NEW THIS SESSION:
-  - internal/collector/nodemetrics: gated node /metrics scraper (label-based instance, single
-    MeterProvider, counters->deltas w/ reset handling, gauges, per-target tailscale.node.up,
-    stdlib Prometheus text parser). config: collectors.node_metrics.
-  - audit + flowlog processors: optional shared dedup.Set (cross-source dedup); app wires one
-    set per processor. flowlog also adds tailscale.node.hostname to flow logs (P5).
-  - tsapi.ConfigureLogStream (PUT) + putJSON; app App.autoConfigureStreaming (gated, off by
-    default). Fixed a latent retry-transport bug: bodies are now rewound via GetBody on retry.
-  - deploy/grafana/*.json (4 dashboards) + deploy/grafana/README.md; docs/metrics.md.
-  - config: streaming.public_url; config.example.yaml refreshed (60s, rate_limit, admin,
-    node_metrics) + a test that loads/validates the example to stop drift.
-  - P2-1: slices.Contains, recorder .String() (deprecated .Emit() replacement).
-
-ORCHESTRATION NOTE: ran the leaf Go work (audit/flowlog/nodemetrics/tsapi) + the no-Go
-deliverables (dashboards/docs) as ONE parallel workflow, partitioned so concurrent agents
-edited import-INDEPENDENT packages and built only their own package (tsapi gated to start
-after audit+flowlog, which it imports). The shared test recorder (.Emit->.String) and the
-config slices.Contains were done solo FIRST (recorder is a test dep of ~every package).
-
-CLOSED DECISIONS (do not reopen without new reason): P2-4 per-device Resource = deferred (see
-P2-4). P3 node identity = labels, not per-node Resource. P2-6 = (was blocked) NOW UNBLOCKED in
-session 4 — log v0.20.0 has Record.EventName(); implement via S4-1 (§7b, evidence §11.1).
-================================================================================
-
---------------------------------------------------------------------------------
-11. SESSION 4 — RESEARCH FINDINGS (2026-06-03)  [read before implementing S4 items]
---------------------------------------------------------------------------------
-Session 4 was a PLANNING/RESEARCH session — NO code changed. A 5-agent web-research fan-out
-(OTEL changelog/pkg.go.dev/proxy, Grafana/Mimir docs, Tailscale KB, renovatebot/helm docs)
-plus a local `go doc` probe produced the evidence below. The actionable items live in §7b
-(S4-1..S4-10); each cites the matching 11.x here.
-
-11.1 OTEL LOG SDK UPGRADE (S4-1). Sources: open-telemetry/opentelemetry-go CHANGELOG.md,
-     pkg.go.dev, Go module proxy, local `go doc` probe.
-  - Latest log modules = v0.20.0 (2026-05-27), built from the SAME commit (b62d928) as core
-    v1.44.0; their go.mod pins otel v1.44.0 + grpc v1.81.1 + protobuf v1.36.11 + proto/otlp
-    v1.10.0 — ALL already in our go.mod. => log-ONLY bump, expect ZERO core/indirect churn.
-  - LOCAL PROBE CONFIRMED (`go doc go.opentelemetry.io/otel/log@v0.20.0 Record`):
-        func (r *Record) EventName() string
-        func (r *Record) SetEventName(s string)
-    and log v0.20.0 + sdk/log v0.20.0 resolve against core v1.44.0 with no core bump.
-  - EventName landed in log v0.11.0 (core 1.35.0, 2025-03-05); exporters emit it since then.
-  - NO breaking changes affect us: NewLoggerProvider / WithResource / WithProcessor /
-    NewBatchProcessor + all exporter constructors and With* options are UNCHANGED v0.6->v0.20.
-    The only breakers (Processor.OnEmit pointer; Record.Resource -> *resource.Resource;
-    Logger.Enabled EnabledParameters) are in the sdk/log Processor EXTENSION API we don't use.
-  - otlploggrpc/stdoutlog v0.12.0 are RETRACTED (broken logtest dep); targeting v0.20.0 skips them.
-  - emitter.go change (the ONLY code change):
-        if ev.Name != "" { r.SetEventName(ev.Name) }   // replaces log.String("event.name", ev.Name)
-  - RISK: anything querying the `event.name` LOG ATTRIBUTE in Loki (incl. our
-    tailscale-audit-events.json `event_name` variable) must migrate to the native EventName.
-
-11.2 GRAFANA CLOUD TEMPORALITY + HISTOGRAMS (S4-4). Sources: grafana.com OTLP
-     format-considerations + delta-vs-cumulative blog; grafana/mimir issues #6696 and #10439;
-     mimir otel-exponential-histograms docs.
-  - Mimir/Grafana Cloud OTLP accepts CUMULATIVE ONLY. DELTA -> HTTP 400 "invalid temporality
-    and type combination for metric ..." (mimir#6696). No server-side delta->cumulative
-    (you'd need the Collector deltatocumulative processor client-side); server-side delta is an
-    OPEN unimplemented FR (mimir#10439). => our SDK-default cumulative is CORRECT.
-  - Optional defensive pin (import sdkmetricdata "go.opentelemetry.io/otel/sdk/metric/metricdata"):
-        otlpmetrichttp.WithTemporalitySelector(func(sdkmetric.InstrumentKind) sdkmetricdata.Temporality {
-            return sdkmetricdata.CumulativeTemporality })   // + matching otlpmetricgrpc option
-  - HISTOGRAMS: Grafana Cloud converts OTEL EXPONENTIAL histograms -> Prometheus NATIVE
-    histograms (separate pricing). OTEL EXPLICIT-bucket histograms are stored as CLASSIC
-    _bucket/_sum/_count by default (NHCB conversion needs the Mimir distributor flag
-    -distributor.otel-convert-histograms-to-nhcb — a tenant/server setting you can't toggle on
-    hosted Grafana Cloud). => our flatten-to-_bucket/_sum/_count matches Mimir's default
-    storage; reconstructing a NATIVE (exponential) histogram would LOSE tailscaled's explicit
-    bucket geometry. KEEP flattening; only act on cardinality cost (drop families at scrape).
-
-11.3 TAILSCALED NODE METRICS EXPOSURE + AUTH/TLS (S4-2). Sources: tailscale.com client-metrics
-     reference + KB 1482/1192/1278 + blog/client-metrics.
-  - Client (host) metrics since v1.78.0: `tailscale set --webclient` -> Prometheus-text /metrics.
-    Local: http://100.100.100.100/metrics (quad-100). Tailnet: http://<tsIP>:5252/metrics.
-    PLAIN HTTP, NO token, NO TLS. Access control = a tailnet ACL/grant opening port 5252:
-        {"grants":[{"src":["tag:monitoring"],"dst":["tag:server"],"ip":["5252"]}]}
-    CLI alts: `tailscale metrics print` / `tailscale metrics write <file>` (textfile collector).
-  - tailscaled debug server: `tailscaled --debug=localhost:8080` -> /debug/metrics
-    (localhost-only, unauthenticated, UNSTABLE superset). Prefer the documented client metrics.
-  - Documented families: counters tailscaled_{inbound,outbound}_{packets,bytes}_total,
-    tailscaled_{inbound,outbound}_dropped_packets_total, tailscaled_peer_relay_forwarded_{packets,bytes}_total;
-    gauges tailscaled_{advertised,approved}_routes, _peer_relay_endpoints, _health_messages,
-    _home_derp_region_id. Throughput counters carry a `path` label (direct_ipv4/ipv6, derp,
-    peer_relay_ipv4/ipv6) => cardinality = nodes x path x metric. Nodes < v1.78 -> node.up=0.
-  - NEW per-target config fields (snake_case; mirror provider.go tlsConfig()):
-        bearer_token, bearer_token_file, headers{map},
-        tls{insecure_skip_verify, ca_file, cert_file, key_file, server_name}
-    Build a per-target *http.Client/Transport (today one shared client); default (no fields)
-    stays a plain GET (correct for native endpoints); insecure_skip_verify defaults false (footgun).
-
-11.4 RENOVATE (S4-5). Source: docs.renovatebot.com. Drop-in renovate.json (repo root):
-  {"$schema":"https://docs.renovatebot.com/renovate-schema.json",
-   "extends":["config:best-practices",":semanticCommits",":dependencyDashboard"],
-   "timezone":"Europe/London","schedule":["before 6am on monday"],
-   "prHourlyLimit":2,"prConcurrentLimit":10,"labels":["dependencies"],
-   "semanticCommitType":"chore","separateMinorPatch":true,
-   "postUpdateOptions":["gomodTidy","gomodUpdateImportPaths"],
-   "osvVulnerabilityAlerts":true,
-   "vulnerabilityAlerts":{"labels":["dependencies","security"],"automerge":false},
-   "packageRules":[
-     {"matchManagers":["gomod"],"matchPackageNames":["go.opentelemetry.io/otel{,/**}"],
-      "groupName":"OpenTelemetry","automerge":false},
-     {"matchManagers":["gomod"],"matchCurrentVersion":"< 1.0.0",
-      "matchUpdateTypes":["minor","patch"],"automerge":false},
-     {"matchManagers":["github-actions","dockerfile"],
-      "matchUpdateTypes":["patch","pin","pinDigest","digest"],"automerge":true},
-     {"matchManagers":["gomod"],"matchDepTypes":["indirect"],
-      "matchUpdateTypes":["patch"],"automerge":true},
-     {"matchManagers":["dockerfile"],"matchPackageNames":["golang"],
-      "matchUpdateTypes":["major","minor"],"automerge":false}],
-   "minimumReleaseAge":"3 days"}
-  CRITICAL rule = the OTel lockstep group (core v1.x + the 0.x log modules MUST move as one PR
-  or the build breaks). go 1.26 is handled natively via go-version-file.
-
-11.5 HELM CONFIG AUTOMATION (S4-6). Sources: helm issue #13069 (Helm validates draft-07 ONLY);
-     github.com/losisin/helm-values-schema-json; github.com/norwoodj/helm-docs.
-  - Drift today is ONLY in the ELSE branch of the "tailscale2otel.config" helper; the IF branch
-    already renders `.Values.config | toYaml`. Make it UNCONDITIONAL (delete the else), and put
-    the full config map in values.yaml (env placeholders for secrets; existing Secret/envFrom
-    inject them). Helm deep-merges maps => single-key overrides still work. Breaking -> bump chart.
-  - values.schema.json: generate with losisin/helm-values-schema-json (draft-07, useHelmDocs on).
-    Do NOT use invopop/jsonschema (emits 2020-12; reads json tags while our struct uses yaml tags).
-    No new RUNTIME Go dep — the generator is a CI tool / separate module.
-  - helm-docs renders the chart README values table (enforce via run-then-git-diff).
-  - CI: losisin action (fail-on-diff) + helm-docs+git-diff + a build-tagged tools/configcheck
-    that calls config.Load to validate BOTH the rendered chart configmap config AND
-    config.example.yaml. Draft-07 can't express cross-field rules — keep those in config.Load
-    (the configcheck tool exercises them).
-================================================================================
+Session 2 (P0 + early P1/P2):
+  P0-1 self-obs scrape/api/export/build_info/enrich metrics (gated).
+  P0-2 wired config: cache_ttl→cache_age/size; collect_routes INLINE via DevicesRich; routes/posture.
+  P0-3 window-boundary dedup in both window collectors (internal/dedup bounded set).
+  P0-4 real-tailnet end-to-end verify + flow self-disable (FeatureCheck/403, feature.enabled).
+  P0-5 CI: .github/workflows/{ci,release}.yml (build/vet/gofmt/test-race/govulncheck + image).
+  P1-3 user-invites + device routes (inline) + acl.rules (hujson-parsed).
+  P1-5 app-level integration test (newApp seam + recorder + stub client).
+  P1-6 global token-bucket rate limiter (tailscale.http.rate_limit; validated @15 req/s).
+  P2-3 build_info metric + always-on admin server (/healthz,/readyz).
+Session 3 (remaining P1/P2/P3/P4/P5):
+  P1-1 deploy/grafana 4 dashboards (Grafana 13 dynamic) + README.
+  P1-2 streaming auto_configure PUT (ConfigureLogStream) + app wiring; parser hardened +
+       realistic fixtures. LIVE-capture pinning deferred → S4-10.
+  P1-4 cross-component shared dedup.Set on flowlog+audit processors (poll↔stream). Webhook↔audit
+       was best-effort/uncovered → done in S4-3.
+  P2-1 modern-stdlib lint (slices.Contains, recorder .String(), maps.Copy, strings.SplitSeq).
+  P2-2 docs/metrics.md (naming + OTLP→Prom normalization + tables + query examples).
+  P3   internal/collector/nodemetrics gated scraper (label "instance" identity, counters→deltas
+       with reset handling, gauges, per-target node.up, stdlib parser; off by default).
+  P4   default otlp.metric_interval 30s→60s; config.example.yaml refreshed + load/validate test.
+  P5   flowlog adds tailscale.node.hostname via cache.LookupNode(flow.NodeID).
+Session 4 EXECUTION (S4-1…S4-8 — detail in H5):
+  S4-1 OTEL log SDK v0.6.0→v0.20.0 + native Record.EventName (zero core churn). [Loki/dashboard
+       event_name migration PENDING → S4-9.]
+  S4-2 nodemetrics per-target auth/TLS (bearer/headers/tls) + docs/node-metrics.md.
+  S4-3 webhook↔audit cross-dedup (best-effort, off by default; mechanism tested).
+  S4-4 cumulative temporality pinned on both OTLP metric exporters.
+  S4-5 renovate.json (OTel lockstep group; reconciled with the repo's Renovate PR #2).
+  S4-6 Helm config automation (unconditional config helper, full config in values.yaml,
+       values.schema.json, Chart 0.2.0, tools/configcheck, helm.yml CI).
+  S4-7 flowlog MaxLogRecordsPerWindow cap + logs_dropped counter + stream MaxBodyBytes cap.
+  S4-8 deploy/alerts/ (9 Prometheus rules, OTLP-normalized names).
 
 --------------------------------------------------------------------------------
-12. SESSION LOG + LEARNINGS  (session 4 EXECUTION, 2026-06-03)
+H3. SESSION 2 LOG + LEARNINGS (2026-06-02)
 --------------------------------------------------------------------------------
-Executed the §7b backlog with strict TDD (stdlib testing + internal/telemetrytest only),
-verifying the WHOLE module green (go build/vet ./..., gofmt -l empty, go test -race ./...)
-and committing a green state after every phase. Phased by the IMPORT GRAPH per the
-session-3 warnings. Commits on main (on top of cc00c3d):
-  99aa13c  Phase A (SOLO): S4-1 native log EventName + S4-4 cumulative temporality pin
-  3e58419  Phase B leaves (parallel workflow): S4-2 nodemetrics auth/TLS + S4-7 flowlog cap
-  5caba8d  S4-3 webhook<->audit cross-dedup (solo) + S4-7 stream body cap (solo)
-  f83dd57  docs(todos): S4-11 webhook-enrichment backlog (user-prompted research)
-  9ac6e7b  Phase C (SOLO): config + app wiring for the Phase-B/S4-3 additions
-  db63b77  Phase D (parallel workflow): S4-5 renovate + S4-6 helm + S4-8 alerts + S4-2 docs
-  5da0b09  Review fixes: 5 adversarially-confirmed findings
+Built all P0 + P1-3/5/6 + P2-2(partial)/P2-3 + P4 by a phased parallel-workflow swarm
+(each agent ONE package; strict TDD), app-layer integration by hand. Commits: 701ce13,
+859ba93, bbcfc42.
 
-WHAT WAS DONE:
-  - S4-1: bumped the 5 OTEL log modules v0.6.0->v0.20.0; CONFIRMED zero core churn (otel
-    v1.44.0, grpc v1.81.1, protobuf v1.36.11 unchanged). emitter.go uses native
-    log.Record.SetEventName; telemetrytest.Recorder reads rec.EventName(); the two tests that
-    asserted the old event.name ATTRIBUTE now assert its ABSENCE; dead semconv.EventName removed.
-    P2-6 unblocked. REMAINING: re-verify the Loki label the native EventName produces (Grafana
-    Explore = source-of-truth) + migrate audit dashboard / grafana README / docs event_name —
-    folded into S4-9.
-  - S4-4: pinned cumulative temporality on BOTH otlpmetric{http,grpc} exporters + a unit test.
-  - S4-2: nodemetrics Target gained bearer_token/bearer_token_file/headers/tls{...}; per-target
-    *http.Client when TLS set (mirrors telemetry.tlsConfig), else shared client; bearer file read
-    fresh each scrape; default = plain GET. docs/node-metrics.md added.
-  - S4-7: flowlog MaxLogRecordsPerWindow caps LOG records per window (and per Process call) with a
-    visible tailscale.network.flow.logs_dropped counter; metrics NEVER capped. Stream MaxBodyBytes
-    guard (default 64MiB; <0 unlimited) bounds the DECOMPRESSED body -> 413 + rejected{too_large}
-    (anti-OOM/zip-bomb).
-  - S4-3: webhook<->audit cross-dedup. audit.NormalizedCrossKey = single key-format home;
-    audit.WithCrossDedup + webhook.WithDedup share one dedup.Set (first-seen-wins). Webhook maps
-    `type` -> audit (verb,subject) vocab + extracts a subject id, defaulting to NO dedup when it
-    can't confidently map (never over-suppresses). Off by default (webhook.dedup_audit_events).
-    Mapping/subjectID/time-bucket are best-effort, flagged for live tuning -> S4-10 + S4-11.
-  - Phase C: config structs + app wiring + config.example.yaml + a config-load test.
-  - S4-5 renovate.json (OTel lockstep group). S4-6 unconditional helm config helper + full config
-    in values.yaml (deep-merge overrides verified via helm template --set) + values.schema.json
-    (draft-07) + Chart 0.1.0->0.2.0 + CHANGELOG + SEPARATE tools/configcheck module (does not
-    touch main go.mod / go build ./...) + .github/workflows/helm.yml. S4-8 deploy/alerts/ (9 rules).
+REAL-TAILNET TESTING: lab = example.com; read-only creds + Grafana Cloud OTLP creds in the
+GITIGNORED .secrets/creds.local.env (`set -a; source .secrets/creds.local.env; set +a`).
+NEVER commit .secrets/, .capture/, or config.{local,smoke,lowlog}.yaml. Real API captures
+in .capture/ for fixtures. Tailnet: 89 devices, flow logging ON, posture ON.
 
-ORCHESTRATION (ultracode): shared/foundational work SOLO (Phase A telemetry+go.mod; Phase C
-config+app; S4-3 spans dedup+audit+webhook). Import-INDEPENDENT leaves fanned out as parallel
-Workflows (Phase B: nodemetrics+flowlog; Phase D: helm+alerts+docs), each agent owning ONE
-package/path + building only its own. After EVERY workflow I re-verified the WHOLE module myself.
-A final 5-dimension adversarial review (find -> refute-by-default verify; 13 agents) produced 8
-candidates; the 5 confirmed real were all fixed (5da0b09): Helm empty-secret footgun (empty
-webhook.secret SKIPS HMAC -> documented + surfaced in values.yaml), a non-discriminating TLS test
-(rewritten as a 2-target differentiator), a missing flow-cap test on the standalone Process()
-path, an orphaned values.schema.json property (CI fail-on-diff risk), and an undocumented
-logs_dropped metric.
+4 PRODUCTION-BREAKING BUGS found ONLY against real data (synthetic fixtures missed them):
+  1. flow-log `proto` is a NUMBER on the wire (1/6/17/99/absent), not a string → `Proto
+     string` made json.Decode FAIL → flow polling silently emitted NOTHING. Fixed:
+     ConnectionCounts.Proto int + transportName() IANA→name mapper.
+  2. audit old/new are POLYMORPHIC (string|object|array|null) → `string` failed to decode.
+     Fixed: json.RawMessage + renderRaw().
+  3. OTLP/HTTP to Grafana Cloud 404'd: otlphttp WithEndpointURL uses the path AS-IS, does
+     NOT append /v1/metrics. Fixed: otlpHTTPURL() appends /v1/{metrics,logs}.
+  4. graceful SIGINT returned context.Canceled → nonzero exit. Fixed: app.Run treats a ctx
+     error from the scheduler as a clean stop.
 
+KEY WIN: raw `GET /devices?fields=all` (tsapi.DevicesRich) returns far richer data than
+tsclient.Device — connectedToControl, per-DERP latency, advertised/enabled routes INLINE,
+distro/os.version, nodeId (nDdi form, keys the cache byNode).
+
+GRAFANA CLOUD (gcx context example, Grafana 13.1.0): metrics → Mimir (ds grafanacloud-prom);
+logs → Loki (ds grafanacloud-logs, label service_name="tailscale2otel"). OTLP→Prom
+normalization: dots→`_`, counters +`_total`, units suffix (By→_bytes, s→_seconds, d→_days),
+UNIT "1" gauges +`_ratio` (e.g. tailscale_device_online_ratio, tailscale2otel_up_ratio).
+gcx GOTCHA: `gcx logs query` needs BOTH --from AND --to; Grafana Explore is source-of-truth.
+
+ORCHESTRATION LEARNINGS: phase by the IMPORT GRAPH — shared-dep packages (telemetry,
+collector top-level, telemetrytest, config, semconv) editing CONCURRENTLY with leaf agents
+causes transient compile races; sequence shared changes BEFORE the leaf fan-out. Type
+changes ripple to CONSUMER test fixtures in OTHER packages. Always verify the WHOLE module +
+commit a GREEN state between phases.
+
+--------------------------------------------------------------------------------
+H4. SESSION 3 LOG + LEARNINGS (2026-06-03)
+--------------------------------------------------------------------------------
+Did every remaining actionable todo (P1-1/1-2/1-4, P2-1/2-2, P3, P4, P5) + the P2-4 closed
+decision. Phased import-graph-aware parallel workflow + app wiring by hand. Module green;
+binary smoke-tested (boot → /healthz 200 → up=1 + build_info → clean SIGINT exit 0).
+NEW: nodemetrics scraper; shared dedup.Set on audit+flowlog; flow node.hostname (P5);
+tsapi.ConfigureLogStream PUT + autoConfigureStreaming (fixed a retry-transport GetBody-rewind
+bug); 4 grafana dashboards + README; docs/metrics.md; streaming.public_url + example refresh.
+CLOSED: P2-4 per-device Resource deferred; P3 node identity = labels; P2-6 unblocked → S4-1.
+
+--------------------------------------------------------------------------------
+H5. SESSION 4 LOG + LEARNINGS (2026-06-03: planning/research THEN execution)
+--------------------------------------------------------------------------------
+PLANNING (no code): a 5-agent web-research fan-out + local `go doc` probe scoped the S4
+backlog with evidence in H6. Headline: P2-6 unblocked (log v0.20.0 has native EventName,
+core stays v1.44.0).
+
+EXECUTION: implemented S4-1…S4-8 with strict TDD, phased by the import graph, committing a
+green state per phase. Commits on main (on cc00c3d), then merge e1e8d59 (origin Renovate PR):
+  99aa13c Phase A SOLO: S4-1 native EventName + S4-4 temporality pin
+  3e58419 Phase B leaves (parallel wf): S4-2 nodemetrics auth/TLS + S4-7 flowlog cap
+  5caba8d S4-3 cross-dedup (solo) + S4-7 stream body cap (solo)
+  f83dd57 docs: S4-11 backlog (user-prompted webhook research)
+  9ac6e7b Phase C SOLO: config + app wiring
+  db63b77 Phase D (parallel wf): S4-5 renovate + S4-6 helm + S4-8 alerts + S4-2 docs
+  5da0b09 Review fixes: 5 adversarially-confirmed findings
+ORCHESTRATION: shared/foundational work SOLO (Phase A telemetry+go.mod; Phase C config+app;
+S4-3 spans dedup+audit+webhook). Import-independent leaves via parallel Workflows; re-verified
+the WHOLE module after each. A 13-agent adversarial review (find → refute-by-default) gave 8
+candidates; the 5 confirmed real were fixed (5da0b09): Helm empty-secret→HMAC-skip footgun
+(documented + surfaced in values.yaml); a non-discriminating TLS test (rewritten as a 2-target
+differentiator); a missing flow-cap test on the standalone Process() path; an orphaned
+values.schema.json property (CI fail-on-diff risk); an undocumented logs_dropped metric.
 LEARNINGS:
-  - gopls/LSP lags a go.mod version bump — its "undefined method" diagnostics were STALE; the
-    compiler (go build / go doc) is the source of truth (verified v0.20.0 native methods via go doc).
-  - A build-tag-only Go package breaks `go build ./...`; the CI configcheck is therefore a SEPARATE
-    module (tools/configcheck/go.mod + replace ../..) which `./...` naturally excludes.
-  - Webhook<->audit cross-dedup needs LIVE capture to be effective (no webhook captures exist; IDs
-    likely differ across sources) — built+tested the mechanism, deferred tuning. User-prompted
-    research found client-misconfig + Tailnet-Lock webhook events have NO log-streaming equivalent
-    and the WARN heuristic misses them -> S4-11.
+  - gopls/LSP lags a go.mod version bump (STALE "undefined method" diagnostics); the compiler
+    (go build / go doc) is source-of-truth — verified the v0.20.0 native methods via go doc.
+  - A build-tag-only Go package breaks `go build ./...`; the CI configcheck is a SEPARATE
+    module (own go.mod + replace ../..) which `./...` naturally excludes.
+  - webhook↔audit cross-dedup needs LIVE capture to actually be effective (no webhook captures
+    exist; IDs likely differ across sources) — built+tested the mechanism, deferred tuning (S4-11).
+  - renovate.json: the repo already had Renovate (PR #2); reconciled by keeping the user's
+    config + ADDING the OTel lockstep group (build-break safety).
 
-CI CAVEATS (S4-6, could NOT run locally — helm-docs + losisin not installed): the first CI run may
-diff the hand-authored README.md / values.schema.json; let them regenerate and commit the baseline,
-after which fail-on-diff is stable. helm lint + helm template DID render cleanly locally.
+--------------------------------------------------------------------------------
+H6. SESSION-4 RESEARCH FINDINGS (evidence for S4-9/10/11; backs completed S4 items)
+--------------------------------------------------------------------------------
+H6.1 OTEL LOG SDK (S4-1, DONE). log v0.20.0 (2026-05-27) built from the SAME commit as core
+  v1.44.0; pins otel v1.44.0/grpc v1.81.1/protobuf v1.36.11/proto-otlp v1.10.0 — all ours →
+  zero core churn. `go doc` confirmed Record.EventName()/SetEventName(). No breaking changes
+  affect us (the breakers are in the sdk/log Processor EXTENSION API we don't use).
+  otlploggrpc/stdoutlog v0.12.0 are RETRACTED (broken logtest dep); v0.20.0 skips them.
+  RISK (→ S4-9): anything querying the `event.name` LOG ATTRIBUTE in Loki must migrate to the
+  native EventName (incl. tailscale-audit-events.json `event_name`).
 
-PENDING (LIVE, by hand, sequential — need example lab creds + a user go-ahead; NOT yet run):
-  - S4-9: re-verify session-3 additions + the S4-1 native-EventName Loki label in Grafana Cloud;
-    migrate the audit dashboard/README/docs event_name; confirm flow hostname + cross-source dedup
-    + the 4 dashboards vs real series. (nodemetrics live check stays skipped — lab scraping off.)
-  - S4-10: stand up the HTTPS stream receiver on the tailnet, point example log streaming at it (LAB
-    ONLY), capture a real Splunk-HEC body -> sanitized fixture -> tighten the parser.
-  SAFETY: only the example LAB may be reconfigured; auto_configure must NEVER target a real tailnet.
-  Push to origin is deferred until the user confirms.
+H6.2 GRAFANA CLOUD TEMPORALITY + HISTOGRAMS (S4-4, DONE). Mimir/Grafana Cloud OTLP accept
+  CUMULATIVE ONLY (delta → HTTP 400, mimir#6696; server-side delta is an open FR, mimir#10439).
+  Explicit-bucket histograms stored as classic _bucket/_sum/_count (NHCB needs a distributor
+  flag you can't toggle on hosted GC) → KEEP flattening; reconstructing native/exponential
+  histograms would lose tailscaled's explicit buckets. Act only on cardinality cost.
+
+H6.3 TAILSCALED NODE METRICS (S4-2, DONE). Client metrics since v1.78.0: `tailscale set
+  --webclient` → Prometheus-text /metrics. Local http://100.100.100.100/metrics (quad-100);
+  tailnet http://<tsIP>:5252/metrics. PLAIN HTTP, NO token/TLS — access = a tailnet ACL/grant
+  opening port 5252 ({"grants":[{"src":["tag:monitoring"],"dst":["tag:server"],"ip":["5252"]}]}).
+  CLI alts: `tailscale metrics print|write`. tailscaled --debug=localhost:8080 → /debug/metrics
+  (localhost-only, unauthenticated, UNSTABLE superset — prefer client metrics). Documented
+  families: counters tailscaled_{inbound,outbound}_{packets,bytes}_total, _dropped_packets_total,
+  _peer_relay_forwarded_{packets,bytes}_total; gauges tailscaled_{advertised,approved}_routes,
+  _peer_relay_endpoints, _health_messages, _home_derp_region_id. Throughput counters carry a
+  `path` label (direct_ipv4/ipv6, derp, peer_relay_ipv4/ipv6) → cardinality = nodes×path×metric.
+  Nodes < v1.78 → node.up=0. (Per-target auth/TLS fields built in S4-2.)
+
+H6.4 RENOVATE (S4-5, DONE). config:best-practices; CRITICAL OTel lockstep group (core v1.x +
+  0.x log modules in ONE PR or the build breaks); 0.x minors never automerged; osvVulnerability
+  Alerts; minimumReleaseAge 3d. (The shipped renovate.json reconciles this with the repo's
+  existing Renovate PR #2 config — see H5.) go 1.26 handled via go-version-file.
+
+H6.5 HELM CONFIG AUTOMATION (S4-6, DONE). Helm validates draft-07 ONLY (helm#13069) → schema is
+  draft-07. Generate values.schema.json with losisin/helm-values-schema-json (NOT
+  invopop/jsonschema — emits 2020-12, reads json tags while our struct uses yaml tags). The
+  generator + helm-docs are CI tools (a separate module, no runtime dep). Cross-field rules that
+  draft-07 can't express stay in config.Load, exercised by tools/configcheck.
+
+H6.6 TAILSCALE WEBHOOKS (S4-11, PENDING). Authoritative catalog
+  https://tailscale.com/kb/1213/webhooks#events. Webhooks carry client-misconfig/health
+  (exitNodeIPForwardingNotEnabled, subnetIPForwardingNotEnabled) + Tailnet-Lock (nodeNeedsSignature,
+  nodeSigned) events with NO log-streaming equivalent. Documented data fields: node*={nodeID,
+  deviceName,managedBy,actor,url}; nodeKey* adds {expiration}; user*={user,url,actor};
+  userRoleUpdated adds {oldRoles,newRoles}; policyUpdate={newPolicy,oldPolicy,url,actor};
+  test=null. The `actor` field matches the config-audit actor format (strongest cross-source
+  join key). UNCONFIRMED: the two misconfig events' data payloads (no example) — need a live
+  capture (S4-10). userSuspended/userDeleted are NOT in the docs (userDeleted only in a Pulumi
+  sample) — verify vs a live subscription. No billing/connect-disconnect/route-change webhooks
+  exist (FRs: tailscale/tailscale#15638, #11166). Full action items in section 7 (S4-11).
 ================================================================================
