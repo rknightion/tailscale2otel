@@ -43,7 +43,6 @@ WHAT REMAINS (see section 7 for detail):
           migration). Needs m7kni lab creds + a user go-ahead.
   • S4-10 LIVE stream-envelope capture (lab-authorized) → tighten the parser.
   • S4-11 Webhook enrichment (severity/data-field/dedup-map correctness).
-  • Helm CI baseline: helm-docs + losisin schema first-run baselines.
 
 --------------------------------------------------------------------------------
 3. HARD CONSTRAINTS (evergreen — always read)
@@ -302,11 +301,8 @@ S4-11 [P1] WEBHOOK ENRICHMENT — severity, data-field pinning, dedup-map correc
      undocumented. No billing/connect-disconnect/route-change webhooks exist (FRs only:
      tailscale/tailscale#15638, #11166). TDD via telemetrytest; pair with S4-10.
 
-HELM CI BASELINE [P2 / chore] — .github/workflows/helm.yml runs helm-docs and
-     losisin/helm-values-schema-json in fail-on-diff mode. The committed README.md /
-     values.schema.json are hand-authored baselines; on the FIRST CI run let those tools
-     regenerate and commit the canonical output, after which fail-on-diff is stable.
-     (helm lint + helm template DO render cleanly today.)
+(The Helm CI baseline chore is DONE — deploy/helm README.md + values.schema.json were
+regenerated with the real helm-docs + losisin tools; see H5.)
 
 --------------------------------------------------------------------------------
 8. HOW TO CONTINUE (workflow for the LLM)
@@ -464,6 +460,10 @@ LEARNINGS:
     exist; IDs likely differ across sources) — built+tested the mechanism, deferred tuning (S4-11).
   - renovate.json: the repo already had Renovate (PR #2); reconciled by keeping the user's
     config + ADDING the OTel lockstep group (build-break safety).
+  - Helm baselines: installed helm-docs 1.14.2 (brew) + helm-values-schema-json v2.4.0 (go
+    install — losisin's brew tap is blocked by a Workbrew git-credential quirk) and
+    regenerated deploy/helm README.md + values.schema.json from the REAL tools so helm.yml's
+    fail-on-diff CI is stable (the actions @v1/@v2 track the same tool majors).
 
 --------------------------------------------------------------------------------
 H6. SESSION-4 RESEARCH FINDINGS (evidence for S4-9/10/11; backs completed S4 items)

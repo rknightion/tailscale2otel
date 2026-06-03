@@ -1,183 +1,536 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "Helm validates JSON Schema draft-07 ONLY (see helm/helm#13069). CI regenerates this file with losisin/helm-values-schema-json in --check/fail-on-diff mode; this committed copy is the baseline. additionalProperties is permissive so valid overrides are never rejected; cross-field config rules are enforced at runtime by internal/config.Load (exercised by tools/configcheck), not here.",
-  "title": "tailscale2otel Helm values",
-  "type": "object",
-  "additionalProperties": true,
-  "properties": {
-    "image": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "repository": { "type": "string" },
-        "tag": { "type": "string" },
-        "pullPolicy": {
-          "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never"]
-        }
-      }
-    },
-    "imagePullSecrets": {
-      "type": "array",
-      "items": { "type": "object" }
-    },
-    "replicaCount": { "type": "integer", "minimum": 0 },
-    "nameOverride": { "type": "string" },
-    "fullnameOverride": { "type": "string" },
-    "serviceAccount": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "create": { "type": "boolean" },
-        "name": { "type": "string" },
-        "annotations": { "type": "object" }
-      }
-    },
-    "podAnnotations": { "type": "object" },
-    "podLabels": { "type": "object" },
-    "podSecurityContext": { "type": "object", "additionalProperties": true },
-    "securityContext": { "type": "object", "additionalProperties": true },
-    "resources": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "requests": { "type": "object", "additionalProperties": true },
-        "limits": { "type": "object", "additionalProperties": true }
-      }
-    },
-    "nodeSelector": { "type": "object" },
-    "tolerations": { "type": "array" },
-    "affinity": { "type": "object" },
-    "existingSecret": { "type": "string" },
-    "secret": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
-    },
-    "config": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "log_level": {
-          "type": "string",
-          "enum": ["debug", "info", "warn", "error"]
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "affinity": {
+            "type": "object"
         },
-        "tailscale": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "tailnet": { "type": "string" },
-            "auth": {
-              "type": "object",
-              "additionalProperties": true,
-              "properties": {
-                "method": {
-                  "type": "string",
-                  "enum": ["oauth", "apikey"]
+        "config": {
+            "type": "object",
+            "properties": {
+                "admin": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "listen": {
+                            "type": "string"
+                        }
+                    }
                 },
-                "oauth": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "properties": {
-                    "client_id": { "type": "string" },
-                    "client_secret": { "type": "string" },
-                    "scopes": {
-                      "type": "array",
-                      "items": { "type": "string" }
-                    },
-                    "token_url": { "type": "string" }
-                  }
+                "cardinality": {
+                    "type": "object",
+                    "properties": {
+                        "collapse_external": {
+                            "type": "boolean"
+                        },
+                        "flow_include_ports": {
+                            "type": "boolean"
+                        },
+                        "flow_node_dims": {
+                            "type": "boolean"
+                        }
+                    }
                 },
-                "apikey": { "type": "string" }
-              }
-            },
-            "http": { "type": "object", "additionalProperties": true }
-          }
-        },
-        "otlp": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "protocol": {
-              "type": "string",
-              "enum": ["http", "grpc", "stdout"]
-            },
-            "endpoint": { "type": "string" },
-            "grafana_cloud": {
-              "type": "object",
-              "additionalProperties": true,
-              "properties": {
-                "instance_id": { "type": "string" },
-                "token": { "type": "string" }
-              }
-            },
-            "headers": { "type": "object" },
-            "tls": { "type": "object", "additionalProperties": true },
-            "metric_interval": { "type": "string" }
-          }
-        },
-        "enrichment": { "type": "object", "additionalProperties": true },
-        "cardinality": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "flow_include_ports": { "type": "boolean" },
-            "flow_node_dims": { "type": "boolean" },
-            "collapse_external": { "type": "boolean" }
-          }
-        },
-        "collectors": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "devices": { "type": "object", "additionalProperties": true },
-            "flowlogs": { "type": "object", "additionalProperties": true },
-            "auditlogs": { "type": "object", "additionalProperties": true },
-            "users": { "type": "object", "additionalProperties": true },
-            "keys": { "type": "object", "additionalProperties": true },
-            "settings": { "type": "object", "additionalProperties": true },
-            "acl": { "type": "object", "additionalProperties": true },
-            "dns": { "type": "object", "additionalProperties": true },
-            "node_metrics": {
-              "type": "object",
-              "additionalProperties": true,
-              "properties": {
-                "enabled": { "type": "boolean" },
-                "interval": { "type": "string" },
-                "timeout": { "type": "string" },
-                "targets": { "type": "array" }
-              }
+                "checkpoint": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string"
+                        },
+                        "store": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "collectors": {
+                    "type": "object",
+                    "properties": {
+                        "acl": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "auditlogs": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "initial_lookback": {
+                                    "type": "string"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                },
+                                "lag": {
+                                    "type": "string"
+                                },
+                                "max_window": {
+                                    "type": "string"
+                                },
+                                "source": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "devices": {
+                            "type": "object",
+                            "properties": {
+                                "collect_posture": {
+                                    "type": "boolean"
+                                },
+                                "collect_routes": {
+                                    "type": "boolean"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "dns": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "flowlogs": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "initial_lookback": {
+                                    "type": "string"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                },
+                                "lag": {
+                                    "type": "string"
+                                },
+                                "log_mode": {
+                                    "type": "string"
+                                },
+                                "max_log_records_per_window": {
+                                    "type": "integer"
+                                },
+                                "max_window": {
+                                    "type": "string"
+                                },
+                                "source": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "keys": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "expiry_warn": {
+                                    "type": "string"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "node_metrics": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                },
+                                "targets": {
+                                    "type": "array"
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "settings": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "users": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
+                "enrichment": {
+                    "type": "object",
+                    "properties": {
+                        "cache_ttl": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "log_level": {
+                    "type": "string"
+                },
+                "otlp": {
+                    "type": "object",
+                    "properties": {
+                        "endpoint": {
+                            "type": "string"
+                        },
+                        "grafana_cloud": {
+                            "type": "object",
+                            "properties": {
+                                "instance_id": {
+                                    "type": "string"
+                                },
+                                "token": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "type": "object"
+                        },
+                        "metric_interval": {
+                            "type": "string"
+                        },
+                        "protocol": {
+                            "type": "string"
+                        },
+                        "tls": {
+                            "type": "object",
+                            "properties": {
+                                "ca_file": {
+                                    "type": "string"
+                                },
+                                "cert_file": {
+                                    "type": "string"
+                                },
+                                "insecure": {
+                                    "type": "boolean"
+                                },
+                                "key_file": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
+                "self_observability": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                "streaming": {
+                    "type": "object",
+                    "properties": {
+                        "auto_configure": {
+                            "type": "boolean"
+                        },
+                        "decompress": {
+                            "type": "string"
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "listen": {
+                            "type": "string"
+                        },
+                        "max_body_bytes": {
+                            "type": "integer"
+                        },
+                        "path": {
+                            "type": "string"
+                        },
+                        "public_url": {
+                            "type": "string"
+                        },
+                        "tls": {
+                            "type": "object",
+                            "properties": {
+                                "cert_file": {
+                                    "type": "string"
+                                },
+                                "key_file": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "token": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "tailscale": {
+                    "type": "object",
+                    "properties": {
+                        "auth": {
+                            "type": "object",
+                            "properties": {
+                                "apikey": {
+                                    "type": "string"
+                                },
+                                "method": {
+                                    "type": "string"
+                                },
+                                "oauth": {
+                                    "type": "object",
+                                    "properties": {
+                                        "client_id": {
+                                            "type": "string"
+                                        },
+                                        "client_secret": {
+                                            "type": "string"
+                                        },
+                                        "scopes": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "token_url": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "http": {
+                            "type": "object",
+                            "properties": {
+                                "rate_limit": {
+                                    "type": "integer"
+                                },
+                                "retry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "base_delay": {
+                                            "type": "string"
+                                        },
+                                        "max_attempts": {
+                                            "type": "integer"
+                                        },
+                                        "max_delay": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "tailnet": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "webhook": {
+                    "type": "object",
+                    "properties": {
+                        "dedup_audit_events": {
+                            "type": "boolean"
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "listen": {
+                            "type": "string"
+                        },
+                        "path": {
+                            "type": "string"
+                        },
+                        "secret": {
+                            "type": "string"
+                        }
+                    }
+                }
             }
-          }
         },
-        "checkpoint": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "store": {
-              "type": "string",
-              "enum": ["memory", "file"]
-            },
-            "file_path": { "type": "string" }
-          }
+        "existingSecret": {
+            "type": "string"
         },
-        "streaming": { "type": "object", "additionalProperties": true },
-        "webhook": { "type": "object", "additionalProperties": true },
-        "self_observability": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "enabled": { "type": "boolean" }
-          }
+        "fullnameOverride": {
+            "type": "string"
         },
-        "admin": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "enabled": { "type": "boolean" },
-            "listen": { "type": "string" }
-          }
+        "image": {
+            "type": "object",
+            "properties": {
+                "pullPolicy": {
+                    "type": "string"
+                },
+                "repository": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                }
+            }
+        },
+        "imagePullSecrets": {
+            "type": "array"
+        },
+        "nameOverride": {
+            "type": "string"
+        },
+        "nodeSelector": {
+            "type": "object"
+        },
+        "podAnnotations": {
+            "type": "object"
+        },
+        "podLabels": {
+            "type": "object"
+        },
+        "podSecurityContext": {
+            "type": "object",
+            "properties": {
+                "runAsNonRoot": {
+                    "type": "boolean"
+                },
+                "seccompProfile": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "replicaCount": {
+            "type": "integer"
+        },
+        "resources": {
+            "type": "object",
+            "properties": {
+                "limits": {
+                    "type": "object",
+                    "properties": {
+                        "cpu": {
+                            "type": "string"
+                        },
+                        "memory": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "requests": {
+                    "type": "object",
+                    "properties": {
+                        "cpu": {
+                            "type": "string"
+                        },
+                        "memory": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "secret": {
+            "type": "object",
+            "properties": {
+                "GC_INSTANCE_ID": {
+                    "type": "string"
+                },
+                "GC_OTLP_TOKEN": {
+                    "type": "string"
+                },
+                "TS_API_KEY": {
+                    "type": "string"
+                },
+                "TS_OAUTH_CLIENT_ID": {
+                    "type": "string"
+                },
+                "TS_OAUTH_CLIENT_SECRET": {
+                    "type": "string"
+                },
+                "TS_STREAM_HEC_TOKEN": {
+                    "type": "string"
+                },
+                "TS_TAILNET": {
+                    "type": "string"
+                },
+                "TS_WEBHOOK_SECRET": {
+                    "type": "string"
+                }
+            }
+        },
+        "securityContext": {
+            "type": "object",
+            "properties": {
+                "allowPrivilegeEscalation": {
+                    "type": "boolean"
+                },
+                "capabilities": {
+                    "type": "object",
+                    "properties": {
+                        "drop": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "readOnlyRootFilesystem": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "serviceAccount": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "type": "object"
+                },
+                "create": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "tolerations": {
+            "type": "array"
         }
-      }
     }
-  }
 }
