@@ -245,6 +245,85 @@ func TestNewApp_WiresSharedFlowDedup(t *testing.T) {
 	}
 }
 
+// TestNewApp_WiresWebhookAuditCrossDedup verifies that with
+// webhook.dedup_audit_events on, the app shares ONE cross-source dedup set
+// between the audit processor and the webhook server, so a change reported by
+// both is counted once (the webhook copy is suppressed).
+func TestNewApp_WiresWebhookAuditCrossDedup(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Webhook.Enabled = true
+	cfg.Webhook.Path = "/webhook"
+	cfg.Webhook.DedupAuditEvents = true
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	if a.webhookSrv == nil {
+		t.Fatal("webhook server not built")
+	}
+	if a.webhookDedup == nil {
+		t.Fatal("cross-source dedup set not wired with dedup_audit_events on")
+	}
+
+	// Audit records the NODE/CREATE/n1 change at the matching second.
+	a.auditProc.Process(audit.Event{
+		EventTime: time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
+		Action:    "CREATE",
+		Target:    audit.Target{ID: "n1", Type: "NODE"},
+		Actor:     audit.Actor{LoginName: "a@example.com"},
+	}, rec.Emitter())
+
+	// A webhook for the SAME change must be suppressed by the shared set.
+	body := `[{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"m","data":{"nodeID":"n1"}}]`
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	a.webhookSrv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("webhook POST status = %d, want 200", w.Code)
+	}
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.webhook.nodeCreated" {
+			t.Fatal("webhook nodeCreated was NOT suppressed by cross-source dedup")
+		}
+	}
+}
+
+// TestNewApp_WebhookCrossDedupOffByDefault verifies the cross-source set is NOT
+// wired without the flag, so both sources emit (back-compat).
+func TestNewApp_WebhookCrossDedupOffByDefault(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Webhook.Enabled = true
+	cfg.Webhook.Path = "/webhook"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+	if a.webhookDedup != nil {
+		t.Fatal("cross-source dedup set wired without the flag")
+	}
+
+	a.auditProc.Process(audit.Event{
+		EventTime: time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
+		Action:    "CREATE",
+		Target:    audit.Target{ID: "n1", Type: "NODE"},
+		Actor:     audit.Actor{LoginName: "a@example.com"},
+	}, rec.Emitter())
+
+	body := `[{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"m","data":{"nodeID":"n1"}}]`
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	a.webhookSrv.Handler().ServeHTTP(w, req)
+
+	var found bool
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.webhook.nodeCreated" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("webhook nodeCreated suppressed despite dedup_audit_events off")
+	}
+}
+
 // TestApp_RunGracefulShutdown is the app-level integration test (P1-5): assemble
 // an App via the newApp seam with an in-memory emitter and a stub Tailscale
 // server, run it briefly, and confirm a cancelled context produces a CLEAN

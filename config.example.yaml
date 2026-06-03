@@ -41,7 +41,9 @@ cardinality:
 collectors:
   # source: poll | stream | both  (stream uses the receiver below)
   devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
-  flowlogs:  { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h, log_mode: per_connection }
+  # max_log_records_per_window caps flow LOG records per poll window (0 = unlimited);
+  # excess is counted into tailscale.network.flow.logs_dropped. Metrics are never capped.
+  flowlogs:  { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h, log_mode: per_connection, max_log_records_per_window: 0 }
   auditlogs: { enabled: true, source: poll, interval: 60s, lag: 60s,  initial_lookback: 5m, max_window: 6h }
   users:     { enabled: true, interval: 300s }
   keys:      { enabled: true, interval: 300s, expiry_warn: 168h }   # warn when a key expires within 7d
@@ -60,6 +62,12 @@ collectors:
       # - url: "http://100.64.0.10:5252/metrics"
       #   instance: "relay-1"          # defaults to the URL host:port if omitted
       #   labels: { role: "relay" }    # extra static labels merged onto every series
+      # Optional per-target auth/TLS for PROXIED/HTTPS targets (native tailscaled
+      # endpoints are plain HTTP and need none of this):
+      # - url: "https://relay-2.ts.net:5252/metrics"
+      #   bearer_token_file: "/run/secrets/scrape-token"   # read fresh each scrape; or bearer_token: "..."
+      #   headers: { X-Scope-OrgID: "1" }
+      #   tls: { ca_file: "/etc/ssl/ca.pem", server_name: "relay-2.ts.net", insecure_skip_verify: false }
 
 checkpoint:
   store: memory                      # memory | file
@@ -77,6 +85,7 @@ streaming:
   # PUT this receiver as a Splunk-HEC log-streaming sink on startup. Needs enabled:
   # true, public_url, and an OAuth client with the log_streaming scope. Off by default.
   auto_configure: false
+  max_body_bytes: 0                  # cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed)
 
 # Optional webhook receiver for real-time Tailscale events.
 webhook:
@@ -84,6 +93,7 @@ webhook:
   listen: ":8089"
   path: "/tailscale/webhook"
   secret: "${TS_WEBHOOK_SECRET}"     # HMAC-SHA256 verification
+  dedup_audit_events: false          # best-effort: drop a webhook event already counted via the audit logs
 
 self_observability:
   enabled: true                      # emit the exporter's own health metrics

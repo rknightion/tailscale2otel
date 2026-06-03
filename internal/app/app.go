@@ -49,11 +49,12 @@ type App struct {
 	sched    *collector.Scheduler
 	logger   *slog.Logger
 
-	flowProc   *flowlog.Processor
-	auditProc  *audit.Processor
-	streamSrv  *stream.Server
-	webhookSrv *webhook.Server
-	adminSrv   *http.Server
+	flowProc     *flowlog.Processor
+	auditProc    *audit.Processor
+	streamSrv    *stream.Server
+	webhookSrv   *webhook.Server
+	webhookDedup *dedup.Set // shared cross-source set (webhook<->audit); nil unless enabled
+	adminSrv     *http.Server
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -123,7 +124,15 @@ func newApp(
 	fopts := flowOptions(cfg)
 	fopts.Dedup = dedup.New(flowDedupCapacity)
 	a.flowProc = flowlog.NewProcessor(a.cache, fopts)
-	a.auditProc = audit.NewProcessor(audit.WithDedup(dedup.New(auditDedupCapacity)))
+	auditOpts := []audit.Option{audit.WithDedup(dedup.New(auditDedupCapacity))}
+	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents {
+		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook
+		// and the audit logs is counted once. Off by default; the same set is
+		// handed to the webhook server in buildReceivers.
+		a.webhookDedup = dedup.New(auditDedupCapacity)
+		auditOpts = append(auditOpts, audit.WithCrossDedup(a.webhookDedup))
+	}
+	a.auditProc = audit.NewProcessor(auditOpts...)
 	a.registerCollectors()
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
