@@ -1,0 +1,53 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "timezone": "Europe/London",
+  "schedule": ["before 6am on monday"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 10,
+  "labels": ["dependencies"],
+  "semanticCommitType": "chore",
+  "separateMinorPatch": true,
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": ["dependencies", "security"],
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["go.opentelemetry.io/otel{,/**}"],
+      "groupName": "OpenTelemetry",
+      "automerge": false
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchCurrentVersion": "< 1.0.0",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": false
+    },
+    {
+      "matchManagers": ["github-actions", "dockerfile"],
+      "matchUpdateTypes": ["patch", "pin", "pinDigest", "digest"],
+      "automerge": true
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["indirect"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["golang"],
+      "matchUpdateTypes": ["major", "minor"],
+      "automerge": false
+    }
+  ],
+  "minimumReleaseAge": "3 days"
+}

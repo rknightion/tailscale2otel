@@ -1,34 +1,50 @@
 # Default values for tailscale2otel.
 
 image:
+  # -- Container image repository.
   repository: ghcr.io/rknightion/tailscale2otel
-  tag: ""              # defaults to .Chart.appVersion
+  # -- Image tag. Defaults to .Chart.appVersion when empty.
+  tag: ""
+  # -- Image pull policy.
   pullPolicy: IfNotPresent
+# -- Image pull secrets for private registries.
 imagePullSecrets: []
 
-replicaCount: 1        # keep at 1 — this is a singleton poller (no leader election)
+# -- Replica count. Keep at 1 — this is a singleton poller (no leader election);
+# scaling up would double-emit telemetry.
+replicaCount: 1
 
+# -- Override the chart name portion of resource names.
 nameOverride: ""
+# -- Fully override the generated resource names.
 fullnameOverride: ""
 
 serviceAccount:
+  # -- Create a ServiceAccount.
   create: true
+  # -- ServiceAccount name. Generated when empty.
   name: ""
+  # -- Annotations to add to the ServiceAccount.
   annotations: {}
 
+# -- Extra annotations for the pod.
 podAnnotations: {}
+# -- Extra labels for the pod.
 podLabels: {}
 
+# -- Pod-level security context.
 podSecurityContext:
   runAsNonRoot: true
   seccompProfile:
     type: RuntimeDefault
+# -- Container-level security context.
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
     drop: ["ALL"]
 
+# -- Resource requests and limits.
 resources:
   requests:
     cpu: 50m
@@ -37,36 +53,142 @@ resources:
     cpu: 500m
     memory: 256Mi
 
+# -- Node selector for pod scheduling.
 nodeSelector: {}
+# -- Tolerations for pod scheduling.
 tolerations: []
+# -- Affinity rules for pod scheduling.
 affinity: {}
 
 # --- Secrets ---
 # Provide credentials either inline here (rendered into a Secret) OR reference an
 # existing Secret via existingSecret. Inline values win only when existingSecret is "".
-existingSecret: ""     # name of a pre-created Secret exposing the env keys below
+# -- Name of a pre-created Secret exposing the env keys below. When set, no Secret is rendered.
+existingSecret: ""
+# -- Inline secret values rendered into a Secret and injected via envFrom. These keys back
+# the ${ENV} placeholders in `config` below.
 secret:
+  TS_TAILNET: ""
   TS_OAUTH_CLIENT_ID: ""
   TS_OAUTH_CLIENT_SECRET: ""
   TS_API_KEY: ""
   GC_INSTANCE_ID: ""
   GC_OTLP_TOKEN: ""
 
-# --- Tailscale ---
-tailscale:
-  tailnet: "-"         # "-" = the auth principal's default tailnet
-  authMethod: oauth    # oauth | apikey
+# --- App config ---
+# The FULL application config, rendered verbatim into a ConfigMap as config.yaml.
+# This is the single source of truth (kept in sync with config.example.yaml).
+# Strings support ${ENV} / $ENV expansion at runtime against the Secret above.
+# Helm deep-merges maps, so single-key overrides keep working, e.g.:
+#   --set config.log_level=debug
+#   --set config.collectors.flowlogs.interval=30s
+config:
+  # -- Log verbosity: debug | info | warn | error.
+  log_level: info
 
-# --- OTLP ---
-otlp:
-  protocol: http       # http | grpc | stdout
-  endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
-  metricInterval: 60s
+  tailscale:
+    # -- Tailnet name, or "-" for the auth principal's default tailnet.
+    tailnet: "${TS_TAILNET}"
+    auth:
+      # -- Auth method: oauth (recommended) | apikey.
+      method: oauth
+      oauth:
+        client_id: "${TS_OAUTH_CLIENT_ID}"
+        client_secret: "${TS_OAUTH_CLIENT_SECRET}"
+        scopes: ["all:read"]
+        token_url: "https://api.tailscale.com/api/v2/oauth/token"
+      # -- API key, used only when method: apikey.
+      apikey: "${TS_API_KEY}"
+    http:
+      timeout: 30s
+      retry: { max_attempts: 4, base_delay: 500ms, max_delay: 10s }
+      # -- Global requests/sec across all collectors (0 = unlimited).
+      rate_limit: 0
 
-# Full app config. This is rendered verbatim into a ConfigMap as config.yaml and
-# supports ${ENV} expansion against the Secret above. Leave null to use the
-# templated default (built from the values above); set to override entirely.
-config: null
+  otlp:
+    # -- Export protocol: http | grpc | stdout (stdout = local debug).
+    protocol: http
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    # Convenience for Grafana Cloud: expands to an "Authorization: Basic <base64(instance:token)>" header.
+    grafana_cloud:
+      instance_id: "${GC_INSTANCE_ID}"
+      token: "${GC_OTLP_TOKEN}"
+    # -- Extra raw headers (alternative to grafana_cloud).
+    headers: {}
+    tls: { insecure: false, ca_file: "", cert_file: "", key_file: "" }
+    # -- How often metrics are pushed.
+    metric_interval: 60s
 
-selfObservability:
-  enabled: true
+  enrichment:
+    # -- Staleness alarm threshold for the device cache.
+    cache_ttl: 5m
+
+  cardinality:
+    # -- Keep ports OFF flow metrics (always on flow logs).
+    flow_include_ports: false
+    # -- Include src/dst device names on flow metrics.
+    flow_node_dims: true
+    # -- Bucket unresolved IPs as external/unknown.
+    collapse_external: true
+
+  collectors:
+    # source: poll | stream | both (stream uses the receiver below).
+    devices: { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
+    # max_log_records_per_window caps flow LOG records per poll window (0 = unlimited);
+    # excess is counted into tailscale.network.flow.logs_dropped. Metrics are never capped.
+    flowlogs: { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h, log_mode: per_connection, max_log_records_per_window: 0 }
+    auditlogs: { enabled: true, source: poll, interval: 60s, lag: 60s, initial_lookback: 5m, max_window: 6h }
+    users: { enabled: true, interval: 300s }
+    keys: { enabled: true, interval: 300s, expiry_warn: 168h }
+    settings: { enabled: true, interval: 600s }
+    acl: { enabled: true, interval: 600s }
+    dns: { enabled: true, interval: 600s }
+    # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
+    # them centrally over OTLP. Off by default; disabled when no targets are configured.
+    node_metrics:
+      enabled: false
+      interval: 60s
+      timeout: 10s
+      targets: []
+
+  checkpoint:
+    # -- Checkpoint store: memory | file.
+    store: memory
+    file_path: "/var/lib/tailscale2otel/checkpoints.json"
+
+  # Optional Splunk-HEC-compatible receiver for streamed logs (set a collector's source to stream).
+  streaming:
+    enabled: false
+    listen: ":8088"
+    path: "/services/collector/event"
+    # -- Expected as 'Authorization: Splunk <token>'.
+    token: "${TS_STREAM_HEC_TOKEN}"
+    # -- Externally reachable receiver URL; REQUIRED when auto_configure: true.
+    public_url: ""
+    tls: { cert_file: "", key_file: "" }
+    # -- Body decompression: auto | gzip | zstd | none.
+    decompress: auto
+    # -- PUT this receiver as a Splunk-HEC log-streaming sink on startup.
+    auto_configure: false
+    # -- Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed).
+    max_body_bytes: 0
+
+  # Optional webhook receiver for real-time Tailscale events.
+  webhook:
+    enabled: false
+    listen: ":8089"
+    path: "/tailscale/webhook"
+    # -- HMAC-SHA256 verification secret.
+    secret: "${TS_WEBHOOK_SECRET}"
+    # -- Best-effort: drop a webhook event already counted via the audit logs.
+    dedup_audit_events: false
+
+  self_observability:
+    # -- Emit the exporter's own health metrics.
+    enabled: true
+
+  # Always-on admin HTTP server for liveness/readiness probes (carries no Tailscale data).
+  admin:
+    enabled: false
+    # -- Serves /healthz and /readyz.
+    listen: ":9090"

@@ -218,7 +218,9 @@ dot becomes an underscore, so you filter on **`event_name`** in LogQL (e.g.
 
 The node metrics scraper (P3) is an **optional, gated** collector that scrapes the Prometheus
 metrics endpoint exposed by `tailscaled` on one or more nodes and forwards them through the same
-OTLP pipeline.
+OTLP pipeline. For how to expose those endpoints on each node (enabling `--webclient`, the `:5252`
+port, the required ACL grant, and per-target auth/TLS), see
+[How to expose `tailscaled` metrics](./node-metrics.md).
 
 Key behavior:
 
