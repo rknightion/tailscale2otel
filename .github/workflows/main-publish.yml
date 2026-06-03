@@ -72,7 +72,9 @@ jobs:
           build-args: |
             VERSION=main-${{ steps.vars.outputs.shortsha }}
 
-      - uses: sigstore/cosign-installer@v3
+      # Pinned to a full v4 tag: cosign-installer publishes no moving `v4` tag,
+      # and installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
+      - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: 'v3.0.6'
 
@@ -88,7 +90,9 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - uses: sigstore/cosign-installer@v3
+      # Pinned to a full v4 tag: cosign-installer publishes no moving `v4` tag,
+      # and installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
+      - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: 'v3.0.6'
 
