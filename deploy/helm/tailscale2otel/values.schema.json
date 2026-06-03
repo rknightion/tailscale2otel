@@ -1,0 +1,184 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Helm validates JSON Schema draft-07 ONLY (see helm/helm#13069). CI regenerates this file with losisin/helm-values-schema-json in --check/fail-on-diff mode; this committed copy is the baseline. additionalProperties is permissive so valid overrides are never rejected; cross-field config rules are enforced at runtime by internal/config.Load (exercised by tools/configcheck), not here.",
+  "title": "tailscale2otel Helm values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "replicaCount": { "type": "integer", "minimum": 0 },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "podAnnotations": { "type": "object" },
+    "podLabels": { "type": "object" },
+    "podSecurityContext": { "type": "object", "additionalProperties": true },
+    "securityContext": { "type": "object", "additionalProperties": true },
+    "resources": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "requests": { "type": "object", "additionalProperties": true },
+        "limits": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" },
+    "existingSecret": { "type": "string" },
+    "secret": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "log_level": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"]
+        },
+        "tailscale": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "tailnet": { "type": "string" },
+            "auth": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": ["oauth", "apikey"]
+                },
+                "oauth": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "client_id": { "type": "string" },
+                    "client_secret": { "type": "string" },
+                    "scopes": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "token_url": { "type": "string" }
+                  }
+                },
+                "apikey": { "type": "string" }
+              }
+            },
+            "http": { "type": "object", "additionalProperties": true }
+          }
+        },
+        "otlp": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "protocol": {
+              "type": "string",
+              "enum": ["http", "grpc", "stdout"]
+            },
+            "endpoint": { "type": "string" },
+            "grafana_cloud": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "instance_id": { "type": "string" },
+                "token": { "type": "string" }
+              }
+            },
+            "headers": { "type": "object" },
+            "tls": { "type": "object", "additionalProperties": true },
+            "metric_interval": { "type": "string" }
+          }
+        },
+        "enrichment": { "type": "object", "additionalProperties": true },
+        "cardinality": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "flow_include_ports": { "type": "boolean" },
+            "flow_node_dims": { "type": "boolean" },
+            "collapse_external": { "type": "boolean" }
+          }
+        },
+        "collectors": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "devices": { "type": "object", "additionalProperties": true },
+            "flowlogs": { "type": "object", "additionalProperties": true },
+            "auditlogs": { "type": "object", "additionalProperties": true },
+            "users": { "type": "object", "additionalProperties": true },
+            "keys": { "type": "object", "additionalProperties": true },
+            "settings": { "type": "object", "additionalProperties": true },
+            "acl": { "type": "object", "additionalProperties": true },
+            "dns": { "type": "object", "additionalProperties": true },
+            "node_metrics": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "interval": { "type": "string" },
+                "timeout": { "type": "string" },
+                "targets": { "type": "array" }
+              }
+            }
+          }
+        },
+        "checkpoint": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "store": {
+              "type": "string",
+              "enum": ["memory", "file"]
+            },
+            "file_path": { "type": "string" }
+          }
+        },
+        "streaming": { "type": "object", "additionalProperties": true },
+        "webhook": { "type": "object", "additionalProperties": true },
+        "self_observability": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "admin": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "listen": { "type": "string" }
+          }
+        }
+      }
+    },
+    "selfObservability": { "type": "object", "additionalProperties": true }
+  }
+}

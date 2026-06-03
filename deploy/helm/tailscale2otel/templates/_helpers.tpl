@@ -44,29 +44,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{/* The rendered config.yaml: explicit override, else built from values. */}}
+{{/*
+The rendered config.yaml. Always sourced from .Values.config so there is a single
+source of truth and no chart<->config drift. The full default config map lives in
+values.yaml under `config:`; Helm deep-merges maps, so single-key overrides
+(e.g. --set config.log_level=debug) keep working. Secrets stay as ${ENV}
+placeholders here and are expanded at runtime from the envFrom Secret.
+*/}}
 {{- define "tailscale2otel.config" -}}
-{{- if .Values.config -}}
 {{ .Values.config | toYaml }}
-{{- else -}}
-log_level: info
-tailscale:
-  tailnet: {{ .Values.tailscale.tailnet | quote }}
-  auth:
-    method: {{ .Values.tailscale.authMethod | quote }}
-    oauth:
-      client_id: "${TS_OAUTH_CLIENT_ID}"
-      client_secret: "${TS_OAUTH_CLIENT_SECRET}"
-      scopes: ["all:read"]
-    apikey: "${TS_API_KEY}"
-otlp:
-  protocol: {{ .Values.otlp.protocol | quote }}
-  endpoint: {{ .Values.otlp.endpoint | quote }}
-  grafana_cloud:
-    instance_id: "${GC_INSTANCE_ID}"
-    token: "${GC_OTLP_TOKEN}"
-  metric_interval: {{ .Values.otlp.metricInterval }}
-self_observability:
-  enabled: {{ .Values.selfObservability.enabled }}
-{{- end -}}
 {{- end -}}

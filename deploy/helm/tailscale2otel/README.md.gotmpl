@@ -1,0 +1,40 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.homepageLine" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+## Configuration
+
+The entire application config lives under a single top-level `config:` key in
+`values.yaml` (the single source of truth, kept in sync with
+`config.example.yaml`). It is rendered verbatim into a ConfigMap as `config.yaml`.
+Secrets are `${ENV}` placeholders expanded at runtime from the injected Secret.
+
+Helm deep-merges maps, so single-key overrides work without restating the rest:
+
+```sh
+helm install t deploy/helm/tailscale2otel \
+  --set secret.TS_OAUTH_CLIENT_ID=... \
+  --set secret.TS_OAUTH_CLIENT_SECRET=... \
+  --set secret.GC_INSTANCE_ID=... \
+  --set secret.GC_OTLP_TOKEN=... \
+  --set config.log_level=debug
+```
+
+See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
+under `config:`).
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

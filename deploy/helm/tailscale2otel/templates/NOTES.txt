@@ -1,7 +1,7 @@
 tailscale2otel has been deployed as {{ include "tailscale2otel.fullname" . }}.
 
 It is a singleton poller that ships Tailscale observability data to your OTLP
-endpoint ({{ .Values.otlp.endpoint }}) every {{ .Values.otlp.metricInterval }}.
+endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metric_interval }}.
 
 1. Confirm it started:
    kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }} -f

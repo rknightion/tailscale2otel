@@ -1,0 +1,187 @@
+# tailscale2otel — Prometheus alerting rules
+#
+# Standard Prometheus / Mimir / Grafana-managed rule-group YAML (groups:/rules:).
+# Every `expr` queries the OTLP -> Prometheus *normalized* metric names that
+# Grafana Cloud (Mimir) produces on ingest, NOT the raw OTEL source names:
+#   - dots -> underscores (metric names AND label keys)
+#   - monotonic counters get a `_total` suffix
+#   - unit `s` -> `_seconds`, `By` -> `_bytes`, `d` -> `_days`
+#   - a gauge with unit `1` gets a `_ratio` suffix (so 0/1 flag gauges and even
+#     plain counts land as `*_ratio` — see deploy/grafana/README.md + docs/metrics.md).
+# See deploy/alerts/README.md for how to load these and the naming caveats.
+#
+# These alerts complement the four dashboards in deploy/grafana/:
+#   - ts2otel-exporter-health   (tailscale-exporter-health.json)
+#   - ts2otel-fleet             (tailscale-fleet.json)
+#   - ts2otel-network           (tailscale-network.json)
+#   - ts2otel-audit-events      (tailscale-audit-events.json)
+
+groups:
+  - name: tailscale2otel.health
+    rules:
+      # Exporter is not reporting at all (no up series) or is reporting down.
+      # tailscale2otel.up (gauge, unit 1) -> tailscale2otel_up_ratio.
+      - alert: ExporterDown
+        expr: absent(tailscale2otel_up_ratio) or tailscale2otel_up_ratio == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "tailscale2otel exporter is down"
+          description: >-
+            tailscale2otel_up_ratio is 0 or absent for 5m — the exporter is not
+            running or not emitting telemetry, so no Tailscale metrics or logs
+            are flowing. All dashboards will be stale. Check the "Up state" /
+            build-info panels on the Exporter Health dashboard (uid
+            ts2otel-exporter-health).
+
+      # A collector's last scrape failed and has stayed failed.
+      # tailscale2otel.scrape.success (gauge, unit 1) ->
+      # tailscale2otel_scrape_success_ratio, label tailscale_collector.
+      - alert: CollectorScrapeFailing
+        expr: tailscale2otel_scrape_success_ratio == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} scrape failing"
+          description: >-
+            tailscale2otel_scrape_success_ratio == 0 for collector
+            {{ $labels.tailscale_collector }} for 15m — its last scrape failed
+            and has not recovered, so that collector's series are stale. See the
+            "Scrape success / duration / errors by collector" panels on the
+            Exporter Health dashboard (uid ts2otel-exporter-health).
+
+      # High scrape-error rate even if the success gauge flaps back to 1.
+      # tailscale2otel.scrape.errors (counter, unit 1) ->
+      # tailscale2otel_scrape_errors_total, labels tailscale_collector, error_type.
+      - alert: CollectorScrapeErrorRateHigh
+        expr: sum by (tailscale_collector) (rate(tailscale2otel_scrape_errors_total[5m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} scrape errors elevated"
+          description: >-
+            Collector {{ $labels.tailscale_collector }} has been logging scrape
+            errors (rate(tailscale2otel_scrape_errors_total[5m]) > 0) for 15m.
+            Break down by error_type on the "scrape errors by collector" panel of
+            the Exporter Health dashboard (uid ts2otel-exporter-health).
+
+      # OTLP export pipeline is dropping telemetry.
+      # tailscale2otel.export.failures (counter, unit 1) ->
+      # tailscale2otel_export_failures_total, label error_type.
+      - alert: OTLPExportFailures
+        expr: rate(tailscale2otel_export_failures_total[10m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "tailscale2otel OTLP export failures"
+          description: >-
+            rate(tailscale2otel_export_failures_total[10m]) > 0 for 15m — the
+            exporter is failing to push OTLP to the collector/backend (error_type
+            {{ $labels.error_type }}), so metrics and logs may be lost in
+            transit. See the "OTLP export failures" panel on the Exporter Health
+            dashboard (uid ts2otel-exporter-health).
+
+  - name: tailscale2otel.tailnet
+    rules:
+      # A DEVICE node key is within 7 days of expiry (and not already expired).
+      # tailscale.device.key.expiry (gauge, unit s, absolute epoch) ->
+      # tailscale_device_key_expiry_seconds.
+      - alert: DeviceKeyExpiringSoon
+        expr: >-
+          (tailscale_device_key_expiry_seconds - time()) < (7 * 24 * 3600)
+          and (tailscale_device_key_expiry_seconds - time()) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Device node key expiring soon: {{ $labels.host_name }}"
+          description: >-
+            The Tailscale node key for device {{ $labels.host_name }} (user
+            {{ $labels.tailscale_user }}) expires in under 7 days. When it
+            expires the device drops off the tailnet until re-authed. See the
+            "Device key expiry" panel on the Fleet dashboard (uid ts2otel-fleet).
+            Note: auth/API keys are tracked separately as
+            tailscale_key_expiry_seconds (label tailscale_key_id) — see
+            AuthKeyExpiringSoon.
+
+      # An AUTH / API key is within 7 days of expiry (and not already expired).
+      # tailscale.key.expiry (gauge, unit s, absolute epoch) ->
+      # tailscale_key_expiry_seconds, labels tailscale_key_id/type/description.
+      - alert: AuthKeyExpiringSoon
+        expr: >-
+          (tailscale_key_expiry_seconds - time()) < (7 * 24 * 3600)
+          and (tailscale_key_expiry_seconds - time()) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Auth/API key expiring soon: {{ $labels.tailscale_key_id }}"
+          description: >-
+            Tailscale key {{ $labels.tailscale_key_id }} (type
+            {{ $labels.tailscale_key_type }}, {{ $labels.tailscale_key_description }})
+            expires in under 7 days. Rotate it before any automation or device
+            using it loses access. See the "Auth-key expiry" panel on the Fleet
+            dashboard (uid ts2otel-fleet).
+
+      # Network flow logging is silently OFF — the feature gauge for the
+      # network_flow_logging feature reports 0, so the flowlogs collector idles.
+      # tailscale.feature.enabled (gauge, unit 1) ->
+      # tailscale_feature_enabled_ratio, label tailscale_feature.
+      - alert: FlowLoggingDisabled
+        expr: tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"} == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tailscale network flow logging is disabled"
+          description: >-
+            tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"}
+            == 0 for 30m — network flow logging is OFF (or plan-gated) on the
+            tailnet, so the flowlogs collector is idle and the Network dashboard
+            (uid ts2otel-network) and flow log panels on the Audit Events
+            dashboard (uid ts2otel-audit-events) will have no flow data.
+
+  - name: tailscale2otel.nodemetrics
+    rules:
+      # A node-metrics scrape target is down. The nodemetrics scraper emits
+      # tailscale.node.up (gauge, unit 1) -> tailscale_node_up_ratio per target,
+      # carrying the scraped node's `instance` label.
+      - alert: NodeMetricsTargetDown
+        expr: tailscale_node_up_ratio == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Node-metrics target down: {{ $labels.instance }}"
+          description: >-
+            tailscale_node_up_ratio == 0 for target {{ $labels.instance }} for
+            10m — the node-metrics scraper could not reach tailscaled's metrics
+            endpoint on that node, so its forwarded tailscaled series are stale.
+            (Forwarded node series are not on the curated dashboards; see
+            docs/metrics.md "Node metrics scraper".)
+
+  - name: tailscale2otel.flowvolume
+    rules:
+      # The S4-7 flow-log volume guard is actually truncating: log records are
+      # being dropped (metrics are NEVER capped, only logs). Surfaces silent
+      # truncation so the cap is visible.
+      # tailscale.network.flow.logs_dropped (counter, unit {record} -> dropped) ->
+      # tailscale_network_flow_logs_dropped_total.
+      - alert: FlowLogsDropped
+        expr: rate(tailscale_network_flow_logs_dropped_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tailscale flow log records being dropped by the volume guard"
+          description: >-
+            rate(tailscale_network_flow_logs_dropped_total[10m]) > 0 for 10m —
+            the per-window flow-log volume guard (max_log_records_per_window) is
+            truncating flow LOG records (metrics keep flowing; only logs are
+            dropped). Flow log panels on the Audit Events dashboard (uid
+            ts2otel-audit-events) are incomplete. Raise the cap or narrow the
+            flow-log scope (per_record vs per_connection) if this is unexpected.
