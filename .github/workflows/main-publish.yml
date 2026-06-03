@@ -91,6 +91,15 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
+      # cosign signs by pulling the pushed chart, so it needs ghcr.io creds via the
+      # Docker keychain (~/.docker/config.json). `helm registry login` below only
+      # authenticates helm, not cosign — hence this explicit docker login.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # cosign for keyless chart signing. Pinned to a full v4 tag: cosign-installer
       # publishes no moving `v4` tag, and installing cosign v3+ requires the v4 installer.
       - uses: sigstore/cosign-installer@v4.1.2
