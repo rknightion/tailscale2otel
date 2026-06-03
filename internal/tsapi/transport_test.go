@@ -116,6 +116,67 @@ func TestRetryTransport_NilObserverNoPanic(t *testing.T) {
 	}
 }
 
+// bodyCapturingRoundTripper records each attempt's request body and returns
+// canned statuses, so a retried request's re-sent body can be asserted.
+type bodyCapturingRoundTripper struct {
+	statuses []int
+	bodies   []string
+	calls    int
+}
+
+func (f *bodyCapturingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	var body string
+	if req.Body != nil {
+		b, _ := io.ReadAll(req.Body)
+		body = string(b)
+	}
+	f.bodies = append(f.bodies, body)
+	s := f.statuses[f.calls]
+	f.calls++
+	return &http.Response{
+		StatusCode: s,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+// TestRetryTransport_ResendsBodyOnRetry verifies that a request carrying a body
+// (e.g. the log-stream-config PUT) re-sends its full payload on a retried
+// attempt instead of an empty body: the retry loop must rewind Body from
+// GetBody each attempt. Without that, the second attempt would see "".
+func TestRetryTransport_ResendsBodyOnRetry(t *testing.T) {
+	capt := &bodyCapturingRoundTripper{statuses: []int{http.StatusInternalServerError, http.StatusOK}}
+	rt := &retryTransport{
+		base:      capt,
+		max:       3,
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+	}
+	const payload = `{"destinationType":"splunk","url":"https://x"}`
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/logging/network/stream",
+		strings.NewReader(payload))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if capt.calls != 2 {
+		t.Fatalf("calls = %d, want 2 (one retry)", capt.calls)
+	}
+	for i, b := range capt.bodies {
+		if b != payload {
+			t.Fatalf("attempt %d body = %q, want full payload re-sent", i+1, b)
+		}
+	}
+}
+
 func TestEndpointLabel(t *testing.T) {
 	cases := []struct {
 		path string

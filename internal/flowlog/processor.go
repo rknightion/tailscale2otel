@@ -2,11 +2,13 @@ package flowlog
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"strconv"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
@@ -21,6 +23,10 @@ const (
 
 // eventNameFlow is the OTEL LogRecord event name for a per-connection flow log.
 const eventNameFlow = "tailscale.network.flow"
+
+// attrNodeHostname is the log attribute carrying the originating node's short
+// hostname, looked up from the device cache by the FlowLog's NodeID.
+const attrNodeHostname = "tailscale.node.hostname"
 
 // Log modes for Options.LogMode. Any other value (including "off") suppresses
 // log emission while still producing metrics.
@@ -42,6 +48,11 @@ type Options struct {
 	// host (IP) instead of collapsing it to "external"/"unknown". The zero value
 	// (false) preserves the collapsing behavior.
 	KeepExternalAddrs bool
+	// Dedup, when non-nil, suppresses duplicate FlowLog window records that arrive
+	// from both the poll flowlogs collector and the streaming receiver (which
+	// share one Processor). A nil value (the default) disables cross-component
+	// de-duplication.
+	Dedup *dedup.Set
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
@@ -53,6 +64,7 @@ type Processor struct {
 	ports        bool
 	nodes        bool
 	keepExternal bool
+	dedup        *dedup.Set
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -68,6 +80,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		ports:        opts.IncludePorts,
 		nodes:        opts.NodeDims,
 		keepExternal: opts.KeepExternalAddrs,
+		dedup:        opts.Dedup,
 	}
 }
 
@@ -86,6 +99,17 @@ type trafficSet struct {
 
 // Process converts a single FlowLog into metrics and (per LogMode) log records.
 func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
+	// Cross-component de-duplication: when a Dedup set is configured, suppress the
+	// whole record (all its metrics and logs) if this window was already seen.
+	if p.dedup != nil {
+		key := flow.NodeID + "|" +
+			flow.Start.UTC().Format(time.RFC3339Nano) + "|" +
+			flow.End.UTC().Format(time.RFC3339Nano)
+		if !p.dedup.Add(key) {
+			return
+		}
+	}
+
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
 		{semconv.TrafficSubnet, flow.SubnetTraffic},
@@ -166,9 +190,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 // shared base map.
 func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 	out := make(telemetry.Attrs, len(base)+1)
-	for k, v := range base {
-		out[k] = v
-	}
+	maps.Copy(out, base)
 	out[semconv.NetworkIODirection] = direction
 	return out
 }
@@ -176,47 +198,63 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 // emitConnLog emits one per-connection flow log event.
 func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode string, e telemetry.Emitter) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
+	attrs := telemetry.Attrs{
+		semconv.SourceAddress:      srcAddr,
+		semconv.SourcePort:         srcPort,
+		semconv.DestinationAddress: dstAddr,
+		semconv.DestinationPort:    dstPort,
+		semconv.NetworkTransport:   transport,
+		semconv.NetworkType:        netType,
+		semconv.AttrTrafficType:    trafficType,
+		semconv.AttrSrcNode:        srcNode,
+		semconv.AttrDstNode:        dstNode,
+		semconv.AttrNodeID:         flow.NodeID,
+		"tailscale.tx.bytes":       cc.TxBytes,
+		"tailscale.rx.bytes":       cc.RxBytes,
+		"tailscale.tx.packets":     cc.TxPkts,
+		"tailscale.rx.packets":     cc.RxPkts,
+	}
+	p.addNodeHostname(attrs, flow.NodeID)
 	e.LogEvent(telemetry.Event{
 		Name:      eventNameFlow,
 		Body:      body,
 		Severity:  telemetry.SeverityInfo,
 		Timestamp: logTimestamp(flow),
-		Attrs: telemetry.Attrs{
-			semconv.SourceAddress:      srcAddr,
-			semconv.SourcePort:         srcPort,
-			semconv.DestinationAddress: dstAddr,
-			semconv.DestinationPort:    dstPort,
-			semconv.NetworkTransport:   transport,
-			semconv.NetworkType:        netType,
-			semconv.AttrTrafficType:    trafficType,
-			semconv.AttrSrcNode:        srcNode,
-			semconv.AttrDstNode:        dstNode,
-			semconv.AttrNodeID:         flow.NodeID,
-			"tailscale.tx.bytes":       cc.TxBytes,
-			"tailscale.rx.bytes":       cc.RxBytes,
-			"tailscale.tx.packets":     cc.TxPkts,
-			"tailscale.rx.packets":     cc.RxPkts,
-		},
+		Attrs:     attrs,
 	})
 }
 
 // emitRecordLog emits one summary log event for an entire FlowLog.
 func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txPkts, rxPkts int64, e telemetry.Emitter) {
 	body := fmt.Sprintf("node %s: %d connections tx=%dB rx=%dB", flow.NodeID, conns, txBytes, rxBytes)
+	attrs := telemetry.Attrs{
+		semconv.AttrNodeID:      flow.NodeID,
+		"tailscale.connections": int64(conns),
+		"tailscale.tx.bytes":    txBytes,
+		"tailscale.rx.bytes":    rxBytes,
+		"tailscale.tx.packets":  txPkts,
+		"tailscale.rx.packets":  rxPkts,
+	}
+	p.addNodeHostname(attrs, flow.NodeID)
 	e.LogEvent(telemetry.Event{
 		Name:      eventNameFlow,
 		Body:      body,
 		Severity:  telemetry.SeverityInfo,
 		Timestamp: logTimestamp(flow),
-		Attrs: telemetry.Attrs{
-			semconv.AttrNodeID:      flow.NodeID,
-			"tailscale.connections": int64(conns),
-			"tailscale.tx.bytes":    txBytes,
-			"tailscale.rx.bytes":    rxBytes,
-			"tailscale.tx.packets":  txPkts,
-			"tailscale.rx.packets":  rxPkts,
-		},
+		Attrs:     attrs,
 	})
+}
+
+// addNodeHostname adds tailscale.node.hostname to attrs when the cache has a
+// device for nodeID with a non-empty Hostname. A nil cache, a cache miss, or an
+// empty hostname leaves attrs untouched (the attribute is omitted entirely).
+func (p *Processor) addNodeHostname(attrs telemetry.Attrs, nodeID string) {
+	if p.cache == nil {
+		return
+	}
+	if meta, ok := p.cache.LookupNode(nodeID); ok && meta.Hostname != "" {
+		attrs[attrNodeHostname] = meta.Hostname
+	}
 }
 
 // resolve maps an "addr:port" to a device hostname via the cache. A nil cache

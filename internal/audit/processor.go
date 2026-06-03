@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
@@ -37,12 +39,53 @@ const (
 )
 
 // Processor converts Tailscale configuration audit Events into OTEL log records
-// and an events counter. It holds no state and is safe for concurrent use;
-// the same instance is shared by the polling collector and streaming receiver.
-type Processor struct{}
+// and an events counter. It is safe for concurrent use; the same instance is
+// shared by the polling collector and streaming receiver.
+//
+// When a de-duplication set is configured via WithDedup, an event whose key has
+// already been seen is dropped silently: no log record and no counter
+// increment. The dedup.Set is itself thread-safe and may be shared with other
+// components so that an event arriving from more than one source is emitted
+// exactly once.
+type Processor struct {
+	dedup *dedup.Set
+}
 
-// NewProcessor returns an audit Processor.
-func NewProcessor() *Processor { return &Processor{} }
+// Option configures a Processor at construction time.
+type Option func(*Processor)
+
+// WithDedup attaches a cross-component de-duplication set. When set is non-nil,
+// Process drops any event whose key (see DedupKey) has already been recorded in
+// set. Passing a nil set is a no-op, preserving the default (no de-dup)
+// behavior.
+func WithDedup(set *dedup.Set) Option {
+	return func(p *Processor) { p.dedup = set }
+}
+
+// NewProcessor returns an audit Processor. With no options it behaves exactly
+// as before: every event produces one log record and one counter increment.
+func NewProcessor(opts ...Option) *Processor {
+	p := &Processor{}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
+}
+
+// DedupKey derives a stable de-duplication key for a single audit event. It is
+// the single home for the key formula shared by the auditlogs collector and the
+// processor's cross-component de-dup. When the event carries an eventGroupID it
+// identifies a logical change, so the key is "<eventGroupID>|<eventTime>". When
+// the eventGroupID is empty the key instead combines the event time with the
+// action and target ID, so distinct events sharing a timestamp are not
+// collapsed into one.
+func DedupKey(ev Event) string {
+	t := ev.EventTime.UTC().Format(time.RFC3339Nano)
+	if ev.EventGroupID != "" {
+		return ev.EventGroupID + "|" + t
+	}
+	return t + "|" + ev.Action + "|" + ev.Target.ID
+}
 
 // ProcessAll converts every Event in resp, emitting one log record and one
 // counter increment per event.
@@ -56,6 +99,11 @@ func (p *Processor) ProcessAll(resp ConfigurationResponse, e telemetry.Emitter) 
 // increment. The log carries the full actor/target context; the counter carries
 // only low-cardinality action and origin attributes.
 func (p *Processor) Process(ev Event, e telemetry.Emitter) {
+	if p.dedup != nil && !p.dedup.Add(DedupKey(ev)) {
+		// Already seen via another source: emit nothing.
+		return
+	}
+
 	severity := telemetry.SeverityInfo
 	if ev.Error != "" {
 		severity = telemetry.SeverityWarn

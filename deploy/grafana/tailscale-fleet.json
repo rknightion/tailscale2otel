@@ -1,0 +1,600 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "schemaVersion": 39,
+  "title": "Tailscale Fleet & Inventory",
+  "uid": "ts2otel-fleet",
+  "tags": ["tailscale", "tailscale2otel"],
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROM",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "grafanacloud-prom", "value": "grafanacloud-prom" },
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "name": "os_type",
+        "label": "OS type",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_device_online_ratio, os_type)",
+        "query": { "query": "label_values(tailscale_device_online_ratio, os_type)", "refId": "OSType" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "host_name",
+        "label": "Host",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)",
+        "query": { "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)", "refId": "HostName" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "tailscale_user",
+        "label": "User",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, tailscale_user)",
+        "query": { "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, tailscale_user)", "refId": "User" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Fleet Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Devices Online",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 1 }, { "color": "green", "value": 5 } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"} == 1)",
+          "legendFormat": "online",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Devices",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"})",
+          "legendFormat": "total",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Devices Offline",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"} == 0) or vector(0)",
+          "legendFormat": "offline",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Updates Available",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 4, "x": 15, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"} == 1) or vector(0)",
+          "legendFormat": "updates",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Distinct Users",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "purple", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(count by (tailscale_user) (tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"}))",
+          "legendFormat": "users",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Devices Online Over Time",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "min", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"} == 1)",
+          "legendFormat": "online",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"})",
+          "legendFormat": "total",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Devices by OS Type",
+      "description": "From tailscale_devices_count_ratio (unit '1' count -> _ratio suffix quirk; this is a raw count, not a fraction).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (os_type) (tailscale_devices_count_ratio{os_type=~\"$os_type\"})",
+          "legendFormat": "{{os_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Health & Upgrades",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Devices With Update Available",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [ { "id": "custom.hidden", "value": true } ] }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "host_name", "desc": false } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"} == 1",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "host_id": true, "Value": true },
+            "indexByName": { "host_name": 0, "os_type": 1, "os_version": 2, "tailscale_user": 3 },
+            "renameByName": {
+              "host_name": "Host",
+              "os_type": "OS",
+              "os_version": "OS Version",
+              "tailscale_user": "User"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Device Key Expiry (time until)",
+      "description": "tailscale_device_key_expiry_seconds is an absolute epoch timestamp; subtracting time() yields seconds-until-expiry. Negative = already expired.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true }, "unit": "s" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Expires In" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 0 }, { "color": "green", "value": 604800 } ] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Expires In", "desc": false } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale_device_key_expiry_seconds{host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"} - time()",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "host_id": true, "os_version": true },
+            "indexByName": { "host_name": 0, "os_type": 1, "tailscale_user": 2, "Value": 3 },
+            "renameByName": {
+              "host_name": "Host",
+              "os_type": "OS",
+              "tailscale_user": "User",
+              "Value": "Expires In"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Auth Key Expiry (tailnet keys, time until)",
+      "description": "tailscale_key_expiry_seconds is an epoch timestamp; subtract time() for seconds remaining.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true }, "unit": "s" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Expires In" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "yellow", "value": 0 }, { "color": "green", "value": 604800 } ] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Expires In", "desc": false } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale_key_expiry_seconds - time()",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
+            "indexByName": { "tailscale_key_description": 0, "tailscale_key_type": 1, "tailscale_key_id": 2, "Value": 3 },
+            "renameByName": {
+              "tailscale_key_description": "Description",
+              "tailscale_key_type": "Type",
+              "tailscale_key_id": "Key ID",
+              "Value": "Expires In"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "DERP Latency by Host / Region",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true }, "unit": "s" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Latency" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "gradient" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.15 } ] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Latency", "desc": true } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "host_id": true },
+            "indexByName": { "host_name": 0, "tailscale_derp_region": 1, "tailscale_derp_preferred": 2, "Value": 3 },
+            "renameByName": {
+              "host_name": "Host",
+              "tailscale_derp_region": "DERP Region",
+              "tailscale_derp_preferred": "Preferred",
+              "Value": "Latency"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Last Seen & Routes",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Devices: Last Seen (time since)",
+      "description": "tailscale_device_last_seen_seconds is an epoch timestamp; time() - value gives age since last seen.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 33 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true }, "unit": "s" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Last Seen Ago" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 3600 }, { "color": "red", "value": 86400 } ] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Last Seen Ago", "desc": true } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "time() - tailscale_device_last_seen_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$tailscale_user\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "host_id": true, "os_version": true },
+            "indexByName": { "host_name": 0, "os_type": 1, "tailscale_user": 2, "Value": 3 },
+            "renameByName": {
+              "host_name": "Host",
+              "os_type": "OS",
+              "tailscale_user": "User",
+              "Value": "Last Seen Ago"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Subnet Routes (advertised vs enabled)",
+      "description": "Gated behind collect_routes. tailscale_device_routes_advertised_routes / _enabled_routes.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 33 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true }, "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Advertised", "desc": true } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale_device_routes_advertised_routes{host_name=~\"$host_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale_device_routes_enabled_routes{host_name=~\"$host_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "host_id": true },
+            "indexByName": { "host_name": 0, "Value #A": 1, "Value #B": 2 },
+            "renameByName": {
+              "host_name": "Host",
+              "Value #A": "Advertised",
+              "Value #B": "Enabled"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

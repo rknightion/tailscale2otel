@@ -1,0 +1,342 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "schemaVersion": 39,
+  "title": "Tailscale Audit & Webhook Events",
+  "uid": "ts2otel-audit-events",
+  "tags": ["tailscale", "tailscale2otel"],
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROM",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "grafanacloud-prom", "value": "grafanacloud-prom" },
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "name": "DS_LOKI",
+        "label": "Loki",
+        "type": "datasource",
+        "query": "loki",
+        "current": { "text": "grafanacloud-logs", "value": "grafanacloud-logs" },
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "name": "event_name",
+        "label": "Log event name",
+        "type": "custom",
+        "query": "tailscale.config.audit,tailscale.network.flow,tailscale.key.expiring,tailscale.device.posture",
+        "current": { "text": "tailscale.config.audit", "value": "tailscale.config.audit" },
+        "options": [
+          { "text": "tailscale.config.audit", "value": "tailscale.config.audit", "selected": true },
+          { "text": "tailscale.network.flow", "value": "tailscale.network.flow", "selected": false },
+          { "text": "tailscale.key.expiring", "value": "tailscale.key.expiring", "selected": false },
+          { "text": "tailscale.device.posture", "value": "tailscale.device.posture", "selected": false }
+        ],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "audit_action",
+        "label": "Audit action",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_config_audit_events_total, tailscale_audit_action)",
+        "query": { "query": "label_values(tailscale_config_audit_events_total, tailscale_audit_action)", "refId": "AuditAction" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "webhook_type",
+        "label": "Webhook type",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_webhook_events_total, tailscale_webhook_type)",
+        "query": { "query": "label_values(tailscale_webhook_events_total, tailscale_webhook_type)", "refId": "WebhookType" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "log_search",
+        "label": "Log line filter (regex)",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Event Counters",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Audit Events Rate by Action",
+      "description": "sum(rate(tailscale_config_audit_events_total[$__rate_interval])) by (tailscale_audit_action).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum", "last"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (tailscale_audit_action) (rate(tailscale_config_audit_events_total{tailscale_audit_action=~\"$audit_action\"}[$__rate_interval]))",
+          "legendFormat": "{{tailscale_audit_action}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Webhook Events Rate by Type",
+      "description": "sum(rate(tailscale_webhook_events_total[$__rate_interval])) by (tailscale_webhook_type).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum", "last"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (tailscale_webhook_type) (rate(tailscale_webhook_events_total{tailscale_webhook_type=~\"$webhook_type\"}[$__rate_interval]))",
+          "legendFormat": "{{tailscale_webhook_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Audit Events (window total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum(increase(tailscale_config_audit_events_total{tailscale_audit_action=~\"$audit_action\"}[$__range]))",
+          "legendFormat": "audit events",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Webhook Events (window total)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum(increase(tailscale_webhook_events_total{tailscale_webhook_type=~\"$webhook_type\"}[$__range]))",
+          "legendFormat": "webhook events",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Stream Ingest: Records vs Rejected",
+      "description": "tailscale_stream_records_total {type} and tailscale_stream_rejected_total {reason}, plus webhook rejected.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "rejected.*" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (type) (rate(tailscale_stream_records_total[$__rate_interval]))",
+          "legendFormat": "records {{type}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (reason) (rate(tailscale_stream_rejected_total[$__rate_interval]))",
+          "legendFormat": "rejected stream {{reason}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (reason) (rate(tailscale_webhook_rejected_total[$__rate_interval]))",
+          "legendFormat": "rejected webhook {{reason}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Audit Log Stream",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "Event Log Stream: $event_name",
+      "description": "Loki: {service_name=\"tailscale2otel\"} | event_name=\"$event_name\". Switch event via the variable; optional regex via Log line filter.",
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 14 },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "expr": "{service_name=\"tailscale2otel\"} | event_name=`$event_name` |~ `$log_search`",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Flow Logs & Audit Volume",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Network Flow Logs",
+      "description": "Loki: {service_name=\"tailscale2otel\"} | event_name=\"tailscale.network.flow\".",
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "gridPos": { "h": 11, "w": 16, "x": 0, "y": 26 },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` |~ `$log_search`",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Log Volume by Event Name",
+      "description": "Loki count_over_time of all tailscale2otel events, grouped by event_name (label after normalization).",
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "gridPos": { "h": 11, "w": 8, "x": 16, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "expr": "sum by (event_name) (count_over_time({service_name=\"tailscale2otel\"} | event_name != `` [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{event_name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
