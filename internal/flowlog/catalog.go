@@ -15,6 +15,8 @@ import (
 // The flow node-dimension attributes (src/dst node) are gated by
 // cardinality.flow_node_dims and the port attributes by cardinality.flow_include_ports;
 // both are listed here as the full possible attribute set (gating is documented in prose).
+const groupNetwork = "Network / flow"
+
 var (
 	docIO = metricdoc.Metric{
 		Name:        MetricIO,
@@ -25,6 +27,7 @@ var (
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.SourcePort, semconv.DestinationPort,
 		},
+		Group: groupNetwork,
 	}
 	docPackets = metricdoc.Metric{
 		Name:        MetricPackets,
@@ -35,6 +38,7 @@ var (
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.SourcePort, semconv.DestinationPort,
 		},
+		Group: groupNetwork,
 	}
 	docFlows = metricdoc.Metric{
 		Name:        MetricFlows,
@@ -42,12 +46,14 @@ var (
 		Instrument:  metricdoc.Counter,
 		Description: "Count of distinct flows observed (lower cardinality than network.io/packets).",
 		Attributes:  []string{semconv.NetworkTransport, semconv.AttrTrafficType},
+		Group:       groupNetwork,
 	}
 	docLogsDropped = metricdoc.Metric{
 		Name:        MetricLogsDropped,
 		Unit:        unitRecord,
 		Instrument:  metricdoc.Counter,
 		Description: "Flow LOG records suppressed by the per-window volume guard (collectors.flowlogs.max_log_records_per_window); 0 unless truncating. Metrics are never dropped, only logs.",
+		Group:       groupNetwork,
 	}
 
 	docFlowLog = metricdoc.LogEvent{
@@ -60,6 +66,7 @@ var (
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrNodeID, attrNodeHostname,
 			"tailscale.tx.bytes", "tailscale.rx.bytes", "tailscale.tx.packets", "tailscale.rx.packets",
 		},
+		Group: groupNetwork,
 	}
 )
 
