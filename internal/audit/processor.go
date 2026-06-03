@@ -48,7 +48,8 @@ const (
 // components so that an event arriving from more than one source is emitted
 // exactly once.
 type Processor struct {
-	dedup *dedup.Set
+	dedup      *dedup.Set
+	crossDedup *dedup.Set
 }
 
 // Option configures a Processor at construction time.
@@ -60,6 +61,18 @@ type Option func(*Processor)
 // behavior.
 func WithDedup(set *dedup.Set) Option {
 	return func(p *Processor) { p.dedup = set }
+}
+
+// WithCrossDedup attaches a cross-SOURCE de-duplication set shared with the
+// webhook receiver. When set is non-nil, Process drops any event whose
+// CrossSourceKey has already been recorded in set (e.g. the same change already
+// emitted via a webhook). This is BEST-EFFORT and SEPARATE from WithDedup's
+// eventGroupID-keyed poll<->stream dedup: it reconciles audit and webhook events
+// on a normalized (verb, subject, time-bucket) key (see NormalizedCrossKey).
+// First-seen-wins, so the surviving copy depends on arrival order. Passing a nil
+// set is a no-op.
+func WithCrossDedup(set *dedup.Set) Option {
+	return func(p *Processor) { p.crossDedup = set }
 }
 
 // NewProcessor returns an audit Processor. With no options it behaves exactly
@@ -102,6 +115,13 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	if p.dedup != nil && !p.dedup.Add(DedupKey(ev)) {
 		// Already seen via another source: emit nothing.
 		return
+	}
+	if p.crossDedup != nil {
+		if key, ok := CrossSourceKey(ev); ok && !p.crossDedup.Add(key) {
+			// The same change was already emitted via the webhook receiver (or a
+			// prior audit event mapping to it): emit nothing.
+			return
+		}
 	}
 
 	severity := telemetry.SeverityInfo
