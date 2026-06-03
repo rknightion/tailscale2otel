@@ -45,6 +45,10 @@ type Options struct {
 
 	MetricInterval time.Duration // PeriodicReader interval (default 60s)
 
+	// SelfObsEnabled turns on self-observability instrumentation, including the
+	// tailscale2otel.series.active cardinality tracker (nil/disabled otherwise).
+	SelfObsEnabled bool
+
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
 }
@@ -55,6 +59,7 @@ type Provider struct {
 	mp      *sdkmetric.MeterProvider
 	lp      *sdklog.LoggerProvider
 	emitter Emitter
+	card    *CardinalityTracker // nil unless self-observability is enabled
 }
 
 // NewProvider builds the telemetry pipeline for the given options.
@@ -85,15 +90,26 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
 	)
 
+	var card *CardinalityTracker
+	if opts.SelfObsEnabled {
+		card = NewCardinalityTracker()
+	}
+
 	return &Provider{
 		mp:      mp,
 		lp:      lp,
-		emitter: NewEmitter(mp.Meter(scopeName), lp.Logger(scopeName)),
+		emitter: newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card),
+		card:    card,
 	}, nil
 }
 
 // Emitter returns the Emitter collectors should use.
 func (p *Provider) Emitter() Emitter { return p.emitter }
+
+// Cardinality returns the self-observability cardinality tracker, or nil when
+// self-observability is disabled. The caller drives Report on the export
+// interval and may call Report safely even when this is nil.
+func (p *Provider) Cardinality() *CardinalityTracker { return p.card }
 
 // Shutdown flushes and stops the metric and log pipelines.
 func (p *Provider) Shutdown(ctx context.Context) error {

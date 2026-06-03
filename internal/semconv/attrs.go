@@ -35,6 +35,11 @@ const (
 	AttrFeature     = "tailscale.feature"
 )
 
+// Self-observability attribute keys.
+const (
+	AttrMetricName = "metric.name"
+)
+
 // network.io.direction values (stable).
 const (
 	DirectionTransmit = "transmit"
@@ -64,6 +69,7 @@ const (
 	UnitRoutes        = "{route}"
 	UnitConnections   = "{connection}"
 	UnitTargets       = "{target}"
+	UnitSeries        = "{series}"
 	UnitSeconds       = "s"
 	UnitDays          = "d"
 	UnitDimensionless = "1"
