@@ -1,0 +1,514 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "schemaVersion": 39,
+  "title": "Tailscale2OTel Exporter Health",
+  "uid": "ts2otel-exporter-health",
+  "tags": ["tailscale", "tailscale2otel"],
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROM",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "grafanacloud-prom", "value": "grafanacloud-prom" },
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "name": "tailscale_collector",
+        "label": "Collector",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale2otel_scrape_duration_seconds, tailscale_collector)",
+        "query": { "query": "label_values(tailscale2otel_scrape_duration_seconds, tailscale_collector)", "refId": "Collector" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "endpoint",
+        "label": "API endpoint",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale2otel_api_requests_total, endpoint)",
+        "query": { "query": "label_values(tailscale2otel_api_requests_total, endpoint)", "refId": "Endpoint" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Liveness & Build",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Exporter Up",
+      "description": "tailscale2otel_up_ratio (OTEL unit '1' gauge -> _ratio suffix; here it is a boolean up=1).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "max(tailscale2otel_up_ratio)",
+          "legendFormat": "up",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Collectors Succeeding",
+      "description": "count of collectors with last scrape success == 1 / total.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "count(tailscale2otel_scrape_success_ratio{tailscale_collector=~\"$tailscale_collector\"} == 1) or vector(0)",
+          "legendFormat": "ok",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Scrape Error Rate",
+      "description": "sum(rate(tailscale2otel_scrape_errors_total[$__rate_interval])).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "cps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.001 } ] } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum(rate(tailscale2otel_scrape_errors_total{tailscale_collector=~\"$tailscale_collector\"}[$__rate_interval]))",
+          "legendFormat": "errors/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Export Failure Rate",
+      "description": "sum(rate(tailscale2otel_export_failures_total[$__rate_interval])).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 4, "x": 15, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "cps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.001 } ] } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum(rate(tailscale2otel_export_failures_total[$__rate_interval]))",
+          "legendFormat": "failures/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Enrich Cache Age",
+      "description": "tailscale2otel_enrich_cache_age_seconds.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 600 }, { "color": "red", "value": 3600 } ] } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "max(tailscale2otel_enrich_cache_age_seconds)",
+          "legendFormat": "cache age",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Scrape Performance",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Scrape Duration by Collector",
+      "description": "tailscale2otel_scrape_duration_seconds by tailscale_collector.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max", "mean"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale2otel_scrape_duration_seconds{tailscale_collector=~\"$tailscale_collector\"}",
+          "legendFormat": "{{tailscale_collector}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Scrape Errors Rate by Collector / Type",
+      "description": "sum(rate(tailscale2otel_scrape_errors_total[$__rate_interval])) by (tailscale_collector, error_type).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum", "last"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (tailscale_collector, error_type) (rate(tailscale2otel_scrape_errors_total{tailscale_collector=~\"$tailscale_collector\"}[$__rate_interval]))",
+          "legendFormat": "{{tailscale_collector}} / {{error_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Last Scrape Status by Collector",
+      "description": "tailscale2otel_scrape_success_ratio and seconds-since-last-scrape (time() - last_timestamp).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Success" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } },
+              { "id": "mappings", "value": [ { "type": "value", "options": { "0": { "text": "FAIL", "color": "red" }, "1": { "text": "OK", "color": "green" } } } ] },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Last Scrape Ago" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 300 }, { "color": "red", "value": 900 } ] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Success", "desc": false } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale2otel_scrape_success_ratio{tailscale_collector=~\"$tailscale_collector\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "time() - tailscale2otel_scrape_last_timestamp_seconds{tailscale_collector=~\"$tailscale_collector\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
+            "indexByName": { "tailscale_collector": 0, "Value #A": 1, "Value #B": 2 },
+            "renameByName": {
+              "tailscale_collector": "Collector",
+              "Value #A": "Success",
+              "Value #B": "Last Scrape Ago"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Scrape Success Over Time",
+      "description": "tailscale2otel_scrape_success_ratio by collector (1 = success, 0 = fail).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 15, "showPoints": "never", "spanNulls": true },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale2otel_scrape_success_ratio{tailscale_collector=~\"$tailscale_collector\"}",
+          "legendFormat": "{{tailscale_collector}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "API & Export",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "API Requests Rate by Status Code",
+      "description": "sum(rate(tailscale2otel_api_requests_total[$__rate_interval])) by (http_response_status_code).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*(4|5)[0-9][0-9].*" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (http_response_status_code) (rate(tailscale2otel_api_requests_total{endpoint=~\"$endpoint\"}[$__rate_interval]))",
+          "legendFormat": "{{http_response_status_code}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "API Retries & Export Failures",
+      "description": "sum(rate(tailscale2otel_api_retries_total[$__rate_interval])) by (endpoint) and sum(rate(tailscale2otel_export_failures_total[$__rate_interval])) by (error_type).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (endpoint) (rate(tailscale2otel_api_retries_total{endpoint=~\"$endpoint\"}[$__rate_interval]))",
+          "legendFormat": "retry {{endpoint}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (error_type) (rate(tailscale2otel_export_failures_total[$__rate_interval]))",
+          "legendFormat": "export fail {{error_type}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Enrichment Cache & Build Info",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Enrich Cache Age & Size",
+      "description": "tailscale2otel_enrich_cache_age_seconds (left axis, seconds) and tailscale2otel_enrich_cache_size_ratio (right axis; unit '1' count -> _ratio quirk, treat as a raw entry count).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 34 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "cache age" }, "properties": [ { "id": "unit", "value": "s" } ] },
+          { "matcher": { "id": "byName", "options": "cache size" }, "properties": [ { "id": "unit", "value": "short" }, { "id": "custom.axisPlacement", "value": "right" } ] }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "max(tailscale2otel_enrich_cache_age_seconds)",
+          "legendFormat": "cache age",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "max(tailscale2otel_enrich_cache_size_ratio)",
+          "legendFormat": "cache size",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Build Info",
+      "description": "tailscale2otel_build_info_ratio {service_version, go_version} (unit '1' gauge -> _ratio suffix quirk; value is always 1, the metadata lives in labels).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [ { "id": "custom.hidden", "value": true } ] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "tailscale2otel_build_info_ratio",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "Value": true },
+            "indexByName": { "service_version": 0, "go_version": 1, "instance": 2 },
+            "renameByName": {
+              "service_version": "Version",
+              "go_version": "Go Version",
+              "instance": "Instance"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

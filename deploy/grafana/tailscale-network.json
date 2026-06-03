@@ -1,0 +1,418 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "schemaVersion": 39,
+  "title": "Tailscale Network Flow & Throughput",
+  "uid": "ts2otel-network",
+  "tags": ["tailscale", "tailscale2otel"],
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROM",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "grafanacloud-prom", "value": "grafanacloud-prom" },
+        "hide": 0,
+        "refresh": 1,
+        "regex": ""
+      },
+      {
+        "name": "network_transport",
+        "label": "Transport",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_network_io_bytes_total, network_transport)",
+        "query": { "query": "label_values(tailscale_network_io_bytes_total, network_transport)", "refId": "Transport" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "tailscale_traffic_type",
+        "label": "Traffic type",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_network_io_bytes_total, tailscale_traffic_type)",
+        "query": { "query": "label_values(tailscale_network_io_bytes_total, tailscale_traffic_type)", "refId": "TrafficType" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "src_node",
+        "label": "Source node",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_network_io_bytes_total, tailscale_src_node)",
+        "query": { "query": "label_values(tailscale_network_io_bytes_total, tailscale_src_node)", "refId": "SrcNode" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "topn",
+        "label": "Top N talkers",
+        "type": "custom",
+        "query": "5,10,15,20",
+        "current": { "text": "10", "value": "10" },
+        "options": [
+          { "text": "5", "value": "5", "selected": false },
+          { "text": "10", "value": "10", "selected": true },
+          { "text": "15", "value": "15", "selected": false },
+          { "text": "20", "value": "20", "selected": false }
+        ],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "repeat_traffic_type",
+        "label": "Repeat rows for traffic types",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+        "definition": "label_values(tailscale_network_io_bytes_total{tailscale_traffic_type=~\"$tailscale_traffic_type\"}, tailscale_traffic_type)",
+        "query": { "query": "label_values(tailscale_network_io_bytes_total{tailscale_traffic_type=~\"$tailscale_traffic_type\"}, tailscale_traffic_type)", "refId": "RepeatTrafficType" },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Throughput Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Throughput by Direction",
+      "description": "sum(rate(tailscale_network_io_bytes_total[$__rate_interval])) by (network_io_direction). Bytes/sec.",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "fillOpacity": 25, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max", "mean"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (network_io_direction) (rate(tailscale_network_io_bytes_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\", tailscale_src_node=~\"$src_node\"}[$__rate_interval]))",
+          "legendFormat": "{{network_io_direction}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Throughput by Transport",
+      "description": "sum(rate(tailscale_network_io_bytes_total[$__rate_interval])) by (network_transport).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "fillOpacity": 25, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max", "mean"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (network_transport) (rate(tailscale_network_io_bytes_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\", tailscale_src_node=~\"$src_node\"}[$__rate_interval]))",
+          "legendFormat": "{{network_transport}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Throughput by Traffic Type",
+      "description": "sum(rate(tailscale_network_io_bytes_total[$__rate_interval])) by (tailscale_traffic_type).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "fillOpacity": 25, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max", "mean"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (tailscale_traffic_type) (rate(tailscale_network_io_bytes_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\", tailscale_src_node=~\"$src_node\"}[$__rate_interval]))",
+          "legendFormat": "{{tailscale_traffic_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Top Talkers",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "panels": []
+    },
+    {
+      "id": 4,
+      "type": "barchart",
+      "title": "Top $topn Source Nodes (by throughput)",
+      "description": "topk($topn, sum(rate(...)) by (tailscale_src_node)).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "orientation": "horizontal", "fillOpacity": 80, "lineWidth": 1 },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": false },
+        "tooltip": { "mode": "single", "sort": "none" },
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_bytes_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\", tailscale_src_node=~\"$src_node\"}[$__rate_interval])))",
+          "legendFormat": "{{tailscale_src_node}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "Top $topn Destination Nodes (by throughput)",
+      "description": "topk($topn, sum(rate(...)) by (tailscale_dst_node)).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "orientation": "horizontal", "fillOpacity": 80, "lineWidth": 1 },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "showLegend": false },
+        "tooltip": { "mode": "single", "sort": "none" },
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "topk($topn, sum by (tailscale_dst_node) (rate(tailscale_network_io_bytes_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\"}[$__rate_interval])))",
+          "legendFormat": "{{tailscale_dst_node}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "row",
+      "title": "Packets & Flows",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Packet Rate by Direction",
+      "description": "sum(rate(tailscale_network_packets_total[$__rate_interval])) by (network_io_direction).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (network_io_direction) (rate(tailscale_network_packets_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\"}[$__rate_interval]))",
+          "legendFormat": "{{network_io_direction}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Flow Rate by Traffic Type",
+      "description": "sum(rate(tailscale_network_flows_total[$__rate_interval])) by (tailscale_traffic_type).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "flps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\"}[$__rate_interval]))",
+          "legendFormat": "{{tailscale_traffic_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Flow Rate by Transport",
+      "description": "sum(rate(tailscale_network_flows_total[$__rate_interval])) by (network_transport).",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "flps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (network_transport) (rate(tailscale_network_flows_total{network_transport=~\"$network_transport\", tailscale_traffic_type=~\"$tailscale_traffic_type\"}[$__rate_interval]))",
+          "legendFormat": "{{network_transport}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 400,
+      "type": "row",
+      "title": "Per Traffic Type: $repeat_traffic_type",
+      "collapsed": false,
+      "repeat": "repeat_traffic_type",
+      "repeatDirection": "v",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "[$repeat_traffic_type] Throughput by Direction",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "drawStyle": "line", "fillOpacity": 25, "showPoints": "never", "spanNulls": false, "stacking": { "mode": "normal", "group": "A" } },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (network_io_direction) (rate(tailscale_network_io_bytes_total{tailscale_traffic_type=\"$repeat_traffic_type\", network_transport=~\"$network_transport\"}[$__rate_interval]))",
+          "legendFormat": "{{network_io_direction}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "[$repeat_traffic_type] Flow Rate by Transport",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "flps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+          "expr": "sum by (network_transport) (rate(tailscale_network_flows_total{tailscale_traffic_type=\"$repeat_traffic_type\", network_transport=~\"$network_transport\"}[$__rate_interval]))",
+          "legendFormat": "{{network_transport}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

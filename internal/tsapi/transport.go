@@ -42,7 +42,19 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		delay = t.baseDelay
 	)
 	for attempt := 1; ; attempt++ {
-		resp, err = t.base.RoundTrip(req.Clone(req.Context()))
+		attemptReq := req.Clone(req.Context())
+		// Clone shares the original Body reader, which the previous attempt would
+		// have drained; rewind it from GetBody so a retried request with a body
+		// (e.g. a PUT) re-sends its payload. GetBody is nil for bodyless GETs.
+		if req.GetBody != nil {
+			body, gbErr := req.GetBody()
+			if gbErr != nil {
+				t.observe(req, nil, gbErr, attempt)
+				return nil, gbErr
+			}
+			attemptReq.Body = body
+		}
+		resp, err = t.base.RoundTrip(attemptReq)
 		if err == nil && resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
 			t.observe(req, resp, err, attempt)
 			return resp, nil
