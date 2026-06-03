@@ -186,9 +186,12 @@ func TestEmitter_LogEventSetsBodySeverityAndEventName(t *testing.T) {
 	if r.SeverityText() != "WARN" {
 		t.Fatalf("severity text = %q, want WARN", r.SeverityText())
 	}
+	if got := r.EventName(); got != "tailscale.network.flow" {
+		t.Fatalf("EventName() = %q, want tailscale.network.flow", got)
+	}
 	attrs := logAttrs(r)
-	if attrs["event.name"] != "tailscale.network.flow" {
-		t.Fatalf("event.name attr = %q, want tailscale.network.flow", attrs["event.name"])
+	if _, ok := attrs["event.name"]; ok {
+		t.Fatalf("event.name must be the native EventName, not an attribute; got attr %q", attrs["event.name"])
 	}
 	if attrs["network.transport"] != "tcp" {
 		t.Fatalf("network.transport attr = %q, want tcp", attrs["network.transport"])

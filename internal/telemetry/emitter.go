@@ -93,13 +93,12 @@ func (e *otelEmitter) LogEvent(ev Event) {
 	r.SetSeverity(toLogSeverity(ev.Severity))
 	r.SetSeverityText(ev.Severity.String())
 	r.SetBody(log.StringValue(ev.Body))
-	kvs := toLogKV(ev.Attrs)
-	// The log SDK has no dedicated EventName field yet (v0.6.0); carry it as the
-	// conventional "event.name" attribute.
+	// The log SDK exposes a native EventName field (log v0.20.0+); use it instead
+	// of carrying the event type as a separate "event.name" attribute.
 	if ev.Name != "" {
-		kvs = append(kvs, log.String("event.name", ev.Name))
+		r.SetEventName(ev.Name)
 	}
-	r.AddAttributes(kvs...)
+	r.AddAttributes(toLogKV(ev.Attrs)...)
 	e.logger.Emit(context.Background(), r)
 }
 

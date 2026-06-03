@@ -1,6 +1,33 @@
 package telemetry
 
-import "testing"
+import (
+	"testing"
+
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+)
+
+// TestCumulativeTemporalitySelectorAlwaysCumulative pins the OTLP metric
+// temporality. Grafana Cloud / Mimir OTLP ingestion accepts CUMULATIVE only
+// (delta is rejected with HTTP 400 and there is no server-side delta->cumulative
+// conversion), so the selector must return cumulative for EVERY instrument kind
+// — a future SDK default change must never silently switch us to delta.
+func TestCumulativeTemporalitySelectorAlwaysCumulative(t *testing.T) {
+	kinds := []sdkmetric.InstrumentKind{
+		sdkmetric.InstrumentKindCounter,
+		sdkmetric.InstrumentKindUpDownCounter,
+		sdkmetric.InstrumentKindHistogram,
+		sdkmetric.InstrumentKindGauge,
+		sdkmetric.InstrumentKindObservableCounter,
+		sdkmetric.InstrumentKindObservableUpDownCounter,
+		sdkmetric.InstrumentKindObservableGauge,
+	}
+	for _, k := range kinds {
+		if got := cumulativeTemporalitySelector(k); got != metricdata.CumulativeTemporality {
+			t.Errorf("cumulativeTemporalitySelector(%v) = %v, want CumulativeTemporality", k, got)
+		}
+	}
+}
 
 // TestOTLPHTTPURL pins the OTLP/HTTP per-signal URL construction. The OTEL Go
 // otlphttp exporter's WithEndpointURL uses the URL path AS-IS (it does not

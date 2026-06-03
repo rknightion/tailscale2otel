@@ -35,7 +35,7 @@ type MetricPoint struct {
 type LogRecord struct {
 	Body         string
 	SeverityText string
-	EventName    string // convenience copy of Attrs["event.name"]
+	EventName    string // the OTLP LogRecord EventName field (native, log v0.20.0+)
 	Severity     int    // OTEL log severity value
 	Attrs        map[string]string
 }
@@ -203,7 +203,7 @@ func flattenLogRecord(rec sdklog.Record) LogRecord {
 	return LogRecord{
 		Body:         rec.Body().AsString(),
 		SeverityText: rec.SeverityText(),
-		EventName:    attrs["event.name"],
+		EventName:    rec.EventName(),
 		Severity:     int(rec.Severity()),
 		Attrs:        attrs,
 	}
