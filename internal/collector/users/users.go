@@ -12,7 +12,6 @@ import (
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -106,24 +105,24 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			attrLogin: u.LoginName,
 		}
 
-		e.Gauge(MetricUserDevices, semconv.UnitDimensionless, "User device count.",
+		e.Gauge(docUserDevices.Name, docUserDevices.Unit, docUserDevices.Description,
 			float64(u.DeviceCount), idAttrs)
 
 		connected := 0.0
 		if u.CurrentlyConnected {
 			connected = 1.0
 		}
-		e.Gauge(MetricUserConn, semconv.UnitDimensionless, "Whether the user is currently connected (1) or not (0).",
+		e.Gauge(docUserConnected.Name, docUserConnected.Unit, docUserConnected.Description,
 			connected, idAttrs)
 
 		if !u.LastSeen.IsZero() {
-			e.Gauge(MetricUserLastSeen, semconv.UnitSeconds, "User last-seen time as a Unix timestamp.",
+			e.Gauge(docUserLastSeen.Name, docUserLastSeen.Unit, docUserLastSeen.Description,
 				float64(u.LastSeen.Unix()), idAttrs)
 		}
 	}
 
 	for k, n := range counts {
-		e.Gauge(MetricUsersCount, semconv.UnitDimensionless, "Number of users grouped by role, status, and type.",
+		e.Gauge(docUsersCount.Name, docUsersCount.Unit, docUsersCount.Description,
 			float64(n), telemetry.Attrs{
 				attrRole:   k.role,
 				attrStatus: k.status,
@@ -141,7 +140,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		inviteCounts[inviteKey{role: invites[i].Role, accepted: invites[i].Accepted}]++
 	}
 	for k, n := range inviteCounts {
-		e.Gauge(MetricUserInvites, semconv.UnitDimensionless, "Number of user invites grouped by role and accepted state.",
+		e.Gauge(docUserInvites.Name, docUserInvites.Unit, docUserInvites.Description,
 			float64(n), telemetry.Attrs{
 				attrInviteRole:     k.role,
 				attrInviteAccepted: strconv.FormatBool(k.accepted),

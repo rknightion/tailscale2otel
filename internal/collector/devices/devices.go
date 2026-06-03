@@ -111,9 +111,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	c.cache.Replace(toMetas(devs))
-	e.Gauge(metricCacheAge, semconv.UnitSeconds, "age of the enrichment device cache (seconds since last replace)",
+	e.Gauge(docCacheAge.Name, docCacheAge.Unit, docCacheAge.Description,
 		c.cache.Age().Seconds(), nil)
-	e.Gauge(metricCacheSize, semconv.UnitDimensionless, "number of devices in the enrichment cache",
+	e.Gauge(docCacheSize.Name, docCacheSize.Unit, docCacheSize.Description,
 		float64(c.cache.Len()), nil)
 
 	type countKey struct {
@@ -135,24 +135,24 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			idAttrs[semconv.OSVersion] = d.Distro.Version
 		}
 
-		e.Gauge(metricOnline, semconv.UnitDimensionless, "device connected to the control plane (0/1)",
+		e.Gauge(docOnline.Name, docOnline.Unit, docOnline.Description,
 			boolToFloat(d.ConnectedToControl), idAttrs)
 
 		if !d.LastSeen.IsZero() {
-			e.Gauge(metricLastSeen, semconv.UnitSeconds, "device last-seen time (unix seconds)",
+			e.Gauge(docLastSeen.Name, docLastSeen.Unit, docLastSeen.Description,
 				float64(d.LastSeen.Unix()), idAttrs)
 		}
 
 		if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
-			e.Gauge(metricKeyExpiry, semconv.UnitSeconds, "device node-key expiry time (unix seconds)",
+			e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
 				float64(d.Expires.Unix()), idAttrs)
 		}
 
-		e.Gauge(metricUpdateAvailable, semconv.UnitDimensionless, "client update available (0/1)",
+		e.Gauge(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
 			boolToFloat(d.UpdateAvailable), idAttrs)
 
 		for region, derp := range d.DERPLatency {
-			e.Gauge(metricDERPLatency, semconv.UnitSeconds, "device round-trip latency to a DERP region (seconds)",
+			e.Gauge(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
 				derp.LatencyMs/1000, telemetry.Attrs{
 					semconv.HostName:  d.Hostname,
 					semconv.HostID:    d.ID,
@@ -166,9 +166,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				semconv.HostName: d.Hostname,
 				semconv.HostID:   d.ID,
 			}
-			e.Gauge(metricRoutesAdvertised, semconv.UnitRoutes, "number of routes advertised by the device",
+			e.Gauge(docRoutesAdvertised.Name, docRoutesAdvertised.Unit, docRoutesAdvertised.Description,
 				float64(len(d.AdvertisedRoutes)), routeAttrs)
-			e.Gauge(metricRoutesEnabled, semconv.UnitRoutes, "number of advertised routes enabled for the device",
+			e.Gauge(docRoutesEnabled.Name, docRoutesEnabled.Unit, docRoutesEnabled.Description,
 				float64(len(d.EnabledRoutes)), routeAttrs)
 		}
 
@@ -180,7 +180,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	for k, n := range counts {
-		e.Gauge(metricDevicesCount, semconv.UnitDimensionless, "device count by os/authorized/external",
+		e.Gauge(docDevicesCount.Name, docDevicesCount.Unit, docDevicesCount.Description,
 			float64(n), telemetry.Attrs{
 				semconv.OSType: k.os,
 				attrAuthorized: k.authorized,
@@ -207,7 +207,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		evAttrs[k] = fmt.Sprint(v)
 	}
 	e.LogEvent(telemetry.Event{
-		Name:     eventPosture,
+		Name:     docPosture.Name,
 		Severity: telemetry.SeverityInfo,
 		Body:     fmt.Sprintf("device %q has %d posture attribute(s)", d.Hostname, len(attrs)),
 		Attrs:    evAttrs,

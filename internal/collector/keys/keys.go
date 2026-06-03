@@ -13,7 +13,6 @@ import (
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -114,7 +113,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		counts[countKey{typ: typ, revoked: revoked, invalid: k.Invalid}]++
 
 		if !k.Expires.IsZero() {
-			e.Gauge(MetricKeyExpiry, semconv.UnitSeconds, "Key expiry time as a Unix timestamp.",
+			e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
 				float64(k.Expires.Unix()), telemetry.Attrs{
 					attrID:          k.ID,
 					attrType:        typ,
@@ -125,7 +124,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				until := k.Expires.Sub(now)
 				if until > 0 && until <= c.expiryWarn {
 					e.LogEvent(telemetry.Event{
-						Name:     EventExpiring,
+						Name:     docKeyExpiring.Name,
 						Severity: telemetry.SeverityWarn,
 						Body: fmt.Sprintf("Tailscale key %q (%s) expires in %s",
 							keyLabel(k), typ, until.Round(time.Second)),
@@ -142,7 +141,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	for k, n := range counts {
-		e.Gauge(MetricKeysCount, semconv.UnitDimensionless, "Number of keys grouped by type, revoked, and invalid state.",
+		e.Gauge(docKeysCount.Name, docKeysCount.Unit, docKeysCount.Description,
 			float64(n), telemetry.Attrs{
 				attrType:    k.typ,
 				attrRevoked: k.revoked,

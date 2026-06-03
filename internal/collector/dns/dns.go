@@ -9,7 +9,6 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -75,13 +74,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		return err
 	}
 
-	e.Gauge(metricNameserversCount, semconv.UnitDimensionless, "number of global DNS nameservers",
+	e.Gauge(docNameserversCount.Name, docNameserversCount.Unit, docNameserversCount.Description,
 		float64(len(nameservers)), nil)
-	e.Gauge(metricSearchPathsCount, semconv.UnitDimensionless, "number of DNS search paths",
+	e.Gauge(docSearchPathsCount.Name, docSearchPathsCount.Unit, docSearchPathsCount.Description,
 		float64(len(searchPaths)), nil)
-	e.Gauge(metricSplitZonesCount, semconv.UnitDimensionless, "number of split-DNS zones",
+	e.Gauge(docSplitZonesCount.Name, docSplitZonesCount.Unit, docSplitZonesCount.Description,
 		float64(len(split)), nil)
-	e.Gauge(metricMagicDNS, semconv.UnitDimensionless, "MagicDNS enabled (1) or disabled (0)",
+	e.Gauge(docMagicDNS.Name, docMagicDNS.Unit, docMagicDNS.Description,
 		boolValue(prefs.MagicDNS), nil)
 
 	return nil

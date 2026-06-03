@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -176,14 +175,14 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	}
 
 	e.LogEvent(telemetry.Event{
-		Name:      auditEventName,
+		Name:      docAuditLog.Name,
 		Body:      summary(ev),
 		Severity:  severity,
 		Timestamp: ev.EventTime,
 		Attrs:     attrs,
 	})
 
-	e.Counter(MetricAuditEvents, semconv.UnitEvents, "Tailscale configuration audit events", 1, telemetry.Attrs{
+	e.Counter(docAuditEvents.Name, docAuditEvents.Unit, docAuditEvents.Description, 1, telemetry.Attrs{
 		attrAction: ev.Action,
 		attrOrigin: ev.Origin,
 	})

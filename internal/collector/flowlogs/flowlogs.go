@@ -218,8 +218,8 @@ func (c *Collector) emitFeature(e telemetry.Emitter, enabled bool) {
 	if enabled {
 		v = 1
 	}
-	e.Gauge(metricFeatureEnabled, semconv.UnitDimensionless,
-		"Tailscale feature enabled (1) or disabled (0)",
+	e.Gauge(docFeatureEnabled.Name, docFeatureEnabled.Unit,
+		docFeatureEnabled.Description,
 		v, telemetry.Attrs{semconv.AttrFeature: featureName})
 }
 
