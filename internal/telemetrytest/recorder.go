@@ -24,12 +24,13 @@ import (
 
 // MetricPoint is a single recorded metric data point, flattened for assertions.
 type MetricPoint struct {
-	Name      string
-	Unit      string
-	Kind      string // "sum" or "gauge"
-	Value     float64
-	Monotonic bool // only meaningful for sums
-	Attrs     map[string]string
+	Name        string
+	Unit        string
+	Kind        string // "sum" or "gauge"
+	Description string
+	Value       float64
+	Monotonic   bool // only meaningful for sums
+	Attrs       map[string]string
 }
 
 // LogRecord is a single captured log record, flattened for assertions.
@@ -134,12 +135,13 @@ func metricPoints(m metricdata.Metrics) []MetricPoint {
 		out := make([]MetricPoint, 0, len(d.DataPoints))
 		for _, dp := range d.DataPoints {
 			out = append(out, MetricPoint{
-				Name:      m.Name,
-				Unit:      m.Unit,
-				Kind:      "sum",
-				Value:     dp.Value,
-				Monotonic: d.IsMonotonic,
-				Attrs:     attrMap(dp.Attributes),
+				Name:        m.Name,
+				Description: m.Description,
+				Unit:        m.Unit,
+				Kind:        "sum",
+				Value:       dp.Value,
+				Monotonic:   d.IsMonotonic,
+				Attrs:       attrMap(dp.Attributes),
 			})
 		}
 		return out
@@ -147,12 +149,13 @@ func metricPoints(m metricdata.Metrics) []MetricPoint {
 		out := make([]MetricPoint, 0, len(d.DataPoints))
 		for _, dp := range d.DataPoints {
 			out = append(out, MetricPoint{
-				Name:      m.Name,
-				Unit:      m.Unit,
-				Kind:      "sum",
-				Value:     float64(dp.Value),
-				Monotonic: d.IsMonotonic,
-				Attrs:     attrMap(dp.Attributes),
+				Name:        m.Name,
+				Description: m.Description,
+				Unit:        m.Unit,
+				Kind:        "sum",
+				Value:       float64(dp.Value),
+				Monotonic:   d.IsMonotonic,
+				Attrs:       attrMap(dp.Attributes),
 			})
 		}
 		return out
@@ -160,11 +163,12 @@ func metricPoints(m metricdata.Metrics) []MetricPoint {
 		out := make([]MetricPoint, 0, len(d.DataPoints))
 		for _, dp := range d.DataPoints {
 			out = append(out, MetricPoint{
-				Name:  m.Name,
-				Unit:  m.Unit,
-				Kind:  "gauge",
-				Value: dp.Value,
-				Attrs: attrMap(dp.Attributes),
+				Name:        m.Name,
+				Description: m.Description,
+				Unit:        m.Unit,
+				Kind:        "gauge",
+				Value:       dp.Value,
+				Attrs:       attrMap(dp.Attributes),
 			})
 		}
 		return out
@@ -172,11 +176,12 @@ func metricPoints(m metricdata.Metrics) []MetricPoint {
 		out := make([]MetricPoint, 0, len(d.DataPoints))
 		for _, dp := range d.DataPoints {
 			out = append(out, MetricPoint{
-				Name:  m.Name,
-				Unit:  m.Unit,
-				Kind:  "gauge",
-				Value: float64(dp.Value),
-				Attrs: attrMap(dp.Attributes),
+				Name:        m.Name,
+				Description: m.Description,
+				Unit:        m.Unit,
+				Kind:        "gauge",
+				Value:       float64(dp.Value),
+				Attrs:       attrMap(dp.Attributes),
 			})
 		}
 		return out
