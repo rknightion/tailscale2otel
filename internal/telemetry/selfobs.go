@@ -15,7 +15,7 @@ import (
 func InstallExportErrorHandler(e Emitter) (restore func()) {
 	prev := otel.GetErrorHandler()
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		e.Counter("tailscale2otel.export.failures", "1", "OTLP export failures handled by the global OTEL error handler", 1, Attrs{
+		e.Counter(docExportFailures.Name, docExportFailures.Unit, docExportFailures.Description, 1, Attrs{
 			"error.type": errorType(err),
 		})
 	}))
@@ -41,5 +41,5 @@ func EmitBuildInfo(e Emitter, version, goVersion string) {
 	if goVersion != "" {
 		attrs["go.version"] = goVersion
 	}
-	e.Gauge("tailscale2otel.build_info", "1", "build metadata exposed as a constant gauge of value 1", 1, attrs)
+	e.Gauge(docBuildInfo.Name, docBuildInfo.Unit, docBuildInfo.Description, 1, attrs)
 }
