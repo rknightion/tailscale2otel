@@ -47,11 +47,13 @@ WHAT REMAINS (see section 7 for detail):
           Audit-timestamp fidelity gap CLOSED (session 6, H8): the parser now threads the HEC
           envelope time (time→fields.recorded) onto a streamed audit record's EventTime when it
           has none of its own, so streamed audit log records bear the event's real time.
-          S4-9(2) poll+stream cross-dedup VERIFIED live (session 6, H8): FLOW dedups across
-          sources (content key) ✓; AUDIT does NOT (key uses eventTime: poll ns vs stream ms-HEC →
-          keys never match → double-count when both paths run). Pinned by app-level tests
-          (TestPollStreamCrossDedup_*). A time-free composite audit key could close it but is
-          D11-sensitive → PENDING a user decision (see H8).
+          S4-9(2) poll+stream cross-dedup VERIFIED live + FIXED (session 6, H8): FLOW already
+          dedups across sources (content key). AUDIT now dedups too — the audit DedupKey (when an
+          eventGroupID is present) switched to the time-free composite egid|action|target.id|
+          property (poll ns-time vs stream ms-time never matched). PLUS: dual ingestion is now a
+          documented FAILSAFE only — startup WARN when streaming.enabled while a log collector
+          polls; config.example.yaml + Helm values say "pick ONE method". Pinned by
+          TestPollStreamCrossDedup_* and TestWarnings_DualIngestionRisk.
   • S4-11 DONE (a–e). Severity SET + misconfig alert; dedup-map (nodeAuthorized alias;
           inert/risky additions deliberately skipped per D11); subjectID {nodeID,user};
           event.Data → json.RawMessage (array-valued data no longer drops the batch).
@@ -266,14 +268,16 @@ must NEVER target a real/production tailnet; NEVER commit .secrets/ or .capture/
 
 S4-9 [P0 / LIVE] DONE (live-verified 2026-06-03 against m7kni + Grafana Cloud; see H7).
      (1) flow log records carry tailscale_node_hostname — VERIFIED (e.g. =opnsense). ✓
-     (2) cross-source dedup (poll+stream) — VERIFIED live in session 6 (H8). Result: FLOW
-         cross-dedup WORKS (content key nodeId|start|end|proto|src|dst is identical across
-         sources); AUDIT cross-dedup does NOT work (key eventGroupID|eventTime: poll has the
-         API's ns eventTime, stream has only the ms HEC "time" — no inner eventTime — so the
-         keys never match and a both-paths audit event is double-counted). Pinned by
-         internal/app TestPollStreamCrossDedup_{FlowDeduplicates,AuditGap}. POSSIBLE FIX (time-
-         free composite audit key egid|action|target.id|property, 70/70 unique on the real
-         capture) is D11-sensitive → left to a user decision (H8).
+     (2) cross-source dedup (poll+stream) — VERIFIED live + FIXED in session 6 (H8). FLOW
+         cross-dedup already WORKS (content key nodeId|start|end|proto|src|dst, identical across
+         sources). AUDIT cross-dedup was BROKEN (key egid|eventTime: poll ns vs stream ms-HEC →
+         never matched → double-count) and is now FIXED: audit DedupKey (eventGroupID present)
+         switched to the time-free composite egid|action|target.id|property (70/70 unique on the
+         real capture, user-approved per D11). Dual ingestion is now framed as a best-effort
+         FAILSAFE: startup WARN (cfg.Warnings) when streaming.enabled while a log collector polls;
+         config.example.yaml + Helm values guide "pick ONE method". Pinned by internal/app
+         TestPollStreamCrossDedup_{FlowDeduplicates,AuditDeduplicates,AuditDistinctSubChangesBothEmit}
+         + internal/config TestWarnings_DualIngestionRisk.
      (3) the 4 dashboards vs REAL series — VERIFIED: all 36 live tailscale*/tailscale2otel*
          metric names match the dashboards' OTLP-normalized names; the only dashboard
          tokens absent live are label names (12), off-by-default receiver metrics (4:
@@ -728,15 +732,20 @@ S4-9(2) LIVE-VERIFIED (poll+stream cross-dedup) — the residual LIVE deferral, 
   - WHY a naive fix is unsafe (D11): ms-truncating eventTime in the key OVER-suppresses — the
     capture shows ONE eventGroupID (d3c5dde0…) spanning 5 DISTINCT events all within the SAME
     millisecond (…05.558078..558558). So eventTime (or eventGroupID alone) cannot be coarsened.
-  - POSSIBLE SAFE FIX (PENDING USER DECISION): replace the audit key's time component, when an
-    eventGroupID is present, with a time-FREE composite egid|action|target.id|target.property.
-    On the real capture this is 70/70 UNIQUE per event (0 collisions) — as unique as
-    egid|eventTime — and all four fields appear in BOTH poll and stream audit records, so the
-    keys would match across sources. Residual risk: two events under one egid with identical
-    (action,target,property) but different times would collapse (semantically shouldn't happen
-    within one logical operation, but not API-guaranteed). D11 says evidence-first → present to
-    user; do NOT change the production key unilaterally. Pinned current behavior in
-    internal/app TestPollStreamCrossDedup_{FlowDeduplicates,AuditGap} (the audit assertion
-    flips to "deduped" if the fix is adopted). NOTE: running BOTH ingestion paths (source=both)
-    is itself uncommon; audit double-counting is bounded to the overlap window + low-volume.
+  - FIX ADOPTED (user-approved): the audit key's time component, when an eventGroupID is
+    present, is now the time-FREE composite egid|action|target.id|target.property (audit/
+    processor.go DedupKey). On the real capture this is 70/70 UNIQUE per event (0 collisions) —
+    as unique as egid|eventTime — and all four fields appear in BOTH poll and stream audit
+    records, so the keys match across sources → audit cross-dedup now works. Accepted residual
+    risk (D11): two events under one egid with identical (action,target,property) at different
+    times would collapse (semantically shouldn't happen within one logical operation; not
+    API-guaranteed). The empty-eventGroupID fallback keeps eventTime (unchanged). Pinned by
+    TestPollStreamCrossDedup_{AuditDeduplicates,AuditDistinctSubChangesBothEmit} +
+    TestDedupKeyMatchesCollectorFormula.
+  - DUAL-INGESTION = FAILSAFE, NOT A MODE (user-directed): the supported design is ONE method
+    per log type. cfg.Warnings() now emits a startup WARN (logged in main.go) when
+    streaming.enabled while flowlogs/auditlogs still poll (source in {"",poll,both}); pinned by
+    TestWarnings_DualIngestionRisk. config.example.yaml + deploy/helm values.yaml (README
+    regenerated, schema byte-identical) now state: pick ONE method; cross-source de-dup is a
+    best-effort failsafe, not a guarantee. (source=both remains allowed but discouraged + warned.)
 ================================================================================

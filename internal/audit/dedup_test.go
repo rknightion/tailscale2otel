@@ -114,16 +114,50 @@ func TestProcessSharedDedupNoGroupDisambiguatesByActionTarget(t *testing.T) {
 	}
 }
 
-// TestDedupKeyMatchesCollectorFormula pins the exported key formula to the exact
-// shape the auditlogs collector relies on.
-func TestDedupKeyMatchesCollectorFormula(t *testing.T) {
+// TestProcessSharedDedupSamePropertyTwiceCollapses pins the ACCEPTED tradeoff of
+// the time-free cross-source key (S4-9(2)): two events that share
+// (eventGroupID, action, target.id, property) but occur at DIFFERENT times
+// collapse to one in the processor's shared dedup set. This is the price of
+// matching poll (ns eventTime) against stream (ms HEC time, no inner eventTime);
+// such a pair should not arise within one logical operation, but the behavior is
+// pinned so any future change to it is deliberate (D11). The auditlogs collector's
+// time-based window-boundary dedup (eventKey) would instead keep both.
+func TestProcessSharedDedupSamePropertyTwiceCollapses(t *testing.T) {
+	rec := telemetrytest.New()
+	set := dedup.New(0)
+	p := audit.NewProcessor(audit.WithDedup(set))
+
+	// sampleEvent: action CREATE, target.id n1, property ALLOWED_IPS.
+	a := sampleEvent()
+	a.EventGroupID = "g1"
+	a.EventTime = time.Date(2026, 6, 3, 11, 30, 1, 100, time.UTC)
+	b := sampleEvent()
+	b.EventGroupID = "g1"
+	b.EventTime = time.Date(2026, 6, 3, 11, 30, 2, 200, time.UTC) // different time, same identity
+
+	p.Process(a, rec.Emitter())
+	p.Process(b, rec.Emitter())
+
+	if got := counterTotal(rec); got != 1 {
+		t.Fatalf("counter total = %v, want 1 (same egid|action|target|property collapses despite different time)", got)
+	}
+}
+
+// TestDedupKeyFormula pins the exported cross-source key formula. This is the key
+// the PROCESSOR's poll<->stream de-dup set uses — distinct from the auditlogs
+// collector's time-based window-boundary eventKey() (they are intentionally
+// different; see DedupKey doc).
+func TestDedupKeyFormula(t *testing.T) {
 	when := time.Date(2026, 6, 2, 19, 0, 5, 558078907, time.UTC)
 	t1 := when.UTC().Format(time.RFC3339Nano)
 
-	withGroup := sampleEvent()
+	// With an eventGroupID the key is the SOURCE-INDEPENDENT identity
+	// eventGroupID|action|target.id|property (time-free) so it matches across the
+	// poll and stream paths, whose timestamps differ in source/precision (S4-9(2)).
+	withGroup := sampleEvent() // action CREATE, target.id n1, property ALLOWED_IPS
 	withGroup.EventGroupID = "g-string"
 	withGroup.EventTime = when
-	if got, want := audit.DedupKey(withGroup), "g-string|"+t1; got != want {
+	if got, want := audit.DedupKey(withGroup), "g-string|CREATE|n1|ALLOWED_IPS"; got != want {
 		t.Errorf("DedupKey(withGroup) = %q, want %q", got, want)
 	}
 

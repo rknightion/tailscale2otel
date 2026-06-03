@@ -307,18 +307,16 @@ func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
 	}
 }
 
-// TestPollStreamCrossDedup_AuditGap characterizes the VERIFIED S4-9(2) limitation
-// for CONFIG audit events. A streamed audit record carries no inner eventTime, so
-// the receiver times it from the HEC envelope (millisecond precision), while the
-// poll collector has the API's nanosecond eventTime. The dedup key is
-// eventGroupID|eventTime, so the two keys DIFFER and the same change is counted
-// TWICE when both ingestion paths run. (Verified live against the m7kni lab on
-// 2026-06-03: replaying a polled event stream-shaped did NOT dedup, but a copy
-// carrying the exact eventTime DID — so the gap is purely the timestamp
-// source/precision, not the mechanism.) A time-free composite key could close
-// this but is D11-sensitive; see todos.txt H8 / §7 S4-9(2). This test guards the
-// current behavior: if it ever changes, that decision must be deliberate.
-func TestPollStreamCrossDedup_AuditGap(t *testing.T) {
+// TestPollStreamCrossDedup_AuditDeduplicates pins S4-9(2) for CONFIG audit events.
+// A streamed audit record carries no inner eventTime (it is timed from the ms HEC
+// envelope), while the poll collector has the API's ns eventTime — so a timestamp
+// component never matches across the two sources. The audit dedup key therefore
+// uses the SOURCE-INDEPENDENT identity eventGroupID|action|target.id|property
+// (time-free), so a change reported by BOTH paths is counted ONCE. This is a
+// best-effort FAILSAFE for the discouraged dual-ingestion config (source=both):
+// the supported setup is to pick ONE method per log type. (S4-9(2), verified live
+// against m7kni 2026-06-03; key change is the session-6 fix.)
+func TestPollStreamCrossDedup_AuditDeduplicates(t *testing.T) {
 	cfg := config.Default()
 	cfg.Tailscale.Tailnet = "example.com"
 	cfg.Streaming.Enabled = true
@@ -347,25 +345,45 @@ func TestPollStreamCrossDedup_AuditGap(t *testing.T) {
 		t.Fatalf("audit count after poll = %v, want 1", c)
 	}
 
-	// STREAM side: the SAME change, but with NO inner eventTime; the HEC envelope
-	// time is ms precision (1780486201.434 -> ...434Z), which does NOT equal the
-	// poll key's ...434327047Z. So it is NOT deduped — the documented gap.
+	// STREAM side: the SAME change, with NO inner eventTime and a ms HEC time that
+	// does NOT equal the poll eventTime. Because the key is time-free, the keys
+	// match across sources and the duplicate is suppressed (counted once).
 	streamBody := `{"time":1780486201.434,"event":{"eventGroupID":"egA","origin":"NODE","action":"DELETE","target":{"id":"t1","type":"NODE"},"actor":{"id":"a1"}},"fields":{"recorded":"2026-06-03T11:30:05Z"}}`
 	if code := postStream(t, a, streamBody); code != http.StatusOK {
 		t.Fatalf("stream POST status = %d, want 200", code)
 	}
-	if c := count(); c != 2 {
-		t.Fatalf("audit count after stream copy = %v, want 2 (documented S4-9(2) gap: ns vs ms key mismatch)", c)
+	if c := count(); c != 1 {
+		t.Fatalf("audit count after stream copy = %v, want 1 (cross-source dedup must suppress the duplicate)", c)
 	}
+}
 
-	// Positive control: a stream copy carrying the EXACT eventTime DOES dedup,
-	// proving the gap is the timestamp source/precision, not the mechanism.
-	streamExact := `{"time":1780486201.999,"event":{"eventTime":"2026-06-03T11:30:01.434327047Z","eventGroupID":"egA","origin":"NODE","action":"DELETE","target":{"id":"t1","type":"NODE"},"actor":{"id":"a1"}},"fields":{"recorded":"2026-06-03T11:30:05Z"}}`
-	if code := postStream(t, a, streamExact); code != http.StatusOK {
-		t.Fatalf("stream POST (exact) status = %d, want 200", code)
+// TestPollStreamCrossDedup_AuditDistinctSubChangesBothEmit guards D11: the
+// time-free composite key must NOT over-suppress distinct sub-changes that share
+// an eventGroupID. Real audit data shows one eventGroupID spanning several events
+// (e.g. UPDATE MACHINE_NAME, UPDATE ACL_TAGS) at sub-millisecond spacing — these
+// differ in (action,target,property) and must each be counted.
+func TestPollStreamCrossDedup_AuditDistinctSubChangesBothEmit(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	count := func() float64 {
+		var tot float64
+		for _, p := range rec.MetricPoints("tailscale.config.audit.events") {
+			tot += p.Value
+		}
+		return tot
 	}
+	base := audit.Event{EventGroupID: "egG", EventTime: time.Unix(1780486201, 0).UTC(), Action: "UPDATE", Target: audit.Target{ID: "t1", Type: "NODE"}}
+	a1 := base
+	a1.Target.Property = "MACHINE_NAME"
+	a2 := base
+	a2.Target.Property = "ACL_TAGS"
+	a.auditProc.Process(a1, rec.Emitter())
+	a.auditProc.Process(a2, rec.Emitter())
 	if c := count(); c != 2 {
-		t.Fatalf("audit count after exact-time copy = %v, want 2 (exact eventTime must dedup against the poll key)", c)
+		t.Fatalf("audit count = %v, want 2 (distinct properties under one eventGroupID must not collapse)", c)
 	}
 }
 

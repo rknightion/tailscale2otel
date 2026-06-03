@@ -43,7 +43,12 @@ cardinality:
   collapse_external: true            # bucket unresolved IPs as external/unknown
 
 collectors:
-  # source: poll | stream | both  (stream uses the receiver below)
+  # source: poll | stream | both — applies to the log collectors (flowlogs, auditlogs).
+  # PICK ONE METHOD per log type: poll = this exporter polls the API; stream = the
+  # receiver below ingests logs Tailscale pushes. `both` runs poll AND stream (dual
+  # ingestion) and the same data can be DOUBLE-COUNTED — cross-source de-duplication is
+  # only a best-effort FAILSAFE, not a guarantee — so it is discouraged. The exporter
+  # logs a WARN at startup when streaming is enabled while a log collector still polls.
   devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
   # max_log_records_per_window caps flow LOG records per poll window (0 = unlimited);
   # excess is counted into tailscale.network.flow.logs_dropped. Metrics are never capped.
@@ -77,7 +82,11 @@ checkpoint:
   store: memory                      # memory | file
   file_path: "/var/lib/tailscale2otel/checkpoints.json"
 
-# Optional Splunk-HEC-compatible receiver for streamed logs (set a collector's source to stream).
+# Optional Splunk-HEC-compatible receiver for streamed logs. When you enable this,
+# set collectors.flowlogs.source and collectors.auditlogs.source to `stream` (NOT poll
+# or both) so each log type is ingested by exactly ONE path. Running both the poller and
+# this receiver for the same log type risks double-counting; cross-source de-duplication
+# is a best-effort failsafe only, and the exporter WARNs at startup if both are active.
 streaming:
   enabled: false
   listen: ":8088"

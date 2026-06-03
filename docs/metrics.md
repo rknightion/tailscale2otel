@@ -245,19 +245,27 @@ fleet without needing resource-attribute joins.
 
 ---
 
-## Cross-source de-duplication
+## Cross-source de-duplication (a failsafe — pick one method)
 
-Flow logs and audit events can arrive over more than one path at once — for example polling the API
-**and** receiving the HEC stream (`source: both`), or running the webhook receiver alongside audit
-polling. To avoid double-counting, the shared **audit** and **flow** processors carry an optional
-**dedup set**: records already seen (keyed on their stable identity) are dropped before they reach
-the metric counters and log emitters.
+**Choose ONE ingestion method per log type.** For flow and audit logs, run *either* the poller
+(`source: poll`) *or* the HEC stream receiver (`source: stream`) — not both. Running both
+(`source: both`, or `streaming.enabled` while a collector still polls) means the same data can
+arrive twice; the exporter logs a **WARN at startup** when it detects this.
 
-- Enabling `poll` + `stream` for a flow/audit collector is safe — the dedup set prevents the same
-  record from being counted twice.
-- `webhook` + `audit` de-duplication is **best-effort** (the two sources don't always share a
-  perfectly stable key), so treat overlapping webhook/audit configurations as approximately, not
-  exactly, deduplicated.
+When data does arrive over more than one path, the shared **audit** and **flow** processors carry a
+**dedup set** that drops already-seen records (keyed on their stable identity) before the metric
+counters and log emitters. This is a **best-effort FAILSAFE, not a guarantee** — do not rely on it
+as a supported mode:
+
+- **Flow** poll↔stream de-dup is reliable: the key is the connection tuple
+  (`nodeId|start|end|proto|src|dst`), identical across both sources.
+- **Audit** poll↔stream de-dup keys on the event identity `eventGroupID|action|target.id|property`
+  (time-free, because a streamed audit record has no inner `eventTime` and is timed from the HEC
+  envelope — its millisecond timestamp never matches the API's nanosecond `eventTime`). This is
+  reliable in practice but theoretical edge cases exist, hence "failsafe".
+- `webhook` + `audit` de-duplication is **best-effort** on a normalized `(verb, subject, time-bucket)`
+  key (the two sources don't always share a perfectly stable key), so treat overlapping
+  webhook/audit configurations as approximately, not exactly, deduplicated.
 
 ---
 

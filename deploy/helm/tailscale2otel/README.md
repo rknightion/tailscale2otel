@@ -56,7 +56,7 @@ under `config:`).
 | config.collectors.auditlogs.interval | string | `"60s"` | Poll interval. |
 | config.collectors.auditlogs.lag | string | `"60s"` | Tail-hazard lag (see flowlogs.lag). |
 | config.collectors.auditlogs.max_window | string | `"6h"` | Maximum width of a single poll window. |
-| config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both. |
+| config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both. Pick ONE method per log type (see flowlogs.source): `both` risks double-counting and de-dup is only a best-effort failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true. |
 | config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
 | config.collectors.devices.collect_routes | bool | `false` | Also collect advertised/enabled subnet routes and per-DERP latency via the rich GET /devices?fields=all endpoint. |
 | config.collectors.devices.enabled | bool | `true` | Enable the devices collector (device.online/last_seen/key_expiry/update_available). |
@@ -70,7 +70,7 @@ under `config:`).
 | config.collectors.flowlogs.log_mode | string | `"per_connection"` | Flow-log verbosity: per_connection | per_record | off (off = metrics only, no logs). |
 | config.collectors.flowlogs.max_log_records_per_window | int | `0` | Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into tailscale.network.flow.logs_dropped; METRICS are never capped, only logs. |
 | config.collectors.flowlogs.max_window | string | `"1h"` | Maximum width of a single poll window (caps catch-up after downtime). |
-| config.collectors.flowlogs.source | string | `"poll"` | Ingestion source: poll | stream | both (stream uses the receiver under `streaming`). |
+| config.collectors.flowlogs.source | string | `"poll"` | Ingestion source: poll | stream | both. PICK ONE method per log type: `both` runs poll AND the `streaming` receiver and risks double-counting — cross-source de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter logs a WARN at startup when streaming is enabled while this collector still polls. Set `stream` (not poll/both) when config.streaming.enabled is true. |
 | config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
 | config.collectors.keys.interval | string | `"300s"` | Poll interval. |

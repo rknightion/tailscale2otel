@@ -21,7 +21,44 @@ func (c *Config) Warnings() []string {
 			"suspended/removed). For an unattended exporter prefer an OAuth client "+
 			"(method: oauth) — its scoped tokens are short-lived and not bound to a user.")
 	}
+
+	// Dual log-ingestion risk: the supported design is to pick ONE method per log
+	// type (poll OR stream). When the stream receiver is enabled AND a log
+	// collector still polls, the same flow/audit data can arrive via both paths
+	// and be double-counted. Cross-source de-duplication is a best-effort FAILSAFE
+	// (audit keys on event identity, flow on the connection tuple) — not a
+	// guarantee — so flag the configuration rather than relying on it silently.
+	if c.Streaming.Enabled {
+		dualLogCollectors := []struct {
+			name string
+			cfg  CollectorConfig
+		}{
+			{"flowlogs", c.Collectors.Flowlogs},
+			{"auditlogs", c.Collectors.Auditlogs},
+		}
+		for _, col := range dualLogCollectors {
+			if col.cfg.Enabled && pollsSource(col.cfg.Source) {
+				src := col.cfg.Source
+				if src == "" {
+					src = "poll"
+				}
+				w = append(w, fmt.Sprintf("collectors.%s.source=%s with streaming.enabled=true: "+
+					"this log type can be ingested by BOTH the poll collector and the stream "+
+					"receiver and double-counted. Cross-source de-duplication is a best-effort "+
+					"FAILSAFE, not a guarantee. Choose ONE method: set collectors.%s.source=stream "+
+					"(rely on the receiver), or keep source=poll and set streaming.enabled=false.",
+					col.name, src, col.name))
+			}
+		}
+	}
 	return w
+}
+
+// pollsSource reports whether a window collector with the given source value
+// runs the poller (as opposed to relying solely on the stream receiver). It
+// mirrors app.pollSource; an empty source defaults to polling.
+func pollsSource(s string) bool {
+	return s == "" || s == "poll" || s == "both"
 }
 
 // Validate reports the first configuration error it finds, or nil if the
