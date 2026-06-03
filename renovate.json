@@ -1,53 +1,58 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:best-practices",
-    ":semanticCommits",
-    ":dependencyDashboard"
-  ],
-  "timezone": "Europe/London",
-  "schedule": ["before 6am on monday"],
-  "prHourlyLimit": 2,
-  "prConcurrentLimit": 10,
-  "labels": ["dependencies"],
-  "semanticCommitType": "chore",
-  "separateMinorPatch": true,
-  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
-  "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
-    "labels": ["dependencies", "security"],
-    "automerge": false
+    "automerge": true
   },
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "automergeType": "pr",
+  "platformAutomerge": true,
   "packageRules": [
     {
+      "description": "Never automerge release-please PRs - manual review required",
+      "matchFileNames": [".release-please-*.json"],
+      "automerge": false
+    },
+    {
+      "description": "Automerge GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "labels": ["dep:gha"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge patch and minor updates for low risk",
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "labels": ["dep:low-risk"]
+    },
+    {
+      "description": "Automerge pin updates",
+      "matchUpdateTypes": ["pin"],
+      "automerge": true,
+      "labels": ["dep:low-risk"]
+    },
+    {
+      "description": "Automerge digest updates (Docker, etc)",
+      "matchUpdateTypes": ["digest"],
+      "automerge": true,
+      "labels": ["dep:low-risk"]
+    },
+    {
+      "description": "OpenTelemetry: update core (v1.x) and the 0.x log modules together in ONE PR and never automerge - a core bump without the log modules (or vice-versa) breaks the build. This rule is last so it overrides the broad patch/minor automerge above for these packages.",
       "matchManagers": ["gomod"],
       "matchPackageNames": ["go.opentelemetry.io/otel{,/**}"],
       "groupName": "OpenTelemetry",
       "automerge": false
     },
     {
+      "description": "Never automerge pre-1.0 (0.x) Go module minor/patch updates - a 0.x minor can be breaking (e.g. the otel log modules).",
       "matchManagers": ["gomod"],
       "matchCurrentVersion": "< 1.0.0",
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": false
-    },
-    {
-      "matchManagers": ["github-actions", "dockerfile"],
-      "matchUpdateTypes": ["patch", "pin", "pinDigest", "digest"],
-      "automerge": true
-    },
-    {
-      "matchManagers": ["gomod"],
-      "matchDepTypes": ["indirect"],
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
-    },
-    {
-      "matchManagers": ["dockerfile"],
-      "matchPackageNames": ["golang"],
-      "matchUpdateTypes": ["major", "minor"],
-      "automerge": false
     }
-  ],
-  "minimumReleaseAge": "3 days"
+  ]
 }
