@@ -178,7 +178,6 @@
           }
         }
       }
-    },
-    "selfObservability": { "type": "object", "additionalProperties": true }
+    }
   }
 }

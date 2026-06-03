@@ -730,7 +730,13 @@ func TestTLS_CAFileTrustSucceeds(t *testing.T) {
 }
 
 // TestTLS_NoCAFails verifies an HTTPS scrape against an untrusted server with no
-// CA and InsecureSkipVerify=false fails (node.up==0).
+// CA and InsecureSkipVerify=false fails (node.up==0). It scrapes the SAME server
+// twice in one Collect — once with an empty TLS config (verify on) and once with
+// InsecureSkipVerify=true — so the empty-config target failing WHILE the
+// skip-verify target succeeds proves the failure is the per-target TLS
+// verification (not mere connectivity or the shared default client): the default
+// client would reject BOTH, so a passing "skip" target can only mean the
+// per-target client was actually built and applied.
 func TestTLS_NoCAFails(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -739,19 +745,26 @@ func TestTLS_NoCAFails(t *testing.T) {
 	defer srv.Close()
 
 	c := nodemetrics.New(nodemetrics.Options{
-		Targets: []nodemetrics.Target{{
-			URL:      srv.URL,
-			Instance: "n",
-			TLS:      &nodemetrics.TLSClientConfig{}, // no CA, verify on
-		}},
+		Targets: []nodemetrics.Target{
+			{URL: srv.URL, Instance: "verify", TLS: &nodemetrics.TLSClientConfig{}},                       // no CA, verify on -> fail
+			{URL: srv.URL, Instance: "skip", TLS: &nodemetrics.TLSClientConfig{InsecureSkipVerify: true}}, // -> succeed
+		},
 	})
 	rec := telemetrytest.New()
-	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
-		t.Fatal("Collect() error = nil, want non-nil (untrusted TLS cert)")
+	// One target succeeds, so Collect (which errors only when EVERY target fails)
+	// returns nil.
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (the skip-verify target succeeds)", err)
 	}
-	up := rec.MetricPoints("tailscale.node.up")
-	if len(up) != 1 || up[0].Value != 0 {
-		t.Fatalf("up = %+v, want single value 0 (TLS untrusted)", up)
+	byInstance := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.node.up") {
+		byInstance[p.Attrs["instance"]] = p.Value
+	}
+	if byInstance["verify"] != 0 {
+		t.Fatalf("verify-target up = %v, want 0 (untrusted cert, verify on)", byInstance["verify"])
+	}
+	if byInstance["skip"] != 1 {
+		t.Fatalf("skip-target up = %v, want 1 (per-target InsecureSkipVerify applied)", byInstance["skip"])
 	}
 }
 

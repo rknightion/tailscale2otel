@@ -112,6 +112,7 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 | `tailscale.network.io` | `By` | counter | `tailscale_network_io_bytes_total` | `network_io_direction`, `network_transport`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `source_port`/`destination_port` (if enabled) | Bytes transferred, by direction/transport/traffic type and src/dst node. |
 | `tailscale.network.packets` | `{packet}` | counter | `tailscale_network_packets_total` | same dims as `network.io` | Packets transferred, same dimensions. |
 | `tailscale.network.flows` | `{flow}` | counter | `tailscale_network_flows_total` | `network_transport`, `tailscale_traffic_type` | Count of distinct flows (lower-cardinality than io/packets). |
+| `tailscale.network.flow.logs_dropped` | `{record}` | counter | `tailscale_network_flow_logs_dropped_total` | (none) | Flow LOG records suppressed by the per-window volume guard (`collectors.flowlogs.max_log_records_per_window`); 0 unless truncating. Metrics are never dropped. |
 | `tailscale.config.audit.events` | `{event}` | counter | `tailscale_config_audit_events_total` | `tailscale_audit_action`, `tailscale_audit_origin` | Configuration-audit events, by action and origin. |
 
 > Label gating on `network.io`/`network.packets`: `tailscale_src_node`/`tailscale_dst_node` are
