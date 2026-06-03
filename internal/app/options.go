@@ -81,9 +81,12 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI) nodem
 		targets = append(targets, nt)
 	}
 	opts := nodemetrics.Options{
-		Targets:  targets,
-		Interval: nm.Interval.D(),
-		Timeout:  nm.Timeout.D(),
+		Targets:     targets,
+		Interval:    nm.Interval.D(),
+		Timeout:     nm.Timeout.D(),
+		MetricAllow: nm.MetricAllow,
+		MetricDeny:  nm.MetricDeny,
+		DropLabels:  nm.DropLabels,
 	}
 	// Dynamic discovery: poll the Tailscale device inventory on its own interval
 	// and union the result with the static targets (handled by the collector).
