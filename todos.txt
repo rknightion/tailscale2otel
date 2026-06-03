@@ -43,6 +43,7 @@ WHAT REMAINS (see section 7 for detail):
           migration). Needs example lab creds + a user go-ahead.
   • S4-10 LIVE stream-envelope capture (lab-authorized) → tighten the parser.
   • S4-11 Webhook enrichment (severity/data-field/dedup-map correctness).
+  • Helm CI baseline: helm-docs + losisin schema first-run baselines.
 
 --------------------------------------------------------------------------------
 3. HARD CONSTRAINTS (evergreen — always read)
@@ -234,8 +235,9 @@ RECEIVERS: stream.records{type=flow|audit}; stream.rejected{reason=auth|unparsab
 NODEMETRICS (gated): tailscale.node.up[1]{instance} + every scraped tailscaled_* series
   re-emitted VERBATIM (counters→deltas, gauges→gauges) keyed by the "instance" label.
 LOG RECORDS (native EventName): tailscale.network.flow (per conn/record); tailscale.config.audit
-  (WARN on error); tailscale.key.expiring (WARN); tailscale.webhook.<type> (WARN for
-  Expir/Suspend/NeedsApproval/Deleted — see S4-11 gap); tailscale.device.posture (gated).
+  (WARN on error); tailscale.key.expiring (WARN); tailscale.webhook.<type> (WARN via explicit
+  severityByType set — key-expiry/needs-approval/needs-signature/deletions; misconfig IPForwarding
+  events INFO + NodeIPForwardingMisconfigured alert — S4-11a/b DONE); tailscale.device.posture (gated).
 
 --------------------------------------------------------------------------------
 7. PENDING TASKS (incl. partially completed — THE LIVE BACKLOG)
@@ -301,8 +303,9 @@ S4-11 [P1] WEBHOOK ENRICHMENT — severity, data-field pinning, dedup-map correc
      undocumented. No billing/connect-disconnect/route-change webhooks exist (FRs only:
      tailscale/tailscale#15638, #11166). TDD via telemetrytest; pair with S4-10.
 
-(The Helm CI baseline chore is DONE — deploy/helm README.md + values.schema.json were
-regenerated with the real helm-docs + losisin tools; see H5.)
+HELM CI BASELINE [P2 / chore] — .github/workflows/helm.yml runs helm-docs and
+     losisin/helm-values-schema-json in fail-on-diff mode. The committed README.md /
+     values.schema.json were generated however we have significant gaps in explaining our configuration file. We want comprehensive config references to be generated so users understand the meaning of each config item
 
 --------------------------------------------------------------------------------
 8. HOW TO CONTINUE (workflow for the LLM)
@@ -460,10 +463,6 @@ LEARNINGS:
     exist; IDs likely differ across sources) — built+tested the mechanism, deferred tuning (S4-11).
   - renovate.json: the repo already had Renovate (PR #2); reconciled by keeping the user's
     config + ADDING the OTel lockstep group (build-break safety).
-  - Helm baselines: installed helm-docs 1.14.2 (brew) + helm-values-schema-json v2.4.0 (go
-    install — losisin's brew tap is blocked by a Workbrew git-credential quirk) and
-    regenerated deploy/helm README.md + values.schema.json from the REAL tools so helm.yml's
-    fail-on-diff CI is stable (the actions @v1/@v2 track the same tool majors).
 
 --------------------------------------------------------------------------------
 H6. SESSION-4 RESEARCH FINDINGS (evidence for S4-9/10/11; backs completed S4 items)

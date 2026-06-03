@@ -185,3 +185,32 @@ groups:
             dropped). Flow log panels on the Audit Events dashboard (uid
             ts2otel-audit-events) are incomplete. Raise the cap or narrow the
             flow-log scope (per_record vs per_connection) if this is unexpected.
+
+  - name: tailscale2otel.webhook
+    rules:
+      # A node reported a client-side misconfiguration that breaks routing: IP
+      # forwarding is not enabled on an exit node or subnet router. These health
+      # events arrive ONLY via the webhook receiver (no log-streaming/poll
+      # equivalent) and are emitted at INFO log severity, so this alert is the
+      # primary way to surface them. tailscale.webhook.events (counter, unit
+      # {event}) -> tailscale_webhook_events_total, label tailscale_webhook_type.
+      # NOTE: requires the webhook receiver to be enabled (off by default); the
+      # series is absent otherwise, so this alert simply never fires.
+      - alert: NodeIPForwardingMisconfigured
+        expr: >-
+          sum by (tailscale_webhook_type) (
+            rate(tailscale_webhook_events_total{tailscale_webhook_type=~"exitNodeIPForwardingNotEnabled|subnetIPForwardingNotEnabled"}[15m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tailscale node IP forwarding misconfigured ({{ $labels.tailscale_webhook_type }})"
+          description: >-
+            Tailscale delivered {{ $labels.tailscale_webhook_type }} webhook
+            events in the last 15m — a node that should route traffic (exit node
+            or subnet router) has IP forwarding disabled on the host, so that
+            routing is silently broken until it is fixed (enable IP forwarding,
+            e.g. net.ipv4.ip_forward=1 / net.ipv6.conf.all.forwarding=1, on the
+            node). This signal exists ONLY as a webhook (no log-streaming or
+            polling equivalent). It clears once the events stop arriving.
