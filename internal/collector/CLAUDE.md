@@ -58,3 +58,17 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
   paths stay identical.
 - Feature-gated collectors (e.g. flowlogs) treat a 403 / feature-off as "idle" (emit `feature.enabled=0`,
   advance the checkpoint, no error), not as a failure.
+- **Rich device data needs `tsapi.DevicesRich()`** (raw `GET /devices?fields=all`), not the flat
+  `tsclient.Device` (no online flag, per-DERP latency, routes, os.version, or nodeId). Several fields
+  are *derived*, not native: `device.online` from `LastSeen` recency (injectable clock via
+  `export_test.go`), key "type" from `Capabilities`. `go doc` the type before assuming a field exists.
+- **Cross-source dedup keys are content-based / time-free** so the poll and stream copies of one record
+  collapse to a single emission: flow uses `nodeId|start|end|proto|src|dst`; audit (when an
+  `eventGroupID` is present) uses `eventGroupID|action|target.id|target.property` — deliberately
+  time-free because poll carries an ns-precision `eventTime` while streamed audit records have none (the
+  receiver threads the HEC envelope time onto `EventTime` only when it's zero). Never put a timestamp in
+  a cross-path dedup key.
+- **nodemetrics reachability:** the scraper reads tailscaled client metrics (`tailscale set --webclient`
+  → `:5252`, plain HTTP); reaching them across the tailnet needs an ACL grant opening TCP 5252 to the
+  scraping node. Nodes < v1.78 have no endpoint → `node.up=0`. Per-target bearer/TLS is supported, but
+  tailnet client metrics are unauthenticated by default.
