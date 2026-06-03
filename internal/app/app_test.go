@@ -125,6 +125,16 @@ func TestRegisterCollectors_NodeMetricsGating(t *testing.T) {
 			t.Fatal("nodemetrics registered while disabled")
 		}
 	})
+	t.Run("enabled, no targets, discovery enabled -> registered", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.NodeMetrics.Enabled = true
+		cfg.Collectors.NodeMetrics.Discovery.Enabled = true
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if !hasCollector(a, "nodemetrics") {
+			t.Fatal("nodemetrics not registered when enabled with discovery and no static targets")
+		}
+	})
 }
 
 // TestAutoConfigureStreaming_RegistersBothSinks verifies the gated auto_configure
