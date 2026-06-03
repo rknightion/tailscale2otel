@@ -33,6 +33,24 @@ go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"
 The Helm `values.schema.json` and chart `README.md` are also generated, but in CI by GitHub Actions
 (see `deploy/CLAUDE.md`); there is no local Go command for them.
 
+## Development methodology
+
+- **TDD is the rule:** failing test → watch it fail for the right reason → minimal code → green →
+  refactor. Standard-library `testing` only — **no testify**.
+- **Assert telemetry, not internals:** every collector/processor test drives the code against
+  `internal/telemetrytest.Recorder` (an in-memory OTEL reader) and asserts the emitted metrics/logs.
+- After every change run `go build ./... && go vet ./... && go test -race ./...` and keep
+  `golangci-lint run` clean; commit a **green** state between units of work.
+- Go 1.26 toolchain — `testing/synctest` (fake clock) is used for time-dependent tests
+  (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
+- **Confirm any `tsclient`/`tsapi` field or method with `go doc` before using it** — the client
+  surface has non-obvious shapes (see the gotchas below). gopls/LSP reports stale "undefined method"
+  diagnostics after a `go.mod` bump; trust the compiler (`go build`, `go doc`), not the editor.
+- Collectors depend only on the frozen contracts (`telemetry.Emitter`, the collector interfaces,
+  `enrich.DeviceCache`, `tsapi.Client`, the flow/audit processors); each declares a **narrow** client
+  interface it can fake in tests. The `telemetry.Emitter` facade is the only thing touching OTLP — keep
+  it that way so OTLP never leaks into collectors.
+
 ## Module / package layout
 
 Three modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel`) plus two
@@ -89,5 +107,21 @@ Match these locally before claiming work is done.
   double-counts; cross-source dedup is a best-effort failsafe and the app WARNs at startup.
 - **Device enrichment depends on the `devices` collector:** flow/audit IP→name resolution silently
   degrades to `unknown`/`external` if `devices` is disabled.
+- **Pinned deps — don't casually `go get`/`go mod tidy`:** OTEL core (`go.opentelemetry.io/otel`
+  v1.44.0) and the log SDK (`go.opentelemetry.io/otel/log` v0.20.0) are version-locked and must move
+  **together** (Renovate batches them into one lockstep PR) or the build breaks. The two tool modules
+  use `replace ../..` and are CI-only — never runtime deps.
+- **Tailscale wire-format quirks — decode defensively:** flow-log `proto` is a *number* on the wire
+  (`flowlog.transportName` maps IANA→name), and audit `old`/`new` are polymorphic
+  (string|object|array|null), so both are `json.RawMessage`/typed loosely. Rich device data (online,
+  per-DERP latency, routes, os.version, nodeId) comes from `tsapi.DevicesRich()` (raw
+  `GET /devices?fields=all`), **not** the flat `tsclient.Device`. Synthetic fixtures miss these —
+  validate record-type changes against real captures in `.capture/`.
+- **OTLP/HTTP endpoint path is used as-is:** the otlphttp exporter does NOT append `/v1/{metrics,logs}`
+  — `internal/telemetry.otlpHTTPURL()` does. A bare gateway URL 404s silently without it.
+- **Real-tailnet verification:** the lab is `example.com`; read-only OAuth + Grafana Cloud creds live in
+  gitignored `.secrets/creds.local.env` (`set -a; source .secrets/creds.local.env; set +a`), gcx
+  context `example`. `gcx metrics|logs query` needs BOTH `--from` and `--to`. Only the lab may be
+  reconfigured — `auto_configure` must NEVER target a real/production tailnet.
 - **Conventional Commits:** commit messages follow `type(scope): subject` (see `git log`); Renovate and
   release tooling assume it.

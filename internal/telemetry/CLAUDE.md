@@ -58,3 +58,13 @@ Consequence to remember: a plain integer **count** declared as a unit-`"1"` gaug
 (e.g. `tailscale_devices_count_ratio`) even though it isn't a fraction. `*_seconds` expiry/last-seen
 gauges hold **absolute epoch timestamps** (dashboards subtract `time()`). When in doubt, run the tool
 and read the generated Prometheus-name column.
+
+## Testing & catalog gotchas
+
+- `telemetrytest.Recorder` renders int64 **log** attributes as `""` (`Value.AsString` on the Int64
+  kind); they emit correctly in prod. Assert the attribute's *presence*, then verify its value via the
+  log `Body`.
+- The per-package `catalog_test.go` consistency guard checks name membership + unit/instrument/
+  description — **not attribute keys**. Attribute accuracy in the generated docs relies on the catalog's
+  `Attributes` being correct, so review them by hand when you add or change a signal (this is exactly
+  how a missing per-record attribute once slipped past the tests).
