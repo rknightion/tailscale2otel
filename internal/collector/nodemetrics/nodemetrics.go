@@ -41,8 +41,9 @@ import (
 var _ collector.SnapshotCollector = (*Collector)(nil)
 
 const (
-	defaultInterval = 60 * time.Second
-	defaultTimeout  = 10 * time.Second
+	defaultInterval          = 60 * time.Second
+	defaultTimeout           = 10 * time.Second
+	defaultDiscoveryInterval = 5 * time.Minute
 
 	// metricUp is the per-target scrape health gauge.
 	metricUp = "tailscale.node.up"
@@ -94,26 +95,54 @@ type TLSClientConfig struct {
 	ServerName         string
 }
 
+// Discoverer produces additional scrape Targets at runtime. The package stays
+// Tailscale-agnostic: a Discoverer returns plain Targets and the concrete
+// (e.g. Tailscale device-list) implementation lives in another package. Discover
+// is called on the Collector's own discovery interval (see Options).
+type Discoverer interface {
+	Discover(ctx context.Context) ([]Target, error)
+}
+
 // Options configures a Collector.
+//
+// When Discoverer is set, the Collector periodically calls it (every
+// DiscoveryInterval, defaulting to 5m when <= 0) and UNIONS the discovered
+// targets with the static Targets (dedup by URL, static wins). When Discoverer
+// is nil the Collector scrapes only the static Targets and DiscoveryInterval is
+// ignored.
 type Options struct {
-	Targets  []Target
-	Interval time.Duration
-	Timeout  time.Duration
-	Client   *http.Client
-	Now      func() time.Time
+	Targets           []Target
+	Interval          time.Duration
+	Timeout           time.Duration
+	Client            *http.Client
+	Now               func() time.Time
+	Discoverer        Discoverer
+	DiscoveryInterval time.Duration
+}
+
+// resolvedTarget pairs a Target with the *http.Client to scrape it through,
+// keeping the two from ever desyncing when the active set changes at runtime.
+// A nil client means "use the shared Collector.client".
+type resolvedTarget struct {
+	target Target
+	client *http.Client // nil => use the shared Collector.client
 }
 
 // Collector implements collector.SnapshotCollector for node /metrics scraping.
 type Collector struct {
-	targets  []Target
-	clients  []*http.Client // parallel to targets: per-target client, or c.client when nil
-	interval time.Duration
-	client   *http.Client
-	now      func() time.Time
+	static            []resolvedTarget // built once in New from opts.Targets
+	interval          time.Duration
+	client            *http.Client
+	now               func() time.Time
+	discoverer        Discoverer
+	discoveryInterval time.Duration
+	timeout           time.Duration // resolved scrape timeout, for building discovered clients
 
-	mu   sync.Mutex
-	prev map[string]prevEntry // series key -> last cumulative value + generation
-	gen  uint64               // scrape generation, bumped once per Collect
+	mu          sync.Mutex
+	active      []resolvedTarget     // current scrape set: static ∪ discovered (guarded by mu)
+	lastDiscACK time.Time            // last SUCCESSFUL discovery time (guarded by mu)
+	prev        map[string]prevEntry // series key -> last cumulative value + generation
+	gen         uint64               // scrape generation, bumped once per Collect
 }
 
 // New returns a nodemetrics Collector. A zero Interval defaults to 60s and a
@@ -140,28 +169,47 @@ func New(opts Options) *Collector {
 	if now == nil {
 		now = time.Now
 	}
-	clients := make([]*http.Client, len(opts.Targets))
-	for i := range opts.Targets {
-		tls := opts.Targets[i].TLS
+	discoveryInterval := opts.DiscoveryInterval
+	if opts.Discoverer != nil && discoveryInterval <= 0 {
+		discoveryInterval = defaultDiscoveryInterval
+	}
+	static := resolveTargets(opts.Targets, timeout)
+	return &Collector{
+		static:            static,
+		interval:          opts.Interval,
+		client:            client,
+		now:               now,
+		discoverer:        opts.Discoverer,
+		discoveryInterval: discoveryInterval,
+		timeout:           timeout,
+		active:            static,
+		prev:              make(map[string]prevEntry),
+	}
+}
+
+// resolveTargets pairs each Target with its dedicated *http.Client, or nil to
+// fall back to the shared Collector.client. A target carrying a non-nil TLS
+// config that builds successfully gets a DEDICATED client whose transport is a
+// clone of http.DefaultTransport with that TLS config; a target with no TLS (or
+// a TLS config that fails to build, e.g. an unreadable CAFile) leaves client nil
+// so the failure is deferred to scrape time and surfaced as tailscale.node.up=0.
+func resolveTargets(ts []Target, timeout time.Duration) []resolvedTarget {
+	out := make([]resolvedTarget, len(ts))
+	for i := range ts {
+		out[i].target = ts[i]
+		tls := ts[i].TLS
 		if tls == nil {
 			continue
 		}
 		tc, err := buildTLSConfig(tls)
 		if err != nil {
-			continue // fall back to default client; scrape will fail and report up=0
+			continue // fall back to shared client; scrape will fail and report up=0
 		}
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		tr.TLSClientConfig = tc
-		clients[i] = &http.Client{Timeout: timeout, Transport: tr}
+		out[i].client = &http.Client{Timeout: timeout, Transport: tr}
 	}
-	return &Collector{
-		targets:  opts.Targets,
-		clients:  clients,
-		interval: opts.Interval,
-		client:   client,
-		now:      now,
-		prev:     make(map[string]prevEntry),
-	}
+	return out
 }
 
 // buildTLSConfig builds a *tls.Config from a per-target TLSClientConfig, mirroring
@@ -209,43 +257,103 @@ func (c *Collector) DefaultInterval() time.Duration {
 // target failed, so the scheduler's scrape.success reflects total failure. Empty
 // Targets returns nil immediately.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
-	if len(c.targets) == 0 {
+	c.maybeDiscover(ctx)
+
+	// Snapshot the active set (and bump/capture the generation) under the lock so
+	// a concurrent discovery swapping c.active can't desync the scrape loop. The
+	// snapshot is a slice-header copy; resolvedTarget elements are never mutated
+	// in place, so iterating the snapshot without the lock is safe.
+	c.mu.Lock()
+	targets := c.active
+	c.gen++
+	gen := c.gen
+	c.mu.Unlock()
+
+	if len(targets) == 0 {
 		return nil
 	}
-	// Collect is driven by a single per-collector goroutine (never concurrent with
-	// itself), so the generation counter needs no lock; prev map access is still
-	// guarded by c.mu in case of any future sharing.
-	c.gen++
 	var failures int
-	for i := range c.targets {
-		if err := c.scrapeTarget(ctx, &c.targets[i], c.clientFor(i), e); err != nil {
+	for i := range targets {
+		if err := c.scrapeTarget(ctx, &targets[i].target, c.clientOf(&targets[i]), e); err != nil {
 			failures++
 		}
 	}
-	c.pruneStale()
-	if failures == len(c.targets) {
+	c.pruneStale(gen)
+	if failures == len(targets) {
 		return fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
 	}
 	return nil
 }
 
+// maybeDiscover runs the Discoverer when due (every discoveryInterval since the
+// last SUCCESSFUL discovery; immediately when never run). On success it rebuilds
+// the active set as static ∪ discovered (dedup by URL, static wins) and records
+// the discovery time. On error it leaves the active set and lastDiscACK
+// UNCHANGED, so the prior targets keep being scraped and discovery retries on the
+// next tick (a flaky Discoverer never empties the scrape set).
+func (c *Collector) maybeDiscover(ctx context.Context) {
+	if c.discoverer == nil {
+		return
+	}
+	now := c.now()
+	c.mu.Lock()
+	due := c.lastDiscACK.IsZero() || now.Sub(c.lastDiscACK) >= c.discoveryInterval
+	c.mu.Unlock()
+	if !due {
+		return
+	}
+	discovered, err := c.discoverer.Discover(ctx)
+	if err != nil {
+		return // keep prior active set and lastDiscACK; retry next tick
+	}
+	union := unionTargets(c.static, resolveTargets(discovered, c.timeout))
+	c.mu.Lock()
+	c.active = union
+	c.lastDiscACK = now
+	c.mu.Unlock()
+}
+
+// unionTargets returns the static targets first, then each discovered target
+// whose URL is not already present. Dedup is by Target.URL and STATIC WINS, so an
+// operator's explicit static target (its labels/auth/TLS) is never overridden by
+// a discovered duplicate. Order is stable.
+func unionTargets(static, discovered []resolvedTarget) []resolvedTarget {
+	out := make([]resolvedTarget, 0, len(static)+len(discovered))
+	seen := make(map[string]struct{}, len(static)+len(discovered))
+	for i := range static {
+		out = append(out, static[i])
+		seen[static[i].target.URL] = struct{}{}
+	}
+	for i := range discovered {
+		u := discovered[i].target.URL
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, discovered[i])
+	}
+	return out
+}
+
 // pruneStale evicts counter baselines not observed within the last
-// staleGenerations scrapes, bounding the prev map against series/label churn.
-func (c *Collector) pruneStale() {
+// staleGenerations scrapes, bounding the prev map against series/label churn. The
+// generation is passed in (the snapshot captured by Collect) so it stays stable
+// even if a concurrent Collect were to bump c.gen.
+func (c *Collector) pruneStale(gen uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for k, pe := range c.prev {
-		if c.gen-pe.gen >= staleGenerations {
+		if gen-pe.gen >= staleGenerations {
 			delete(c.prev, k)
 		}
 	}
 }
 
-// clientFor returns the dedicated per-target client for index i, falling back to
-// the shared default client when the target has no (or a failed) TLS config.
-func (c *Collector) clientFor(i int) *http.Client {
-	if i < len(c.clients) && c.clients[i] != nil {
-		return c.clients[i]
+// clientOf returns the resolved target's dedicated client, falling back to the
+// shared default client when the target has no (or a failed) TLS config.
+func (c *Collector) clientOf(rt *resolvedTarget) *http.Client {
+	if rt.client != nil {
+		return rt.client
 	}
 	return c.client
 }
