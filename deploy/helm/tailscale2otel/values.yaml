@@ -11,7 +11,7 @@ image:
 imagePullSecrets: []
 
 # -- Replica count. Keep at 1 — this is a singleton poller (no leader election);
-# scaling up would double-emit telemetry.
+# scaling up would double-emit every metric and log.
 replicaCount: 1
 
 # -- Override the chart name portion of resource names.
@@ -32,19 +32,24 @@ podAnnotations: {}
 # -- Extra labels for the pod.
 podLabels: {}
 
-# -- Pod-level security context.
+# -- Pod-level security context. Runs as non-root with the RuntimeDefault seccomp
+# profile; the app needs no special privileges.
 podSecurityContext:
   runAsNonRoot: true
   seccompProfile:
     type: RuntimeDefault
-# -- Container-level security context.
+# -- Container-level security context. Drops all capabilities and runs with a
+# read-only root filesystem (the app writes only to the optional checkpoint
+# volume).
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
     drop: ["ALL"]
 
-# -- Resource requests and limits.
+# -- Resource requests and limits. The defaults suit a few-hundred-device tailnet;
+# raise limits if you enable high-volume flow-log streaming or many node-metrics
+# targets.
 resources:
   requests:
     cpu: 50m
@@ -68,18 +73,24 @@ existingSecret: ""
 # -- Inline secret values rendered into a Secret and injected via envFrom. These keys back
 # the ${ENV} placeholders in `config` below.
 secret:
+  # -- Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet.
   TS_TAILNET: ""
+  # -- OAuth client ID (recommended auth; needs the "all:read" scope). Used when config.tailscale.auth.method=oauth.
   TS_OAUTH_CLIENT_ID: ""
+  # -- OAuth client secret paired with TS_OAUTH_CLIENT_ID.
   TS_OAUTH_CLIENT_SECRET: ""
+  # -- Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey (OAuth is preferred).
   TS_API_KEY: ""
+  # -- Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth).
   GC_INSTANCE_ID: ""
+  # -- Grafana Cloud OTLP token (the password for OTLP basic auth).
   GC_OTLP_TOKEN: ""
-  # Set ONLY when you enable the matching receiver under `config` below. Leaving
-  # them empty makes streaming token auth a no-op and — critically — makes
-  # config.webhook.secret empty, which SKIPS webhook HMAC verification (so
-  # unauthenticated webhook POSTs are accepted). See config.streaming.token /
-  # config.webhook.secret.
+  # -- HEC token the streaming receiver expects ("Authorization: Splunk <token>").
+  # Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op.
   TS_STREAM_HEC_TOKEN: ""
+  # -- Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. CRITICAL: leaving
+  # this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so
+  # unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook.
   TS_WEBHOOK_SECRET: ""
 
 # --- App config ---
@@ -100,102 +111,203 @@ config:
       # -- Auth method: oauth (recommended) | apikey.
       method: oauth
       oauth:
+        # -- OAuth client ID (backed by the TS_OAUTH_CLIENT_ID secret).
         client_id: "${TS_OAUTH_CLIENT_ID}"
+        # -- OAuth client secret (backed by the TS_OAUTH_CLIENT_SECRET secret).
         client_secret: "${TS_OAUTH_CLIENT_SECRET}"
+        # -- OAuth scopes to request. "all:read" covers every read-only collector.
         scopes: ["all:read"]
+        # -- Tailscale OAuth token endpoint (override only for self-hosted/Headscale).
         token_url: "https://api.tailscale.com/api/v2/oauth/token"
       # -- API key, used only when method: apikey.
       apikey: "${TS_API_KEY}"
     http:
+      # -- Per-request HTTP timeout for Tailscale API calls.
       timeout: 30s
-      retry: { max_attempts: 4, base_delay: 500ms, max_delay: 10s }
+      retry:
+        # -- Max attempts per request (incl. the first) before giving up.
+        max_attempts: 4
+        # -- Initial backoff delay; doubles each retry up to max_delay.
+        base_delay: 500ms
+        # -- Ceiling on the per-retry backoff delay.
+        max_delay: 10s
       # -- Global requests/sec across all collectors (0 = unlimited).
       rate_limit: 0
 
   otlp:
     # -- Export protocol: http | grpc | stdout (stdout = local debug).
     protocol: http
+    # -- OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region
+    # (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol).
     endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
-    # Convenience for Grafana Cloud: expands to an "Authorization: Basic <base64(instance:token)>" header.
     grafana_cloud:
+      # -- Grafana Cloud instance/stack ID. Convenience: expands to an
+      # "Authorization: Basic <base64(instance_id:token)>" header. Leave both empty to use `headers`.
       instance_id: "${GC_INSTANCE_ID}"
+      # -- Grafana Cloud OTLP token paired with instance_id.
       token: "${GC_OTLP_TOKEN}"
-    # -- Extra raw headers (alternative to grafana_cloud).
+    # -- Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend).
     headers: {}
-    tls: { insecure: false, ca_file: "", cert_file: "", key_file: "" }
-    # -- How often metrics are pushed.
+    tls:
+      # -- Skip TLS certificate verification (insecure; for local/testing only).
+      insecure: false
+      # -- Path to a CA bundle to verify the server certificate.
+      ca_file: ""
+      # -- Client certificate for mutual TLS.
+      cert_file: ""
+      # -- Client private key for mutual TLS.
+      key_file: ""
+    # -- How often metrics are pushed (the metric export interval).
     metric_interval: 60s
 
   enrichment:
-    # -- Staleness alarm threshold for the device cache.
+    # -- Staleness alarm threshold for the device-enrichment cache (drives the
+    # tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries.
     cache_ttl: 5m
 
   cardinality:
-    # -- Keep ports OFF flow metrics (always on flow logs).
+    # -- Keep src/dst ports OFF flow METRICS (ports are always on flow LOGS).
     flow_include_ports: false
-    # -- Include src/dst device names on flow metrics.
+    # -- Include src/dst device names as dimensions on flow metrics.
     flow_node_dims: true
-    # -- Bucket unresolved IPs as external/unknown.
+    # -- Bucket unresolved IPs as external/unknown to cap cardinality.
     collapse_external: true
 
   collectors:
-    # source: poll | stream | both (stream uses the receiver below).
-    devices: { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
-    # max_log_records_per_window caps flow LOG records per poll window (0 = unlimited);
-    # excess is counted into tailscale.network.flow.logs_dropped. Metrics are never capped.
-    flowlogs: { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h, log_mode: per_connection, max_log_records_per_window: 0 }
-    auditlogs: { enabled: true, source: poll, interval: 60s, lag: 60s, initial_lookback: 5m, max_window: 6h }
-    users: { enabled: true, interval: 300s }
-    keys: { enabled: true, interval: 300s, expiry_warn: 168h }
-    settings: { enabled: true, interval: 600s }
-    acl: { enabled: true, interval: 600s }
-    dns: { enabled: true, interval: 600s }
+    devices:
+      # -- Enable the devices collector (device.online/last_seen/key_expiry/update_available).
+      enabled: true
+      # -- Poll interval.
+      interval: 60s
+      # -- Also collect advertised/enabled subnet routes and per-DERP latency via the rich
+      # GET /devices?fields=all endpoint.
+      collect_routes: false
+      # -- Emit per-device posture attributes as log records (gated; requires posture identity on).
+      collect_posture: false
+    flowlogs:
+      # -- Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs).
+      enabled: true
+      # -- Ingestion source: poll | stream | both (stream uses the receiver under `streaming`).
+      source: poll
+      # -- Poll interval.
+      interval: 60s
+      # -- Tail-hazard lag: never poll closer than this to now, so a window only closes once
+      # Tailscale has finished writing it (avoids missing late-arriving records).
+      lag: 120s
+      # -- Cold-start lookback on first run when no checkpoint exists.
+      initial_lookback: 5m
+      # -- Maximum width of a single poll window (caps catch-up after downtime).
+      max_window: 1h
+      # -- Flow-log verbosity: per_connection | per_record | off (off = metrics only, no logs).
+      log_mode: per_connection
+      # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
+      # tailscale.network.flow.logs_dropped; METRICS are never capped, only logs.
+      max_log_records_per_window: 0
+    auditlogs:
+      # -- Enable the configuration-audit-logs collector.
+      enabled: true
+      # -- Ingestion source: poll | stream | both.
+      source: poll
+      # -- Poll interval.
+      interval: 60s
+      # -- Tail-hazard lag (see flowlogs.lag).
+      lag: 60s
+      # -- Cold-start lookback on first run.
+      initial_lookback: 5m
+      # -- Maximum width of a single poll window.
+      max_window: 6h
+    users:
+      # -- Enable the users collector (users.count, per-user devices/connected/last_seen).
+      enabled: true
+      # -- Poll interval (user data changes slowly).
+      interval: 300s
+    keys:
+      # -- Enable the auth/API keys collector (key.expiry, keys.count).
+      enabled: true
+      # -- Poll interval.
+      interval: 300s
+      # -- Emit a tailscale.key.expiring WARN log when a key expires within this window.
+      expiry_warn: 168h
+    settings:
+      # -- Enable the tailnet-settings collector (setting.enabled flags, key-duration).
+      enabled: true
+      # -- Poll interval (settings change rarely).
+      interval: 600s
+    acl:
+      # -- Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section).
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
+    dns:
+      # -- Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS).
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
     # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
     # them centrally over OTLP. Off by default; disabled when no targets are configured.
     node_metrics:
+      # -- Enable the node-metrics scraper. Requires at least one entry in `targets`.
       enabled: false
+      # -- Scrape interval for every target.
       interval: 60s
+      # -- Per-scrape HTTP timeout.
       timeout: 10s
+      # -- List of scrape targets. Each: {url, instance, labels{}, bearer_token, bearer_token_file,
+      # headers{}, tls{insecure,ca_file,cert_file,key_file}}. The "instance" label is the node identity.
       targets: []
 
   checkpoint:
-    # -- Checkpoint store: memory | file.
+    # -- Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does
+    # initial_lookback); "file" persists them atomically (needs a writable volume at file_path).
     store: memory
+    # -- Checkpoint file path when store: file (mount a writable volume here).
     file_path: "/var/lib/tailscale2otel/checkpoints.json"
 
   # Optional Splunk-HEC-compatible receiver for streamed logs (set a collector's source to stream).
   streaming:
+    # -- Enable the HEC-style streaming receiver.
     enabled: false
+    # -- Address the receiver binds (host:port).
     listen: ":8088"
+    # -- HTTP path the receiver serves (the Splunk-HEC event endpoint).
     path: "/services/collector/event"
-    # -- Expected as 'Authorization: Splunk <token>'.
+    # -- Expected as 'Authorization: Splunk <token>'. Empty disables token auth.
     token: "${TS_STREAM_HEC_TOKEN}"
     # -- Externally reachable receiver URL; REQUIRED when auto_configure: true.
     public_url: ""
-    tls: { cert_file: "", key_file: "" }
+    tls:
+      # -- TLS certificate file; set with key_file to serve the receiver over HTTPS.
+      cert_file: ""
+      # -- TLS private key file paired with cert_file.
+      key_file: ""
     # -- Body decompression: auto | gzip | zstd | none.
     decompress: auto
-    # -- PUT this receiver as a Splunk-HEC log-streaming sink on startup.
+    # -- PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url).
+    # NEVER enable against a tailnet whose streaming you do not intend to overwrite.
     auto_configure: false
     # -- Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed).
     max_body_bytes: 0
 
   # Optional webhook receiver for real-time Tailscale events.
   webhook:
+    # -- Enable the webhook receiver.
     enabled: false
+    # -- Address the receiver binds (host:port).
     listen: ":8089"
+    # -- HTTP path the receiver serves.
     path: "/tailscale/webhook"
-    # -- HMAC-SHA256 verification secret.
+    # -- HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs).
     secret: "${TS_WEBHOOK_SECRET}"
-    # -- Best-effort: drop a webhook event already counted via the audit logs.
+    # -- Best-effort: drop a webhook event already counted via the audit logs (off by default).
     dedup_audit_events: false
 
   self_observability:
-    # -- Emit the exporter's own health metrics.
+    # -- Emit the exporter's own health metrics (scrape/api/export/build_info/enrich).
     enabled: true
 
   # Always-on admin HTTP server for liveness/readiness probes (carries no Tailscale data).
   admin:
+    # -- Enable the admin probe server.
     enabled: false
-    # -- Serves /healthz and /readyz.
+    # -- Address the admin server binds; serves /healthz and /readyz.
     listen: ":9090"
