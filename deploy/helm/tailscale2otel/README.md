@@ -42,86 +42,86 @@ under `config:`).
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
-| config.admin.enabled | bool | `false` |  |
-| config.admin.listen | string | `":9090"` | Serves /healthz and /readyz. |
-| config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown. |
-| config.cardinality.flow_include_ports | bool | `false` | Keep ports OFF flow metrics (always on flow logs). |
-| config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names on flow metrics. |
-| config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` |  |
-| config.checkpoint.store | string | `"memory"` | Checkpoint store: memory | file. |
-| config.collectors.acl.enabled | bool | `true` |  |
-| config.collectors.acl.interval | string | `"600s"` |  |
-| config.collectors.auditlogs.enabled | bool | `true` |  |
-| config.collectors.auditlogs.initial_lookback | string | `"5m"` |  |
-| config.collectors.auditlogs.interval | string | `"60s"` |  |
-| config.collectors.auditlogs.lag | string | `"60s"` |  |
-| config.collectors.auditlogs.max_window | string | `"6h"` |  |
-| config.collectors.auditlogs.source | string | `"poll"` |  |
-| config.collectors.devices.collect_posture | bool | `false` |  |
-| config.collectors.devices.collect_routes | bool | `false` |  |
-| config.collectors.devices.enabled | bool | `true` |  |
-| config.collectors.devices.interval | string | `"60s"` |  |
-| config.collectors.dns.enabled | bool | `true` |  |
-| config.collectors.dns.interval | string | `"600s"` |  |
-| config.collectors.flowlogs.enabled | bool | `true` |  |
-| config.collectors.flowlogs.initial_lookback | string | `"5m"` |  |
-| config.collectors.flowlogs.interval | string | `"60s"` |  |
-| config.collectors.flowlogs.lag | string | `"120s"` |  |
-| config.collectors.flowlogs.log_mode | string | `"per_connection"` |  |
-| config.collectors.flowlogs.max_log_records_per_window | int | `0` |  |
-| config.collectors.flowlogs.max_window | string | `"1h"` |  |
-| config.collectors.flowlogs.source | string | `"poll"` |  |
-| config.collectors.keys.enabled | bool | `true` |  |
-| config.collectors.keys.expiry_warn | string | `"168h"` |  |
-| config.collectors.keys.interval | string | `"300s"` |  |
-| config.collectors.node_metrics.enabled | bool | `false` |  |
-| config.collectors.node_metrics.interval | string | `"60s"` |  |
-| config.collectors.node_metrics.targets | list | `[]` |  |
-| config.collectors.node_metrics.timeout | string | `"10s"` |  |
-| config.collectors.settings.enabled | bool | `true` |  |
-| config.collectors.settings.interval | string | `"600s"` |  |
-| config.collectors.users.enabled | bool | `true` |  |
-| config.collectors.users.interval | string | `"300s"` |  |
-| config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device cache. |
+| config.admin.enabled | bool | `false` | Enable the admin probe server. |
+| config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. |
+| config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. |
+| config.cardinality.flow_include_ports | bool | `false` | Keep src/dst ports OFF flow METRICS (ports are always on flow LOGS). |
+| config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
+| config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
+| config.checkpoint.store | string | `"memory"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
+| config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
+| config.collectors.acl.interval | string | `"600s"` | Poll interval. |
+| config.collectors.auditlogs.enabled | bool | `true` | Enable the configuration-audit-logs collector. |
+| config.collectors.auditlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run. |
+| config.collectors.auditlogs.interval | string | `"60s"` | Poll interval. |
+| config.collectors.auditlogs.lag | string | `"60s"` | Tail-hazard lag (see flowlogs.lag). |
+| config.collectors.auditlogs.max_window | string | `"6h"` | Maximum width of a single poll window. |
+| config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both. |
+| config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
+| config.collectors.devices.collect_routes | bool | `false` | Also collect advertised/enabled subnet routes and per-DERP latency via the rich GET /devices?fields=all endpoint. |
+| config.collectors.devices.enabled | bool | `true` | Enable the devices collector (device.online/last_seen/key_expiry/update_available). |
+| config.collectors.devices.interval | string | `"60s"` | Poll interval. |
+| config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
+| config.collectors.dns.interval | string | `"600s"` | Poll interval. |
+| config.collectors.flowlogs.enabled | bool | `true` | Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs). |
+| config.collectors.flowlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run when no checkpoint exists. |
+| config.collectors.flowlogs.interval | string | `"60s"` | Poll interval. |
+| config.collectors.flowlogs.lag | string | `"120s"` | Tail-hazard lag: never poll closer than this to now, so a window only closes once Tailscale has finished writing it (avoids missing late-arriving records). |
+| config.collectors.flowlogs.log_mode | string | `"per_connection"` | Flow-log verbosity: per_connection | per_record | off (off = metrics only, no logs). |
+| config.collectors.flowlogs.max_log_records_per_window | int | `0` | Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into tailscale.network.flow.logs_dropped; METRICS are never capped, only logs. |
+| config.collectors.flowlogs.max_window | string | `"1h"` | Maximum width of a single poll window (caps catch-up after downtime). |
+| config.collectors.flowlogs.source | string | `"poll"` | Ingestion source: poll | stream | both (stream uses the receiver under `streaming`). |
+| config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
+| config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
+| config.collectors.keys.interval | string | `"300s"` | Poll interval. |
+| config.collectors.node_metrics.enabled | bool | `false` | Enable the node-metrics scraper. Requires at least one entry in `targets`. |
+| config.collectors.node_metrics.interval | string | `"60s"` | Scrape interval for every target. |
+| config.collectors.node_metrics.targets | list | `[]` | List of scrape targets. Each: {url, instance, labels{}, bearer_token, bearer_token_file, headers{}, tls{insecure,ca_file,cert_file,key_file}}. The "instance" label is the node identity. |
+| config.collectors.node_metrics.timeout | string | `"10s"` | Per-scrape HTTP timeout. |
+| config.collectors.settings.enabled | bool | `true` | Enable the tailnet-settings collector (setting.enabled flags, key-duration). |
+| config.collectors.settings.interval | string | `"600s"` | Poll interval (settings change rarely). |
+| config.collectors.users.enabled | bool | `true` | Enable the users collector (users.count, per-user devices/connected/last_seen). |
+| config.collectors.users.interval | string | `"300s"` | Poll interval (user data changes slowly). |
+| config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
-| config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` |  |
-| config.otlp.grafana_cloud.instance_id | string | `"${GC_INSTANCE_ID}"` |  |
-| config.otlp.grafana_cloud.token | string | `"${GC_OTLP_TOKEN}"` |  |
-| config.otlp.headers | object | `{}` | Extra raw headers (alternative to grafana_cloud). |
-| config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed. |
+| config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
+| config.otlp.grafana_cloud.instance_id | string | `"${GC_INSTANCE_ID}"` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Leave both empty to use `headers`. |
+| config.otlp.grafana_cloud.token | string | `"${GC_OTLP_TOKEN}"` | Grafana Cloud OTLP token paired with instance_id. |
+| config.otlp.headers | object | `{}` | Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend). |
+| config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed (the metric export interval). |
 | config.otlp.protocol | string | `"http"` | Export protocol: http | grpc | stdout (stdout = local debug). |
-| config.otlp.tls.ca_file | string | `""` |  |
-| config.otlp.tls.cert_file | string | `""` |  |
-| config.otlp.tls.insecure | bool | `false` |  |
-| config.otlp.tls.key_file | string | `""` |  |
-| config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics. |
-| config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup. |
+| config.otlp.tls.ca_file | string | `""` | Path to a CA bundle to verify the server certificate. |
+| config.otlp.tls.cert_file | string | `""` | Client certificate for mutual TLS. |
+| config.otlp.tls.insecure | bool | `false` | Skip TLS certificate verification (insecure; for local/testing only). |
+| config.otlp.tls.key_file | string | `""` | Client private key for mutual TLS. |
+| config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich). |
+| config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
 | config.streaming.decompress | string | `"auto"` | Body decompression: auto | gzip | zstd | none. |
-| config.streaming.enabled | bool | `false` |  |
-| config.streaming.listen | string | `":8088"` |  |
+| config.streaming.enabled | bool | `false` | Enable the HEC-style streaming receiver. |
+| config.streaming.listen | string | `":8088"` | Address the receiver binds (host:port). |
 | config.streaming.max_body_bytes | int | `0` | Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed). |
-| config.streaming.path | string | `"/services/collector/event"` |  |
+| config.streaming.path | string | `"/services/collector/event"` | HTTP path the receiver serves (the Splunk-HEC event endpoint). |
 | config.streaming.public_url | string | `""` | Externally reachable receiver URL; REQUIRED when auto_configure: true. |
-| config.streaming.tls.cert_file | string | `""` |  |
-| config.streaming.tls.key_file | string | `""` |  |
-| config.streaming.token | string | `"${TS_STREAM_HEC_TOKEN}"` | Expected as 'Authorization: Splunk <token>'. |
+| config.streaming.tls.cert_file | string | `""` | TLS certificate file; set with key_file to serve the receiver over HTTPS. |
+| config.streaming.tls.key_file | string | `""` | TLS private key file paired with cert_file. |
+| config.streaming.token | string | `"${TS_STREAM_HEC_TOKEN}"` | Expected as 'Authorization: Splunk <token>'. Empty disables token auth. |
 | config.tailscale.auth.apikey | string | `"${TS_API_KEY}"` | API key, used only when method: apikey. |
 | config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey. |
-| config.tailscale.auth.oauth.client_id | string | `"${TS_OAUTH_CLIENT_ID}"` |  |
-| config.tailscale.auth.oauth.client_secret | string | `"${TS_OAUTH_CLIENT_SECRET}"` |  |
-| config.tailscale.auth.oauth.scopes[0] | string | `"all:read"` |  |
-| config.tailscale.auth.oauth.token_url | string | `"https://api.tailscale.com/api/v2/oauth/token"` |  |
+| config.tailscale.auth.oauth.client_id | string | `"${TS_OAUTH_CLIENT_ID}"` | OAuth client ID (backed by the TS_OAUTH_CLIENT_ID secret). |
+| config.tailscale.auth.oauth.client_secret | string | `"${TS_OAUTH_CLIENT_SECRET}"` | OAuth client secret (backed by the TS_OAUTH_CLIENT_SECRET secret). |
+| config.tailscale.auth.oauth.scopes | list | `["all:read"]` | OAuth scopes to request. "all:read" covers every read-only collector. |
+| config.tailscale.auth.oauth.token_url | string | `"https://api.tailscale.com/api/v2/oauth/token"` | Tailscale OAuth token endpoint (override only for self-hosted/Headscale). |
 | config.tailscale.http.rate_limit | int | `0` | Global requests/sec across all collectors (0 = unlimited). |
-| config.tailscale.http.retry.base_delay | string | `"500ms"` |  |
-| config.tailscale.http.retry.max_attempts | int | `4` |  |
-| config.tailscale.http.retry.max_delay | string | `"10s"` |  |
-| config.tailscale.http.timeout | string | `"30s"` |  |
+| config.tailscale.http.retry.base_delay | string | `"500ms"` | Initial backoff delay; doubles each retry up to max_delay. |
+| config.tailscale.http.retry.max_attempts | int | `4` | Max attempts per request (incl. the first) before giving up. |
+| config.tailscale.http.retry.max_delay | string | `"10s"` | Ceiling on the per-retry backoff delay. |
+| config.tailscale.http.timeout | string | `"30s"` | Per-request HTTP timeout for Tailscale API calls. |
 | config.tailscale.tailnet | string | `"${TS_TAILNET}"` | Tailnet name, or "-" for the auth principal's default tailnet. |
-| config.webhook.dedup_audit_events | bool | `false` | Best-effort: drop a webhook event already counted via the audit logs. |
-| config.webhook.enabled | bool | `false` |  |
-| config.webhook.listen | string | `":8089"` |  |
-| config.webhook.path | string | `"/tailscale/webhook"` |  |
-| config.webhook.secret | string | `"${TS_WEBHOOK_SECRET}"` | HMAC-SHA256 verification secret. |
+| config.webhook.dedup_audit_events | bool | `false` | Best-effort: drop a webhook event already counted via the audit logs (off by default). |
+| config.webhook.enabled | bool | `false` | Enable the webhook receiver. |
+| config.webhook.listen | string | `":8089"` | Address the receiver binds (host:port). |
+| config.webhook.path | string | `"/tailscale/webhook"` | HTTP path the receiver serves. |
+| config.webhook.secret | string | `"${TS_WEBHOOK_SECRET}"` | HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs). |
 | existingSecret | string | `""` | Name of a pre-created Secret exposing the env keys below. When set, no Secret is rendered. |
 | fullnameOverride | string | `""` | Fully override the generated resource names. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
@@ -132,11 +132,19 @@ under `config:`).
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Extra annotations for the pod. |
 | podLabels | object | `{}` | Extra labels for the pod. |
-| podSecurityContext | object | `{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. |
-| replicaCount | int | `1` | Replica count. Keep at 1 — this is a singleton poller (no leader election); scaling up would double-emit telemetry. |
-| resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. |
+| podSecurityContext | object | `{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. |
+| replicaCount | int | `1` | Replica count. Keep at 1 — this is a singleton poller (no leader election); scaling up would double-emit every metric and log. |
+| resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. The defaults suit a few-hundred-device tailnet; raise limits if you enable high-volume flow-log streaming or many node-metrics targets. |
 | secret | object | `{"GC_INSTANCE_ID":"","GC_OTLP_TOKEN":"","TS_API_KEY":"","TS_OAUTH_CLIENT_ID":"","TS_OAUTH_CLIENT_SECRET":"","TS_STREAM_HEC_TOKEN":"","TS_TAILNET":"","TS_WEBHOOK_SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These keys back the ${ENV} placeholders in `config` below. |
-| securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container-level security context. |
+| secret.GC_INSTANCE_ID | string | `""` | Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth). |
+| secret.GC_OTLP_TOKEN | string | `""` | Grafana Cloud OTLP token (the password for OTLP basic auth). |
+| secret.TS_API_KEY | string | `""` | Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey (OAuth is preferred). |
+| secret.TS_OAUTH_CLIENT_ID | string | `""` | OAuth client ID (recommended auth; needs the "all:read" scope). Used when config.tailscale.auth.method=oauth. |
+| secret.TS_OAUTH_CLIENT_SECRET | string | `""` | OAuth client secret paired with TS_OAUTH_CLIENT_ID. |
+| secret.TS_STREAM_HEC_TOKEN | string | `""` | HEC token the streaming receiver expects ("Authorization: Splunk <token>"). Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op. |
+| secret.TS_TAILNET | string | `""` | Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet. |
+| secret.TS_WEBHOOK_SECRET | string | `""` | Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. CRITICAL: leaving this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook. |
+| securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container-level security context. Drops all capabilities and runs with a read-only root filesystem (the app writes only to the optional checkpoint volume). |
 | serviceAccount.annotations | object | `{}` | Annotations to add to the ServiceAccount. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
 | serviceAccount.name | string | `""` | ServiceAccount name. Generated when empty. |

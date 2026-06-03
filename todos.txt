@@ -44,7 +44,8 @@ WHAT REMAINS (see section 7 for detail):
           Also carries S4-9(2): poll+stream cross-dedup live check.
   • S4-11 Webhook enrichment: (a) severity SET + (b) misconfig alert DONE (S4-11a/b);
           (c/d/e) dedup-map/subjectID/payload-typing → bundled with the S4-10 capture.
-  • Helm CI baseline: comprehensive config references (reopened — see §7).
+  • Helm CI baseline: DONE — comprehensive `# --` config references for every key
+    (README regenerated; schema unchanged/fail-on-diff safe; configcheck passes).
 
 --------------------------------------------------------------------------------
 3. HARD CONSTRAINTS (evergreen — always read)
@@ -311,9 +312,14 @@ S4-11 [P1] WEBHOOK ENRICHMENT — severity, data-field pinning, dedup-map correc
      undocumented. No billing/connect-disconnect/route-change webhooks exist (FRs only:
      tailscale/tailscale#15638, #11166). TDD via telemetrytest; pair with S4-10.
 
-HELM CI BASELINE [P2 / chore] — .github/workflows/helm.yml runs helm-docs and
-     losisin/helm-values-schema-json in fail-on-diff mode. The committed README.md /
-     values.schema.json were generated however we have significant gaps in explaining our configuration file. We want comprehensive config references to be generated so users understand the meaning of each config item
+HELM CI BASELINE [P2 / chore] — DONE (H7). Expanded the inline collector flow-maps in
+     deploy/helm/tailscale2otel/values.yaml to block style and added comprehensive `# --`
+     annotations to EVERY config key (collectors.*, otlp.*, tailscale.auth/http.*, streaming.*,
+     webhook.*, checkpoint.*, admin.*, the secret keys). Regenerated README.md via helm-docs
+     (norwoodj) and values.schema.json via losisin --draft 7 (CI args; no --use-helm-docs, so the
+     schema is byte-identical = fail-on-diff safe). 0 blank rows in the README values table now.
+     Verified: helm lint + helm template + tools/configcheck on the rendered ConfigMap all pass
+     (the flow→block restructure preserves the rendered config.yaml exactly).
 
 --------------------------------------------------------------------------------
 8. HOW TO CONTINUE (workflow for the LLM)
@@ -555,7 +561,20 @@ S4-9 [LIVE, DONE]: ran the binary (config.local.yaml, OAuth) against m7kni → G
   - poll+stream cross-dedup (S4-9 item 2) carried into S4-10 (needs stream ON).
   gotcha reconfirmed: gcx is `gcx metrics|logs query` (needs --from AND --to); contexts
   via `gcx config use-context`/`current-context` (active = m7kni), NOT `gcx context`.
-  NOTE: this dev host's tailscaled is on ROB'S PERSONAL tailnet (mbp16/ai/alex/...), NOT
-  m7kni — relevant to S4-10 receiver reachability (TS log streaming egresses from TS
-  cloud → the receiver needs PUBLIC reachability, e.g. Funnel, not tailnet-internal).
+  CORRECTION: this dev host (mbp16) IS on the m7kni tailnet — m7kni.io's MagicDNS suffix
+  is saga-turtle.ts.net, so mbp16.saga-turtle.ts.net is a lab node. (Earlier "personal
+  tailnet" assumption was wrong.) The lab uses Tailscale PRIVATE log streaming
+  (src logstream@tailscale; kb/1255) and the ACL already grants logstream → mbp16 IPv6:443.
+
+HELM CI BASELINE [DONE]: expanded values.yaml collector flow-maps to block style + added
+  `# --` annotations to every config key; regenerated README (helm-docs) + schema (losisin
+  --draft 7, no use-helm-docs → byte-identical, fail-on-diff safe). helm lint/template +
+  configcheck on the rendered ConfigMap all pass. 0 blank rows in the README values table.
+
+S4-10 [IN PROGRESS]: stood up a raw-dump HEC capture server (127.0.0.1:8088) fronted by
+  `tailscale serve --https=443` (valid mbp16 cert), redirected the lab's network+configuration
+  log streams to https://mbp16.saga-turtle.ts.net (saved the prior vector.saga-turtle.ts.net
+  config; vector is DECOMMISSIONED per user, so restore is non-critical). IPv4 self-test +
+  HTTPS both captured; awaiting a real lab batch (Tailscale streaming cadence). MUST restore
+  the original stream config + `tailscale serve --https=443 off` on teardown.
 ================================================================================
