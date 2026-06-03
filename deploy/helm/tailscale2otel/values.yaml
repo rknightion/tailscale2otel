@@ -74,6 +74,13 @@ secret:
   TS_API_KEY: ""
   GC_INSTANCE_ID: ""
   GC_OTLP_TOKEN: ""
+  # Set ONLY when you enable the matching receiver under `config` below. Leaving
+  # them empty makes streaming token auth a no-op and — critically — makes
+  # config.webhook.secret empty, which SKIPS webhook HMAC verification (so
+  # unauthenticated webhook POSTs are accepted). See config.streaming.token /
+  # config.webhook.secret.
+  TS_STREAM_HEC_TOKEN: ""
+  TS_WEBHOOK_SECRET: ""
 
 # --- App config ---
 # The FULL application config, rendered verbatim into a ConfigMap as config.yaml.

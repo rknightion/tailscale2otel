@@ -122,3 +122,26 @@ func TestProcessAllCapsPerRecordSummaries(t *testing.T) {
 		t.Fatalf("io total = %v, want %v (metrics never capped)", got, 2*5*(100+80))
 	}
 }
+
+// TestProcessStandaloneCapsLogs covers the standalone Process() entry point that
+// the stream receiver calls per flow: its own per-call budget must cap log
+// records and flush MetricLogsDropped, while metrics stay uncapped. (ProcessAll
+// and Process are distinct budget code paths.)
+func TestProcessStandaloneCapsLogs(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{
+		LogMode:                "per_connection",
+		MaxLogRecordsPerWindow: 2,
+	})
+	p.Process(fiveConnFlow(), rec.Emitter())
+
+	if logs := rec.LogRecords(); len(logs) != 2 {
+		t.Fatalf("flow log records = %d, want 2 (cap via Process)", len(logs))
+	}
+	if got := ioTotal(rec); got != 5*(100+80) {
+		t.Fatalf("io total = %v, want %v (metrics never capped)", got, 5*(100+80))
+	}
+	if got := droppedTotal(rec); got != 3 {
+		t.Fatalf("logs_dropped = %v, want 3", got)
+	}
+}
