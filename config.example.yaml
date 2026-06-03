@@ -7,13 +7,17 @@ tailscale:
   # Your tailnet's name, or "-" for the default tailnet of the auth principal.
   tailnet: "${TS_TAILNET}"
   auth:
-    method: oauth                    # oauth (recommended) | apikey
+    # oauth (recommended) | apikey. Prefer an OAuth client: its scoped tokens are
+    # short-lived and NOT tied to a user. A personal API key (apikey) expires in
+    # <=90 days and stops working when the user who created it is removed — the
+    # exporter logs a WARN advising this when method: apikey.
+    method: oauth
     oauth:
       client_id: "${TS_OAUTH_CLIENT_ID}"
       client_secret: "${TS_OAUTH_CLIENT_SECRET}"
       scopes: ["all:read"]           # least-privilege read scopes
       token_url: "https://api.tailscale.com/api/v2/oauth/token"
-    apikey: "${TS_API_KEY}"          # used only when method: apikey
+    apikey: "${TS_API_KEY}"          # used only when method: apikey (expires <=90d, user-tied)
   http:
     timeout: 30s
     retry: { max_attempts: 4, base_delay: 500ms, max_delay: 10s }

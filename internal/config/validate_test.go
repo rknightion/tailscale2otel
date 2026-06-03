@@ -15,6 +15,26 @@ func loadErr(t *testing.T, y string) error {
 	return err
 }
 
+// TestWarnings_APIKeyMethodAdvises pins the non-fatal advisory steering operators
+// toward OAuth: a personal API key (auth.method: apikey) is valid but expires in
+// <=90 days and is tied to a user, so Warnings() should flag it; the default
+// (oauth) produces no warning.
+func TestWarnings_APIKeyMethodAdvises(t *testing.T) {
+	c := config.Default()
+	if w := c.Warnings(); len(w) != 0 {
+		t.Fatalf("default (oauth) Warnings = %v, want none", w)
+	}
+	c.Tailscale.Auth.Method = "apikey"
+	w := c.Warnings()
+	if len(w) == 0 {
+		t.Fatalf("apikey Warnings = none, want an advisory about expiry / OAuth")
+	}
+	joined := strings.Join(w, " ")
+	if !strings.Contains(joined, "apikey") || !strings.Contains(joined, "OAuth") {
+		t.Errorf("apikey advisory %q should reference both apikey and OAuth", joined)
+	}
+}
+
 func TestValidateRejectsBadProtocol(t *testing.T) {
 	err := loadErr(t, "otlp:\n  protocol: carrier-pigeon\n")
 	if err == nil {

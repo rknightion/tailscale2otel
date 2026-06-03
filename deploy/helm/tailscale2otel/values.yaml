@@ -79,7 +79,9 @@ secret:
   TS_OAUTH_CLIENT_ID: ""
   # -- OAuth client secret paired with TS_OAUTH_CLIENT_ID.
   TS_OAUTH_CLIENT_SECRET: ""
-  # -- Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey (OAuth is preferred).
+  # -- Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey. Prefer OAuth: a
+  # personal API key expires in <=90 days and is tied to the user that created it (stops working
+  # when that user is removed). The exporter logs a WARN when method=apikey.
   TS_API_KEY: ""
   # -- Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth).
   GC_INSTANCE_ID: ""
@@ -108,7 +110,9 @@ config:
     # -- Tailnet name, or "-" for the auth principal's default tailnet.
     tailnet: "${TS_TAILNET}"
     auth:
-      # -- Auth method: oauth (recommended) | apikey.
+      # -- Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped
+      # tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the
+      # exporter logs a WARN when apikey is selected.
       method: oauth
       oauth:
         # -- OAuth client ID (backed by the TS_OAUTH_CLIENT_ID secret).
