@@ -38,6 +38,7 @@ the metric names accordingly.
 | `FlowLoggingDisabled` | warning | `tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"} == 0` for 30m | ts2otel-network / ts2otel-audit-events |
 | `NodeMetricsTargetDown` | warning | `tailscale_node_up_ratio == 0` (per `instance`) for 10m | docs/metrics.md (node scraper) |
 | `FlowLogsDropped` | warning | `rate(tailscale_network_flow_logs_dropped_total[10m]) > 0` for 10m | ts2otel-audit-events |
+| `NodeIPForwardingMisconfigured` | warning | `rate(tailscale_webhook_events_total{tailscale_webhook_type=~"exitNodeIPForwardingNotEnabled\|subnetIPForwardingNotEnabled"}[15m]) > 0` for 5m | — (webhook receiver) |
 
 Notes:
 
@@ -51,6 +52,12 @@ Notes:
   (`max_log_records_per_window`) actually truncating flow **logs**. Metrics are
   never capped — only log records are dropped — so this alert means the flow log
   stream is incomplete, not that metric counters are wrong.
+- `NodeIPForwardingMisconfigured` depends on the **webhook receiver** (off by
+  default). The `exitNodeIPForwardingNotEnabled` / `subnetIPForwardingNotEnabled`
+  health events have no log-streaming or polling equivalent, so they are emitted
+  at INFO log severity and this alert is the way to surface them; without the
+  webhook receiver the series never appears and the alert never fires. Subscribe
+  to the events at <https://tailscale.com/kb/1213/webhooks#events>.
 
 ## Loading the rules
 

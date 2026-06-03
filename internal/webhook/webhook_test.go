@@ -245,6 +245,53 @@ func TestHandler_NoSecretSkipsVerification(t *testing.T) {
 	}
 }
 
+// TestEmit_SeverityClassification pins the explicit per-type severity mapping
+// (S4-11a) that replaced the old substring heuristic. The heuristic MISSED
+// nodeNeedsSignature and the deprecated nodeNeedsAuthorization (neither contains
+// a matched substring) and so emitted them at INFO; both must now be WARN. The
+// client-misconfig health events stay INFO (they are surfaced via the events
+// counter + a Prometheus alert, not via log severity).
+func TestEmit_SeverityClassification(t *testing.T) {
+	cases := []struct {
+		eventType string
+		want      string // SeverityText
+	}{
+		// Promoted to WARN by the explicit set (old substring heuristic missed these).
+		{"nodeNeedsSignature", "WARN"},
+		{"nodeNeedsAuthorization", "WARN"}, // deprecated alias of nodeNeedsApproval
+		// Health / client-misconfig events stay INFO (counter + alert, not severity).
+		{"exitNodeIPForwardingNotEnabled", "INFO"},
+		{"subnetIPForwardingNotEnabled", "INFO"},
+		// Resolution / benign lifecycle events are informational.
+		{"nodeSigned", "INFO"},
+		{"nodeApproved", "INFO"},
+		{"nodeCreated", "INFO"},
+		{"policyUpdate", "INFO"},
+		{"userRoleUpdated", "INFO"},
+		// Existing WARN classifications still hold.
+		{"nodeKeyExpiringInOneDay", "WARN"},
+		{"nodeKeyExpired", "WARN"},
+		{"nodeNeedsApproval", "WARN"},
+		{"userNeedsApproval", "WARN"},
+		{"nodeDeleted", "WARN"},
+		{"webhookDeleted", "WARN"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.eventType, func(t *testing.T) {
+			rec := telemetrytest.New()
+			s := New(Options{}, rec.Emitter(), discard())
+			s.emit(event{Type: tc.eventType, Tailnet: "example.com", Message: "m", Timestamp: "2026-06-02T10:00:00Z"})
+			logs := rec.LogRecords()
+			if len(logs) != 1 {
+				t.Fatalf("log records = %d, want 1", len(logs))
+			}
+			if logs[0].SeverityText != tc.want {
+				t.Errorf("%s severity = %q, want %q", tc.eventType, logs[0].SeverityText, tc.want)
+			}
+		})
+	}
+}
+
 func logNames(logs []telemetrytest.LogRecord) []string {
 	out := make([]string, 0, len(logs))
 	for _, lr := range logs {

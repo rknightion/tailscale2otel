@@ -63,10 +63,39 @@ const (
 	attrReason = "reason"
 )
 
-// warnSubstrings are the case-sensitive substrings of an event type that
-// promote a record to WARN severity (e.g. nodeKeyExpiringInOneDay, userNeedsApproval,
-// nodeDeleted, userSuspended).
-var warnSubstrings = []string{"Expir", "Suspend", "NeedsApproval", "Deleted"}
+// severityByType is the explicit, per-type log-severity classification for
+// webhook events. It replaces an earlier substring heuristic ({Expir, Suspend,
+// NeedsApproval, Deleted}) that MISSED nodeNeedsSignature and the deprecated
+// nodeNeedsAuthorization (neither contains a matched substring), emitting both
+// at INFO when they warrant WARN. Only types whose severity is NOT the default
+// INFO are listed; severityForType returns INFO for everything else. The
+// authoritative event catalog is https://tailscale.com/kb/1213/webhooks#events
+// (see todos.txt S4-11(a)).
+//
+// Deliberately INFO (not listed): the client-misconfiguration health events
+// exitNodeIPForwardingNotEnabled and subnetIPForwardingNotEnabled — they are
+// surfaced via the events counter and a dedicated Prometheus alert (see
+// deploy/alerts/), not by elevating log severity.
+var severityByType = map[string]telemetry.Severity{
+	// Node key expiry — the device drops off the tailnet when the key expires.
+	"nodeKeyExpired":          telemetry.SeverityWarn,
+	"nodeKeyExpiringInOneDay": telemetry.SeverityWarn,
+	// Pending approvals — a node/user is blocked until an admin acts.
+	"nodeNeedsApproval": telemetry.SeverityWarn,
+	"userNeedsApproval": telemetry.SeverityWarn,
+	// Deprecated alias of nodeNeedsApproval (still delivered until disabled).
+	"nodeNeedsAuthorization": telemetry.SeverityWarn,
+	// Tailnet Lock — a node is blocked from the tailnet until a trusted node signs it.
+	"nodeNeedsSignature": telemetry.SeverityWarn,
+	// Deletions are notable, irreversible config changes.
+	"nodeDeleted":    telemetry.SeverityWarn,
+	"webhookDeleted": telemetry.SeverityWarn,
+	// Undocumented in the catalog above but historically observed; kept at WARN
+	// (matching prior substring behaviour) pending live verification — remove if
+	// invalid (todos.txt S4-11(c), gated on the S4-10 capture).
+	"userSuspended": telemetry.SeverityWarn,
+	"userDeleted":   telemetry.SeverityWarn,
+}
 
 // Options configures a Server.
 type Options struct {
@@ -269,15 +298,10 @@ func (s *Server) emit(ev event) {
 		}
 	}
 
-	severity := telemetry.SeverityInfo
-	if isWarn(ev.Type) {
-		severity = telemetry.SeverityWarn
-	}
-
 	s.e.LogEvent(telemetry.Event{
 		Name:      eventNamePrefix + ev.Type,
 		Body:      ev.Message,
-		Severity:  severity,
+		Severity:  severityForType(ev.Type),
 		Timestamp: parseTimestamp(ev.Timestamp),
 		Attrs: telemetry.Attrs{
 			attrType:            ev.Type,
@@ -323,14 +347,13 @@ func parseSignatureHeader(header string) (time.Time, []string, error) {
 	return ts, sigs, nil
 }
 
-// isWarn reports whether an event type maps to WARN severity.
-func isWarn(eventType string) bool {
-	for _, sub := range warnSubstrings {
-		if strings.Contains(eventType, sub) {
-			return true
-		}
+// severityForType returns the log severity for a webhook event type, defaulting
+// to INFO for any type not enumerated in severityByType.
+func severityForType(eventType string) telemetry.Severity {
+	if sev, ok := severityByType[eventType]; ok {
+		return sev
 	}
-	return false
+	return telemetry.SeverityInfo
 }
 
 // parseTimestamp parses an RFC3339 event timestamp, returning the zero time
