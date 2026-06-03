@@ -41,6 +41,9 @@ cardinality:
   flow_include_ports: false          # keep ports OFF flow metrics (always on flow logs)
   flow_node_dims: true               # include src/dst device names on flow metrics
   collapse_external: true            # bucket unresolved IPs as external/unknown (also sets src/dst node metric labels when flow_node_dims is on)
+  device_per_entity: true            # per-device gauges (online/last_seen/key.expiry/derp/routes); false = only tailscale.devices.count
+  user_per_entity: true              # per-user gauges (devices/connected/last_seen); false = only tailscale.users.count
+  key_per_entity: true               # per-key expiry gauge; false = only tailscale.keys.count (expiry WARN log still fires)
 
 collectors:
   # source: poll | stream | both — applies to the log collectors (flowlogs, auditlogs).
