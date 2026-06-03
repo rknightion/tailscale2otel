@@ -208,7 +208,7 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 // any flow log records were dropped. Nothing is emitted when none were dropped.
 func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 	if budget.dropped > 0 {
-		e.Counter(MetricLogsDropped, unitRecord, "Tailscale flow log records dropped by the volume guard",
+		e.Counter(docLogsDropped.Name, docLogsDropped.Unit, docLogsDropped.Description,
 			float64(budget.dropped), telemetry.Attrs{})
 	}
 }
@@ -248,20 +248,21 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		metricAttrs[semconv.DestinationPort] = dstPort
 	}
 
-	// MetricIO (bytes): transmit + receive.
-	e.Counter(MetricIO, semconv.UnitBytes, "Tailscale network bytes transferred",
+	// MetricIO (bytes): transmit + receive. Name/unit/description come from the
+	// catalog (catalog.go) so they cannot drift from the generated docs.
+	e.Counter(docIO.Name, docIO.Unit, docIO.Description,
 		float64(cc.TxBytes), dirAttrs(metricAttrs, semconv.DirectionTransmit))
-	e.Counter(MetricIO, semconv.UnitBytes, "Tailscale network bytes transferred",
+	e.Counter(docIO.Name, docIO.Unit, docIO.Description,
 		float64(cc.RxBytes), dirAttrs(metricAttrs, semconv.DirectionReceive))
 
 	// MetricPackets: transmit + receive.
-	e.Counter(MetricPackets, semconv.UnitPackets, "Tailscale network packets transferred",
+	e.Counter(docPackets.Name, docPackets.Unit, docPackets.Description,
 		float64(cc.TxPkts), dirAttrs(metricAttrs, semconv.DirectionTransmit))
-	e.Counter(MetricPackets, semconv.UnitPackets, "Tailscale network packets transferred",
+	e.Counter(docPackets.Name, docPackets.Unit, docPackets.Description,
 		float64(cc.RxPkts), dirAttrs(metricAttrs, semconv.DirectionReceive))
 
 	// MetricFlows: one flow observed.
-	e.Counter(MetricFlows, semconv.UnitFlows, "Tailscale network flows observed", 1, telemetry.Attrs{
+	e.Counter(docFlows.Name, docFlows.Unit, docFlows.Description, 1, telemetry.Attrs{
 		semconv.NetworkTransport: transport,
 		semconv.AttrTrafficType:  trafficType,
 	})
@@ -302,7 +303,7 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	e.LogEvent(telemetry.Event{
-		Name:      eventNameFlow,
+		Name:      docFlowLog.Name,
 		Body:      body,
 		Severity:  telemetry.SeverityInfo,
 		Timestamp: logTimestamp(flow),
@@ -323,7 +324,7 @@ func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txP
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	e.LogEvent(telemetry.Event{
-		Name:      eventNameFlow,
+		Name:      docFlowLog.Name,
 		Body:      body,
 		Severity:  telemetry.SeverityInfo,
 		Timestamp: logTimestamp(flow),
