@@ -20,10 +20,6 @@ const (
 	HostID    = "host.id"
 	OSType    = "os.type"
 	OSVersion = "os.version"
-
-	// EventName carries the event type until the log SDK exposes a native
-	// EventName field (see internal/telemetry).
-	EventName = "event.name"
 )
 
 // Tailscale-specific attribute keys (namespaced under "tailscale.").

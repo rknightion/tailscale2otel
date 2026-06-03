@@ -102,8 +102,8 @@ func TestRecorderCapturesLogEvent(t *testing.T) {
 	if lr.EventName != "tailscale.network.flow" {
 		t.Fatalf("event name = %q, want tailscale.network.flow", lr.EventName)
 	}
-	if lr.Attrs["event.name"] != "tailscale.network.flow" {
-		t.Fatalf("event.name attr = %q, want tailscale.network.flow", lr.Attrs["event.name"])
+	if _, ok := lr.Attrs["event.name"]; ok {
+		t.Fatalf("event.name must be the native EventName, not an attribute; got attr %q", lr.Attrs["event.name"])
 	}
 	if lr.Attrs["network.transport"] != "tcp" {
 		t.Fatalf("network.transport attr = %q, want tcp", lr.Attrs["network.transport"])

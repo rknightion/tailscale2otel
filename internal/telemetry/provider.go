@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"google.golang.org/grpc/credentials"
 )
@@ -124,6 +125,14 @@ func otlpHTTPURL(base, signal string) string {
 	return base + suffix
 }
 
+// cumulativeTemporalitySelector forces cumulative temporality for every
+// instrument kind. Grafana Cloud / Mimir OTLP ingestion accepts cumulative only
+// (delta is rejected with HTTP 400 and there is no server-side delta->cumulative
+// conversion), so we pin it explicitly rather than relying on the SDK default.
+func cumulativeTemporalitySelector(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.CumulativeTemporality
+}
+
 func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, error) {
 	switch opts.Protocol {
 	case "stdout":
@@ -133,7 +142,7 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 		}
 		return stdoutmetric.New(stdoutmetric.WithWriter(w))
 	case "", "http":
-		o := []otlpmetrichttp.Option{}
+		o := []otlpmetrichttp.Option{otlpmetrichttp.WithTemporalitySelector(cumulativeTemporalitySelector)}
 		if opts.Endpoint != "" {
 			o = append(o, otlpmetrichttp.WithEndpointURL(otlpHTTPURL(opts.Endpoint, "metrics")))
 		}
@@ -149,7 +158,7 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 		}
 		return otlpmetrichttp.New(ctx, o...)
 	case "grpc":
-		o := []otlpmetricgrpc.Option{}
+		o := []otlpmetricgrpc.Option{otlpmetricgrpc.WithTemporalitySelector(cumulativeTemporalitySelector)}
 		if opts.Endpoint != "" {
 			o = append(o, otlpmetricgrpc.WithEndpoint(opts.Endpoint))
 		}
