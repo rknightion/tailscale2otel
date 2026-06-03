@@ -24,6 +24,12 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	defer restore()
 	otel.Handle(errors.New("boom"))
 
+	// Emit the cardinality self-metric too so docSeriesActive is exercised by the
+	// drift guard (observe one series, then report it through the recorder).
+	tr := telemetry.NewCardinalityTracker()
+	tr.Observe("tailscale.example", telemetry.Attrs{"a": "x"})
+	tr.Report(rec.Emitter())
+
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range telemetry.Catalog() {
 		declared[m.Name] = m

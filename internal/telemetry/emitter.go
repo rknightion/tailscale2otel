@@ -16,6 +16,10 @@ import (
 type otelEmitter struct {
 	meter  metric.Meter
 	logger log.Logger
+	// card counts distinct time series per source metric for the
+	// tailscale2otel.series.active self-metric. Nil disables tracking; Observe is
+	// nil-safe so the emit path needs no guard.
+	card *CardinalityTracker
 
 	mu       sync.Mutex
 	counters map[string]metric.Float64Counter
@@ -23,11 +27,19 @@ type otelEmitter struct {
 	updowns  map[string]metric.Float64UpDownCounter
 }
 
-// NewEmitter returns an Emitter that records to the given meter and logger.
+// NewEmitter returns an Emitter that records to the given meter and logger,
+// without cardinality self-tracking.
 func NewEmitter(meter metric.Meter, logger log.Logger) Emitter {
+	return newOtelEmitter(meter, logger, nil)
+}
+
+// newOtelEmitter returns an *otelEmitter wired to the given meter, logger, and
+// (optional) cardinality tracker. A nil card disables series.active tracking.
+func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker) *otelEmitter {
 	return &otelEmitter{
 		meter:    meter,
 		logger:   logger,
+		card:     card,
 		counters: map[string]metric.Float64Counter{},
 		gauges:   map[string]metric.Float64Gauge{},
 		updowns:  map[string]metric.Float64UpDownCounter{},
@@ -46,6 +58,7 @@ func (e *otelEmitter) Counter(name, unit, desc string, add float64, attrs Attrs)
 		e.counters[name] = c
 	}
 	e.mu.Unlock()
+	e.card.Observe(name, attrs)
 	if c != nil {
 		c.Add(context.Background(), add, metric.WithAttributes(toKV(attrs)...))
 	}
@@ -63,6 +76,7 @@ func (e *otelEmitter) Gauge(name, unit, desc string, value float64, attrs Attrs)
 		e.gauges[name] = g
 	}
 	e.mu.Unlock()
+	e.card.Observe(name, attrs)
 	if g != nil {
 		g.Record(context.Background(), value, metric.WithAttributes(toKV(attrs)...))
 	}
@@ -80,6 +94,7 @@ func (e *otelEmitter) UpDownCounter(name, unit, desc string, value float64, attr
 		e.updowns[name] = u
 	}
 	e.mu.Unlock()
+	e.card.Observe(name, attrs)
 	if u != nil {
 		u.Add(context.Background(), value, metric.WithAttributes(toKV(attrs)...))
 	}

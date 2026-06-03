@@ -1,6 +1,9 @@
 package telemetry
 
-import "github.com/rknightion/tailscale2otel/internal/metricdoc"
+import (
+	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
+)
 
 // Catalog declarations are the SINGLE SOURCE OF TRUTH for this package's
 // self-observability metric documentation: name, unit, instrument, description,
@@ -32,12 +35,20 @@ var (
 		Attributes:  []string{"error.type"},
 		Group:       groupSelfObs,
 	}
+	docSeriesActive = metricdoc.Metric{
+		Name:        seriesActiveMetric,
+		Unit:        semconv.UnitSeries,
+		Instrument:  metricdoc.Gauge,
+		Description: "Exact distinct active time series emitted for `metric.name` during the last export interval; bounded by a per-metric cap (the value pins at the cap when exceeded). A **count**.",
+		Attributes:  []string{semconv.AttrMetricName},
+		Group:       groupSelfObs,
+	}
 )
 
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docBuildInfo, docExportFailures}
+	return []metricdoc.Metric{docBuildInfo, docExportFailures, docSeriesActive}
 }
 
 // LogCatalog returns the log events this package emits (none).
