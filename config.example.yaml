@@ -77,6 +77,25 @@ collectors:
       #   bearer_token_file: "/run/secrets/scrape-token"   # read fresh each scrape; or bearer_token: "..."
       #   headers: { X-Scope-OrgID: "1" }
       #   tls: { ca_file: "/etc/ssl/ca.pem", server_name: "relay-2.ts.net", insecure_skip_verify: false }
+    # Optional: DISCOVER scrape targets dynamically from the Tailscale devices API.
+    # Discovered targets are UNIONED (deduped by URL) with the static `targets` above,
+    # so this is fully backward-compatible. The devices API is polled on its own
+    # `interval` (default 5m), separate from the scrape `interval`. No ACL parsing is
+    # done: a node the scraper cannot reach simply reports tailscale.node.up=0.
+    discovery:
+      enabled: false
+      interval: 5m
+      scheme: http              # http | https
+      port: 5252                # tailscaled client metrics port
+      path: /metrics
+      online_only: true         # only devices connected to the control plane
+      exclude_external: true    # skip shared/external devices
+      include_tags: []          # e.g. ["tag:server"]; empty = all devices
+      exclude_tags: []          # wins over include_tags
+      address_order: ipv4       # ipv4 | ipv6 (preferred family; falls back to the other)
+      instance_source: address  # address (host:port) | name (MagicDNS) | hostname
+      include_host_labels: true # attach host.name/host.id for tailscale.device.* joins
+      include_tags_label: true  # attach tailscale.tags
 
 checkpoint:
   store: memory                      # memory | file

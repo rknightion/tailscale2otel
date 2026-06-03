@@ -124,10 +124,43 @@ type Collectors struct {
 // default and disabled when no targets are configured. Node identity is carried
 // as the "instance" label, not as an OTEL Resource.
 type NodeMetricsConfig struct {
-	Enabled  bool                `yaml:"enabled"`
-	Interval Duration            `yaml:"interval"`
-	Timeout  Duration            `yaml:"timeout"`
-	Targets  []NodeMetricsTarget `yaml:"targets"`
+	Enabled   bool                 `yaml:"enabled"`
+	Interval  Duration             `yaml:"interval"`
+	Timeout   Duration             `yaml:"timeout"`
+	Targets   []NodeMetricsTarget  `yaml:"targets"`
+	Discovery NodeMetricsDiscovery `yaml:"discovery"`
+}
+
+// NodeMetricsDiscovery configures DYNAMIC scrape-target discovery from the
+// Tailscale devices API. When enabled, the live device inventory is polled on
+// this block's own Interval (default 5m, independent of the scrape Interval) and
+// each matching device becomes a scrape target; discovered targets are UNIONED
+// (deduped by URL) with the static Targets list, so existing static-only configs
+// are unaffected. Reachability is reported by tailscale.node.up=0 for any node
+// the scraper cannot reach (no ACL parsing is performed).
+type NodeMetricsDiscovery struct {
+	Enabled  bool     `yaml:"enabled"`
+	Interval Duration `yaml:"interval"`
+
+	// Metrics-endpoint shape applied to every discovered device.
+	Scheme string `yaml:"scheme"` // "http" (default) | "https"
+	Port   int    `yaml:"port"`   // default 5252 (tailscaled client metrics)
+	Path   string `yaml:"path"`   // default "/metrics"
+
+	// Filters.
+	OnlineOnly      bool     `yaml:"online_only"`      // default true: only connectedToControl devices
+	ExcludeExternal bool     `yaml:"exclude_external"` // default true: skip shared/external devices
+	IncludeTags     []string `yaml:"include_tags"`     // empty = match all; any-match
+	ExcludeTags     []string `yaml:"exclude_tags"`     // wins over include_tags
+
+	// Address + instance selection.
+	AddressOrder   string `yaml:"address_order"`   // "ipv4" (default) | "ipv6" (preferred family; falls back to the other)
+	InstanceSource string `yaml:"instance_source"` // "address" (default, host:port) | "name" (MagicDNS) | "hostname"
+
+	// Passthrough labels merged onto each discovered target's series, for
+	// join-ability with tailscale.device.* (host.name/host.id, tailscale.tags).
+	IncludeHostLabels bool `yaml:"include_host_labels"` // default true
+	IncludeTagsLabel  bool `yaml:"include_tags_label"`  // default true
 }
 
 // NodeMetricsTarget is a single Prometheus-text endpoint to scrape. Instance

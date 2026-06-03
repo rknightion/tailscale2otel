@@ -114,11 +114,30 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Every node-metrics target must have a URL when the scraper is enabled.
-	if c.Collectors.NodeMetrics.Enabled {
-		for i, t := range c.Collectors.NodeMetrics.Targets {
+	// Every static node-metrics target must have a URL when the scraper is
+	// enabled; when dynamic discovery is enabled its fields are validated too.
+	// Either static targets OR discovery is a valid way to have something to scrape.
+	if nm := c.Collectors.NodeMetrics; nm.Enabled {
+		for i, t := range nm.Targets {
 			if t.URL == "" {
 				return fmt.Errorf("collectors.node_metrics.targets[%d].url is required", i)
+			}
+		}
+		if d := nm.Discovery; d.Enabled {
+			if !oneOf(d.Scheme, "http", "https") {
+				return fmt.Errorf("collectors.node_metrics.discovery.scheme %q invalid: must be one of http, https", d.Scheme)
+			}
+			if d.Port < 1 || d.Port > 65535 {
+				return fmt.Errorf("collectors.node_metrics.discovery.port %d invalid: must be 1-65535", d.Port)
+			}
+			if !oneOf(d.AddressOrder, "ipv4", "ipv6") {
+				return fmt.Errorf("collectors.node_metrics.discovery.address_order %q invalid: must be one of ipv4, ipv6", d.AddressOrder)
+			}
+			if !oneOf(d.InstanceSource, "address", "name", "hostname") {
+				return fmt.Errorf("collectors.node_metrics.discovery.instance_source %q invalid: must be one of address, name, hostname", d.InstanceSource)
+			}
+			if d.Interval.D() <= 0 {
+				return fmt.Errorf("collectors.node_metrics.discovery.interval must be > 0")
 			}
 		}
 	}
