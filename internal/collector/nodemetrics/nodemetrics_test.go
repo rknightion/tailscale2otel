@@ -1223,3 +1223,178 @@ func TestDiscovery_AllDiscoveredFail_ReturnsError(t *testing.T) {
 		t.Fatalf("up = %+v, want instance disc-bad value 0", up[0])
 	}
 }
+
+// --- Passthrough filters (metric_allow / metric_deny / drop_labels) --------
+
+// TestMetricAllow_ForwardsOnlyMatchingNames: with a non-empty MetricAllow, only
+// metric names matching at least one anchored pattern are forwarded; others are
+// dropped at the emitSample choke point.
+func TestMetricAllow_ForwardsOnlyMatchingNames(t *testing.T) {
+	body := "# TYPE node_load gauge\nnode_load 0.5\n# TYPE other_metric gauge\nother_metric 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:     []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MetricAllow: []string{"node_load"},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("node_load"); len(pts) != 1 || pts[0].Value != 0.5 {
+		t.Fatalf("node_load = %+v, want single value 0.5 (allowed)", pts)
+	}
+	if pts := rec.MetricPoints("other_metric"); len(pts) != 0 {
+		t.Fatalf("other_metric = %+v, want none (not in allowlist)", pts)
+	}
+}
+
+// TestMetricAllow_AnchoredMatch: allow patterns are anchored, so "node_lo" does
+// NOT match "node_load" (no substring match), while "node_.*" matches both
+// node_load and node_loss.
+func TestMetricAllow_AnchoredMatch(t *testing.T) {
+	body := "# TYPE node_load gauge\nnode_load 1\n# TYPE node_loss gauge\nnode_loss 2\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	// "node_lo" must NOT match "node_load" (anchored, not a substring).
+	cExact := nodemetrics.New(nodemetrics.Options{
+		Targets:     []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MetricAllow: []string{"node_lo"},
+	})
+	rec := telemetrytest.New()
+	if err := cExact.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("node_load"); len(pts) != 0 {
+		t.Fatalf("node_load = %+v, want none ('node_lo' is anchored, must not match node_load)", pts)
+	}
+	if pts := rec.MetricPoints("node_loss"); len(pts) != 0 {
+		t.Fatalf("node_loss = %+v, want none ('node_lo' is anchored, must not match node_loss)", pts)
+	}
+
+	// "node_.*" matches both.
+	cWild := nodemetrics.New(nodemetrics.Options{
+		Targets:     []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MetricAllow: []string{"node_.*"},
+	})
+	rec2 := telemetrytest.New()
+	if err := cWild.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec2.MetricPoints("node_load"); len(pts) != 1 {
+		t.Fatalf("node_load = %+v, want 1 ('node_.*' matches)", pts)
+	}
+	if pts := rec2.MetricPoints("node_loss"); len(pts) != 1 {
+		t.Fatalf("node_loss = %+v, want 1 ('node_.*' matches)", pts)
+	}
+}
+
+// TestMetricDeny_DropsMatchingNames: with an empty MetricAllow and a MetricDeny,
+// a name matching any deny pattern is dropped while others pass through.
+func TestMetricDeny_DropsMatchingNames(t *testing.T) {
+	body := "# TYPE keep_me gauge\nkeep_me 1\n# TYPE drop_me gauge\ndrop_me 2\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:    []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MetricDeny: []string{"drop_me"},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("keep_me"); len(pts) != 1 || pts[0].Value != 1 {
+		t.Fatalf("keep_me = %+v, want single value 1 (not denied)", pts)
+	}
+	if pts := rec.MetricPoints("drop_me"); len(pts) != 0 {
+		t.Fatalf("drop_me = %+v, want none (denied)", pts)
+	}
+}
+
+// TestMetricAllowDeny_DenyWinsAfterAllow: deny is applied AFTER allow, so a name
+// matching both the allowlist and the denylist is dropped (deny precedence).
+func TestMetricAllowDeny_DenyWinsAfterAllow(t *testing.T) {
+	body := "# TYPE node_load gauge\nnode_load 1\n# TYPE node_temp gauge\nnode_temp 2\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:     []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MetricAllow: []string{"node_.*"}, // allows both node_load and node_temp
+		MetricDeny:  []string{"node_temp"},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("node_load"); len(pts) != 1 {
+		t.Fatalf("node_load = %+v, want 1 (allowed, not denied)", pts)
+	}
+	if pts := rec.MetricPoints("node_temp"); len(pts) != 0 {
+		t.Fatalf("node_temp = %+v, want none (allowed but denied; deny wins)", pts)
+	}
+}
+
+// TestDropLabels_RemovesLabelKeepsInstance: a key in DropLabels is stripped from
+// every forwarded series, but the instance label is NEVER dropped even if named.
+func TestDropLabels_RemovesLabelKeepsInstance(t *testing.T) {
+	body := "# TYPE g gauge\ng{region=\"eu\",keep=\"yes\"} 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:    []nodemetrics.Target{{URL: srv.URL, Instance: "node-a", Labels: map[string]string{"role": "relay"}}},
+		DropLabels: []string{"region", "role", "instance"}, // instance must be kept
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	pts := rec.MetricPoints("g")
+	if len(pts) != 1 {
+		t.Fatalf("g points = %d, want 1; pts=%+v", len(pts), pts)
+	}
+	p := pts[0]
+	if _, ok := p.Attrs["region"]; ok {
+		t.Fatalf("region label present = %q, want dropped", p.Attrs["region"])
+	}
+	if _, ok := p.Attrs["role"]; ok {
+		t.Fatalf("role label present = %q, want dropped", p.Attrs["role"])
+	}
+	if p.Attrs["keep"] != "yes" {
+		t.Fatalf("keep label = %q, want yes (not in drop list)", p.Attrs["keep"])
+	}
+	if p.Attrs["instance"] != "node-a" {
+		t.Fatalf("instance label = %q, want node-a (instance is never dropped)", p.Attrs["instance"])
+	}
+}
+
+// TestNodeUp_EmittedDespiteMetricAllow is a regression guard: the per-target
+// tailscale.node.up health gauge (and discovery gauges) bypass the passthrough
+// filters entirely, so it still emits even when MetricAllow matches nothing.
+func TestNodeUp_EmittedDespiteMetricAllow(t *testing.T) {
+	body := "# TYPE g gauge\ng 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:     []nodemetrics.Target{{URL: srv.URL, Instance: "node-a"}},
+		MetricAllow: []string{"nothing"}, // matches no forwarded sample
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	// The forwarded sample is filtered out...
+	if pts := rec.MetricPoints("g"); len(pts) != 0 {
+		t.Fatalf("g = %+v, want none (allowlist matches nothing)", pts)
+	}
+	// ...but the health gauge is never subject to the filters.
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 1 || up[0].Attrs["instance"] != "node-a" {
+		t.Fatalf("up = %+v, want single value 1 instance node-a (never filtered)", up)
+	}
+}
