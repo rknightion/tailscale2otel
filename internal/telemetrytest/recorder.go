@@ -188,7 +188,7 @@ func attrMap(set attribute.Set) map[string]string {
 	out := map[string]string{}
 	for it := set.Iter(); it.Next(); {
 		kv := it.Attribute()
-		out[string(kv.Key)] = kv.Value.Emit()
+		out[string(kv.Key)] = kv.Value.String()
 	}
 	return out
 }

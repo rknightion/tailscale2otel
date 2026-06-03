@@ -1,15 +1,13 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // oneOf reports whether v equals one of the allowed values.
 func oneOf(v string, allowed ...string) bool {
-	for _, a := range allowed {
-		if v == a {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, v)
 }
 
 // Validate reports the first configuration error it finds, or nil if the
