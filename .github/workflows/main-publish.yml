@@ -42,6 +42,9 @@ jobs:
   image:
     name: build + push + sign snapshot image
     needs: vars
+    # Manual dispatches can be started from arbitrary refs; only publish/sign
+    # artifacts when the workflow is actually running on the protected main ref.
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write # push image + attestations to ghcr.io
@@ -82,6 +85,9 @@ jobs:
     name: push + sign snapshot chart
     runs-on: ubuntu-latest
     needs: [vars, image]
+    # Match the image job's branch guard so manually dispatched non-main refs
+    # cannot publish/sign main-named chart snapshots.
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write # push chart to ghcr.io
