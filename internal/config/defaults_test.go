@@ -159,6 +159,81 @@ func TestNodeMetricsDefaults(t *testing.T) {
 	}
 }
 
+func TestNodeMetricsDiscoveryDefaults(t *testing.T) {
+	d := config.Default().Collectors.NodeMetrics.Discovery
+	if d.Enabled {
+		t.Errorf("Discovery.Enabled = true, want default false")
+	}
+	if d.Interval.D() != 5*time.Minute {
+		t.Errorf("Discovery.Interval = %v, want default 5m", d.Interval.D())
+	}
+	if d.Scheme != "http" {
+		t.Errorf("Discovery.Scheme = %q, want http", d.Scheme)
+	}
+	if d.Port != 5252 {
+		t.Errorf("Discovery.Port = %d, want 5252", d.Port)
+	}
+	if d.Path != "/metrics" {
+		t.Errorf("Discovery.Path = %q, want /metrics", d.Path)
+	}
+	if !d.OnlineOnly {
+		t.Errorf("Discovery.OnlineOnly = false, want default true")
+	}
+	if !d.ExcludeExternal {
+		t.Errorf("Discovery.ExcludeExternal = false, want default true")
+	}
+	if d.AddressOrder != "ipv4" {
+		t.Errorf("Discovery.AddressOrder = %q, want ipv4", d.AddressOrder)
+	}
+	if d.InstanceSource != "address" {
+		t.Errorf("Discovery.InstanceSource = %q, want address", d.InstanceSource)
+	}
+	if !d.IncludeHostLabels {
+		t.Errorf("Discovery.IncludeHostLabels = false, want default true")
+	}
+	if !d.IncludeTagsLabel {
+		t.Errorf("Discovery.IncludeTagsLabel = false, want default true")
+	}
+}
+
+func TestNodeMetricsDiscoveryParse(t *testing.T) {
+	const y = `
+collectors:
+  node_metrics:
+    enabled: true
+    discovery:
+      enabled: true
+      interval: 2m
+      port: 9100
+      online_only: false
+      include_tags: ["tag:server"]
+`
+	p := writeTemp(t, y)
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	d := cfg.Collectors.NodeMetrics.Discovery
+	if !d.Enabled || d.Interval.D() != 2*time.Minute || d.Port != 9100 {
+		t.Fatalf("discovery enabled/interval/port = %v/%v/%d", d.Enabled, d.Interval.D(), d.Port)
+	}
+	// An explicit false overrides the true default.
+	if d.OnlineOnly {
+		t.Errorf("Discovery.OnlineOnly = true, want false (explicit override)")
+	}
+	// An unset bool keeps its true default.
+	if !d.ExcludeExternal {
+		t.Errorf("Discovery.ExcludeExternal = false, want true (default preserved)")
+	}
+	if len(d.IncludeTags) != 1 || d.IncludeTags[0] != "tag:server" {
+		t.Errorf("Discovery.IncludeTags = %v, want [tag:server]", d.IncludeTags)
+	}
+	// An unset enum keeps its default.
+	if d.Scheme != "http" {
+		t.Errorf("Discovery.Scheme = %q, want http (default preserved)", d.Scheme)
+	}
+}
+
 func TestNodeMetricsTargetsParse(t *testing.T) {
 	const y = `
 collectors:

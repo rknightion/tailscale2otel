@@ -233,3 +233,44 @@ func TestValidateNodeMetricsValidWithURL(t *testing.T) {
 		t.Errorf("node_metrics with a url should be valid: %v", err)
 	}
 }
+
+func TestValidateNodeMetricsDiscoveryRejectsBadScheme(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      scheme: ftp\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "scheme") {
+		t.Fatalf("err = %v, want a scheme error", err)
+	}
+}
+
+func TestValidateNodeMetricsDiscoveryRejectsBadPort(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      port: 70000\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "port") {
+		t.Fatalf("err = %v, want a port error", err)
+	}
+}
+
+func TestValidateNodeMetricsDiscoveryRejectsBadAddressOrder(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      address_order: ipv9\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "address_order") {
+		t.Fatalf("err = %v, want an address_order error", err)
+	}
+}
+
+func TestValidateNodeMetricsDiscoveryRejectsBadInstanceSource(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      instance_source: fqdn\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "instance_source") {
+		t.Fatalf("err = %v, want an instance_source error", err)
+	}
+}
+
+func TestValidateNodeMetricsDiscoveryEnabledZeroTargetsValid(t *testing.T) {
+	// Discovery enabled with NO static targets is valid: discovery is another way
+	// to obtain targets.
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets: []\n    discovery:\n      enabled: true\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("discovery-enabled with zero static targets should be valid: %v", err)
+	}
+}
