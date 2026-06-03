@@ -56,7 +56,7 @@ jobs:
       # Regenerate the chart README from README.md.gotmpl + value annotations and
       # fail if it drifts from the committed copy.
       - name: helm-docs is in sync (norwoodj/helm-docs)
-        uses: losisin/helm-docs-action@v1
+        uses: losisin/helm-docs-github-action@v2
         with:
           chart-search-root: ${{ env.CHART_DIR }}
           fail-on-diff: true
