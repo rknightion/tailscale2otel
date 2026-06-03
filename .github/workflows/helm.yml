@@ -48,7 +48,7 @@ jobs:
       - name: values.schema.json is in sync (losisin/helm-values-schema-json)
         uses: losisin/helm-values-schema-json-action@v2
         with:
-          input: ${{ env.CHART_DIR }}/values.yaml
+          values: ${{ env.CHART_DIR }}/values.yaml
           output: ${{ env.CHART_DIR }}/values.schema.json
           draft: 7
           fail-on-diff: true
