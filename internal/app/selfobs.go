@@ -16,13 +16,13 @@ const (
 // self-observability is enabled.
 func apiObserver(e telemetry.Emitter) func(endpoint string, status, attempts int) {
 	return func(endpoint string, status, attempts int) {
-		e.Counter(metricAPIRequests, "1", "Tailscale API requests by endpoint and status", 1,
+		e.Counter(docAPIRequests.Name, docAPIRequests.Unit, docAPIRequests.Description, 1,
 			telemetry.Attrs{
 				"endpoint":                  endpoint,
 				"http.response.status_code": status,
 			})
 		if attempts > 1 {
-			e.Counter(metricAPIRetries, "1", "Tailscale API request retries by endpoint",
+			e.Counter(docAPIRetries.Name, docAPIRetries.Unit, docAPIRetries.Description,
 				float64(attempts-1), telemetry.Attrs{"endpoint": endpoint})
 		}
 	}
