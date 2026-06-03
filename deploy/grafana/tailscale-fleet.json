@@ -550,7 +550,7 @@
       "id": 13,
       "type": "table",
       "title": "Subnet Routes (advertised vs enabled)",
-      "description": "Gated behind collect_routes. tailscale_device_routes_advertised_routes / _enabled_routes.",
+      "description": "Gated behind collect_routes. tailscale_device_routes_advertised / tailscale_device_routes_enabled (the {route} annotation unit is dropped on OTLP->Prometheus, so there is no _routes suffix).",
       "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 33 },
       "fieldConfig": {
@@ -564,14 +564,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
-          "expr": "tailscale_device_routes_advertised_routes{host_name=~\"$host_name\"}",
+          "expr": "tailscale_device_routes_advertised{host_name=~\"$host_name\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
-          "expr": "tailscale_device_routes_enabled_routes{host_name=~\"$host_name\"}",
+          "expr": "tailscale_device_routes_enabled{host_name=~\"$host_name\"}",
           "format": "table",
           "instant": true,
           "refId": "B"

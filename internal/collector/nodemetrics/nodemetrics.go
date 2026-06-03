@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,7 +45,19 @@ const (
 	metricUp = "tailscale.node.up"
 	// attrInstance is the node-identity label attached to every emitted series.
 	attrInstance = "instance"
+
+	// staleGenerations is how many consecutive scrapes a counter series may go
+	// unobserved before its delta baseline is evicted, bounding the prev map
+	// against label churn while tolerating a transient target outage.
+	staleGenerations = 5
 )
+
+// prevEntry is a tracked counter series' last cumulative value and the scrape
+// generation in which it was last observed (for stale-baseline eviction).
+type prevEntry struct {
+	value float64
+	gen   uint64
+}
 
 // Target is a single Prometheus-text endpoint to scrape. Instance overrides the
 // default host:port "instance" label; Labels are passthrough attributes merged
@@ -72,7 +85,8 @@ type Collector struct {
 	now      func() time.Time
 
 	mu   sync.Mutex
-	prev map[string]float64 // series key -> last cumulative value
+	prev map[string]prevEntry // series key -> last cumulative value + generation
+	gen  uint64               // scrape generation, bumped once per Collect
 }
 
 // New returns a nodemetrics Collector. A zero Interval defaults to 60s and a
@@ -95,7 +109,7 @@ func New(opts Options) *Collector {
 		interval: opts.Interval,
 		client:   client,
 		now:      now,
-		prev:     make(map[string]float64),
+		prev:     make(map[string]prevEntry),
 	}
 }
 
@@ -118,16 +132,33 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if len(c.targets) == 0 {
 		return nil
 	}
+	// Collect is driven by a single per-collector goroutine (never concurrent with
+	// itself), so the generation counter needs no lock; prev map access is still
+	// guarded by c.mu in case of any future sharing.
+	c.gen++
 	var failures int
 	for i := range c.targets {
 		if err := c.scrapeTarget(ctx, &c.targets[i], e); err != nil {
 			failures++
 		}
 	}
+	c.pruneStale()
 	if failures == len(c.targets) {
 		return fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
 	}
 	return nil
+}
+
+// pruneStale evicts counter baselines not observed within the last
+// staleGenerations scrapes, bounding the prev map against series/label churn.
+func (c *Collector) pruneStale() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k, pe := range c.prev {
+		if c.gen-pe.gen >= staleGenerations {
+			delete(c.prev, k)
+		}
+	}
 }
 
 // scrapeTarget fetches and re-emits one target. It always emits the per-target
@@ -195,15 +226,15 @@ func (c *Collector) emitDelta(s *sample, attrs telemetry.Attrs, e telemetry.Emit
 	key := seriesKey(s.name, attrs)
 
 	c.mu.Lock()
-	prev, seen := c.prev[key]
-	c.prev[key] = s.value
+	pe, seen := c.prev[key]
+	c.prev[key] = prevEntry{value: s.value, gen: c.gen}
 	c.mu.Unlock()
 
 	if !seen {
 		return // baseline only on first observation
 	}
-	delta := s.value - prev
-	if s.value < prev {
+	delta := s.value - pe.value
+	if s.value < pe.value {
 		// Counter reset: the new series started from zero, so the current value
 		// is the increment.
 		delta = s.value
@@ -228,13 +259,15 @@ func mergeAttrs(targetLabels, metricLabels map[string]string, instance string) t
 	return out
 }
 
-// seriesKey is the stable, collision-resistant key used for delta tracking:
-// name + "\x00" + sorted "k=v" over ALL attrs (incl instance), joined by ",".
-// All attr values are strings (Prometheus labels + the instance label).
+// seriesKey is the stable, injective key used for delta tracking:
+// name + "\x00" + sorted "k=<quoted v>" over ALL attrs (incl instance), joined by
+// ",". The value is rendered with strconv.Quote so that a value containing "="
+// or "," (both legal in Prometheus label values) cannot be confused with the
+// key/value or part separators — keys are [a-zA-Z0-9_] so they need no quoting.
 func seriesKey(name string, attrs telemetry.Attrs) string {
 	parts := make([]string, 0, len(attrs))
 	for k, v := range attrs {
-		parts = append(parts, k+"="+attrString(v))
+		parts = append(parts, k+"="+strconv.Quote(attrString(v)))
 	}
 	sort.Strings(parts)
 	return name + "\x00" + strings.Join(parts, ",")

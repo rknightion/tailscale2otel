@@ -303,7 +303,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
       "fieldConfig": {
         "defaults": {
-          "unit": "flps",
+          "unit": "cps",
           "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
           "color": { "mode": "palette-classic" }
         },
@@ -331,7 +331,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
       "fieldConfig": {
         "defaults": {
-          "unit": "flps",
+          "unit": "cps",
           "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
           "color": { "mode": "palette-classic" }
         },
@@ -395,7 +395,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
       "fieldConfig": {
         "defaults": {
-          "unit": "flps",
+          "unit": "cps",
           "custom": { "drawStyle": "line", "fillOpacity": 15, "showPoints": "never", "spanNulls": false },
           "color": { "mode": "palette-classic" }
         },

@@ -73,7 +73,7 @@ func parseComment(line string, types map[string]familyType, helps map[string]str
 		rest := strings.TrimSpace(strings.TrimPrefix(body, "HELP"))
 		name, text, _ := strings.Cut(rest, " ")
 		if name != "" {
-			helps[name] = strings.TrimSpace(text)
+			helps[name] = unescapeHelp(strings.TrimSpace(text))
 		}
 	case strings.HasPrefix(body, "TYPE"):
 		rest := strings.TrimSpace(strings.TrimPrefix(body, "TYPE"))
@@ -115,17 +115,15 @@ func parseSample(line string, types map[string]familyType, helps map[string]stri
 
 	if i := strings.IndexByte(line, '{'); i >= 0 {
 		name = strings.TrimSpace(line[:i])
-		close := strings.IndexByte(line[i+1:], '}')
-		if close < 0 {
-			return sample{}, false // unterminated label set
-		}
-		labelStr := line[i+1 : i+1+close]
-		var ok bool
-		labels, ok = parseLabels(labelStr)
+		var (
+			consumed int
+			ok       bool
+		)
+		labels, consumed, ok = parseLabelSet(line[i+1:])
 		if !ok {
 			return sample{}, false
 		}
-		rest = strings.TrimSpace(line[i+1+close+1:])
+		rest = strings.TrimSpace(line[i+1+consumed:])
 	} else {
 		// name value [ts]
 		fields := strings.Fields(line)
@@ -206,46 +204,85 @@ func componentFamily(name string, types map[string]familyType) (string, familyTy
 	return "", typeUnknown, false
 }
 
-// parseLabels parses the contents between '{' and '}' into a string map. It
-// returns ok=false on any malformed label list.
-func parseLabels(s string) (map[string]string, bool) {
-	s = strings.TrimSpace(s)
+// parseLabelSet parses a Prometheus label set from s, which is the text
+// immediately AFTER the opening '{'. It returns the parsed labels and the number
+// of bytes of s consumed up to and including the matching closing '}', so the
+// caller can resume after it. It is quote-aware: label values are arbitrary
+// quoted strings that may legally contain unescaped '}' and ',' (only \\, \" and
+// \n are escapes), so the terminating '}' is the first one found OUTSIDE a
+// quoted value. ok is false on any malformed list (the whole line is then dropped).
+func parseLabelSet(s string) (labels map[string]string, consumed int, ok bool) {
 	out := map[string]string{}
-	if s == "" {
-		return out, true
+	orig := s
+	// consumedTo computes bytes consumed when the cursor `cur` points at the
+	// closing '}', including that brace.
+	consumedTo := func(cur string) int { return len(orig) - len(cur) + 1 }
+
+	s = strings.TrimLeft(s, " \t")
+	if len(s) > 0 && s[0] == '}' { // empty label set: {}
+		return out, consumedTo(s), true
 	}
-	for len(s) > 0 {
+	for {
+		s = strings.TrimLeft(s, " \t")
 		eq := strings.IndexByte(s, '=')
 		if eq < 0 {
-			return nil, false
+			return nil, 0, false
 		}
 		key := strings.TrimSpace(s[:eq])
 		if key == "" {
-			return nil, false
+			return nil, 0, false
 		}
-		rest := strings.TrimSpace(s[eq+1:])
-		if len(rest) == 0 || rest[0] != '"' {
-			return nil, false // value must be a quoted string
+		s = strings.TrimLeft(s[eq+1:], " \t")
+		if len(s) == 0 || s[0] != '"' {
+			return nil, 0, false // value must be a quoted string
 		}
-		val, after, ok := scanQuoted(rest)
-		if !ok {
-			return nil, false
+		val, after, vok := scanQuoted(s)
+		if !vok {
+			return nil, 0, false
 		}
 		out[key] = val
-		after = strings.TrimSpace(after)
-		if after == "" {
-			break
+		s = strings.TrimLeft(after, " \t")
+		if len(s) == 0 {
+			return nil, 0, false // unterminated (no closing '}')
 		}
-		if after[0] != ',' {
-			return nil, false
-		}
-		s = strings.TrimSpace(after[1:])
-		if s == "" {
-			// trailing comma is tolerated
-			break
+		switch s[0] {
+		case ',':
+			s = strings.TrimLeft(s[1:], " \t")
+			if len(s) > 0 && s[0] == '}' { // tolerate a trailing comma
+				return out, consumedTo(s), true
+			}
+		case '}':
+			return out, consumedTo(s), true
+		default:
+			return nil, 0, false
 		}
 	}
-	return out, true
+}
+
+// unescapeHelp unescapes a Prometheus HELP text, where only "\\" (backslash) and
+// "\n" (newline) are defined escapes.
+func unescapeHelp(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case '\\':
+				b.WriteByte('\\')
+				i++
+				continue
+			case 'n':
+				b.WriteByte('\n')
+				i++
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // scanQuoted consumes a leading double-quoted, backslash-escaped string from s

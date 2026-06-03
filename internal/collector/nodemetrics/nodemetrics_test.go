@@ -2,8 +2,10 @@ package nodemetrics_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -492,5 +494,104 @@ func TestTimestampIgnored(t *testing.T) {
 	pts := rec.MetricPoints("g")
 	if len(pts) != 1 || pts[0].Value != 9 {
 		t.Fatalf("g = %+v, want single value 9 (trailing ts ignored)", pts)
+	}
+}
+
+// TestParse_LabelValueWithBraceAndComma is a regression test: a Prometheus label
+// value may legally contain an unescaped '}' and ',' (only \\, \" and \n are
+// escapes). Such a series must be parsed (not silently dropped) and its value
+// preserved verbatim. Two scrapes confirm the series is tracked end-to-end.
+func TestParse_LabelValueWithBraceAndComma(t *testing.T) {
+	body := "# TYPE m counter\n" + `m{msg="warn: skew }, detected",k="v"} 100` + "\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "n"}}})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil { // baseline
+		t.Fatalf("Collect 1: %v", err)
+	}
+	body = "# TYPE m counter\n" + `m{msg="warn: skew }, detected",k="v"} 150` + "\n"
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil { // delta 50
+		t.Fatalf("Collect 2: %v", err)
+	}
+
+	pts := rec.MetricPoints("m")
+	p, ok := pointByAttr(pts, map[string]string{"msg": "warn: skew }, detected", "k": "v", "instance": "n"})
+	if !ok {
+		t.Fatalf("series with brace/comma label value was dropped; points=%+v", pts)
+	}
+	if p.Value != 50 {
+		t.Fatalf("delta = %v, want 50", p.Value)
+	}
+}
+
+// TestSeriesKey_NoCollisionAcrossDistinctLabels is a regression test: two
+// genuinely distinct label sets that a naive "k=v,..." key would conflate
+// ({x="1,y=2"} vs {x="1",y="2"}) must be tracked as separate delta series.
+func TestSeriesKey_NoCollisionAcrossDistinctLabels(t *testing.T) {
+	mk := func(a, b int) string {
+		return "# TYPE m counter\n" +
+			`m{x="1,y=2",instance="n"} ` + strconv.Itoa(a) + "\n" +
+			`m{x="1",y="2",instance="n"} ` + strconv.Itoa(b) + "\n"
+	}
+	body := mk(100, 7)
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "n"}}})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil { // baselines
+		t.Fatalf("Collect 1: %v", err)
+	}
+	body = mk(110, 9) // A +10, B +2
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect 2: %v", err)
+	}
+
+	pts := rec.MetricPoints("m")
+	a, okA := pointByAttr(pts, map[string]string{"x": "1,y=2"})
+	if !okA || a.Value != 10 {
+		t.Fatalf("series A delta = %v (ok=%v), want 10; pts=%+v", a.Value, okA, pts)
+	}
+	b, okB := pointByAttr(pts, map[string]string{"x": "1", "y": "2"})
+	if !okB || b.Value != 2 {
+		t.Fatalf("series B delta = %v (ok=%v), want 2; pts=%+v", b.Value, okB, pts)
+	}
+}
+
+// TestPrune_StaleBaselineEvicted is a regression test: a counter series not seen
+// for staleGenerations scrapes must have its delta baseline evicted, so a later
+// re-appearance at a lower value is treated as a fresh baseline (no spurious
+// reset delta). Total emitted delta stays at the single 50 from the early scrape.
+func TestPrune_StaleBaselineEvicted(t *testing.T) {
+	withC := "# TYPE m counter\nm{instance=\"n\"} %s\n"
+	body := fmt.Sprintf(withC, "100")
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "n"}}})
+	rec := telemetrytest.New()
+	collect := func() {
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+	}
+	collect() // gen1 baseline 100
+	body = fmt.Sprintf(withC, "150")
+	collect()                              // gen2 delta 50
+	body = "# TYPE other gauge\nother 1\n" // counter absent for many scrapes
+	for i := 0; i < 6; i++ {
+		collect() // gen3..gen8: m unobserved -> baseline evicted
+	}
+	body = fmt.Sprintf(withC, "10") // reappears LOWER than 150
+	collect()                       // if baseline survived: 10<150 -> reset emit 10; if evicted: baseline, no emit
+
+	var total float64
+	for _, p := range rec.MetricPoints("m") {
+		total += p.Value
+	}
+	if total != 50 {
+		t.Fatalf("m total delta = %v, want 50 (stale baseline must be evicted so the re-add is a fresh baseline, not a +10 reset)", total)
 	}
 }
