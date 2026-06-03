@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /out/tailscale2otel ./cmd/tailscale2otel
 
 # ---- runtime ----
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/tailscale2otel /usr/local/bin/tailscale2otel
 COPY config.example.yaml /etc/tailscale2otel/config.yaml
 USER nonroot:nonroot
