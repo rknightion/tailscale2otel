@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/config"
 )
@@ -69,7 +70,7 @@ func TestNodeMetricsOptions_AuthAndTLS(t *testing.T) {
 			},
 		}},
 	}
-	tg := nodeMetricsOptions(nm).Targets[0]
+	tg := nodeMetricsOptions(nm, nil).Targets[0]
 	if tg.BearerToken != "tok" || tg.BearerTokenFile != "/f" {
 		t.Errorf("bearer = %q/%q", tg.BearerToken, tg.BearerTokenFile)
 	}
@@ -79,6 +80,25 @@ func TestNodeMetricsOptions_AuthAndTLS(t *testing.T) {
 	if tg.TLS == nil || !tg.TLS.InsecureSkipVerify || tg.TLS.CAFile != "/ca" ||
 		tg.TLS.CertFile != "/c" || tg.TLS.KeyFile != "/k" || tg.TLS.ServerName != "n" {
 		t.Errorf("tls = %+v", tg.TLS)
+	}
+}
+
+func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
+	nm := config.Default().Collectors.NodeMetrics
+	nm.Discovery.Enabled = true
+	nm.Discovery.Interval = config.Duration(2 * time.Minute)
+
+	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{})
+	if opts.Discoverer == nil {
+		t.Fatal("Discoverer = nil, want a discoverer when discovery is enabled")
+	}
+	if opts.DiscoveryInterval != 2*time.Minute {
+		t.Fatalf("DiscoveryInterval = %v, want 2m", opts.DiscoveryInterval)
+	}
+
+	nm.Discovery.Enabled = false
+	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}); got.Discoverer != nil {
+		t.Fatal("Discoverer != nil, want nil when discovery is disabled")
 	}
 }
 
