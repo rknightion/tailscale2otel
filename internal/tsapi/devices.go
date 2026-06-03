@@ -20,6 +20,7 @@ type RichDevice struct {
 	ClientVersion string
 
 	Addresses []string
+	Tags      []string
 
 	Authorized                bool
 	IsExternal                bool
@@ -70,6 +71,7 @@ type richDevice struct {
 	ClientVersion string `json:"clientVersion"`
 
 	Addresses []string `json:"addresses"`
+	Tags      []string `json:"tags"`
 
 	Authorized                bool `json:"authorized"`
 	IsExternal                bool `json:"isExternal"`
@@ -118,6 +120,7 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 			User:                      d.User,
 			ClientVersion:             d.ClientVersion,
 			Addresses:                 d.Addresses,
+			Tags:                      d.Tags,
 			Authorized:                d.Authorized,
 			IsExternal:                d.IsExternal,
 			UpdateAvailable:           d.UpdateAvailable,
