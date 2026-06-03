@@ -44,9 +44,12 @@ under `config:`).
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
 | config.admin.enabled | bool | `false` | Enable the admin probe server. |
 | config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. |
-| config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. |
+| config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when flow_node_dims is true, the src/dst node labels on flow METRICS. |
+| config.cardinality.device_per_entity | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
 | config.cardinality.flow_include_ports | bool | `false` | Keep src/dst ports OFF flow METRICS (ports are always on flow LOGS). |
 | config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
+| config.cardinality.key_per_entity | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
+| config.cardinality.user_per_entity | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
 | config.checkpoint.store | string | `"memory"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
@@ -74,8 +77,11 @@ under `config:`).
 | config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
 | config.collectors.keys.interval | string | `"300s"` | Poll interval. |
+| config.collectors.node_metrics.drop_labels | list | `[]` | Label keys stripped from every forwarded series (the instance label is never dropped). |
 | config.collectors.node_metrics.enabled | bool | `false` | Enable the node-metrics scraper. Requires at least one entry in `targets`. |
 | config.collectors.node_metrics.interval | string | `"60s"` | Scrape interval for every target. |
+| config.collectors.node_metrics.metric_allow | list | `[]` | Passthrough allow-list: anchored regex on the forwarded metric NAME; if non-empty, only matching names are forwarded. |
+| config.collectors.node_metrics.metric_deny | list | `[]` | Passthrough deny-list: anchored regex; names matching any are dropped (after metric_allow). |
 | config.collectors.node_metrics.targets | list | `[]` | List of scrape targets. Each: {url, instance, labels{}, bearer_token, bearer_token_file, headers{}, tls{insecure,ca_file,cert_file,key_file}}. The "instance" label is the node identity. |
 | config.collectors.node_metrics.timeout | string | `"10s"` | Per-scrape HTTP timeout. |
 | config.collectors.settings.enabled | bool | `true` | Enable the tailnet-settings collector (setting.enabled flags, key-duration). |

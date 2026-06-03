@@ -174,8 +174,16 @@ config:
     flow_include_ports: false
     # -- Include src/dst device names as dimensions on flow metrics.
     flow_node_dims: true
-    # -- Bucket unresolved IPs as external/unknown to cap cardinality.
+    # -- Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and,
+    # when flow_node_dims is true, the src/dst node labels on flow METRICS.
     collapse_external: true
+    # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
+    # aggregate tailscale.devices.count rollup.
+    device_per_entity: true
+    # -- Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count.
+    user_per_entity: true
+    # -- Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires).
+    key_per_entity: true
 
   collectors:
     devices:
@@ -265,6 +273,12 @@ config:
       # -- List of scrape targets. Each: {url, instance, labels{}, bearer_token, bearer_token_file,
       # headers{}, tls{insecure,ca_file,cert_file,key_file}}. The "instance" label is the node identity.
       targets: []
+      # -- Passthrough allow-list: anchored regex on the forwarded metric NAME; if non-empty, only matching names are forwarded.
+      metric_allow: []
+      # -- Passthrough deny-list: anchored regex; names matching any are dropped (after metric_allow).
+      metric_deny: []
+      # -- Label keys stripped from every forwarded series (the instance label is never dropped).
+      drop_labels: []
 
   checkpoint:
     # -- Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does
