@@ -22,6 +22,8 @@ stream, and key-expiry signals out of the box.
 - **Two ingestion paths for logs:** poll the API, or receive Tailscale's **log streaming** via a
   built-in Splunk-HEC-compatible receiver — both feed the same conversion pipeline.
 - **Optional webhook receiver** for real-time Tailscale events (HMAC-verified).
+- **Optional node-metrics scraper** that forwards `tailscaled` per-node Prometheus `/metrics`
+  centrally over OTLP (counters as deltas, gauges as gauges), as a drop-in for per-node scraping.
 - **OTLP push** (gRPC/HTTP) with first-class Grafana Cloud support; `stdout` mode for local debug.
 - Lightweight single static binary, pluggable per-source polling with jitter, failure isolation,
   checkpointing, an in-memory device-enrichment cache, and self-observability metrics.
@@ -77,9 +79,20 @@ the Basic-auth header is built for you. For a self-hosted Collector/Alloy, use `
 | `settings` | 600s | tailnet feature-toggle gauges |
 | `acl` | 600s | ACL size + "policy changed" signal (by ETag) |
 | `dns` | 600s | nameserver / search-path / split-zone counts, MagicDNS flag |
+| `node_metrics` | 60s | **(opt-in)** scrapes configured `tailscaled` `/metrics` endpoints, forwarding counters as deltas and gauges with an `instance` label + a per-target `tailscale.node.up` |
 
 Each collector can be disabled or re-tuned in config. `flowlogs`/`auditlogs` can be sourced from
-`poll`, `stream`, or `both`.
+`poll`, `stream`, or `both`. `node_metrics` is off by default and disabled when no targets are set.
+
+## Dashboards & metrics reference
+
+- Ready-to-import Grafana 13 dashboards live in [`deploy/grafana/`](./deploy/grafana/) — device
+  **fleet & inventory**, network **flow & throughput**, **audit & webhook events** (logs), and
+  **exporter health**. They use `${DS_PROM}`/`${DS_LOKI}` datasource variables, so pick your
+  Prometheus/Loki datasources on import. See [`deploy/grafana/README.md`](./deploy/grafana/README.md).
+- A full catalog of every metric and log event — including the OTLP→Prometheus name normalization
+  (e.g. `tailscale.network.io` → `tailscale_network_io_bytes_total`, unit-`1` gauges → `*_ratio`) —
+  is in [`docs/metrics.md`](./docs/metrics.md).
 
 ## Log streaming (HEC) & webhooks
 
@@ -87,6 +100,10 @@ Set a log collector's `source: stream` and enable the `streaming` receiver to ha
 logs to this service as a Splunk-HEC sink (ideally over a private endpoint inside your tailnet,
 using a `tailscale cert` for HTTPS). Enable the `webhook` receiver to ingest real-time Tailscale
 events. Both are off by default.
+
+Set `streaming.auto_configure: true` (with `streaming.enabled: true`, a `streaming.public_url`, and
+an OAuth client carrying the `log_streaming` scope) to have the service register itself as the
+Splunk-HEC sink on startup instead of configuring the stream by hand. It is off by default.
 
 > Note: Tailscale does not publicly document the exact HEC payload envelope; the receiver parses
 > defensively and the envelope should be confirmed by capturing a live stream in your environment.

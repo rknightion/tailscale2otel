@@ -9,6 +9,18 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/config"
 )
 
+// TestConfigExampleLoadsAndValidates guards the shipped config.example.yaml
+// against drift: it must always parse, env-expand, and validate cleanly.
+func TestConfigExampleLoadsAndValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "config.example.yaml")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("config.example.yaml not found: %v", err)
+	}
+	if _, err := config.Load(path); err != nil {
+		t.Fatalf("config.example.yaml must load and validate: %v", err)
+	}
+}
+
 // writeTemp writes content to a file in a fresh temp dir and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()

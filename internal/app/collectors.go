@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/internal/collector/flowlogs"
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
+	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
 	"github.com/rknightion/tailscale2otel/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/internal/config"
@@ -71,6 +72,9 @@ func (a *App) registerCollectors() {
 	}
 	if c.Dns.Enabled {
 		a.registry.Register(dns.New(a.client, c.Dns.Interval.D()), c.Dns.Interval.D())
+	}
+	if nm := c.NodeMetrics; nm.Enabled && len(nm.Targets) > 0 {
+		a.registry.Register(nodemetrics.New(nodeMetricsOptions(nm)), nm.Interval.D())
 	}
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
 		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck())

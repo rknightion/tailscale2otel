@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"maps"
 
+	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
@@ -53,4 +54,22 @@ func tsapiOptions(cfg *config.Config) tsapi.Options {
 		o.OAuthScopes = cfg.Tailscale.Auth.OAuth.Scopes
 	}
 	return o
+}
+
+// nodeMetricsOptions maps the node-metrics scraper config into
+// nodemetrics.Options, translating each configured target.
+func nodeMetricsOptions(nm config.NodeMetricsConfig) nodemetrics.Options {
+	targets := make([]nodemetrics.Target, 0, len(nm.Targets))
+	for _, t := range nm.Targets {
+		targets = append(targets, nodemetrics.Target{
+			URL:      t.URL,
+			Instance: t.Instance,
+			Labels:   t.Labels,
+		})
+	}
+	return nodemetrics.Options{
+		Targets:  targets,
+		Interval: nm.Interval.D(),
+		Timeout:  nm.Timeout.D(),
+	}
 }

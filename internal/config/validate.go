@@ -52,5 +52,25 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("streaming.decompress %q invalid: must be one of auto, gzip, zstd, none", c.Streaming.Decompress)
 	}
 
+	// Auto-configuring the log-streaming sink needs an enabled receiver and the
+	// externally reachable URL to register with Tailscale.
+	if c.Streaming.AutoConfigure {
+		if !c.Streaming.Enabled {
+			return fmt.Errorf("streaming.auto_configure requires streaming.enabled: true")
+		}
+		if c.Streaming.PublicURL == "" {
+			return fmt.Errorf("streaming.auto_configure requires streaming.public_url to be set")
+		}
+	}
+
+	// Every node-metrics target must have a URL when the scraper is enabled.
+	if c.Collectors.NodeMetrics.Enabled {
+		for i, t := range c.Collectors.NodeMetrics.Targets {
+			if t.URL == "" {
+				return fmt.Errorf("collectors.node_metrics.targets[%d].url is required", i)
+			}
+		}
+	}
+
 	return nil
 }

@@ -2,14 +2,19 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -69,6 +74,175 @@ func newTestClient(t *testing.T, baseURL string) *tsapi.Client {
 		t.Fatalf("tsapi.NewClient: %v", err)
 	}
 	return c
+}
+
+// hasCollector reports whether a collector with the given Name() is registered.
+func hasCollector(a *App, name string) bool {
+	for _, e := range a.registry.Entries() {
+		if e.Collector.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
+// baseTestApp builds an App via the newApp seam with an in-memory emitter and a
+// stub client pointed at baseURL, using the supplied (already-validated) config.
+func baseTestApp(t *testing.T, cfg *config.Config, baseURL string, rec *telemetrytest.Recorder) *App {
+	t.Helper()
+	return newApp(cfg, "vtest", nil, rec.Emitter(), func(context.Context) error { return nil },
+		newTestClient(t, baseURL), collector.NewMemoryStore())
+}
+
+// TestRegisterCollectors_NodeMetricsGating verifies the node-metrics scraper is
+// registered only when enabled AND at least one target is configured.
+func TestRegisterCollectors_NodeMetricsGating(t *testing.T) {
+	t.Run("enabled with target -> registered", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.NodeMetrics.Enabled = true
+		cfg.Collectors.NodeMetrics.Targets = []config.NodeMetricsTarget{{URL: "http://node:5252/metrics"}}
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if !hasCollector(a, "nodemetrics") {
+			t.Fatal("nodemetrics not registered when enabled with a target")
+		}
+	})
+	t.Run("enabled without targets -> not registered", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.NodeMetrics.Enabled = true
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if hasCollector(a, "nodemetrics") {
+			t.Fatal("nodemetrics registered with no targets")
+		}
+	})
+	t.Run("disabled -> not registered", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.NodeMetrics.Targets = []config.NodeMetricsTarget{{URL: "http://node:5252/metrics"}}
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if hasCollector(a, "nodemetrics") {
+			t.Fatal("nodemetrics registered while disabled")
+		}
+	})
+}
+
+// TestAutoConfigureStreaming_RegistersBothSinks verifies the gated auto_configure
+// path PUTs this receiver as a Splunk-HEC sink for both log types.
+func TestAutoConfigureStreaming_RegistersBothSinks(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string]tsapi.LogStreamConfig{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		var logType string
+		for i, p := range parts {
+			if p == "logging" && i+1 < len(parts) {
+				logType = parts[i+1]
+			}
+		}
+		var cfg tsapi.LogStreamConfig
+		_ = json.NewDecoder(r.Body).Decode(&cfg)
+		mu.Lock()
+		got[logType] = cfg
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Tailscale.Auth.Method = "apikey"
+	cfg.Tailscale.Auth.APIKey = "tskey-test"
+	cfg.Streaming.Enabled = true
+	cfg.Streaming.AutoConfigure = true
+	cfg.Streaming.PublicURL = "https://recv.example/services/collector/event"
+	cfg.Streaming.Token = "hectoken"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config should be valid: %v", err)
+	}
+
+	a := baseTestApp(t, cfg, srv.URL, telemetrytest.New())
+	a.autoConfigureStreaming(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("registered %d sinks, want 2 (network+configuration)", len(got))
+	}
+	for _, lt := range []string{"network", "configuration"} {
+		c, ok := got[lt]
+		if !ok {
+			t.Fatalf("no sink registered for %q", lt)
+		}
+		if c.DestinationType != "splunk" || c.URL != "https://recv.example/services/collector/event" || c.Token != "hectoken" {
+			t.Fatalf("%s sink = %+v", lt, c)
+		}
+	}
+}
+
+// TestNewApp_WiresSharedAuditDedup verifies the app gives audit.Processor a shared
+// dedup set so a duplicate event (same identity) is counted once.
+func TestNewApp_WiresSharedAuditDedup(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	ev := audit.Event{
+		EventGroupID: "g1",
+		EventTime:    time.Unix(1700000000, 0).UTC(),
+		Action:       "CREATE",
+		Actor:        audit.Actor{LoginName: "a@example.com"},
+		Target:       audit.Target{Type: "NODE", Name: "n", ID: "t1"},
+	}
+	a.auditProc.Process(ev, rec.Emitter())
+	a.auditProc.Process(ev, rec.Emitter()) // exact duplicate
+
+	var total float64
+	for _, p := range rec.MetricPoints("tailscale.config.audit.events") {
+		total += p.Value
+	}
+	if total != 1 {
+		t.Fatalf("audit events counter = %v, want 1 (shared dedup wired)", total)
+	}
+}
+
+// TestNewApp_WiresSharedFlowDedup verifies the app gives flowlog.Processor a shared
+// dedup set so a duplicate flow window is processed once.
+func TestNewApp_WiresSharedFlowDedup(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	flow := flowlog.FlowLog{
+		NodeID: "n-x",
+		Start:  time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC),
+		End:    time.Date(2026, 6, 2, 12, 1, 0, 0, time.UTC),
+		VirtualTraffic: []flowlog.ConnectionCounts{
+			{Proto: 6, Src: "100.64.0.1:1", Dst: "100.64.0.2:443", TxBytes: 1000, RxBytes: 500},
+		},
+	}
+	sum := func() float64 {
+		var t float64
+		for _, p := range rec.MetricPoints(flowlog.MetricIO) {
+			t += p.Value
+		}
+		return t
+	}
+	a.flowProc.Process(flow, rec.Emitter())
+	first := sum()
+	a.flowProc.Process(flow, rec.Emitter()) // duplicate window
+	if first == 0 {
+		t.Fatal("flow io total = 0 after first process, want >0")
+	}
+	if second := sum(); second != first {
+		t.Fatalf("flow io total after duplicate = %v, want %v (shared dedup wired)", second, first)
+	}
 }
 
 // TestApp_RunGracefulShutdown is the app-level integration test (P1-5): assemble
