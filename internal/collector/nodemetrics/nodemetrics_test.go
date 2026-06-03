@@ -2,9 +2,12 @@ package nodemetrics_test
 
 import (
 	"context"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -12,6 +15,9 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
+
+// ptr returns a pointer to s, for serveText's mutable-body argument.
+func ptr(s string) *string { return &s }
 
 // serveText returns an *httptest.Server that responds to every request with the
 // current value of *body, allowing a test to mutate the served payload between
@@ -557,6 +563,293 @@ func TestSeriesKey_NoCollisionAcrossDistinctLabels(t *testing.T) {
 	b, okB := pointByAttr(pts, map[string]string{"x": "1", "y": "2"})
 	if !okB || b.Value != 2 {
 		t.Fatalf("series B delta = %v (ok=%v), want 2; pts=%+v", b.Value, okB, pts)
+	}
+}
+
+// TestBearerToken_ForwardedAsAuthorization verifies a static BearerToken is sent
+// as the Authorization: Bearer header on every scrape request.
+func TestBearerToken_ForwardedAsAuthorization(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "n", BearerToken: "sekret"}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if gotAuth != "Bearer sekret" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer sekret")
+	}
+}
+
+// TestBearerTokenFile_ReadFreshEachScrape verifies the token is read from a file
+// on every scrape (rotation-safe): rewriting the file changes the sent header, and
+// BearerTokenFile takes precedence over a static BearerToken.
+func TestBearerTokenFile_ReadFreshEachScrape(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("first\n"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:             srv.URL,
+			Instance:        "n",
+			BearerToken:     "ignored", // file takes precedence
+			BearerTokenFile: tokenPath,
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if gotAuth != "Bearer first" {
+		t.Fatalf("Authorization = %q, want %q (trimmed file contents)", gotAuth, "Bearer first")
+	}
+
+	// Rotate the token; the next scrape must pick up the new contents.
+	if err := os.WriteFile(tokenPath, []byte("second"), 0o600); err != nil {
+		t.Fatalf("rewrite token: %v", err)
+	}
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if gotAuth != "Bearer second" {
+		t.Fatalf("Authorization after rotation = %q, want %q", gotAuth, "Bearer second")
+	}
+}
+
+// TestBearerTokenFile_ReadErrorFailsScrape verifies a missing/unreadable token
+// file fails the scrape so tailscale.node.up reports 0.
+func TestBearerTokenFile_ReadErrorFailsScrape(t *testing.T) {
+	srv := serveText(ptr("# TYPE g gauge\ng 1\n"))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:             srv.URL,
+			Instance:        "n",
+			BearerTokenFile: filepath.Join(t.TempDir(), "does-not-exist"),
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect() error = nil, want non-nil (token file unreadable)")
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 0 {
+		t.Fatalf("up = %+v, want single value 0 (scrape failed)", up)
+	}
+	if g := rec.MetricPoints("g"); len(g) != 0 {
+		t.Fatalf("g = %+v, want none (scrape failed before fetch)", g)
+	}
+}
+
+// TestCustomHeaders_Forwarded verifies arbitrary per-target headers are sent.
+func TestCustomHeaders_Forwarded(t *testing.T) {
+	var gotProxy, gotX string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProxy = r.Header.Get("X-Proxy-Auth")
+		gotX = r.Header.Get("X-Tenant")
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:      srv.URL,
+			Instance: "n",
+			Headers:  map[string]string{"X-Proxy-Auth": "abc", "X-Tenant": "acme"},
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if gotProxy != "abc" || gotX != "acme" {
+		t.Fatalf("headers = X-Proxy-Auth %q, X-Tenant %q; want abc, acme", gotProxy, gotX)
+	}
+}
+
+// writeCAFile PEM-encodes the TLS server's certificate to a temp file and returns
+// its path, for use as a per-target TLS CAFile.
+func writeCAFile(t *testing.T, srv *httptest.Server) string {
+	t.Helper()
+	cert := srv.Certificate()
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		t.Fatalf("write CA file: %v", err)
+	}
+	return path
+}
+
+// TestTLS_CAFileTrustSucceeds verifies that supplying the TLS server's own
+// certificate as the per-target CAFile lets the HTTPS scrape succeed (node.up==1).
+func TestTLS_CAFileTrustSucceeds(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:      srv.URL,
+			Instance: "n",
+			TLS:      &nodemetrics.TLSClientConfig{CAFile: writeCAFile(t, srv)},
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (CA trusts server)", err)
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 1 {
+		t.Fatalf("up = %+v, want single value 1 (TLS trusted)", up)
+	}
+	if g := rec.MetricPoints("g"); len(g) != 1 || g[0].Value != 1 {
+		t.Fatalf("g = %+v, want single value 1", g)
+	}
+}
+
+// TestTLS_NoCAFails verifies an HTTPS scrape against an untrusted server with no
+// CA and InsecureSkipVerify=false fails (node.up==0).
+func TestTLS_NoCAFails(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:      srv.URL,
+			Instance: "n",
+			TLS:      &nodemetrics.TLSClientConfig{}, // no CA, verify on
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect() error = nil, want non-nil (untrusted TLS cert)")
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 0 {
+		t.Fatalf("up = %+v, want single value 0 (TLS untrusted)", up)
+	}
+}
+
+// TestTLS_InsecureSkipVerifySucceeds verifies InsecureSkipVerify=true lets the
+// scrape succeed against an untrusted TLS server with no CA (node.up==1).
+func TestTLS_InsecureSkipVerifySucceeds(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:      srv.URL,
+			Instance: "n",
+			TLS:      &nodemetrics.TLSClientConfig{InsecureSkipVerify: true},
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (insecure skip verify)", err)
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 1 {
+		t.Fatalf("up = %+v, want single value 1 (verify skipped)", up)
+	}
+}
+
+// TestPlainTarget_NoNewFields_NoAuthHeader is a regression test: a target with no
+// auth/TLS fields set scrapes a plain HTTP server and sends NO Authorization
+// header (byte-for-byte the prior plain-GET behavior).
+func TestPlainTarget_NoNewFields_NoAuthHeader(t *testing.T) {
+	var gotAuth string
+	var sawAuthHeader bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_, sawAuthHeader = r.Header["Authorization"]
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 5\n"))
+	}))
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if sawAuthHeader || gotAuth != "" {
+		t.Fatalf("plain target sent Authorization = %q (present=%v), want none", gotAuth, sawAuthHeader)
+	}
+	g := rec.MetricPoints("g")
+	if len(g) != 1 || g[0].Value != 5 {
+		t.Fatalf("g = %+v, want single value 5", g)
+	}
+}
+
+// TestMixedTargets_TLSAndPlain verifies that, with one TLS target (trusted via
+// CAFile) and one plain HTTP target, each uses the correct client: both succeed
+// and emit their series. The plain target must not be affected by the other
+// target's dedicated TLS client.
+func TestMixedTargets_TLSAndPlain(t *testing.T) {
+	tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer tlsSrv.Close()
+
+	plainBody := "# TYPE g gauge\ng 2\n"
+	plainSrv := serveText(&plainBody)
+	defer plainSrv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{
+			{URL: tlsSrv.URL, Instance: "secure", TLS: &nodemetrics.TLSClientConfig{CAFile: writeCAFile(t, tlsSrv)}},
+			{URL: plainSrv.URL, Instance: "plain"},
+		},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (both healthy)", err)
+	}
+	g := rec.MetricPoints("g")
+	secure, okS := pointByAttr(g, map[string]string{"instance": "secure"})
+	if !okS || secure.Value != 1 {
+		t.Fatalf("secure g = %+v (ok=%v), want value 1", secure, okS)
+	}
+	plain, okP := pointByAttr(g, map[string]string{"instance": "plain"})
+	if !okP || plain.Value != 2 {
+		t.Fatalf("plain g = %+v (ok=%v), want value 2", plain, okP)
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	for _, p := range up {
+		if p.Value != 1 {
+			t.Fatalf("up = %+v, want all 1", up)
+		}
 	}
 }
 

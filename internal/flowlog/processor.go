@@ -19,7 +19,13 @@ const (
 	MetricIO      = "tailscale.network.io"
 	MetricPackets = "tailscale.network.packets"
 	MetricFlows   = "tailscale.network.flows"
+	// MetricLogsDropped counts flow LOG records suppressed by the
+	// MaxLogRecordsPerWindow volume guard. Metrics are never dropped; only logs.
+	MetricLogsDropped = "tailscale.network.flow.logs_dropped"
 )
+
+// unitRecord is the OTEL unit for MetricLogsDropped (a count of log records).
+const unitRecord = "{record}"
 
 // eventNameFlow is the OTEL LogRecord event name for a per-connection flow log.
 const eventNameFlow = "tailscale.network.flow"
@@ -53,6 +59,12 @@ type Options struct {
 	// share one Processor). A nil value (the default) disables cross-component
 	// de-duplication.
 	Dedup *dedup.Set
+	// MaxLogRecordsPerWindow caps the number of flow LOG records emitted per poll
+	// window (one ProcessAll call; standalone Process applies its own per-call
+	// budget). Once the cap is reached, further flow logs are suppressed and
+	// counted into MetricLogsDropped, but ALL metrics keep flowing. A zero value
+	// (the default) means unlimited and preserves the current behavior exactly.
+	MaxLogRecordsPerWindow int
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
@@ -65,6 +77,7 @@ type Processor struct {
 	nodes        bool
 	keepExternal bool
 	dedup        *dedup.Set
+	maxLogs      int
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -81,14 +94,53 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		nodes:        opts.NodeDims,
 		keepExternal: opts.KeepExternalAddrs,
 		dedup:        opts.Dedup,
+		maxLogs:      opts.MaxLogRecordsPerWindow,
 	}
 }
 
-// ProcessAll converts every flow log in resp.
-func (p *Processor) ProcessAll(resp NetworkResponse, e telemetry.Emitter) {
-	for i := range resp.Logs {
-		p.Process(resp.Logs[i], e)
+// logBudget gates flow LOG record emission for the volume guard. remaining < 0
+// means unlimited (the cap is disabled). allow reports whether one more log
+// record may be emitted, decrementing the remaining budget when it can or
+// counting a drop when it cannot.
+type logBudget struct {
+	remaining int
+	dropped   int
+}
+
+// newLogBudget returns a budget for max log records. max <= 0 yields an
+// unlimited budget that never drops.
+func newLogBudget(max int) *logBudget {
+	if max <= 0 {
+		return &logBudget{remaining: -1}
 	}
+	return &logBudget{remaining: max}
+}
+
+// allow reports whether one more flow log record may be emitted. An unlimited
+// budget (remaining < 0) always allows; otherwise it consumes one unit when
+// available and records a drop when exhausted.
+func (b *logBudget) allow() bool {
+	if b.remaining < 0 {
+		return true
+	}
+	if b.remaining == 0 {
+		b.dropped++
+		return false
+	}
+	b.remaining--
+	return true
+}
+
+// ProcessAll converts every flow log in resp. The MaxLogRecordsPerWindow cap (if
+// set) applies across the whole call (the poll window): one shared budget gates
+// every flow log record, and any suppressed records are flushed into
+// MetricLogsDropped once the loop completes.
+func (p *Processor) ProcessAll(resp NetworkResponse, e telemetry.Emitter) {
+	budget := newLogBudget(p.maxLogs)
+	for i := range resp.Logs {
+		p.process(resp.Logs[i], e, budget)
+	}
+	p.flushDropped(budget, e)
 }
 
 // trafficSet pairs a ConnectionCounts slice with its traffic_type label.
@@ -98,7 +150,20 @@ type trafficSet struct {
 }
 
 // Process converts a single FlowLog into metrics and (per LogMode) log records.
+// When MaxLogRecordsPerWindow is set, this standalone entry point (used by the
+// stream receiver) applies the cap per single call with its own budget and
+// flushes any dropped count before returning.
 func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
+	budget := newLogBudget(p.maxLogs)
+	p.process(flow, e, budget)
+	p.flushDropped(budget, e)
+}
+
+// process converts a single FlowLog, gating every flow LOG record through
+// budget. Metrics are always emitted; only log records consume the budget. The
+// caller owns the budget (one per ProcessAll window, or one per standalone
+// Process call) and is responsible for flushing the dropped count.
+func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget) {
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
 		{semconv.TrafficSubnet, flow.SubnetTraffic},
@@ -120,7 +185,7 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 			if p.dedup != nil && !p.dedup.Add(connDedupKey(flow, cc)) {
 				continue
 			}
-			p.processConn(flow, set.typ, cc, e)
+			p.processConn(flow, set.typ, cc, e, budget)
 
 			totalConns++
 			totalTxBytes += cc.TxBytes
@@ -132,9 +197,19 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 
 	// Emit the per-record summary when in per_record mode. With dedup on, suppress
 	// it when every connection was a duplicate (nothing left to summarize); with
-	// dedup off, preserve the original always-emit behavior.
-	if p.logMode == logPerRecord && (totalConns > 0 || p.dedup == nil) {
+	// dedup off, preserve the original always-emit behavior. The summary log also
+	// consumes the volume budget.
+	if p.logMode == logPerRecord && (totalConns > 0 || p.dedup == nil) && budget.allow() {
 		p.emitRecordLog(flow, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
+	}
+}
+
+// flushDropped emits MetricLogsDropped with the budget's suppressed count when
+// any flow log records were dropped. Nothing is emitted when none were dropped.
+func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
+	if budget.dropped > 0 {
+		e.Counter(MetricLogsDropped, unitRecord, "Tailscale flow log records dropped by the volume guard",
+			float64(budget.dropped), telemetry.Attrs{})
 	}
 }
 
@@ -149,8 +224,9 @@ func connDedupKey(fl FlowLog, cc ConnectionCounts) string {
 }
 
 // processConn emits metrics (and, in per_connection mode, a log) for one
-// ConnectionCounts entry.
-func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, e telemetry.Emitter) {
+// ConnectionCounts entry. Metrics are always emitted; the per-connection log is
+// gated through budget so the volume guard never suppresses metrics.
+func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, e telemetry.Emitter, budget *logBudget) {
 	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitHostPort(cc.Src)
 	dstAddr, dstPort := splitHostPort(cc.Dst)
@@ -190,7 +266,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		semconv.AttrTrafficType:  trafficType,
 	})
 
-	if p.logMode == logPerConnection {
+	if p.logMode == logPerConnection && budget.allow() {
 		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, e)
 	}
 }
