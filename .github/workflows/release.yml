@@ -31,7 +31,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # cosign (keyless image + checksum signing) and syft (SBOMs).
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v3.0.6'
       - uses: anchore/sbom-action/download-syft@v0

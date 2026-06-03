@@ -72,7 +72,7 @@ jobs:
           build-args: |
             VERSION=main-${{ steps.vars.outputs.shortsha }}
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v3.0.6'
 
@@ -88,7 +88,7 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v3.0.6'
 
