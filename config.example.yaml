@@ -40,7 +40,7 @@ enrichment:
 cardinality:
   flow_include_ports: false          # keep ports OFF flow metrics (always on flow logs)
   flow_node_dims: true               # include src/dst device names on flow metrics
-  collapse_external: true            # bucket unresolved IPs as external/unknown
+  collapse_external: true            # bucket unresolved IPs as external/unknown (also sets src/dst node metric labels when flow_node_dims is on)
 
 collectors:
   # source: poll | stream | both — applies to the log collectors (flowlogs, auditlogs).
