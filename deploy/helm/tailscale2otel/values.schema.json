@@ -25,10 +25,19 @@
                         "collapse_external": {
                             "type": "boolean"
                         },
+                        "device_per_entity": {
+                            "type": "boolean"
+                        },
                         "flow_include_ports": {
                             "type": "boolean"
                         },
                         "flow_node_dims": {
+                            "type": "boolean"
+                        },
+                        "key_per_entity": {
+                            "type": "boolean"
+                        },
+                        "user_per_entity": {
                             "type": "boolean"
                         }
                     }
@@ -155,11 +164,20 @@
                         "node_metrics": {
                             "type": "object",
                             "properties": {
+                                "drop_labels": {
+                                    "type": "array"
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "metric_allow": {
+                                    "type": "array"
+                                },
+                                "metric_deny": {
+                                    "type": "array"
                                 },
                                 "targets": {
                                     "type": "array"

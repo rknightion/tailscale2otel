@@ -80,6 +80,11 @@ collectors:
       #   bearer_token_file: "/run/secrets/scrape-token"   # read fresh each scrape; or bearer_token: "..."
       #   headers: { X-Scope-OrgID: "1" }
       #   tls: { ca_file: "/etc/ssl/ca.pem", server_name: "relay-2.ts.net", insecure_skip_verify: false }
+    # Passthrough filters on the FORWARDED scraped series (they never affect
+    # tailscale.node.up or the discovery.* gauges). Anchored regex on the metric NAME.
+    metric_allow: []           # if non-empty, only metric names matching one of these regexes are forwarded
+    metric_deny: []            # metric names matching any of these regexes are dropped (applied after allow)
+    drop_labels: []            # label keys stripped from every forwarded series (instance is never dropped)
     # Optional: DISCOVER scrape targets dynamically from the Tailscale devices API.
     # Discovered targets are UNIONED (deduped by URL) with the static `targets` above,
     # so this is fully backward-compatible. The devices API is polled on its own

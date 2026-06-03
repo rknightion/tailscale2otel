@@ -101,6 +101,7 @@ exporter health.
 | `tailscale2otel.scrape.errors` | `1` | counter | `tailscale2otel_scrape_errors_total` | `tailscale_collector`, `error_type` | Count of scrape errors, by collector and error class. |
 | `tailscale2otel.scrape.last_timestamp` | `s` | gauge | `tailscale2otel_scrape_last_timestamp_seconds` | `tailscale_collector` | Unix timestamp the last scrape *finished* (success **or** failure); pair with `scrape.success` to detect last-success staleness. |
 | `tailscale2otel.scrape.success` | `1` | gauge | `tailscale2otel_scrape_success_ratio` | `tailscale_collector` | `1` if the last scrape for that collector succeeded, else `0`. |
+| `tailscale2otel.series.active` | `{series}` | gauge | `tailscale2otel_series_active` | `metric_name` | Exact distinct active time series emitted for `metric.name` during the last export interval; bounded by a per-metric cap (the value pins at the cap when exceeded). A **count**. |
 | `tailscale2otel.up` | `1` | gauge | `tailscale2otel_up_ratio` | — | Liveness flag: `1` while the service is running and reporting. |
 <!-- END GENERATED -->
 
@@ -163,6 +164,11 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 | `tailscale.key.expiry` | `s` | gauge | `tailscale_key_expiry_seconds` | `tailscale_key_id`, `tailscale_key_type`, `tailscale_key_description` | Unix timestamp an auth/API key expires; one series per key. |
 | `tailscale.keys.count` | `1` | gauge | `tailscale_keys_count_ratio` | `tailscale_key_type`, `tailscale_key_revoked`, `tailscale_key_invalid` | Key count (a **count**), bucketed by type/revoked/invalid. |
 <!-- END GENERATED -->
+
+> Per-entity gauge gating: the per-device, per-user, and per-key gauges above are gated by
+> `cardinality.device_per_entity` / `user_per_entity` / `key_per_entity` (all **on** by default).
+> Set one to `false` to drop that collector's per-entity series and keep only its aggregate
+> `*.count` roll-up; the key-expiry **warning log** still fires regardless.
 
 ### Settings / ACL / DNS (`tailscale.setting.*`, `tailscale.acl.*`, `tailscale.dns.*`)
 
@@ -266,6 +272,11 @@ Key behavior:
   re-emitted as **gauges**.
 - **Per-target up signal.** A `tailscale.node.up` gauge (→ `tailscale_node_up_ratio`) is emitted
   per target with the `instance` label, reporting whether the last scrape of that node succeeded.
+- **Cardinality controls (optional).** `collectors.node_metrics.metric_allow` / `metric_deny`
+  (anchored regexes on the forwarded metric **name**, allow-then-deny) and `drop_labels` (label keys
+  stripped from every forwarded series) trim the verbatim stream. They never affect
+  `tailscale.node.up` or the `tailscale2otel.nodemetrics.discovery.*` gauges, and the `instance`
+  label is never dropped.
 
 Node identity is carried as **labels** (notably `instance`) on the forwarded series, **not** as
 OTEL Resource attributes. This keeps the forwarded metrics queryable alongside the rest of the
