@@ -472,15 +472,26 @@ P5. [DONE session 3 — flowlog.Processor now adds tailscale.node.hostname to fl
     the processor calls cache.LookupNode(flow.NodeID).Hostname.
 
 --------------------------------------------------------------------------------
-7b. SESSION-4 BACKLOG (planned 2026-06-03; research-backed; NOT yet implemented)
+7b. SESSION-4 BACKLOG (planned 2026-06-03; research-backed). IMPLEMENTED in the
+    2026-06-03 session-4-EXECUTION run — see the §12 log. STATUS:
+      S4-1  DONE (code; Loki-label re-verify + dashboard/README/docs event_name migration
+            still PENDING the Phase-E live check folded into S4-9)
+      S4-2  DONE (nodemetrics per-target auth/TLS + config wiring + docs/node-metrics.md)
+      S4-3  DONE (mechanism, off by default; type<->action map + subjectID + time-bucket are
+            best-effort, flagged for live tuning in S4-10/S4-11)
+      S4-4  DONE      S4-5  DONE      S4-6  DONE (helm-docs/losisin schema baselines
+            regenerate on the first CI run — see §12 caveats)
+      S4-7  DONE (flowlog window cap + visible logs_dropped counter + stream body cap)
+      S4-8  DONE (deploy/alerts/, 9 rules, OTLP-normalized names)
+      S4-9, S4-10  PENDING — LIVE lab ops (need example creds + a user go-ahead); not yet run.
+      S4-11 PENDING — new backlog item added this run (webhook enrichment).
 --------------------------------------------------------------------------------
-These were scoped + web-researched in session 4 and DEFERRED to a future session for
-implementation. Each item is actionable; the supporting research + evidence + sources +
-code snippets are in SECTION 11 (read the matching 11.x before implementing). Still TDD,
-still stdlib `testing` only, still verify the WHOLE module green (build/vet/gofmt/test
--race) + commit between units. NOTE: go.mod edits ARE now IN-SCOPE for S4-1 + S4-5 — the
-"no go.mod edits" rule in section 8 was a parallel-swarm race guard; do dependency work
-SOLO (not concurrently with a leaf swarm) and run the full test suite after.
+Original framing (each item is actionable; supporting research + evidence + sources +
+code snippets are in SECTION 11 — read the matching 11.x before implementing). TDD,
+stdlib `testing` only, verify the WHOLE module green (build/vet/gofmt/test -race) + commit
+between units. NOTE: go.mod edits ARE IN-SCOPE for S4-1 + S4-5 — the "no go.mod edits"
+rule in section 8 was a parallel-swarm race guard; do dependency work SOLO (not
+concurrently with a leaf swarm) and run the full test suite after.
 
 S4-1 [P0 / low-risk / UNBLOCKS P2-6] UPGRADE OTEL LOG SDK v0.6.0 -> v0.20.0 + switch to
      the native log EventName field. (Evidence/snippet: §11.1.)
@@ -861,4 +872,81 @@ plus a local `go doc` probe produced the evidence below. The actionable items li
     that calls config.Load to validate BOTH the rendered chart configmap config AND
     config.example.yaml. Draft-07 can't express cross-field rules — keep those in config.Load
     (the configcheck tool exercises them).
+================================================================================
+
+--------------------------------------------------------------------------------
+12. SESSION LOG + LEARNINGS  (session 4 EXECUTION, 2026-06-03)
+--------------------------------------------------------------------------------
+Executed the §7b backlog with strict TDD (stdlib testing + internal/telemetrytest only),
+verifying the WHOLE module green (go build/vet ./..., gofmt -l empty, go test -race ./...)
+and committing a green state after every phase. Phased by the IMPORT GRAPH per the
+session-3 warnings. Commits on main (on top of cc00c3d):
+  99aa13c  Phase A (SOLO): S4-1 native log EventName + S4-4 cumulative temporality pin
+  3e58419  Phase B leaves (parallel workflow): S4-2 nodemetrics auth/TLS + S4-7 flowlog cap
+  5caba8d  S4-3 webhook<->audit cross-dedup (solo) + S4-7 stream body cap (solo)
+  f83dd57  docs(todos): S4-11 webhook-enrichment backlog (user-prompted research)
+  9ac6e7b  Phase C (SOLO): config + app wiring for the Phase-B/S4-3 additions
+  db63b77  Phase D (parallel workflow): S4-5 renovate + S4-6 helm + S4-8 alerts + S4-2 docs
+  5da0b09  Review fixes: 5 adversarially-confirmed findings
+
+WHAT WAS DONE:
+  - S4-1: bumped the 5 OTEL log modules v0.6.0->v0.20.0; CONFIRMED zero core churn (otel
+    v1.44.0, grpc v1.81.1, protobuf v1.36.11 unchanged). emitter.go uses native
+    log.Record.SetEventName; telemetrytest.Recorder reads rec.EventName(); the two tests that
+    asserted the old event.name ATTRIBUTE now assert its ABSENCE; dead semconv.EventName removed.
+    P2-6 unblocked. REMAINING: re-verify the Loki label the native EventName produces (Grafana
+    Explore = source-of-truth) + migrate audit dashboard / grafana README / docs event_name —
+    folded into S4-9.
+  - S4-4: pinned cumulative temporality on BOTH otlpmetric{http,grpc} exporters + a unit test.
+  - S4-2: nodemetrics Target gained bearer_token/bearer_token_file/headers/tls{...}; per-target
+    *http.Client when TLS set (mirrors telemetry.tlsConfig), else shared client; bearer file read
+    fresh each scrape; default = plain GET. docs/node-metrics.md added.
+  - S4-7: flowlog MaxLogRecordsPerWindow caps LOG records per window (and per Process call) with a
+    visible tailscale.network.flow.logs_dropped counter; metrics NEVER capped. Stream MaxBodyBytes
+    guard (default 64MiB; <0 unlimited) bounds the DECOMPRESSED body -> 413 + rejected{too_large}
+    (anti-OOM/zip-bomb).
+  - S4-3: webhook<->audit cross-dedup. audit.NormalizedCrossKey = single key-format home;
+    audit.WithCrossDedup + webhook.WithDedup share one dedup.Set (first-seen-wins). Webhook maps
+    `type` -> audit (verb,subject) vocab + extracts a subject id, defaulting to NO dedup when it
+    can't confidently map (never over-suppresses). Off by default (webhook.dedup_audit_events).
+    Mapping/subjectID/time-bucket are best-effort, flagged for live tuning -> S4-10 + S4-11.
+  - Phase C: config structs + app wiring + config.example.yaml + a config-load test.
+  - S4-5 renovate.json (OTel lockstep group). S4-6 unconditional helm config helper + full config
+    in values.yaml (deep-merge overrides verified via helm template --set) + values.schema.json
+    (draft-07) + Chart 0.1.0->0.2.0 + CHANGELOG + SEPARATE tools/configcheck module (does not
+    touch main go.mod / go build ./...) + .github/workflows/helm.yml. S4-8 deploy/alerts/ (9 rules).
+
+ORCHESTRATION (ultracode): shared/foundational work SOLO (Phase A telemetry+go.mod; Phase C
+config+app; S4-3 spans dedup+audit+webhook). Import-INDEPENDENT leaves fanned out as parallel
+Workflows (Phase B: nodemetrics+flowlog; Phase D: helm+alerts+docs), each agent owning ONE
+package/path + building only its own. After EVERY workflow I re-verified the WHOLE module myself.
+A final 5-dimension adversarial review (find -> refute-by-default verify; 13 agents) produced 8
+candidates; the 5 confirmed real were all fixed (5da0b09): Helm empty-secret footgun (empty
+webhook.secret SKIPS HMAC -> documented + surfaced in values.yaml), a non-discriminating TLS test
+(rewritten as a 2-target differentiator), a missing flow-cap test on the standalone Process()
+path, an orphaned values.schema.json property (CI fail-on-diff risk), and an undocumented
+logs_dropped metric.
+
+LEARNINGS:
+  - gopls/LSP lags a go.mod version bump — its "undefined method" diagnostics were STALE; the
+    compiler (go build / go doc) is the source of truth (verified v0.20.0 native methods via go doc).
+  - A build-tag-only Go package breaks `go build ./...`; the CI configcheck is therefore a SEPARATE
+    module (tools/configcheck/go.mod + replace ../..) which `./...` naturally excludes.
+  - Webhook<->audit cross-dedup needs LIVE capture to be effective (no webhook captures exist; IDs
+    likely differ across sources) — built+tested the mechanism, deferred tuning. User-prompted
+    research found client-misconfig + Tailnet-Lock webhook events have NO log-streaming equivalent
+    and the WARN heuristic misses them -> S4-11.
+
+CI CAVEATS (S4-6, could NOT run locally — helm-docs + losisin not installed): the first CI run may
+diff the hand-authored README.md / values.schema.json; let them regenerate and commit the baseline,
+after which fail-on-diff is stable. helm lint + helm template DID render cleanly locally.
+
+PENDING (LIVE, by hand, sequential — need example lab creds + a user go-ahead; NOT yet run):
+  - S4-9: re-verify session-3 additions + the S4-1 native-EventName Loki label in Grafana Cloud;
+    migrate the audit dashboard/README/docs event_name; confirm flow hostname + cross-source dedup
+    + the 4 dashboards vs real series. (nodemetrics live check stays skipped — lab scraping off.)
+  - S4-10: stand up the HTTPS stream receiver on the tailnet, point example log streaming at it (LAB
+    ONLY), capture a real Splunk-HEC body -> sanitized fixture -> tighten the parser.
+  SAFETY: only the example LAB may be reconfigured; auto_configure must NEVER target a real tailnet.
+  Push to origin is deferred until the user confirms.
 ================================================================================
