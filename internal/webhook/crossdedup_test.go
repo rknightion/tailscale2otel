@@ -1,8 +1,10 @@
 package webhook
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
 	"testing"
 	"time"
 
@@ -22,8 +24,14 @@ func nodeCreatedEvent(nodeID string) event {
 		Type:      "nodeCreated",
 		Tailnet:   "example.com",
 		Message:   "node created",
-		Data:      map[string]string{"nodeID": nodeID},
+		Data:      map[string]json.RawMessage{"nodeID": jsonString(nodeID)},
 	}
+}
+
+// jsonString renders s as a JSON string value (e.g. n1 -> "n1") for event.Data.
+func jsonString(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
 }
 
 // TestEmit_CrossDedupSuppressesAfterAudit confirms that when an audit event for
@@ -105,5 +113,57 @@ func TestEmit_NoDedupSetEmitsAll(t *testing.T) {
 
 	if got := len(rec.LogRecords()); got != 2 {
 		t.Fatalf("log records = %d, want 2 (no dedup set)", got)
+	}
+}
+
+// TestHandler_ArrayValuedDataDoesNotDropBatch pins S4-11(e): a webhook event
+// whose data carries a non-flat value (userRoleUpdated's oldRoles/newRoles are
+// arrays per kb/1213) must NOT cause the whole POST to be rejected. The old
+// map[string]string Data type failed json.Unmarshal on the array, dropping every
+// event in the batch.
+func TestHandler_ArrayValuedDataDoesNotDropBatch(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard()) // empty secret -> verification skipped
+	body := `[` +
+		`{"timestamp":"2026-06-02T10:00:00Z","version":1,"type":"nodeCreated","tailnet":"e.com","message":"m","data":{"nodeID":"n1"}},` +
+		`{"timestamp":"2026-06-02T10:00:01Z","version":1,"type":"userRoleUpdated","tailnet":"e.com","message":"m","data":{"user":"a@e.com","oldRoles":["member"],"newRoles":["admin"],"url":"https://x"}}` +
+		`]`
+	resp := doPost(t, s.Handler(), "/webhook", body, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (array-valued data must not drop the batch)", resp.StatusCode)
+	}
+	if got := len(rec.LogRecords()); got != 2 {
+		t.Fatalf("log records = %d, want 2 (both events emitted despite array-valued data)", got)
+	}
+}
+
+// TestHandler_UserSubjectDedupByUserField pins S4-11(d): the cross-source subject
+// id for a USER event is the "user" data field (login/email), per kb/1213 — NOT
+// userID/userId/loginName/email. Two identical userApproved events must collapse
+// to one when a shared dedup set is attached.
+func TestHandler_UserSubjectDedupByUserField(t *testing.T) {
+	rec := telemetrytest.New()
+	set := dedup.New(0)
+	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
+	one := `{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"userApproved","tailnet":"e.com","message":"m","data":{"user":"u1@e.com"}}`
+	body := `[` + one + `,` + one + `]`
+	doPost(t, s.Handler(), "/webhook", body, "")
+	if got := len(rec.LogRecords()); got != 1 {
+		t.Fatalf("log records = %d, want 1 (user-subject dedup via the \"user\" field)", got)
+	}
+}
+
+// TestHandler_NodeAuthorizedAliasDedup pins S4-11(c): nodeAuthorized is the
+// deprecated alias of nodeApproved and must map to the same (update, node)
+// cross-key. Two identical nodeAuthorized events collapse to one.
+func TestHandler_NodeAuthorizedAliasDedup(t *testing.T) {
+	rec := telemetrytest.New()
+	set := dedup.New(0)
+	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
+	one := `{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeAuthorized","tailnet":"e.com","message":"m","data":{"nodeID":"n1"}}`
+	body := `[` + one + `,` + one + `]`
+	doPost(t, s.Handler(), "/webhook", body, "")
+	if got := len(rec.LogRecords()); got != 1 {
+		t.Fatalf("log records = %d, want 1 (nodeAuthorized alias of nodeApproved)", got)
 	}
 }

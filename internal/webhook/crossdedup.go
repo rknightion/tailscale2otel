@@ -1,6 +1,10 @@
 package webhook
 
-import "github.com/rknightion/tailscale2otel/internal/audit"
+import (
+	"encoding/json"
+
+	"github.com/rknightion/tailscale2otel/internal/audit"
+)
 
 // webhookActionMap maps the Tailscale webhook event types that overlap with
 // configuration-audit events onto the SAME canonical (verb, subject) vocabulary
@@ -20,6 +24,7 @@ var webhookActionMap = map[string]struct{ verb, subject string }{
 	"nodeCreated":     {"create", "node"},
 	"nodeDeleted":     {"delete", "node"},
 	"nodeApproved":    {"update", "node"},
+	"nodeAuthorized":  {"update", "node"}, // deprecated alias of nodeApproved (kb/1213)
 	"userCreated":     {"create", "user"},
 	"userDeleted":     {"delete", "user"},
 	"userApproved":    {"update", "user"},
@@ -27,9 +32,23 @@ var webhookActionMap = map[string]struct{ verb, subject string }{
 	"userRoleUpdated": {"update", "user"},
 }
 
+// NOTE on deliberately-UNMAPPED types (S4-11c, after the kb/1213 catalog +
+// live findings): policyUpdate carries NO node/user id in its data
+// ({newPolicy,oldPolicy,url,actor}), so it can never form an id-keyed cross-key —
+// mapping it would be inert. userNeedsApproval shows null data in the catalog
+// (no subject id either). nodeNeedsApproval / nodeNeedsAuthorization are
+// "needs-action" notifications with NO config-audit counterpart, so mapping them
+// risks SUPPRESSING a distinct real change (e.g. a same-second nodeCreated/
+// nodeApproved) — and D11 says never over-suppress. They are intentionally left
+// unmapped (never cross-deduped). userSuspended/userDeleted are kept pending a
+// live webhook subscription to confirm they exist (they are not in the catalog).
+
 // subjectIDKeys are the webhook event Data keys consulted, in order, for the
-// subject identity (a node or user id) used in the cross-source key.
-var subjectIDKeys = []string{"nodeID", "nodeId", "deviceID", "deviceId", "userID", "userId", "id", "loginName", "email"}
+// subject identity used in the cross-source key. Per kb/1213 the only id fields
+// that actually appear are "nodeID" (node* events) and "user" (the user
+// login/email on user* events) — userID/loginName/email/deviceID never appear
+// (S4-11d).
+var subjectIDKeys = []string{"nodeID", "user"}
 
 // crossKey derives the normalized cross-source de-dup key for a webhook event,
 // reusing audit.NormalizedCrossKey so both sources share one key format. It
@@ -47,11 +66,18 @@ func crossKey(ev event) (string, bool) {
 	return audit.NormalizedCrossKey(va.verb, va.subject, id, parseTimestamp(ev.Timestamp))
 }
 
-// subjectID returns the first non-empty Data value among subjectIDKeys.
+// subjectID returns the first Data value among subjectIDKeys that decodes to a
+// non-empty JSON string. Non-string values (e.g. arrays) are skipped, so a
+// subject id is only used when it is unambiguously a scalar identifier.
 func subjectID(ev event) string {
 	for _, k := range subjectIDKeys {
-		if v := ev.Data[k]; v != "" {
-			return v
+		raw, ok := ev.Data[k]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(raw, &s) == nil && s != "" {
+			return s
 		}
 	}
 	return ""
