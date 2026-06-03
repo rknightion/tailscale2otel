@@ -1,0 +1,14 @@
+# Dockerfile used by GoReleaser (.goreleaser.yaml `dockers`): it copies the
+# prebuilt, cross-compiled binary and the example config into the distroless
+# runtime image. No build stage — GoReleaser builds the binary itself.
+#
+# For source-based `docker build` (CI docker smoke, local dev), use the
+# multi-stage deploy/Dockerfile instead.
+FROM gcr.io/distroless/static-debian13:nonroot
+COPY tailscale2otel /usr/local/bin/tailscale2otel
+COPY config.example.yaml /etc/tailscale2otel/config.yaml
+USER nonroot:nonroot
+# Streaming (HEC) and webhook receivers, if enabled in config.
+EXPOSE 8088 8089
+ENTRYPOINT ["/usr/local/bin/tailscale2otel"]
+CMD ["-config", "/etc/tailscale2otel/config.yaml"]

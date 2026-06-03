@@ -57,7 +57,7 @@ func NewScheduler(e telemetry.Emitter, store CheckpointStore, opts ...SchedulerO
 }
 
 // Run launches one goroutine per registered collector and blocks until ctx is
-// cancelled, then drains. Returns ctx.Err().
+// canceled, then drains. Returns ctx.Err().
 func (s *Scheduler) Run(ctx context.Context, r *Registry) error {
 	var wg sync.WaitGroup
 	for _, entry := range r.Entries() {
@@ -97,7 +97,7 @@ func (s *Scheduler) initialDelay(interval time.Duration) time.Duration {
 	if s.jitter <= 0 {
 		return 0
 	}
-	return time.Duration(rand.Float64() * s.jitter * float64(interval))
+	return time.Duration(rand.Float64() * s.jitter * float64(interval)) //nolint:gosec // G404: scheduling jitter is not security-sensitive
 }
 
 // runTick executes one collection, recovering from panics so a single bad

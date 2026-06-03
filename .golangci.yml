@@ -1,0 +1,44 @@
+# golangci-lint v2 configuration.
+#
+# Shared by the root module and the tools/configcheck and tools/metricscatalog
+# modules: golangci-lint discovers this file by walking up from each module
+# directory, so one config covers all three (CI lints them via a matrix).
+#
+#   golangci-lint run     # report issues
+#   golangci-lint fmt     # apply formatters (gofmt, goimports)
+version: "2"
+
+linters:
+  # "standard" = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose # HTTP response bodies must be closed (we make many API calls)
+    - errorlint # correct errors.Is/As/%w wrapping
+    - gosec # common security mistakes
+    - misspell # typos in comments and strings
+    - unconvert # redundant type conversions
+  settings:
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - std-error-handling
+    rules:
+      # Tests favour brevity over exhaustive error/security checks.
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  # Surface every finding in CI rather than hiding duplicates (defaults cap at 3).
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -51,7 +51,7 @@ func run(path string, check, write bool) error {
 			fmt.Printf("%s already up to date\n", path)
 			return nil
 		}
-		if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(out), 0o644); err != nil { //nolint:gosec // G306: generated docs file is intentionally world-readable
 			return err
 		}
 		fmt.Printf("wrote %s\n", path)

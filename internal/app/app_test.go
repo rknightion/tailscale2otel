@@ -468,7 +468,7 @@ func TestNewApp_WebhookCrossDedupOffByDefault(t *testing.T) {
 
 // TestApp_RunGracefulShutdown is the app-level integration test (P1-5): assemble
 // an App via the newApp seam with an in-memory emitter and a stub Tailscale
-// server, run it briefly, and confirm a cancelled context produces a CLEAN
+// server, run it briefly, and confirm a canceled context produces a CLEAN
 // (nil) return plus the heartbeat and build_info self-observability signals.
 func TestApp_RunGracefulShutdown(t *testing.T) {
 	// A stub Tailscale API that 200s everything (collectors won't tick within the

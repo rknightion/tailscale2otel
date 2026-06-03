@@ -152,7 +152,7 @@ func (e *recordingLogExporter) all() []sdklog.Record {
 func logAttrs(r sdklog.Record) map[string]string {
 	out := map[string]string{}
 	r.WalkAttributes(func(kv log.KeyValue) bool {
-		out[string(kv.Key)] = kv.Value.AsString()
+		out[kv.Key] = kv.Value.AsString()
 		return true
 	})
 	return out

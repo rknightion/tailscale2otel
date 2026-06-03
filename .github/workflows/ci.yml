@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-test:
-    name: build / vet / fmt / test
+    name: build / vet / test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,15 +24,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: gofmt (must be empty)
-        run: |
-          fmt_out="$(gofmt -l .)"
-          if [ -n "$fmt_out" ]; then
-            echo "::error::gofmt found unformatted files:"
-            echo "$fmt_out"
-            exit 1
-          fi
-
       - name: go vet
         run: go vet ./...
 
@@ -41,6 +32,29 @@ jobs:
 
       - name: go test -race
         run: go test -race ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Root module + the two CI-only tool modules (each a separate go.mod).
+        # gofmt/goimports are enforced here via the `formatters` block in
+        # .golangci.yml, so there is no separate gofmt step.
+        module: [".", "tools/configcheck", "tools/metricscatalog"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint (${{ matrix.module }})
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: ${{ matrix.module }}
 
   docs-catalog:
     name: docs/metrics.md is generated from the code catalog
@@ -75,11 +89,33 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: install govulncheck (pinned)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
       - name: govulncheck
         run: govulncheck ./...
+
+  goreleaser-snapshot:
+    name: goreleaser build (snapshot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Cross-compile every target + build archives/checksums. The container
+      # image (dockers_v2) is disabled in snapshot mode, so no docker/qemu/syft
+      # is needed here; the image is smoke-tested by docker-build below and fully
+      # built, pushed, and signed by release.yml.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish,sign,sbom
 
   docker-build:
     name: docker image builds

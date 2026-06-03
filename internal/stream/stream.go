@@ -585,7 +585,7 @@ func (s *Server) writeError(w http.ResponseWriter, status int, text string) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// Run binds Options.Listen and serves the handler until ctx is cancelled, then
+// Run binds Options.Listen and serves the handler until ctx is canceled, then
 // performs a graceful shutdown. It serves HTTPS when both TLS files are set.
 func (s *Server) Run(ctx context.Context) error {
 	srv := &http.Server{

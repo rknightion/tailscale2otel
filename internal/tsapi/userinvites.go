@@ -43,16 +43,7 @@ func (c *Client) UserInvites(ctx context.Context) ([]UserInvite, error) {
 	}
 	out := make([]UserInvite, 0, len(wire))
 	for _, i := range wire {
-		out = append(out, UserInvite{
-			ID:        i.ID,
-			Role:      i.Role,
-			TailnetID: i.TailnetID,
-			InviterID: i.InviterID,
-			Email:     i.Email,
-			InviteURL: i.InviteURL,
-			Created:   i.Created,
-			Accepted:  i.Accepted,
-		})
+		out = append(out, UserInvite(i))
 	}
 	return out, nil
 }

@@ -313,7 +313,7 @@ func flipLast(s string) string {
 }
 
 // Run is exercised lightly to ensure it binds, serves, and shuts down on ctx
-// cancellation without leaking. Full handler behaviour is covered above.
+// cancellation without leaking. Full handler behavior is covered above.
 func TestRun_GracefulShutdown(t *testing.T) {
 	rec := telemetrytest.New()
 	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))

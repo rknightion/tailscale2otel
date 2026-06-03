@@ -15,7 +15,7 @@ func Default() *Config {
 			Tailnet: "example.com",
 			Auth: TailscaleAuth{
 				Method: "oauth",
-				OAuth: OAuthConfig{
+				OAuth: OAuthConfig{ //nolint:gosec // G101: public OAuth token endpoint + read scope, not secrets
 					Scopes:   []string{"all:read"},
 					TokenURL: "https://api.tailscale.com/api/v2/oauth/token",
 				},

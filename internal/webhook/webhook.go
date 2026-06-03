@@ -91,7 +91,7 @@ var severityByType = map[string]telemetry.Severity{
 	"nodeDeleted":    telemetry.SeverityWarn,
 	"webhookDeleted": telemetry.SeverityWarn,
 	// Undocumented in the catalog above but historically observed; kept at WARN
-	// (matching prior substring behaviour) pending live verification — remove if
+	// (matching prior substring behavior) pending live verification — remove if
 	// invalid (todos.txt S4-11(c), gated on the S4-10 capture).
 	"userSuspended": telemetry.SeverityWarn,
 	"userDeleted":   telemetry.SeverityWarn,
@@ -173,7 +173,7 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 }
 
 // Handler returns the http.Handler serving the configured Path. It is the unit
-// of behaviour exercised by tests via httptest.
+// of behavior exercised by tests via httptest.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handle)
@@ -181,7 +181,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // Run binds opts.Listen, serves Handler at opts.Path, and shuts down gracefully
-// when ctx is cancelled. It returns nil on a clean shutdown.
+// when ctx is canceled. It returns nil on a clean shutdown.
 func (s *Server) Run(ctx context.Context) error {
 	srv := &http.Server{
 		Addr:              s.opts.Listen,
