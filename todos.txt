@@ -1,16 +1,18 @@
 ================================================================================
 tailscale2otel — HANDOFF / CONTEXT / TODO  (for resuming with an LLM)
 ================================================================================
-Last updated: 2026-06-03 (session 6: closed the S4-10 audit-timestamp fidelity gap — streamed audit
-  records now take the HEC envelope time, not OTEL ingest time. session 5: §7 DRIVEN TO EMPTY — S4-9/10/11
-  + Helm all done; commits HELD/unpushed). Single source of truth.
+Last updated: 2026-06-03 (session 7: DOCS-GEN DONE — docs/metrics.md is now GENERATED from an in-code
+  telemetry catalog (every emit site references a metricdoc descriptor; tools/metricscatalog -write/-check;
+  CI fail-on-diff). session 6: closed the S4-10 audit-timestamp fidelity gap — streamed audit records now
+  take the HEC envelope time, not OTEL ingest time. session 5: §7 DRIVEN TO EMPTY — S4-9/10/11 + Helm all
+  done; commits HELD/unpushed). Single source of truth.
 
 HOW TO READ THIS FILE:
   • ACTIVE (sections 1–8): what a new session needs NOW — status, hard
     constraints, agreed design decisions, the current package/telemetry maps,
     the LIVE backlog (section 7), and how to work here. READ THIS HALF before
     changing code.
-  • HISTORICAL REFERENCE (sections H1–H7, BOTTOM): completed work (one-liners),
+  • HISTORICAL REFERENCE (sections H1–H9, BOTTOM): completed work (one-liners),
     the per-session execution logs, and the session-4 research evidence. Context
     only — consult for the "why" behind a finished item or the research backing a
     pending one. NOT active work.
@@ -57,6 +59,15 @@ WHAT REMAINS (see section 7 for detail):
   • S4-11 DONE (a–e). Severity SET + misconfig alert; dedup-map (nodeAuthorized alias;
           inert/risky additions deliberately skipped per D11); subjectID {nodeID,user};
           event.Data → json.RawMessage (array-valued data no longer drops the batch).
+  • DOCS-GEN DONE (session 7). docs/metrics.md metric/log tables are generated from code. Each
+          emitting package declares a metricdoc catalog (catalog.go: docXxx descriptors +
+          Catalog()/LogCatalog()) and its emit sites reference the descriptors, so name/unit/
+          instrument/description/attributes can't drift. internal/catalog aggregates all packages and
+          Render()s the tables between `<!-- BEGIN GENERATED: ... -->`/`<!-- END GENERATED -->` markers
+          (prose preserved). tools/metricscatalog (separate module, like configcheck): -write regenerates,
+          -check fails on drift; CI job in ci.yml + internal/catalog.TestDocsMetricsInSync guard locally.
+          Per-package catalog_test.go asserts emitted<->declared. Adversarial review done (2 low findings
+          fixed: flowlog per_record `tailscale.connections` attr; metricdoc cell-escaping hardening).
   • §7 IS NOW EMPTY. Only remaining deferral: S4-9(2) poll+stream cross-dedup LIVE check
           (needs both ingestion paths running at once; mechanism is unit-tested).
   • Helm CI baseline: DONE — comprehensive `# --` config references for every key
@@ -184,8 +195,16 @@ internal/telemetry    - Emitter{Counter,Gauge,UpDownCounter,LogEvent}; Attrs=map
                         temporality pinned); .Emitter(); .Shutdown(). emitter.go uses
                         native Record.SetEventName.
 internal/telemetrytest- Recorder.New(); .Emitter(); .MetricPoints(name)/.MetricNames();
-                        .LogRecords() []{Body,SeverityText,EventName,Severity,Attrs}.
-                        EventName reads the native field. TEST HELPER (no testing import).
+                        .LogRecords() []{Body,SeverityText,EventName,Severity,Attrs}; MetricPoint has
+                        Description. EventName reads the native field. TEST HELPER (no testing import).
+internal/metricdoc    - in-code telemetry DOC catalog types: Metric/LogEvent{Name,Unit,Instrument,
+                        Description,Attributes,Group}; PromName()/PromLabels() (OTLP→Prom normalization);
+                        RenderMetricTable/RenderLogTable (Markdown, all cells escaped). Single doc source
+                        of truth. Each emitting package has a catalog.go (docXxx + Catalog()/LogCatalog())
+                        whose descriptors the emit sites reference, + a catalog_test.go consistency guard.
+internal/catalog      - aggregates every package's Catalog()/LogCatalog() (Metrics()/LogEvents()) and
+                        Render(doc) fills docs/metrics.md tables between markers (prose preserved,
+                        completeness-checked). TestDocsMetricsInSync = local drift guard.
 internal/semconv      - shared attribute keys, UCUM units, enum values.
 internal/dedup        - Set: bounded FIFO thread-safe de-dup set. New(cap); Add(key) bool.
 internal/enrich       - DeviceCache: Replace([]DeviceMeta); ResolveName/LookupAddr/
@@ -223,8 +242,9 @@ internal/app          - options.go (config→telemetry/tsapi/nodemetrics opts); 
 Packaging/ops: deploy/Dockerfile, deploy/helm/tailscale2otel (full config in values.yaml,
   unconditional config helper, values.schema.json draft-07), deploy/docker-compose.yaml,
   deploy/grafana/*.json (4 dashboards)+README, deploy/alerts/*.yaml (9 rules),
-  docs/metrics.md + docs/node-metrics.md, tools/configcheck (CI), .github/workflows/{ci,
-  release,helm}.yml, config.example.yaml.
+  docs/metrics.md (GENERATED) + docs/node-metrics.md, tools/configcheck (CI), tools/metricscatalog
+  (CI, separate module; -write/-check regenerates/verifies docs/metrics.md from internal/catalog),
+  .github/workflows/{ci,release,helm}.yml, config.example.yaml.
 
 --------------------------------------------------------------------------------
 6. AS-BUILT TELEMETRY CATALOG (current; OTLP→Prom normalization in docs/metrics.md)
@@ -266,22 +286,12 @@ creds in .secrets/creds.local.env (`set -a; source .secrets/creds.local.env; set
 +a`), gcx context m7kni; only the m7kni LAB may be reconfigured; auto_configure
 must NEVER target a real/production tailnet; NEVER commit .secrets/ or .capture/.
 
-DOCS-GEN [P1 / IN PROGRESS — session 6 continued] Generate docs/metrics.md from code (so metric/
-     log names, units, instruments, descriptions, attributes are derived from the codebase, not
-     hand-maintained). DESIGN: each emitting package declares a metricdoc catalog (the SINGLE
-     SOURCE OF TRUTH for descriptions) and the emit sites reference it; a generator renders the
-     catalog into docs/metrics.md between markers (prose preserved outside); CI fail-on-diff.
-     DONE so far: internal/metricdoc (Metric/LogEvent{Name,Unit,Instrument,Description,Attributes,
-     Group} + PromName/PromLabels OTLP→Prom normalization + RenderMetricTable/RenderLogTable, TDD);
-     telemetrytest.Recorder.MetricPoint.Description; internal/flowlog FULLY CONVERTED = the TEMPLATE
-     (catalog.go + emit sites reference descriptors + catalog_test.go consistency test). REMAINING:
-     convert devices/users/keys/settings/acl/dns/auditlogs(feature)/flowlogs-collector(feature.enabled)/
-     stream/webhook/nodemetrics + cross-cutting self-obs (collector/selfobs.go, app/selfobs.go,
-     app/heartbeat.go, telemetry/selfobs.go, devices' enrich.cache_*); build tools/metricscatalog
-     (separate module like tools/configcheck) to aggregate every Catalog()/LogCatalog() and
-     regenerate docs/metrics.md; wire fail-on-diff CI. GOTCHAS: nodemetrics forwards runtime-named
-     tailscaled_* (not enumerable → prose note); webhook event names are computed
-     tailscale.webhook.<type> (prose prefix note). See the session handoff for the full plan.
+DOCS-GEN [P1] DONE (session 7) — see §2 for the summary. All emitting packages (self-obs in
+     telemetry/app/collector; leaves devices/users/keys/settings/acl/dns/flowlogs/nodemetrics/audit/
+     stream/webhook; flowlog already template) converted; internal/catalog + tools/metricscatalog +
+     CI fail-on-diff + local TestDocsMetricsInSync guard. GENERATED docs/metrics.md verified faithful
+     (no signal dropped; prose preserved). Runtime-named exceptions documented as prose: nodemetrics
+     forwarded tailscaled_* series, webhook computed tailscale.webhook.<type> log names.
 
 S4-9 [P0 / LIVE] DONE (live-verified 2026-06-03 against m7kni + Grafana Cloud; see H7).
      (1) flow log records carry tailscale_node_hostname — VERIFIED (e.g. =opnsense). ✓
@@ -765,4 +775,65 @@ S4-9(2) LIVE-VERIFIED (poll+stream cross-dedup) — the residual LIVE deferral, 
     TestWarnings_DualIngestionRisk. config.example.yaml + deploy/helm values.yaml (README
     regenerated, schema byte-identical) now state: pick ONE method; cross-source de-dup is a
     best-effort failsafe, not a guarantee. (source=both remains allowed but discouraged + warned.)
-================================================================================
+
+--------------------------------------------------------------------------------
+H9. SESSION 7 LOG + LEARNINGS (2026-06-03 continued: DOCS-GEN — code-derived docs)
+--------------------------------------------------------------------------------
+GOAL (user priority "docs stay up to date"): make docs/metrics.md GENERATED from the codebase so
+metric/log NAMES, UNITS, INSTRUMENTS, DESCRIPTIONS, and ATTRIBUTES come from code, never hand-
+maintained; de-duplicate the ~61 copy-pasted unit/description literals. Strict TDD throughout; green
+commit between units; adversarial review before finishing.
+
+WHAT SHIPPED (commits 94b6765..a87fa12, on main, UNPUSHED — push only on user confirm):
+  - PATTERN (per emitting package): a catalog.go declares `docXxx = metricdoc.Metric/LogEvent{...}`
+    descriptors + Catalog()/LogCatalog(); every emit site passes docXxx.Name/.Unit/.Description
+    (value+attrs unchanged) so they can't drift; a catalog_test.go drives the package against
+    internal/telemetrytest.Recorder and asserts emitted<->declared (unit/instrument/description;
+    log-event membership). flowlog was the pre-existing template.
+  - CONVERTED: self-obs (telemetry: build_info/export.failures; app: up/api.requests/api.retries;
+    collector: the 4 scrape.* — all Group "Self-observability") + 11 leaves (devices [+enrich.cache_*
+    under Self-obs, +posture log], users, keys [+key.expiring log], settings, acl, dns, flowlogs
+    [feature.enabled], nodemetrics [node.up only; forwarded tailscaled_* are runtime-named prose],
+    audit [+config.audit log], stream [records/rejected], webhook [events/rejected +computed
+    tailscale.webhook.<type> log]). auditlogs collector emits nothing of its own (delegates to
+    audit.Processor) — no catalog needed.
+  - internal/catalog: Metrics()/LogEvents() aggregate all 15 packages; Render(doc) fills the tables
+    between `<!-- BEGIN GENERATED: <metrics groups="..."|logs> -->`/`<!-- END GENERATED -->` markers
+    (metrics grouped per doc section, logs in one table, all sorted by OTEL name), preserves prose,
+    and ERRORS if any declared signal isn't rendered (a new metric forces a docs update). Engine is
+    dependency-injected (render(doc,metrics,logs)) so it's unit-tested with a synthetic catalog;
+    TestDocsMetricsInSync reads ../../docs/metrics.md as a local drift guard.
+  - tools/metricscatalog: separate CI-only module (replace ../.., like configcheck). -write
+    regenerates docs/metrics.md, -check fails on drift, default -file docs/metrics.md (run from repo
+    root). CI: a `docs-catalog` job in .github/workflows/ci.yml builds it and runs -check.
+  - docs/metrics.md restructured: every per-section metric table + the log table wrapped in markers
+    and regenerated; ALL prose (naming/normalization rules, gating blockquotes, query examples)
+    preserved. Node.up got a (new) generated table.
+
+ORCHESTRATION: discovery workflow (read-only, 1 agent/leaf) mapped exact consts/units/attrs/test
+harnesses; I authored all catalog.go (correctness-critical) SOLO; a wiring workflow fanned out the
+mechanical emit-site rewiring + consistency tests (10 leaves in parallel, then stream after audit
+since stream imports audit); then SOLO built internal/catalog + tool + docs + CI; then an adversarial
+review workflow (refute-by-default). Re-verified the WHOLE module after each workflow (leaf agents
+passing in isolation != module builds).
+
+ADVERSARIAL REVIEW: 12 candidate findings, 2 survived refutation (both fixed in a87fa12):
+  (1) flowlog docFlowLog omitted the per_record-only `tailscale.connections` attribute → added.
+  (2) metricdoc render escaped only Description → now escapes every cell (latent `|`/newline column-
+      injection footgun; no-op for current values, pinned by TestRenderEscapesPipesInCells).
+Refuted (correctly): description-wording changes are the intended doc-source-of-truth (doc-only
+metadata, name/unit/instrument/value/attrs unchanged); gated-branch metrics' instruments match;
+no pre-feature signal dropped; prose preserved; CI -check path resolves from repo root; CRLF/end-
+marker-in-cell edge cases handled.
+
+GOTCHAS / LEARNINGS for next time:
+  - metricdoc is the doc-types package; its descriptors are the single source of truth. To add/rename
+    a metric or change a description/unit: edit the owning package's catalog.go, then
+    `go run ./tools/metricscatalog -write` from repo root and commit docs/metrics.md (or `go test
+    ./internal/catalog/` / CI -check will fail).
+  - The consistency tests do NOT verify attribute KEYS (only unit/instrument/description + name
+    membership); attribute accuracy in docs relies on the catalog Attributes being correct (that is
+    how finding #1 slipped past the tests). Gateway packages (flowlogs/stream) and forwarded/computed
+    names (nodemetrics/webhook) scope their drift check by name prefix.
+  - tools/metricscatalog has a large go.mod/go.sum (it transitively imports the OTEL SDK via
+    internal/catalog→app); versions track the main module via the replace + MVS, pinned by go mod tidy.
