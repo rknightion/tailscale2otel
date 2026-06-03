@@ -136,13 +136,18 @@ func WithDedup(set *dedup.Set) Option {
 
 // event mirrors a single Tailscale webhook event. Field names and types match
 // Tailscale's documented payload and official example consumer.
+//
+// Data values are kept as raw JSON because they are NOT uniformly flat strings:
+// userRoleUpdated carries array-valued oldRoles/newRoles, and policyUpdate carries
+// large oldPolicy/newPolicy strings (kb/1213). A map[string]string here would make
+// json.Unmarshal fail on the array values and reject the WHOLE delivery (S4-11e).
 type event struct {
-	Timestamp string            `json:"timestamp"` // RFC3339
-	Version   int               `json:"version"`
-	Type      string            `json:"type"`
-	Tailnet   string            `json:"tailnet"`
-	Message   string            `json:"message"`
-	Data      map[string]string `json:"data"`
+	Timestamp string                     `json:"timestamp"` // RFC3339
+	Version   int                        `json:"version"`
+	Type      string                     `json:"type"`
+	Tailnet   string                     `json:"tailnet"`
+	Message   string                     `json:"message"`
+	Data      map[string]json.RawMessage `json:"data"`
 }
 
 // New returns a Server that verifies against opts.Secret and emits via e.

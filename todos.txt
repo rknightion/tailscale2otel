@@ -1,7 +1,7 @@
 ================================================================================
 tailscale2otel — HANDOFF / CONTEXT / TODO  (for resuming with an LLM)
 ================================================================================
-Last updated: 2026-06-03 (session 5: S4-9 live-verified, S4-11a/b done). Single source of truth.
+Last updated: 2026-06-03 (session 5: §7 DRIVEN TO EMPTY — S4-9/10/11 + Helm all done; commits HELD/unpushed). Single source of truth.
 
 HOW TO READ THIS FILE:
   • ACTIVE (sections 1–8): what a new session needs NOW — status, hard
@@ -43,9 +43,11 @@ WHAT REMAINS (see section 7 for detail):
   • S4-10 DONE (2026-06-03 live capture; H7). Envelope pinned = concatenated HEC
           {time,event,fields}; FIXED the auth bug (Basic user:token, not Splunk).
           S4-9(2) poll+stream cross-dedup live check still DEFERRED (needs both on).
-  • S4-11 Webhook enrichment: (a) severity SET + (b) misconfig alert DONE (S4-11a/b);
-          (c/d/e) dedup-map/subjectID/payload-typing → from the authoritative KB catalog
-          (the S4-10 log-stream capture does NOT include webhooks — separate data path).
+  • S4-11 DONE (a–e). Severity SET + misconfig alert; dedup-map (nodeAuthorized alias;
+          inert/risky additions deliberately skipped per D11); subjectID {nodeID,user};
+          event.Data → json.RawMessage (array-valued data no longer drops the batch).
+  • §7 IS NOW EMPTY. Only remaining deferral: S4-9(2) poll+stream cross-dedup LIVE check
+          (needs both ingestion paths running at once; mechanism is unit-tested).
   • Helm CI baseline: DONE — comprehensive `# --` config references for every key
     (README regenerated; schema unchanged/fail-on-diff safe; configcheck passes).
 
@@ -299,7 +301,25 @@ S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING — DONE (2026-06-03 live capture v
        the tailnet, so its config could not be restored — repoint streaming at the real
        tailscale2otel deployment when ready).
 
-S4-11 [P1] WEBHOOK ENRICHMENT — severity, data-field pinning, dedup-map correctness.
+S4-11 [P1] WEBHOOK ENRICHMENT — DONE (a–e; 2026-06-03; H7). All from the authoritative
+     catalog https://tailscale.com/kb/1213/webhooks#events (the S4-10 LOG-STREAM capture does
+     NOT carry webhooks — separate subscription/data path — so the KB is the source of truth;
+     a live webhook capture would need a separate subscription + can't easily trigger the
+     events whose payloads matter). Generic dispatch (one log + one counter per type) STAYS.
+       (a) DONE: explicit severityByType set (commit 7814e9d).
+       (b) DONE: NodeIPForwardingMisconfigured alert (commit 7814e9d).
+       (c) DONE w/ deliberate divergence from the list below: ADDED only nodeAuthorized
+           (deprecated alias of nodeApproved → {update,node}). Did NOT add policyUpdate
+           (no node/user id in its data → inert), userNeedsApproval (null data → inert), or
+           nodeNeedsApproval/nodeNeedsAuthorization (no config-audit counterpart → mapping
+           risks OVER-suppressing a distinct same-second change; D11 says never over-suppress).
+           userSuspended/userDeleted KEPT (couldn't live-verify without a webhook subscription).
+           Rationale documented in crossdedup.go.
+       (d) DONE: subjectIDKeys fixed to {nodeID, user} (the only ids that appear per KB).
+       (e) DONE: event.Data is now map[string]json.RawMessage (was map[string]string) so an
+           array-valued field (userRoleUpdated oldRoles/newRoles) no longer fails json.Unmarshal
+           and DROPS THE WHOLE batch; subjectID extracts only scalar-string ids. TDD via doPost.
+     -------- original research/action items (kept for reference) --------
      (Researched 2026-06-03; evidence H6.) Generic dispatch in webhook.go (one log +
      one counter per `type`) is SOUND and STAYS; this is severity + attrs + dedup
      fixes from the authoritative catalog https://tailscale.com/kb/1213/webhooks#events.
@@ -607,4 +627,18 @@ S4-10 [DONE]: captured the real TailscaleLogStreamPublisher wire format and TIGH
   user-authorized) the backlog flushed. The green dots in the admin console mean "enabled",
   not "delivering". TEARDOWN (all reverted): ACL→original, serve off, servers stopped,
   streaming DISABLED (original vector sink node was removed from the tailnet → unrestorable).
+
+S4-11(c/d/e) [DONE]: completed from the authoritative KB catalog (the S4-10 capture is the
+  LOG STREAM, not webhooks — different path). (e) event.Data map[string]string→json.RawMessage
+  (an array-valued field like userRoleUpdated.oldRoles previously failed json.Unmarshal and
+  dropped the ENTIRE webhook batch → 401). (d) subjectIDKeys → {nodeID, user} (the only id
+  fields that appear per KB; the old list had userID/loginName/email/deviceID which never appear).
+  (c) added only nodeAuthorized (deprecated alias of nodeApproved); DELIBERATELY did NOT add
+  policyUpdate (no id → inert), userNeedsApproval (null data → inert), or nodeNeedsApproval/
+  nodeNeedsAuthorization (no audit counterpart → over-suppress risk; D11). Divergence from the
+  §7(c) "add all" list is evidence-based + documented in crossdedup.go. TDD via handler doPost.
+
+SESSION 5 NET: §7 driven to EMPTY. S4-9, S4-10, S4-11(a–e), Helm config-docs all DONE +
+  committed locally (6 commits, HELD per user — push pending user confirm). Only deferral:
+  S4-9(2) poll+stream cross-dedup LIVE check (mechanism unit-tested).
 ================================================================================
