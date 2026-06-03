@@ -10,6 +10,20 @@ func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
 }
 
+// Warnings returns non-fatal configuration advisories. They never block startup
+// (Validate handles hard errors); the caller logs them at WARN. The goal is to
+// steer operators toward the safer choice without removing flexibility.
+func (c *Config) Warnings() []string {
+	var w []string
+	if c.Tailscale.Auth.Method == "apikey" {
+		w = append(w, "tailscale.auth.method=apikey: a personal API key expires in <=90 days "+
+			"and is tied to the user that created it (it stops working when that user is "+
+			"suspended/removed). For an unattended exporter prefer an OAuth client "+
+			"(method: oauth) — its scoped tokens are short-lived and not bound to a user.")
+	}
+	return w
+}
+
 // Validate reports the first configuration error it finds, or nil if the
 // Config is valid.
 func (c *Config) Validate() error {

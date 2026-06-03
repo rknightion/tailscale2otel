@@ -106,7 +106,7 @@ under `config:`).
 | config.streaming.tls.key_file | string | `""` | TLS private key file paired with cert_file. |
 | config.streaming.token | string | `"${TS_STREAM_HEC_TOKEN}"` | Expected as 'Authorization: Splunk <token>'. Empty disables token auth. |
 | config.tailscale.auth.apikey | string | `"${TS_API_KEY}"` | API key, used only when method: apikey. |
-| config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey. |
+| config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the exporter logs a WARN when apikey is selected. |
 | config.tailscale.auth.oauth.client_id | string | `"${TS_OAUTH_CLIENT_ID}"` | OAuth client ID (backed by the TS_OAUTH_CLIENT_ID secret). |
 | config.tailscale.auth.oauth.client_secret | string | `"${TS_OAUTH_CLIENT_SECRET}"` | OAuth client secret (backed by the TS_OAUTH_CLIENT_SECRET secret). |
 | config.tailscale.auth.oauth.scopes | list | `["all:read"]` | OAuth scopes to request. "all:read" covers every read-only collector. |
@@ -138,7 +138,7 @@ under `config:`).
 | secret | object | `{"GC_INSTANCE_ID":"","GC_OTLP_TOKEN":"","TS_API_KEY":"","TS_OAUTH_CLIENT_ID":"","TS_OAUTH_CLIENT_SECRET":"","TS_STREAM_HEC_TOKEN":"","TS_TAILNET":"","TS_WEBHOOK_SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These keys back the ${ENV} placeholders in `config` below. |
 | secret.GC_INSTANCE_ID | string | `""` | Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth). |
 | secret.GC_OTLP_TOKEN | string | `""` | Grafana Cloud OTLP token (the password for OTLP basic auth). |
-| secret.TS_API_KEY | string | `""` | Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey (OAuth is preferred). |
+| secret.TS_API_KEY | string | `""` | Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey. Prefer OAuth: a personal API key expires in <=90 days and is tied to the user that created it (stops working when that user is removed). The exporter logs a WARN when method=apikey. |
 | secret.TS_OAUTH_CLIENT_ID | string | `""` | OAuth client ID (recommended auth; needs the "all:read" scope). Used when config.tailscale.auth.method=oauth. |
 | secret.TS_OAUTH_CLIENT_SECRET | string | `""` | OAuth client secret paired with TS_OAUTH_CLIENT_ID. |
 | secret.TS_STREAM_HEC_TOKEN | string | `""` | HEC token the streaming receiver expects ("Authorization: Splunk <token>"). Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op. |

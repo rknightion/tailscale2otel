@@ -308,14 +308,20 @@ S4-11 [P1] WEBHOOK ENRICHMENT — DONE (a–e; 2026-06-03; H7). All from the aut
      events whose payloads matter). Generic dispatch (one log + one counter per type) STAYS.
        (a) DONE: explicit severityByType set (commit 7814e9d).
        (b) DONE: NodeIPForwardingMisconfigured alert (commit 7814e9d).
-       (c) DONE w/ deliberate divergence from the list below: ADDED only nodeAuthorized
-           (deprecated alias of nodeApproved → {update,node}). Did NOT add policyUpdate
-           (no node/user id in its data → inert), userNeedsApproval (null data → inert), or
-           nodeNeedsApproval/nodeNeedsAuthorization (no config-audit counterpart → mapping
-           risks OVER-suppressing a distinct same-second change; D11 says never over-suppress).
-           userSuspended/userDeleted KEPT (couldn't live-verify without a webhook subscription).
-           Rationale documented in crossdedup.go.
-       (d) DONE: subjectIDKeys fixed to {nodeID, user} (the only ids that appear per KB).
+       (c) DONE w/ deliberate divergence from the list below (+ an adversarial-review fix):
+           ADDED only nodeAuthorized (deprecated alias of nodeApproved → {update,node}). The
+           webhookActionMap now holds NODE types only (+ inert userCreated/userDeleted). The
+           session-5 adversarial review caught that (d) had ACTIVATED user cross-dedup and that
+           userApproved/userSuspended/userRoleUpdated all share {update,user} → distinct
+           same-second user changes collapsed (D11 over-suppression) → REMOVED those three.
+           User cross-SOURCE dedup is non-viable anyway (audit USER Target.ID is an internal
+           …CNTRL id, not the login/email the webhook "user" field carries). Did NOT add
+           policyUpdate (no id → inert), userNeedsApproval (null data → inert), or
+           nodeNeedsApproval/nodeNeedsAuthorization (no audit counterpart → over-suppress risk).
+           Rationale documented in crossdedup.go; TestHandler_DistinctUserUpdatesNotSuppressed guards it.
+       (d) DONE: subjectIDKeys = {nodeID, user} (the only ids per KB). NOTE: "user" is now only
+           reached for the inert userCreated/userDeleted (the colliding user-update types were
+           unmapped in (c)); node dedup keys on nodeID and is the only viable cross-source path.
        (e) DONE: event.Data is now map[string]json.RawMessage (was map[string]string) so an
            array-valued field (userRoleUpdated oldRoles/newRoles) no longer fails json.Unmarshal
            and DROPS THE WHOLE batch; subjectID extracts only scalar-string ids. TDD via doPost.
@@ -638,7 +644,14 @@ S4-11(c/d/e) [DONE]: completed from the authoritative KB catalog (the S4-10 capt
   nodeNeedsAuthorization (no audit counterpart → over-suppress risk; D11). Divergence from the
   §7(c) "add all" list is evidence-based + documented in crossdedup.go. TDD via handler doPost.
 
-SESSION 5 NET: §7 driven to EMPTY. S4-9, S4-10, S4-11(a–e), Helm config-docs all DONE +
-  committed locally (6 commits, HELD per user — push pending user confirm). Only deferral:
-  S4-9(2) poll+stream cross-dedup LIVE check (mechanism unit-tested).
+SESSION 5 NET: §7 driven to EMPTY. S4-9, S4-10, S4-11(a–e), Helm config-docs all DONE.
+  ADVERSARIAL REVIEW (7-agent find→refute-by-default workflow): 4 candidates, 1 CONFIRMED +
+  fixed — the (d) subjectID change had activated user cross-dedup where userApproved/
+  userSuspended/userRoleUpdated share {update,user} → distinct same-second user events
+  over-suppressed (D11); fixed by removing those three from webhookActionMap (TDD).
+  AUTH ADVISORY (user-requested, Option A): kept both oauth+apikey but added cfg.Warnings()
+  (logged at startup in main.go) warning that apikey expires ≤90d + is user-tied → prefer
+  OAuth; documented in config.example.yaml + Helm comments. (NOT enforcing oauth-only.)
+  Commits HELD/unpushed per user — push pending confirm. Only deferral: S4-9(2) poll+stream
+  cross-dedup LIVE check (mechanism unit-tested).
 ================================================================================
