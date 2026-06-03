@@ -26,3 +26,22 @@ func TestRenderMetricTable(t *testing.T) {
 		t.Fatalf("missing flows row (no-attr => em dash).\n got:\n%s", got)
 	}
 }
+
+// TestRenderEscapesPipesInCells guards against a stray `|` in any free-text cell
+// injecting an extra Markdown table column (a doc generator must produce valid
+// tables for arbitrary descriptors).
+func TestRenderEscapesPipesInCells(t *testing.T) {
+	mt := metricdoc.RenderMetricTable([]metricdoc.Metric{
+		{Name: "x.y", Unit: "1", Instrument: metricdoc.Gauge, Description: "a | b"},
+	})
+	if strings.Contains(mt, "a | b") || !strings.Contains(mt, `a \| b`) {
+		t.Errorf("metric description pipe not escaped:\n%s", mt)
+	}
+
+	lt := metricdoc.RenderLogTable([]metricdoc.LogEvent{
+		{Name: "e.v", Severity: "INFO | WARN", Description: "d"},
+	})
+	if strings.Contains(lt, "INFO | WARN") || !strings.Contains(lt, `INFO \| WARN`) {
+		t.Errorf("log severity pipe not escaped:\n%s", lt)
+	}
+}

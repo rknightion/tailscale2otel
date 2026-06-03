@@ -14,7 +14,8 @@ func RenderMetricTable(metrics []Metric) string {
 	b.WriteString("|---|---|---|---|---|---|\n")
 	for _, m := range metrics {
 		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | %s | %s |\n",
-			m.Name, m.Unit, m.Instrument, m.PromName(), renderLabels(m.PromLabels()), cell(m.Description))
+			cell(m.Name), cell(m.Unit), cell(string(m.Instrument)), cell(m.PromName()),
+			renderLabels(m.PromLabels()), cell(m.Description))
 	}
 	return b.String()
 }
@@ -30,7 +31,7 @@ func RenderLogTable(events []LogEvent) string {
 		for i, a := range e.Attributes {
 			labels[i] = strings.ReplaceAll(a, ".", "_")
 		}
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", e.Name, e.Severity, renderLabels(labels), cell(e.Description))
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", cell(e.Name), cell(e.Severity), renderLabels(labels), cell(e.Description))
 	}
 	return b.String()
 }
@@ -43,7 +44,7 @@ func renderLabels(labels []string) string {
 	}
 	parts := make([]string, len(labels))
 	for i, l := range labels {
-		parts[i] = "`" + l + "`"
+		parts[i] = "`" + cell(l) + "`"
 	}
 	return strings.Join(parts, ", ")
 }
