@@ -99,17 +99,6 @@ type trafficSet struct {
 
 // Process converts a single FlowLog into metrics and (per LogMode) log records.
 func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
-	// Cross-component de-duplication: when a Dedup set is configured, suppress the
-	// whole record (all its metrics and logs) if this window was already seen.
-	if p.dedup != nil {
-		key := flow.NodeID + "|" +
-			flow.Start.UTC().Format(time.RFC3339Nano) + "|" +
-			flow.End.UTC().Format(time.RFC3339Nano)
-		if !p.dedup.Add(key) {
-			return
-		}
-	}
-
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
 		{semconv.TrafficSubnet, flow.SubnetTraffic},
@@ -123,6 +112,14 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 	for _, set := range sets {
 		for i := range set.counts {
 			cc := set.counts[i]
+			// Cross-source de-duplication at CONNECTION granularity (matching the
+			// poll collector's boundary key). Per-connection — not per-window — so a
+			// window re-delivered with a new connection still emits that connection
+			// while the already-seen connections are skipped. The first sighting
+			// (from poll or stream, which share this processor) wins.
+			if p.dedup != nil && !p.dedup.Add(connDedupKey(flow, cc)) {
+				continue
+			}
 			p.processConn(flow, set.typ, cc, e)
 
 			totalConns++
@@ -133,9 +130,22 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 		}
 	}
 
-	if p.logMode == logPerRecord {
+	// Emit the per-record summary when in per_record mode. With dedup on, suppress
+	// it when every connection was a duplicate (nothing left to summarize); with
+	// dedup off, preserve the original always-emit behavior.
+	if p.logMode == logPerRecord && (totalConns > 0 || p.dedup == nil) {
 		p.emitRecordLog(flow, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
 	}
+}
+
+// connDedupKey is the cross-source de-dup identity of one connection within a
+// flow window: nodeId|start|end|proto|src|dst. It matches the flowlogs
+// collector's per-connection boundary key so the two dedup layers are consistent.
+func connDedupKey(fl FlowLog, cc ConnectionCounts) string {
+	return fl.NodeID + "|" +
+		fl.Start.UTC().Format(time.RFC3339Nano) + "|" +
+		fl.End.UTC().Format(time.RFC3339Nano) + "|" +
+		strconv.Itoa(cc.Proto) + "|" + cc.Src + "|" + cc.Dst
 }
 
 // processConn emits metrics (and, in per_connection mode, a log) for one

@@ -58,9 +58,10 @@ rewritten by the OTLP-to-Prometheus translation rules. The rules that matter her
 > land as `*_ratio`. This is a known cosmetic artifact of the OTLP→Prometheus mapping; the values
 > are correct, only the suffix is misleading.
 >
-> Note that counter annotation units like `{packet}`/`{flow}`/`{route}` are **not** appended to the
-> name (only the `_total` suffix is added for counters). A gauge with an annotation unit such as
-> `{route}` keeps that token (`..._routes`) — see `tailscale.device.routes.advertised`.
+> Note that annotation units in curly braces — `{packet}`/`{flow}`/`{event}`/`{route}` — are
+> **dropped** entirely; they are never appended to the name, for **either** counters **or** gauges.
+> So `tailscale.network.packets` (counter) → `tailscale_network_packets_total`, and
+> `tailscale.device.routes.advertised` (gauge) → `tailscale_device_routes_advertised` (no `_routes`).
 
 ### Worked examples
 
@@ -72,8 +73,8 @@ rewritten by the OTLP-to-Prometheus translation rules. The rules that matter her
 | `tailscale.devices.count` | gauge | `1` | dots→`_`, gauge unit `1`→`_ratio` (a *count*, despite the suffix) | `tailscale_devices_count_ratio` |
 | `tailscale.setting.devices_key_duration` | gauge | `d` | dots→`_`, unit `d`→`_days` | `tailscale_setting_devices_key_duration_days` |
 
-Labels follow the same dots→underscores rule, so the attribute `tailscale.src_node` is queried as
-the label `tailscale_src_node`.
+Labels follow the same dots→underscores rule, so the OTEL attributes `tailscale.src.node` /
+`tailscale.dst.node` are queried as the labels `tailscale_src_node` / `tailscale_dst_node`.
 
 ---
 
@@ -94,7 +95,7 @@ exporter health.
 | `tailscale2otel.scrape.duration` | `s` | gauge | `tailscale2otel_scrape_duration_seconds` | `tailscale_collector` | Wall-clock duration of the last scrape, per collector. |
 | `tailscale2otel.scrape.success` | `1` | gauge | `tailscale2otel_scrape_success_ratio` | `tailscale_collector` | `1` if the last scrape for that collector succeeded, else `0`. |
 | `tailscale2otel.scrape.errors` | `1` | counter | `tailscale2otel_scrape_errors_total` | `tailscale_collector`, `error_type` | Count of scrape errors, by collector and error class. |
-| `tailscale2otel.scrape.last_timestamp` | `s` | gauge | `tailscale2otel_scrape_last_timestamp_seconds` | `tailscale_collector` | Unix timestamp of the last successful scrape (staleness signal). |
+| `tailscale2otel.scrape.last_timestamp` | `s` | gauge | `tailscale2otel_scrape_last_timestamp_seconds` | `tailscale_collector` | Unix timestamp the last scrape *finished* (success **or** failure); pair with `scrape.success` to detect last-success staleness. |
 | `tailscale2otel.api.requests` | `1` | counter | `tailscale2otel_api_requests_total` | `endpoint`, `http_response_status_code` | Tailscale API requests, by endpoint and HTTP status code. |
 | `tailscale2otel.api.retries` | `1` | counter | `tailscale2otel_api_retries_total` | `endpoint` | API retry attempts, by endpoint. |
 | `tailscale2otel.export.failures` | `1` | counter | `tailscale2otel_export_failures_total` | `error_type` | OTLP export failures, by error class. |
@@ -113,8 +114,9 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 | `tailscale.network.flows` | `{flow}` | counter | `tailscale_network_flows_total` | `network_transport`, `tailscale_traffic_type` | Count of distinct flows (lower-cardinality than io/packets). |
 | `tailscale.config.audit.events` | `{event}` | counter | `tailscale_config_audit_events_total` | `tailscale_audit_action`, `tailscale_audit_origin` | Configuration-audit events, by action and origin. |
 
-> `source_port`/`destination_port` labels on `network.io`/`network.packets` are gated by config —
-> ports add cardinality and are off by default.
+> Label gating on `network.io`/`network.packets`: `tailscale_src_node`/`tailscale_dst_node` are
+> gated by `cardinality.flow_node_dims` (**on** by default); `source_port`/`destination_port` are
+> gated by `cardinality.flow_include_ports` (**off** by default, as ports add cardinality).
 
 ### Devices (`tailscale.device.*`, `tailscale.devices.count`)
 
@@ -128,8 +130,8 @@ attribute set: `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user`
 | `tailscale.device.key.expiry` | `s` | gauge | `tailscale_device_key_expiry_seconds` | id dims | Unix timestamp the device node key expires. |
 | `tailscale.device.update_available` | `1` | gauge | `tailscale_device_update_available_ratio` | id dims | `1` if a Tailscale client update is available for the device. |
 | `tailscale.device.derp.latency` | `s` | gauge | `tailscale_device_derp_latency_seconds` | `host_name`, `host_id`, `tailscale_derp_region`, `tailscale_derp_preferred` | Latency from the device to a DERP region; one series per region. |
-| `tailscale.device.routes.advertised` | `{route}` | gauge | `tailscale_device_routes_advertised_routes` | `host_name`, `host_id` | Number of subnet routes the device advertises. **Gated** by `collect_routes`. |
-| `tailscale.device.routes.enabled` | `{route}` | gauge | `tailscale_device_routes_enabled_routes` | `host_name`, `host_id` | Number of advertised routes that are enabled/approved. **Gated** by `collect_routes`. |
+| `tailscale.device.routes.advertised` | `{route}` | gauge | `tailscale_device_routes_advertised` | `host_name`, `host_id` | Number of subnet routes the device advertises. **Gated** by `collect_routes`. |
+| `tailscale.device.routes.enabled` | `{route}` | gauge | `tailscale_device_routes_enabled` | `host_name`, `host_id` | Number of advertised routes that are enabled/approved. **Gated** by `collect_routes`. |
 | `tailscale.devices.count` | `1` | gauge | `tailscale_devices_count_ratio` | `os_type`, `tailscale_authorized`, `tailscale_external` | Fleet device count (a **count**, despite `_ratio`), bucketed by OS/authorized/external. |
 
 ### Users (`tailscale.users.count`, `tailscale.user.*`, `tailscale.user_invites.count`)
@@ -201,8 +203,8 @@ dot becomes an underscore, so you filter on **`event_name`** in LogQL (e.g.
 | `event.name` | When emitted | Severity rule | Key attributes |
 |---|---|---|---|
 | `tailscale.network.flow` | Per flow connection (in `per_connection` mode) or per record (in `per_record` mode). | INFO. | `source_address`, `source_port`, `destination_address`, `destination_port`, `network_transport`, `network_type`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_node_id`, **`tailscale_node_hostname`** (when the node is resolved via the enrichment cache), tx/rx bytes + packets. |
-| `tailscale.config.audit` | Per configuration-audit event. | **WARN** when the event carries an error; otherwise INFO. | `action`, `origin`, `event_group_id`, `actor`, `target`, `old`, `new`, `details`. |
-| `tailscale.key.expiring` | When a key expires within the configured `expiry_warn` window. | **WARN**. | Key identity (id/type/description) and expiry time. |
+| `tailscale.config.audit` | Per configuration-audit event. | **WARN** when the event carries an error; otherwise INFO. | `tailscale_audit_action`, `tailscale_audit_origin`, `tailscale_audit_event_group_id`, `enduser_id`, `tailscale_actor_login`, `tailscale_actor_display`, `tailscale_target_id`, `tailscale_target_name`, `tailscale_target_type`, `tailscale_target_property`, `tailscale_audit_old`, `tailscale_audit_new`, `tailscale_audit_details`, and `error` (on WARN records). |
+| `tailscale.key.expiring` | When a key expires within the configured `expiry_warn` window. | **WARN**. | `tailscale_key_id`, `tailscale_key_type`, `tailscale_key_description`, and `tailscale_key_expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp). |
 | `tailscale.webhook.<type>` | Per webhook event; `<type>` is the Tailscale event type. | **WARN** for types containing `Expir`, `Suspend`, `NeedsApproval`, or `Deleted`; otherwise INFO. | Webhook event payload fields, including `tailscale_webhook_type`. |
 | `tailscale.device.posture` | Per device. **Gated** by `collect_posture`. | INFO. | Device identity plus posture/attribute fields. |
 

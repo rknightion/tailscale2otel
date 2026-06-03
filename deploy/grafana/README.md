@@ -92,8 +92,8 @@ panels convert them to relative time at query level, e.g.
 
 ## Notes & caveats
 
-- Route panels (`tailscale_device_routes_advertised_routes` /
-  `_enabled_routes`) and posture logs are **gated** behind the exporter's
+- Route panels (`tailscale_device_routes_advertised` /
+  `tailscale_device_routes_enabled`) and posture logs are **gated** behind the exporter's
   `collect_routes` / `collect_posture` options; those panels are empty if the
   features are disabled.
 - The verbatim node-metrics scraper forwards original `tailscaled` series under

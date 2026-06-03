@@ -33,6 +33,10 @@ const (
 	auditDedupCapacity = 4096
 )
 
+// autoConfigureTimeout bounds the optional startup log-stream registration so a
+// slow/hung Tailscale endpoint cannot delay shutdown indefinitely.
+const autoConfigureTimeout = 30 * time.Second
+
 // App is the assembled, runnable service.
 type App struct {
 	cfg      *config.Config
@@ -145,7 +149,14 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		}()
 		if a.cfg.Streaming.AutoConfigure {
-			a.autoConfigureStreaming(ctx)
+			// Off the hot path: registering the sink makes a network call to
+			// Tailscale, which must not block the scheduler/other receivers from
+			// starting. Bounded so a hung endpoint can't linger past shutdown.
+			go func() {
+				cctx, cancel := context.WithTimeout(ctx, autoConfigureTimeout)
+				defer cancel()
+				a.autoConfigureStreaming(cctx)
+			}()
 		}
 	}
 	if a.webhookSrv != nil {
