@@ -1,14 +1,14 @@
 ================================================================================
 tailscale2otel — HANDOFF / CONTEXT / TODO  (for resuming with an LLM)
 ================================================================================
-Last updated: 2026-06-03 (session 4 EXECUTION). Single source of truth.
+Last updated: 2026-06-03 (session 5: S4-9 live-verified, S4-11a/b done). Single source of truth.
 
 HOW TO READ THIS FILE:
   • ACTIVE (sections 1–8): what a new session needs NOW — status, hard
     constraints, agreed design decisions, the current package/telemetry maps,
     the LIVE backlog (section 7), and how to work here. READ THIS HALF before
     changing code.
-  • HISTORICAL REFERENCE (sections H1–H6, BOTTOM): completed work (one-liners),
+  • HISTORICAL REFERENCE (sections H1–H7, BOTTOM): completed work (one-liners),
     the per-session execution logs, and the session-4 research evidence. Context
     only — consult for the "why" behind a finished item or the research backing a
     pending one. NOT active work.
@@ -38,12 +38,13 @@ pass; `helm lint`/`helm template` render; tools/configcheck builds+runs.
 Verified END-TO-END against the real example.com lab + Grafana Cloud in session 2.
 
 WHAT REMAINS (see section 7 for detail):
-  • S4-9  LIVE re-verify of the session-3/4 additions in Grafana Cloud (incl. the
-          S4-1 native-EventName Loki label + the audit dashboard/event_name
-          migration). Needs example lab creds + a user go-ahead.
+  • S4-9  DONE (2026-06-03 live-verified vs example + Grafana Cloud; H7). Native
+          EventName → Loki key `event_name` (no dashboard migration needed).
   • S4-10 LIVE stream-envelope capture (lab-authorized) → tighten the parser.
-  • S4-11 Webhook enrichment (severity/data-field/dedup-map correctness).
-  • Helm CI baseline: helm-docs + losisin schema first-run baselines.
+          Also carries S4-9(2): poll+stream cross-dedup live check.
+  • S4-11 Webhook enrichment: (a) severity SET + (b) misconfig alert DONE (S4-11a/b);
+          (c/d/e) dedup-map/subjectID/payload-typing → bundled with the S4-10 capture.
+  • Helm CI baseline: comprehensive config references (reopened — see §7).
 
 --------------------------------------------------------------------------------
 3. HARD CONSTRAINTS (evergreen — always read)
@@ -128,7 +129,8 @@ ENGINEERING decisions:
      document the exact HEC envelope → parser is DEFENSIVE; envelope still to be
      pinned by a live capture (S4-10).
   D9 [S4-1] Event name uses the NATIVE log.Record.EventName (log v0.20.0+), not the
-     old "event.name" attribute. (Loki label re-verify pending — S4-9.)
+     old "event.name" attribute. (S4-9 live-verified: native EventName → Loki key
+     `event_name`, identical to the old attribute → dashboards unaffected. DONE.)
   D10 [S4-4] Cumulative temporality pinned explicitly on both OTLP metric exporters
      (Grafana Cloud/Mimir accept cumulative ONLY; delta→HTTP 400). KEEP histogram
      _bucket/_sum/_count flattening (matches Mimir's classic storage; do NOT
@@ -248,19 +250,25 @@ creds in .secrets/creds.local.env (`set -a; source .secrets/creds.local.env; set
 +a`), gcx context example; only the example LAB may be reconfigured; auto_configure
 must NEVER target a real/production tailnet; NEVER commit .secrets/ or .capture/.
 
-S4-9 [P0 / LIVE] RE-VERIFY the session-3/4 additions end-to-end in Grafana Cloud
-     (only session-2's original telemetry was verified live). Confirm LIVE:
-     (1) flow log records carry tailscale.node.hostname;
-     (2) cross-source dedup (no double-count when poll + stream both on);
-     (3) the 4 dashboards render vs REAL series — ESPECIALLY OTLP-normalized metric
-         names match (highest-risk); add the new metrics (flow.logs_dropped, alerts);
-     (4) [S4-1 TAIL] the NATIVE EventName: re-verify what Loki label the native
-         EventName produces (Grafana Explore = source-of-truth), then migrate
-         deploy/grafana/tailscale-audit-events.json + deploy/grafana/README.md +
-         docs/metrics.md `event_name` variable/queries accordingly. Then P2-6/D9 done.
-     (5) auto_configure path (only if doing S4-10).
-     gcx gotcha: `gcx logs query` needs BOTH --from AND --to. Defer the nodemetrics
-     live check — scraping is disabled on the lab.
+S4-9 [P0 / LIVE] DONE (live-verified 2026-06-03 against example + Grafana Cloud; see H7).
+     (1) flow log records carry tailscale_node_hostname — VERIFIED (e.g. =opnsense). ✓
+     (2) cross-source dedup (poll+stream) — DEFERRED into S4-10 (needs the stream
+         receiver ON to observe; mechanism is unit-tested). Carried below.
+     (3) the 4 dashboards vs REAL series — VERIFIED: all 36 live tailscale*/tailscale2otel*
+         metric names match the dashboards' OTLP-normalized names; the only dashboard
+         tokens absent live are label names (12), off-by-default receiver metrics (4:
+         stream/webhook), and healthy-zero counters (3: api_retries/export_failures/
+         scrape_errors). flow.logs_dropped name confirmed-by-convention (= other
+         network counters; absent until a drop fires). ✓
+     (4) [S4-1 TAIL] NATIVE EventName — VERIFIED: Grafana Cloud's OTLP→Loki ingestion
+         exposes the native Record.EventName as the SAME Loki key `event_name` the old
+         `event.name` attribute normalized to. So NO dashboard/README migration is
+         needed (they already filter `| event_name=...` and `sum by (event_name)` —
+         both confirmed live). Fixed only the stale "log attribute" wording in
+         docs/metrics.md. P2-6/D9 fully DONE.
+     (5) auto_configure path — folded into S4-10.
+     gcx gotcha: `gcx logs query` needs BOTH --from AND --to. nodemetrics live check
+     stays DEFERRED — scraping is disabled on the lab.
 
 S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING (finishes D8/P1-2's deferred capture;
      lab-AUTHORIZED). Stand up the stream receiver with an HTTPS endpoint reachable
@@ -515,4 +523,39 @@ H6.6 TAILSCALE WEBHOOKS (S4-11, PENDING). Authoritative catalog
   capture (S4-10). userSuspended/userDeleted are NOT in the docs (userDeleted only in a Pulumi
   sample) — verify vs a live subscription. No billing/connect-disconnect/route-change webhooks
   exist (FRs: tailscale/tailscale#15638, #11166). Full action items in section 7 (S4-11).
+
+--------------------------------------------------------------------------------
+H7. SESSION 5 LOG + LEARNINGS (2026-06-03 continued: finish S4-9/10/11)
+--------------------------------------------------------------------------------
+Goal: drive §7 to complete resolution. User confirmed: HOLD all pushes until end;
+run S4-9 live; tailscale CLI installed → S4-10 authorized; S4-11 dedup-map (c/d/e)
+bundled with the S4-10 capture (not punted).
+
+S4-11(a,b) [pure-code, DONE, commit 7814e9d]: replaced the warnSubstrings heuristic
+  with an explicit severityByType map (fixes the missed nodeNeedsSignature +
+  deprecated nodeNeedsAuthorization → WARN; misconfig IPForwarding events stay INFO).
+  Added NodeIPForwardingMisconfigured Prometheus alert (the two misconfig events have
+  NO log-stream/poll equivalent). Fetched the authoritative kb/1213 catalog: confirmed
+  policyUpdate data has NO node/user id (→ inert in the ID-keyed cross-dedup), user*
+  events show data:null in examples (so the `user` subjectID is unconfirmed), and the
+  nodeAuthorized→nodeApproved / nodeNeedsAuthorization→nodeNeedsApproval deprecations.
+  TDD via TestEmit_SeverityClassification.
+
+S4-9 [LIVE, DONE]: ran the binary (config.local.yaml, OAuth) against example → Grafana
+  Cloud (gcx ctx example), ~2min poll run. Findings (see §7 S4-9 for the checklist):
+  - flow records carry tailscale_node_hostname (=opnsense). ✓
+  - 36 live tailscale*/tailscale2otel* metric names ALL match the 4 dashboards'
+    OTLP-normalized names; absent dashboard tokens are only labels / off-by-default
+    receivers (stream,webhook) / healthy-zero counters (api_retries,export_failures,
+    scrape_errors). ✓
+  - KEY: native Record.EventName → Loki key `event_name` (SAME as the old event.name
+    attribute normalized to). emitter.go:99 uses SetEventName only (no attribute).
+    Live `| event_name=...` + `sum by (event_name)` both work → NO dashboard/README
+    migration needed. Fixed stale "log attribute" wording in docs/metrics.md. P2-6/D9 DONE.
+  - poll+stream cross-dedup (S4-9 item 2) carried into S4-10 (needs stream ON).
+  gotcha reconfirmed: gcx is `gcx metrics|logs query` (needs --from AND --to); contexts
+  via `gcx config use-context`/`current-context` (active = example), NOT `gcx context`.
+  NOTE: this dev host's tailscaled is on ROB'S PERSONAL tailnet (node-b/ai/alex/...), NOT
+  example — relevant to S4-10 receiver reachability (TS log streaming egresses from TS
+  cloud → the receiver needs PUBLIC reachability, e.g. Funnel, not tailnet-internal).
 ================================================================================
