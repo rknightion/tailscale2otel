@@ -266,6 +266,23 @@ creds in .secrets/creds.local.env (`set -a; source .secrets/creds.local.env; set
 +a`), gcx context example; only the example LAB may be reconfigured; auto_configure
 must NEVER target a real/production tailnet; NEVER commit .secrets/ or .capture/.
 
+DOCS-GEN [P1 / IN PROGRESS — session 6 continued] Generate docs/metrics.md from code (so metric/
+     log names, units, instruments, descriptions, attributes are derived from the codebase, not
+     hand-maintained). DESIGN: each emitting package declares a metricdoc catalog (the SINGLE
+     SOURCE OF TRUTH for descriptions) and the emit sites reference it; a generator renders the
+     catalog into docs/metrics.md between markers (prose preserved outside); CI fail-on-diff.
+     DONE so far: internal/metricdoc (Metric/LogEvent{Name,Unit,Instrument,Description,Attributes,
+     Group} + PromName/PromLabels OTLP→Prom normalization + RenderMetricTable/RenderLogTable, TDD);
+     telemetrytest.Recorder.MetricPoint.Description; internal/flowlog FULLY CONVERTED = the TEMPLATE
+     (catalog.go + emit sites reference descriptors + catalog_test.go consistency test). REMAINING:
+     convert devices/users/keys/settings/acl/dns/auditlogs(feature)/flowlogs-collector(feature.enabled)/
+     stream/webhook/nodemetrics + cross-cutting self-obs (collector/selfobs.go, app/selfobs.go,
+     app/heartbeat.go, telemetry/selfobs.go, devices' enrich.cache_*); build tools/metricscatalog
+     (separate module like tools/configcheck) to aggregate every Catalog()/LogCatalog() and
+     regenerate docs/metrics.md; wire fail-on-diff CI. GOTCHAS: nodemetrics forwards runtime-named
+     tailscaled_* (not enumerable → prose note); webhook event names are computed
+     tailscale.webhook.<type> (prose prefix note). See the session handoff for the full plan.
+
 S4-9 [P0 / LIVE] DONE (live-verified 2026-06-03 against example + Grafana Cloud; see H7).
      (1) flow log records carry tailscale_node_hostname — VERIFIED (e.g. =opnsense). ✓
      (2) cross-source dedup (poll+stream) — VERIFIED live + FIXED in session 6 (H8). FLOW
