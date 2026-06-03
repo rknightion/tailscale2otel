@@ -23,8 +23,10 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		LogMode:      cfg.Collectors.Flowlogs.LogMode,
 		IncludePorts: cfg.Cardinality.FlowIncludePorts,
 		NodeDims:     cfg.Cardinality.FlowNodeDims,
-		// collapse_external=true (the default) keeps unresolved/external addresses
-		// bucketed as external/unknown; false preserves the raw IP on flow logs.
+		// collapse_external=true (the default) buckets unresolved/external addresses
+		// as external/unknown; false preserves the raw IP. This affects BOTH flow LOGS
+		// and, when flow_node_dims is true, the flow METRIC attrs tailscale.src.node /
+		// tailscale.dst.node (srcNode/dstNode come from the processor's resolve()).
 		KeepExternalAddrs:      !cfg.Cardinality.CollapseExternal,
 		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
 	}
