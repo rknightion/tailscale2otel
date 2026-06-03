@@ -197,9 +197,12 @@ forwarded verbatim from `tailscaled` and are not part of the curated catalog abo
 Structured OTEL log records. They are exported via OTLP and land in **Loki** under datasource uid
 `grafanacloud-logs`, all tagged with the label `service_name="tailscale2otel"`.
 
-The OTEL event type is carried in the log attribute **`event.name`**. After Loki normalization the
-dot becomes an underscore, so you filter on **`event_name`** in LogQL (e.g.
-`| event_name="tailscale.config.audit"`). The `event.name` *value* keeps its dots.
+The OTEL event type is carried in the native log-record **`EventName`** field (set via the log
+SDK's `SetEventName`, log v0.20.0+ — not a separate `event.name` attribute). Grafana Cloud's
+OTLP→Loki ingestion exposes it as **`event_name`**, so you filter on `event_name` in LogQL (e.g.
+`| event_name="tailscale.config.audit"`); the value keeps its dots. *Verified live against Grafana
+Cloud:* the native `EventName` produces the same `event_name` key the earlier `event.name` attribute
+did, so existing queries and the bundled dashboards are unaffected by the S4-1 migration.
 
 | `event.name` | When emitted | Severity rule | Key attributes |
 |---|---|---|---|
