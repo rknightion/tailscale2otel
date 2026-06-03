@@ -42,6 +42,28 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
+  docs-catalog:
+    name: docs/metrics.md is generated from the code catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: tools/metricscatalog/go.sum
+
+      - name: Build metricscatalog (separate module)
+        working-directory: tools/metricscatalog
+        run: go build -o /tmp/metricscatalog .
+
+      # Fail if the generated metric/log tables in docs/metrics.md drift from the
+      # in-code telemetry catalog. Regenerate with `go run ./tools/metricscatalog
+      # -write` (from the repo root) and commit the result.
+      - name: docs/metrics.md is in sync with the in-code telemetry catalog
+        run: /tmp/metricscatalog -check
+
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
