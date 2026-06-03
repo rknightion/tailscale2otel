@@ -3,16 +3,22 @@ name: Main publish (snapshot)
 # Publish a signed, pullable snapshot image + Helm chart on every push to main,
 # so the latest main build is consumable without cutting a release. Releases
 # (v* tags) are handled by release.yml via GoReleaser; this is the "edge" path.
+#
+# The image is built with Docker's official reusable build workflow
+# (docker/github-builder). It fans out one platform per runner — linux/arm64
+# builds natively on ubuntu-24.04-arm with NO QEMU emulation — then merges the
+# manifest. It also generates SLSA build provenance + an SBOM attestation,
+# keyless-signs the attestation manifests with cosign (GitHub OIDC), and
+# cosign-signs the GitHub Actions build cache so restored layers must match the
+# expected workflow identity.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+# Least-privilege default; the image/chart jobs widen this as needed.
 permissions:
   contents: read
-  packages: write # push image + chart to ghcr.io
-  id-token: write # keyless cosign signing via GitHub OIDC
-  attestations: write # buildx SBOM/provenance attestations
 
 concurrency:
   # Only the latest main build matters; cancel superseded snapshot publishes.
@@ -20,85 +26,80 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: ghcr.io/rknightion/tailscale2otel
   CHART_DIR: deploy/helm/tailscale2otel
   CHART_REPO: oci://ghcr.io/rknightion/charts
 
 jobs:
-  image:
-    name: build + push + sign snapshot image
+  vars:
+    name: compute version vars
     runs-on: ubuntu-latest
     outputs:
       shortsha: ${{ steps.vars.outputs.shortsha }}
     steps:
-      - uses: actions/checkout@v4
-
       - id: vars
         run: echo "shortsha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
+  image:
+    name: build + push + sign snapshot image
+    needs: vars
+    permissions:
+      contents: read
+      packages: write # push image + attestations to ghcr.io
+      id-token: write # keyless cosign signing (attestations + build cache) via OIDC
+    # Pinned to the latest full tag; docker/github-builder also has a moving `v1`.
+    uses: docker/github-builder/.github/workflows/build.yml@v1.10.0
+    with:
+      output: image
+      push: true
+      file: deploy/Dockerfile
+      # distribute (default true) fans out one platform per runner; the default
+      # runner mapping sends linux/arm64 -> ubuntu-24.04-arm (native, no QEMU).
+      platforms: linux/amd64,linux/arm64
+      sbom: true # SBOM attestation (SLSA provenance is always generated + signed)
+      sign: true # keyless-sign the attestation manifests (push is enabled)
+      cache: true # GitHub Actions cache backend; entries are cosign-signed via OIDC
+      cache-mode: max
+      meta-images: ghcr.io/rknightion/tailscale2otel
+      # Never emit `latest` here — that tag is reserved for real releases.
+      meta-flavor: latest=false
+      meta-tags: |
+        type=raw,value=main
+        type=raw,value=main-${{ needs.vars.outputs.shortsha }}
+      # Standard OCI labels/annotations (title, source, licenses, created,
+      # revision, version, ...) derived by docker/metadata-action.
+      set-meta-labels: true
+      set-meta-annotations: true
+      build-args: |
+        VERSION=main-${{ needs.vars.outputs.shortsha }}
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE }}
-          # Never emit `latest` here — that tag is reserved for real releases.
-          flavor: latest=false
-          tags: |
-            type=raw,value=main
-            type=raw,value=main-${{ steps.vars.outputs.shortsha }}
-          labels: |
-            org.opencontainers.image.title=tailscale2otel
-            org.opencontainers.image.source=https://github.com/rknightion/tailscale2otel
-            org.opencontainers.image.licenses=Apache-2.0
-
-      - id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max # SLSA build provenance attestation
-          sbom: true # SBOM attestation
-          build-args: |
-            VERSION=main-${{ steps.vars.outputs.shortsha }}
-
-      # Pinned to a full v4 tag: cosign-installer publishes no moving `v4` tag,
-      # and installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
-      - uses: sigstore/cosign-installer@v4.1.2
-        with:
-          cosign-release: 'v3.0.6'
-
-      - name: cosign sign image (keyless)
-        run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+      github-token: ${{ github.token }}
 
   chart:
     name: push + sign snapshot chart
     runs-on: ubuntu-latest
-    needs: image
+    needs: [vars, image]
+    permissions:
+      contents: read
+      packages: write # push chart to ghcr.io
+      id-token: write # keyless cosign signing via OIDC
     steps:
       - uses: actions/checkout@v4
 
       - uses: azure/setup-helm@v4
 
-      # Pinned to a full v4 tag: cosign-installer publishes no moving `v4` tag,
-      # and installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
+      # cosign for keyless chart signing. Pinned to a full v4 tag: cosign-installer
+      # publishes no moving `v4` tag, and installing cosign v3+ requires the v4 installer.
       - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: 'v3.0.6'
 
       - name: package + push + sign chart
         env:
-          SHORTSHA: ${{ needs.image.outputs.shortsha }}
+          SHORTSHA: ${{ needs.vars.outputs.shortsha }}
         run: |
           chartver="$(grep -E '^version:' "$CHART_DIR/Chart.yaml" | awk '{print $2}')"
           snapver="${chartver}-main.${SHORTSHA}"  # SemVer prerelease, e.g. 0.2.0-main.abc1234
