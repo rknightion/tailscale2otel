@@ -2,14 +2,88 @@ package nodemetrics_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
+
+const (
+	discoverySuccessName  = "tailscale2otel.nodemetrics.discovery.success"
+	discoveredTargetsName = "tailscale2otel.nodemetrics.discovery.targets"
+)
+
+// TestCatalog_DiscoveryMetricsDeclaredAndEmitted is the drift guard for the two
+// discovery-health gauges: when a Discoverer is configured they must be declared
+// in Catalog() AND emitted every Collect, with matching unit/instrument.
+func TestCatalog_DiscoveryMetricsDeclaredAndEmitted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	fake := &fakeDiscoverer{targets: []nodemetrics.Target{{URL: srv.URL, Instance: "disc"}}}
+	c := nodemetrics.New(nodemetrics.Options{Discoverer: fake, DiscoveryInterval: time.Minute})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	declared := map[string]metricdoc.Metric{}
+	for _, m := range nodemetrics.Catalog() {
+		declared[m.Name] = m
+	}
+	for _, name := range []string{discoverySuccessName, discoveredTargetsName} {
+		d, ok := declared[name]
+		if !ok {
+			t.Errorf("%q is not declared in nodemetrics.Catalog()", name)
+			continue
+		}
+		pts := rec.MetricPoints(name)
+		if len(pts) != 1 {
+			t.Fatalf("%q points = %d, want 1", name, len(pts))
+		}
+		if pts[0].Kind != "gauge" {
+			t.Errorf("%s kind = %q, want gauge", name, pts[0].Kind)
+		}
+		if pts[0].Unit != d.Unit {
+			t.Errorf("%s: emitted unit %q != catalog unit %q", name, pts[0].Unit, d.Unit)
+		}
+		if pts[0].Description != d.Description {
+			t.Errorf("%s: emitted description %q != catalog description %q", name, pts[0].Description, d.Description)
+		}
+	}
+	if pts := rec.MetricPoints(discoverySuccessName); pts[0].Value != 1 {
+		t.Errorf("discovery.success = %v, want 1 (fake discovered successfully)", pts[0].Value)
+	}
+	if pts := rec.MetricPoints(discoveredTargetsName); pts[0].Value != 1 {
+		t.Errorf("discovery.targets = %v, want 1 (one discovered target)", pts[0].Value)
+	}
+}
+
+// TestDiscovery_HealthGaugeZeroOnError: a failed discovery reports success=0 and,
+// with no static targets, targets=0 — and the health gauges are still emitted
+// (and Collect returns nil) even though the active set is empty.
+func TestDiscovery_HealthGaugeZeroOnError(t *testing.T) {
+	fake := &fakeDiscoverer{err: errors.New("boom")}
+	c := nodemetrics.New(nodemetrics.Options{Discoverer: fake, DiscoveryInterval: time.Minute})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (empty active set)", err)
+	}
+	if pts := rec.MetricPoints(discoverySuccessName); len(pts) != 1 || pts[0].Value != 0 {
+		t.Fatalf("discovery.success = %+v, want single 0 (discovery failed)", pts)
+	}
+	if pts := rec.MetricPoints(discoveredTargetsName); len(pts) != 1 || pts[0].Value != 0 {
+		t.Fatalf("discovery.targets = %+v, want single 0 (no targets)", pts)
+	}
+}
 
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard for the
 // only statically-enumerable metric this collector emits: the per-target

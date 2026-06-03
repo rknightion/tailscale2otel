@@ -212,6 +212,8 @@ every scraped `tailscaled` series **verbatim**. Those forwarded series are runti
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
 | `tailscale.node.up` | `1` | gauge | `tailscale_node_up_ratio` | `instance` | Per-target scrape health: `1` if the last scrape of that node succeeded, else `0`. |
+| `tailscale2otel.nodemetrics.discovery.success` | `1` | gauge | `tailscale2otel_nodemetrics_discovery_success_ratio` | — | 1 if the last dynamic target-discovery refresh succeeded, else 0. Emitted only when discovery is enabled. |
+| `tailscale2otel.nodemetrics.discovery.targets` | `{target}` | gauge | `tailscale2otel_nodemetrics_discovery_targets` | — | Active node-metrics scrape targets after the last refresh (static plus discovered). Emitted only when discovery is enabled. |
 <!-- END GENERATED -->
 
 ---

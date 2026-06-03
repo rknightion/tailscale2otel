@@ -63,6 +63,7 @@ const (
 	UnitEvents        = "{event}"
 	UnitRoutes        = "{route}"
 	UnitConnections   = "{connection}"
+	UnitTargets       = "{target}"
 	UnitSeconds       = "s"
 	UnitDays          = "d"
 	UnitDimensionless = "1"
