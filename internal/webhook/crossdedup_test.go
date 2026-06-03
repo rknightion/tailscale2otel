@@ -137,19 +137,25 @@ func TestHandler_ArrayValuedDataDoesNotDropBatch(t *testing.T) {
 	}
 }
 
-// TestHandler_UserSubjectDedupByUserField pins S4-11(d): the cross-source subject
-// id for a USER event is the "user" data field (login/email), per kb/1213 — NOT
-// userID/userId/loginName/email. Two identical userApproved events must collapse
-// to one when a shared dedup set is attached.
-func TestHandler_UserSubjectDedupByUserField(t *testing.T) {
+// TestHandler_DistinctUserUpdatesNotSuppressed guards D11 (never over-suppress).
+// userApproved, userSuspended and userRoleUpdated are THREE INDEPENDENT changes
+// that would all share the same (update, user) cross-key — so once subjectID
+// resolves the "user" field, the same user in the same one-second bucket would
+// collapse three real events into one. They must all emit. (Cross-SOURCE user
+// dedup is non-viable anyway: the audit user Target.ID is an internal id, not the
+// login/email the webhook "user" field carries — so these types are intentionally
+// NOT in webhookActionMap.)
+func TestHandler_DistinctUserUpdatesNotSuppressed(t *testing.T) {
 	rec := telemetrytest.New()
 	set := dedup.New(0)
 	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
-	one := `{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"userApproved","tailnet":"e.com","message":"m","data":{"user":"u1@e.com"}}`
-	body := `[` + one + `,` + one + `]`
+	mk := func(typ string) string {
+		return `{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"` + typ + `","tailnet":"e.com","message":"m","data":{"user":"u1@e.com"}}`
+	}
+	body := `[` + mk("userApproved") + `,` + mk("userRoleUpdated") + `,` + mk("userSuspended") + `]`
 	doPost(t, s.Handler(), "/webhook", body, "")
-	if got := len(rec.LogRecords()); got != 1 {
-		t.Fatalf("log records = %d, want 1 (user-subject dedup via the \"user\" field)", got)
+	if got := len(rec.LogRecords()); got != 3 {
+		t.Fatalf("log records = %d, want 3 (distinct user-update events must not collapse)", got)
 	}
 }
 
