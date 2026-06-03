@@ -15,7 +15,7 @@ const devicesRichFixture = `{"devices":[
   {
     "id":"3690401478992208","nodeId":"nDdiWAbPpV11CNTRL","name":"laptop.example.ts.net",
     "hostname":"laptop","os":"linux","user":"rob@example.com","clientVersion":"1.99.0",
-    "addresses":["100.64.0.1","fd7a::1"],
+    "addresses":["100.64.0.1","fd7a::1"],"tags":["tag:server","tag:prod"],
     "authorized":true,"isExternal":false,"updateAvailable":true,"keyExpiryDisabled":false,
     "connectedToControl":true,"blocksIncomingConnections":false,"sshEnabled":true,
     "created":"2026-03-24T15:45:46Z","lastSeen":"2026-06-02T21:50:25Z","expires":"2026-09-20T15:45:46Z",
@@ -157,6 +157,28 @@ func TestDevicesRich_OfflineMinimalAndExternal(t *testing.T) {
 	}
 	if !ext.Expires.IsZero() {
 		t.Fatalf("ext Expires = %v, want zero", ext.Expires)
+	}
+}
+
+// TestDevicesRich_DecodesTags verifies the per-device `tags` array is decoded.
+// Verified against .capture/devices.json: a tagged device carries
+// "tags":[...]; an untagged device OMITS the field (never "tags":[]) so it
+// decodes to a nil slice.
+func TestDevicesRich_DecodesTags(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(devicesRichFixture))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich: %v", err)
+	}
+	if got := devs[0].Tags; len(got) != 2 || got[0] != "tag:server" || got[1] != "tag:prod" {
+		t.Fatalf("devs[0].Tags = %v, want [tag:server tag:prod]", got)
+	}
+	if devs[1].Tags != nil {
+		t.Fatalf("devs[1].Tags = %v, want nil (untagged device omits the field)", devs[1].Tags)
 	}
 }
 
