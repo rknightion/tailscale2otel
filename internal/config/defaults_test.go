@@ -59,6 +59,10 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if !cfg.Cardinality.CollapseExternal {
 		t.Errorf("Cardinality.CollapseExternal = false, want default true")
 	}
+	if !cfg.Cardinality.DevicePerEntity || !cfg.Cardinality.UserPerEntity || !cfg.Cardinality.KeyPerEntity {
+		t.Errorf("Cardinality per-entity toggles = %v/%v/%v, want all default true",
+			cfg.Cardinality.DevicePerEntity, cfg.Cardinality.UserPerEntity, cfg.Cardinality.KeyPerEntity)
+	}
 	if !cfg.Collectors.Devices.Enabled {
 		t.Errorf("Devices.Enabled = false, want default true")
 	}
@@ -112,6 +116,7 @@ self_observability:
   enabled: false
 cardinality:
   flow_node_dims: false
+  device_per_entity: false
 `
 	p := writeTemp(t, y)
 	cfg, err := config.Load(p)
@@ -127,12 +132,19 @@ cardinality:
 	if cfg.Cardinality.FlowNodeDims {
 		t.Errorf("Cardinality.FlowNodeDims = true, want false (explicit override)")
 	}
+	if cfg.Cardinality.DevicePerEntity {
+		t.Errorf("Cardinality.DevicePerEntity = true, want false (explicit override)")
+	}
 	// Sibling defaults untouched.
 	if cfg.Collectors.Devices.Interval.D() != 60*time.Second {
 		t.Errorf("Devices.Interval = %v, want default 60s preserved", cfg.Collectors.Devices.Interval.D())
 	}
 	if !cfg.Cardinality.CollapseExternal {
 		t.Errorf("Cardinality.CollapseExternal = false, want default true preserved")
+	}
+	if !cfg.Cardinality.UserPerEntity || !cfg.Cardinality.KeyPerEntity {
+		t.Errorf("sibling per-entity toggles = %v/%v, want default true preserved",
+			cfg.Cardinality.UserPerEntity, cfg.Cardinality.KeyPerEntity)
 	}
 }
 

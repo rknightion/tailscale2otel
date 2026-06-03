@@ -76,6 +76,29 @@ func TestDefaultInterval(t *testing.T) {
 	}
 }
 
+func TestCollect_PerEntityFalse(t *testing.T) {
+	// WithPerEntity(false) suppresses the per-key expiry gauge but keeps the
+	// aggregate keys.count rollup AND the expiry-warning log event.
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	soon := now.Add(30 * time.Minute) // within the 1h expiryWarn window
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsclient.Key{
+		reusableKey("k1", soon),
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if pts := rec.MetricPoints("tailscale.key.expiry"); len(pts) != 0 {
+		t.Errorf("per-key tailscale.key.expiry emitted with WithPerEntity(false): %+v", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.keys.count"); len(pts) == 0 {
+		t.Error("aggregate tailscale.keys.count not emitted with WithPerEntity(false)")
+	}
+	// The expiry-warning log must still fire regardless of perEntity.
+	findLog(t, rec.LogRecords(), "tailscale.key.expiring")
+}
+
 func TestCollect_ExpiryGauge(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	exp := now.Add(48 * time.Hour)

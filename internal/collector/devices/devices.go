@@ -72,6 +72,18 @@ type Collector struct {
 	interval       time.Duration
 	collectRoutes  bool
 	collectPosture bool
+	perEntity      bool
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithPerEntity controls whether the per-device gauges (online, last_seen,
+// key.expiry, update_available, DERP latency, routes) are emitted. The default
+// is true; false (cardinality.device_per_entity) emits only the aggregate
+// tailscale.devices.count rollup, dropping the per-device series.
+func WithPerEntity(enabled bool) Option {
+	return func(c *Collector) { c.perEntity = enabled }
 }
 
 // New returns a devices Collector that lists via the rich devices endpoint,
@@ -80,15 +92,21 @@ type Collector struct {
 // gauges are emitted (read from the inline route slices, no extra API call).
 // When collectPosture is true the collector additionally calls
 // DevicePostureAttributes once per device (N API calls per tick) and emits a
-// posture log event per device; it is off by default.
-func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool) *Collector {
-	return &Collector{
+// posture log event per device; it is off by default. Options (e.g.
+// WithPerEntity) tune cardinality; per-entity gauges are emitted by default.
+func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool, opts ...Option) *Collector {
+	c := &Collector{
 		api:            api,
 		cache:          cache,
 		interval:       interval,
 		collectRoutes:  collectRoutes,
 		collectPosture: collectPosture,
+		perEntity:      true,
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier.
@@ -125,51 +143,57 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	for i := range devs {
 		d := &devs[i]
-		idAttrs := telemetry.Attrs{
-			semconv.HostName: d.Hostname,
-			semconv.HostID:   d.ID,
-			semconv.OSType:   d.OS,
-			semconv.AttrUser: d.User,
-		}
-		if d.Distro.Version != "" {
-			idAttrs[semconv.OSVersion] = d.Distro.Version
-		}
 
-		e.Gauge(docOnline.Name, docOnline.Unit, docOnline.Description,
-			boolToFloat(d.ConnectedToControl), idAttrs)
-
-		if !d.LastSeen.IsZero() {
-			e.Gauge(docLastSeen.Name, docLastSeen.Unit, docLastSeen.Description,
-				float64(d.LastSeen.Unix()), idAttrs)
-		}
-
-		if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
-			e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
-				float64(d.Expires.Unix()), idAttrs)
-		}
-
-		e.Gauge(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
-			boolToFloat(d.UpdateAvailable), idAttrs)
-
-		for region, derp := range d.DERPLatency {
-			e.Gauge(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
-				derp.LatencyMs/1000, telemetry.Attrs{
-					semconv.HostName:  d.Hostname,
-					semconv.HostID:    d.ID,
-					attrDERPRegion:    region,
-					attrDERPPreferred: derp.Preferred,
-				})
-		}
-
-		if c.collectRoutes {
-			routeAttrs := telemetry.Attrs{
+		// Per-device gauges (one series per device) are gated by
+		// cardinality.device_per_entity; when off, only the aggregate
+		// devices.count rollup below is emitted.
+		if c.perEntity {
+			idAttrs := telemetry.Attrs{
 				semconv.HostName: d.Hostname,
 				semconv.HostID:   d.ID,
+				semconv.OSType:   d.OS,
+				semconv.AttrUser: d.User,
 			}
-			e.Gauge(docRoutesAdvertised.Name, docRoutesAdvertised.Unit, docRoutesAdvertised.Description,
-				float64(len(d.AdvertisedRoutes)), routeAttrs)
-			e.Gauge(docRoutesEnabled.Name, docRoutesEnabled.Unit, docRoutesEnabled.Description,
-				float64(len(d.EnabledRoutes)), routeAttrs)
+			if d.Distro.Version != "" {
+				idAttrs[semconv.OSVersion] = d.Distro.Version
+			}
+
+			e.Gauge(docOnline.Name, docOnline.Unit, docOnline.Description,
+				boolToFloat(d.ConnectedToControl), idAttrs)
+
+			if !d.LastSeen.IsZero() {
+				e.Gauge(docLastSeen.Name, docLastSeen.Unit, docLastSeen.Description,
+					float64(d.LastSeen.Unix()), idAttrs)
+			}
+
+			if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
+				e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
+					float64(d.Expires.Unix()), idAttrs)
+			}
+
+			e.Gauge(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
+				boolToFloat(d.UpdateAvailable), idAttrs)
+
+			for region, derp := range d.DERPLatency {
+				e.Gauge(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
+					derp.LatencyMs/1000, telemetry.Attrs{
+						semconv.HostName:  d.Hostname,
+						semconv.HostID:    d.ID,
+						attrDERPRegion:    region,
+						attrDERPPreferred: derp.Preferred,
+					})
+			}
+
+			if c.collectRoutes {
+				routeAttrs := telemetry.Attrs{
+					semconv.HostName: d.Hostname,
+					semconv.HostID:   d.ID,
+				}
+				e.Gauge(docRoutesAdvertised.Name, docRoutesAdvertised.Unit, docRoutesAdvertised.Description,
+					float64(len(d.AdvertisedRoutes)), routeAttrs)
+				e.Gauge(docRoutesEnabled.Name, docRoutesEnabled.Unit, docRoutesEnabled.Description,
+					float64(len(d.EnabledRoutes)), routeAttrs)
+			}
 		}
 
 		if c.collectPosture {

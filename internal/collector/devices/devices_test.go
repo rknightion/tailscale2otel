@@ -158,6 +158,39 @@ func TestCollect_ReturnsAPIError(t *testing.T) {
 	}
 }
 
+func TestCollect_PerEntityFalse(t *testing.T) {
+	// WithPerEntity(false) suppresses every per-device gauge (incl. routes, which
+	// would otherwise emit since collectRoutes=true) while keeping the aggregate
+	// devices.count rollup and the enrichment-cache self-metrics.
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, true /*routes*/, false /*posture*/, devices.WithPerEntity(false))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	for _, name := range []string{
+		"tailscale.device.online",
+		"tailscale.device.last_seen",
+		"tailscale.device.key.expiry",
+		"tailscale.device.update_available",
+		"tailscale.device.derp.latency",
+		"tailscale.device.routes.advertised",
+		"tailscale.device.routes.enabled",
+	} {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Errorf("per-entity gauge %q emitted with WithPerEntity(false): %+v", name, pts)
+		}
+	}
+
+	if pts := rec.MetricPoints("tailscale.devices.count"); len(pts) == 0 {
+		t.Error("aggregate tailscale.devices.count not emitted with WithPerEntity(false)")
+	}
+	if pts := rec.MetricPoints("tailscale2otel.enrich.cache_size"); len(pts) == 0 {
+		t.Error("enrich.cache_size self-metric not emitted with WithPerEntity(false)")
+	}
+}
+
 func TestCollect_Online(t *testing.T) {
 	devs := sampleDevices()
 	c, _, _ := newCollector(t, devs)

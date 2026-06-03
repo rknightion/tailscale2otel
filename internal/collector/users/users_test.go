@@ -102,6 +102,33 @@ func TestDefaultInterval(t *testing.T) {
 	}
 }
 
+func TestCollect_PerEntityFalse(t *testing.T) {
+	// WithPerEntity(false) suppresses the per-user gauges while keeping the
+	// aggregate users.count and user_invites.count rollups.
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites()}, 0, users.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	for _, name := range []string{
+		"tailscale.user.devices",
+		"tailscale.user.connected",
+		"tailscale.user.last_seen",
+	} {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Errorf("per-user gauge %q emitted with WithPerEntity(false): %+v", name, pts)
+		}
+	}
+
+	if pts := rec.MetricPoints("tailscale.users.count"); len(pts) == 0 {
+		t.Error("aggregate tailscale.users.count not emitted with WithPerEntity(false)")
+	}
+	if pts := rec.MetricPoints("tailscale.user_invites.count"); len(pts) == 0 {
+		t.Error("aggregate tailscale.user_invites.count not emitted with WithPerEntity(false)")
+	}
+}
+
 func TestCollect_CountByCombo(t *testing.T) {
 	rec := telemetrytest.New()
 	c := users.New(&fakeLister{users: sampleUsers()}, 0)
