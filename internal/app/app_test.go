@@ -245,6 +245,130 @@ func TestNewApp_WiresSharedFlowDedup(t *testing.T) {
 	}
 }
 
+// postStream sends body through the app's stream receiver Handler, which shares
+// the flow/audit processors and their dedup set with the poll path, and returns
+// the HTTP status. It is the in-process equivalent of a Tailscale log-stream POST.
+func postStream(t *testing.T, a *App, body string) int {
+	t.Helper()
+	if a.streamSrv == nil {
+		t.Fatal("stream server not built (streaming.enabled?)")
+	}
+	req := httptest.NewRequest(http.MethodPost, "/services/collector/event", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	a.streamSrv.Handler().ServeHTTP(w, req)
+	return w.Code
+}
+
+// TestPollStreamCrossDedup_FlowDeduplicates pins S4-9(2) for FLOW logs: a
+// connection reported by BOTH the poll collector and the stream receiver is
+// counted ONCE. The flow dedup key is content-based (nodeId|start|end|proto|src|dst),
+// byte-identical across the two sources, so the shared set suppresses the second
+// copy. (Verified live against the example lab on 2026-06-03: an identical flow
+// replayed through the receiver did not double-count.)
+func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Streaming.Enabled = true
+	cfg.Streaming.Path = "/services/collector/event"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	sum := func() float64 {
+		var tot float64
+		for _, p := range rec.MetricPoints(flowlog.MetricIO) {
+			tot += p.Value
+		}
+		return tot
+	}
+
+	// POLL side: the collector processes the flow window.
+	pollFlow := flowlog.FlowLog{
+		NodeID: "n-x",
+		Start:  time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC),
+		End:    time.Date(2026, 6, 3, 10, 0, 5, 0, time.UTC),
+		VirtualTraffic: []flowlog.ConnectionCounts{
+			{Proto: 6, Src: "100.64.0.1:1", Dst: "100.64.0.2:443", TxBytes: 1000, RxBytes: 500},
+		},
+	}
+	a.flowProc.Process(pollFlow, rec.Emitter())
+	afterPoll := sum()
+	if afterPoll == 0 {
+		t.Fatal("flow io total = 0 after poll, want > 0")
+	}
+
+	// STREAM side: the SAME connection arrives via the receiver (HEC-wrapped). Its
+	// content key matches the poll copy, so it must be suppressed (no double-count).
+	streamBody := `{"time":1780480800.0,"event":{"nodeId":"n-x","start":"2026-06-03T10:00:00Z","end":"2026-06-03T10:00:05Z","virtualTraffic":[{"proto":6,"src":"100.64.0.1:1","dst":"100.64.0.2:443","txBytes":1000,"rxBytes":500}]},"fields":{"recorded":"2026-06-03T10:00:06Z"}}`
+	if code := postStream(t, a, streamBody); code != http.StatusOK {
+		t.Fatalf("stream POST status = %d, want 200", code)
+	}
+	if after := sum(); after != afterPoll {
+		t.Fatalf("flow io total after stream copy = %v, want %v (cross-source dedup must suppress the duplicate)", after, afterPoll)
+	}
+}
+
+// TestPollStreamCrossDedup_AuditGap characterizes the VERIFIED S4-9(2) limitation
+// for CONFIG audit events. A streamed audit record carries no inner eventTime, so
+// the receiver times it from the HEC envelope (millisecond precision), while the
+// poll collector has the API's nanosecond eventTime. The dedup key is
+// eventGroupID|eventTime, so the two keys DIFFER and the same change is counted
+// TWICE when both ingestion paths run. (Verified live against the example lab on
+// 2026-06-03: replaying a polled event stream-shaped did NOT dedup, but a copy
+// carrying the exact eventTime DID — so the gap is purely the timestamp
+// source/precision, not the mechanism.) A time-free composite key could close
+// this but is D11-sensitive; see todos.txt H8 / §7 S4-9(2). This test guards the
+// current behavior: if it ever changes, that decision must be deliberate.
+func TestPollStreamCrossDedup_AuditGap(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Streaming.Enabled = true
+	cfg.Streaming.Path = "/services/collector/event"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	count := func() float64 {
+		var tot float64
+		for _, p := range rec.MetricPoints("tailscale.config.audit.events") {
+			tot += p.Value
+		}
+		return tot
+	}
+
+	// POLL side: the API event carries a nanosecond eventTime.
+	pollEv := audit.Event{
+		EventGroupID: "egA",
+		EventTime:    time.Unix(1780486201, 434327047).UTC(), // 2026-06-03T11:30:01.434327047Z
+		Action:       "DELETE",
+		Target:       audit.Target{ID: "t1", Type: "NODE"},
+		Actor:        audit.Actor{ID: "a1"},
+	}
+	a.auditProc.Process(pollEv, rec.Emitter())
+	if c := count(); c != 1 {
+		t.Fatalf("audit count after poll = %v, want 1", c)
+	}
+
+	// STREAM side: the SAME change, but with NO inner eventTime; the HEC envelope
+	// time is ms precision (1780486201.434 -> ...434Z), which does NOT equal the
+	// poll key's ...434327047Z. So it is NOT deduped — the documented gap.
+	streamBody := `{"time":1780486201.434,"event":{"eventGroupID":"egA","origin":"NODE","action":"DELETE","target":{"id":"t1","type":"NODE"},"actor":{"id":"a1"}},"fields":{"recorded":"2026-06-03T11:30:05Z"}}`
+	if code := postStream(t, a, streamBody); code != http.StatusOK {
+		t.Fatalf("stream POST status = %d, want 200", code)
+	}
+	if c := count(); c != 2 {
+		t.Fatalf("audit count after stream copy = %v, want 2 (documented S4-9(2) gap: ns vs ms key mismatch)", c)
+	}
+
+	// Positive control: a stream copy carrying the EXACT eventTime DOES dedup,
+	// proving the gap is the timestamp source/precision, not the mechanism.
+	streamExact := `{"time":1780486201.999,"event":{"eventTime":"2026-06-03T11:30:01.434327047Z","eventGroupID":"egA","origin":"NODE","action":"DELETE","target":{"id":"t1","type":"NODE"},"actor":{"id":"a1"}},"fields":{"recorded":"2026-06-03T11:30:05Z"}}`
+	if code := postStream(t, a, streamExact); code != http.StatusOK {
+		t.Fatalf("stream POST (exact) status = %d, want 200", code)
+	}
+	if c := count(); c != 2 {
+		t.Fatalf("audit count after exact-time copy = %v, want 2 (exact eventTime must dedup against the poll key)", c)
+	}
+}
+
 // TestNewApp_WiresWebhookAuditCrossDedup verifies that with
 // webhook.dedup_audit_events on, the app shares ONE cross-source dedup set
 // between the audit processor and the webhook server, so a change reported by
