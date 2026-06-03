@@ -51,19 +51,17 @@ type scrapeResult struct {
 func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
 	attrs := telemetry.Attrs{semconv.AttrCollector: res.collector}
 
-	e.Gauge(MetricScrapeDuration, semconv.UnitSeconds,
-		"wall-clock seconds a collector scrape took", res.duration.Seconds(), attrs)
+	e.Gauge(docScrapeDuration.Name, docScrapeDuration.Unit, docScrapeDuration.Description,
+		res.duration.Seconds(), attrs)
 
 	failed := res.err != nil || res.panicked
 	success := 1.0
 	if failed {
 		success = 0
 	}
-	e.Gauge(MetricScrapeSuccess, semconv.UnitDimensionless,
-		"1 if the collector scrape succeeded, else 0", success, attrs)
+	e.Gauge(docScrapeSuccess.Name, docScrapeSuccess.Unit, docScrapeSuccess.Description, success, attrs)
 
-	e.Gauge(MetricScrapeLastTimestamp, semconv.UnitSeconds,
-		"unix time in seconds when the collector scrape finished",
+	e.Gauge(docScrapeLastTimestamp.Name, docScrapeLastTimestamp.Unit, docScrapeLastTimestamp.Description,
 		float64(res.finishedAt.Unix()), attrs)
 
 	if failed {
@@ -71,8 +69,7 @@ func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
 			semconv.AttrCollector: res.collector,
 			"error.type":          scrapeErrorType(res.err, res.panicked),
 		}
-		e.Counter(MetricScrapeErrors, semconv.UnitDimensionless,
-			"collector scrape failures by error.type", 1, errAttrs)
+		e.Counter(docScrapeErrors.Name, docScrapeErrors.Unit, docScrapeErrors.Description, 1, errAttrs)
 	}
 }
 
