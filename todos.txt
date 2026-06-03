@@ -594,6 +594,46 @@ S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING — finishes P1-2's deferred live c
      real envelope (TDD). SAFETY: reconfigure ONLY the example lab; auto_configure must NEVER be
      pointed at any real/production tailnet. Then P1-2 is fully DONE.
 
+S4-11 [P1] WEBHOOK ENRICHMENT — health-event severity, data-field pinning, and dedup-map
+     correctness. (Researched session-4-cont 2026-06-03; user-prompted by the generic-webhooks
+     docs.) Generic dispatch in internal/webhook/webhook.go (one log + one counter per `type`) is
+     SOUND and STAYS — this is severity + attributes + dedup fixes, grounded in the authoritative
+     event catalog https://tailscale.com/kb/1213/webhooks#events (mirror
+     https://tailscale.com/docs/features/webhooks). VERDICT: enhancing adds real value — webhooks
+     carry client-misconfiguration/health + Tailnet-Lock events with NO log-streaming equivalent.
+     (a) WARN-HEURISTIC GAP: warnSubstrings {Expir,Suspend,NeedsApproval,Deleted} MISSES the two
+         client-misconfig/health events `exitNodeIPForwardingNotEnabled` +
+         `subnetIPForwardingNotEnabled` (emit at INFO), the Tailnet-Lock `nodeNeedsSignature`, and
+         deprecated `nodeNeedsAuthorization`. These are the most actionable webhook alerts and are
+         NOT in the flow OR config-audit streams. Promote to WARN; prefer an explicit warn-type SET
+         over substring matching so future types aren't silently missed.
+     (b) ADDITIVE-VALUE EVENTS (no log-streaming equivalent): exitNodeIPForwardingNotEnabled,
+         subnetIPForwardingNotEnabled, nodeNeedsSignature, nodeSigned — the core reason to keep
+         webhooks on alongside polling. Add an S4-8 alert on a nonzero rate of the two misconfig
+         events (counter already keyed by tailscale.webhook.type; no new metric).
+     (c) DEDUP-MAP CORRECTNESS (internal/webhook/crossdedup.go webhookActionMap, written
+         speculatively in S4-3): `userSuspended` + `userDeleted` are NOT in Tailscale's documented
+         catalog (UNCONFIRMED — userDeleted only in a Pulumi sample, userSuspended nowhere); verify
+         vs a live subscription and REMOVE if invalid. MISSING real overlapping types that DO appear
+         in the config-audit stream: `policyUpdate` (-> {update, policy|tailnet}), `nodeNeedsApproval`
+         ({create|update, node}), `userNeedsApproval` ({update, user}); plus deprecated aliases
+         nodeAuthorized->nodeApproved, nodeNeedsAuthorization->nodeNeedsApproval.
+     (d) DATA-FIELD PINNING for S4-3 subjectIDKeys: docs confirm node key is `nodeID` (already
+         first) but the USER key is `user` (login/email string) — NOT userID/userId/loginName/email,
+         and deviceID/deviceId never appear. Fix subjectIDKeys to {nodeID, user} and drop the
+         unsupported guesses. Documented data fields: node* = {nodeID,deviceName,managedBy,actor,url};
+         nodeKey* adds {expiration}; user* = {user,url,actor}; userRoleUpdated adds {oldRoles,newRoles};
+         policyUpdate = {newPolicy,oldPolicy,url,actor}; test = null. The `actor` field is documented
+         to MATCH the config-audit actor format — strongest cross-source JOIN key; evaluate using it
+         (not just subject id) once S4-10 capture lands.
+     (e) PAYLOAD-TYPING RISK: webhook event.Data is map[string]string, but policyUpdate
+         (oldPolicy/newPolicy = policy contents) and userRoleUpdated (oldRoles/newRoles = arrays)
+         are NOT flat strings -> may fail to unmarshal / drop silently. Confirm shape in S4-10 capture.
+     UNCONFIRMED / NEEDS LIVE CAPTURE: the data payloads of the two misconfig events are NOT
+     documented (no example) — capture real events before adding dedicated attributes. No billing,
+     connect/disconnect, or subnet-route-change webhooks exist (FRs only:
+     github.com/tailscale/tailscale/issues/15638 and /11166). TDD via telemetrytest; pair with S4-10.
+
 --------------------------------------------------------------------------------
 8. HOW TO CONTINUE (workflow for the LLM)
 --------------------------------------------------------------------------------
