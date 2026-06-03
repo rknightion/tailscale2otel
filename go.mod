@@ -1,6 +1,6 @@
 module github.com/rknightion/tailscale2otel
 
-go 1.26.0
+go 1.26.4
 
 require (
 	github.com/klauspost/compress v1.18.6
