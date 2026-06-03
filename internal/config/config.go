@@ -103,6 +103,13 @@ type CardinalityConfig struct {
 	FlowIncludePorts bool `yaml:"flow_include_ports"`
 	FlowNodeDims     bool `yaml:"flow_node_dims"`
 	CollapseExternal bool `yaml:"collapse_external"`
+	// DevicePerEntity/UserPerEntity/KeyPerEntity (default true) gate the
+	// per-entity gauges in the devices/users/keys collectors. When false, only
+	// the low-cardinality aggregate *.count rollups are emitted (the per-entity
+	// gauges, one series per device/user/key, are dropped).
+	DevicePerEntity bool `yaml:"device_per_entity"`
+	UserPerEntity   bool `yaml:"user_per_entity"`
+	KeyPerEntity    bool `yaml:"key_per_entity"`
 }
 
 // Collectors groups the per-collector configurations.

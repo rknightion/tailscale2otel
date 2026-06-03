@@ -58,22 +58,40 @@ type Collector struct {
 	interval   time.Duration
 	expiryWarn time.Duration
 	now        func() time.Time
+	perEntity  bool
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithPerEntity controls whether the per-key tailscale.key.expiry gauge is
+// emitted. The default is true; false (cardinality.key_per_entity) emits only
+// the aggregate tailscale.keys.count rollup. The expiry-warning log event is
+// unaffected (it always fires within expiryWarn).
+func WithPerEntity(enabled bool) Option {
+	return func(c *Collector) { c.perEntity = enabled }
 }
 
 // New returns a keys Collector. A non-positive interval falls back to the
 // default (300s) via DefaultInterval. now defaults to time.Now when nil
 // (inject a fixed clock for deterministic tests). expiryWarn is the lead time
-// within which an upcoming key expiry triggers a warning log event.
-func New(api lister, interval, expiryWarn time.Duration, now func() time.Time) *Collector {
+// within which an upcoming key expiry triggers a warning log event. Per-key
+// gauges are emitted by default; pass WithPerEntity(false) to emit only counts.
+func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, opts ...Option) *Collector {
 	if now == nil {
 		now = time.Now
 	}
-	return &Collector{
+	c := &Collector{
 		api:        api,
 		interval:   interval,
 		expiryWarn: expiryWarn,
 		now:        now,
+		perEntity:  true,
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier.
@@ -113,12 +131,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		counts[countKey{typ: typ, revoked: revoked, invalid: k.Invalid}]++
 
 		if !k.Expires.IsZero() {
-			e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
-				float64(k.Expires.Unix()), telemetry.Attrs{
-					attrID:          k.ID,
-					attrType:        typ,
-					attrDescription: k.Description,
-				})
+			// The per-key expiry gauge (one series per key) is gated by
+			// cardinality.key_per_entity; the expiry-warning log below always
+			// fires regardless, so operators never lose the warning.
+			if c.perEntity {
+				e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
+					float64(k.Expires.Unix()), telemetry.Attrs{
+						attrID:          k.ID,
+						attrType:        typ,
+						attrDescription: k.Description,
+					})
+			}
 
 			if c.expiryWarn > 0 {
 				until := k.Expires.Sub(now)

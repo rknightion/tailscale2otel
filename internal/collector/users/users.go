@@ -50,14 +50,30 @@ type lister interface {
 
 // Collector reports Tailscale user inventory on each tick.
 type Collector struct {
-	api      lister
-	interval time.Duration
+	api       lister
+	interval  time.Duration
+	perEntity bool
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithPerEntity controls whether the per-user gauges (devices, connected,
+// last_seen) are emitted. The default is true; false (cardinality.user_per_entity)
+// emits only the aggregate tailscale.users.count / user_invites.count rollups.
+func WithPerEntity(enabled bool) Option {
+	return func(c *Collector) { c.perEntity = enabled }
 }
 
 // New returns a users Collector. A non-positive interval falls back to the
-// default (300s) via DefaultInterval.
-func New(api lister, interval time.Duration) *Collector {
-	return &Collector{api: api, interval: interval}
+// default (300s) via DefaultInterval. Per-user gauges are emitted by default;
+// pass WithPerEntity(false) to emit only the aggregate counts.
+func New(api lister, interval time.Duration, opts ...Option) *Collector {
+	c := &Collector{api: api, interval: interval, perEntity: true}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier.
@@ -99,6 +115,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			typ:    string(u.Type),
 		}
 		counts[k]++
+
+		// Per-user gauges (one series per user) are gated by
+		// cardinality.user_per_entity; when off, only the aggregate
+		// users.count / user_invites.count rollups are emitted.
+		if !c.perEntity {
+			continue
+		}
 
 		idAttrs := telemetry.Attrs{
 			attrID:    u.ID,

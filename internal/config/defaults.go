@@ -45,6 +45,9 @@ func Default() *Config {
 			FlowIncludePorts: false,
 			FlowNodeDims:     true,
 			CollapseExternal: true,
+			DevicePerEntity:  true,
+			UserPerEntity:    true,
+			KeyPerEntity:     true,
 		},
 		Collectors: Collectors{
 			Devices: CollectorConfig{

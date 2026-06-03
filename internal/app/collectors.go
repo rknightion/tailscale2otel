@@ -59,13 +59,16 @@ func (a *App) registerCollectors() {
 
 	if c.Devices.Enabled {
 		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
-			c.Devices.CollectRoutes, c.Devices.CollectPosture), c.Devices.Interval.D())
+			c.Devices.CollectRoutes, c.Devices.CollectPosture,
+			devices.WithPerEntity(a.cfg.Cardinality.DevicePerEntity)), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
-		a.registry.Register(users.New(a.client, c.Users.Interval.D()), c.Users.Interval.D())
+		a.registry.Register(users.New(a.client, c.Users.Interval.D(),
+			users.WithPerEntity(a.cfg.Cardinality.UserPerEntity)), c.Users.Interval.D())
 	}
 	if c.Keys.Enabled {
-		a.registry.Register(keys.New(a.client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil), c.Keys.Interval.D())
+		a.registry.Register(keys.New(a.client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
+			keys.WithPerEntity(a.cfg.Cardinality.KeyPerEntity)), c.Keys.Interval.D())
 	}
 	if c.Settings.Enabled {
 		a.registry.Register(settings.New(a.client, c.Settings.Interval.D()), c.Settings.Interval.D())
