@@ -83,6 +83,7 @@ const (
 
 	reasonAuth       = "auth"
 	reasonUnparsable = "unparsable"
+	reasonTooLarge   = "too_large"
 )
 
 // defaultPath is the Splunk-HEC event endpoint path used when Options.Path is
@@ -92,6 +93,12 @@ const defaultPath = "/services/collector/event"
 // authScheme is the Splunk-HEC Authorization scheme: "Authorization: Splunk
 // <token>".
 const authScheme = "Splunk"
+
+// defaultMaxBodyBytes caps the decompressed body when Options.MaxBodyBytes is 0.
+const defaultMaxBodyBytes = 64 << 20 // 64 MiB
+
+// errBodyTooLarge is returned by readAllLimited when the body exceeds the cap.
+var errBodyTooLarge = errors.New("stream: request body exceeds max size")
 
 // Options configures a Server.
 type Options struct {
@@ -109,6 +116,11 @@ type Options struct {
 	// TLSCertFile and TLSKeyFile, when both set, make Run serve HTTPS.
 	TLSCertFile string
 	TLSKeyFile  string
+	// MaxBodyBytes caps the DECOMPRESSED request body size; a request whose body
+	// exceeds it is rejected with 413 and a rejected{reason=too_large} counter, so
+	// a huge or zip-bomb POST cannot OOM the receiver. 0 selects a 64 MiB default;
+	// a negative value disables the cap.
+	MaxBodyBytes int64
 }
 
 // Server is the streaming receiver. It is safe to share its Handler across
@@ -120,6 +132,7 @@ type Server struct {
 	tlsCert    string
 	tlsKey     string
 	listen     string
+	maxBody    int64
 
 	flowProc  *flowlog.Processor
 	auditProc *audit.Processor
@@ -141,6 +154,10 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	maxBody := opts.MaxBodyBytes
+	if maxBody == 0 {
+		maxBody = defaultMaxBodyBytes
+	}
 	return &Server{
 		path:       path,
 		token:      opts.Token,
@@ -148,6 +165,7 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		tlsCert:    opts.TLSCertFile,
 		tlsKey:     opts.TLSKeyFile,
 		listen:     opts.Listen,
+		maxBody:    maxBody,
 		flowProc:   flowProc,
 		auditProc:  auditProc,
 		emitter:    e,
@@ -181,6 +199,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	raw, err := s.readBody(r)
 	if err != nil {
+		if errors.Is(err, errBodyTooLarge) {
+			s.logger.Warn("stream: request body exceeds max size", "limit_bytes", s.maxBody)
+			s.emitter.Counter(MetricRejected, "{rejection}", "Tailscale stream records rejected", 1,
+				telemetry.Attrs{attrReason: reasonTooLarge})
+			s.writeError(w, http.StatusRequestEntityTooLarge, "body too large")
+			return
+		}
 		s.logger.Warn("stream: reading/decompressing body failed", "error", err)
 		s.emitter.Counter(MetricRejected, "{rejection}", "Tailscale stream records rejected", 1,
 			telemetry.Attrs{attrReason: reasonUnparsable})
@@ -272,17 +297,35 @@ func (s *Server) readBody(r *http.Request) ([]byte, error) {
 			return nil, err
 		}
 		defer zr.Close()
-		return io.ReadAll(zr)
+		return readAllLimited(zr, s.maxBody)
 	case "zstd":
 		zr, err := zstd.NewReader(r.Body)
 		if err != nil {
 			return nil, err
 		}
 		defer zr.Close()
-		return io.ReadAll(zr)
+		return readAllLimited(zr, s.maxBody)
 	default:
-		return io.ReadAll(r.Body)
+		return readAllLimited(r.Body, s.maxBody)
 	}
+}
+
+// readAllLimited reads all of r but fails with errBodyTooLarge when more than
+// limit bytes are available, bounding memory against a huge or zip-bomb body
+// (the limit is checked on the DECOMPRESSED stream). A negative limit reads
+// without a cap.
+func readAllLimited(r io.Reader, limit int64) ([]byte, error) {
+	if limit < 0 {
+		return io.ReadAll(r)
+	}
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, errBodyTooLarge
+	}
+	return b, nil
 }
 
 // recordKind is the classification of an extracted record object.

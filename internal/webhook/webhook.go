@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
@@ -88,6 +89,20 @@ type Server struct {
 	e      telemetry.Emitter
 	logger *slog.Logger
 	now    func() time.Time // injectable clock; defaults to time.Now
+	dedup  *dedup.Set       // optional cross-source de-dup set (see WithDedup)
+}
+
+// Option configures a Server at construction time.
+type Option func(*Server)
+
+// WithDedup attaches a cross-SOURCE de-duplication set shared with the audit
+// Processor (see audit.WithCrossDedup). When set is non-nil, a webhook event
+// that maps to a change already recorded in set — by the audit poller/stream or
+// a prior webhook — is suppressed (no log record, no counter increment) so
+// enabling both webhooks and audit-log polling does not double-count. This is
+// BEST-EFFORT (see crossKey); a nil set is a no-op.
+func WithDedup(set *dedup.Set) Option {
+	return func(s *Server) { s.dedup = set }
 }
 
 // event mirrors a single Tailscale webhook event. Field names and types match
@@ -102,20 +117,25 @@ type event struct {
 }
 
 // New returns a Server that verifies against opts.Secret and emits via e.
-// A nil logger is replaced with a no-op logger.
-func New(opts Options, e telemetry.Emitter, logger *slog.Logger) *Server {
+// A nil logger is replaced with a no-op logger. Optional Options (e.g. WithDedup)
+// are applied after construction.
+func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Option) *Server {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	if opts.Path == "" {
 		opts.Path = "/webhook"
 	}
-	return &Server{
+	s := &Server{
 		opts:   opts,
 		e:      e,
 		logger: logger,
 		now:    time.Now,
 	}
+	for _, o := range options {
+		o(s)
+	}
+	return s
 }
 
 // Handler returns the http.Handler serving the configured Path. It is the unit
@@ -241,6 +261,14 @@ func (s *Server) expectedSignature(ts time.Time, body []byte) string {
 // emit converts one event into an OTEL log record plus a counter increment.
 // The counter carries only the low-cardinality event type.
 func (s *Server) emit(ev event) {
+	if s.dedup != nil {
+		if key, ok := crossKey(ev); ok && !s.dedup.Add(key) {
+			// Same change already emitted via the audit logs (or a prior webhook):
+			// suppress to avoid double-counting.
+			return
+		}
+	}
+
 	severity := telemetry.SeverityInfo
 	if isWarn(ev.Type) {
 		severity = telemetry.SeverityWarn
