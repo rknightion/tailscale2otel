@@ -10,7 +10,6 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -76,11 +75,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		{"posture_identity_collection", s.PostureIdentityCollectionOn},
 	}
 	for _, b := range bools {
-		e.Gauge(metricEnabled, semconv.UnitDimensionless, "tailnet feature enabled (1) or disabled (0)",
+		e.Gauge(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
 			boolValue(b.on), telemetry.Attrs{attrSettingName: b.name})
 	}
 
-	e.Gauge(metricKeyDuration, semconv.UnitDays, "device key expiry duration in days",
+	e.Gauge(docSettingKeyDuration.Name, docSettingKeyDuration.Unit, docSettingKeyDuration.Description,
 		float64(s.DevicesKeyDurationDays), nil)
 
 	return nil

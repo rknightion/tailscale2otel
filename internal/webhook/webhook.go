@@ -249,7 +249,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // the body could not be authenticated as a well-formed signed payload.
 func (s *Server) reject(w http.ResponseWriter, reason, msg string, err error) {
 	s.logger.Warn(msg, "reason", reason, "error", err)
-	s.e.Counter(MetricRejected, semconv.UnitDimensionless, "Rejected Tailscale webhook requests", 1, telemetry.Attrs{
+	s.e.Counter(docWebhookRejected.Name, docWebhookRejected.Unit, docWebhookRejected.Description, 1, telemetry.Attrs{
 		attrReason: reason,
 	})
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -314,7 +314,7 @@ func (s *Server) emit(ev event) {
 		},
 	})
 
-	s.e.Counter(MetricEvents, semconv.UnitEvents, "Received Tailscale webhook events", 1, telemetry.Attrs{
+	s.e.Counter(docWebhookEvents.Name, docWebhookEvents.Unit, docWebhookEvents.Description, 1, telemetry.Attrs{
 		attrType: ev.Type,
 	})
 }

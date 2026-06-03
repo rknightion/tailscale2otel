@@ -259,10 +259,10 @@ func (c *Collector) scrapeTarget(ctx context.Context, t *Target, client *http.Cl
 		instance = hostPort(t.URL)
 	}
 	if err := c.fetchAndEmit(ctx, t, client, instance, e); err != nil {
-		e.Gauge(metricUp, "1", "node metrics scrape up (1) or down (0)", 0, telemetry.Attrs{attrInstance: instance})
+		e.Gauge(docNodeUp.Name, docNodeUp.Unit, docNodeUp.Description, 0, telemetry.Attrs{attrInstance: instance})
 		return err
 	}
-	e.Gauge(metricUp, "1", "node metrics scrape up (1) or down (0)", 1, telemetry.Attrs{attrInstance: instance})
+	e.Gauge(docNodeUp.Name, docNodeUp.Unit, docNodeUp.Description, 1, telemetry.Attrs{attrInstance: instance})
 	return nil
 }
 

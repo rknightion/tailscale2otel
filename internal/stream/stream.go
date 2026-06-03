@@ -201,7 +201,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.authorized(r) {
-		s.emitter.Counter(MetricRejected, "{rejection}", "Tailscale stream records rejected", 1,
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonAuth})
 		s.writeError(w, http.StatusUnauthorized, "invalid or missing token")
 		return
@@ -211,13 +211,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errBodyTooLarge) {
 			s.logger.Warn("stream: request body exceeds max size", "limit_bytes", s.maxBody)
-			s.emitter.Counter(MetricRejected, "{rejection}", "Tailscale stream records rejected", 1,
+			s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 				telemetry.Attrs{attrReason: reasonTooLarge})
 			s.writeError(w, http.StatusRequestEntityTooLarge, "body too large")
 			return
 		}
 		s.logger.Warn("stream: reading/decompressing body failed", "error", err)
-		s.emitter.Counter(MetricRejected, "{rejection}", "Tailscale stream records rejected", 1,
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonUnparsable})
 		s.writeError(w, http.StatusBadRequest, "could not read body")
 		return
@@ -226,7 +226,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	records, err := extractRecords(raw)
 	if err != nil {
 		s.logger.Warn("stream: parsing body failed", "error", err)
-		s.emitter.Counter(MetricRejected, "{rejection}", "Tailscale stream records rejected", 1,
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonUnparsable})
 		s.writeError(w, http.StatusBadRequest, "could not parse body")
 		return
@@ -266,11 +266,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if flows > 0 {
-		s.emitter.Counter(MetricRecords, "{record}", "Tailscale stream records processed", float64(flows),
+		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
 			telemetry.Attrs{attrType: typeFlow})
 	}
 	if audits > 0 {
-		s.emitter.Counter(MetricRecords, "{record}", "Tailscale stream records processed", float64(audits),
+		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
 			telemetry.Attrs{attrType: typeAudit})
 	}
 	if skipped > 0 {

@@ -14,7 +14,6 @@ import (
 	"github.com/tailscale/hujson"
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -102,11 +101,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		c.lastChanged = c.now()
 	}
 
-	e.Gauge(metricLastChanged, semconv.UnitSeconds, "Unix time the ACL policy last changed (by ETag)",
+	e.Gauge(docACLLastChanged.Name, docACLLastChanged.Unit, docACLLastChanged.Description,
 		float64(c.lastChanged.Unix()), nil)
 
 	// Trivial presence/size signal: bytes of the raw HuJSON policy document.
-	e.Gauge(metricSize, semconv.UnitBytes, "size of the raw HuJSON ACL document in bytes",
+	e.Gauge(docACLSize.Name, docACLSize.Unit, docACLSize.Description,
 		float64(len(raw.HuJSON)), nil)
 
 	// Per-section rule counts require parsing the HuJSON policy. If parsing
@@ -143,8 +142,7 @@ func (c *Collector) emitRuleCounts(e telemetry.Emitter, hujsonDoc string) {
 		if !ok {
 			continue
 		}
-		e.Gauge(metricRules, semconv.UnitDimensionless,
-			"number of rules/entries in an ACL policy section",
+		e.Gauge(docACLRules.Name, docACLRules.Unit, docACLRules.Description,
 			float64(size), telemetry.Attrs{attrSection: section})
 	}
 }
