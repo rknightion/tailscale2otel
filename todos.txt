@@ -1,7 +1,9 @@
 ================================================================================
 tailscale2otel — HANDOFF / CONTEXT / TODO  (for resuming with an LLM)
 ================================================================================
-Last updated: 2026-06-03 (session 5: §7 DRIVEN TO EMPTY — S4-9/10/11 + Helm all done; commits HELD/unpushed). Single source of truth.
+Last updated: 2026-06-03 (session 6: closed the S4-10 audit-timestamp fidelity gap — streamed audit
+  records now take the HEC envelope time, not OTEL ingest time. session 5: §7 DRIVEN TO EMPTY — S4-9/10/11
+  + Helm all done; commits HELD/unpushed). Single source of truth.
 
 HOW TO READ THIS FILE:
   • ACTIVE (sections 1–8): what a new session needs NOW — status, hard
@@ -42,6 +44,9 @@ WHAT REMAINS (see section 7 for detail):
           EventName → Loki key `event_name` (no dashboard migration needed).
   • S4-10 DONE (2026-06-03 live capture; H7). Envelope pinned = concatenated HEC
           {time,event,fields}; FIXED the auth bug (Basic user:token, not Splunk).
+          Audit-timestamp fidelity gap CLOSED (session 6, H8): the parser now threads the HEC
+          envelope time (time→fields.recorded) onto a streamed audit record's EventTime when it
+          has none of its own, so streamed audit log records bear the event's real time.
           S4-9(2) poll+stream cross-dedup live check still DEFERRED (needs both on).
   • S4-11 DONE (a–e). Severity SET + misconfig alert; dedup-map (nodeAuthorized alias;
           inert/risky additions deliberately skipped per D11); subjectID {nodeID,user};
@@ -285,10 +290,12 @@ S4-10 [P0 / LIVE] STREAMING ENVELOPE PINNING — DONE (2026-06-03 live capture v
      - AUTH BUG FIXED (TDD): Tailscale uses HTTP Basic auth base64(user:<token>), NOT
        "Authorization: Splunk <token>". The old authorized() rejected ALL real deliveries when a
        token was set. Now accepts Basic (password==token, constant-time) + Splunk for compat.
-     - proto numeric + srcNode/dstNodes confirmed; audit uses actionDetails. KNOWN MINOR GAP:
-       streamed audit events carry NO inner eventTime (it's the HEC time/fields.recorded) → audit
-       log records take OTEL ingest time (~seconds off). Flow unaffected (start/end inside event).
-       Documented in stream.go; not fixed (would need to thread envelope time through the parser).
+     - proto numeric + srcNode/dstNodes confirmed; audit uses actionDetails. AUDIT-TIMESTAMP GAP
+       (streamed audit events carry NO inner eventTime — it's the HEC time/fields.recorded sibling
+       of "event"): RESOLVED in session 6 (H8). extractRecords/unwrap now thread the envelope time
+       (extractedRecord{raw,envTime}; prefer numeric "time" unix-secs, fall back to fields.recorded
+       RFC3339) and handle() sets audit.Event.EventTime=envTime only when the record's own EventTime
+       IsZero (never overrides a real time; flow records ignore it). TDD'd in internal/stream.
      - Bodies arrive Transfer-Encoding: chunked (Go net/http decodes transparently; only the
        throwaway python capture server needed manual chunk decoding).
      NOT verified live: S4-9(2) poll+stream cross-dedup (would need both running simultaneously;
@@ -654,4 +661,50 @@ SESSION 5 NET: §7 driven to EMPTY. S4-9, S4-10, S4-11(a–e), Helm config-docs 
   OAuth; documented in config.example.yaml + Helm comments. (NOT enforcing oauth-only.)
   Commits HELD/unpushed per user — push pending confirm. Only deferral: S4-9(2) poll+stream
   cross-dedup LIVE check (mechanism unit-tested).
+
+--------------------------------------------------------------------------------
+H8. SESSION 6 LOG + LEARNINGS (2026-06-03 continued: S4-10 audit-timestamp fidelity)
+--------------------------------------------------------------------------------
+Goal: implement the one pure-code residual deferral — the S4-10 audit-timestamp
+fidelity gap (streamed CONFIG audit events have NO inner eventTime; the time is the
+HEC envelope "time"/"fields.recorded", siblings of "event"; the receiver gave them
+the OTEL ingest time). Strict TDD; module kept green; commit a green state (unpushed).
+
+WHAT CHANGED:
+  - internal/stream/stream.go: the parser now carries an envelope timestamp with each
+    record. extractRecords returns []extractedRecord{raw,envTime}; unwrap takes an
+    `inherited time.Time` and propagates the enclosing HEC/batch wrapper's time down to
+    BOTH the {"event":...} and {"logs":[...]} shapes (the logs branch was the one review
+    finding — see below). New envelope fields Time+Fields are json.RawMessage so a
+    malformed/odd shape can NEVER fail the whole envelope decode (parser stays defensive).
+    envelopeTime() prefers the numeric "time" (unix-secs float → UTC) and falls back to
+    fields.recorded (RFC3339); parseHECTime tolerates number OR quoted-string, rejects
+    null/≤0/unparseable. handle() sets ev.EventTime=rec.envTime ONLY when
+    ev.EventTime.IsZero() && !rec.envTime.IsZero() → never overrides a real eventTime
+    (poll records always have one); flow records ignore envTime (they carry start/end).
+  - internal/telemetrytest/recorder.go: LogRecord gained a Timestamp field (surfaces
+    sdklog.Record.Timestamp()) so the emitted log-record time is assertable.
+  - 4 new stream tests (TDD; the 3 driver tests failed first with "timestamp is zero"):
+    HEC "time" → audit EventTime; inner eventTime WINS over envelope (guards "only when
+    zero"); fields.recorded fallback; and the {"time","logs":[...]} wrapper path.
+  Whole module GREEN: go build/vet/gofmt/test-race all pass. Updated the stale "known
+  minor gap" wording in stream.go pkg-doc + the stream_test fixture comment.
+
+ADVERSARIAL REVIEW (4-lens find→refute-by-default workflow: correctness/regression,
+  dedup-semantics/D11, defensive-parsing, test-quality): 1 candidate, 1 CONFIRMED + fixed
+  (TDD) — the {"logs":[...]} batch-wrapper branch passed `inherited` (zero at top level)
+  instead of the envelope's own time, dropping it for that defensive shape (inconsistent
+  with the {"event":...} branch). Fix: hoist `t := env.envelopeTime()` above both branches.
+  The dedup-semantics lens refuted any D11 risk: a zero EventTime never matched poll's real
+  eventTime either, so this does not regress dedup.
+
+KEY INSIGHT for the still-DEFERRED S4-9(2) (poll+stream audit cross-dedup): audit.DedupKey
+  is "<eventGroupID>|<EventTime RFC3339Nano>". A poll audit event's eventTime is ns-precision;
+  a streamed one's is now the HEC "time" (ms-precision float) or fields.recorded — NOT the
+  same value/precision. So even after this fix the stream key likely WON'T equal the poll key,
+  i.e. poll↔stream audit cross-dedup probably does NOT actually suppress cross-source dups
+  today (the dedup_test.go cases all feed an IDENTICAL event object twice, so they pass but
+  don't exercise the cross-source precision mismatch). S4-9(2) must verify this live and, if
+  confirmed, the audit dedup key likely needs to drop/round the timestamp (D11-sensitive →
+  evidence first). This change is orthogonal (log-record fidelity) and does not address it.
 ================================================================================

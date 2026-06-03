@@ -11,6 +11,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -35,8 +36,9 @@ type MetricPoint struct {
 type LogRecord struct {
 	Body         string
 	SeverityText string
-	EventName    string // the OTLP LogRecord EventName field (native, log v0.20.0+)
-	Severity     int    // OTEL log severity value
+	EventName    string    // the OTLP LogRecord EventName field (native, log v0.20.0+)
+	Severity     int       // OTEL log severity value
+	Timestamp    time.Time // the LogRecord Timestamp (zero when the emitter left it unset)
 	Attrs        map[string]string
 }
 
@@ -205,6 +207,7 @@ func flattenLogRecord(rec sdklog.Record) LogRecord {
 		SeverityText: rec.SeverityText(),
 		EventName:    rec.EventName(),
 		Severity:     int(rec.Severity()),
+		Timestamp:    rec.Timestamp(),
 		Attrs:        attrs,
 	}
 }
