@@ -405,6 +405,7 @@ P3  [REMAINING — session 3, BIG] NOTE: the lab tailnet ALREADY exposes tailsca
       has this today subject to it being enabled on the tailnet and ACLs set up (research first)
       and our collector can act as a prometheus scraper then transform to OTEL and send all
       the tailscale node metrics centrally. Match the configured default scrape interval.
+      I have disabled scraping on your approved test environment so you can avoid seeing all the old data.
 
 P4  [DONE session 2] Default OTLP push interval changed 30s -> 60s (config/defaults.go;
     config.example.yaml still shows 30s — update it in session 3). Collector intervals
