@@ -19,8 +19,10 @@ stream, and key-expiry signals out of the box.
 - **Configuration audit logs → logs + counter.**
 - **Device inventory, users, keys, settings, ACL, DNS** → gauges (online status, key expiry,
   per-user device counts, feature toggles, …).
-- **Two ingestion paths for logs:** poll the API, or receive Tailscale's **log streaming** via a
-  built-in Splunk-HEC-compatible receiver — both feed the same conversion pipeline.
+- **Two ingestion paths for logs (pick one):** poll the API, or receive Tailscale's **log
+  streaming** via a built-in Splunk-HEC-compatible receiver — both feed the same conversion
+  pipeline. Choose one method per log type; running both is a discouraged fallback guarded by a
+  best-effort de-dup failsafe (see below).
 - **Optional webhook receiver** for real-time Tailscale events (HMAC-verified).
 - **Optional node-metrics scraper** that forwards `tailscaled` per-node Prometheus `/metrics`
   centrally over OTLP (counters as deltas, gauges as gauges), as a drop-in for per-node scraping.
@@ -81,8 +83,11 @@ the Basic-auth header is built for you. For a self-hosted Collector/Alloy, use `
 | `dns` | 600s | nameserver / search-path / split-zone counts, MagicDNS flag |
 | `node_metrics` | 60s | **(opt-in)** scrapes configured `tailscaled` `/metrics` endpoints, forwarding counters as deltas and gauges with an `instance` label + a per-target `tailscale.node.up` |
 
-Each collector can be disabled or re-tuned in config. `flowlogs`/`auditlogs` can be sourced from
-`poll`, `stream`, or `both`. `node_metrics` is off by default and disabled when no targets are set.
+Each collector can be disabled or re-tuned in config. `flowlogs`/`auditlogs` take a `source` of
+`poll`, `stream`, or `both` — **pick one method per log type** (`poll` *or* `stream`). `both` (and
+enabling `streaming` while a collector still polls) risks double-counting; cross-source de-dup is a
+best-effort failsafe and the exporter WARNs at startup when it sees this. `node_metrics` is off by
+default and disabled when no targets are set.
 
 ## Dashboards & metrics reference
 
@@ -98,8 +103,11 @@ Each collector can be disabled or re-tuned in config. `flowlogs`/`auditlogs` can
 
 Set a log collector's `source: stream` and enable the `streaming` receiver to have Tailscale push
 logs to this service as a Splunk-HEC sink (ideally over a private endpoint inside your tailnet,
-using a `tailscale cert` for HTTPS). Enable the `webhook` receiver to ingest real-time Tailscale
-events. Both are off by default.
+using a `tailscale cert` for HTTPS). When you do this, set `source: stream` (not `poll`/`both`) so
+each log type is ingested by exactly one path — running the poller and the receiver for the same
+log type risks double-counting, and cross-source de-dup is only a best-effort failsafe (the exporter
+WARNs at startup if both are active). Enable the `webhook` receiver to ingest real-time Tailscale
+events. All receivers are off by default.
 
 Set `streaming.auto_configure: true` (with `streaming.enabled: true`, a `streaming.public_url`, and
 an OAuth client carrying the `log_streaming` scope) to have the service register itself as the

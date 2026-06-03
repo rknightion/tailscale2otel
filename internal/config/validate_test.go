@@ -35,6 +35,47 @@ func TestWarnings_APIKeyMethodAdvises(t *testing.T) {
 	}
 }
 
+// TestWarnings_DualIngestionRisk pins the advisory that steers operators to a
+// single log-ingestion method. When the stream receiver is enabled AND a log
+// collector still polls, the same data can arrive twice; cross-source de-dup is
+// only a best-effort failsafe, so Warnings() must flag the risk (and not flag a
+// stream-only collector, nor anything when streaming is off).
+func TestWarnings_DualIngestionRisk(t *testing.T) {
+	// streaming OFF => no dual-ingestion warning even with source=both.
+	c := config.Default()
+	c.Streaming.Enabled = false
+	c.Collectors.Flowlogs.Source = "both"
+	for _, w := range c.Warnings() {
+		if strings.Contains(strings.ToLower(w), "ingest") {
+			t.Fatalf("unexpected dual-ingestion warning while streaming is off: %q", w)
+		}
+	}
+
+	// streaming ON + auditlogs=both, flowlogs=stream => warn for audit only.
+	c = config.Default()
+	c.Streaming.Enabled = true
+	c.Collectors.Auditlogs.Source = "both"
+	c.Collectors.Flowlogs.Source = "stream"
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "auditlogs") {
+		t.Fatalf("want a dual-ingestion warning naming auditlogs; got %q", w)
+	}
+	if !strings.Contains(strings.ToLower(w), "failsafe") {
+		t.Errorf("dual-ingestion advisory should describe de-dup as a failsafe; got %q", w)
+	}
+	if strings.Contains(w, "flowlogs") {
+		t.Errorf("flowlogs source=stream is single-method and must NOT warn; got %q", w)
+	}
+
+	// streaming ON + default (poll) sources => warn for BOTH flow and audit.
+	c = config.Default()
+	c.Streaming.Enabled = true
+	w = strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "flowlogs") || !strings.Contains(w, "auditlogs") {
+		t.Fatalf("streaming on + polling collectors should warn for both flow and audit; got %q", w)
+	}
+}
+
 func TestValidateRejectsBadProtocol(t *testing.T) {
 	err := loadErr(t, "otlp:\n  protocol: carrier-pigeon\n")
 	if err == nil {

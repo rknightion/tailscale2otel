@@ -85,18 +85,39 @@ func NewProcessor(opts ...Option) *Processor {
 	return p
 }
 
-// DedupKey derives a stable de-duplication key for a single audit event. It is
-// the single home for the key formula shared by the auditlogs collector and the
-// processor's cross-component de-dup. When the event carries an eventGroupID it
-// identifies a logical change, so the key is "<eventGroupID>|<eventTime>". When
-// the eventGroupID is empty the key instead combines the event time with the
-// action and target ID, so distinct events sharing a timestamp are not
-// collapsed into one.
+// DedupKey derives the key for the PROCESSOR's cross-source (poll<->stream)
+// de-dup set (see Process, wired via WithDedup). It is SEPARATE from the
+// auditlogs collector's window-boundary de-dup, which uses its own time-based
+// eventKey() (internal/collector/auditlogs): at a poll-window boundary the SAME
+// event reappears with the SAME eventTime, so a time-based key is correct there
+// and avoids the tradeoff below. The two formulas are intentionally different.
+//
+// When the event carries an eventGroupID (every real audit event does) the key
+// is the SOURCE-INDEPENDENT identity "<eventGroupID>|<action>|<target.id>|
+// <target.property>" — deliberately TIME-FREE. A streamed audit record has no
+// inner eventTime (it is timed from the millisecond HEC envelope) while a polled
+// one carries the API's nanosecond eventTime, so any timestamp component would
+// never match across the poll and stream paths (verified live; S4-9(2)). Within
+// one eventGroupID each (action, target, property) is a distinct sub-change
+// (verified unique across a real 70-event capture), so dropping the timestamp
+// does NOT over-suppress distinct events in practice (D11). TRADEOFF (accepted):
+// because this set processes every event (poll-only included), two events sharing
+// (eventGroupID, action, target.id, property) at DIFFERENT times would collapse
+// to one — they shouldn't occur within a single logical operation, but it is not
+// API-guaranteed (pinned by TestProcessSharedDedupSamePropertyTwiceCollapses).
+// This cross-source de-dup is a best-effort FAILSAFE: the SUPPORTED setup is to
+// pick ONE ingestion method per log type (collectors.auditlogs.source /
+// streaming.enabled); the app warns at startup when both are active.
+//
+// When the eventGroupID is empty (a defensive fallback — not seen in practice)
+// the key combines the event time with the action and target ID so distinct
+// events sharing a timestamp are not collapsed; such events do not de-dup across
+// sources (no group to scope a time-free identity).
 func DedupKey(ev Event) string {
-	t := ev.EventTime.UTC().Format(time.RFC3339Nano)
 	if ev.EventGroupID != "" {
-		return ev.EventGroupID + "|" + t
+		return ev.EventGroupID + "|" + ev.Action + "|" + ev.Target.ID + "|" + ev.Target.Property
 	}
+	t := ev.EventTime.UTC().Format(time.RFC3339Nano)
 	return t + "|" + ev.Action + "|" + ev.Target.ID
 }
 

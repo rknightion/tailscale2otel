@@ -191,7 +191,11 @@ config:
     flowlogs:
       # -- Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs).
       enabled: true
-      # -- Ingestion source: poll | stream | both (stream uses the receiver under `streaming`).
+      # -- Ingestion source: poll | stream | both. PICK ONE method per log type: `both`
+      # runs poll AND the `streaming` receiver and risks double-counting — cross-source
+      # de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter logs a WARN
+      # at startup when streaming is enabled while this collector still polls. Set `stream`
+      # (not poll/both) when config.streaming.enabled is true.
       source: poll
       # -- Poll interval.
       interval: 60s
@@ -210,7 +214,9 @@ config:
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true
-      # -- Ingestion source: poll | stream | both.
+      # -- Ingestion source: poll | stream | both. Pick ONE method per log type (see
+      # flowlogs.source): `both` risks double-counting and de-dup is only a best-effort
+      # failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true.
       source: poll
       # -- Poll interval.
       interval: 60s
@@ -267,7 +273,10 @@ config:
     # -- Checkpoint file path when store: file (mount a writable volume here).
     file_path: "/var/lib/tailscale2otel/checkpoints.json"
 
-  # Optional Splunk-HEC-compatible receiver for streamed logs (set a collector's source to stream).
+  # Optional Splunk-HEC-compatible receiver for streamed logs. When enabled, set the
+  # flowlogs/auditlogs source to `stream` (NOT poll/both) so each log type is ingested by
+  # exactly ONE path; running both the poller and this receiver for the same log type risks
+  # double-counting (cross-source de-dup is a best-effort failsafe, WARNed at startup).
   streaming:
     # -- Enable the HEC-style streaming receiver.
     enabled: false
