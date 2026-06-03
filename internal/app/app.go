@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/stream"
@@ -22,6 +23,15 @@ import (
 )
 
 const heartbeatInterval = 15 * time.Second
+
+// Dedup-set capacities for the shared cross-source de-duplication carried by the
+// flow and audit processors. They bound memory while comfortably covering the
+// overlap window between the poll collectors and the streaming receiver (which
+// share one processor each). Flow windows are higher-volume than audit events.
+const (
+	flowDedupCapacity  = 16384
+	auditDedupCapacity = 4096
+)
 
 // App is the assembled, runnable service.
 type App struct {
@@ -84,6 +94,9 @@ func newApp(
 	client *tsapi.Client,
 	store collector.CheckpointStore,
 ) *App {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	a := &App{
 		cfg:      cfg,
 		emitter:  emitter,
@@ -100,8 +113,13 @@ func newApp(
 		a.restore = telemetry.InstallExportErrorHandler(emitter)
 		telemetry.EmitBuildInfo(emitter, version, runtime.Version())
 	}
-	a.flowProc = flowlog.NewProcessor(a.cache, flowOptions(cfg))
-	a.auditProc = audit.NewProcessor()
+	// Shared cross-source de-duplication: the same flow window / audit event can
+	// arrive from both the poll collector and the streaming receiver, which share
+	// one processor each, so a dedup set on the processor suppresses the repeat.
+	fopts := flowOptions(cfg)
+	fopts.Dedup = dedup.New(flowDedupCapacity)
+	a.flowProc = flowlog.NewProcessor(a.cache, fopts)
+	a.auditProc = audit.NewProcessor(audit.WithDedup(dedup.New(auditDedupCapacity)))
 	a.registerCollectors()
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
@@ -126,6 +144,9 @@ func (a *App) Run(ctx context.Context) error {
 				a.logger.Error("stream receiver stopped", "error", err)
 			}
 		}()
+		if a.cfg.Streaming.AutoConfigure {
+			a.autoConfigureStreaming(ctx)
+		}
 	}
 	if a.webhookSrv != nil {
 		go func() {
@@ -154,6 +175,26 @@ func (a *App) Run(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return errors.Join(schedErr, a.shutdown(shutdownCtx))
+}
+
+// autoConfigureStreaming registers this receiver as a Splunk-HEC log-streaming
+// sink for both log types via the Tailscale API. It is gated by
+// streaming.auto_configure (off by default) and best-effort: a failure is logged
+// and does not stop startup. It is only ever called when streaming is enabled and
+// public_url is set (enforced by config validation).
+func (a *App) autoConfigureStreaming(ctx context.Context) {
+	sink := tsapi.LogStreamConfig{
+		DestinationType: "splunk",
+		URL:             a.cfg.Streaming.PublicURL,
+		Token:           a.cfg.Streaming.Token,
+	}
+	for _, logType := range []string{"network", "configuration"} {
+		if err := a.client.ConfigureLogStream(ctx, logType, sink); err != nil {
+			a.logger.Error("streaming auto_configure failed", "log_type", logType, "error", err)
+			continue
+		}
+		a.logger.Info("streaming auto_configure registered sink", "log_type", logType, "url", sink.URL)
+	}
 }
 
 func checkpointStore(cfg *config.Config) (collector.CheckpointStore, error) {

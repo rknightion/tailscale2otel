@@ -117,3 +117,58 @@ func TestValidateAllowsEmptyCollectorSource(t *testing.T) {
 		t.Errorf("empty source on users collector should be valid: %v", err)
 	}
 }
+
+func TestValidateAutoConfigureRequiresEnabled(t *testing.T) {
+	const y = "streaming:\n  enabled: false\n  auto_configure: true\n  public_url: https://recv.example\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: auto_configure without enabled")
+	}
+	if !strings.Contains(err.Error(), "auto_configure") || !strings.Contains(err.Error(), "enabled") {
+		t.Errorf("error %q should mention auto_configure + enabled", err.Error())
+	}
+}
+
+func TestValidateAutoConfigureRequiresPublicURL(t *testing.T) {
+	const y = "streaming:\n  enabled: true\n  auto_configure: true\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: auto_configure without public_url")
+	}
+	if !strings.Contains(err.Error(), "public_url") {
+		t.Errorf("error %q should mention public_url", err.Error())
+	}
+}
+
+func TestValidateAutoConfigureValidWhenComplete(t *testing.T) {
+	const y = "streaming:\n  enabled: true\n  auto_configure: true\n  public_url: https://recv.example/services/collector/event\n  token: tok\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("complete auto_configure should be valid: %v", err)
+	}
+}
+
+func TestValidateNodeMetricsRequiresTargetURL(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n      - instance: nodeA\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: enabled node_metrics target without url")
+	}
+	if !strings.Contains(err.Error(), "node_metrics") || !strings.Contains(err.Error(), "url") {
+		t.Errorf("error %q should mention node_metrics + url", err.Error())
+	}
+}
+
+func TestValidateNodeMetricsDisabledIgnoresTargets(t *testing.T) {
+	// A disabled scraper with an empty-URL target must not fail validation.
+	const y = "collectors:\n  node_metrics:\n    enabled: false\n    targets:\n      - instance: nodeA\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("disabled node_metrics should not validate targets: %v", err)
+	}
+}
+
+func TestValidateNodeMetricsValidWithURL(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n      - url: http://100.64.0.1:5252/metrics\n        instance: nodeA\n        labels: { role: relay }\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("node_metrics with a url should be valid: %v", err)
+	}
+}

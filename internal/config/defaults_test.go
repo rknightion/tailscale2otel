@@ -141,3 +141,60 @@ func TestDefaultIsValid(t *testing.T) {
 		t.Fatalf("Default() should be valid: %v", err)
 	}
 }
+
+func TestNodeMetricsDefaults(t *testing.T) {
+	cfg := config.Default()
+	nm := cfg.Collectors.NodeMetrics
+	if nm.Enabled {
+		t.Errorf("NodeMetrics.Enabled = true, want default false")
+	}
+	if nm.Interval.D() != 60*time.Second {
+		t.Errorf("NodeMetrics.Interval = %v, want default 60s", nm.Interval.D())
+	}
+	if nm.Timeout.D() != 10*time.Second {
+		t.Errorf("NodeMetrics.Timeout = %v, want default 10s", nm.Timeout.D())
+	}
+	if len(nm.Targets) != 0 {
+		t.Errorf("NodeMetrics.Targets = %v, want empty by default", nm.Targets)
+	}
+}
+
+func TestNodeMetricsTargetsParse(t *testing.T) {
+	const y = `
+collectors:
+  node_metrics:
+    enabled: true
+    interval: 30s
+    targets:
+      - url: http://100.64.0.1:5252/metrics
+        instance: nodeA
+        labels:
+          role: relay
+      - url: http://100.64.0.2:5252/metrics
+`
+	p := writeTemp(t, y)
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	nm := cfg.Collectors.NodeMetrics
+	if !nm.Enabled || nm.Interval.D() != 30*time.Second {
+		t.Fatalf("node_metrics enabled/interval = %v/%v", nm.Enabled, nm.Interval.D())
+	}
+	// Interval set, Timeout omitted -> default preserved.
+	if nm.Timeout.D() != 10*time.Second {
+		t.Errorf("NodeMetrics.Timeout = %v, want default 10s preserved", nm.Timeout.D())
+	}
+	if len(nm.Targets) != 2 {
+		t.Fatalf("targets = %d, want 2", len(nm.Targets))
+	}
+	if nm.Targets[0].URL != "http://100.64.0.1:5252/metrics" || nm.Targets[0].Instance != "nodeA" {
+		t.Errorf("target0 = %+v", nm.Targets[0])
+	}
+	if nm.Targets[0].Labels["role"] != "relay" {
+		t.Errorf("target0 labels = %v", nm.Targets[0].Labels)
+	}
+	if nm.Targets[1].URL != "http://100.64.0.2:5252/metrics" {
+		t.Errorf("target1 = %+v", nm.Targets[1])
+	}
+}

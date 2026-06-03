@@ -107,14 +107,36 @@ type CardinalityConfig struct {
 
 // Collectors groups the per-collector configurations.
 type Collectors struct {
-	Devices   CollectorConfig `yaml:"devices"`
-	Flowlogs  CollectorConfig `yaml:"flowlogs"`
-	Auditlogs CollectorConfig `yaml:"auditlogs"`
-	Users     CollectorConfig `yaml:"users"`
-	Keys      CollectorConfig `yaml:"keys"`
-	Settings  CollectorConfig `yaml:"settings"`
-	Acl       CollectorConfig `yaml:"acl"`
-	Dns       CollectorConfig `yaml:"dns"`
+	Devices     CollectorConfig   `yaml:"devices"`
+	Flowlogs    CollectorConfig   `yaml:"flowlogs"`
+	Auditlogs   CollectorConfig   `yaml:"auditlogs"`
+	Users       CollectorConfig   `yaml:"users"`
+	Keys        CollectorConfig   `yaml:"keys"`
+	Settings    CollectorConfig   `yaml:"settings"`
+	Acl         CollectorConfig   `yaml:"acl"`
+	Dns         CollectorConfig   `yaml:"dns"`
+	NodeMetrics NodeMetricsConfig `yaml:"node_metrics"`
+}
+
+// NodeMetricsConfig configures the optional node-local metrics scraper, which
+// scrapes a configured list of Prometheus-text /metrics endpoints (e.g.
+// tailscaled per-node metrics) and re-emits them centrally. It is off by
+// default and disabled when no targets are configured. Node identity is carried
+// as the "instance" label, not as an OTEL Resource.
+type NodeMetricsConfig struct {
+	Enabled  bool                `yaml:"enabled"`
+	Interval Duration            `yaml:"interval"`
+	Timeout  Duration            `yaml:"timeout"`
+	Targets  []NodeMetricsTarget `yaml:"targets"`
+}
+
+// NodeMetricsTarget is a single Prometheus-text endpoint to scrape. Instance
+// overrides the default host:port "instance" label; Labels are passthrough
+// attributes merged onto every series from this target.
+type NodeMetricsTarget struct {
+	URL      string            `yaml:"url"`
+	Instance string            `yaml:"instance"`
+	Labels   map[string]string `yaml:"labels"`
 }
 
 // CollectorConfig is the union of all per-collector options. Not every field
@@ -140,13 +162,19 @@ type CheckpointConfig struct {
 
 // StreamingConfig configures the HEC-style streaming receiver.
 type StreamingConfig struct {
-	Enabled       bool         `yaml:"enabled"`
-	Listen        string       `yaml:"listen"`
-	Path          string       `yaml:"path"`
-	Token         string       `yaml:"token"`
-	TLS           StreamingTLS `yaml:"tls"`
-	Decompress    string       `yaml:"decompress"`
-	AutoConfigure bool         `yaml:"auto_configure"`
+	Enabled bool   `yaml:"enabled"`
+	Listen  string `yaml:"listen"`
+	Path    string `yaml:"path"`
+	Token   string `yaml:"token"`
+	// PublicURL is the externally reachable URL Tailscale should POST logs to
+	// (this receiver's public endpoint). Required only when AutoConfigure is on,
+	// since it is the sink URL registered with Tailscale.
+	PublicURL  string       `yaml:"public_url"`
+	TLS        StreamingTLS `yaml:"tls"`
+	Decompress string       `yaml:"decompress"`
+	// AutoConfigure, when true, PUTs this receiver as a Splunk-HEC log-streaming
+	// sink on startup (requires Enabled and PublicURL). Off by default.
+	AutoConfigure bool `yaml:"auto_configure"`
 }
 
 // StreamingTLS configures TLS for the streaming receiver.

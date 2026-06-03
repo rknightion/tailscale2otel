@@ -17,6 +17,7 @@ tailscale:
   http:
     timeout: 30s
     retry: { max_attempts: 4, base_delay: 500ms, max_delay: 10s }
+    rate_limit: 0                    # global requests/sec across all collectors (0 = unlimited)
 
 otlp:
   protocol: http                     # http | grpc | stdout (stdout = local debug)
@@ -27,7 +28,7 @@ otlp:
     token: "${GC_OTLP_TOKEN}"
   headers: {}                        # extra raw headers (alternative to grafana_cloud)
   tls: { insecure: false, ca_file: "", cert_file: "", key_file: "" }
-  metric_interval: 30s               # how often metrics are pushed
+  metric_interval: 60s               # how often metrics are pushed (aligned with the default 60s scrape cadence)
 
 enrichment:
   cache_ttl: 5m                      # staleness alarm threshold for the device cache
@@ -47,6 +48,18 @@ collectors:
   settings:  { enabled: true, interval: 600s }
   acl:       { enabled: true, interval: 600s }
   dns:       { enabled: true, interval: 600s }
+  # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
+  # them centrally over OTLP (counters as deltas, gauges as gauges, plus a per-target
+  # tailscale.node.up gauge). Node identity is carried as the "instance" label, not an
+  # OTEL Resource. Off by default; disabled when no targets are configured.
+  node_metrics:
+    enabled: false
+    interval: 60s
+    timeout: 10s
+    targets: []
+      # - url: "http://100.64.0.10:5252/metrics"
+      #   instance: "relay-1"          # defaults to the URL host:port if omitted
+      #   labels: { role: "relay" }    # extra static labels merged onto every series
 
 checkpoint:
   store: memory                      # memory | file
@@ -58,8 +71,11 @@ streaming:
   listen: ":8088"
   path: "/services/collector/event"
   token: "${TS_STREAM_HEC_TOKEN}"    # expected as 'Authorization: Splunk <token>'
+  public_url: ""                     # externally reachable receiver URL; REQUIRED when auto_configure: true
   tls: { cert_file: "", key_file: "" }   # HTTPS is required by Tailscale; a `tailscale cert` works for private endpoints
   decompress: auto                   # auto | gzip | zstd | none
+  # PUT this receiver as a Splunk-HEC log-streaming sink on startup. Needs enabled:
+  # true, public_url, and an OAuth client with the log_streaming scope. Off by default.
   auto_configure: false
 
 # Optional webhook receiver for real-time Tailscale events.
@@ -71,3 +87,8 @@ webhook:
 
 self_observability:
   enabled: true                      # emit the exporter's own health metrics
+
+# Always-on admin HTTP server for liveness/readiness probes (carries no Tailscale data).
+admin:
+  enabled: false
+  listen: ":9090"                    # serves /healthz and /readyz

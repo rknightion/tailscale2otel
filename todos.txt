@@ -26,9 +26,13 @@ LOGS all arrive in Mimir + Loki; self-obs (scrape/api/build_info/cache) present;
 feature.enabled=1; DERP latency + routes emitted; flow throughput cross-checks
 (~66 KB/s); /healthz=200; graceful exit 0. Real testing FOUND AND FIXED 4
 production-breaking bugs (see section 9).
-REMAINING (for session 3): P1-1 dashboards, P1-2 streaming auto_configure, P1-4
-stream/webhook<->audit dedup, P2-1 leftover lint, docs/metrics.md, P2-4 per-device
-Resource, P3 node-local metrics, P5 flow nodeId->hostname enrichment. See section 7.
+SESSION 3 (2026-06-03): ALL remaining actionable items DONE. P1-1 dashboards, P1-2
+streaming auto_configure (PUT + wiring; live-capture pinning still deliberately
+skipped), P1-4 cross-component dedup, P2-1 lint, P2-2 docs/metrics.md, P3 node-local
+metrics scraper, P4 config.example.yaml, P5 flow nodeId->hostname all DONE and green
+(go build/vet/gofmt/test -race ./... all pass; binary smoke-tested). P2-4 per-device
+Resource is now a CLOSED DECISION: kept deferred (see P2-4 below for rationale). Only
+P2-6 (blocked by pinned SDK) remains, by design. See section 10 for the session-3 log.
 
 --------------------------------------------------------------------------------
 1. CRITICAL CONTEXT FOR ANY LLM CONTINUING THIS
@@ -320,7 +324,10 @@ P0-5  [DONE session 2 — .github/workflows/ci.yml + release.yml]. CI: .github/w
       non-empty), `go test -race ./...`, and `govulncheck`. Add a release workflow
       (goreleaser or docker buildx) building the image from deploy/Dockerfile.
 
-P1-1  [REMAINING — session 3, HIGH VALUE] now buildable against live data (gcx context
+P1-1  [DONE session 3 — deploy/grafana/{tailscale-fleet,tailscale-network,tailscale-audit-events,
+      tailscale-exporter-health}.json (Grafana 13, DS_PROM/DS_LOKI vars, dynamic multi-value
+      variables) + deploy/grafana/README.md + README references]. Original notes:
+      now buildable against live data (gcx context
       `example`, default prom ds `grafanacloud-prom`, loki `grafanacloud-logs`; metric
       names are OTLP-normalized, e.g. tailscale.network.io -> tailscale_network_io_bytes_total,
       unit-1 gauges get a _ratio suffix e.g. tailscale_device_online_ratio).
@@ -331,7 +338,12 @@ P1-1  [REMAINING — session 3, HIGH VALUE] now buildable against live data (gcx
       with the gcx create-dashboard tooling. Update README to reference it. Make heavy
       use of Grafana 13's Dynamic Dashboards functionality.
 
-P1-2  [PARTIAL — session 3] stream parser hardened + realistic fixtures (numeric proto,
+P1-2  [DONE session 3 — auto_configure PUT implemented (tsapi.ConfigureLogStream +
+      putJSON; retry transport now rewinds the body via GetBody) and wired in app
+      (App.autoConfigureStreaming, gated by streaming.auto_configure, requires
+      streaming.enabled + public_url, validated). LIVE-CAPTURE pinning STILL skipped by
+      design — never reconfigures the lab tailnet's streaming]. Original notes:
+      stream parser hardened + realistic fixtures (numeric proto,
       polymorphic audit) added; LIVE-CAPTURE pinning intentionally SKIPPED (must NOT touch
       the lab tailnet's streaming config). STILL TODO: streaming.auto_configure PUT
       /tailnet/{tailnet}/logging/{type}/stream (off by default; add tsapi method + app wiring).
@@ -352,7 +364,12 @@ P1-3  [DONE session 2] MISSING DATA SOURCES — user-invites (tailscale.user_inv
       - acl.rules per-section counts: parse RawACL.HuJSON with github.com/tailscale/hujson
         and emit tailscale.acl.rules {tailscale.acl.section}. (Currently only acl.size.)
 
-P1-4  [REMAINING — session 3] NOTE: poll-window boundary dedup IS done (P0-3, per-collector).
+P1-4  [DONE session 3 — optional shared dedup.Set on BOTH processors: audit (WithDedup +
+      exported DedupKey) and flowlog (Options.Dedup, FlowLog-window keyed; flow records are
+      immutable once their window closes so window-granularity dedup is safe). App wires one
+      shared set per processor (flow cap 16384, audit cap 4096) so poll + stream don't
+      double-count. Webhook<->audit cross-dedup is best-effort/not covered: webhook events do
+      not flow through audit.Processor and may lack eventGroupID]. NOTE: poll-window boundary dedup IS done (P0-3, per-collector).
       What remains is CROSS-component dedup. Because the app shares ONE flowProc/auditProc
       between the poll collectors AND the stream receiver, the cleanest fix is an optional
       shared dedup.Set on the PROCESSORS (keyed by eventGroupID|eventTime for audit). Webhook
@@ -376,23 +393,43 @@ P1-6  [DONE session 2 — global stdlib token-bucket rate limiter as the OUTERMO
       transport honors Retry-After. Validate under a large tailnet; consider a global
       rate limiter across collectors.
 
-P2-1  [PARTIAL] DONE: maps.Copy (app/options.go), strings.SplitSeq (stream+webhook),
+P2-1  [DONE session 3 — config/validate.go oneOf now uses slices.Contains; telemetrytest
+      recorder metric-attr rendering uses attribute.Value.String() (the non-deprecated
+      replacement for the deprecated .Emit(); identical output for our scalar attrs); also
+      maps.Copy in flowlog dirAttrs and strings.CutSuffix in the nodemetrics parser]. Earlier:
+      DONE: maps.Copy (app/options.go), strings.SplitSeq (stream+webhook),
       removed dead logOff const. REMAINING (minor): slices.Contains in
       internal/config/validate.go + telemetrytest test; deprecated kv.Value.Emit() in
       internal/telemetrytest/recorder.go (use .String()) — NOTE recorder is a SHARED test
       dep imported by ~everything, so change it ALONE (not concurrently with a swarm) and
       run the FULL `go test -race ./...` to catch attr-rendering regressions.
-P2-2  [PARTIAL] Helm chart + docker-compose DONE. REMAINING: docs/metrics.md (a metrics
-      reference doc — author from the as-built catalog in section 5 + the new metrics).
+P2-2  [DONE session 3 — docs/metrics.md authored: naming conventions + OTLP->Prom
+      normalization rules, full metrics table, log-events table, node-metrics scraper
+      section, cross-source dedup note, and Grafana PromQL/LogQL query examples]. Helm
+      chart + docker-compose were already DONE in session 2.
 P2-3  [DONE session 2] build_info metric (tailscale2otel.build_info {service.version,go.version})
       + always-on admin server (config `admin: {enabled,listen}`) serving /healthz + /readyz.
-P2-4  [REMAINING] Per-device Resource option (D4 alternative). Deferred — significant
-      data-model change (OTEL metrics have one Resource per MeterProvider; per-device
-      Resource needs per-device providers or resource-attr handling). Gate OFF by default.
+P2-4  [DEFERRED — CLOSED DECISION, session 3 (user-confirmed)]. Per-device Resource
+      (D4 alternative) will NOT be implemented. Rationale: OTEL metrics have exactly one
+      Resource per MeterProvider, so true per-device Resource requires N per-device
+      MeterProviders/readers (86 on the lab tailnet) plus a target_info series per device =
+      churn/cost on Grafana Cloud, for ~zero new capability — device identity is ALREADY on
+      every metric as attributes (host.name/host.id/os.type/os.version/tailscale.user via
+      D4), which already supports per-device filter/group/alert. The user separately wanted
+      node-level metrics in OTEL; that is delivered by P3 (node-metrics scraper, label-based
+      "instance" identity), NOT by per-device Resource. If a host-centric Entity-Graph view is
+      ever needed, revisit then. (Was: significant data-model change, gated off by default.)
 P2-6  [BLOCKED — not actionable] pinned OTEL log SDK v0.6.0 has NO Record.EventName field;
       we carry it as the "event.name" attribute. Revisit only if the SDK is upgraded.
 
-P3  [REMAINING — session 3, BIG] NOTE: the lab tailnet ALREADY exposes tailscaled_*
+P3  [DONE session 3 — internal/collector/nodemetrics: gated SnapshotCollector that scrapes
+      a CONFIGURED list of Prometheus-text /metrics endpoints (config collectors.node_metrics
+      {enabled,interval,timeout,targets:[{url,instance,labels}]}) and re-emits VERBATIM names
+      via the Emitter — counters (and histogram/summary _bucket/_sum/_count) as DELTAS with
+      reset handling, gauges as gauges, plus a per-target tailscale.node.up gauge. Node
+      identity is the "instance" LABEL (user-confirmed: NOT per-node Resource), single
+      MeterProvider. Stdlib-only Prometheus text parser. Off by default; disabled with no
+      targets. App registers it when enabled && len(targets)>0]. NOTE: the lab tailnet ALREADY exposes tailscaled_*
       metrics in Grafana (some existing scraper), so there is real precedent/value.
       Design: a new gated collector (internal/collector/nodemetrics) that scrapes a
       CONFIGURED list of Prometheus /metrics endpoints (no tailnet auto-discovery from
@@ -407,11 +444,16 @@ P3  [REMAINING — session 3, BIG] NOTE: the lab tailnet ALREADY exposes tailsca
       the tailscale node metrics centrally. Match the configured default scrape interval.
       I have disabled scraping on your approved test environment so you can avoid seeing all the old data.
 
-P4  [DONE session 2] Default OTLP push interval changed 30s -> 60s (config/defaults.go;
-    config.example.yaml still shows 30s — update it in session 3). Collector intervals
+P4  [DONE session 2 + session 3] Default OTLP push interval changed 30s -> 60s
+    (config/defaults.go). config.example.yaml UPDATED in session 3: metric_interval 30s->60s,
+    added tailscale.http.rate_limit, admin.{enabled,listen}, streaming.public_url, and the
+    collectors.node_metrics section; a new config test loads+validates the example to prevent
+    drift. Collector intervals
     already >=60s. Aligns push cadence with scrape to avoid Grafana Cloud DPM churn.
 
-P5. [REMAINING — session 3] Enrich the flow-log nodeId with hostname from the device cache.
+P5. [DONE session 3 — flowlog.Processor now adds tailscale.node.hostname to flow log records
+    (both per_connection and per_record) via cache.LookupNode(flow.NodeID), only when the
+    cache resolves a non-empty hostname]. Enrich the flow-log nodeId with hostname from the device cache.
     NOTE: the cache's byNode index is NOW keyed by the nDdi... NodeID (DevicesRich.NodeID),
     which MATCHES flow.NodeID, so LookupNode(flow.NodeID) will hit. Add the hostname as an
     attribute on the flow log/metric in flowlog.Processor (it currently passes flow.NodeID raw
@@ -506,4 +548,36 @@ ORCHESTRATION NOTES for session 3 (this was an "ultracode" swarm session):
     (e.g. Proto int broke collector/flowlogs + stream test fixtures). Fix consumers between phases.
   - Always verify the WHOLE module (go build/vet/gofmt/test -race) + commit a GREEN state
     between phases. Leaf agents passing in isolation does NOT mean the module builds.
+================================================================================
+
+--------------------------------------------------------------------------------
+10. SESSION LOG + LEARNINGS  (session 3, 2026-06-03)
+--------------------------------------------------------------------------------
+WHAT WAS DONE: every remaining actionable todo (P1-1, P1-2, P1-4, P2-1, P2-2, P3, P4, P5)
+plus the P2-4 closed-decision write-up. Built with a phased, import-graph-aware parallel
+workflow then app-layer wiring by hand. Module fully green: `go build ./...`, `go vet ./...`,
+`gofmt -l .` (empty), `go test -race ./...` all pass; the binary was smoke-tested
+(boot -> /healthz 200 -> tailscale2otel.up=1 + build_info on stdout -> clean SIGINT exit 0).
+
+NEW THIS SESSION:
+  - internal/collector/nodemetrics: gated node /metrics scraper (label-based instance, single
+    MeterProvider, counters->deltas w/ reset handling, gauges, per-target tailscale.node.up,
+    stdlib Prometheus text parser). config: collectors.node_metrics.
+  - audit + flowlog processors: optional shared dedup.Set (cross-source dedup); app wires one
+    set per processor. flowlog also adds tailscale.node.hostname to flow logs (P5).
+  - tsapi.ConfigureLogStream (PUT) + putJSON; app App.autoConfigureStreaming (gated, off by
+    default). Fixed a latent retry-transport bug: bodies are now rewound via GetBody on retry.
+  - deploy/grafana/*.json (4 dashboards) + deploy/grafana/README.md; docs/metrics.md.
+  - config: streaming.public_url; config.example.yaml refreshed (60s, rate_limit, admin,
+    node_metrics) + a test that loads/validates the example to stop drift.
+  - P2-1: slices.Contains, recorder .String() (deprecated .Emit() replacement).
+
+ORCHESTRATION NOTE: ran the leaf Go work (audit/flowlog/nodemetrics/tsapi) + the no-Go
+deliverables (dashboards/docs) as ONE parallel workflow, partitioned so concurrent agents
+edited import-INDEPENDENT packages and built only their own package (tsapi gated to start
+after audit+flowlog, which it imports). The shared test recorder (.Emit->.String) and the
+config slices.Contains were done solo FIRST (recorder is a test dep of ~every package).
+
+CLOSED DECISIONS (do not reopen without new reason): P2-4 per-device Resource = deferred (see
+P2-4). P3 node identity = labels, not per-node Resource. P2-6 = blocked by pinned log SDK.
 ================================================================================
