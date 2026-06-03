@@ -188,9 +188,9 @@ func assertFlowAndAuditOnce(t *testing.T, rec *telemetrytest.Recorder) {
 // separators, shaped {"time":<float>,"event":{<record>},"fields":{"recorded":...}}.
 // The flow event carries srcNode/dstNodes and a NUMERIC proto; the audit event
 // uses "actionDetails" and has NO inner eventTime (its timestamp is the HEC
-// "time"/"fields.recorded", which this receiver does not currently map onto the
-// record — a known minor fidelity gap, so streamed audit records take the OTEL
-// ingest time). This body holds one flow object followed by one audit object.
+// "time"/"fields.recorded", which the receiver threads onto the audit record's
+// EventTime — see TestStream_AuditEventTimeFromHECEnvelope). This body holds one
+// flow object followed by one audit object.
 const realHECStreamBody = `{"time":1780500776.773,"event":{"nodeId":"n0001CNTRL","start":"2026-06-03T15:32:54.272130712Z","end":"2026-06-03T15:32:59.27411903Z","srcNode":{"nodeId":"n0001CNTRL","name":"gateway.example.ts.net","addresses":["100.64.0.1","fd7a:115c:a1e0::1"],"tags":["tag:networking"]},"dstNodes":[{"nodeId":"n0002CNTRL","name":"peer-a.example.ts.net","addresses":["100.64.0.2","fd7a:115c:a1e0::2"],"os":"linux","tags":["tag:server"]}],"subnetTraffic":[{"proto":99,"src":"10.0.0.254:0","dst":"100.64.0.3:0","txPkts":8,"txBytes":216}],"physicalTraffic":[{"src":"100.64.0.4:0","dst":"192.0.2.40:8","txPkts":1,"txBytes":32}]},"fields":{"recorded":"2026-06-03T15:33:01.552946176Z"}}` +
 	`{"time":1780500887.356,"event":{"eventGroupID":"abc123def456","origin":"CONFIG_API","actor":{"id":"u0001CNTRL","type":"OAUTH_CLIENT","loginName":"","displayName":"OAuth client"},"target":{"id":"k0001CNTRL","name":"API access token","type":"OAUTH_ACCESS_TOKEN"},"action":"CREATE","actionDetails":"scopes - all:read"},"fields":{"recorded":"2026-06-03T15:34:47.809040387Z"}}`
 
@@ -358,6 +358,107 @@ func TestEnvelope_TailscaleLogsWrapper(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
 	}
 	assertFlowAndAuditOnce(t, rec)
+}
+
+// auditLogRecord returns the single emitted audit log record (EventName
+// "tailscale.config.audit"), or fails.
+func auditLogRecord(t *testing.T, rec *telemetrytest.Recorder) telemetrytest.LogRecord {
+	t.Helper()
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.config.audit" {
+			return lr
+		}
+	}
+	t.Fatalf("no audit log record found in %+v", rec.LogRecords())
+	return telemetrytest.LogRecord{}
+}
+
+// assertTimeNear fails unless got is within tol of want (and not zero).
+func assertTimeNear(t *testing.T, got, want time.Time, tol time.Duration) {
+	t.Helper()
+	if got.IsZero() {
+		t.Fatalf("timestamp is zero; want ~%s", want.Format(time.RFC3339Nano))
+	}
+	d := got.Sub(want)
+	if d < 0 {
+		d = -d
+	}
+	if d > tol {
+		t.Fatalf("timestamp = %s, want ~%s (diff %s > tol %s)",
+			got.Format(time.RFC3339Nano), want.Format(time.RFC3339Nano), d, tol)
+	}
+}
+
+// TestStream_AuditEventTimeFromHECEnvelope is the S4-10 fidelity fix: a streamed
+// configuration-audit record carries NO inner "eventTime"; its timestamp lives in
+// the HEC envelope "time" (unix seconds), a sibling of "event". The receiver must
+// thread that envelope time onto the audit record so the emitted OTEL log record
+// bears the event's real occurrence time instead of falling back to the ingest
+// (observed) time. realHECStreamBody's audit object has "time":1780500887.356.
+func TestStream_AuditEventTimeFromHECEnvelope(t *testing.T) {
+	s, rec := newServer(t, stream.Options{})
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(realHECStreamBody))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.Code)
+	}
+	lr := auditLogRecord(t, rec)
+	want := time.Unix(1780500887, 356_000_000).UTC()
+	assertTimeNear(t, lr.Timestamp, want, time.Millisecond)
+}
+
+// TestStream_AuditInnerEventTimeWinsOverEnvelope guards the "only when zero"
+// rule: when a streamed audit record DOES carry its own eventTime, the envelope
+// time must NOT override it. captureAuditRecord has eventTime 2026-06-02T19:00:05Z;
+// the surrounding HEC envelope advertises a different time (1780500887.356).
+func TestStream_AuditInnerEventTimeWinsOverEnvelope(t *testing.T) {
+	s, rec := newServer(t, stream.Options{})
+	body := `{"time":1780500887.356,"event":` + captureAuditRecord + `,"fields":{"recorded":"2026-06-03T15:34:47.809040387Z"}}`
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.Code)
+	}
+	lr := auditLogRecord(t, rec)
+	want, err := time.Parse(time.RFC3339Nano, "2026-06-02T19:00:05.558444283Z")
+	if err != nil {
+		t.Fatalf("parse want: %v", err)
+	}
+	assertTimeNear(t, lr.Timestamp, want, time.Microsecond)
+}
+
+// TestStream_AuditEventTimeFallsBackToFieldsRecorded checks the fallback: when the
+// HEC envelope has NO "time" but does carry "fields.recorded" (RFC3339, the
+// publisher's record time), an inner-eventTime-less audit record uses that.
+func TestStream_AuditEventTimeFallsBackToFieldsRecorded(t *testing.T) {
+	s, rec := newServer(t, stream.Options{})
+	body := `{"event":{"eventGroupID":"g9","origin":"CONFIG_API","actor":{"id":"u1","loginName":"a@example.com"},"target":{"id":"k1","type":"OAUTH_ACCESS_TOKEN"},"action":"CREATE"},"fields":{"recorded":"2026-06-03T15:34:47.809040387Z"}}`
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.Code)
+	}
+	lr := auditLogRecord(t, rec)
+	want, err := time.Parse(time.RFC3339Nano, "2026-06-03T15:34:47.809040387Z")
+	if err != nil {
+		t.Fatalf("parse want: %v", err)
+	}
+	assertTimeNear(t, lr.Timestamp, want, time.Microsecond)
+}
+
+// TestStream_AuditEventTimeFromLogsWrapperEnvelope guards that the HEC envelope
+// time is propagated through the {"time":..,"logs":[..]} batch wrapper too, not
+// only the {"event":..} wrapper. The parser is documented as defensive across
+// both shapes, so an inner-eventTime-less audit record inside a timestamped logs
+// batch must still receive the envelope time (not fall back to ingest time).
+func TestStream_AuditEventTimeFromLogsWrapperEnvelope(t *testing.T) {
+	s, rec := newServer(t, stream.Options{})
+	inner := `{"eventGroupID":"g7","origin":"CONFIG_API","actor":{"id":"u1","loginName":"a@example.com"},"target":{"id":"k1","type":"OAUTH_ACCESS_TOKEN"},"action":"CREATE"}`
+	body := `{"time":1780500887.356,"logs":[` + inner + `]}`
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.Code)
+	}
+	lr := auditLogRecord(t, rec)
+	want := time.Unix(1780500887, 356_000_000).UTC()
+	assertTimeNear(t, lr.Timestamp, want, time.Millisecond)
 }
 
 func TestHandler_HECFlowRecord(t *testing.T) {

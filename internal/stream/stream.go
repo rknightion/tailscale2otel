@@ -21,11 +21,14 @@
 //
 // The per-record shapes match the poll API exactly: flow records carry a NUMERIC
 // "proto" (e.g. 6 for TCP, 99 here) plus srcNode/dstNodes, and audit records use
-// "actionDetails" with polymorphic "old"/"new". KNOWN MINOR GAP: a streamed audit
-// record has NO inner "eventTime" (the timestamp lives in the HEC "time" /
-// "fields.recorded", siblings of "event"); this receiver does not map that onto
-// the record, so streamed audit log records take the OTEL ingest time (off by the
-// streaming latency, ~seconds). Flow records are unaffected (they carry start/end).
+// "actionDetails" with polymorphic "old"/"new". A streamed audit record has NO
+// inner "eventTime" — its timestamp lives in the HEC "time" (unix seconds) /
+// "fields.recorded" (RFC3339), siblings of "event". The parser threads that
+// envelope time through (see extractRecords/unwrap/envelopeTime) and the handler
+// applies it to an audit record's EventTime when the record has none of its own,
+// so a streamed audit log bears the event's real occurrence time rather than the
+// OTEL ingest time (S4-10 fidelity fix). Flow records carry their own start/end
+// and ignore the envelope time.
 //
 // The parser stays DEFENSIVE and accepts the union of plausible shapes (the HEC
 // "event" wrapper above plus the variants below) so an unexpected sender or a
@@ -57,7 +60,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -229,10 +234,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	var flows, audits, skipped int
 	for _, rec := range records {
-		switch classify(rec) {
+		switch classify(rec.raw) {
 		case kindFlow:
 			var f flowlog.FlowLog
-			if err := json.Unmarshal(rec, &f); err != nil {
+			if err := json.Unmarshal(rec.raw, &f); err != nil {
 				skipped++
 				continue
 			}
@@ -240,9 +245,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			flows++
 		case kindAudit:
 			var ev audit.Event
-			if err := json.Unmarshal(rec, &ev); err != nil {
+			if err := json.Unmarshal(rec.raw, &ev); err != nil {
 				skipped++
 				continue
+			}
+			// A streamed configuration-audit record carries no inner eventTime —
+			// its timestamp lives in the HEC envelope (see the package doc). Fall
+			// back to the envelope time so the emitted log record bears the event's
+			// real occurrence time instead of the OTEL ingest time. Only fill it in
+			// when the record has no time of its own (polled records always do), so
+			// the envelope time never overrides a real eventTime.
+			if ev.EventTime.IsZero() && !rec.envTime.IsZero() {
+				ev.EventTime = rec.envTime
 			}
 			s.auditProc.Process(ev, s.emitter)
 			audits++
@@ -381,10 +395,21 @@ func classify(rec json.RawMessage) recordKind {
 	return kindUnknown
 }
 
-// extractRecords parses a request body into zero or more record objects,
-// tolerating the several envelope shapes documented on the package. It returns
-// an error only when nothing JSON-like can be extracted at all.
-func extractRecords(raw []byte) ([]json.RawMessage, error) {
+// extractedRecord pairs a raw record object with the timestamp carried by its
+// enclosing HEC envelope ("time"/"fields.recorded", siblings of "event"), or the
+// zero time when the record had no such envelope. The envelope time is used only
+// as a FALLBACK for streamed audit records that lack an inner eventTime (S4-10):
+// flow records ignore it (they carry their own start/end).
+type extractedRecord struct {
+	raw     json.RawMessage
+	envTime time.Time
+}
+
+// extractRecords parses a request body into zero or more record objects (each
+// paired with its envelope time), tolerating the several envelope shapes
+// documented on the package. It returns an error only when nothing JSON-like can
+// be extracted at all.
+func extractRecords(raw []byte) ([]extractedRecord, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, errors.New("empty body")
@@ -428,10 +453,11 @@ func extractRecords(raw []byte) ([]json.RawMessage, error) {
 		}
 	}
 
-	// Unwrap each top-level value into record objects.
-	var out []json.RawMessage
+	// Unwrap each top-level value into record objects, propagating each HEC
+	// envelope's time down to the record(s) it carries.
+	var out []extractedRecord
 	for _, v := range values {
-		out = append(out, unwrap(v)...)
+		out = append(out, unwrap(v, time.Time{})...)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no records after unwrapping")
@@ -439,17 +465,23 @@ func extractRecords(raw []byte) ([]json.RawMessage, error) {
 	return out, nil
 }
 
-// envelope captures the optional HEC ("event") and Tailscale ("logs") wrappers.
+// envelope captures the optional HEC ("event") and Tailscale ("logs") wrappers
+// plus the HEC timestamp fields ("time" and "fields.recorded") that sit beside
+// "event". Time and Fields are kept raw so a malformed or unexpected shape can
+// never fail the whole envelope decode — keeping the parser defensive.
 type envelope struct {
-	Event json.RawMessage   `json:"event"`
-	Logs  []json.RawMessage `json:"logs"`
+	Time   json.RawMessage   `json:"time"`
+	Event  json.RawMessage   `json:"event"`
+	Fields json.RawMessage   `json:"fields"`
+	Logs   []json.RawMessage `json:"logs"`
 }
 
 // unwrap turns a single top-level JSON value into the record object(s) it
-// carries: a Splunk-HEC {"event": <record>} wrapper yields its event; a
-// Tailscale {"logs": [...]} wrapper yields its elements; any other object is
-// itself a record.
-func unwrap(v json.RawMessage) []json.RawMessage {
+// carries, tagging each with the enclosing HEC envelope time (inherited down the
+// recursion): a Splunk-HEC {"event": <record>} wrapper yields its event tagged
+// with the wrapper's own "time"/"fields.recorded"; a Tailscale {"logs": [...]}
+// wrapper yields its elements; any other object is itself a record.
+func unwrap(v json.RawMessage, inherited time.Time) []extractedRecord {
 	trimmed := bytes.TrimSpace(v)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		// Not a JSON object (e.g. an array or scalar at top level); ignore.
@@ -457,9 +489,9 @@ func unwrap(v json.RawMessage) []json.RawMessage {
 			// A bare JSON array of records.
 			var arr []json.RawMessage
 			if err := json.Unmarshal(trimmed, &arr); err == nil {
-				var out []json.RawMessage
+				var out []extractedRecord
 				for _, e := range arr {
-					out = append(out, unwrap(e)...)
+					out = append(out, unwrap(e, inherited)...)
 				}
 				return out
 			}
@@ -469,19 +501,70 @@ func unwrap(v json.RawMessage) []json.RawMessage {
 
 	var env envelope
 	if err := json.Unmarshal(trimmed, &env); err == nil {
+		// A HEC/batch wrapper's "time"/"fields.recorded" sibling is the event
+		// time; prefer it over an inherited time when propagating down to the
+		// record(s) it carries. Applied to BOTH the {"logs":[...]} and {"event":...}
+		// wrappers so the two shapes behave consistently.
+		t := env.envelopeTime()
+		if t.IsZero() {
+			t = inherited
+		}
 		if len(env.Logs) > 0 {
-			out := make([]json.RawMessage, 0, len(env.Logs))
+			out := make([]extractedRecord, 0, len(env.Logs))
 			for _, e := range env.Logs {
-				out = append(out, unwrap(e)...)
+				out = append(out, unwrap(e, t)...)
 			}
 			return out
 		}
 		if len(bytes.TrimSpace(env.Event)) > 0 {
-			return unwrap(env.Event)
+			return unwrap(env.Event, t)
 		}
 	}
 	// Plain record object.
-	return []json.RawMessage{trimmed}
+	return []extractedRecord{{raw: trimmed, envTime: inherited}}
+}
+
+// envelopeTime extracts the event time from a HEC envelope, preferring the
+// numeric "time" (unix epoch seconds — the event's own occurrence time) and
+// falling back to "fields.recorded" (RFC3339 — the publisher's record/ship time).
+// It returns the zero time when neither is present or parseable.
+func (e envelope) envelopeTime() time.Time {
+	if t := parseHECTime(e.Time); !t.IsZero() {
+		return t
+	}
+	if len(bytes.TrimSpace(e.Fields)) > 0 {
+		var fields struct {
+			Recorded string `json:"recorded"`
+		}
+		if err := json.Unmarshal(e.Fields, &fields); err == nil && fields.Recorded != "" {
+			if t, err := time.Parse(time.RFC3339Nano, fields.Recorded); err == nil {
+				return t.UTC()
+			}
+		}
+	}
+	return time.Time{}
+}
+
+// parseHECTime parses a Splunk-HEC "time" value (unix epoch SECONDS, normally a
+// JSON number but tolerated as a quoted string) into a UTC time.Time. It returns
+// the zero time for an absent, null, non-positive, or unparseable value.
+func parseHECTime(raw json.RawMessage) time.Time {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return time.Time{}
+	}
+	s := string(trimmed)
+	if trimmed[0] == '"' {
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return time.Time{}
+		}
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || f <= 0 {
+		return time.Time{}
+	}
+	sec, frac := math.Modf(f)
+	return time.Unix(int64(sec), int64(frac*1e9)).UTC()
 }
 
 // writeAck writes the Splunk-HEC success acknowledgement.
