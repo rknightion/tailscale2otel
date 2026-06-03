@@ -4,7 +4,7 @@
 // keeping the docs derived from code rather than hand-maintained.
 module github.com/rknightion/tailscale2otel/tools/metricscatalog
 
-go 1.26.0
+go 1.26.4
 
 require github.com/rknightion/tailscale2otel v0.0.0
 
