@@ -50,6 +50,11 @@ const (
 	// attrInstance is the node-identity label attached to every emitted series.
 	attrInstance = "instance"
 
+	// metricDiscoverySuccess and metricDiscoveredTargets are the discovery-health
+	// gauges emitted every Collect when a Discoverer is configured.
+	metricDiscoverySuccess  = "tailscale2otel.nodemetrics.discovery.success"
+	metricDiscoveredTargets = "tailscale2otel.nodemetrics.discovery.targets"
+
 	// staleGenerations is how many consecutive scrapes a counter series may go
 	// unobserved before its delta baseline is evicted, bounding the prev map
 	// against label churn while tolerating a transient target outage.
@@ -141,6 +146,7 @@ type Collector struct {
 	mu          sync.Mutex
 	active      []resolvedTarget     // current scrape set: static ∪ discovered (guarded by mu)
 	lastDiscACK time.Time            // last SUCCESSFUL discovery time (guarded by mu)
+	lastDiscOK  bool                 // outcome of the last discovery attempt (guarded by mu)
 	prev        map[string]prevEntry // series key -> last cumulative value + generation
 	gen         uint64               // scrape generation, bumped once per Collect
 }
@@ -267,7 +273,20 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	targets := c.active
 	c.gen++
 	gen := c.gen
+	discOK := c.lastDiscOK
 	c.mu.Unlock()
+
+	// Discovery-health gauges (only when discovery is enabled): emitted every
+	// Collect from stored state so the series stays continuous between the
+	// (slower) discovery refreshes, even when the active set is empty.
+	if c.discoverer != nil {
+		success := 0.0
+		if discOK {
+			success = 1
+		}
+		e.Gauge(docDiscoverySuccess.Name, docDiscoverySuccess.Unit, docDiscoverySuccess.Description, success, nil)
+		e.Gauge(docDiscoveredTargets.Name, docDiscoveredTargets.Unit, docDiscoveredTargets.Description, float64(len(targets)), nil)
+	}
 
 	if len(targets) == 0 {
 		return nil
@@ -304,12 +323,16 @@ func (c *Collector) maybeDiscover(ctx context.Context) {
 	}
 	discovered, err := c.discoverer.Discover(ctx)
 	if err != nil {
+		c.mu.Lock()
+		c.lastDiscOK = false
+		c.mu.Unlock()
 		return // keep prior active set and lastDiscACK; retry next tick
 	}
 	union := unionTargets(c.static, resolveTargets(discovered, c.timeout))
 	c.mu.Lock()
 	c.active = union
 	c.lastDiscACK = now
+	c.lastDiscOK = true
 	c.mu.Unlock()
 }
 

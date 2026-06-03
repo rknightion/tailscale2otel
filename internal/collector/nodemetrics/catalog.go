@@ -1,6 +1,9 @@
 package nodemetrics
 
-import "github.com/rknightion/tailscale2otel/internal/metricdoc"
+import (
+	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
+)
 
 // Catalog declarations are the SINGLE SOURCE OF TRUTH for this collector's own,
 // statically-enumerable metric documentation. The scraper also FORWARDS every
@@ -20,11 +23,29 @@ var docNodeUp = metricdoc.Metric{
 	Group:       groupNodeMetrics,
 }
 
+// docDiscoverySuccess and docDiscoveredTargets are the discovery-health gauges,
+// emitted every Collect only when dynamic discovery is enabled.
+var docDiscoverySuccess = metricdoc.Metric{
+	Name:        metricDiscoverySuccess,
+	Unit:        semconv.UnitDimensionless,
+	Instrument:  metricdoc.Gauge,
+	Description: "1 if the last dynamic target-discovery refresh succeeded, else 0. Emitted only when discovery is enabled.",
+	Group:       groupNodeMetrics,
+}
+
+var docDiscoveredTargets = metricdoc.Metric{
+	Name:        metricDiscoveredTargets,
+	Unit:        semconv.UnitTargets,
+	Instrument:  metricdoc.Gauge,
+	Description: "Active node-metrics scrape targets after the last refresh (static plus discovered). Emitted only when discovery is enabled.",
+	Group:       groupNodeMetrics,
+}
+
 // Catalog returns the statically-enumerable metrics this package emits, for the
 // doc generator. The forwarded tailscaled_* series are runtime-named and not
 // included.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docNodeUp}
+	return []metricdoc.Metric{docNodeUp, docDiscoverySuccess, docDiscoveredTargets}
 }
 
 // LogCatalog returns the log events this package emits (none).
