@@ -32,6 +32,7 @@ type Metric struct {
 	Instrument  Instrument // counter | gauge | updowncounter
 	Description string     // human description (also exported as OTLP metric metadata)
 	Attributes  []string   // dotted OTEL attribute keys carried on the metric
+	Group       string     // docs/metrics.md section heading this metric belongs under
 }
 
 // LogEvent declares one emitted log record's documentation metadata.
@@ -40,6 +41,7 @@ type LogEvent struct {
 	Severity    string   // default severity text: INFO | WARN | ERROR
 	Description string   // human description
 	Attributes  []string // dotted OTEL attribute keys carried on the record
+	Group       string   // docs/metrics.md section heading this event belongs under
 }
 
 // PromName returns the metric's Prometheus name after Grafana Cloud's
