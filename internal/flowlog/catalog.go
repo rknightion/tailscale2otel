@@ -64,6 +64,7 @@ var (
 			semconv.SourceAddress, semconv.SourcePort, semconv.DestinationAddress, semconv.DestinationPort,
 			semconv.NetworkTransport, semconv.NetworkType, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrNodeID, attrNodeHostname,
+			"tailscale.connections", // per_record summary only
 			"tailscale.tx.bytes", "tailscale.rx.bytes", "tailscale.tx.packets", "tailscale.rx.packets",
 		},
 		Group: groupNetwork,
