@@ -133,10 +133,29 @@ type NodeMetricsConfig struct {
 // NodeMetricsTarget is a single Prometheus-text endpoint to scrape. Instance
 // overrides the default host:port "instance" label; Labels are passthrough
 // attributes merged onto every series from this target.
+//
+// The optional auth/TLS fields cover PROXIED/HTTPS targets; native tailscaled
+// /metrics endpoints are plain HTTP with no auth/TLS, so leaving them unset keeps
+// the scrape a plain GET. BearerTokenFile (read fresh each scrape) takes
+// precedence over BearerToken.
 type NodeMetricsTarget struct {
-	URL      string            `yaml:"url"`
-	Instance string            `yaml:"instance"`
-	Labels   map[string]string `yaml:"labels"`
+	URL             string                `yaml:"url"`
+	Instance        string                `yaml:"instance"`
+	Labels          map[string]string     `yaml:"labels"`
+	BearerToken     string                `yaml:"bearer_token"`
+	BearerTokenFile string                `yaml:"bearer_token_file"`
+	Headers         map[string]string     `yaml:"headers"`
+	TLS             *NodeMetricsTargetTLS `yaml:"tls"`
+}
+
+// NodeMetricsTargetTLS is the optional per-target TLS trust/identity for HTTPS
+// node-metrics targets. InsecureSkipVerify defaults to false (a footgun guard).
+type NodeMetricsTargetTLS struct {
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	CAFile             string `yaml:"ca_file"`
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
+	ServerName         string `yaml:"server_name"`
 }
 
 // CollectorConfig is the union of all per-collector options. Not every field
@@ -152,6 +171,10 @@ type CollectorConfig struct {
 	ExpiryWarn      Duration `yaml:"expiry_warn"`
 	CollectRoutes   bool     `yaml:"collect_routes"`
 	CollectPosture  bool     `yaml:"collect_posture"`
+	// MaxLogRecordsPerWindow caps flow LOG records emitted per poll window
+	// (flowlogs only; 0 = unlimited). Excess is counted into
+	// tailscale.network.flow.logs_dropped; metrics are never capped.
+	MaxLogRecordsPerWindow int `yaml:"max_log_records_per_window"`
 }
 
 // CheckpointConfig configures high-water-mark persistence.
@@ -175,6 +198,10 @@ type StreamingConfig struct {
 	// AutoConfigure, when true, PUTs this receiver as a Splunk-HEC log-streaming
 	// sink on startup (requires Enabled and PublicURL). Off by default.
 	AutoConfigure bool `yaml:"auto_configure"`
+	// MaxBodyBytes caps the DECOMPRESSED request body; an over-cap POST is
+	// rejected with 413 + rejected{reason=too_large} so a huge or zip-bomb body
+	// cannot OOM the receiver. 0 selects a 64 MiB default; negative disables it.
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
 }
 
 // StreamingTLS configures TLS for the streaming receiver.
@@ -189,6 +216,11 @@ type WebhookConfig struct {
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
 	Secret  string `yaml:"secret"`
+	// DedupAuditEvents, when true, shares a best-effort cross-source de-dup set
+	// with the audit processor so a change reported by BOTH a webhook and the
+	// audit logs is counted once. Off by default (the type<->action mapping is
+	// best-effort; see internal/webhook crossKey). See also S4-11.
+	DedupAuditEvents bool `yaml:"dedup_audit_events"`
 }
 
 // SelfObservabilityConfig toggles emitting the collector's own telemetry.

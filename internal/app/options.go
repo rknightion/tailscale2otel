@@ -61,11 +61,24 @@ func tsapiOptions(cfg *config.Config) tsapi.Options {
 func nodeMetricsOptions(nm config.NodeMetricsConfig) nodemetrics.Options {
 	targets := make([]nodemetrics.Target, 0, len(nm.Targets))
 	for _, t := range nm.Targets {
-		targets = append(targets, nodemetrics.Target{
-			URL:      t.URL,
-			Instance: t.Instance,
-			Labels:   t.Labels,
-		})
+		nt := nodemetrics.Target{
+			URL:             t.URL,
+			Instance:        t.Instance,
+			Labels:          t.Labels,
+			BearerToken:     t.BearerToken,
+			BearerTokenFile: t.BearerTokenFile,
+			Headers:         t.Headers,
+		}
+		if t.TLS != nil {
+			nt.TLS = &nodemetrics.TLSClientConfig{
+				InsecureSkipVerify: t.TLS.InsecureSkipVerify,
+				CAFile:             t.TLS.CAFile,
+				CertFile:           t.TLS.CertFile,
+				KeyFile:            t.TLS.KeyFile,
+				ServerName:         t.TLS.ServerName,
+			}
+		}
+		targets = append(targets, nt)
 	}
 	return nodemetrics.Options{
 		Targets:  targets,

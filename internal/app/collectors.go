@@ -25,7 +25,8 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		NodeDims:     cfg.Cardinality.FlowNodeDims,
 		// collapse_external=true (the default) keeps unresolved/external addresses
 		// bucketed as external/unknown; false preserves the raw IP on flow logs.
-		KeepExternalAddrs: !cfg.Cardinality.CollapseExternal,
+		KeepExternalAddrs:      !cfg.Cardinality.CollapseExternal,
+		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
 	}
 }
 
@@ -90,19 +91,24 @@ func (a *App) registerCollectors() {
 func (a *App) buildReceivers() {
 	if a.cfg.Streaming.Enabled {
 		a.streamSrv = stream.New(stream.Options{
-			Listen:      a.cfg.Streaming.Listen,
-			Path:        a.cfg.Streaming.Path,
-			Token:       a.cfg.Streaming.Token,
-			Decompress:  a.cfg.Streaming.Decompress,
-			TLSCertFile: a.cfg.Streaming.TLS.CertFile,
-			TLSKeyFile:  a.cfg.Streaming.TLS.KeyFile,
+			Listen:       a.cfg.Streaming.Listen,
+			Path:         a.cfg.Streaming.Path,
+			Token:        a.cfg.Streaming.Token,
+			Decompress:   a.cfg.Streaming.Decompress,
+			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
+			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
+			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
 		}, a.flowProc, a.auditProc, a.emitter, a.logger)
 	}
 	if a.cfg.Webhook.Enabled {
+		var wopts []webhook.Option
+		if a.webhookDedup != nil {
+			wopts = append(wopts, webhook.WithDedup(a.webhookDedup))
+		}
 		a.webhookSrv = webhook.New(webhook.Options{
 			Listen: a.cfg.Webhook.Listen,
 			Path:   a.cfg.Webhook.Path,
 			Secret: a.cfg.Webhook.Secret,
-		}, a.emitter, a.logger)
+		}, a.emitter, a.logger, wopts...)
 	}
 }

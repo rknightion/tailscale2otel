@@ -56,3 +56,36 @@ func TestTsapiOptions_OAuth(t *testing.T) {
 		t.Fatal("apikey should be empty for oauth method")
 	}
 }
+
+func TestNodeMetricsOptions_AuthAndTLS(t *testing.T) {
+	nm := config.NodeMetricsConfig{
+		Targets: []config.NodeMetricsTarget{{
+			URL:             "https://n:5252/metrics",
+			BearerToken:     "tok",
+			BearerTokenFile: "/f",
+			Headers:         map[string]string{"X-Scope-OrgID": "1"},
+			TLS: &config.NodeMetricsTargetTLS{
+				InsecureSkipVerify: true, CAFile: "/ca", CertFile: "/c", KeyFile: "/k", ServerName: "n",
+			},
+		}},
+	}
+	tg := nodeMetricsOptions(nm).Targets[0]
+	if tg.BearerToken != "tok" || tg.BearerTokenFile != "/f" {
+		t.Errorf("bearer = %q/%q", tg.BearerToken, tg.BearerTokenFile)
+	}
+	if tg.Headers["X-Scope-OrgID"] != "1" {
+		t.Errorf("headers = %v", tg.Headers)
+	}
+	if tg.TLS == nil || !tg.TLS.InsecureSkipVerify || tg.TLS.CAFile != "/ca" ||
+		tg.TLS.CertFile != "/c" || tg.TLS.KeyFile != "/k" || tg.TLS.ServerName != "n" {
+		t.Errorf("tls = %+v", tg.TLS)
+	}
+}
+
+func TestFlowOptions_MaxLogRecordsPerWindow(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow = 250
+	if got := flowOptions(cfg).MaxLogRecordsPerWindow; got != 250 {
+		t.Fatalf("flowOptions MaxLogRecordsPerWindow = %d, want 250", got)
+	}
+}
