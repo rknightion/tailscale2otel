@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
@@ -178,6 +179,72 @@ func assertFlowAndAuditOnce(t *testing.T, rec *telemetrytest.Recorder) {
 	}
 	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
 		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+// realHECStreamBody is the ACTUAL Tailscale log-stream wire format, pinned by a
+// live capture (S4-10; sanitized: tailnet/node-ids/names/addresses anonymized).
+// Each POST body is one-or-more concatenated Splunk-HEC objects with NO
+// separators, shaped {"time":<float>,"event":{<record>},"fields":{"recorded":...}}.
+// The flow event carries srcNode/dstNodes and a NUMERIC proto; the audit event
+// uses "actionDetails" and has NO inner eventTime (its timestamp is the HEC
+// "time"/"fields.recorded", which this receiver does not currently map onto the
+// record — a known minor fidelity gap, so streamed audit records take the OTEL
+// ingest time). This body holds one flow object followed by one audit object.
+const realHECStreamBody = `{"time":1780500776.773,"event":{"nodeId":"n0001CNTRL","start":"2026-06-03T15:32:54.272130712Z","end":"2026-06-03T15:32:59.27411903Z","srcNode":{"nodeId":"n0001CNTRL","name":"gateway.example.ts.net","addresses":["100.64.0.1","fd7a:115c:a1e0::1"],"tags":["tag:networking"]},"dstNodes":[{"nodeId":"n0002CNTRL","name":"peer-a.example.ts.net","addresses":["100.64.0.2","fd7a:115c:a1e0::2"],"os":"linux","tags":["tag:server"]}],"subnetTraffic":[{"proto":99,"src":"10.0.0.254:0","dst":"100.64.0.3:0","txPkts":8,"txBytes":216}],"physicalTraffic":[{"src":"100.64.0.4:0","dst":"192.0.2.40:8","txPkts":1,"txBytes":32}]},"fields":{"recorded":"2026-06-03T15:33:01.552946176Z"}}` +
+	`{"time":1780500887.356,"event":{"eventGroupID":"abc123def456","origin":"CONFIG_API","actor":{"id":"u0001CNTRL","type":"OAUTH_CLIENT","loginName":"","displayName":"OAuth client"},"target":{"id":"k0001CNTRL","name":"API access token","type":"OAUTH_ACCESS_TOKEN"},"action":"CREATE","actionDetails":"scopes - all:read"},"fields":{"recorded":"2026-06-03T15:34:47.809040387Z"}}`
+
+// TestEnvelope_RealTailscaleHEC locks in the live-captured Tailscale envelope:
+// concatenated {"time","event","fields"} HEC objects, the "event" carrying a flow
+// or audit record, classified and routed. (Characterization: the parser already
+// unwraps "event" and reads successive JSON values, which the capture confirms.)
+func TestEnvelope_RealTailscaleHEC(t *testing.T) {
+	s, rec := newServer(t, stream.Options{}) // no token here; auth is covered separately
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(realHECStreamBody))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.Code)
+	}
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Errorf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
+		t.Errorf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Errorf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+// TestHandler_TailscaleBasicAuth pins the real Tailscale auth scheme (live
+// capture, S4-10): HTTP Basic auth, base64(user:<token>) — NOT
+// "Authorization: Splunk <token>". A token-protected receiver MUST accept it,
+// otherwise every real Tailscale delivery is rejected as unauthorized.
+func TestHandler_TailscaleBasicAuth(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+	h := http.Header{}
+	h.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("user:"+testToken)))
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", h, strings.NewReader(captureFlowRecord))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (Tailscale Basic auth must be accepted)", resp.Code)
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Errorf("unexpected rejection of valid Basic auth: %+v", rej)
+	}
+}
+
+// TestHandler_WrongBasicTokenRejected confirms a Basic header whose password is
+// not the configured token is still rejected.
+func TestHandler_WrongBasicTokenRejected(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+	h := http.Header{}
+	h.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("user:wrong-token")))
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", h, strings.NewReader(captureFlowRecord))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (wrong Basic token)", resp.Code)
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) == 0 {
+		t.Errorf("expected a rejection counter for wrong Basic token")
 	}
 }
 
