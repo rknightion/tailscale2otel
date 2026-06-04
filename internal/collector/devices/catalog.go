@@ -29,6 +29,16 @@ const (
 // distro version, so it appears here as part of the full possible set.
 var deviceIdentityAttrs = []string{semconv.HostName, semconv.HostID, semconv.OSType, semconv.OSVersion, semconv.AttrUser}
 
+// postureInfoAttrs is the curated label set carried by the posture info gauge:
+// device identity (host.name/host.id) plus the curated subset of posture
+// attributes. Each posture label is set only when the source key is present in
+// the device's posture map, so this is the full possible set.
+var postureInfoAttrs = []string{
+	semconv.HostName, semconv.HostID,
+	attrPostureOS, attrPostureOSVersion, attrPostureTSVersion,
+	attrPostureAutoUpdate, attrPostureEncrypted, attrPostureTrack,
+}
+
 var (
 	docOnline = metricdoc.Metric{
 		Name:        metricOnline,
@@ -113,8 +123,17 @@ var (
 	docPosture = metricdoc.LogEvent{
 		Name:        eventPosture,
 		Severity:    "INFO",
-		Description: "Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API. **Gated** by `collect_posture`.",
+		Description: "Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API. **Gated** by `collect_posture`; by default emitted only when a device's posture changes (see `posture_log_mode`).",
 		Attributes:  []string{semconv.HostName, semconv.HostID},
+		Group:       groupDevices,
+	}
+
+	docPostureInfo = metricdoc.Metric{
+		Name:        eventPosture,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Per-device posture info gauge (constant `1`); device security posture — OS, Tailscale client version, auto-update, state-encrypted, release track — carried as labels. **Gated** by `collect_posture`.",
+		Attributes:  postureInfoAttrs,
 		Group:       groupDevices,
 	}
 )
@@ -123,7 +142,7 @@ var (
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
-		docRoutesAdvertised, docRoutesEnabled, docDevicesCount,
+		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docPostureInfo,
 		docCacheAge, docCacheSize,
 	}
 }

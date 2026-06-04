@@ -18,9 +18,10 @@ import (
 // event must be in LogCatalog().
 //
 // The collector is driven with collectRoutes=true AND collectPosture=true (and
-// a populated posture map) so that all ten declared metrics — including the two
-// route gauges and the two self-observability enrich.cache_* gauges — plus the
-// posture log event are emitted in one pass.
+// a populated posture map) so that all declared metrics — including the two
+// route gauges, the two self-observability enrich.cache_* gauges, and the
+// per-device posture info gauge — plus the posture log event are emitted in one
+// pass.
 func TestCatalogMatchesEmitted(t *testing.T) {
 	devs := sampleDevices()
 	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
@@ -66,6 +67,14 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		if wantCounter != gotCounter {
 			t.Errorf("%s: catalog instrument %q but emitted kind=%q monotonic=%v", name, d.Instrument, p0.Kind, p0.Monotonic)
 		}
+	}
+
+	// The posture info gauge must be both emitted and declared.
+	if pts := rec.MetricPoints("tailscale.device.posture"); len(pts) == 0 {
+		t.Error("posture info gauge tailscale.device.posture not emitted with collectPosture=true")
+	}
+	if _, ok := declared["tailscale.device.posture"]; !ok {
+		t.Error("posture info gauge tailscale.device.posture not declared in devices.Catalog()")
 	}
 
 	logDeclared := map[string]bool{}

@@ -15,6 +15,8 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
@@ -56,6 +58,43 @@ const (
 	attrDERPPreferred = "tailscale.derp.preferred"
 )
 
+// Curated posture label keys carried by the posture info gauge. Each maps a
+// colon-namespaced posture attribute (node:os, node:osVersion, …) to a short,
+// analytics-friendly label name; a label is set only when its source key is
+// present in the device's posture map.
+const (
+	attrPostureOS         = "os"
+	attrPostureOSVersion  = "os_version"
+	attrPostureTSVersion  = "ts_version"
+	attrPostureAutoUpdate = "auto_update"
+	attrPostureEncrypted  = "encrypted"
+	attrPostureTrack      = "track"
+)
+
+// Posture LOG emission modes, controlling how often the posture log event fires
+// (the posture info gauge metric is unaffected and always emitted per scrape).
+const (
+	// postureLogChanges emits the posture log for a device only when its posture
+	// changed since the previous scrape (first-seen counts as changed). Default.
+	postureLogChanges = "changes"
+	// postureLogAlways emits the posture log every scrape (legacy behavior).
+	postureLogAlways = "always"
+	// postureLogOff never emits the posture log (the info gauge is still emitted).
+	postureLogOff = "off"
+)
+
+// postureKeyToLabel maps the curated colon-namespaced posture attribute keys to
+// their short metric label names. Posture keys not present here are not carried
+// on the info gauge (they remain on the posture log's full attribute set).
+var postureKeyToLabel = map[string]string{
+	"node:os":               attrPostureOS,
+	"node:osVersion":        attrPostureOSVersion,
+	"node:tsVersion":        attrPostureTSVersion,
+	"node:tsAutoUpdate":     attrPostureAutoUpdate,
+	"node:tsStateEncrypted": attrPostureEncrypted,
+	"node:tsReleaseTrack":   attrPostureTrack,
+}
+
 const defaultInterval = 60 * time.Second
 
 // api is the subset of the Tailscale API this collector needs. It is satisfied
@@ -73,6 +112,12 @@ type Collector struct {
 	collectRoutes  bool
 	collectPosture bool
 	perEntity      bool
+	postureLogMode string // "changes" (default) | "always" | "off"
+
+	// lastPosture remembers each device's last-emitted posture signature
+	// (deviceID -> signature) so the posture LOG can fire on-change only. A
+	// device absent from the map is first-seen and counts as changed.
+	lastPosture map[string]string
 }
 
 // Option configures optional Collector behavior.
@@ -84,6 +129,32 @@ type Option func(*Collector)
 // tailscale.devices.count rollup, dropping the per-device series.
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
+}
+
+// WithPostureLogMode controls how often the per-device posture LOG event fires
+// (it does not affect the posture info-gauge metric, which is emitted every
+// scrape when collect_posture is on):
+//
+//   - "changes" (default): emit the posture log for a device only when its
+//     posture changed since the previous scrape; a first-seen device counts as
+//     changed, so process start dumps a full baseline, then only deltas.
+//   - "always": emit the posture log every scrape (the legacy behavior).
+//   - "off": never emit the posture log (the info-gauge metric is still emitted).
+//
+// An empty or unrecognized mode falls back to "changes".
+func WithPostureLogMode(mode string) Option {
+	return func(c *Collector) { c.postureLogMode = normalizePostureLogMode(mode) }
+}
+
+// normalizePostureLogMode maps an arbitrary mode string to a known mode,
+// defaulting unknown/empty values to "changes".
+func normalizePostureLogMode(mode string) string {
+	switch mode {
+	case postureLogAlways, postureLogOff, postureLogChanges:
+		return mode
+	default:
+		return postureLogChanges
+	}
 }
 
 // New returns a devices Collector that lists via the rich devices endpoint,
@@ -102,6 +173,8 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		collectRoutes:  collectRoutes,
 		collectPosture: collectPosture,
 		perEntity:      true,
+		postureLogMode: postureLogChanges,
+		lastPosture:    make(map[string]string),
 	}
 	for _, o := range opts {
 		o(c)
@@ -215,14 +288,49 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	return nil
 }
 
-// emitPosture fetches the posture attributes for one device and emits a single
-// posture log event. Per-device errors are non-fatal: the device is skipped and
-// collection continues.
+// emitPosture fetches the posture attributes for one device, always emits the
+// posture info-gauge metric (constant 1, curated labels), and conditionally
+// emits the full posture LOG event depending on the configured posture log mode.
+// Per-device errors are non-fatal: the device is skipped and collection
+// continues.
 func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice) {
 	attrs, err := c.api.DevicePostureAttributes(ctx, d.ID)
 	if err != nil {
 		return
 	}
+
+	// Info-gauge metric: always emitted (independent of log mode). Constant 1,
+	// carrying the curated posture subset plus device identity as labels.
+	metricAttrs := telemetry.Attrs{
+		semconv.HostName: d.Hostname,
+		semconv.HostID:   d.ID,
+	}
+	for srcKey, label := range postureKeyToLabel {
+		if v, ok := attrs[srcKey]; ok {
+			metricAttrs[label] = fmt.Sprint(v)
+		}
+	}
+	e.Gauge(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
+
+	// Decide whether to emit the LOG. The signature is computed over the FULL
+	// posture map so any posture change (not just curated keys) fires the log.
+	sig := postureSignature(attrs)
+	emitLog := false
+	switch c.postureLogMode {
+	case postureLogOff:
+		emitLog = false
+	case postureLogAlways:
+		emitLog = true
+	default: // postureLogChanges
+		prev, seen := c.lastPosture[d.ID]
+		emitLog = !seen || prev != sig
+	}
+	c.lastPosture[d.ID] = sig
+
+	if !emitLog {
+		return
+	}
+
 	evAttrs := telemetry.Attrs{
 		semconv.HostName: d.Hostname,
 		semconv.HostID:   d.ID,
@@ -236,6 +344,21 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		Body:     fmt.Sprintf("device %q has %d posture attribute(s)", d.Hostname, len(attrs)),
 		Attrs:    evAttrs,
 	})
+}
+
+// postureSignature returns a stable string fingerprint of a posture map: each
+// entry rendered as key=value, sorted by key and joined, so logically-equal
+// maps produce equal signatures regardless of Go map iteration order.
+func postureSignature(attrs map[string]any) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(attrs))
+	for k, v := range attrs {
+		parts = append(parts, k+"="+fmt.Sprint(v))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\x1f")
 }
 
 // toMetas converts rich API devices to the cache's normalized DeviceMeta form,

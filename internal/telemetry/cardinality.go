@@ -46,20 +46,35 @@ type SeriesCount struct {
 //
 // All methods are safe for concurrent use and are no-ops on a nil receiver.
 type CardinalityTracker struct {
-	mu   sync.Mutex
-	sets map[string]*seriesSet
-	last []SeriesCount // counts from the most recent Report; nil before the first
+	mu        sync.Mutex
+	sets      map[string]*seriesSet
+	seriesCap int           // per-source-metric distinct-series cap (pins the reported count)
+	last      []SeriesCount // counts from the most recent Report; nil before the first
 }
 
-// NewCardinalityTracker returns an empty tracker.
+// NewCardinalityTracker returns an empty tracker using the package default
+// per-metric cap (defaultSeriesCap).
 func NewCardinalityTracker() *CardinalityTracker {
-	return &CardinalityTracker{sets: map[string]*seriesSet{}}
+	return NewCardinalityTrackerWithCap(defaultSeriesCap)
+}
+
+// NewCardinalityTrackerWithCap returns an empty tracker that pins each source
+// metric's distinct-series count at seriesCap. Pass the configured OTLP
+// cardinality limit so tailscale2otel.series.active pins exactly when a metric
+// reaches the limit (and overflows into otel_metric_overflow). A non-positive
+// seriesCap (the "unlimited OTLP limit" case) falls back to defaultSeriesCap as a
+// memory guard so the tracker never grows unboundedly.
+func NewCardinalityTrackerWithCap(seriesCap int) *CardinalityTracker {
+	if seriesCap <= 0 {
+		seriesCap = defaultSeriesCap
+	}
+	return &CardinalityTracker{sets: map[string]*seriesSet{}, seriesCap: seriesCap}
 }
 
 // Observe records one emitted data point for the source metric name with the
 // given attributes. It is a no-op on a nil tracker and for the self-metric
 // itself (self-exclusion, which also prevents Report->Gauge->Observe
-// recursion). Once a metric reaches defaultSeriesCap distinct series, further
+// recursion). Once a metric reaches the tracker's per-metric cap, further
 // distinct combinations are dropped (the metric is marked capped).
 func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
 	if t == nil || name == seriesActiveMetric {
@@ -73,7 +88,7 @@ func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
 		s = &seriesSet{fps: make(map[uint64]struct{})}
 		t.sets[name] = s
 	}
-	if len(s.fps) >= defaultSeriesCap {
+	if len(s.fps) >= t.seriesCap {
 		s.capped = true
 		return
 	}

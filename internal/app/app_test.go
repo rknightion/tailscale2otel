@@ -138,6 +138,48 @@ func TestRegisterCollectors_NodeMetricsGating(t *testing.T) {
 	})
 }
 
+// TestRegisterCollectors_FeatureProbeStreamMode verifies the flowlogs feature
+// probe is registered exactly when flowlogs is enabled but NOT polling (stream
+// mode), so tailscale.feature.enabled keeps being emitted without the poller. In
+// poll mode the poller emits the gauge itself, so no probe is registered.
+func TestRegisterCollectors_FeatureProbeStreamMode(t *testing.T) {
+	t.Run("stream source -> probe registered, poller not", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.Flowlogs.Enabled = true
+		cfg.Collectors.Flowlogs.Source = "stream"
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if !hasCollector(a, "flowlogs-feature") {
+			t.Fatal("flowlogs-feature probe not registered in stream mode")
+		}
+		if hasCollector(a, "flowlogs") {
+			t.Fatal("flowlogs poller registered in stream mode")
+		}
+	})
+	t.Run("poll source -> poller registered, no probe", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.Flowlogs.Enabled = true
+		cfg.Collectors.Flowlogs.Source = "poll"
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if !hasCollector(a, "flowlogs") {
+			t.Fatal("flowlogs poller not registered in poll mode")
+		}
+		if hasCollector(a, "flowlogs-feature") {
+			t.Fatal("feature probe registered in poll mode (the poller already emits it)")
+		}
+	})
+	t.Run("flowlogs disabled -> neither", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		cfg.Collectors.Flowlogs.Enabled = false
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if hasCollector(a, "flowlogs-feature") || hasCollector(a, "flowlogs") {
+			t.Fatal("flowlogs collectors registered while disabled")
+		}
+	})
+}
+
 // TestAutoConfigureStreaming_RegistersBothSinks verifies the gated auto_configure
 // path PUTs this receiver as a Splunk-HEC sink for both log types.
 func TestAutoConfigureStreaming_RegistersBothSinks(t *testing.T) {

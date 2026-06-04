@@ -158,6 +158,14 @@ type CardinalityConfig struct {
 	DevicePerEntity bool `yaml:"device_per_entity"`
 	UserPerEntity   bool `yaml:"user_per_entity"`
 	KeyPerEntity    bool `yaml:"key_per_entity"`
+	// MetricLimit is the hard per-instrument cardinality limit: the maximum number
+	// of distinct attribute sets (series) a single metric may emit per collection
+	// cycle. Beyond it the OTLP SDK collapses further series into one
+	// otel_metric_overflow series (silent loss of detail), so size it above your
+	// busiest flow-metric cardinality. Cardinality is primarily shaped by the
+	// toggles above (ports/node-dims/collapse-external); this is the safety cap.
+	// Default 10000; 0 or negative disables the limit (unlimited).
+	MetricLimit int `yaml:"metric_limit"`
 }
 
 // Collectors groups the per-collector configurations.
@@ -270,6 +278,13 @@ type CollectorConfig struct {
 	ExpiryWarn      Duration `yaml:"expiry_warn"`
 	CollectRoutes   bool     `yaml:"collect_routes"`
 	CollectPosture  bool     `yaml:"collect_posture"`
+	// PostureLogMode controls the tailscale.device.posture LOG (devices collector,
+	// requires collect_posture): "changes" (default) logs a device only when its
+	// posture changes since the last scrape — a full baseline dump on the first
+	// scrape, then deltas; "always" logs every scrape (the prior behavior); "off"
+	// suppresses the log entirely. The posture info-gauge METRIC is emitted every
+	// scrape regardless of this setting.
+	PostureLogMode string `yaml:"posture_log_mode"`
 	// MaxLogRecordsPerWindow caps flow LOG records emitted per poll window
 	// (flowlogs only; 0 = unlimited). Excess is counted into
 	// tailscale.network.flow.logs_dropped; metrics are never capped.

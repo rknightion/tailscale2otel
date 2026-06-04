@@ -60,7 +60,8 @@ func (a *App) registerCollectors() {
 	if c.Devices.Enabled {
 		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture,
-			devices.WithPerEntity(a.cfg.Cardinality.DevicePerEntity)), c.Devices.Interval.D())
+			devices.WithPerEntity(a.cfg.Cardinality.DevicePerEntity),
+			devices.WithPostureLogMode(c.Devices.PostureLogMode)), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
 		a.registry.Register(users.New(a.client, c.Users.Interval.D(),
@@ -87,6 +88,12 @@ func (a *App) registerCollectors() {
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
 		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck())
 		a.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
+	} else if c.Flowlogs.Enabled {
+		// Stream-only (source: stream): the poller isn't registered, so the
+		// tailscale.feature.enabled health gauge it normally emits would be missing.
+		// Register a lightweight probe that reports it independently of ingestion.
+		fp := flowlogs.NewFeatureProbe(a.flowFeatureCheck(), c.Flowlogs.Interval.D())
+		a.registry.Register(fp, fp.DefaultInterval())
 	}
 	if c.Auditlogs.Enabled && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(a.client, a.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D())

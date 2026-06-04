@@ -142,6 +142,14 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > gated by `cardinality.flow_node_dims` (**on** by default); `source_port`/`destination_port` are
 > gated by `cardinality.flow_include_ports` (**off** by default, as ports add cardinality).
 
+> **Per-metric cardinality cap.** Every metric is bounded by `cardinality.metric_limit` (default
+> 10000) — the OTLP SDK's hard limit on distinct series per instrument per export cycle. Series past
+> it collapse into a single `{otel_metric_overflow="true"}` series (silent loss of per-series
+> detail). So a label-less `tailscale_network_io_bytes_total{otel_metric_overflow="true"}` (or the
+> same on `network.packets`) means you are **over the cap** — raise `metric_limit` or lower flow
+> cardinality (ephemeral `source_port` is the biggest driver). `tailscale2otel.series.active` pins at
+> the same cap, so it flags the condition too.
+
 ### Devices (`tailscale.device.*`, `tailscale.devices.count`)
 
 Per-device gauges plus a fleet roll-up. "id dims" below is shorthand for the common device-identity
@@ -154,6 +162,7 @@ attribute set: `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user`
 | `tailscale.device.key.expiry` | `s` | gauge | `tailscale_device_key_expiry_seconds` | `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user` | Unix timestamp the device node key expires. |
 | `tailscale.device.last_seen` | `s` | gauge | `tailscale_device_last_seen_seconds` | `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user` | Unix timestamp the device was last seen. |
 | `tailscale.device.online` | `1` | gauge | `tailscale_device_online_ratio` | `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user` | `1` if the device is currently online, else `0`. |
+| `tailscale.device.posture` | `1` | gauge | `tailscale_device_posture_ratio` | `host_name`, `host_id`, `os`, `os_version`, `ts_version`, `auto_update`, `encrypted`, `track` | Per-device posture info gauge (constant `1`); device security posture — OS, Tailscale client version, auto-update, state-encrypted, release track — carried as labels. **Gated** by `collect_posture`. |
 | `tailscale.device.routes.advertised` | `{route}` | gauge | `tailscale_device_routes_advertised` | `host_name`, `host_id` | Number of subnet routes the device advertises. **Gated** by `collect_routes`. |
 | `tailscale.device.routes.enabled` | `{route}` | gauge | `tailscale_device_routes_enabled` | `host_name`, `host_id` | Number of advertised routes that are enabled/approved. **Gated** by `collect_routes`. |
 | `tailscale.device.update_available` | `1` | gauge | `tailscale_device_update_available_ratio` | `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user` | `1` if a Tailscale client update is available for the device. |
@@ -212,6 +221,10 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 | `tailscale.feature.enabled` | `1` | gauge | `tailscale_feature_enabled_ratio` | `tailscale_feature` | `1` if the named tailnet feature is enabled, else `0`; one series per feature. |
 <!-- END GENERATED -->
 
+> `tailscale.feature.enabled` for network-flow-logging is emitted in **both** ingestion modes: the
+> flowlogs poller emits it directly when polling, and under `source: stream` a lightweight feature
+> probe emits it on the flowlogs interval — so the signal is never lost when only the receiver runs.
+
 ### Receivers — stream & webhook (`tailscale.stream.*`, `tailscale.webhook.*`)
 
 Health/throughput counters for the optional HEC log-stream receiver and the webhook receiver.
@@ -236,7 +249,7 @@ every scraped `tailscaled` series **verbatim**. Those forwarded series are runti
 <!-- BEGIN GENERATED: metrics groups="Node metrics" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
-| `tailscale.node.up` | `1` | gauge | `tailscale_node_up_ratio` | `instance` | Per-target scrape health: `1` if the last scrape of that node succeeded, else `0`. |
+| `tailscale.node.up` | `1` | gauge | `tailscale_node_up_ratio` | `tailscale_node` | Per-target scrape health: `1` if the last scrape of that node succeeded, else `0`. |
 | `tailscale2otel.nodemetrics.discovery.success` | `1` | gauge | `tailscale2otel_nodemetrics_discovery_success_ratio` | — | 1 if the last dynamic target-discovery refresh succeeded, else 0. Emitted only when discovery is enabled. |
 | `tailscale2otel.nodemetrics.discovery.targets` | `{target}` | gauge | `tailscale2otel_nodemetrics_discovery_targets` | — | Active node-metrics scrape targets after the last refresh (static plus discovered). Emitted only when discovery is enabled. |
 <!-- END GENERATED -->
@@ -259,7 +272,7 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 | Event name | Severity | Key attributes | Description |
 |---|---|---|---|
 | `tailscale.config.audit` | INFO | `tailscale_audit_action`, `tailscale_audit_origin`, `tailscale_audit_event_group_id`, `enduser_id`, `tailscale_actor_login`, `tailscale_actor_display`, `tailscale_target_id`, `tailscale_target_name`, `tailscale_target_type`, `tailscale_target_property`, `tailscale_audit_old`, `tailscale_audit_new`, `tailscale_audit_details`, `error` | Per configuration-audit event: actor, target, action, and (when present) the before/after change. Emitted at **WARN** when the event carries an error, otherwise INFO. |
-| `tailscale.device.posture` | INFO | `host_name`, `host_id` | Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API. **Gated** by `collect_posture`. |
+| `tailscale.device.posture` | INFO | `host_name`, `host_id` | Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API. **Gated** by `collect_posture`; by default emitted only when a device's posture changes (see `posture_log_mode`). |
 | `tailscale.key.expiring` | WARN | `tailscale_key_id`, `tailscale_key_type`, `tailscale_key_description`, `tailscale_key_expires_in_seconds` | Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp). |
 | `tailscale.network.flow` | INFO | `source_address`, `source_port`, `destination_address`, `destination_port`, `network_transport`, `network_type`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_node_id`, `tailscale_node_hostname`, `tailscale_connections`, `tailscale_tx_bytes`, `tailscale_rx_bytes`, `tailscale_tx_packets`, `tailscale_rx_packets` | Per-connection (per_connection) or per-record (per_record) network-flow detail: the 5-tuple, transport, traffic type, source/destination node, and tx/rx bytes & packets. |
 | `tailscale.webhook.<type>` | INFO / WARN by type | `tailscale_webhook_type`, `tailscale_tailnet` | Per webhook event; `<type>` is the Tailscale event type. Emitted at **WARN** for attention-worthy types (node key expiry, needs-approval/authorization/signature, deletions), otherwise INFO. The client-misconfig health events `exitNodeIPForwardingNotEnabled`/`subnetIPForwardingNotEnabled` are INFO and surfaced via the `NodeIPForwardingMisconfigured` alert. |
@@ -268,6 +281,18 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 > The **`tailscale_node_hostname`** attribute on `tailscale.network.flow` is populated only when the
 > node IP/ID could be resolved against the device-enrichment cache; otherwise the record carries the
 > raw `tailscale_node_id`/addresses without a hostname.
+
+> **Device posture — metric vs. log.** Posture is exposed two ways. The **metric**
+> `tailscale.device.posture` (→ `tailscale_device_posture_ratio`, a constant-`1` info gauge, one
+> series per device) carries a curated, low-cardinality label set (`os`, `os_version`, `ts_version`,
+> `auto_update`, `encrypted`, `track`) and is emitted **every scrape** — use it for fleet analytics
+> (version skew, auto-update/encryption coverage, release-track outliers). The **log**
+> `tailscale.device.posture` carries the full raw posture attribute set and, by default
+> (`posture_log_mode: changes`), is emitted only when a device's posture **changes** — a full
+> baseline dump on the first scrape after start, then per-device deltas — so it reads as an audit
+> trail rather than a per-minute snapshot. Note that the device's own OS is `node_os` / `node_osVersion`
+> (and the metric's `os` / `os_version` labels); the resource-level `os_type` / `os_description` on
+> any signal describe the **collector** host, not the device.
 
 ---
 
@@ -285,20 +310,24 @@ Key behavior:
   metric name and original labels preserved** — these are *not* renamed into the curated
   `tailscale.*` namespace and are *not* subject to our semconv naming. (Grafana Cloud's standard
   OTLP→Prometheus normalization still applies on ingest.)
-- **An added `instance` label.** Every forwarded series gains an `instance` label identifying the
-  scraped node, so you can distinguish series across targets.
+- **An added `tailscale_node` label.** Every forwarded series gains a `tailscale_node` label
+  (OTEL attribute `tailscale.node`) identifying the scraped node, so you can distinguish series
+  across targets. It is deliberately **not** called `instance`: on Grafana Cloud the OTLP→Prometheus
+  translation promotes the exporter's `service.instance.id` resource attribute to the `instance`
+  label, which would overwrite a per-node `instance` and collapse every node's series onto the
+  collector host.
 - **Instrument mapping.** Counters from the node are re-emitted as **deltas**; gauges are
   re-emitted as **gauges**.
 - **Per-target up signal.** A `tailscale.node.up` gauge (→ `tailscale_node_up_ratio`) is emitted
-  per target with the `instance` label, reporting whether the last scrape of that node succeeded.
+  per target with the `tailscale_node` label, reporting whether the last scrape of that node succeeded.
 - **Cardinality controls (optional).** `collectors.node_metrics.metric_allow` / `metric_deny`
   (anchored regexes on the forwarded metric **name**, allow-then-deny) and `drop_labels` (label keys
   stripped from every forwarded series) trim the verbatim stream. They never affect
-  `tailscale.node.up` or the `tailscale2otel.nodemetrics.discovery.*` gauges, and the `instance`
+  `tailscale.node.up` or the `tailscale2otel.nodemetrics.discovery.*` gauges, and the `tailscale_node`
   label is never dropped. The scraper also enforces per-target `max_response_bytes` / `max_samples`
   limits, while dynamic discovery is bounded by `discovery.max_targets`.
 
-Node identity is carried as **labels** (notably `instance`) on the forwarded series, **not** as
+Node identity is carried as **labels** (notably `tailscale_node`) on the forwarded series, **not** as
 OTEL Resource attributes. This keeps the forwarded metrics queryable alongside the rest of the
 fleet without needing resource-attribute joins.
 

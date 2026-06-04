@@ -44,6 +44,7 @@ cardinality:
   device_per_entity: true            # per-device gauges (online/last_seen/key.expiry/derp/routes); false = only tailscale.devices.count
   user_per_entity: true              # per-user gauges (devices/connected/last_seen); false = only tailscale.users.count
   key_per_entity: true               # per-key expiry gauge; false = only tailscale.keys.count (expiry WARN log still fires)
+  metric_limit: 10000                # hard per-metric series cap (OTLP cardinality limit). Beyond it the SDK collapses extra series into otel_metric_overflow. 0/negative = unlimited. Shape cardinality with the toggles above; this is the safety cap.
 
 collectors:
   # Every collector takes `enabled` + `interval`. The two LOG collectors (flowlogs,
@@ -64,7 +65,10 @@ collectors:
   # log_mode and the cardinality.* block above — apply no matter which path delivers
   # the records.
 
-  devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
+  # posture_log_mode (needs collect_posture): changes (default; log only when a device's posture
+  # changes — full baseline dump on first scrape, deltas after) | always (every scrape) | off (no
+  # log). The posture info-gauge metric (tailscale.device.posture) is emitted every scrape regardless.
+  devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false, posture_log_mode: changes }
 
   # flowlogs — network flow logs → aggregated traffic counters + per-connection logs.
   flowlogs:

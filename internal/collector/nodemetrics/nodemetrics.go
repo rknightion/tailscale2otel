@@ -4,7 +4,7 @@
 // through the shared telemetry.Emitter.
 //
 // It is a Prometheus-faithful drop-in for scraping individual Tailscale nodes:
-// node identity is carried as LABELS (an "instance" attribute plus any
+// node identity is carried as LABELS (a "tailscale.node" attribute plus any
 // configured passthrough labels), NOT as OTEL Resources, and a SINGLE
 // MeterProvider (the one behind the injected Emitter) is used — there are no
 // per-node providers. Metric names are forwarded VERBATIM with an empty unit so
@@ -52,7 +52,14 @@ const (
 	// metricUp is the per-target scrape health gauge.
 	metricUp = "tailscale.node.up"
 	// attrInstance is the node-identity label attached to every emitted series.
-	attrInstance = "instance"
+	// It is deliberately NOT "instance": Grafana Cloud's OTLP->Prometheus
+	// translation promotes the resource attribute service.instance.id to the
+	// "instance" label, and that resource value WINS — clobbering a per-series
+	// "instance" attribute to the collector host's name and collapsing
+	// tailscale.node.up to a single series. The key "tailscale.node" normalizes to
+	// the Prometheus label "tailscale_node", which does not collide with that
+	// promotion, so per-node attribution survives.
+	attrInstance = "tailscale.node"
 
 	// metricDiscoverySuccess and metricDiscoveredTargets are the discovery-health
 	// gauges emitted every Collect when a Discoverer is configured.
@@ -73,8 +80,9 @@ type prevEntry struct {
 }
 
 // Target is a single Prometheus-text endpoint to scrape. Instance overrides the
-// default host:port "instance" label; Labels are passthrough attributes merged
-// onto every sample from this target (parsed metric labels win on key conflict).
+// default host:port value of the per-node "tailscale.node" identity label; Labels
+// are passthrough attributes merged onto every sample from this target (parsed
+// metric labels win on key conflict).
 //
 // The optional auth/TLS fields cover PROXIED/HTTPS targets; native tailscaled
 // /metrics endpoints are plain HTTP with no auth/TLS, so leaving them unset keeps
@@ -133,7 +141,7 @@ type Options struct {
 	// Passthrough filters applied to forwarded samples only (never to
 	// tailscale.node.up or the discovery.* gauges). MetricAllow/MetricDeny are
 	// anchored against the metric NAME; DropLabels strips label keys (the
-	// instance label is never dropped). Empty = no filtering.
+	// tailscale.node identity label is never dropped). Empty = no filtering.
 	MetricAllow []string
 	MetricDeny  []string
 	DropLabels  []string
@@ -161,7 +169,7 @@ type Collector struct {
 
 	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
 	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
-	dropLabels  map[string]struct{} // label keys stripped from forwarded series (never the instance label)
+	dropLabels  map[string]struct{} // label keys stripped from forwarded series (never the tailscale.node label)
 
 	mu          sync.Mutex
 	active      []resolvedTarget     // current scrape set: static ∪ discovered (guarded by mu)
@@ -657,8 +665,8 @@ func (c *Collector) allowMetric(name string) bool {
 	return true
 }
 
-// applyDropLabels deletes every dropLabels key from attrs, EXCEPT the instance
-// label which is never dropped (node identity must survive).
+// applyDropLabels deletes every dropLabels key from attrs, EXCEPT the
+// tailscale.node identity label which is never dropped (node identity must survive).
 func (c *Collector) applyDropLabels(attrs telemetry.Attrs) {
 	for k := range c.dropLabels {
 		if k == attrInstance {
@@ -698,8 +706,8 @@ func (c *Collector) emitDelta(s *sample, attrs telemetry.Attrs, e telemetry.Emit
 }
 
 // mergeAttrs builds the per-sample attribute set: target passthrough labels
-// first, then parsed metric labels (which win on conflict), then the instance
-// label (which always wins). All values are strings.
+// first, then parsed metric labels (which win on conflict), then the
+// tailscale.node identity label (which always wins). All values are strings.
 func mergeAttrs(targetLabels, metricLabels map[string]string, instance string) telemetry.Attrs {
 	out := make(telemetry.Attrs, len(targetLabels)+len(metricLabels)+1)
 	for k, v := range targetLabels {
@@ -713,7 +721,7 @@ func mergeAttrs(targetLabels, metricLabels map[string]string, instance string) t
 }
 
 // seriesKey is the stable, injective key used for delta tracking:
-// name + "\x00" + sorted "k=<quoted v>" over ALL attrs (incl instance), joined by
+// name + "\x00" + sorted "k=<quoted v>" over ALL attrs (incl tailscale.node), joined by
 // ",". The value is rendered with strconv.Quote so that a value containing "="
 // or "," (both legal in Prometheus label values) cannot be confused with the
 // key/value or part separators — keys are [a-zA-Z0-9_] so they need no quoting.
@@ -735,8 +743,8 @@ func attrString(v any) string {
 	return fmt.Sprint(v)
 }
 
-// hostPort extracts host:port from a target URL for the default instance label,
-// falling back to the raw URL when it cannot be parsed.
+// hostPort extracts host:port from a target URL for the default tailscale.node
+// label value, falling back to the raw URL when it cannot be parsed.
 func hostPort(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {

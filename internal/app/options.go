@@ -23,18 +23,19 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 			base64.StdEncoding.EncodeToString([]byte(gc.InstanceID+":"+gc.Token))
 	}
 	return telemetry.Options{
-		ServiceName:    serviceName,
-		ServiceVersion: version,
-		InstanceID:     instanceID(cfg),
-		Protocol:       cfg.OTLP.Protocol,
-		Endpoint:       cfg.OTLP.Endpoint,
-		Headers:        headers,
-		Insecure:       cfg.OTLP.TLS.Insecure,
-		CAFile:         cfg.OTLP.TLS.CAFile,
-		CertFile:       cfg.OTLP.TLS.CertFile,
-		KeyFile:        cfg.OTLP.TLS.KeyFile,
-		MetricInterval: cfg.OTLP.MetricInterval.D(),
-		SelfObsEnabled: cfg.SelfObservability.Enabled,
+		ServiceName:      serviceName,
+		ServiceVersion:   version,
+		InstanceID:       instanceID(cfg),
+		Protocol:         cfg.OTLP.Protocol,
+		Endpoint:         cfg.OTLP.Endpoint,
+		Headers:          headers,
+		Insecure:         cfg.OTLP.TLS.Insecure,
+		CAFile:           cfg.OTLP.TLS.CAFile,
+		CertFile:         cfg.OTLP.TLS.CertFile,
+		KeyFile:          cfg.OTLP.TLS.KeyFile,
+		MetricInterval:   cfg.OTLP.MetricInterval.D(),
+		SelfObsEnabled:   cfg.SelfObservability.Enabled,
+		CardinalityLimit: cfg.Cardinality.MetricLimit,
 	}
 }
 

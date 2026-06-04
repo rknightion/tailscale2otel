@@ -334,6 +334,24 @@ func TestValidateAcceptsAllLogModes(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsBadPostureLogMode(t *testing.T) {
+	err := loadErr(t, "collectors:\n  devices:\n    posture_log_mode: hourly\n")
+	if err == nil {
+		t.Fatalf("expected error for bad devices.posture_log_mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "posture_log_mode") {
+		t.Errorf("error %q should mention posture_log_mode", err.Error())
+	}
+}
+
+func TestValidateAcceptsAllPostureLogModes(t *testing.T) {
+	for _, m := range []string{"changes", "always", "off"} {
+		if err := loadErr(t, "collectors:\n  devices:\n    posture_log_mode: "+m+"\n"); err != nil {
+			t.Errorf("posture_log_mode %q should be valid: %v", m, err)
+		}
+	}
+}
+
 func TestValidateRejectsBadDecompress(t *testing.T) {
 	err := loadErr(t, "streaming:\n  decompress: bzip2\n")
 	if err == nil {

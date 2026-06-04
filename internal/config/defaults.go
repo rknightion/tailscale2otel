@@ -48,6 +48,7 @@ func Default() *Config {
 			DevicePerEntity:  true,
 			UserPerEntity:    true,
 			KeyPerEntity:     true,
+			MetricLimit:      10000,
 		},
 		Collectors: Collectors{
 			Devices: CollectorConfig{
@@ -55,6 +56,7 @@ func Default() *Config {
 				Interval:       dur(60 * time.Second),
 				CollectRoutes:  false,
 				CollectPosture: false,
+				PostureLogMode: "changes",
 			},
 			Flowlogs: CollectorConfig{
 				Enabled:         true,

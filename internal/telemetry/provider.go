@@ -45,6 +45,13 @@ type Options struct {
 
 	MetricInterval time.Duration // PeriodicReader interval (default 60s)
 
+	// CardinalityLimit is the hard per-instrument limit on the number of distinct
+	// attribute sets collected per cycle; sets beyond it collapse into the SDK's
+	// otel_metric_overflow series. 0 or negative means unlimited. The app layer
+	// supplies the configured default (10000); the same value caps the
+	// self-observability series tracker so series.active pins exactly at the limit.
+	CardinalityLimit int
+
 	// SelfObsEnabled turns on self-observability instrumentation, including the
 	// tailscale2otel.series.active cardinality tracker (nil/disabled otherwise).
 	SelfObsEnabled bool
@@ -84,6 +91,10 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(interval))),
+		// Hard per-instrument cardinality limit (0/neg = unlimited). Raises the SDK
+		// default of 2000 to whatever the app configures (default 10000); beyond it
+		// the SDK emits otel_metric_overflow.
+		sdkmetric.WithCardinalityLimit(opts.CardinalityLimit),
 	)
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithResource(res),
@@ -92,7 +103,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 	var card *CardinalityTracker
 	if opts.SelfObsEnabled {
-		card = NewCardinalityTracker()
+		card = NewCardinalityTrackerWithCap(opts.CardinalityLimit)
 	}
 
 	return &Provider{

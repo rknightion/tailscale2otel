@@ -57,6 +57,40 @@ func TestCardinalityTracker_ExactDistinctCountPerMetric(t *testing.T) {
 	}
 }
 
+// TestCardinalityTracker_ConfigurableCap asserts a tracker built with an explicit
+// cap pins each source metric's reported distinct-series count at that cap once
+// exceeded (rather than the package default), so series.active faithfully signals
+// when a metric is at the configured OTLP cardinality limit.
+func TestCardinalityTracker_ConfigurableCap(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTrackerWithCap(3)
+	for s := 0; s < 5; s++ {
+		tr.Observe("tailscale.metric", telemetry.Attrs{"n": s})
+	}
+	tr.Report(rec.Emitter())
+
+	if got := seriesActivePointsByName(t, rec)["tailscale.metric"]; got != 3 {
+		t.Fatalf("series.active = %v, want 3 (pinned at the configured cap)", got)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Count != 3 || !snap[0].Capped {
+		t.Fatalf("Snapshot = %+v, want one entry Count=3 Capped=true", snap)
+	}
+}
+
+// TestCardinalityTracker_NonPositiveCapFallsBackToDefault asserts a non-positive
+// cap (the "unlimited OTLP limit" case) falls back to the package memory-guard
+// default rather than tracking unboundedly.
+func TestCardinalityTracker_NonPositiveCapFallsBackToDefault(t *testing.T) {
+	tr := telemetry.NewCardinalityTrackerWithCap(0)
+	rec := telemetrytest.New()
+	tr.Observe("tailscale.metric", telemetry.Attrs{"n": 1})
+	tr.Report(rec.Emitter())
+	if got := seriesActivePointsByName(t, rec)["tailscale.metric"]; got != 1 {
+		t.Fatalf("series.active = %v, want 1 (default cap still tracks normally)", got)
+	}
+}
+
 // TestCardinalityTracker_DeterministicFingerprint asserts the same attribute
 // set observed twice counts as ONE series, despite Go's randomized map order.
 func TestCardinalityTracker_DeterministicFingerprint(t *testing.T) {

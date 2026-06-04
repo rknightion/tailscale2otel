@@ -557,6 +557,235 @@ func TestCollect_PostureEnabled(t *testing.T) {
 	}
 }
 
+// richPosture returns a posture map containing every curated node:* key plus an
+// uncurated custom key, used to assert the info-gauge labels.
+func richPosture() map[string]any {
+	return map[string]any{
+		"node:os":               "linux",
+		"node:osVersion":        "24.04",
+		"node:tsVersion":        "1.78.1",
+		"node:tsAutoUpdate":     true,
+		"node:tsStateEncrypted": false,
+		"node:tsReleaseTrack":   "stable",
+		"custom:foo":            "bar",
+	}
+}
+
+func TestCollect_PostureInfoGauge(t *testing.T) {
+	// collectPosture on + a device with a full posture map => one
+	// tailscale.device.posture GAUGE point, value 1, carrying the curated labels.
+	devs := sampleDevices()[:1] // just the laptop
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{"3690401478992208": richPosture()},
+	}
+	c := devices.New(api, cache, 0, false, true)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device.posture")
+	if len(pts) != 1 {
+		t.Fatalf("posture info-gauge points = %d, want 1; pts=%+v", len(pts), pts)
+	}
+	p := pts[0]
+	if p.Kind != "gauge" {
+		t.Fatalf("posture metric kind = %q, want gauge", p.Kind)
+	}
+	if p.Unit != semconv.UnitDimensionless {
+		t.Fatalf("posture metric unit = %q, want %q", p.Unit, semconv.UnitDimensionless)
+	}
+	if p.Value != 1 {
+		t.Fatalf("posture metric value = %v, want 1 (constant)", p.Value)
+	}
+	wantLabels := map[string]string{
+		semconv.HostName: "laptop",
+		semconv.HostID:   "3690401478992208",
+		"os":             "linux",
+		"os_version":     "24.04",
+		"ts_version":     "1.78.1",
+		"auto_update":    "true",
+		"encrypted":      "false",
+		"track":          "stable",
+	}
+	for k, want := range wantLabels {
+		if got := p.Attrs[k]; got != want {
+			t.Errorf("posture metric label %q = %q, want %q", k, got, want)
+		}
+	}
+	// The uncurated custom key must NOT become a metric label.
+	if _, present := p.Attrs["custom:foo"]; present {
+		t.Errorf("posture metric carries uncurated label custom:foo = %q, want absent", p.Attrs["custom:foo"])
+	}
+}
+
+func TestCollect_PostureInfoGauge_OmitsMissingLabels(t *testing.T) {
+	// A device whose posture map lacks a curated key must omit that label.
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{"3690401478992208": {"node:os": "linux"}},
+	}
+	c := devices.New(api, cache, 0, false, true)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.device.posture")
+	if len(pts) != 1 {
+		t.Fatalf("posture info-gauge points = %d, want 1", len(pts))
+	}
+	p := pts[0]
+	if p.Attrs["os"] != "linux" {
+		t.Fatalf("posture os label = %q, want linux", p.Attrs["os"])
+	}
+	for _, k := range []string{"os_version", "ts_version", "auto_update", "encrypted", "track"} {
+		if _, present := p.Attrs[k]; present {
+			t.Errorf("posture metric label %q present = %q, want omitted (key absent in posture map)", k, p.Attrs[k])
+		}
+	}
+}
+
+func TestCollect_PostureLogOnChange_Default(t *testing.T) {
+	// Default log mode is "changes": baseline on first scrape, silent on an
+	// unchanged repeat, fires again when posture changes. The info-gauge metric
+	// is emitted on EVERY scrape regardless.
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	posture := map[string]map[string]any{"3690401478992208": richPosture()}
+	api := &fakeAPI{devices: devs, posture: posture}
+	c := devices.New(api, cache, 0, false, true)
+
+	// 1st scrape: first-seen => baseline log emitted.
+	rec1 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec1.Emitter()); err != nil {
+		t.Fatalf("Collect 1: %v", err)
+	}
+	if got := postureLogCount(rec1); got != 1 {
+		t.Fatalf("scrape 1 posture logs = %d, want 1 (baseline)", got)
+	}
+	if got := len(rec1.MetricPoints("tailscale.device.posture")); got != 1 {
+		t.Fatalf("scrape 1 posture metric points = %d, want 1", got)
+	}
+
+	// 2nd scrape: unchanged posture => no log, metric still emitted.
+	rec2 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatalf("Collect 2: %v", err)
+	}
+	if got := postureLogCount(rec2); got != 0 {
+		t.Fatalf("scrape 2 posture logs = %d, want 0 (unchanged)", got)
+	}
+	if got := len(rec2.MetricPoints("tailscale.device.posture")); got != 1 {
+		t.Fatalf("scrape 2 posture metric points = %d, want 1 (metric every scrape)", got)
+	}
+
+	// Change the posture => log fires again.
+	changed := richPosture()
+	changed["node:osVersion"] = "24.10"
+	posture["3690401478992208"] = changed
+	rec3 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec3.Emitter()); err != nil {
+		t.Fatalf("Collect 3: %v", err)
+	}
+	if got := postureLogCount(rec3); got != 1 {
+		t.Fatalf("scrape 3 posture logs = %d, want 1 (posture changed)", got)
+	}
+	if got := len(rec3.MetricPoints("tailscale.device.posture")); got != 1 {
+		t.Fatalf("scrape 3 posture metric points = %d, want 1", got)
+	}
+}
+
+func TestCollect_PostureLogMode_Always(t *testing.T) {
+	// "always" mode emits the posture log every scrape even when unchanged.
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{"3690401478992208": richPosture()},
+	}
+	c := devices.New(api, cache, 0, false, true, devices.WithPostureLogMode("always"))
+
+	for i := 1; i <= 3; i++ {
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect %d: %v", i, err)
+		}
+		if got := postureLogCount(rec); got != 1 {
+			t.Fatalf("scrape %d posture logs = %d, want 1 (always)", i, got)
+		}
+		if got := len(rec.MetricPoints("tailscale.device.posture")); got != 1 {
+			t.Fatalf("scrape %d posture metric points = %d, want 1", i, got)
+		}
+	}
+}
+
+func TestCollect_PostureLogMode_Off(t *testing.T) {
+	// "off" mode never emits the posture log, but the info-gauge metric is still
+	// emitted on every scrape.
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{"3690401478992208": richPosture()},
+	}
+	c := devices.New(api, cache, 0, false, true, devices.WithPostureLogMode("off"))
+
+	for i := 1; i <= 2; i++ {
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect %d: %v", i, err)
+		}
+		if got := postureLogCount(rec); got != 0 {
+			t.Fatalf("scrape %d posture logs = %d, want 0 (off)", i, got)
+		}
+		if got := len(rec.MetricPoints("tailscale.device.posture")); got != 1 {
+			t.Fatalf("scrape %d posture metric points = %d, want 1 (metric still emitted when log off)", i, got)
+		}
+	}
+}
+
+func TestCollect_PostureLogMode_UnknownDefaultsToChanges(t *testing.T) {
+	// An unknown/empty mode falls back to the default "changes" behavior.
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: devs,
+		posture: map[string]map[string]any{"3690401478992208": richPosture()},
+	}
+	c := devices.New(api, cache, 0, false, true, devices.WithPostureLogMode("bogus"))
+
+	rec1 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec1.Emitter()); err != nil {
+		t.Fatalf("Collect 1: %v", err)
+	}
+	if got := postureLogCount(rec1); got != 1 {
+		t.Fatalf("scrape 1 posture logs = %d, want 1 (unknown mode => changes baseline)", got)
+	}
+	rec2 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatalf("Collect 2: %v", err)
+	}
+	if got := postureLogCount(rec2); got != 0 {
+		t.Fatalf("scrape 2 posture logs = %d, want 0 (unknown mode => changes, unchanged)", got)
+	}
+}
+
+// postureLogCount counts captured log records whose EventName is the posture
+// event.
+func postureLogCount(rec *telemetrytest.Recorder) int {
+	n := 0
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device.posture" {
+			n++
+		}
+	}
+	return n
+}
+
 func TestCollect_PostureContinuesOnError(t *testing.T) {
 	devs := sampleDevices()
 	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))

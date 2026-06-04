@@ -63,8 +63,14 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 		t.Errorf("Cardinality per-entity toggles = %v/%v/%v, want all default true",
 			cfg.Cardinality.DevicePerEntity, cfg.Cardinality.UserPerEntity, cfg.Cardinality.KeyPerEntity)
 	}
+	if cfg.Cardinality.MetricLimit != 10000 {
+		t.Errorf("Cardinality.MetricLimit = %d, want default 10000", cfg.Cardinality.MetricLimit)
+	}
 	if !cfg.Collectors.Devices.Enabled {
 		t.Errorf("Devices.Enabled = false, want default true")
+	}
+	if cfg.Collectors.Devices.PostureLogMode != "changes" {
+		t.Errorf("Devices.PostureLogMode = %q, want default changes", cfg.Collectors.Devices.PostureLogMode)
 	}
 	if cfg.Collectors.Flowlogs.Source != "poll" {
 		t.Errorf("Flowlogs.Source = %q, want default poll", cfg.Collectors.Flowlogs.Source)

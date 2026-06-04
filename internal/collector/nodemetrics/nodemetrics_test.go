@@ -146,8 +146,13 @@ func TestGauge_CurrentValueEachScrape(t *testing.T) {
 	if p.Unit != "" {
 		t.Fatalf("node_load unit = %q, want empty", p.Unit)
 	}
-	if p.Attrs["instance"] != "node-a" {
-		t.Fatalf("node_load instance = %q, want node-a", p.Attrs["instance"])
+	if p.Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("node_load tailscale.node = %q, want node-a", p.Attrs["tailscale.node"])
+	}
+	// Regression guard for the service.instance.id resource-promotion collision:
+	// the per-node identity must NOT be emitted under the old "instance" key.
+	if _, ok := p.Attrs["instance"]; ok {
+		t.Fatalf("node_load emitted legacy instance attr = %q, want absent (renamed to tailscale.node)", p.Attrs["instance"])
 	}
 	if p.Attrs["kind"] != "cpu" {
 		t.Fatalf("node_load kind label = %q, want cpu", p.Attrs["kind"])
@@ -159,7 +164,7 @@ func TestGauge_CurrentValueEachScrape(t *testing.T) {
 		t.Fatalf("Collect() error = %v", err)
 	}
 	pts = rec.MetricPoints("node_load")
-	p2, ok := pointByAttr(pts, map[string]string{"kind": "cpu", "instance": "node-a"})
+	p2, ok := pointByAttr(pts, map[string]string{"kind": "cpu", "tailscale.node": "node-a"})
 	if !ok {
 		t.Fatalf("no node_load point after second scrape; pts=%+v", pts)
 	}
@@ -205,8 +210,8 @@ func TestCounter_BaselineThenDelta(t *testing.T) {
 	if pts[0].Value != 25 {
 		t.Fatalf("reqs delta = %v, want 25", pts[0].Value)
 	}
-	if pts[0].Attrs["instance"] != "node-a" || pts[0].Attrs["path"] != "/" {
-		t.Fatalf("reqs attrs = %+v, want instance=node-a path=/", pts[0].Attrs)
+	if pts[0].Attrs["tailscale.node"] != "node-a" || pts[0].Attrs["path"] != "/" {
+		t.Fatalf("reqs attrs = %+v, want tailscale.node=node-a path=/", pts[0].Attrs)
 	}
 
 	// Third scrape with no change: delta 0, nothing emitted to a fresh recorder.
@@ -325,10 +330,10 @@ func TestDefaultInstanceFromURL(t *testing.T) {
 	if len(pts) != 1 {
 		t.Fatalf("g points = %d, want 1", len(pts))
 	}
-	// srv.URL is like http://127.0.0.1:PORT — instance should be host:port.
+	// srv.URL is like http://127.0.0.1:PORT — tailscale.node should be host:port.
 	want := srv.Listener.Addr().String()
-	if pts[0].Attrs["instance"] != want {
-		t.Fatalf("default instance = %q, want %q (host:port from URL)", pts[0].Attrs["instance"], want)
+	if pts[0].Attrs["tailscale.node"] != want {
+		t.Fatalf("default tailscale.node = %q, want %q (host:port from URL)", pts[0].Attrs["tailscale.node"], want)
 	}
 }
 
@@ -350,10 +355,10 @@ func TestLabelPassthrough(t *testing.T) {
 	}
 	pts := rec.MetricPoints("g")
 	p, ok := pointByAttr(pts, map[string]string{
-		"instance": "node-a",
-		"role":     "relay",
-		"dc":       "fra",
-		"region":   "eu",
+		"tailscale.node": "node-a",
+		"role":           "relay",
+		"dc":             "fra",
+		"region":         "eu",
 	})
 	if !ok {
 		t.Fatalf("no g point with merged labels; pts=%+v", pts)
@@ -388,8 +393,15 @@ func TestHealthUp_OnSuccess(t *testing.T) {
 	if up[0].Unit != "1" {
 		t.Fatalf("up unit = %q, want 1", up[0].Unit)
 	}
-	if up[0].Attrs["instance"] != "node-a" {
-		t.Fatalf("up instance = %q, want node-a", up[0].Attrs["instance"])
+	if up[0].Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("up tailscale.node = %q, want node-a", up[0].Attrs["tailscale.node"])
+	}
+	// Regression guard for the service.instance.id resource-promotion collision:
+	// tailscale.node.up must NOT carry the per-node identity under "instance"
+	// (Grafana's OTLP->Prometheus promotes the resource service.instance.id to the
+	// "instance" label, which would otherwise clobber per-node attribution).
+	if _, ok := up[0].Attrs["instance"]; ok {
+		t.Fatalf("up emitted legacy instance attr = %q, want absent (renamed to tailscale.node)", up[0].Attrs["instance"])
 	}
 }
 
@@ -417,17 +429,17 @@ func TestMultipleTargets_OneFailsOtherHealthy(t *testing.T) {
 
 	// Healthy target still emits its series.
 	g := rec.MetricPoints("g")
-	gp, ok := pointByAttr(g, map[string]string{"instance": "good"})
+	gp, ok := pointByAttr(g, map[string]string{"tailscale.node": "good"})
 	if !ok || gp.Value != 7 {
-		t.Fatalf("good g point = %+v (ok=%v), want value 7 instance good", gp, ok)
+		t.Fatalf("good g point = %+v (ok=%v), want value 7 tailscale.node good", gp, ok)
 	}
 
 	up := rec.MetricPoints("tailscale.node.up")
-	goodUp, ok := pointByAttr(up, map[string]string{"instance": "good"})
+	goodUp, ok := pointByAttr(up, map[string]string{"tailscale.node": "good"})
 	if !ok || goodUp.Value != 1 {
 		t.Fatalf("good up = %+v (ok=%v), want 1", goodUp, ok)
 	}
-	badUp, ok := pointByAttr(up, map[string]string{"instance": "bad"})
+	badUp, ok := pointByAttr(up, map[string]string{"tailscale.node": "bad"})
 	if !ok || badUp.Value != 0 {
 		t.Fatalf("bad up = %+v (ok=%v), want 0", badUp, ok)
 	}
@@ -570,7 +582,7 @@ func TestParse_LabelValueWithBraceAndComma(t *testing.T) {
 	}
 
 	pts := rec.MetricPoints("m")
-	p, ok := pointByAttr(pts, map[string]string{"msg": "warn: skew }, detected", "k": "v", "instance": "n"})
+	p, ok := pointByAttr(pts, map[string]string{"msg": "warn: skew }, detected", "k": "v", "tailscale.node": "n"})
 	if !ok {
 		t.Fatalf("series with brace/comma label value was dropped; points=%+v", pts)
 	}
@@ -805,7 +817,7 @@ func TestTLS_NoCAFails(t *testing.T) {
 	}
 	byInstance := map[string]float64{}
 	for _, p := range rec.MetricPoints("tailscale.node.up") {
-		byInstance[p.Attrs["instance"]] = p.Value
+		byInstance[p.Attrs["tailscale.node"]] = p.Value
 	}
 	if byInstance["verify"] != 0 {
 		t.Fatalf("verify-target up = %v, want 0 (untrusted cert, verify on)", byInstance["verify"])
@@ -897,11 +909,11 @@ func TestMixedTargets_TLSAndPlain(t *testing.T) {
 		t.Fatalf("Collect() error = %v, want nil (both healthy)", err)
 	}
 	g := rec.MetricPoints("g")
-	secure, okS := pointByAttr(g, map[string]string{"instance": "secure"})
+	secure, okS := pointByAttr(g, map[string]string{"tailscale.node": "secure"})
 	if !okS || secure.Value != 1 {
 		t.Fatalf("secure g = %+v (ok=%v), want value 1", secure, okS)
 	}
-	plain, okP := pointByAttr(g, map[string]string{"instance": "plain"})
+	plain, okP := pointByAttr(g, map[string]string{"tailscale.node": "plain"})
 	if !okP || plain.Value != 2 {
 		t.Fatalf("plain g = %+v (ok=%v), want value 2", plain, okP)
 	}
@@ -1017,8 +1029,8 @@ func TestStaticOnly_NoDiscovererUnchanged(t *testing.T) {
 		t.Fatalf("Collect() error = %v", err)
 	}
 	g := rec.MetricPoints("g")
-	if len(g) != 1 || g[0].Value != 1 || g[0].Attrs["instance"] != "node-a" {
-		t.Fatalf("g = %+v, want single value 1 instance node-a", g)
+	if len(g) != 1 || g[0].Value != 1 || g[0].Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("g = %+v, want single value 1 tailscale.node node-a", g)
 	}
 	up := rec.MetricPoints("tailscale.node.up")
 	if len(up) != 1 || up[0].Value != 1 {
@@ -1052,8 +1064,8 @@ func TestDiscovery_GatingHonorsInterval(t *testing.T) {
 	if got := fake.callCount(); got != 1 {
 		t.Fatalf("discover calls after first Collect = %d, want 1", got)
 	}
-	if up := rec.MetricPoints("tailscale.node.up"); len(up) != 1 || up[0].Attrs["instance"] != "disc" {
-		t.Fatalf("up after first Collect = %+v, want single point instance disc", up)
+	if up := rec.MetricPoints("tailscale.node.up"); len(up) != 1 || up[0].Attrs["tailscale.node"] != "disc" {
+		t.Fatalf("up after first Collect = %+v, want single point tailscale.node disc", up)
 	}
 
 	// 1 minute later: not due, no new discovery.
@@ -1100,12 +1112,12 @@ func TestDiscovery_FirstRunUnionsStaticImmediately(t *testing.T) {
 		t.Fatalf("discover calls = %d, want 1 (ran on first Collect)", got)
 	}
 	g := rec.MetricPoints("g")
-	if len(g) != 1 || g[0].Value != 7 || g[0].Attrs["instance"] != "static-a" {
-		t.Fatalf("g = %+v, want single value 7 instance static-a (static scraped despite empty discovery)", g)
+	if len(g) != 1 || g[0].Value != 7 || g[0].Attrs["tailscale.node"] != "static-a" {
+		t.Fatalf("g = %+v, want single value 7 tailscale.node static-a (static scraped despite empty discovery)", g)
 	}
 	up := rec.MetricPoints("tailscale.node.up")
-	if len(up) != 1 || up[0].Attrs["instance"] != "static-a" || up[0].Value != 1 {
-		t.Fatalf("up = %+v, want single point instance static-a value 1", up)
+	if len(up) != 1 || up[0].Attrs["tailscale.node"] != "static-a" || up[0].Value != 1 {
+		t.Fatalf("up = %+v, want single point tailscale.node static-a value 1", up)
 	}
 }
 
@@ -1150,27 +1162,27 @@ func TestDiscovery_UnionAndDedup(t *testing.T) {
 		t.Fatalf("B handler requests = %d, want 1", got)
 	}
 
-	// A's emitted series carries the STATIC instance/label, not the discovered one.
+	// A's emitted series carries the STATIC identity/label, not the discovered one.
 	g := rec.MetricPoints("g")
-	a, okA := pointByAttr(g, map[string]string{"instance": "static-A", "src": "static"})
+	a, okA := pointByAttr(g, map[string]string{"tailscale.node": "static-A", "src": "static"})
 	if !okA || a.Value != 1 {
-		t.Fatalf("A g point = %+v (ok=%v), want value 1 instance static-A src static (static wins); g=%+v", a, okA, g)
+		t.Fatalf("A g point = %+v (ok=%v), want value 1 tailscale.node static-A src static (static wins); g=%+v", a, okA, g)
 	}
-	if _, dup := pointByAttr(g, map[string]string{"instance": "discovered-A"}); dup {
+	if _, dup := pointByAttr(g, map[string]string{"tailscale.node": "discovered-A"}); dup {
 		t.Fatalf("found a discovered-A series; static should have won the dedup; g=%+v", g)
 	}
-	b, okB := pointByAttr(g, map[string]string{"instance": "node-b", "src": "discovery"})
+	b, okB := pointByAttr(g, map[string]string{"tailscale.node": "node-b", "src": "discovery"})
 	if !okB || b.Value != 2 {
-		t.Fatalf("B g point = %+v (ok=%v), want value 2 instance node-b; g=%+v", b, okB, g)
+		t.Fatalf("B g point = %+v (ok=%v), want value 2 tailscale.node node-b; g=%+v", b, okB, g)
 	}
 
-	// One up point per distinct instance (A static + B), both healthy.
+	// One up point per distinct node (A static + B), both healthy.
 	up := rec.MetricPoints("tailscale.node.up")
 	if len(up) != 2 {
-		t.Fatalf("up points = %d, want 2 (one per distinct instance); up=%+v", len(up), up)
+		t.Fatalf("up points = %d, want 2 (one per distinct node); up=%+v", len(up), up)
 	}
-	upA, okUA := pointByAttr(up, map[string]string{"instance": "static-A"})
-	upB, okUB := pointByAttr(up, map[string]string{"instance": "node-b"})
+	upA, okUA := pointByAttr(up, map[string]string{"tailscale.node": "static-A"})
+	upB, okUB := pointByAttr(up, map[string]string{"tailscale.node": "node-b"})
 	if !okUA || upA.Value != 1 || !okUB || upB.Value != 1 {
 		t.Fatalf("up = %+v, want static-A=1 and node-b=1", up)
 	}
@@ -1201,7 +1213,7 @@ func TestDiscovery_FailureKeepsStaleTargets(t *testing.T) {
 			t.Fatalf("%s: Collect error = %v", label, err)
 		}
 		g := rec.MetricPoints("g")
-		if p, ok := pointByAttr(g, map[string]string{"instance": "node-b"}); !ok || p.Value != 5 {
+		if p, ok := pointByAttr(g, map[string]string{"tailscale.node": "node-b"}); !ok || p.Value != 5 {
 			t.Fatalf("%s: B g point = %+v (ok=%v), want value 5; g=%+v", label, p, ok, g)
 		}
 	}
@@ -1264,8 +1276,8 @@ func TestDiscovery_AllDiscoveredFail_ReturnsError(t *testing.T) {
 	if len(up) != 1 {
 		t.Fatalf("up points = %d, want 1; up=%+v", len(up), up)
 	}
-	if up[0].Attrs["instance"] != "disc-bad" || up[0].Value != 0 {
-		t.Fatalf("up = %+v, want instance disc-bad value 0", up[0])
+	if up[0].Attrs["tailscale.node"] != "disc-bad" || up[0].Value != 0 {
+		t.Fatalf("up = %+v, want tailscale.node disc-bad value 0", up[0])
 	}
 }
 
@@ -1384,7 +1396,8 @@ func TestMetricAllowDeny_DenyWinsAfterAllow(t *testing.T) {
 }
 
 // TestDropLabels_RemovesLabelKeepsInstance: a key in DropLabels is stripped from
-// every forwarded series, but the instance label is NEVER dropped even if named.
+// every forwarded series, but the per-node identity label (tailscale.node) is
+// NEVER dropped even if named.
 func TestDropLabels_RemovesLabelKeepsInstance(t *testing.T) {
 	body := "# TYPE g gauge\ng{region=\"eu\",keep=\"yes\"} 1\n"
 	srv := serveText(&body)
@@ -1392,7 +1405,7 @@ func TestDropLabels_RemovesLabelKeepsInstance(t *testing.T) {
 
 	c := nodemetrics.New(nodemetrics.Options{
 		Targets:    []nodemetrics.Target{{URL: srv.URL, Instance: "node-a", Labels: map[string]string{"role": "relay"}}},
-		DropLabels: []string{"region", "role", "instance"}, // instance must be kept
+		DropLabels: []string{"region", "role", "tailscale.node"}, // tailscale.node must be kept
 	})
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -1412,8 +1425,8 @@ func TestDropLabels_RemovesLabelKeepsInstance(t *testing.T) {
 	if p.Attrs["keep"] != "yes" {
 		t.Fatalf("keep label = %q, want yes (not in drop list)", p.Attrs["keep"])
 	}
-	if p.Attrs["instance"] != "node-a" {
-		t.Fatalf("instance label = %q, want node-a (instance is never dropped)", p.Attrs["instance"])
+	if p.Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("tailscale.node label = %q, want node-a (the identity label is never dropped)", p.Attrs["tailscale.node"])
 	}
 }
 
@@ -1439,8 +1452,8 @@ func TestNodeUp_EmittedDespiteMetricAllow(t *testing.T) {
 	}
 	// ...but the health gauge is never subject to the filters.
 	up := rec.MetricPoints("tailscale.node.up")
-	if len(up) != 1 || up[0].Value != 1 || up[0].Attrs["instance"] != "node-a" {
-		t.Fatalf("up = %+v, want single value 1 instance node-a (never filtered)", up)
+	if len(up) != 1 || up[0].Value != 1 || up[0].Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("up = %+v, want single value 1 tailscale.node node-a (never filtered)", up)
 	}
 }
 

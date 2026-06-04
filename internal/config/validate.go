@@ -169,6 +169,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("collectors.flowlogs.log_mode %q invalid: must be one of per_connection, per_record, off", c.Collectors.Flowlogs.LogMode)
 	}
 
+	if c.Collectors.Devices.PostureLogMode != "" &&
+		!oneOf(c.Collectors.Devices.PostureLogMode, "changes", "always", "off") {
+		return fmt.Errorf("collectors.devices.posture_log_mode %q invalid: must be one of changes, always, off", c.Collectors.Devices.PostureLogMode)
+	}
+
 	if !oneOf(c.Streaming.Decompress, "auto", "gzip", "zstd", "none") {
 		return fmt.Errorf("streaming.decompress %q invalid: must be one of auto, gzip, zstd, none", c.Streaming.Decompress)
 	}
