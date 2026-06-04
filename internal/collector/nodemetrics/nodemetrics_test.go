@@ -368,6 +368,40 @@ func TestLabelPassthrough(t *testing.T) {
 	}
 }
 
+func TestReservedPrometheusIdentityLabelIsStripped(t *testing.T) {
+	body := `# TYPE g gauge
+g{tailscale_node="spoofed",region="eu"} 1
+`
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:      srv.URL,
+			Instance: "node-a",
+			Labels:   map[string]string{"tailscale_node": "target-spoof", "role": "relay"},
+		}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	pts := rec.MetricPoints("g")
+	if len(pts) != 1 {
+		t.Fatalf("g points = %d, want 1; pts=%+v", len(pts), pts)
+	}
+	p := pts[0]
+	if p.Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("tailscale.node label = %q, want actual node identity", p.Attrs["tailscale.node"])
+	}
+	if _, ok := p.Attrs["tailscale_node"]; ok {
+		t.Fatalf("reserved normalized identity label present = %q, want stripped", p.Attrs["tailscale_node"])
+	}
+	if p.Attrs["region"] != "eu" || p.Attrs["role"] != "relay" {
+		t.Fatalf("non-reserved labels = %+v, want region and role preserved", p.Attrs)
+	}
+}
+
 func TestHealthUp_OnSuccess(t *testing.T) {
 	body := "# TYPE g gauge\ng 1\n"
 	srv := serveText(&body)
