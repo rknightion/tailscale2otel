@@ -155,7 +155,12 @@ jobs:
           SHORTSHA: ${{ needs.vars.outputs.shortsha }}
         run: |
           chartver="$(grep -E '^version:' "$CHART_DIR/Chart.yaml" | awk '{print $2}')"
-          snapver="${chartver}-main.${SHORTSHA}"  # SemVer prerelease, e.g. 0.2.0-main.abc1234
+          # Prefix the short SHA with `g` (git-describe convention) so the SemVer
+          # prerelease identifier is always alphanumeric. A bare 7-char SHA that is
+          # all digits with a leading zero (e.g. 0835122) is an invalid numeric
+          # SemVer identifier and `helm push` rejects it ("version segment starts
+          # with 0").
+          snapver="${chartver}-main.g${SHORTSHA}"  # SemVer prerelease, e.g. 0.2.0-main.gabc1234
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           # appVersion pins the chart to the snapshot image tag we just pushed.
