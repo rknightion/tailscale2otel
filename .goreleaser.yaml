@@ -10,6 +10,16 @@ version: 2
 
 project_name: tailscale2otel
 
+# Log the size of each built binary in the release output.
+report_sizes: true
+
+# Verifiable builds: fetch deps from proxy.golang.org and verify against
+# sum.golang.org. Only effective when building from a tag AND requires the
+# module to be resolvable on the PUBLIC proxy — enable this only once the repo
+# is public, or tagged release builds will fail to fetch the module.
+# gomod:
+#   proxy: true
+
 builds:
   - id: tailscale2otel
     main: ./cmd/tailscale2otel
@@ -42,6 +52,11 @@ archives:
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
   algorithm: sha256
+
+# Deterministic version for `--snapshot` builds (CI goreleaser-snapshot job and
+# local dry runs). Real tagged releases use the git tag, not this template.
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
 
 sboms:
   - id: archives

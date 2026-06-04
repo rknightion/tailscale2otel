@@ -50,9 +50,16 @@ profiles instance ID and `basic_auth_password` = a `profiles:write` access-polic
 
 ## Release / publish pipelines
 
-- `release.yml` (on tag) — GoReleaser builds binaries + a multi-arch image to `ghcr.io`, **cosign**
-  keyless-signs (GitHub OIDC) the image + checksums, generates SBOMs (syft), and pushes the Helm chart
-  as an OCI artifact to `oci://ghcr.io/rknightion/charts`.
+- `release-please.yml` (on push to main) — **release-please** maintains a release PR from the
+  Conventional Commit history (config: `/release-please-config.json` + `/.release-please-manifest.json`,
+  changelog in `/CHANGELOG.md`). Merging that PR creates the GitHub Release + a `vX.Y.Z` tag and sets
+  `release_created=true`, which gates two follow-on jobs in the **same** workflow (so the default
+  `GITHUB_TOKEN` suffices — no PAT/App, no second workflow to trigger): **GoReleaser** builds the
+  binaries + multi-arch image to `ghcr.io`, **cosign** keyless-signs (GitHub OIDC) the image + checksums,
+  generates SBOMs (syft), and **uploads the binaries to the release-please release** (it does not
+  overwrite the notes — release-please owns the changelog); then the Helm chart is pushed as an OCI
+  artifact to `oci://ghcr.io/rknightion/charts`. **There is no manual tagging** — never `git tag`/push a
+  `v*` tag by hand.
 - `main-publish.yml` (on push to main) — the snapshot equivalent: publishes `:main`-ish image + chart.
 - `cosign-installer` is pinned to `@v4.1.2` (no moving `v4` tag exists) and installs `cosign-release: v3.0.6`.
 

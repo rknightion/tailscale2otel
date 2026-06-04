@@ -49,6 +49,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
+          cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: golangci-lint (${{ matrix.module }})
         uses: golangci/golangci-lint-action@v9
@@ -106,6 +108,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
 
       # Cross-compile every target + build archives/checksums. The container
       # image (dockers_v2) is disabled in snapshot mode, so no docker/qemu/syft
@@ -123,6 +126,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+
+      # The Dockerfile's `go build` step uses a BuildKit cache mount for the Go
+      # build cache (/root/.cache/go-build). type=gha layer cache does NOT carry
+      # cache-mount contents across runs, so restore/save it via actions/cache and
+      # let buildkit-cache-dance inject it into (and extract it from) the build.
+      - name: Restore Go build cache for Docker
+        uses: actions/cache@v4
+        with:
+          path: go-build-cache
+          key: ${{ runner.os }}-docker-go-build-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-docker-go-build-
+      - name: Inject Go build cache into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@4b2444fec0c0fb9dbf175a96c094720a692ef810 # v2.1.4
+        with:
+          cache-source: go-build-cache
+          cache-target: /root/.cache/go-build
+
       - name: build image (no push)
         uses: docker/build-push-action@v6
         with:
@@ -130,5 +151,8 @@ jobs:
           file: deploy/Dockerfile
           push: false
           tags: tailscale2otel:ci
+          # Layer cache (base image, go.mod copy, go mod download) across runs.
+          cache-from: type=gha,scope=ci-smoke
+          cache-to: type=gha,mode=max,scope=ci-smoke
           build-args: |
             VERSION=ci-${{ github.sha }}

@@ -7,7 +7,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath \
+# Cache mount for the Go build cache so incremental rebuilds (and CI builds via
+# buildkit-cache-dance) skip recompiling unchanged packages. The module cache
+# stays in the `go mod download` layer above (gha-layer-cacheable), so it is
+# deliberately NOT mounted here — mounting /go/pkg/mod would shadow it.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/tailscale2otel ./cmd/tailscale2otel
 
