@@ -13,8 +13,12 @@ import (
 // asserts what the processor actually emits matches these declarations.
 //
 // The flow node-dimension attributes (src/dst node) are gated by
-// cardinality.flow_node_dims and the port attributes by cardinality.flow_include_ports;
-// both are listed here as the full possible attribute set (gating is documented in prose).
+// cardinality.flow_node_dims, the source/destination port attributes by
+// cardinality.flow_source_port / flow_destination_port, and tailscale.dst.service
+// by cardinality.flow_destination_service; all are listed here as the full
+// possible attribute set (gating is documented in prose). On flow LOGS the ports
+// and tailscale.dst.service are always present (the latter when the destination
+// port maps to a known service).
 const groupNetwork = "Network / flow"
 
 var (
@@ -26,6 +30,7 @@ var (
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.SourcePort, semconv.DestinationPort,
+			semconv.AttrDstService,
 		},
 		Group: groupNetwork,
 	}
@@ -37,6 +42,7 @@ var (
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.SourcePort, semconv.DestinationPort,
+			semconv.AttrDstService,
 		},
 		Group: groupNetwork,
 	}
@@ -63,7 +69,7 @@ var (
 		Attributes: []string{
 			semconv.SourceAddress, semconv.SourcePort, semconv.DestinationAddress, semconv.DestinationPort,
 			semconv.NetworkTransport, semconv.NetworkType, semconv.AttrTrafficType,
-			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrNodeID, attrNodeHostname,
+			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService, semconv.AttrNodeID, attrNodeHostname,
 			"tailscale.connections", // per_record summary only
 			"tailscale.tx.bytes", "tailscale.rx.bytes", "tailscale.tx.packets", "tailscale.rx.packets",
 		},

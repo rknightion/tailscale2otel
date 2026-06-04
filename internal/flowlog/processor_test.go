@@ -415,7 +415,7 @@ func TestProcessNetworkTypeIPv6(t *testing.T) {
 
 func TestProcessIncludePorts(t *testing.T) {
 	rec := telemetrytest.New()
-	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{IncludePorts: true})
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{IncludeSourcePort: true, IncludeDestinationPort: true})
 	p.Process(virtualTCPFlow(), rec.Emitter())
 
 	io := rec.MetricPoints(flowlog.MetricIO)
@@ -499,5 +499,147 @@ func TestNewProcessorNilCacheSafe(t *testing.T) {
 	tx := findPoint(t, io, map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
 	if tx.Attrs[semconv.AttrSrcNode] != "unknown" {
 		t.Fatalf("src.node = %q, want unknown for nil cache", tx.Attrs[semconv.AttrSrcNode])
+	}
+}
+
+// httpsFlow has one virtual connection whose DESTINATION is a well-known port
+// (tcp/443 -> "https"); the source port (50000) is unmapped.
+func httpsFlow() flowlog.FlowLog {
+	return flowlog.FlowLog{
+		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
+		NodeID: "nLaptop",
+		VirtualTraffic: []flowlog.ConnectionCounts{
+			{Proto: protoTCP, Src: "100.64.0.1:50000", Dst: "100.64.0.2:443", TxPkts: 10, TxBytes: 1000, RxPkts: 8, RxBytes: 800},
+		},
+	}
+}
+
+func TestProcessDestinationServiceOnLogs(t *testing.T) {
+	// The mapped destination service name is ALWAYS added to flow LOGS (no toggle)
+	// when the destination port maps to a known IANA service.
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: "per_connection"})
+	p.Process(httpsFlow(), rec.Emitter())
+
+	logs := rec.LogRecords()
+	if len(logs) != 1 {
+		t.Fatalf("log records = %d, want 1", len(logs))
+	}
+	if logs[0].Attrs[semconv.AttrDstService] != "https" {
+		t.Fatalf("dst.service = %q, want https", logs[0].Attrs[semconv.AttrDstService])
+	}
+}
+
+func TestProcessDestinationServiceMetricsGated(t *testing.T) {
+	// Off by default: no dst.service on metrics.
+	recOff := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{}).Process(httpsFlow(), recOff.Emitter())
+	for _, pt := range recOff.MetricPoints(flowlog.MetricIO) {
+		if _, ok := pt.Attrs[semconv.AttrDstService]; ok {
+			t.Fatalf("dst.service present on metrics by default: %+v", pt.Attrs)
+		}
+	}
+
+	// On: dst.service on the io metric points.
+	recOn := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{IncludeDestinationService: true}).Process(httpsFlow(), recOn.Emitter())
+	tx := findPoint(t, recOn.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstService] != "https" {
+		t.Fatalf("io dst.service = %q, want https", tx.Attrs[semconv.AttrDstService])
+	}
+}
+
+func TestProcessDestinationServiceUnmappedOmitted(t *testing.T) {
+	// virtualTCPFlow's destination port (51820) is not a registered service, so
+	// dst.service is omitted entirely even with the metric toggle on.
+	rec := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: "per_connection", IncludeDestinationService: true}).Process(virtualTCPFlow(), rec.Emitter())
+	for _, pt := range rec.MetricPoints(flowlog.MetricIO) {
+		if _, ok := pt.Attrs[semconv.AttrDstService]; ok {
+			t.Fatalf("dst.service present for unmapped port on metrics: %+v", pt.Attrs)
+		}
+	}
+	if _, ok := rec.LogRecords()[0].Attrs[semconv.AttrDstService]; ok {
+		t.Fatalf("dst.service present on log for unmapped port")
+	}
+}
+
+// fakeRDNS is a synchronous reverse-DNS resolver for tests (the real cache is
+// async; the processor only needs the narrow Resolver interface).
+type fakeRDNS map[netip.Addr]string
+
+func (f fakeRDNS) LookupName(a netip.Addr) (string, bool) {
+	n, ok := f[a]
+	return n, ok
+}
+
+func TestProcessExternalReverseDNSHit(t *testing.T) {
+	rec := telemetrytest.New()
+	r := fakeRDNS{netip.MustParseAddr("8.8.8.8"): "dns.google"}
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true, LogMode: "per_connection", RDNS: r})
+	p.Process(externalFlow(), rec.Emitter())
+
+	tx := findPoint(t, rec.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstNode] != "dns.google" {
+		t.Fatalf("metric dst.node = %q, want dns.google (reverse-DNS)", tx.Attrs[semconv.AttrDstNode])
+	}
+	if logs := rec.LogRecords(); logs[0].Attrs[semconv.AttrDstNode] != "dns.google" {
+		t.Fatalf("log dst.node = %q, want dns.google", logs[0].Attrs[semconv.AttrDstNode])
+	}
+}
+
+func TestProcessExternalReverseDNSMissFallsBack(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true, RDNS: fakeRDNS{}})
+	p.Process(externalFlow(), rec.Emitter())
+
+	tx := findPoint(t, rec.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstNode] != "external" {
+		t.Fatalf("metric dst.node = %q, want external on reverse-DNS miss", tx.Attrs[semconv.AttrDstNode])
+	}
+}
+
+func TestProcessReverseDNSSkipsTailnetUnknown(t *testing.T) {
+	// Reverse DNS only enriches external addresses; an uncached tailnet address
+	// stays "unknown" even if the resolver would answer for it.
+	rec := telemetrytest.New()
+	flow := flowlog.FlowLog{
+		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
+		NodeID: "nLaptop",
+		VirtualTraffic: []flowlog.ConnectionCounts{
+			{Proto: protoTCP, Src: "100.64.0.1:443", Dst: "100.64.0.9:51820", TxBytes: 10, RxBytes: 20},
+		},
+	}
+	r := fakeRDNS{netip.MustParseAddr("100.64.0.9"): "should-not-be-used"}
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true, RDNS: r})
+	p.Process(flow, rec.Emitter())
+
+	tx := findPoint(t, rec.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstNode] != "unknown" {
+		t.Fatalf("metric dst.node = %q, want unknown (rDNS must not touch tailnet addrs)", tx.Attrs[semconv.AttrDstNode])
+	}
+}
+
+func TestProcessIndependentPortToggles(t *testing.T) {
+	// Source-only: source.port present, destination.port absent.
+	recSrc := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{IncludeSourcePort: true}).Process(virtualTCPFlow(), recSrc.Emitter())
+	txSrc := findPoint(t, recSrc.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if txSrc.Attrs[semconv.SourcePort] != "443" {
+		t.Fatalf("source.port = %q, want 443 (src-only)", txSrc.Attrs[semconv.SourcePort])
+	}
+	if _, ok := txSrc.Attrs[semconv.DestinationPort]; ok {
+		t.Fatalf("destination.port present with src-only toggle: %+v", txSrc.Attrs)
+	}
+
+	// Destination-only: destination.port present, source.port absent.
+	recDst := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{IncludeDestinationPort: true}).Process(virtualTCPFlow(), recDst.Emitter())
+	txDst := findPoint(t, recDst.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if txDst.Attrs[semconv.DestinationPort] != "51820" {
+		t.Fatalf("destination.port = %q, want 51820 (dst-only)", txDst.Attrs[semconv.DestinationPort])
+	}
+	if _, ok := txDst.Attrs[semconv.SourcePort]; ok {
+		t.Fatalf("source.port present with dst-only toggle: %+v", txDst.Attrs)
 	}
 }

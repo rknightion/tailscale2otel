@@ -143,14 +143,42 @@ type TLSConfig struct {
 
 // EnrichmentConfig configures device-enrichment caching.
 type EnrichmentConfig struct {
-	CacheTTL Duration `yaml:"cache_ttl"`
+	CacheTTL   Duration         `yaml:"cache_ttl"`
+	ReverseDNS ReverseDNSConfig `yaml:"reverse_dns"`
+}
+
+// ReverseDNSConfig configures opt-in reverse-DNS (PTR) enrichment of EXTERNAL
+// (non-Tailscale) flow addresses. When enabled, a resolved hostname replaces the
+// "external" bucket / raw IP in tailscale.src.node / tailscale.dst.node on flow
+// logs and metrics. Lookups are async and cached; the hot path never blocks.
+type ReverseDNSConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// Server is the resolver to query as "ip" or "ip:port" (default port 53). Empty
+	// uses the system/container default resolver.
+	Server      string   `yaml:"server"`
+	Timeout     Duration `yaml:"timeout"`      // per-lookup timeout
+	CacheTTL    Duration `yaml:"cache_ttl"`    // positive-result TTL
+	NegativeTTL Duration `yaml:"negative_ttl"` // failed-lookup TTL
+	MaxEntries  int      `yaml:"max_entries"`  // cache size bound
 }
 
 // CardinalityConfig controls metric/label cardinality trade-offs.
 type CardinalityConfig struct {
+	// FlowIncludePorts is the legacy "both ports" toggle for flow METRICS; it is
+	// OR'd with FlowSourcePort/FlowDestinationPort so existing configs keep working.
 	FlowIncludePorts bool `yaml:"flow_include_ports"`
-	FlowNodeDims     bool `yaml:"flow_node_dims"`
-	CollapseExternal bool `yaml:"collapse_external"`
+	// FlowSourcePort / FlowDestinationPort independently add source.port /
+	// destination.port to flow METRICS (both default false; flow LOGS always carry
+	// both ports regardless).
+	FlowSourcePort      bool `yaml:"flow_source_port"`
+	FlowDestinationPort bool `yaml:"flow_destination_port"`
+	// FlowDestinationService adds tailscale.dst.service (the IANA service name for
+	// the destination port+transport, e.g. tcp/443 -> "https") to flow METRICS as a
+	// bounded, low-cardinality stand-in for the destination port. Default false;
+	// flow LOGS always carry it when the port maps to a known service.
+	FlowDestinationService bool `yaml:"flow_destination_service"`
+	FlowNodeDims           bool `yaml:"flow_node_dims"`
+	CollapseExternal       bool `yaml:"collapse_external"`
 	// DevicePerEntity/UserPerEntity/KeyPerEntity (default true) gate the
 	// per-entity gauges in the devices/users/keys collectors. When false, only
 	// the low-cardinality aggregate *.count rollups are emitted (the per-entity

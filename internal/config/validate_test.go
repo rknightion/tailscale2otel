@@ -543,3 +543,48 @@ func TestValidateNodeMetricsDisabledIgnoresBadRegex(t *testing.T) {
 		t.Errorf("disabled node_metrics should not validate metric_allow regex: %v", err)
 	}
 }
+
+func TestValidateReverseDNSRejectsBadServer(t *testing.T) {
+	const y = "enrichment:\n  reverse_dns:\n    enabled: true\n    server: not-an-ip\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "reverse_dns.server") {
+		t.Fatalf("err = %v, want a reverse_dns.server error", err)
+	}
+}
+
+func TestValidateReverseDNSAcceptsIPServers(t *testing.T) {
+	for _, s := range []string{"", "10.0.0.53", "1.1.1.1:53", "2001:db8::1"} {
+		y := "enrichment:\n  reverse_dns:\n    enabled: true\n    server: \"" + s + "\"\n"
+		if err := loadErr(t, y); err != nil {
+			t.Errorf("reverse_dns.server %q should be valid: %v", s, err)
+		}
+	}
+}
+
+func TestValidateReverseDNSRejectsZeroMaxEntries(t *testing.T) {
+	const y = "enrichment:\n  reverse_dns:\n    enabled: true\n    max_entries: 0\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "max_entries") {
+		t.Fatalf("err = %v, want a max_entries error", err)
+	}
+}
+
+func TestValidateReverseDNSDisabledIgnoresBadServer(t *testing.T) {
+	// Validation is gated on enabled: a disabled block with a bad server is fine.
+	const y = "enrichment:\n  reverse_dns:\n    enabled: false\n    server: not-an-ip\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("disabled reverse_dns should not validate server: %v", err)
+	}
+}
+
+func TestWarnings_ReverseDNSCardinality(t *testing.T) {
+	c := config.Default()
+	if w := c.Warnings(); len(w) != 0 {
+		t.Fatalf("default Warnings = %v, want none", w)
+	}
+	c.Enrichment.ReverseDNS.Enabled = true
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "reverse_dns") || !strings.Contains(strings.ToLower(w), "cardinalit") {
+		t.Errorf("reverse_dns warning %q should mention reverse_dns and cardinality", w)
+	}
+}

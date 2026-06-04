@@ -36,9 +36,24 @@ otlp:
 
 enrichment:
   cache_ttl: 5m                      # staleness alarm threshold for the device cache
+  # Reverse-DNS (PTR) enrichment of EXTERNAL (non-Tailscale) flow addresses. When
+  # enabled, a resolved hostname replaces the "external" bucket / raw IP in
+  # tailscale.src.node / tailscale.dst.node (flow logs always; flow metrics when
+  # flow_node_dims is on). Lookups are async + cached, so the hot path never blocks.
+  # NOTE: on flow METRICS this can add ~one series per external IP — see metric_limit.
+  reverse_dns:
+    enabled: false                   # opt-in; off by default
+    server: ""                       # resolver "ip" or "ip:port" (default :53); empty = system/container resolver
+    timeout: 2s                      # per-lookup timeout
+    cache_ttl: 1h                    # how long a resolved name is cached
+    negative_ttl: 5m                 # how long a failed lookup is remembered (suppresses retries)
+    max_entries: 4096                # cache size bound (new external IPs beyond this are not resolved)
 
 cardinality:
-  flow_include_ports: false          # keep ports OFF flow metrics (always on flow logs)
+  flow_include_ports: false          # legacy: both ports on flow metrics (OR'd with the two below); ports are always on flow logs
+  flow_source_port: false            # add source.port to flow metrics (independent of flow_destination_port)
+  flow_destination_port: false       # add destination.port to flow metrics
+  flow_destination_service: false    # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics — bounded stand-in for destination.port; always on flow logs
   flow_node_dims: true               # include src/dst device names on flow metrics
   collapse_external: true            # bucket unresolved IPs as external/unknown (also sets src/dst node metric labels when flow_node_dims is on)
   device_per_entity: true            # per-device gauges (online/last_seen/key.expiry/derp/routes); false = only tailscale.devices.count

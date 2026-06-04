@@ -40,15 +40,25 @@ func Default() *Config {
 		},
 		Enrichment: EnrichmentConfig{
 			CacheTTL: dur(5 * time.Minute),
+			ReverseDNS: ReverseDNSConfig{
+				Enabled:     false,
+				Timeout:     dur(2 * time.Second),
+				CacheTTL:    dur(1 * time.Hour),
+				NegativeTTL: dur(5 * time.Minute),
+				MaxEntries:  4096,
+			},
 		},
 		Cardinality: CardinalityConfig{
-			FlowIncludePorts: false,
-			FlowNodeDims:     true,
-			CollapseExternal: true,
-			DevicePerEntity:  true,
-			UserPerEntity:    true,
-			KeyPerEntity:     true,
-			MetricLimit:      10000,
+			FlowIncludePorts:       false,
+			FlowSourcePort:         false,
+			FlowDestinationPort:    false,
+			FlowDestinationService: false,
+			FlowNodeDims:           true,
+			CollapseExternal:       true,
+			DevicePerEntity:        true,
+			UserPerEntity:          true,
+			KeyPerEntity:           true,
+			MetricLimit:            10000,
 		},
 		Collectors: Collectors{
 			Devices: CollectorConfig{

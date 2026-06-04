@@ -10,6 +10,8 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
+	"github.com/rknightion/tailscale2otel/internal/portservice"
+	"github.com/rknightion/tailscale2otel/internal/rdns"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
@@ -46,14 +48,26 @@ type Options struct {
 	// LogMode selects how flow logs are emitted: "per_connection" (default),
 	// "per_record", or "off". An empty value means "per_connection".
 	LogMode string
-	// IncludePorts adds source.port/destination.port to METRIC attributes.
-	IncludePorts bool
+	// IncludeSourcePort / IncludeDestinationPort independently add
+	// source.port / destination.port to METRIC attributes. Flow LOGS always carry
+	// both ports regardless of these toggles.
+	IncludeSourcePort      bool
+	IncludeDestinationPort bool
+	// IncludeDestinationService adds tailscale.dst.service (the IANA service name
+	// for the destination port+transport) to METRIC attributes. It is a bounded,
+	// low-cardinality stand-in for the destination port. Flow LOGS always carry it
+	// when the port maps to a known service, regardless of this toggle.
+	IncludeDestinationService bool
 	// NodeDims adds tailscale.src.node/tailscale.dst.node to metric attributes.
 	NodeDims bool
 	// KeepExternalAddrs, when true, resolves an unrecognized address to its raw
 	// host (IP) instead of collapsing it to "external"/"unknown". The zero value
 	// (false) preserves the collapsing behavior.
 	KeepExternalAddrs bool
+	// RDNS, when non-nil, supplies reverse-DNS (PTR) names for EXTERNAL addresses:
+	// a cached hit replaces "external"/raw-IP in src/dst node with the hostname.
+	// It is consulted only for non-Tailscale addresses and never blocks.
+	RDNS rdns.Resolver
 	// Dedup, when non-nil, suppresses duplicate FlowLog window records that arrive
 	// from both the poll flowlogs collector and the streaming receiver (which
 	// share one Processor). A nil value (the default) disables cross-component
@@ -73,9 +87,12 @@ type Options struct {
 type Processor struct {
 	cache        *enrich.DeviceCache
 	logMode      string
-	ports        bool
+	srcPort      bool
+	dstPort      bool
+	dstService   bool
 	nodes        bool
 	keepExternal bool
+	rdns         rdns.Resolver
 	dedup        *dedup.Set
 	maxLogs      int
 }
@@ -90,9 +107,12 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 	return &Processor{
 		cache:        cache,
 		logMode:      mode,
-		ports:        opts.IncludePorts,
+		srcPort:      opts.IncludeSourcePort,
+		dstPort:      opts.IncludeDestinationPort,
+		dstService:   opts.IncludeDestinationService,
 		nodes:        opts.NodeDims,
 		keepExternal: opts.KeepExternalAddrs,
+		rdns:         opts.RDNS,
 		dedup:        opts.Dedup,
 		maxLogs:      opts.MaxLogRecordsPerWindow,
 	}
@@ -233,6 +253,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	netType := networkType(srcAddr)
 	srcNode := p.resolve(cc.Src, srcAddr)
 	dstNode := p.resolve(cc.Dst, dstAddr)
+	dstService := serviceName(transport, dstPort)
 
 	// Metric attributes shared by io + packets points.
 	metricAttrs := telemetry.Attrs{
@@ -243,9 +264,14 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		metricAttrs[semconv.AttrSrcNode] = srcNode
 		metricAttrs[semconv.AttrDstNode] = dstNode
 	}
-	if p.ports {
+	if p.srcPort {
 		metricAttrs[semconv.SourcePort] = srcPort
+	}
+	if p.dstPort {
 		metricAttrs[semconv.DestinationPort] = dstPort
+	}
+	if p.dstService && dstService != "" {
+		metricAttrs[semconv.AttrDstService] = dstService
 	}
 
 	// MetricIO (bytes): transmit + receive. Name/unit/description come from the
@@ -268,7 +294,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	})
 
 	if p.logMode == logPerConnection && budget.allow() {
-		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, e)
+		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, e)
 	}
 }
 
@@ -283,7 +309,7 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 }
 
 // emitConnLog emits one per-connection flow log event.
-func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode string, e telemetry.Emitter) {
+func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, e telemetry.Emitter) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
 		semconv.SourceAddress:      srcAddr,
@@ -300,6 +326,11 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 		"tailscale.rx.bytes":       cc.RxBytes,
 		"tailscale.tx.packets":     cc.TxPkts,
 		"tailscale.rx.packets":     cc.RxPkts,
+	}
+	// Logs always carry the mapped destination service when the port is known
+	// (independent of the metric toggle); omit it entirely otherwise.
+	if dstService != "" {
+		attrs[semconv.AttrDstService] = dstService
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	e.LogEvent(telemetry.Event{
@@ -345,7 +376,9 @@ func (p *Processor) addNodeHostname(attrs telemetry.Attrs, nodeID string) {
 }
 
 // resolve maps an "addr:port" to a device hostname via the cache. A nil cache
-// yields "unknown". host is the already-split host part of addrPort. When
+// yields "unknown". host is the already-split host part of addrPort. When the
+// address is EXTERNAL (non-Tailscale) and a reverse-DNS resolver is configured,
+// a cached PTR name replaces the "external" sentinel. Otherwise, when
 // keepExternal is set and the cache misses (collapsing to "external"/"unknown"),
 // the raw host is returned instead of the collapsed sentinel.
 func (p *Processor) resolve(addrPort, host string) string {
@@ -356,6 +389,15 @@ func (p *Processor) resolve(addrPort, host string) string {
 		return "unknown"
 	}
 	name := p.cache.ResolveName(addrPort)
+	// Reverse DNS enriches only external addresses (never tailnet "unknown"), and
+	// only when a name is already cached — the lookup itself never blocks here.
+	if name == "external" && p.rdns != nil && host != "" {
+		if a, err := netip.ParseAddr(host); err == nil {
+			if ptr, ok := p.rdns.LookupName(a); ok && ptr != "" {
+				return ptr
+			}
+		}
+	}
 	if p.keepExternal && (name == "external" || name == "unknown") && host != "" {
 		return host
 	}
@@ -368,6 +410,22 @@ func logTimestamp(flow FlowLog) time.Time {
 		return flow.Logged
 	}
 	return flow.End
+}
+
+// serviceName maps a transport name and destination port string to its IANA
+// service name (e.g. "tcp","443" -> "https"). It returns "" when the port is
+// empty, unparseable, or has no registered service — callers omit the attribute
+// entirely in that case.
+func serviceName(transport, port string) string {
+	if port == "" {
+		return ""
+	}
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return ""
+	}
+	name, _ := portservice.LookupName(transport, uint16(p))
+	return name
 }
 
 // splitHostPort splits an "addr:port" into host and port, tolerating a missing

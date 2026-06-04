@@ -14,21 +14,40 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/internal/rdns"
 	"github.com/rknightion/tailscale2otel/internal/stream"
 	"github.com/rknightion/tailscale2otel/internal/webhook"
 )
 
 func flowOptions(cfg *config.Config) flowlog.Options {
 	return flowlog.Options{
-		LogMode:      cfg.Collectors.Flowlogs.LogMode,
-		IncludePorts: cfg.Cardinality.FlowIncludePorts,
-		NodeDims:     cfg.Cardinality.FlowNodeDims,
+		LogMode: cfg.Collectors.Flowlogs.LogMode,
+		// flow_include_ports is the legacy "both ports" toggle; OR it with the
+		// independent flow_source_port / flow_destination_port so old configs keep
+		// emitting both ports while new ones can drop either side.
+		IncludeSourcePort:         cfg.Cardinality.FlowIncludePorts || cfg.Cardinality.FlowSourcePort,
+		IncludeDestinationPort:    cfg.Cardinality.FlowIncludePorts || cfg.Cardinality.FlowDestinationPort,
+		IncludeDestinationService: cfg.Cardinality.FlowDestinationService,
+		NodeDims:                  cfg.Cardinality.FlowNodeDims,
 		// collapse_external=true (the default) buckets unresolved/external addresses
 		// as external/unknown; false preserves the raw IP. This affects BOTH flow LOGS
 		// and, when flow_node_dims is true, the flow METRIC attrs tailscale.src.node /
 		// tailscale.dst.node (srcNode/dstNode come from the processor's resolve()).
 		KeepExternalAddrs:      !cfg.Cardinality.CollapseExternal,
 		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
+	}
+}
+
+// rdnsOptions maps the reverse-DNS enrichment config into rdns.Cache options.
+// Only called when enrichment.reverse_dns.enabled is true.
+func rdnsOptions(cfg *config.Config) rdns.Options {
+	rd := cfg.Enrichment.ReverseDNS
+	return rdns.Options{
+		Server:      rd.Server,
+		Timeout:     rd.Timeout.D(),
+		TTL:         rd.CacheTTL.D(),
+		NegativeTTL: rd.NegativeTTL.D(),
+		MaxEntries:  rd.MaxEntries,
 	}
 }
 

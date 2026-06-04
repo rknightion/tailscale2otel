@@ -95,6 +95,25 @@ func baseTestApp(t *testing.T, cfg *config.Config, baseURL string, rec *telemetr
 		newTestClient(t, baseURL), collector.NewMemoryStore())
 }
 
+// TestNewApp_ReverseDNSGating verifies the async reverse-DNS cache is constructed
+// (and wired into the flow processor) only when enrichment.reverse_dns is enabled.
+func TestNewApp_ReverseDNSGating(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	if a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New()); a.rdnsCache != nil {
+		t.Fatal("rdnsCache should be nil when reverse_dns is disabled")
+	}
+
+	cfg2 := config.Default()
+	cfg2.Tailscale.Tailnet = "example.com"
+	cfg2.Enrichment.ReverseDNS.Enabled = true
+	a := baseTestApp(t, cfg2, "http://127.0.0.1:0", telemetrytest.New())
+	if a.rdnsCache == nil {
+		t.Fatal("rdnsCache should be non-nil when reverse_dns is enabled")
+	}
+	a.rdnsCache.Close()
+}
+
 // TestRegisterCollectors_NodeMetricsGating verifies the node-metrics scraper is
 // registered only when enabled AND at least one target is configured.
 func TestRegisterCollectors_NodeMetricsGating(t *testing.T) {

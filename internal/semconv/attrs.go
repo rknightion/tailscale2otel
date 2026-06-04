@@ -27,12 +27,15 @@ const (
 	AttrTrafficType = "tailscale.traffic_type"
 	AttrSrcNode     = "tailscale.src.node"
 	AttrDstNode     = "tailscale.dst.node"
-	AttrNodeID      = "tailscale.node.id"
-	AttrUser        = "tailscale.user"
-	AttrTags        = "tailscale.tags"
-	AttrTailnet     = "tailscale.tailnet"
-	AttrCollector   = "tailscale.collector"
-	AttrFeature     = "tailscale.feature"
+	// AttrDstService is the IANA service name inferred from the destination port
+	// and transport (e.g. tcp/443 -> "https"). Port-inferred, not DPI-confirmed.
+	AttrDstService = "tailscale.dst.service"
+	AttrNodeID     = "tailscale.node.id"
+	AttrUser       = "tailscale.user"
+	AttrTags       = "tailscale.tags"
+	AttrTailnet    = "tailscale.tailnet"
+	AttrCollector  = "tailscale.collector"
+	AttrFeature    = "tailscale.feature"
 )
 
 // Self-observability attribute keys.

@@ -104,6 +104,16 @@ func (c *Config) Warnings() []string {
 			"requires HTTP basic-auth credentials (basic_auth_user = profiles instance ID, "+
 			"basic_auth_password = an access policy token with profiles:write).")
 	}
+
+	// Reverse DNS replaces the low-cardinality "external" bucket with per-host PTR
+	// names, which on flow METRICS can be roughly one series per external IP.
+	if c.Enrichment.ReverseDNS.Enabled {
+		w = append(w, "enrichment.reverse_dns.enabled=true: resolved PTR names replace the \"external\" "+
+			"bucket in tailscale.src.node/tailscale.dst.node, so on flow METRICS this can add roughly one "+
+			"series per external IP (bounded only by cardinality.metric_limit). To keep the names on flow "+
+			"LOGS only, set cardinality.flow_node_dims=false; otherwise size cardinality.metric_limit for "+
+			"the added cardinality.")
+	}
 	return w
 }
 
@@ -235,6 +245,23 @@ func (c *Config) Validate() error {
 			if d.MaxTargets <= 0 {
 				return fmt.Errorf("collectors.node_metrics.discovery.max_targets must be > 0")
 			}
+		}
+	}
+
+	// Reverse-DNS enrichment: when enabled, the resolver address (if set) must be
+	// an IP or IP:port, and the cache bound must be positive.
+	if rd := c.Enrichment.ReverseDNS; rd.Enabled {
+		if rd.Server != "" {
+			host := rd.Server
+			if h, _, err := net.SplitHostPort(rd.Server); err == nil {
+				host = h
+			}
+			if net.ParseIP(host) == nil {
+				return fmt.Errorf("enrichment.reverse_dns.server %q invalid: must be an IP or IP:port", rd.Server)
+			}
+		}
+		if rd.MaxEntries <= 0 {
+			return fmt.Errorf("enrichment.reverse_dns.max_entries must be > 0 when reverse DNS is enabled")
 		}
 	}
 

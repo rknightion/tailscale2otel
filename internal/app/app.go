@@ -20,6 +20,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/internal/rdns"
 	"github.com/rknightion/tailscale2otel/internal/stream"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
@@ -67,6 +68,7 @@ type App struct {
 	webhookDedup *dedup.Set // shared cross-source set (webhook<->audit); nil unless enabled
 	adminSrv     *http.Server
 	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
+	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -152,6 +154,12 @@ func newApp(
 	a.flowDedup = dedup.New(flowDedupCapacity)
 	fopts := flowOptions(cfg)
 	fopts.Dedup = a.flowDedup
+	// Opt-in reverse-DNS enrichment of external flow addresses. The async cache is
+	// retained on App so Run can drain its background workers on shutdown.
+	if cfg.Enrichment.ReverseDNS.Enabled {
+		a.rdnsCache = rdns.New(rdnsOptions(cfg))
+		fopts.RDNS = a.rdnsCache
+	}
 	a.flowProc = flowlog.NewProcessor(a.cache, fopts)
 	a.auditDedup = dedup.New(auditDedupCapacity)
 	auditOpts := []audit.Option{audit.WithDedup(a.auditDedup)}
@@ -179,6 +187,11 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.profiler != nil {
 		defer func() { _ = a.profiler.Stop() }()
+	}
+	if a.rdnsCache != nil {
+		// Drain background reverse-DNS workers on stop (after the scheduler and
+		// receivers have wound down, so no further lookups are issued).
+		defer a.rdnsCache.Close()
 	}
 	if a.cfg.SelfObservability.Enabled {
 		go runHeartbeat(ctx, a.emitter, heartbeatInterval)

@@ -52,6 +52,14 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Enrichment.CacheTTL.D() != 5*time.Minute {
 		t.Errorf("Enrichment.CacheTTL = %v, want default 5m", cfg.Enrichment.CacheTTL.D())
 	}
+	if cfg.Enrichment.ReverseDNS.Enabled {
+		t.Errorf("Enrichment.ReverseDNS.Enabled = true, want default false (opt-in)")
+	}
+	if rd := cfg.Enrichment.ReverseDNS; rd.Timeout.D() != 2*time.Second || rd.CacheTTL.D() != time.Hour ||
+		rd.NegativeTTL.D() != 5*time.Minute || rd.MaxEntries != 4096 {
+		t.Errorf("Enrichment.ReverseDNS defaults = timeout %v / ttl %v / neg %v / max %d, want 2s/1h/5m/4096",
+			rd.Timeout.D(), rd.CacheTTL.D(), rd.NegativeTTL.D(), rd.MaxEntries)
+	}
 	// Default true booleans.
 	if !cfg.Cardinality.FlowNodeDims {
 		t.Errorf("Cardinality.FlowNodeDims = false, want default true")
@@ -65,6 +73,12 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	}
 	if cfg.Cardinality.MetricLimit != 10000 {
 		t.Errorf("Cardinality.MetricLimit = %d, want default 10000", cfg.Cardinality.MetricLimit)
+	}
+	// New flow metric port/service toggles default off (ports stay off metrics
+	// by default, matching the legacy flow_include_ports default).
+	if cfg.Cardinality.FlowSourcePort || cfg.Cardinality.FlowDestinationPort || cfg.Cardinality.FlowDestinationService {
+		t.Errorf("Cardinality flow toggles = src %v / dst %v / service %v, want all default false",
+			cfg.Cardinality.FlowSourcePort, cfg.Cardinality.FlowDestinationPort, cfg.Cardinality.FlowDestinationService)
 	}
 	if !cfg.Collectors.Devices.Enabled {
 		t.Errorf("Devices.Enabled = false, want default true")

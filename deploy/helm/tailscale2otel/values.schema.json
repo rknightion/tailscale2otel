@@ -39,10 +39,19 @@
                         "device_per_entity": {
                             "type": "boolean"
                         },
+                        "flow_destination_port": {
+                            "type": "boolean"
+                        },
+                        "flow_destination_service": {
+                            "type": "boolean"
+                        },
                         "flow_include_ports": {
                             "type": "boolean"
                         },
                         "flow_node_dims": {
+                            "type": "boolean"
+                        },
+                        "flow_source_port": {
                             "type": "boolean"
                         },
                         "key_per_entity": {
@@ -227,6 +236,29 @@
                     "properties": {
                         "cache_ttl": {
                             "type": "string"
+                        },
+                        "reverse_dns": {
+                            "type": "object",
+                            "properties": {
+                                "cache_ttl": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "max_entries": {
+                                    "type": "integer"
+                                },
+                                "negative_ttl": {
+                                    "type": "string"
+                                },
+                                "server": {
+                                    "type": "string"
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 },

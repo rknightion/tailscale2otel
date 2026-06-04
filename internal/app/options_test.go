@@ -135,3 +135,37 @@ func TestFlowOptions_MaxLogRecordsPerWindow(t *testing.T) {
 		t.Fatalf("flowOptions MaxLogRecordsPerWindow = %d, want 250", got)
 	}
 }
+
+func TestFlowOptions_PortToggles(t *testing.T) {
+	// Defaults: every metric port/service toggle off.
+	if def := flowOptions(config.Default()); def.IncludeSourcePort || def.IncludeDestinationPort || def.IncludeDestinationService {
+		t.Fatalf("defaults = src %v / dst %v / service %v, want all false",
+			def.IncludeSourcePort, def.IncludeDestinationPort, def.IncludeDestinationService)
+	}
+
+	// Legacy flow_include_ports enables BOTH ports (back-compat).
+	legacy := config.Default()
+	legacy.Cardinality.FlowIncludePorts = true
+	if got := flowOptions(legacy); !got.IncludeSourcePort || !got.IncludeDestinationPort {
+		t.Fatalf("flow_include_ports=true => src %v / dst %v, want both true", got.IncludeSourcePort, got.IncludeDestinationPort)
+	}
+
+	// Independent source-only and destination-only.
+	srcOnly := config.Default()
+	srcOnly.Cardinality.FlowSourcePort = true
+	if got := flowOptions(srcOnly); !got.IncludeSourcePort || got.IncludeDestinationPort {
+		t.Fatalf("flow_source_port=true => src %v / dst %v, want true/false", got.IncludeSourcePort, got.IncludeDestinationPort)
+	}
+	dstOnly := config.Default()
+	dstOnly.Cardinality.FlowDestinationPort = true
+	if got := flowOptions(dstOnly); got.IncludeSourcePort || !got.IncludeDestinationPort {
+		t.Fatalf("flow_destination_port=true => src %v / dst %v, want false/true", got.IncludeSourcePort, got.IncludeDestinationPort)
+	}
+
+	// Service toggle maps through.
+	svc := config.Default()
+	svc.Cardinality.FlowDestinationService = true
+	if got := flowOptions(svc); !got.IncludeDestinationService {
+		t.Fatal("flow_destination_service=true => IncludeDestinationService false, want true")
+	}
+}

@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.4.1](https://img.shields.io/badge/Version-0.4.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.4.2](https://img.shields.io/badge/Version-0.4.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -48,8 +48,11 @@ under `config:`).
 | config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
 | config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when flow_node_dims is true, the src/dst node labels on flow METRICS. |
 | config.cardinality.device_per_entity | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
-| config.cardinality.flow_include_ports | bool | `false` | Keep src/dst ports OFF flow METRICS (ports are always on flow LOGS). |
+| config.cardinality.flow_destination_port | bool | `false` | Add destination.port to flow METRICS (independent of flow_source_port). |
+| config.cardinality.flow_destination_service | bool | `false` | Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS. |
+| config.cardinality.flow_include_ports | bool | `false` | Legacy "both ports" toggle for flow METRICS; OR'd with flow_source_port/flow_destination_port (ports are always on flow LOGS). |
 | config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
+| config.cardinality.flow_source_port | bool | `false` | Add source.port to flow METRICS (independent of flow_destination_port). |
 | config.cardinality.key_per_entity | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
 | config.cardinality.user_per_entity | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
@@ -91,6 +94,12 @@ under `config:`).
 | config.collectors.users.enabled | bool | `true` | Enable the users collector (users.count, per-user devices/connected/last_seen). |
 | config.collectors.users.interval | string | `"300s"` | Poll interval (user data changes slowly). |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
+| config.enrichment.reverse_dns.cache_ttl | string | `"1h"` | How long a resolved name is cached. |
+| config.enrichment.reverse_dns.enabled | bool | `false` | Opt-in reverse-DNS (PTR) enrichment of EXTERNAL flow addresses; resolved names replace the "external" bucket in tailscale.src/dst.node (flow logs always; flow metrics when flow_node_dims is on). On flow METRICS this can add ~one series per external IP. |
+| config.enrichment.reverse_dns.max_entries | int | `4096` | Cache size bound; new external IPs beyond this are not resolved. |
+| config.enrichment.reverse_dns.negative_ttl | string | `"5m"` | How long a failed lookup is remembered (suppresses retries). |
+| config.enrichment.reverse_dns.server | string | `""` | Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver. |
+| config.enrichment.reverse_dns.timeout | string | `"2s"` | Per-lookup timeout. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
 | config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
 | config.otlp.grafana_cloud.instance_id | string | `"${GC_INSTANCE_ID}"` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Leave both empty to use `headers`. |
