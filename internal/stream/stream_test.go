@@ -148,14 +148,14 @@ const bareAuditRecord = `{"eventTime":"2026-06-02T12:00:30Z","type":"CONFIG","ev
 // TCP), srcNode/dstNodes node descriptors, and both virtualTraffic and
 // physicalTraffic arrays. The receiver must ignore the descriptive node fields
 // and route this to the flow processor on the strength of nodeId + traffic.
-const captureFlowRecord = `{"logged":"2026-06-02T19:00:01.346001489Z","nodeId":"nxrsyR7CNTRL","start":"2026-06-02T18:59:54.278418352Z","end":"2026-06-02T18:59:59.279306235Z","srcNode":{"nodeId":"nxrsyR7CNTRL","name":"camden.saga-turtle.ts.net","addresses":["100.91.77.97"],"tags":["tag:servers"]},"dstNodes":[{"nodeId":"nrx7wUpMaa11CNTRL","name":"mbp16.saga-turtle.ts.net","addresses":["100.88.109.22"],"os":"macOS","user":"rob@m7kni.io"}],"virtualTraffic":[{"proto":6,"src":"100.91.77.97:22","dst":"100.88.109.22:58544","txPkts":51,"txBytes":6420}],"physicalTraffic":[{"src":"100.88.109.22:0","dst":"10.0.0.183:57532","txPkts":53,"txBytes":8708,"rxPkts":53,"rxBytes":7004}]}`
+const captureFlowRecord = `{"logged":"2026-06-02T19:00:01.346001489Z","nodeId":"nFlowSrc1CNTRL","start":"2026-06-02T18:59:54.278418352Z","end":"2026-06-02T18:59:59.279306235Z","srcNode":{"nodeId":"nFlowSrc1CNTRL","name":"node-a.example.ts.net","addresses":["100.64.0.11"],"tags":["tag:servers"]},"dstNodes":[{"nodeId":"nFlowDst1CNTRL","name":"node-b.example.ts.net","addresses":["100.64.0.12"],"os":"macOS","user":"alice@example.com"}],"virtualTraffic":[{"proto":6,"src":"100.64.0.11:22","dst":"100.64.0.12:58544","txPkts":51,"txBytes":6420}],"physicalTraffic":[{"src":"100.64.0.12:0","dst":"10.0.0.183:57532","txPkts":53,"txBytes":8708,"rxPkts":53,"rxBytes":7004}]}`
 
 // captureAuditRecord mirrors the exact shape of a configuration-audit record
 // from a real capture (.capture/logging_config.json): an UPDATE whose "new" is
 // a JSON ARRAY ("new":["tag:grafana-pdc"]) and whose "old" is an empty STRING.
 // These polymorphic old/new values (string|object|array|null) must not derail
 // classification or decoding.
-const captureAuditRecord = `{"eventTime":"2026-06-02T19:00:05.558444283Z","type":"CONFIG","eventGroupID":"d3c5dde026b27ddd2e5601788dbecec6","origin":"NODE","actor":{"id":"uiffmH5CNTRL","type":"USER","loginName":"rob@m7kni.io","displayName":"Rob Knight"},"target":{"id":"n5FKuyvTaV11CNTRL","name":"grafanacloud-1217581-tailscale-grafana-pdc-48.saga-turtle.ts.net","type":"NODE","isEphemeral":true,"property":"ACL_TAGS"},"action":"UPDATE","old":"","new":["tag:grafana-pdc"]}`
+const captureAuditRecord = `{"eventTime":"2026-06-02T19:00:05.558444283Z","type":"CONFIG","eventGroupID":"egExample0000000000000000000000000001","origin":"NODE","actor":{"id":"uExample1CNTRL","type":"USER","loginName":"alice@example.com","displayName":"Alice Example"},"target":{"id":"nAuditTgt1CNTRL","name":"service-node.example.ts.net","type":"NODE","isEphemeral":true,"property":"ACL_TAGS"},"action":"UPDATE","old":"","new":["tag:grafana-pdc"]}`
 
 // assertFlowAndAuditOnce asserts that exactly one flow and one audit record
 // were processed and that no records were rejected.

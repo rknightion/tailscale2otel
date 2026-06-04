@@ -273,7 +273,7 @@ func postStream(t *testing.T, a *App, body string) int {
 // connection reported by BOTH the poll collector and the stream receiver is
 // counted ONCE. The flow dedup key is content-based (nodeId|start|end|proto|src|dst),
 // byte-identical across the two sources, so the shared set suppresses the second
-// copy. (Verified live against the m7kni lab on 2026-06-03: an identical flow
+// copy. (Verified live against the example-tailnet lab on 2026-06-03: an identical flow
 // replayed through the receiver did not double-count.)
 func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
 	cfg := config.Default()
@@ -325,7 +325,7 @@ func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
 // (time-free), so a change reported by BOTH paths is counted ONCE. This is a
 // best-effort FAILSAFE for the discouraged dual-ingestion config (source=both):
 // the supported setup is to pick ONE method per log type. (S4-9(2), verified live
-// against m7kni 2026-06-03; key change is the session-6 fix.)
+// against example-tailnet 2026-06-03; key change is the session-6 fix.)
 func TestPollStreamCrossDedup_AuditDeduplicates(t *testing.T) {
 	cfg := config.Default()
 	cfg.Tailscale.Tailnet = "example.com"

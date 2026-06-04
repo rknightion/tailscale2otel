@@ -183,25 +183,25 @@ func TestProcessAllEmitsPerEvent(t *testing.T) {
 // fail, and each variant must render to the expected attribute string.
 const polymorphicConfigBody = `{
   "version": "1.1",
-  "tailnetId": "m7kni.io",
+  "tailnetId": "example.com",
   "logs": [
     {
       "eventTime": "2026-06-02T19:00:05.558078907Z",
       "type": "CONFIG",
       "eventGroupID": "g-string",
       "origin": "NODE",
-      "actor": {"id":"u1","type":"USER","loginName":"rob@m7kni.io","displayName":"Rob"},
+      "actor": {"id":"u1","type":"USER","loginName":"alice@example.com","displayName":"Alice"},
       "target": {"id":"n1","name":"node.ts.net","type":"NODE","property":"MACHINE_NAME"},
       "action": "UPDATE",
       "old": "",
-      "new": "grafanacloud-1217581-tailscale-grafana-pdc-48"
+      "new": "service-node"
     },
     {
       "eventTime": "2026-06-02T19:00:05.558376389Z",
       "type": "CONFIG",
       "eventGroupID": "g-object",
       "origin": "ADMIN_CONSOLE",
-      "actor": {"id":"u1","type":"USER","loginName":"rob@m7kni.io","displayName":"Rob"},
+      "actor": {"id":"u1","type":"USER","loginName":"alice@example.com","displayName":"Alice"},
       "target": {"id":"n1","name":"node.ts.net","type":"NODE","property":"POSTURE"},
       "action": "UPDATE",
       "old": {"PostureDisabled":false},
@@ -212,7 +212,7 @@ const polymorphicConfigBody = `{
       "type": "CONFIG",
       "eventGroupID": "g-array",
       "origin": "NODE",
-      "actor": {"id":"u1","type":"USER","loginName":"rob@m7kni.io","displayName":"Rob"},
+      "actor": {"id":"u1","type":"USER","loginName":"alice@example.com","displayName":"Alice"},
       "target": {"id":"n1","name":"node.ts.net","type":"NODE","property":"ACL_TAGS"},
       "action": "UPDATE",
       "new": ["tag:grafana-pdc"]
@@ -222,7 +222,7 @@ const polymorphicConfigBody = `{
       "type": "CONFIG",
       "eventGroupID": "g-null",
       "origin": "NODE",
-      "actor": {"id":"u1","type":"USER","loginName":"rob@m7kni.io","displayName":"Rob"},
+      "actor": {"id":"u1","type":"USER","loginName":"alice@example.com","displayName":"Alice"},
       "target": {"id":"n1","name":"node.ts.net","type":"NODE"},
       "action": "CREATE",
       "old": null,
@@ -257,8 +257,8 @@ func TestProcessAllRendersPolymorphicOldNew(t *testing.T) {
 
 	// (a) JSON string new -> unquoted string; empty old absent.
 	str := byGroup["g-string"]
-	if got := str.Attrs["tailscale.audit.new"]; got != "grafanacloud-1217581-tailscale-grafana-pdc-48" {
-		t.Errorf("string new = %q, want unquoted grafanacloud-1217581-tailscale-grafana-pdc-48", got)
+	if got := str.Attrs["tailscale.audit.new"]; got != "service-node" {
+		t.Errorf("string new = %q, want unquoted service-node", got)
 	}
 	if _, ok := str.Attrs["tailscale.audit.old"]; ok {
 		t.Errorf("empty-string old should be absent, got %q", str.Attrs["tailscale.audit.old"])

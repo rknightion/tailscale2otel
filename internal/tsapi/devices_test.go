@@ -14,7 +14,7 @@ import (
 const devicesRichFixture = `{"devices":[
   {
     "id":"3690401478992208","nodeId":"nDdiWAbPpV11CNTRL","name":"laptop.example.ts.net",
-    "hostname":"laptop","os":"linux","user":"rob@example.com","clientVersion":"1.99.0",
+    "hostname":"laptop","os":"linux","user":"alice@example.com","clientVersion":"1.99.0",
     "addresses":["100.64.0.1","fd7a::1"],"tags":["tag:server","tag:prod"],
     "authorized":true,"isExternal":false,"updateAvailable":true,"keyExpiryDisabled":false,
     "connectedToControl":true,"blocksIncomingConnections":false,"sshEnabled":true,
@@ -24,7 +24,7 @@ const devicesRichFixture = `{"devices":[
     "clientConnectivity":{"latency":{"Frankfurt":{"preferred":true,"latencyMs":1.0156919999999998},"Amsterdam":{"latencyMs":8.675937999999999}}}
   },
   {
-    "id":"346670268899695","nodeId":"nt5gYXS1i311CNTRL","name":"alex.example.ts.net",
+    "id":"346670268899695","nodeId":"nExampleFlow11CNTRL","name":"alex.example.ts.net",
     "hostname":"alex","os":"macOS","user":"alex@example.com","clientVersion":"1.80.0",
     "addresses":["100.64.0.2"],
     "authorized":true,"isExternal":false,"updateAvailable":false,"keyExpiryDisabled":false,
@@ -72,7 +72,7 @@ func TestDevicesRich_DecodesRichFields(t *testing.T) {
 	if d0.ID != "3690401478992208" || d0.NodeID != "nDdiWAbPpV11CNTRL" {
 		t.Fatalf("ids = %q/%q", d0.ID, d0.NodeID)
 	}
-	if d0.Hostname != "laptop" || d0.OS != "linux" || d0.User != "rob@example.com" {
+	if d0.Hostname != "laptop" || d0.OS != "linux" || d0.User != "alice@example.com" {
 		t.Fatalf("basic = %+v", d0)
 	}
 	if d0.ClientVersion != "1.99.0" {

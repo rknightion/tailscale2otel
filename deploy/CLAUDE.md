@@ -7,7 +7,7 @@ consumed by operators or by the release pipelines.
 
 - `Dockerfile` — runtime image (built/smoke-tested in CI as `tailscale2otel:ci`).
   `Dockerfile.goreleaser` — the variant GoReleaser uses for the published multi-arch image.
-- `docker-compose.yaml` — local/single-host run (this is how it's deployed on `camden`).
+- `docker-compose.yaml` — local/single-host run (this is how it's deployed on `node-a`).
 - `helm/tailscale2otel/` — Helm chart (see below).
 - `grafana/*.json` — four importable Grafana 13 dashboards (fleet, network, audit-events,
   exporter-health). Datasource-agnostic via `${DS_PROM}`/`${DS_LOKI}` vars. See `grafana/README.md`.
