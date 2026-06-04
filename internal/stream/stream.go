@@ -337,7 +337,11 @@ func (s *Server) readBody(r *http.Request) ([]byte, error) {
 		defer zr.Close()
 		return readAllLimited(zr, s.maxBody)
 	case "zstd":
-		zr, err := zstd.NewReader(r.Body)
+		var dopts []zstd.DOption
+		if w := zstdMaxWindow(s.maxBody); w > 0 {
+			dopts = append(dopts, zstd.WithDecoderMaxWindow(w))
+		}
+		zr, err := zstd.NewReader(r.Body, dopts...)
 		if err != nil {
 			return nil, err
 		}
@@ -364,6 +368,22 @@ func readAllLimited(r io.Reader, limit int64) ([]byte, error) {
 		return nil, errBodyTooLarge
 	}
 	return b, nil
+}
+
+// zstdMaxWindow returns the cap for the zstd decoder's back-reference window,
+// derived from the decompressed-body limit so a crafted frame cannot declare a
+// window larger than the most we would ever decompress (the library default cap
+// is 512 MB, allowing a large allocation even when the output stays under the
+// body cap). 0 means "leave the library default" — used when the body is
+// uncapped (maxBody <= 0). The result is clamped up to zstd's 1 KB minimum.
+func zstdMaxWindow(maxBody int64) uint64 {
+	if maxBody <= 0 {
+		return 0
+	}
+	if maxBody < 1<<10 {
+		return 1 << 10
+	}
+	return uint64(maxBody)
 }
 
 // recordKind is the classification of an extracted record object.
