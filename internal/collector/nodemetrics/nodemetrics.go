@@ -61,6 +61,12 @@ const (
 	// promotion, so per-node attribution survives.
 	attrInstance = "tailscale.node"
 
+	// attrInstancePromLabel is the Prometheus-normalized spelling of attrInstance.
+	// Scraped labels are untrusted and may legally include this key; carrying both
+	// keys would create a backend-dependent collision after OTLP->Prometheus
+	// normalization, so this raw scraped/passthrough key is reserved and stripped.
+	attrInstancePromLabel = "tailscale_node"
+
 	// metricDiscoverySuccess and metricDiscoveredTargets are the discovery-health
 	// gauges emitted every Collect when a Discoverer is configured.
 	metricDiscoverySuccess  = "tailscale2otel.nodemetrics.discovery.success"
@@ -707,13 +713,22 @@ func (c *Collector) emitDelta(s *sample, attrs telemetry.Attrs, e telemetry.Emit
 
 // mergeAttrs builds the per-sample attribute set: target passthrough labels
 // first, then parsed metric labels (which win on conflict), then the
-// tailscale.node identity label (which always wins). All values are strings.
+// tailscale.node identity label (which always wins). The Prometheus-normalized
+// identity spelling (tailscale_node) is reserved and stripped from scraped and
+// passthrough labels to prevent normalized-key collisions in OTLP backends. All
+// values are strings.
 func mergeAttrs(targetLabels, metricLabels map[string]string, instance string) telemetry.Attrs {
 	out := make(telemetry.Attrs, len(targetLabels)+len(metricLabels)+1)
 	for k, v := range targetLabels {
+		if k == attrInstancePromLabel {
+			continue
+		}
 		out[k] = v
 	}
 	for k, v := range metricLabels {
+		if k == attrInstancePromLabel {
+			continue
+		}
 		out[k] = v
 	}
 	out[attrInstance] = instance
