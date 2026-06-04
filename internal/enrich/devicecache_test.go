@@ -103,6 +103,64 @@ func TestLenReflectsDeviceCount(t *testing.T) {
 	}
 }
 
+func TestDeviceCache_Snapshot(t *testing.T) {
+	c := enrich.NewDeviceCache()
+	c.Replace([]enrich.DeviceMeta{
+		{
+			NodeID:   "n1",
+			Name:     "laptop.tail1a2b.ts.net",
+			Hostname: "laptop",
+			OS:       "linux",
+			User:     "alice@example.com",
+			Tags:     []string{"tag:server"},
+			Addrs: []netip.Addr{
+				netip.MustParseAddr("100.64.0.1"),
+				netip.MustParseAddr("fd7a:115c:a1e0::1"),
+			},
+		},
+		{
+			NodeID:   "n2",
+			Hostname: "phone",
+			OS:       "ios",
+			Addrs:    []netip.Addr{netip.MustParseAddr("100.64.0.2")},
+		},
+	})
+
+	snap := c.Snapshot()
+	if len(snap) != 2 {
+		t.Fatalf("Snapshot() returned %d devices, want 2", len(snap))
+	}
+
+	// Each device must appear exactly once (keyed by node ID), with expected fields.
+	byNode := map[string]enrich.DeviceMeta{}
+	for _, m := range snap {
+		if _, dup := byNode[m.NodeID]; dup {
+			t.Fatalf("Snapshot() returned node %q more than once", m.NodeID)
+		}
+		byNode[m.NodeID] = m
+	}
+
+	n1, ok := byNode["n1"]
+	if !ok {
+		t.Fatal("Snapshot() missing node n1")
+	}
+	if n1.Hostname != "laptop" || n1.OS != "linux" || n1.User != "alice@example.com" {
+		t.Fatalf("Snapshot() n1 = %+v, want laptop/linux/alice", n1)
+	}
+	if len(n1.Addrs) != 2 {
+		t.Fatalf("Snapshot() n1 has %d addrs, want 2", len(n1.Addrs))
+	}
+	if _, ok := byNode["n2"]; !ok {
+		t.Fatal("Snapshot() missing node n2")
+	}
+
+	// Mutating the returned slice/entries must not affect the cache (copies).
+	snap[0].Hostname = "MUTATED"
+	if m, _ := c.LookupNode(snap[0].NodeID); m == nil || m.Hostname == "MUTATED" {
+		t.Fatal("mutating Snapshot() entry affected the cache; want isolated copies")
+	}
+}
+
 func TestAgeUsesInjectedClock(t *testing.T) {
 	now := time.Unix(1000, 0)
 	c := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))

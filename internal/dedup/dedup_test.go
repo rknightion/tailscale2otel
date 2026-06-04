@@ -31,6 +31,18 @@ func TestAdd_SameKeyReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestSet_Cap(t *testing.T) {
+	if got := dedup.New(16).Cap(); got != 16 {
+		t.Fatalf("New(16).Cap() = %d, want 16", got)
+	}
+	// A non-positive capacity selects the default, so Cap must report it too.
+	for _, capacity := range []int{0, -1, -100} {
+		if got := dedup.New(capacity).Cap(); got != 4096 {
+			t.Fatalf("New(%d).Cap() = %d, want 4096 (default capacity)", capacity, got)
+		}
+	}
+}
+
 func TestNew_NonPositiveCapacityUsesDefault(t *testing.T) {
 	for _, capacity := range []int{0, -1, -100} {
 		s := dedup.New(capacity)

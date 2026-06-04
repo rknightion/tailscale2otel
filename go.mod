@@ -3,6 +3,7 @@ module github.com/rknightion/tailscale2otel
 go 1.26.4
 
 require (
+	github.com/grafana/pyroscope-go v1.3.1
 	github.com/klauspost/compress v1.18.6
 	github.com/tailscale/hujson v0.0.0-20220506213045-af5ed07155e5
 	github.com/tailscale/tailscale-client-go/v2 v2.0.0-20250129222324-74c8fc3cb4d7
@@ -28,6 +29,7 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.11 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // oneOf reports whether v equals one of the allowed values.
@@ -51,6 +52,18 @@ func (c *Config) Warnings() []string {
 					col.name, src, col.name))
 			}
 		}
+	}
+
+	// Grafana Cloud Profiles authenticates Pyroscope pushes with HTTP basic auth
+	// (the user is the stack's profiles instance ID, the password an access
+	// policy token). A grafana.net endpoint with no basic_auth_password set will
+	// be rejected by the server, so steer the operator toward configuring it.
+	if p := c.Profiling.Pyroscope; p.Enabled &&
+		strings.Contains(p.ServerAddress, "grafana.net") && p.BasicAuthPassword == "" {
+		w = append(w, "profiling.pyroscope.server_address points at Grafana Cloud (grafana.net) "+
+			"but profiling.pyroscope.basic_auth_password is empty: Grafana Cloud Profiles "+
+			"requires HTTP basic-auth credentials (basic_auth_user = profiles instance ID, "+
+			"basic_auth_password = an access policy token with profiles:write).")
 	}
 	return w
 }
@@ -153,6 +166,15 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("collectors.node_metrics.discovery.interval must be > 0")
 			}
 		}
+	}
+
+	// Profiling is opt-in. The pprof handlers are mounted on the admin server, so
+	// they need it enabled; the Pyroscope push agent needs a server to push to.
+	if c.Profiling.Pprof.Enabled && !c.Admin.Enabled {
+		return fmt.Errorf("profiling.pprof.enabled requires admin.enabled: true")
+	}
+	if c.Profiling.Pyroscope.Enabled && c.Profiling.Pyroscope.ServerAddress == "" {
+		return fmt.Errorf("profiling.pyroscope.enabled requires profiling.pyroscope.server_address")
 	}
 
 	return nil

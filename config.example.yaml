@@ -138,7 +138,28 @@ webhook:
 self_observability:
   enabled: true                      # emit the exporter's own health metrics
 
-# Always-on admin HTTP server for liveness/readiness probes (carries no Tailscale data).
+# Admin HTTP server: liveness/readiness probes plus an optional status landing
+# page. The page exposes operational metadata (collector health, cardinality,
+# discovered nodes, redacted config) but NEVER secret values. Bind it to a
+# tailnet/loopback address, not the public internet.
 admin:
   enabled: false
   listen: ":9090"                    # serves /healthz and /readyz
+  landing_page: true                 # serve a human landing page at / and machine-readable /api/status.json
+
+# Optional continuous/on-demand profiling. Everything here is OFF by default and
+# carries no Tailscale data. The pprof handlers are mounted on the admin server
+# (above), so pprof.enabled requires admin.enabled: true.
+profiling:
+  pprof:
+    enabled: false                   # mount net/http/pprof debug handlers on the admin server (needs admin.enabled)
+  pyroscope:
+    enabled: false                   # run the Pyroscope continuous-profiling push agent
+    server_address: ""               # REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net
+    basic_auth_user: "${PYROSCOPE_BASIC_AUTH_USER}"         # Grafana Cloud: the profiles instance ID
+    basic_auth_password: "${PYROSCOPE_BASIC_AUTH_PASSWORD}" # Grafana Cloud: an access policy token with profiles:write
+    tenant_id: ""                    # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
+    upload_rate: 15s                 # how often profiles are flushed to the server
+    tags: {}                         # extra static labels merged onto every profile, e.g. { env: prod }
+  mutex_profile_fraction: 0          # runtime.SetMutexProfileFraction (0 = disabled)
+  block_profile_rate: 0              # runtime.SetBlockProfileRate (0 = disabled)

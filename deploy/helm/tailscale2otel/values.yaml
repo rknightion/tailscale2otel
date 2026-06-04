@@ -94,6 +94,11 @@ secret:
   # this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so
   # unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook.
   TS_WEBHOOK_SECRET: ""
+  # -- Pyroscope basic-auth user (Grafana Cloud: the profiles instance ID). Set ONLY when you
+  # enable config.profiling.pyroscope.
+  PYROSCOPE_BASIC_AUTH_USER: ""
+  # -- Pyroscope basic-auth password (Grafana Cloud: an access policy token with profiles:write).
+  PYROSCOPE_BASIC_AUTH_PASSWORD: ""
 
 # --- App config ---
 # The FULL application config, rendered verbatim into a ConfigMap as config.yaml.
@@ -332,9 +337,40 @@ config:
     # -- Emit the exporter's own health metrics (scrape/api/export/build_info/enrich).
     enabled: true
 
-  # Always-on admin HTTP server for liveness/readiness probes (carries no Tailscale data).
+  # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
+  # The page exposes operational metadata (collector health, cardinality, discovered
+  # nodes, redacted config) but NEVER secret values.
   admin:
     # -- Enable the admin probe server.
     enabled: false
     # -- Address the admin server binds; serves /healthz and /readyz.
     listen: ":9090"
+    # -- Serve the human status page at / and machine-readable JSON at /api/status.json.
+    landing_page: true
+
+  # Optional continuous/on-demand profiling. Everything here is OFF by default and
+  # carries no Tailscale data. The pprof handlers mount on the admin server, so
+  # profiling.pprof.enabled requires admin.enabled: true.
+  profiling:
+    pprof:
+      # -- Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles.
+      enabled: false
+    pyroscope:
+      # -- Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK).
+      enabled: false
+      # -- Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled.
+      server_address: ""
+      # -- Basic-auth user (backed by the PYROSCOPE_BASIC_AUTH_USER secret).
+      basic_auth_user: "${PYROSCOPE_BASIC_AUTH_USER}"
+      # -- Basic-auth password (backed by the PYROSCOPE_BASIC_AUTH_PASSWORD secret).
+      basic_auth_password: "${PYROSCOPE_BASIC_AUTH_PASSWORD}"
+      # -- X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud).
+      tenant_id: ""
+      # -- How often profiles are flushed to the server.
+      upload_rate: 15s
+      # -- Extra static labels merged onto every profile, e.g. { env: prod }.
+      tags: {}
+    # -- runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull.
+    mutex_profile_fraction: 0
+    # -- runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull.
+    block_profile_rate: 0

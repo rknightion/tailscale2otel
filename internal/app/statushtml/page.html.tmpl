@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Service.Name}} — status</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);
+    padding:1px 5px;border-radius:4px;color:#c9d1d9}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
+  header .spacer{flex:1}
+  main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+  section{margin:26px 0}
+  section>h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:0 0 12px;font-weight:600}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card .sub{color:var(--muted);font-size:12px;margin-top:4px;font-family:var(--mono);
+    overflow-wrap:anywhere}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;
+    font-weight:600;line-height:1.6}
+  .badge.ok{background:rgba(63,185,80,.16);color:var(--ok)}
+  .badge.err{background:rgba(248,81,73,.16);color:var(--err)}
+  .badge.warn{background:rgba(210,153,34,.16);color:var(--warn)}
+  .badge.pending{background:rgba(110,118,129,.18);color:var(--muted)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums;vertical-align:top}
+  th{color:var(--muted);font-size:12px;font-weight:600;position:sticky;top:0;
+    background:var(--panel2)}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-family:var(--mono)}
+  .mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  details>summary{cursor:pointer;padding:12px 16px;font-weight:600;user-select:none}
+  details[open]>summary{border-bottom:1px solid var(--line)}
+  details table{border:0;border-radius:0}
+  .filter{width:100%;max-width:340px;margin-bottom:10px;padding:7px 11px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    color:var(--fg);font-size:13px}
+  .scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .scroll table{border:0;border-radius:0}
+  .muted{color:var(--muted)}
+  .note{color:var(--muted);font-size:12px;margin-top:8px}
+  footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
+  .bar{height:4px;background:var(--panel2);border-radius:3px;margin-top:6px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1>{{.Service.Name}}</h1>
+  <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}</span>
+  {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
+  <span class="spacer"></span>
+  <span class="badge ok">running</span>
+</header>
+<main>
+
+  <section>
+    <div class="cards">
+      <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="sub">since {{.Service.StartedAt}}</div></div>
+      <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s</div></div>
+      <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
+      <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
+      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Collectors</h2>
+    <table>
+      <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Last run</th><th class="num">Duration</th><th>Last error</th></tr></thead>
+      <tbody>
+      {{range .Collectors}}
+        <tr>
+          <td><code>{{.Name}}</code></td>
+          <td>{{if not .HasRun}}<span class="badge pending">pending</span>{{else if .LastSuccess}}<span class="badge ok">ok</span>{{else}}<span class="badge err">fail</span>{{end}}</td>
+          <td class="num">{{.IntervalSec}}s</td>
+          <td class="num">{{.Runs}}</td>
+          <td class="num">{{.Failures}}</td>
+          <td class="num">{{if .HasRun}}{{.LastFinishedAt}}{{else}}—{{end}}</td>
+          <td class="num">{{if .HasRun}}{{.LastDurationMs}}ms{{else}}—{{end}}</td>
+          <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="muted">No collectors enabled.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Cardinality (active series, last export interval)</h2>
+    {{if .Cardinality.Available}}
+      <div class="cards" style="margin-bottom:12px">
+        <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{len .Cardinality.Series}} metrics</div></div>
+      </div>
+      <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'cardTable')">
+      <div class="scroll">
+      <table id="cardTable">
+        <thead><tr><th>Metric</th><th>Prometheus name</th><th class="num">Series</th></tr></thead>
+        <tbody>
+        {{range .Cardinality.Series}}
+          <tr><td><code>{{.Metric}}</code></td><td class="mono">{{.PromName}}</td><td class="num">{{.Count}}{{if .Capped}} <span class="badge warn" title="cap reached; true cardinality is at least this high">capped</span>{{end}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+    {{else}}
+      <p class="muted">{{if .Service.SelfObs}}Awaiting the first export interval…{{else}}Enable <code>self_observability</code> to surface live active-series cardinality.{{end}}</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Node-metrics discovery</h2>
+    {{if .NodeDiscovery.Enabled}}
+      <details>
+        <summary>{{.NodeDiscovery.Active}} active target(s) · {{.NodeDiscovery.Static}} static, {{minus .NodeDiscovery.Active .NodeDiscovery.Static}} discovered
+          {{if .NodeDiscovery.LastOK}}<span class="badge ok">last discovery ok</span>{{else}}<span class="badge err">last discovery failed</span>{{end}}
+          {{if .NodeDiscovery.LastDiscovery}}<span class="muted" style="font-weight:400"> at {{.NodeDiscovery.LastDiscovery}}</span>{{end}}
+        </summary>
+        <table>
+          <thead><tr><th>Instance</th><th>URL</th><th>Source</th></tr></thead>
+          <tbody>
+          {{range .NodeDiscovery.Targets}}
+            <tr><td>{{if .Instance}}<code>{{.Instance}}</code>{{else}}<span class="muted">—</span>{{end}}</td><td class="mono">{{.URL}}</td><td>{{if eq .Source "discovered"}}<span class="badge ok">discovered</span>{{else}}<span class="badge pending">static</span>{{end}}</td></tr>
+          {{else}}
+            <tr><td colspan="3" class="muted">No active targets.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </details>
+    {{else}}
+      <p class="muted">Dynamic discovery is disabled. {{if gt .NodeDiscovery.Static 0}}Scraping {{.NodeDiscovery.Static}} static target(s).{{end}}</p>
+    {{end}}
+  </section>
+
+  {{if .Devices}}
+  <section>
+    <h2>Devices ({{len .Devices}})</h2>
+    <details>
+      <summary>{{len .Devices}} device(s) in the enrichment cache</summary>
+      <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')" style="margin:12px 16px">
+      <div class="scroll">
+      <table id="devTable">
+        <thead><tr><th>Name</th><th>OS</th><th>User</th><th>Addresses</th><th>Tags</th><th>External</th></tr></thead>
+        <tbody>
+        {{range .Devices}}
+          <tr>
+            <td><code>{{if .Name}}{{.Name}}{{else}}{{.Hostname}}{{end}}</code></td>
+            <td>{{.OS}}{{if .OSVersion}} {{.OSVersion}}{{end}}</td>
+            <td>{{.User}}</td>
+            <td class="mono">{{range .Addrs}}{{.}} {{end}}</td>
+            <td class="mono">{{range .Tags}}<code>{{.}}</code> {{end}}</td>
+            <td>{{if .External}}<span class="badge warn">external</span>{{else}}<span class="badge pending">internal</span>{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+    </details>
+  </section>
+  {{end}}
+
+  <section>
+    <h2>Metrics catalog ({{len .Metrics}})</h2>
+    <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'metricsTable')">
+    <div class="scroll">
+    <table id="metricsTable">
+      <thead><tr><th>Name</th><th>Prometheus name</th><th>Type</th><th>Unit</th><th>Group</th>{{if .Service.SelfObs}}<th class="num">Series</th>{{end}}<th>Attributes</th></tr></thead>
+      <tbody>
+      {{range .Metrics}}
+        <tr>
+          <td><code>{{.Name}}</code><div class="note" style="margin:2px 0 0">{{.Description}}</div></td>
+          <td class="mono">{{.PromName}}</td>
+          <td>{{.Instrument}}</td>
+          <td>{{if .Unit}}<code>{{.Unit}}</code>{{end}}</td>
+          <td>{{.Group}}</td>
+          {{if $.Service.SelfObs}}<td class="num">{{if gt .Series 0}}{{.Series}}{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
+          <td class="mono">{{range .Attributes}}<code>{{.}}</code> {{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Log events ({{len .LogEvents}})</h2>
+    <input class="filter" type="text" placeholder="Filter log events…" oninput="filterTable(this,'logsTable')">
+    <div class="scroll">
+    <table id="logsTable">
+      <thead><tr><th>Event</th><th>Severity</th><th>Group</th><th>Attributes</th></tr></thead>
+      <tbody>
+      {{range .LogEvents}}
+        <tr>
+          <td><code>{{.Name}}</code><div class="note" style="margin:2px 0 0">{{.Description}}</div></td>
+          <td>{{.Severity}}</td>
+          <td>{{.Group}}</td>
+          <td class="mono">{{range .Attributes}}<code>{{.}}</code> {{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Configuration (secrets redacted)</h2>
+    <div class="cards">
+      <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
+      <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px">{{.Config.AuthMethod}}</div></div>
+      <div class="card"><div class="k">Checkpoint store</div><div class="v" style="font-size:16px">{{.Config.CheckpointStore}}</div></div>
+      <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
+      <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
+    </div>
+    <table style="margin-top:12px">
+      <tbody>
+        <tr><td>Enabled collectors</td><td class="mono">{{range .Config.EnabledCollectors}}<code>{{.}}</code> {{end}}</td></tr>
+        <tr><td>Secrets configured</td><td class="mono">
+          {{if .Config.APIKeySet}}<code>api_key</code> {{end}}
+          {{if .Config.OAuthSecretSet}}<code>oauth_secret</code> {{end}}
+          {{if .Config.GCloudTokenSet}}<code>grafana_cloud_token</code> {{end}}
+          {{if .Config.StreamTokenSet}}<code>stream_token</code> {{end}}
+          {{if .Config.WebhookSecretSet}}<code>webhook_secret</code> {{end}}
+          {{if .Config.PyroscopeAuthSet}}<code>pyroscope_auth</code> {{end}}
+        </td></tr>
+        {{if .Config.OTLPHeaderKeys}}<tr><td>OTLP header keys</td><td class="mono">{{range .Config.OTLPHeaderKeys}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
+        {{if .Dedup}}<tr><td>Dedup sets</td><td class="mono">{{range .Dedup}}{{.Name}} {{.Len}}/{{.Capacity}} &nbsp;{{end}}</td></tr>{{end}}
+      </tbody>
+    </table>
+  </section>
+
+</main>
+<footer>
+  Generated at <span id="generatedAt">{{.GeneratedAt}}</span> ·
+  <a href="/api/status.json">JSON</a> ·
+  <noscript>static snapshot (enable JavaScript for live updates) ·</noscript>
+  auto-refreshing every 10s
+</footer>
+<script>
+// Filter table rows by a case-insensitive substring of their text content.
+function filterTable(input, tableId){
+  var q = input.value.toLowerCase();
+  var rows = document.querySelectorAll('#'+tableId+' tbody tr');
+  for (var i=0;i<rows.length;i++){
+    rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+  }
+}
+// Poll the JSON endpoint and refresh the live scalar stats in place (tables
+// update on a full reload). Failures are ignored so a transient blip is silent.
+function setText(id, v){ var el=document.getElementById(id); if(el!=null&&v!=null) el.textContent=v; }
+function refresh(){
+  fetch('/api/status.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+    setText('uptime', d.service && d.service.uptime);
+    setText('goroutines', d.runtime && d.runtime.goroutines);
+    setText('heapAlloc', d.runtime && d.runtime.heap_alloc);
+    setText('numGC', d.runtime && d.runtime.num_gc);
+    setText('cacheDevices', d.device_cache && d.device_cache.devices);
+    setText('cacheAge', d.device_cache && d.device_cache.age);
+    if (d.cardinality) setText('cardTotal', d.cardinality.total);
+    setText('generatedAt', d.generated_at);
+  }).catch(function(){});
+}
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

@@ -14,6 +14,9 @@
                         "enabled": {
                             "type": "boolean"
                         },
+                        "landing_page": {
+                            "type": "boolean"
+                        },
                         "listen": {
                             "type": "string"
                         }
@@ -267,6 +270,51 @@
                         }
                     }
                 },
+                "profiling": {
+                    "type": "object",
+                    "properties": {
+                        "block_profile_rate": {
+                            "type": "integer"
+                        },
+                        "mutex_profile_fraction": {
+                            "type": "integer"
+                        },
+                        "pprof": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                }
+                            }
+                        },
+                        "pyroscope": {
+                            "type": "object",
+                            "properties": {
+                                "basic_auth_password": {
+                                    "type": "string"
+                                },
+                                "basic_auth_user": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "server_address": {
+                                    "type": "string"
+                                },
+                                "tags": {
+                                    "type": "object"
+                                },
+                                "tenant_id": {
+                                    "type": "string"
+                                },
+                                "upload_rate": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
                 "self_observability": {
                     "type": "object",
                     "properties": {
@@ -489,6 +537,12 @@
                     "type": "string"
                 },
                 "GC_OTLP_TOKEN": {
+                    "type": "string"
+                },
+                "PYROSCOPE_BASIC_AUTH_PASSWORD": {
+                    "type": "string"
+                },
+                "PYROSCOPE_BASIC_AUTH_USER": {
                     "type": "string"
                 },
                 "TS_API_KEY": {

@@ -202,6 +202,72 @@ func TestLoadNestedValues(t *testing.T) {
 	}
 }
 
+// TestLoadProfilingValues pins the round-trip parse of the profiling block into
+// the typed struct (pprof/pyroscope toggles, basic-auth, tenant, upload_rate,
+// tags, and the mutex/block sampling knobs).
+func TestLoadProfilingValues(t *testing.T) {
+	const y = `
+admin:
+  enabled: true
+  landing_page: false
+profiling:
+  pprof:
+    enabled: true
+  pyroscope:
+    enabled: true
+    server_address: "https://profiles.example/pyroscope"
+    basic_auth_user: "12345"
+    basic_auth_password: "glc_token"
+    tenant_id: "tenant-1"
+    upload_rate: 30s
+    tags:
+      env: prod
+      region: eu
+  mutex_profile_fraction: 5
+  block_profile_rate: 10000
+`
+	p := writeTemp(t, y)
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Admin.LandingPage {
+		t.Errorf("Admin.LandingPage = true, want false")
+	}
+	pr := cfg.Profiling
+	if !pr.Pprof.Enabled {
+		t.Errorf("Profiling.Pprof.Enabled = false, want true")
+	}
+	if !pr.Pyroscope.Enabled {
+		t.Errorf("Profiling.Pyroscope.Enabled = false, want true")
+	}
+	if pr.Pyroscope.ServerAddress != "https://profiles.example/pyroscope" {
+		t.Errorf("Pyroscope.ServerAddress = %q, want https://profiles.example/pyroscope", pr.Pyroscope.ServerAddress)
+	}
+	if pr.Pyroscope.BasicAuthUser != "12345" {
+		t.Errorf("Pyroscope.BasicAuthUser = %q, want 12345", pr.Pyroscope.BasicAuthUser)
+	}
+	if pr.Pyroscope.BasicAuthPassword != "glc_token" {
+		t.Errorf("Pyroscope.BasicAuthPassword = %q, want glc_token", pr.Pyroscope.BasicAuthPassword)
+	}
+	if pr.Pyroscope.TenantID != "tenant-1" {
+		t.Errorf("Pyroscope.TenantID = %q, want tenant-1", pr.Pyroscope.TenantID)
+	}
+	if pr.Pyroscope.UploadRate.D() != 30*time.Second {
+		t.Errorf("Pyroscope.UploadRate = %v, want 30s", pr.Pyroscope.UploadRate.D())
+	}
+	if pr.Pyroscope.Tags["env"] != "prod" || pr.Pyroscope.Tags["region"] != "eu" {
+		t.Errorf("Pyroscope.Tags = %v, want env=prod region=eu", pr.Pyroscope.Tags)
+	}
+	if pr.MutexProfileFraction != 5 {
+		t.Errorf("MutexProfileFraction = %d, want 5", pr.MutexProfileFraction)
+	}
+	if pr.BlockProfileRate != 10000 {
+		t.Errorf("BlockProfileRate = %d, want 10000", pr.BlockProfileRate)
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := config.Load("/nonexistent/path/config.yaml"); err == nil {
 		t.Fatalf("expected error for missing file, got nil")

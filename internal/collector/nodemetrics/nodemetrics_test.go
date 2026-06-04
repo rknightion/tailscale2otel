@@ -1398,3 +1398,112 @@ func TestNodeUp_EmittedDespiteMetricAllow(t *testing.T) {
 		t.Fatalf("up = %+v, want single value 1 instance node-a (never filtered)", up)
 	}
 }
+
+// targetBySource indexes a Snapshot's targets by their (URL, source) pair so a
+// test can assert each active target is classified correctly.
+func sourceByURL(s nodemetrics.DiscoveryStatus) map[string]string {
+	out := make(map[string]string, len(s.Targets))
+	for _, ti := range s.Targets {
+		out[ti.URL] = ti.Source
+	}
+	return out
+}
+
+// TestCollector_Snapshot: with a static target and a Discoverer returning one
+// additional (different-URL) target, after a successful discovery Snapshot()
+// reports discovery enabled and healthy, the static/active counts, and each
+// active target's source ("static" vs "discovered"). With NO Discoverer the
+// snapshot reports discovery disabled and every target as static.
+func TestCollector_Snapshot(t *testing.T) {
+	t.Run("with discoverer", func(t *testing.T) {
+		srvStatic, _ := countingServer(t, "# TYPE g gauge\ng 1\n")
+		defer srvStatic.Close()
+		srvDisc, _ := countingServer(t, "# TYPE g gauge\ng 2\n")
+		defer srvDisc.Close()
+
+		now := time.Unix(1_700_000_000, 0)
+		fake := &fakeDiscoverer{targets: []nodemetrics.Target{
+			{URL: srvDisc.URL, Instance: "node-disc"},
+		}}
+
+		c := nodemetrics.New(nodemetrics.Options{
+			Targets:           []nodemetrics.Target{{URL: srvStatic.URL, Instance: "node-static"}},
+			Discoverer:        fake,
+			DiscoveryInterval: 5 * time.Minute,
+			Now:               func() time.Time { return now },
+		})
+
+		// Drive a discovery so active = static ∪ discovered.
+		if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+			t.Fatalf("Collect error = %v", err)
+		}
+
+		snap := c.Snapshot()
+		if !snap.Enabled {
+			t.Errorf("Enabled = false, want true (a Discoverer is set)")
+		}
+		if !snap.LastOK {
+			t.Errorf("LastOK = false, want true (discovery succeeded)")
+		}
+		if snap.LastDiscovery != now {
+			t.Errorf("LastDiscovery = %v, want %v", snap.LastDiscovery, now)
+		}
+		if snap.Static != 1 {
+			t.Errorf("Static = %d, want 1", snap.Static)
+		}
+		if snap.Active != 2 {
+			t.Errorf("Active = %d, want 2", snap.Active)
+		}
+		if len(snap.Targets) != 2 {
+			t.Fatalf("len(Targets) = %d, want 2 (%+v)", len(snap.Targets), snap.Targets)
+		}
+		bySrc := sourceByURL(snap)
+		if got := bySrc[srvStatic.URL]; got != "static" {
+			t.Errorf("static target source = %q, want \"static\"", got)
+		}
+		if got := bySrc[srvDisc.URL]; got != "discovered" {
+			t.Errorf("discovered target source = %q, want \"discovered\"", got)
+		}
+		// Instance passthrough.
+		var staticInstance string
+		for _, ti := range snap.Targets {
+			if ti.URL == srvStatic.URL {
+				staticInstance = ti.Instance
+			}
+		}
+		if staticInstance != "node-static" {
+			t.Errorf("static target Instance = %q, want node-static", staticInstance)
+		}
+	})
+
+	t.Run("no discoverer", func(t *testing.T) {
+		srv, _ := countingServer(t, "# TYPE g gauge\ng 1\n")
+		defer srv.Close()
+
+		c := nodemetrics.New(nodemetrics.Options{
+			Targets: []nodemetrics.Target{
+				{URL: srv.URL, Instance: "node-a"},
+				{URL: srv.URL + "/x", Instance: "node-b"},
+			},
+		})
+
+		snap := c.Snapshot()
+		if snap.Enabled {
+			t.Errorf("Enabled = true, want false (no Discoverer)")
+		}
+		if !snap.LastDiscovery.IsZero() {
+			t.Errorf("LastDiscovery = %v, want zero (discovery never ran)", snap.LastDiscovery)
+		}
+		if snap.Static != 2 || snap.Active != 2 {
+			t.Errorf("Static/Active = %d/%d, want 2/2", snap.Static, snap.Active)
+		}
+		if len(snap.Targets) != 2 {
+			t.Fatalf("len(Targets) = %d, want 2 (%+v)", len(snap.Targets), snap.Targets)
+		}
+		for _, ti := range snap.Targets {
+			if ti.Source != "static" {
+				t.Errorf("target %q source = %q, want \"static\"", ti.URL, ti.Source)
+			}
+		}
+	})
+}

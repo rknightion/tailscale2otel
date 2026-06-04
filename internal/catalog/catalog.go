@@ -9,7 +9,7 @@
 package catalog
 
 import (
-	"github.com/rknightion/tailscale2otel/internal/app"
+	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/collector/acl"
@@ -31,7 +31,7 @@ import (
 // affects the pre-sort aggregate; Render() sorts each rendered table by name.
 var metricSources = []func() []metricdoc.Metric{
 	telemetry.Catalog,
-	app.Catalog,
+	appcatalog.Catalog,
 	collector.Catalog,
 	devices.Catalog,
 	users.Catalog,
@@ -50,7 +50,7 @@ var metricSources = []func() []metricdoc.Metric{
 // logSources is every package that declares emitted log events.
 var logSources = []func() []metricdoc.LogEvent{
 	telemetry.LogCatalog,
-	app.LogCatalog,
+	appcatalog.LogCatalog,
 	collector.LogCatalog,
 	devices.LogCatalog,
 	users.LogCatalog,

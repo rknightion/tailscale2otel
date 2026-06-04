@@ -133,8 +133,14 @@ func Default() *Config {
 			Enabled: true,
 		},
 		Admin: AdminConfig{
-			Enabled: false,
-			Listen:  ":9090",
+			Enabled:     false,
+			Listen:      ":9090",
+			LandingPage: true,
+		},
+		Profiling: ProfilingConfig{
+			Pyroscope: ProfilingPyroscope{
+				UploadRate: dur(15 * time.Second),
+			},
 		},
 	}
 }
