@@ -76,6 +76,76 @@ func TestWarnings_DualIngestionRisk(t *testing.T) {
 	}
 }
 
+// TestWarnings_GrafanaCloudProfilesNeedsAuth pins the advisory that Grafana
+// Cloud Profiles (a grafana.net pyroscope endpoint) needs basic-auth
+// credentials: when pyroscope is enabled against a grafana.net server_address
+// with no basic_auth_password set, Warnings() should flag it; a complete config
+// (or a non-grafana.net endpoint) produces no such warning.
+func TestWarnings_GrafanaCloudProfilesNeedsAuth(t *testing.T) {
+	// grafana.net server with no password => advisory.
+	c := config.Default()
+	c.Profiling.Pyroscope.Enabled = true
+	c.Profiling.Pyroscope.ServerAddress = "https://profiles-prod-001.grafana.net"
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(strings.ToLower(w), "basic-auth") && !strings.Contains(strings.ToLower(w), "basic auth") {
+		t.Fatalf("want a Grafana Cloud Profiles basic-auth advisory; got %q", w)
+	}
+
+	// Same endpoint WITH a password => no such advisory.
+	c.Profiling.Pyroscope.BasicAuthPassword = "glc_token"
+	for _, msg := range c.Warnings() {
+		if strings.Contains(strings.ToLower(msg), "basic-auth") || strings.Contains(strings.ToLower(msg), "basic auth") {
+			t.Errorf("did not expect a basic-auth advisory once a password is set; got %q", msg)
+		}
+	}
+
+	// A self-hosted (non-grafana.net) endpoint without a password => no advisory.
+	c = config.Default()
+	c.Profiling.Pyroscope.Enabled = true
+	c.Profiling.Pyroscope.ServerAddress = "http://pyroscope.internal:4040"
+	for _, msg := range c.Warnings() {
+		if strings.Contains(strings.ToLower(msg), "basic-auth") || strings.Contains(strings.ToLower(msg), "basic auth") {
+			t.Errorf("self-hosted endpoint should not trigger the Grafana Cloud advisory; got %q", msg)
+		}
+	}
+}
+
+func TestValidateProfilingPprofRequiresAdmin(t *testing.T) {
+	const y = "profiling:\n  pprof:\n    enabled: true\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: pprof enabled without admin")
+	}
+	if !strings.Contains(err.Error(), "pprof") || !strings.Contains(err.Error(), "admin") {
+		t.Errorf("error %q should mention pprof + admin", err.Error())
+	}
+}
+
+func TestValidateProfilingPprofValidWithAdmin(t *testing.T) {
+	const y = "admin:\n  enabled: true\nprofiling:\n  pprof:\n    enabled: true\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("pprof with admin.enabled should be valid: %v", err)
+	}
+}
+
+func TestValidateProfilingPyroscopeRequiresServerAddress(t *testing.T) {
+	const y = "profiling:\n  pyroscope:\n    enabled: true\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: pyroscope enabled without server_address")
+	}
+	if !strings.Contains(err.Error(), "pyroscope") || !strings.Contains(err.Error(), "server_address") {
+		t.Errorf("error %q should mention pyroscope + server_address", err.Error())
+	}
+}
+
+func TestValidateProfilingPyroscopeValidWithServerAddress(t *testing.T) {
+	const y = "profiling:\n  pyroscope:\n    enabled: true\n    server_address: http://pyroscope.internal:4040\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("pyroscope with a server_address should be valid: %v", err)
+	}
+}
+
 func TestValidateRejectsBadProtocol(t *testing.T) {
 	err := loadErr(t, "otlp:\n  protocol: carrier-pigeon\n")
 	if err == nil {

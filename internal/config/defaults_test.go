@@ -102,6 +102,54 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if !cfg.SelfObservability.Enabled {
 		t.Errorf("SelfObservability.Enabled = false, want default true")
 	}
+	if !cfg.Admin.LandingPage {
+		t.Errorf("Admin.LandingPage = false, want default true")
+	}
+}
+
+// TestProfilingDefaults pins the off-by-default continuous-profiling block:
+// pprof + pyroscope disabled, the pyroscope upload_rate defaulting to 15s, and
+// the mutex/block fractions left at 0 (sampling disabled).
+func TestProfilingDefaults(t *testing.T) {
+	cfg := config.Default()
+	p := cfg.Profiling
+	if p.Pprof.Enabled {
+		t.Errorf("Profiling.Pprof.Enabled = true, want default false")
+	}
+	if p.Pyroscope.Enabled {
+		t.Errorf("Profiling.Pyroscope.Enabled = true, want default false")
+	}
+	if p.Pyroscope.UploadRate.D() != 15*time.Second {
+		t.Errorf("Profiling.Pyroscope.UploadRate = %v, want default 15s", p.Pyroscope.UploadRate.D())
+	}
+	if p.MutexProfileFraction != 0 {
+		t.Errorf("Profiling.MutexProfileFraction = %d, want default 0", p.MutexProfileFraction)
+	}
+	if p.BlockProfileRate != 0 {
+		t.Errorf("Profiling.BlockProfileRate = %d, want default 0", p.BlockProfileRate)
+	}
+}
+
+// TestLoadAdminLandingPageFalseOverridesDefaultTrue mirrors the per-collector
+// "present false overrides default true" caveat for admin.landing_page.
+func TestLoadAdminLandingPageFalseOverridesDefaultTrue(t *testing.T) {
+	const y = `
+admin:
+  enabled: true
+  landing_page: false
+`
+	p := writeTemp(t, y)
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Admin.LandingPage {
+		t.Errorf("Admin.LandingPage = true, want false (explicit override of default true)")
+	}
+	// Sibling default untouched.
+	if cfg.Admin.Listen != ":9090" {
+		t.Errorf("Admin.Listen = %q, want default :9090 preserved", cfg.Admin.Listen)
+	}
 }
 
 // TestLoadPresentFalseOverridesDefaultTrue documents the key caveat: a key

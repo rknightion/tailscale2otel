@@ -145,3 +145,92 @@ func TestCardinalityTracker_NilSafe(t *testing.T) {
 		t.Fatalf("nil tracker emitted %d points, want 0", n)
 	}
 }
+
+// TestCardinalityTracker_SnapshotEmptyBeforeReport asserts Snapshot returns nil
+// before the first Report — even after Observe, since Snapshot reflects the last
+// COMPLETED export interval, not the in-progress one.
+func TestCardinalityTracker_SnapshotEmptyBeforeReport(t *testing.T) {
+	tr := telemetry.NewCardinalityTracker()
+	tr.Observe("tailscale.metric", telemetry.Attrs{"a": "x"})
+	if s := tr.Snapshot(); s != nil {
+		t.Fatalf("Snapshot before first Report = %+v, want nil", s)
+	}
+}
+
+// TestCardinalityTracker_SnapshotReflectsLastReport asserts Snapshot returns the
+// per-source-metric counts from the most recent Report, sorted by count desc then
+// name, mirroring the values emitted on the series.active gauge.
+func TestCardinalityTracker_SnapshotReflectsLastReport(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTracker()
+
+	// "big" gets 3 distinct series, "small" gets 1 → expect big sorted first.
+	tr.Observe("tailscale.small", telemetry.Attrs{"a": "x"})
+	for i := 0; i < 3; i++ {
+		tr.Observe("tailscale.big", telemetry.Attrs{"n": i})
+	}
+	tr.Report(rec.Emitter())
+
+	got := tr.Snapshot()
+	want := []telemetry.SeriesCount{
+		{Metric: "tailscale.big", Count: 3, Capped: false},
+		{Metric: "tailscale.small", Count: 1, Capped: false},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Snapshot len = %d, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Snapshot[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestCardinalityTracker_SnapshotTracksReset asserts Snapshot follows the same
+// per-interval reset semantics as the emitted gauge: after an empty interval it
+// reflects that empty interval.
+func TestCardinalityTracker_SnapshotTracksReset(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTracker()
+
+	tr.Observe("tailscale.metric", telemetry.Attrs{"a": "x"})
+	tr.Report(rec.Emitter())
+	if n := len(tr.Snapshot()); n != 1 {
+		t.Fatalf("Snapshot after first report = %d entries, want 1", n)
+	}
+
+	tr.Report(rec.Emitter()) // empty interval
+	if s := tr.Snapshot(); len(s) != 0 {
+		t.Fatalf("Snapshot after empty interval = %+v, want empty", s)
+	}
+}
+
+// TestCardinalityTracker_SnapshotCappedFlag asserts an over-cap metric is
+// surfaced with Capped=true and the count pinned at the cap.
+func TestCardinalityTracker_SnapshotCappedFlag(t *testing.T) {
+	const cap = 10000 // defaultSeriesCap
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTracker()
+
+	for i := 0; i < cap+500; i++ {
+		tr.Observe("tailscale.metric", telemetry.Attrs{"n": i})
+	}
+	tr.Report(rec.Emitter())
+
+	got := tr.Snapshot()
+	if len(got) != 1 {
+		t.Fatalf("Snapshot len = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Count != cap || !got[0].Capped {
+		t.Fatalf("Snapshot[0] = %+v, want Count=%d Capped=true", got[0], cap)
+	}
+}
+
+// TestCardinalityTracker_SnapshotNilSafe asserts Snapshot is a no-op (nil, no
+// panic) on a nil *CardinalityTracker.
+func TestCardinalityTracker_SnapshotNilSafe(t *testing.T) {
+	var tr *telemetry.CardinalityTracker
+	if s := tr.Snapshot(); s != nil {
+		t.Fatalf("nil tracker Snapshot = %+v, want nil", s)
+	}
+}

@@ -59,6 +59,14 @@ func (s *Set) Len() int {
 	return len(s.seen)
 }
 
+// Cap reports the configured capacity: the maximum number of keys the set
+// remembers before it begins evicting the oldest in FIFO order.
+func (s *Set) Cap() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.capacity
+}
+
 // evictLocked drops oldest keys until the set is within capacity. The caller
 // must hold s.mu.
 func (s *Set) evictLocked() {

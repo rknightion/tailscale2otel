@@ -2,6 +2,8 @@ package collector_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,6 +71,38 @@ func runScheduler(t *testing.T, r *collector.Registry, store collector.Checkpoin
 }
 
 // --- tests ---
+
+func TestScheduler_StatusTrackerRecordsOutcomes(t *testing.T) {
+	tr := collector.NewStatusTracker()
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "ok", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		return nil
+	}}, time.Millisecond)
+	r.Register(snapFunc{name: "bad", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		return errors.New("nope")
+	}}, time.Millisecond)
+	r.Register(snapFunc{name: "boom", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		panic("kaboom")
+	}}, time.Millisecond)
+
+	runScheduler(t, r, collector.NewMemoryStore(), collector.WithStatusTracker(tr))
+
+	waitFor(t, func() bool {
+		s := tr.Snapshot()
+		return s["ok"].Runs > 0 && s["bad"].Runs > 0 && s["boom"].Runs > 0
+	}, 2*time.Second)
+
+	s := tr.Snapshot()
+	if !s["ok"].LastSuccess {
+		t.Errorf("ok.LastSuccess = false, want true")
+	}
+	if s["bad"].LastSuccess || s["bad"].LastError != "nope" {
+		t.Errorf("bad = %+v, want failure with error %q", s["bad"], "nope")
+	}
+	if s["boom"].LastSuccess || !strings.Contains(s["boom"].LastError, "kaboom") {
+		t.Errorf("boom = %+v, want panic error containing %q", s["boom"], "kaboom")
+	}
+}
 
 func TestScheduler_InvokesSnapshotCollector(t *testing.T) {
 	var calls atomic.Int64

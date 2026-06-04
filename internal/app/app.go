@@ -10,8 +10,11 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/grafana/pyroscope-go"
+
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
@@ -39,23 +42,30 @@ const autoConfigureTimeout = 30 * time.Second
 
 // App is the assembled, runnable service.
 type App struct {
-	cfg      *config.Config
-	emitter  telemetry.Emitter
-	card     *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
-	shutdown func(context.Context) error   // flushes telemetry on stop
-	restore  func()                        // restores the prior otel error handler
-	client   *tsapi.Client
-	cache    *enrich.DeviceCache
-	registry *collector.Registry
-	sched    *collector.Scheduler
-	logger   *slog.Logger
+	cfg       *config.Config
+	version   string    // injected build version, for the status page
+	startTime time.Time // process start, for uptime on the status page
+	emitter   telemetry.Emitter
+	card      *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
+	shutdown  func(context.Context) error   // flushes telemetry on stop
+	restore   func()                        // restores the prior otel error handler
+	client    *tsapi.Client
+	cache     *enrich.DeviceCache
+	registry  *collector.Registry
+	sched     *collector.Scheduler
+	status    *collector.StatusTracker // per-collector run outcomes, for the status page
+	logger    *slog.Logger
 
 	flowProc     *flowlog.Processor
 	auditProc    *audit.Processor
+	flowDedup    *dedup.Set             // flow cross-source set; surfaced on the status page
+	auditDedup   *dedup.Set             // audit cross-source set; surfaced on the status page
+	nodeMetrics  *nodemetrics.Collector // nil unless the node-metrics collector is enabled
 	streamSrv    *stream.Server
 	webhookSrv   *webhook.Server
 	webhookDedup *dedup.Set // shared cross-source set (webhook<->audit); nil unless enabled
 	adminSrv     *http.Server
+	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -87,6 +97,15 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 
 	a := newApp(cfg, version, logger, emitter, provider.Shutdown, client, store)
 	a.card = provider.Cardinality()
+
+	// Continuous profiling is opt-in. startProfiling also applies the runtime
+	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
+	// to reach Pyroscope is non-fatal: the exporter's core job is unaffected.
+	prof, err := startProfiling(cfg, version, logger)
+	if err != nil {
+		logger.Error("pyroscope profiler failed to start", "error", err)
+	}
+	a.profiler = prof
 	return a, nil
 }
 
@@ -106,17 +125,21 @@ func newApp(
 		logger = slog.Default()
 	}
 	a := &App{
-		cfg:      cfg,
-		emitter:  emitter,
-		shutdown: shutdown,
-		client:   client,
-		cache:    enrich.NewDeviceCache(),
-		registry: collector.NewRegistry(),
-		sched: collector.NewScheduler(emitter, store,
-			collector.WithLogger(logger),
-			collector.WithSelfObs(cfg.SelfObservability.Enabled)),
-		logger: logger,
+		cfg:       cfg,
+		version:   version,
+		startTime: time.Now(),
+		emitter:   emitter,
+		shutdown:  shutdown,
+		client:    client,
+		cache:     enrich.NewDeviceCache(),
+		registry:  collector.NewRegistry(),
+		status:    collector.NewStatusTracker(),
+		logger:    logger,
 	}
+	a.sched = collector.NewScheduler(emitter, store,
+		collector.WithLogger(logger),
+		collector.WithSelfObs(cfg.SelfObservability.Enabled),
+		collector.WithStatusTracker(a.status))
 	if cfg.SelfObservability.Enabled {
 		a.restore = telemetry.InstallExportErrorHandler(emitter)
 		telemetry.EmitBuildInfo(emitter, version, runtime.Version())
@@ -124,10 +147,13 @@ func newApp(
 	// Shared cross-source de-duplication: the same flow window / audit event can
 	// arrive from both the poll collector and the streaming receiver, which share
 	// one processor each, so a dedup set on the processor suppresses the repeat.
+	// The sets are retained on App so the status page can report their occupancy.
+	a.flowDedup = dedup.New(flowDedupCapacity)
 	fopts := flowOptions(cfg)
-	fopts.Dedup = dedup.New(flowDedupCapacity)
+	fopts.Dedup = a.flowDedup
 	a.flowProc = flowlog.NewProcessor(a.cache, fopts)
-	auditOpts := []audit.Option{audit.WithDedup(dedup.New(auditDedupCapacity))}
+	a.auditDedup = dedup.New(auditDedupCapacity)
+	auditOpts := []audit.Option{audit.WithDedup(a.auditDedup)}
 	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents {
 		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook
 		// and the audit logs is counted once. Off by default; the same set is
@@ -139,7 +165,7 @@ func newApp(
 	a.registerCollectors()
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
-		a.adminSrv = newAdminServer(cfg.Admin.Listen)
+		a.adminSrv = a.buildAdminServer()
 	}
 	return a
 }
@@ -149,6 +175,9 @@ func newApp(
 func (a *App) Run(ctx context.Context) error {
 	if a.restore != nil {
 		defer a.restore()
+	}
+	if a.profiler != nil {
+		defer func() { _ = a.profiler.Stop() }()
 	}
 	if a.cfg.SelfObservability.Enabled {
 		go runHeartbeat(ctx, a.emitter, heartbeatInterval)

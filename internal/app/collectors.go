@@ -80,7 +80,9 @@ func (a *App) registerCollectors() {
 		a.registry.Register(dns.New(a.client, c.Dns.Interval.D()), c.Dns.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
-		a.registry.Register(nodemetrics.New(nodeMetricsOptions(nm, a.client)), nm.Interval.D())
+		// Keep a typed reference so the status page can surface discovered nodes.
+		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.client))
+		a.registry.Register(a.nodeMetrics, nm.Interval.D())
 	}
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
 		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck())

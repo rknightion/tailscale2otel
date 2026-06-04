@@ -27,16 +27,28 @@ type seriesSet struct {
 	capped bool
 }
 
+// SeriesCount is the distinct active-series count for one source metric during
+// the last completed export interval. Capped is true when the per-metric cap was
+// hit, in which case Count is pinned at defaultSeriesCap.
+type SeriesCount struct {
+	Metric string
+	Count  int
+	Capped bool
+}
+
 // CardinalityTracker counts the EXACT number of distinct attribute combinations
 // (time series) emitted per source metric within an export interval. Observe is
 // called from the emit hot path for every metric data point; Report snapshots
 // the per-metric distinct counts, resets the sets, and emits the
-// tailscale2otel.series.active gauge once per source metric.
+// tailscale2otel.series.active gauge once per source metric. The same per-metric
+// counts are retained for the most recent interval and exposed via Snapshot for
+// in-process introspection (e.g. the admin status page).
 //
 // All methods are safe for concurrent use and are no-ops on a nil receiver.
 type CardinalityTracker struct {
 	mu   sync.Mutex
 	sets map[string]*seriesSet
+	last []SeriesCount // counts from the most recent Report; nil before the first
 }
 
 // NewCardinalityTracker returns an empty tracker.
@@ -79,25 +91,47 @@ func (t *CardinalityTracker) Report(e Emitter) {
 		return
 	}
 
-	type entry struct {
-		name  string
-		count int
-	}
-
 	t.mu.Lock()
-	entries := make([]entry, 0, len(t.sets))
+	last := make([]SeriesCount, 0, len(t.sets))
 	for name, s := range t.sets {
-		entries = append(entries, entry{name: name, count: len(s.fps)})
+		last = append(last, SeriesCount{Metric: name, Count: len(s.fps), Capped: s.capped})
 	}
 	// Replace (rather than clear) so the next interval starts empty and metrics
 	// that stopped emitting are dropped.
 	t.sets = map[string]*seriesSet{}
+	// Stable, presentation-friendly order: highest cardinality first, then name.
+	// Retained for Snapshot; emission order is irrelevant.
+	sort.Slice(last, func(i, j int) bool {
+		if last[i].Count != last[j].Count {
+			return last[i].Count > last[j].Count
+		}
+		return last[i].Metric < last[j].Metric
+	})
+	t.last = last
 	t.mu.Unlock()
 
-	for _, en := range entries {
+	for _, en := range last {
 		e.Gauge(docSeriesActive.Name, docSeriesActive.Unit, docSeriesActive.Description,
-			float64(en.count), Attrs{semconv.AttrMetricName: en.name})
+			float64(en.Count), Attrs{semconv.AttrMetricName: en.Metric})
 	}
+}
+
+// Snapshot returns the per-source-metric active-series counts from the last
+// completed export interval (the most recent Report), sorted by count desc then
+// metric name. It returns nil before the first Report and is a no-op (nil) on a
+// nil receiver. The returned slice is a copy the caller may retain or mutate.
+func (t *CardinalityTracker) Snapshot() []SeriesCount {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.last == nil {
+		return nil
+	}
+	out := make([]SeriesCount, len(t.last))
+	copy(out, t.last)
+	return out
 }
 
 // fingerprint computes a deterministic, low-allocation 64-bit hash of an

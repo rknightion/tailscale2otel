@@ -27,6 +27,9 @@ stream, and key-expiry signals out of the box.
 - **Optional node-metrics scraper** that forwards `tailscaled` per-node Prometheus `/metrics`
   centrally over OTLP (counters as deltas, gauges as gauges), as a drop-in for per-node scraping.
 - **OTLP push** (gRPC/HTTP) with first-class Grafana Cloud support; `stdout` mode for local debug.
+- **Admin status page** at `/` (plus `/healthz`/`/readyz` and a `/api/status.json`) showing live
+  collector health, active-series cardinality, the metrics/log catalog, discovered nodes, and a
+  redacted config — and **opt-in continuous profiling** (pprof for Alloy, or Pyroscope push).
 - Lightweight single static binary, pluggable per-source polling with jitter, failure isolation,
   checkpointing, an in-memory device-enrichment cache, and self-observability metrics.
 
@@ -115,6 +118,34 @@ Splunk-HEC sink on startup instead of configuring the stream by hand. It is off 
 
 > Note: Tailscale does not publicly document the exact HEC payload envelope; the receiver parses
 > defensively and the envelope should be confirmed by capturing a live stream in your environment.
+
+## Admin status page & profiling
+
+Enable the admin server (`admin.enabled: true`) and it serves liveness/readiness probes at
+`/healthz` and `/readyz`. Unless you set `admin.landing_page: false`, it also serves a
+Prometheus-exporter-style **status page** at `/` and the same snapshot as JSON at `/api/status.json`.
+The page surfaces, live and in-process:
+
+- per-collector health (last run, success/failure, last error, interval, run/failure counts);
+- **active-series cardinality** for the last export interval (when `self_observability.enabled`);
+- the full **metrics & log-event catalog** with OTLP→Prometheus names and attributes;
+- **discovered node-metrics targets** (when dynamic discovery is on) — a collapsible list;
+- the device-enrichment cache, dedup-set occupancy, Go runtime stats, and a **redacted** config
+  summary (secret *values* never appear — only which secrets are set, and OTLP header key names).
+
+Bind `admin.listen` to a tailnet or loopback address; the page is unauthenticated and meant for
+operators on the tailnet.
+
+**Continuous profiling** is opt-in (`profiling.*`, all off by default):
+
+- `profiling.pprof.enabled: true` mounts the standard `/debug/pprof/*` handlers on the admin server
+  so Grafana Alloy's `pyroscope.scrape` (or `go tool pprof`) can **pull** profiles. Requires
+  `admin.enabled: true`.
+- `profiling.pyroscope.enabled: true` **pushes** profiles to Pyroscope / Grafana Cloud Profiles via
+  the [pyroscope-go](https://github.com/grafana/pyroscope-go) SDK (`server_address` required; basic
+  auth via `PYROSCOPE_BASIC_AUTH_USER`/`PYROSCOPE_BASIC_AUTH_PASSWORD`).
+- Mutex/block profiles are off until `profiling.mutex_profile_fraction` / `profiling.block_profile_rate`
+  are set above zero (they apply to both the push and pull paths).
 
 ## Development
 

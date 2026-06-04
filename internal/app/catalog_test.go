@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
@@ -12,8 +13,8 @@ import (
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard for the
 // app layer's self-observability metrics (api.requests, api.retries, and the
 // heartbeat up gauge): every metric these helpers actually emit must be declared
-// in app.Catalog() with a matching unit, instrument, and description, so the
-// docs generated from Catalog() stay honest.
+// in appcatalog.Catalog() with a matching unit, instrument, and description, so
+// the docs generated from it stay honest.
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
 
@@ -34,7 +35,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	cancel()
 
 	declared := map[string]metricdoc.Metric{}
-	for _, m := range Catalog() {
+	for _, m := range appcatalog.Catalog() {
 		declared[m.Name] = m
 	}
 
@@ -46,7 +47,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		p0 := pts[0]
 		d, ok := declared[name]
 		if !ok {
-			t.Errorf("emitted metric %q is not declared in app.Catalog()", name)
+			t.Errorf("emitted metric %q is not declared in appcatalog.Catalog()", name)
 			continue
 		}
 		if p0.Unit != d.Unit {

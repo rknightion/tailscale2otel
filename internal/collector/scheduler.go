@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -19,6 +20,7 @@ type Scheduler struct {
 	jitter  float64
 	logger  *slog.Logger
 	selfObs bool
+	status  *StatusTracker // optional; records per-collector run outcomes for the status page
 }
 
 // SchedulerOption configures a Scheduler.
@@ -38,6 +40,12 @@ func WithLogger(l *slog.Logger) SchedulerOption { return func(s *Scheduler) { s.
 // (tailscale2otel.scrape.*). It defaults to enabled; passing false suppresses
 // all scrape metric emission, leaving behavior identical to having no self-obs.
 func WithSelfObs(enabled bool) SchedulerOption { return func(s *Scheduler) { s.selfObs = enabled } }
+
+// WithStatusTracker records each collector's latest run outcome into t for
+// in-process introspection (e.g. the admin status page). Recording happens on
+// every tick regardless of WithSelfObs, so the status page works even when
+// scrape metrics are suppressed.
+func WithStatusTracker(t *StatusTracker) SchedulerOption { return func(s *Scheduler) { s.status = t } }
 
 // NewScheduler returns a Scheduler that drives collectors with the given
 // emitter and checkpoint store.
@@ -105,22 +113,37 @@ func (s *Scheduler) initialDelay(interval time.Duration) time.Duration {
 // self-obs is enabled, the per-collector scrape.* metrics are emitted — even on
 // the panic-recovery path, which records success=0 plus an errors{panic} count.
 func (s *Scheduler) runTick(ctx context.Context, e Entry) {
-	started := time.Now() // monotonic: used for duration only
+	started := time.Now()  // monotonic: used for duration only
+	startedWall := s.now() // wall-clock: for the status page's LastStarted
 	var runErr error
 	panicked := false
+	var panicVal any
 	defer func() {
 		if r := recover(); r != nil {
 			panicked = true
+			panicVal = r
 			s.logger.Error("collector panicked", "collector", e.Collector.Name(), "panic", r)
 		}
+		duration := time.Since(started)
+		finishedWall := s.now()
 		if s.selfObs {
 			emitScrapeMetrics(s.emitter, scrapeResult{
 				collector:  e.Collector.Name(),
-				duration:   time.Since(started),
-				finishedAt: s.now(),
+				duration:   duration,
+				finishedAt: finishedWall,
 				err:        runErr,
 				panicked:   panicked,
 			})
+		}
+		if s.status != nil {
+			errStr := ""
+			switch {
+			case panicked:
+				errStr = fmt.Sprintf("panic: %v", panicVal)
+			case runErr != nil:
+				errStr = runErr.Error()
+			}
+			s.status.record(e.Collector.Name(), startedWall, finishedWall, duration, errStr)
 		}
 	}()
 	switch c := e.Collector.(type) {

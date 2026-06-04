@@ -22,6 +22,7 @@ type Config struct {
 	Webhook           WebhookConfig           `yaml:"webhook"`
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
 	Admin             AdminConfig             `yaml:"admin"`
+	Profiling         ProfilingConfig         `yaml:"profiling"`
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -29,6 +30,42 @@ type Config struct {
 type AdminConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Listen  string `yaml:"listen"`
+	// LandingPage (default true) serves a human-readable landing page at "/" and
+	// a machine-readable "/api/status.json" on the admin server.
+	LandingPage bool `yaml:"landing_page"`
+}
+
+// ProfilingConfig configures continuous/on-demand profiling. Everything here is
+// opt-in and off by default: net/http/pprof handlers (mounted on the admin
+// server) and a Pyroscope push agent, plus the runtime mutex/block sampling
+// knobs they depend on.
+type ProfilingConfig struct {
+	Pprof     ProfilingPprof     `yaml:"pprof"`
+	Pyroscope ProfilingPyroscope `yaml:"pyroscope"`
+	// MutexProfileFraction sets runtime.SetMutexProfileFraction (0 = disabled);
+	// BlockProfileRate sets runtime.SetBlockProfileRate (0 = disabled). Both feed
+	// the pprof/Pyroscope mutex+block profiles.
+	MutexProfileFraction int `yaml:"mutex_profile_fraction"`
+	BlockProfileRate     int `yaml:"block_profile_rate"`
+}
+
+// ProfilingPprof toggles the net/http/pprof debug handlers, which are mounted on
+// the admin HTTP server (so it requires admin.enabled).
+type ProfilingPprof struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// ProfilingPyroscope configures the Pyroscope continuous-profiling push agent.
+// When enabled it requires ServerAddress; the basic-auth/tenant fields cover
+// Grafana Cloud Profiles and multi-tenant servers.
+type ProfilingPyroscope struct {
+	Enabled           bool              `yaml:"enabled"`
+	ServerAddress     string            `yaml:"server_address"`
+	BasicAuthUser     string            `yaml:"basic_auth_user"`
+	BasicAuthPassword string            `yaml:"basic_auth_password"`
+	TenantID          string            `yaml:"tenant_id"`
+	UploadRate        Duration          `yaml:"upload_rate"`
+	Tags              map[string]string `yaml:"tags"`
 }
 
 // TailscaleConfig holds Tailscale API connection settings.

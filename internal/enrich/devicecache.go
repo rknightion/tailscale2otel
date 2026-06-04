@@ -118,6 +118,23 @@ func (c *DeviceCache) Len() int {
 	return len(c.byNode)
 }
 
+// Snapshot returns a copy of every cached device exactly once, suitable for
+// rendering a read-only device table (e.g. an admin status page). It iterates
+// byNode (one entry per device) rather than byAddr, so multi-address devices are
+// not duplicated. Each element is a value copy of the cached *DeviceMeta;
+// callers may freely read or replace top-level fields without affecting the
+// cache. The copy is shallow: the Tags and Addrs slices are shared with the
+// cached entry, which is acceptable for a read-only view.
+func (c *DeviceCache) Snapshot() []DeviceMeta {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]DeviceMeta, 0, len(c.byNode))
+	for _, m := range c.byNode {
+		out = append(out, *m)
+	}
+	return out
+}
+
 // Age returns how long ago the cache was last replaced.
 func (c *DeviceCache) Age() time.Duration {
 	c.mu.RLock()

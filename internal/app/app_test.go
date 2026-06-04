@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
@@ -29,11 +30,11 @@ func TestApiObserver_RecordsRequestsAndRetries(t *testing.T) {
 	obs("devices", 200, 1)         // first-try success: no retries
 	obs("logging/network", 200, 3) // succeeded after 2 retries
 
-	reqs := rec.MetricPoints(metricAPIRequests)
+	reqs := rec.MetricPoints(appcatalog.MetricAPIRequests)
 	if len(reqs) != 2 {
 		t.Fatalf("api.requests points = %d, want 2", len(reqs))
 	}
-	retries := rec.MetricPoints(metricAPIRetries)
+	retries := rec.MetricPoints(appcatalog.MetricAPIRetries)
 	if len(retries) != 1 {
 		t.Fatalf("api.retries points = %d, want 1 (only the retried request)", len(retries))
 	}

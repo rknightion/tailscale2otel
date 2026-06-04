@@ -383,6 +383,61 @@ func (c *Collector) maybeDiscover(ctx context.Context) {
 	c.mu.Unlock()
 }
 
+// DiscoveryStatus is a snapshot of the scraper's current targets and the
+// outcome of the most recent dynamic discovery refresh.
+type DiscoveryStatus struct {
+	Enabled       bool         // dynamic discovery configured (a Discoverer is set)
+	LastDiscovery time.Time    // time of the last SUCCESSFUL discovery (zero if none yet)
+	LastOK        bool         // outcome of the last discovery attempt
+	Static        int          // number of static (configured) targets
+	Active        int          // number of active targets (static ∪ discovered)
+	Targets       []TargetInfo // the active scrape set
+}
+
+// TargetInfo identifies one active scrape target and whether it was statically
+// configured or dynamically discovered.
+type TargetInfo struct {
+	Instance string
+	URL      string
+	Source   string // "static" | "discovered"
+}
+
+// Snapshot returns the current scrape targets and last-discovery health for an
+// admin status page. Each active target's Source is "static" when its URL is one
+// of the configured static targets, else "discovered" (a discovered target whose
+// URL collides with a static one is reported as static, mirroring the union's
+// static-wins dedup). The returned slice is freshly allocated, so the caller may
+// retain it safely.
+func (c *Collector) Snapshot() DiscoveryStatus {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	staticURLs := make(map[string]struct{}, len(c.static))
+	for i := range c.static {
+		staticURLs[c.static[i].target.URL] = struct{}{}
+	}
+	targets := make([]TargetInfo, 0, len(c.active))
+	for i := range c.active {
+		t := &c.active[i].target
+		source := "discovered"
+		if _, ok := staticURLs[t.URL]; ok {
+			source = "static"
+		}
+		targets = append(targets, TargetInfo{
+			Instance: t.Instance,
+			URL:      t.URL,
+			Source:   source,
+		})
+	}
+	return DiscoveryStatus{
+		Enabled:       c.discoverer != nil,
+		LastDiscovery: c.lastDiscACK,
+		LastOK:        c.lastDiscOK,
+		Static:        len(c.static),
+		Active:        len(c.active),
+		Targets:       targets,
+	}
+}
+
 // unionTargets returns the static targets first, then each discovered target
 // whose URL is not already present. Dedup is by Target.URL and STATIC WINS, so an
 // operator's explicit static target (its labels/auth/TLS) is never overridden by
