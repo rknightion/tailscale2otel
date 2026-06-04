@@ -60,8 +60,10 @@ Set `otlp.protocol: stdout` to print metrics & logs to the console.
 
 ## Configuration
 
-See [`config.example.yaml`](./config.example.yaml). All string values support `${ENV}` expansion,
-so keep secrets in environment variables.
+Copy [`config.example.yaml`](./config.example.yaml) and edit it (or just set the `${ENV}` vars it
+references — every string value supports `${ENV}` expansion, so keep secrets in environment
+variables). That commented example is the fastest way in; for an exhaustive, per-key reference of
+**every** setting, default, and gotcha, see **[`docs/configuration.md`](./docs/configuration.md)**.
 
 **Authentication** — prefer an [OAuth client](https://tailscale.com/kb/1215/oauth-clients)
 (`method: oauth`, no fixed expiry, auto-refreshing) with least-privilege read scopes; an API key
@@ -71,6 +73,51 @@ so keep secrets in environment variables.
 `https://otlp-gateway-<region>.grafana.net/otlp`, and fill `otlp.grafana_cloud.{instance_id,token}`;
 the Basic-auth header is built for you. For a self-hosted Collector/Alloy, use `protocol: grpc` or
 `http` with your own endpoint/headers.
+
+### Log collectors: poll vs. stream
+
+The two log collectors — `flowlogs` and `auditlogs` — can obtain data two ways, chosen per
+collector with `source`:
+
+- **`source: poll`** (default) — `tailscale2otel` pulls the logs from the Tailscale API on a
+  schedule, one time-window per tick. Four windowing fields tune that polling:
+  - `interval` — how often a window is polled.
+  - `lag` — only query up to `now − lag`, so records still arriving at the tail aren't missed.
+  - `initial_lookback` — how far back a cold start reaches when there is no checkpoint yet.
+  - `max_window` — caps a single tick's window so a long outage is caught up over several ticks
+    instead of one huge request.
+- **`source: stream`** — the logs are *pushed* to the built-in Splunk-HEC receiver instead (see
+  [Log streaming (HEC) & webhooks](#log-streaming-hec--webhooks) below); `tailscale2otel` does not
+  poll. **The four windowing fields above (`interval`, `lag`, `initial_lookback`, `max_window`) have
+  no effect in this mode** — only `enabled`, `source`, and (for `flowlogs`) the output-shaping
+  `log_mode` / `max_log_records_per_window` apply.
+- **`source: both`** — poll *and* accept the stream. Discouraged: the same record can be
+  double-counted (cross-source de-dup is only a best-effort failsafe), and a startup WARN fires.
+
+Pick exactly one method per log type. Output shaping — `flowlogs.log_mode` and the `cardinality.*`
+knobs — applies regardless of which path delivers the records.
+
+```yaml
+# Poll (default): tailscale2otel pulls logs on a schedule.
+flowlogs:  { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h }
+
+# Stream: Tailscale pushes logs to the HEC receiver; the window fields are omitted (they'd be ignored).
+flowlogs:  { enabled: true, source: stream, log_mode: per_connection }
+```
+
+### Checkpointing
+
+Checkpoints record how far each *polled* log collector has read, so a restart resumes without gaps
+or large overlaps. They matter **only** when `flowlogs`/`auditlogs` use `source: poll` (or `both`);
+if you stream both log types — or disable them — the checkpoint store is unused.
+
+- **`checkpoint.store: memory`** (default) — held in RAM only. Simplest, needs no volume, but on
+  restart the poller cold-starts from `initial_lookback`, so any downtime longer than that leaves a
+  gap. Fine for streamed or stateless deployments.
+- **`checkpoint.store: file`** — persisted to `checkpoint.file_path` (atomic write each tick) and
+  reloaded at startup, so polling resumes from the exact high-water mark across restarts (minor
+  overlap is de-duplicated). Use this when you poll logs and want continuity; it needs a writable,
+  **persistent** path such as a mounted volume. An empty `file_path` silently falls back to memory.
 
 ## Collectors
 

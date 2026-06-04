@@ -46,17 +46,53 @@ cardinality:
   key_per_entity: true               # per-key expiry gauge; false = only tailscale.keys.count (expiry WARN log still fires)
 
 collectors:
-  # source: poll | stream | both — applies to the log collectors (flowlogs, auditlogs).
-  # PICK ONE METHOD per log type: poll = this exporter polls the API; stream = the
-  # receiver below ingests logs Tailscale pushes. `both` runs poll AND stream (dual
-  # ingestion) and the same data can be DOUBLE-COUNTED — cross-source de-duplication is
-  # only a best-effort FAILSAFE, not a guarantee — so it is discouraged. The exporter
-  # logs a WARN at startup when streaming is enabled while a log collector still polls.
+  # Every collector takes `enabled` + `interval`. The two LOG collectors (flowlogs,
+  # auditlogs) ALSO take `source` and a set of windowing fields; the rest are simple
+  # point-in-time snapshots.
+  #
+  #   source: poll   (default) — this exporter PULLS logs from the Tailscale API once
+  #                  per `interval`, one time-window per tick.
+  #   source: stream           — logs are PUSHED to the `streaming:` receiver (Splunk-
+  #                  HEC) configured further below; this exporter does NOT poll. The
+  #                  windowing fields (interval, lag, initial_lookback, max_window) are
+  #                  IGNORED in this mode.
+  #   source: both             — poll AND accept the stream. Discouraged: the same
+  #                  record can be DOUBLE-COUNTED (cross-source de-duplication is a
+  #                  best-effort FAILSAFE, not a guarantee). A startup WARN fires.
+  #
+  # Pick exactly ONE method per log type. The output-shaping fields — flowlogs'
+  # log_mode and the cardinality.* block above — apply no matter which path delivers
+  # the records.
+
   devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false }
-  # max_log_records_per_window caps flow LOG records per poll window (0 = unlimited);
-  # excess is counted into tailscale.network.flow.logs_dropped. Metrics are never capped.
-  flowlogs:  { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookback: 5m, max_window: 1h, log_mode: per_connection, max_log_records_per_window: 0 }
-  auditlogs: { enabled: true, source: poll, interval: 60s, lag: 60s,  initial_lookback: 5m, max_window: 6h }
+
+  # flowlogs — network flow logs → aggregated traffic counters + per-connection logs.
+  flowlogs:
+    enabled: true
+    source: poll                    # poll | stream | both  (see the header above)
+    interval: 60s                   # poll only — how often a window is polled (ignored when source: stream)
+    lag: 120s                       # poll only — only query up to now-lag, so late-arriving records aren't missed
+    initial_lookback: 5m            # poll only — cold-start reach-back used when there is no checkpoint yet
+    max_window: 1h                  # poll only — cap one tick's window so a long outage catches up over several ticks
+    log_mode: per_connection        # per_connection | per_record | off — log detail level (applies to poll AND stream)
+    max_log_records_per_window: 0   # cap flow LOG records per poll window (0 = unlimited); excess → tailscale.network.flow.logs_dropped. Metrics are never capped.
+
+  # auditlogs — configuration/audit events → event logs + a counter.
+  auditlogs:
+    enabled: true
+    source: poll                    # poll | stream | both  (see the header above)
+    interval: 60s                   # poll only — how often a window is polled (ignored when source: stream)
+    lag: 60s                        # poll only — only query up to now-lag, so late-arriving records aren't missed
+    initial_lookback: 5m            # poll only — cold-start reach-back used when there is no checkpoint yet
+    max_window: 6h                  # poll only — cap one tick's window so a long outage catches up over several ticks
+
+  # ── Streaming alternative: RECEIVE logs instead of polling ──────────────────
+  # To have Tailscale PUSH logs here, set source: stream on the log type(s) below
+  # and enable the `streaming:` receiver further down. In stream mode only enabled,
+  # source (and, for flowlogs, log_mode / max_log_records_per_window) take effect:
+  #   flowlogs:  { enabled: true, source: stream, log_mode: per_connection }
+  #   auditlogs: { enabled: true, source: stream }
+
   users:     { enabled: true, interval: 300s }
   keys:      { enabled: true, interval: 300s, expiry_warn: 168h }   # warn when a key expires within 7d
   settings:  { enabled: true, interval: 600s }
@@ -108,9 +144,21 @@ collectors:
       include_host_labels: true # attach host.name/host.id for tailscale.device.* joins
       include_tags_label: true  # attach tailscale.tags
 
+# Checkpointing remembers how far each POLLED log collector (flowlogs/auditlogs with
+# source: poll|both) has read, so a restart resumes without gaps or large overlaps.
+# It is unused if you stream both log types or disable them.
+#   store: memory — keep the high-water mark in RAM only. Simplest; needs no volume.
+#                   On restart the poller cold-starts from initial_lookback, so any
+#                   downtime longer than that leaves a GAP. Fine for streaming or
+#                   stateless deployments where the checkpoint is unused or disposable.
+#   store: file   — persist to file_path (atomic JSON write each tick). Survives
+#                   restarts, resuming from the exact high-water mark (no gap; minor
+#                   overlap is de-duplicated). Use when you POLL logs and want
+#                   continuity. Needs a writable, PERSISTENT path (e.g. a mounted
+#                   volume); an empty file_path silently falls back to memory.
 checkpoint:
   store: memory                      # memory | file
-  file_path: "/var/lib/tailscale2otel/checkpoints.json"
+  file_path: "/var/lib/tailscale2otel/checkpoints.json"   # only used when store: file
 
 # Optional Splunk-HEC-compatible receiver for streamed logs. When you enable this,
 # set collectors.flowlogs.source and collectors.auditlogs.source to `stream` (NOT poll
