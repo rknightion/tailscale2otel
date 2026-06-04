@@ -651,6 +651,9 @@
                 "annotations": {
                     "type": "object"
                 },
+                "automountServiceAccountToken": {
+                    "type": "boolean"
+                },
                 "create": {
                     "type": "boolean"
                 },

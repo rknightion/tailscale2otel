@@ -26,6 +26,8 @@ serviceAccount:
   name: ""
   # -- Annotations to add to the ServiceAccount.
   annotations: {}
+  # -- Automount the ServiceAccount API token into the pod. The exporter makes no Kubernetes API calls, so this defaults to false to drop an unused, attacker-useful credential from the network-facing pod.
+  automountServiceAccountToken: false
 
 # -- Extra annotations for the pod.
 podAnnotations: {}
