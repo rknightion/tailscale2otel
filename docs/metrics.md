@@ -294,7 +294,8 @@ Key behavior:
   (anchored regexes on the forwarded metric **name**, allow-then-deny) and `drop_labels` (label keys
   stripped from every forwarded series) trim the verbatim stream. They never affect
   `tailscale.node.up` or the `tailscale2otel.nodemetrics.discovery.*` gauges, and the `instance`
-  label is never dropped.
+  label is never dropped. The scraper also enforces per-target `max_response_bytes` / `max_samples`
+  limits, while dynamic discovery is bounded by `discovery.max_targets`.
 
 Node identity is carried as **labels** (notably `instance`) on the forwarded series, **not** as
 OTEL Resource attributes. This keeps the forwarded metrics queryable alongside the rest of the

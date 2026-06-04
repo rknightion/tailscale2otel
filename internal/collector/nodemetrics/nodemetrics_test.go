@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -70,6 +71,50 @@ func TestEmptyTargets_CollectNil(t *testing.T) {
 	}
 	if names := rec.MetricNames(); len(names) != 0 {
 		t.Fatalf("MetricNames with no targets = %v, want none", names)
+	}
+}
+
+func TestScrape_MaxResponseBytesRejectsOversizedBody(t *testing.T) {
+	body := strings.Repeat("a", 32)
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:          []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MaxResponseBytes: 16,
+		MaxSamples:       10,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect() error = nil, want oversized response to fail the only target")
+	}
+	if pts := rec.MetricPoints("tailscale.node.up"); len(pts) != 1 || pts[0].Value != 0 {
+		t.Fatalf("tailscale.node.up = %+v, want one down point", pts)
+	}
+}
+
+func TestScrape_MaxSamplesRejectsOversizedSampleSet(t *testing.T) {
+	body := "# TYPE m gauge\n" +
+		"m{series=\"1\"} 1\n" +
+		"m{series=\"2\"} 2\n" +
+		"m{series=\"3\"} 3\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:          []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MaxResponseBytes: 1024,
+		MaxSamples:       2,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect() error = nil, want oversized sample set to fail the only target")
+	}
+	if pts := rec.MetricPoints("m"); len(pts) != 0 {
+		t.Fatalf("m = %+v, want no forwarded samples after sample-limit failure", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.node.up"); len(pts) != 1 || pts[0].Value != 0 {
+		t.Fatalf("tailscale.node.up = %+v, want one down point", pts)
 	}
 }
 

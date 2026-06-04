@@ -154,8 +154,7 @@ terminate, **the grant is the access-control boundary** — keep it as narrow as
 ## Wiring up the scraper
 
 The scraper lives under [`collectors.node_metrics`](../config.example.yaml) and is **off by
-default** (and stays disabled when no targets are configured). A minimal config for native
-endpoints needs nothing more than the URL:
+default**. A minimal static-target config for native endpoints needs nothing more than the URL:
 
 ```yaml
 collectors:
@@ -163,6 +162,8 @@ collectors:
     enabled: true
     interval: 60s
     timeout: 10s
+    max_response_bytes: 4194304  # per-target response cap (4 MiB)
+    max_samples: 50000           # per-target sample cap per scrape
     targets:
       - url: "http://100.64.0.10:5252/metrics"
         instance: "relay-1"          # defaults to the URL host:port if omitted
@@ -183,6 +184,17 @@ scrape is a plain `GET` with no added headers.
 - **Node identity = the `instance` label.** Every forwarded series carries an `instance` label
   (your `instance:` value, or the URL `host:port` if omitted) — identity is a **label, not an OTEL
   Resource**. See the [reference](./metrics.md#node-metrics-scraper) for how these query in Grafana.
+
+### Scrape and discovery safety limits
+
+The scraper enforces bounded work per node. `max_response_bytes` caps the number of bytes read from
+one target response (default `4194304`, 4 MiB), and `max_samples` caps the number of valid samples
+accepted from one scrape (default `50000`). A target that exceeds either limit is treated as a failed
+scrape and reports `tailscale.node.up=0` for that collection.
+
+When dynamic discovery is enabled, `discovery.max_targets` caps the number of discovered devices that
+can become scrape targets in one refresh (default `1000`). Use `include_tags`/`exclude_tags` together
+with this cap to keep automatic discovery scoped to the nodes you intend to scrape.
 
 ### Optional per-target auth & TLS (proxied / HTTPS targets only)
 

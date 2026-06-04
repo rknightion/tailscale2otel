@@ -2,6 +2,7 @@ package nodemetrics
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -35,7 +36,7 @@ const (
 // sample per valid metric line. HELP/TYPE comment lines configure the family
 // metadata applied to following samples; blank and malformed lines are skipped
 // robustly. parse only returns an error for an underlying read failure.
-func parse(r io.Reader) ([]sample, error) {
+func parse(r io.Reader, maxSamples int) ([]sample, error) {
 	types := map[string]familyType{}
 	helps := map[string]string{}
 	var out []sample
@@ -54,6 +55,9 @@ func parse(r io.Reader) ([]sample, error) {
 		}
 		s, ok := parseSample(line, types, helps)
 		if ok {
+			if maxSamples > 0 && len(out) >= maxSamples {
+				return nil, fmt.Errorf("nodemetrics: sample count exceeds max_samples (%d)", maxSamples)
+			}
 			out = append(out, s)
 		}
 	}
