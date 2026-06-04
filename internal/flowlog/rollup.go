@@ -22,6 +22,20 @@ const (
 // cardinality cap (cardinality.metric_limit, default 10000).
 const defaultRollupTopN = 500
 
+// Insert-time safety caps on the live accumulator maps. Unlike topN (which is
+// applied only at Flush), these bound peak memory *between* flushes so a flood of
+// unique flow keys cannot grow the accumulator without limit. This is the
+// attacker-amplified case: raw src/dst addresses become live map keys when
+// collapse_external is off or reverse_dns is on, and reach record/observeUnique
+// via the (possibly unauthenticated) stream receiver. Overflow folds into the
+// __other__ remainder (counters) or saturates the set (unique gauges); see
+// record and addToSet. The caps sit far above any legitimate per-interval volume.
+const (
+	maxRollupKeys     = 8000    // live rollupKeys before new ones fold to __other__
+	maxUniqueSrcNodes = 2000    // distinct source nodes tracked for unique gauges
+	maxUniquePerSrc   = 1 << 16 // distinct peers/ports per source (L4 port space)
+)
+
 // rollupKey is the bounded dimension set of a *.rollup series — the low-card
 // stand-ins for a flow, deliberately WITHOUT L4 ports. srcNode/dstNode are empty
 // when flow node dimensions are off; dstService is empty when the destination
@@ -89,6 +103,18 @@ func (a *rollupAccumulator) record(transport, trafficType, srcNode, dstNode, dst
 	}
 	a.mu.Lock()
 	e := a.entries[k]
+	if e == nil && len(a.entries) >= maxRollupKeys {
+		// Live map full: fold this new key into the per-group __other__ remainder
+		// instead of growing without bound between flushes. Mirrors flushCounters'
+		// node collapse, so group totals stay exact; the __other__ key space is
+		// itself bounded (transport/traffic_type/dst_service come from fixed tables).
+		k = rollupKey{transport: transport, trafficType: trafficType, dstService: dstService}
+		if a.nodes {
+			k.srcNode = semconv.RollupOther
+			k.dstNode = semconv.RollupOther
+		}
+		e = a.entries[k]
+	}
 	if e == nil {
 		e = &rollupEntry{}
 		a.entries[k] = e
@@ -119,11 +145,21 @@ func (a *rollupAccumulator) observeUnique(srcNode, dstNode, dstPort string) {
 }
 
 // addToSet inserts val into the string set at m[key], creating it on first use.
+// It enforces insert-time caps in both dimensions — the number of source-node
+// keys (maxUniqueSrcNodes) and each set's size (maxUniquePerSrc) — so a flood of
+// distinct sources/ports saturates the unique gauges rather than growing the
+// accumulator without bound between flushes.
 func addToSet(m map[string]map[string]struct{}, key, val string) {
 	s := m[key]
 	if s == nil {
+		if len(m) >= maxUniqueSrcNodes {
+			return
+		}
 		s = map[string]struct{}{}
 		m[key] = s
+	}
+	if len(s) >= maxUniquePerSrc {
+		return
 	}
 	s[val] = struct{}{}
 }
