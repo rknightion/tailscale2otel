@@ -21,6 +21,16 @@ import (
 // port maps to a known service).
 const groupNetwork = "Network / flow"
 
+// Rollup + unique metric names, emitted only when cardinality.flow_metrics_mode
+// is "rollup" or "both" (the bounded *.rollup families are the default metric
+// path). The accumulator in rollup.go emits these; FlushRollup drives it.
+const (
+	MetricIORollup       = "tailscale.network.io.rollup"
+	MetricPacketsRollup  = "tailscale.network.packets.rollup"
+	MetricUniqueDstPeers = "tailscale.network.unique.dst_peers"
+	MetricUniqueDstPorts = "tailscale.network.unique.dst_ports"
+)
+
 var (
 	docIO = metricdoc.Metric{
 		Name:        MetricIO,
@@ -62,6 +72,45 @@ var (
 		Group:       groupNetwork,
 	}
 
+	docIORollup = metricdoc.Metric{
+		Name:        MetricIORollup,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Counter,
+		Description: "Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node=\"__other__\" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow_metrics_mode is rollup or both (the default).",
+		Attributes: []string{
+			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
+			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService,
+		},
+		Group: groupNetwork,
+	}
+	docPacketsRollup = metricdoc.Metric{
+		Name:        MetricPacketsRollup,
+		Unit:        semconv.UnitPackets,
+		Instrument:  metricdoc.Counter,
+		Description: "Packets transferred on the tailnet, with the same bounded top-N rollup dimensions as network.io.rollup.",
+		Attributes: []string{
+			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
+			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService,
+		},
+		Group: groupNetwork,
+	}
+	docUniqueDstPeers = metricdoc.Metric{
+		Name:        MetricUniqueDstPeers,
+		Unit:        semconv.UnitPeers,
+		Instrument:  metricdoc.Gauge,
+		Description: "Distinct destination nodes (peers) observed per source node in the last rollup flush interval (exact count, reset each flush). Emitted when cardinality.flow_metrics_mode is rollup or both and flow node dimensions are on.",
+		Attributes:  []string{semconv.AttrSrcNode},
+		Group:       groupNetwork,
+	}
+	docUniqueDstPorts = metricdoc.Metric{
+		Name:        MetricUniqueDstPorts,
+		Unit:        semconv.UnitPorts,
+		Instrument:  metricdoc.Gauge,
+		Description: "Distinct destination ports observed per source node in the last rollup flush interval (exact count, reset each flush) — port-level visibility without per-port series.",
+		Attributes:  []string{semconv.AttrSrcNode},
+		Group:       groupNetwork,
+	}
+
 	docFlowLog = metricdoc.LogEvent{
 		Name:        eventNameFlow,
 		Severity:    "INFO",
@@ -79,7 +128,10 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docIO, docPackets, docFlows, docLogsDropped}
+	return []metricdoc.Metric{
+		docIO, docPackets, docFlows, docLogsDropped,
+		docIORollup, docPacketsRollup, docUniqueDstPeers, docUniqueDstPorts,
+	}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

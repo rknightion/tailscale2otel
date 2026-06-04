@@ -49,6 +49,7 @@ func Default() *Config {
 			},
 		},
 		Cardinality: CardinalityConfig{
+			FlowMetricsMode:        "rollup",
 			FlowIncludePorts:       false,
 			FlowSourcePort:         false,
 			FlowDestinationPort:    false,
@@ -76,6 +77,7 @@ func Default() *Config {
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(1 * time.Hour),
 				LogMode:         "per_connection",
+				FlowRollupTopN:  500,
 			},
 			Auditlogs: CollectorConfig{
 				Enabled:         true,

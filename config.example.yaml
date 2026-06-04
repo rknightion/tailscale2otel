@@ -50,7 +50,8 @@ enrichment:
     max_entries: 4096                # cache size bound (new external IPs beyond this are not resolved)
 
 cardinality:
-  flow_include_ports: false          # legacy: both ports on flow metrics (OR'd with the two below); ports are always on flow logs
+  flow_metrics_mode: rollup          # rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into __other__ so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (≈2x series; summing double-counts).
+  flow_include_ports: false          # legacy: both ports on flow metrics (OR'd with the two below); ports are always on flow logs. Applies to the raw families (mode all/both); the rollup never carries ports
   flow_source_port: false            # add source.port to flow metrics (independent of flow_destination_port)
   flow_destination_port: false       # add destination.port to flow metrics
   flow_destination_service: false    # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics — bounded stand-in for destination.port; always on flow logs
@@ -95,6 +96,7 @@ collectors:
     max_window: 1h                  # poll only — cap one tick's window so a long outage catches up over several ticks
     log_mode: per_connection        # per_connection | per_record | off — log detail level (applies to poll AND stream)
     max_log_records_per_window: 0   # cap flow LOG records per poll window (0 = unlimited); excess → tailscale.network.flow.logs_dropped. Metrics are never capped.
+    flow_rollup_top_n: 500          # rollup only (cardinality.flow_metrics_mode=rollup/both): busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500)
 
   # auditlogs — configuration/audit events → event logs + a counter.
   auditlogs:

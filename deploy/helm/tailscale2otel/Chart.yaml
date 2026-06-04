@@ -7,11 +7,13 @@ type: application
 # nonroot uid/gid > 10000) to satisfy hardened-cluster policy (trivy KSV-0020/0021).
 # 0.4.0: add admin.auth.token (shared-secret gate for the status page + pprof)
 # and the ADMIN_TOKEN secret key.
+# 0.4.3: flow metrics default to the bounded rollup (cardinality.flow_metrics_mode,
+# default rollup) + collectors.flowlogs.flow_rollup_top_n.
 # 0.3.0: add admin.landing_page (status page) and the profiling section
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.4.2
+version: 0.4.3
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "0.1.0"
 home: https://github.com/rknightion/tailscale2otel

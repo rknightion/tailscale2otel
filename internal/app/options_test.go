@@ -136,6 +136,24 @@ func TestFlowOptions_MaxLogRecordsPerWindow(t *testing.T) {
 	}
 }
 
+func TestFlowOptions_RollupMode(t *testing.T) {
+	// Default: bounded rollup mode with a top-N of 500.
+	def := flowOptions(config.Default())
+	if def.FlowMetricsMode != "rollup" {
+		t.Fatalf("default FlowMetricsMode = %q, want rollup", def.FlowMetricsMode)
+	}
+	if def.RollupTopN != 500 {
+		t.Fatalf("default RollupTopN = %d, want 500", def.RollupTopN)
+	}
+	// Overrides propagate from cardinality + flowlogs config.
+	cfg := config.Default()
+	cfg.Cardinality.FlowMetricsMode = "both"
+	cfg.Collectors.Flowlogs.FlowRollupTopN = 42
+	if got := flowOptions(cfg); got.FlowMetricsMode != "both" || got.RollupTopN != 42 {
+		t.Fatalf("flowOptions mode/topN = %q/%d, want both/42", got.FlowMetricsMode, got.RollupTopN)
+	}
+}
+
 func TestFlowOptions_PortToggles(t *testing.T) {
 	// Defaults: every metric port/service toggle off.
 	if def := flowOptions(config.Default()); def.IncludeSourcePort || def.IncludeDestinationPort || def.IncludeDestinationService {

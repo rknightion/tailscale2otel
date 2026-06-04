@@ -204,6 +204,13 @@ func (a *App) Run(ctx context.Context) error {
 		})
 	}
 
+	// Bounded flow-metric rollups (the default output): drain the accumulator on
+	// the export interval. Independent of self-observability — it must run whenever
+	// rollup metrics are the configured output.
+	if m := a.cfg.Cardinality.FlowMetricsMode; m == "rollup" || m == "both" {
+		go runRollupFlusher(ctx, a.flowProc, a.emitter, a.cfg.OTLP.MetricInterval.D())
+	}
+
 	if a.streamSrv != nil {
 		go func() {
 			if err := a.streamSrv.Run(ctx); err != nil {
@@ -250,6 +257,12 @@ func (a *App) Run(ctx context.Context) error {
 	if errors.Is(schedErr, context.Canceled) || errors.Is(schedErr, context.DeadlineExceeded) {
 		schedErr = nil
 	}
+
+	// Drain any buffered flow rollup so the final interval's accumulated counts are
+	// exported before the telemetry pipeline shuts down. The scheduler has stopped
+	// (so no connections are still being processed) and this is a no-op in "all"
+	// mode (nil accumulator).
+	a.flowProc.FlushRollup(a.emitter)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

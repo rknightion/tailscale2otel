@@ -164,8 +164,21 @@ type ReverseDNSConfig struct {
 
 // CardinalityConfig controls metric/label cardinality trade-offs.
 type CardinalityConfig struct {
+	// FlowMetricsMode selects which flow metric families to emit:
+	//   "rollup" (default) — bounded top-N *.rollup families: the busiest
+	//     source/destination node pairs by bytes are kept (flow_rollup_top_n) and the
+	//     remainder folds into an __other__ series per transport/traffic_type/service
+	//     so totals are preserved. Carries no L4 ports. Lowest cardinality; also adds
+	//     the per-source-node tailscale.network.unique.* gauges.
+	//   "all"  — per-connection raw tailscale.network.io/packets, shaped by the
+	//     toggles below (highest fidelity, highest cardinality).
+	//   "both" — emit BOTH families (≈2x series; summing them double-counts — see Warnings).
+	// The raw and rollup families share semantic conventions; the rollup attribute
+	// keys are a subset (no ports) plus the __other__ sentinel value.
+	FlowMetricsMode string `yaml:"flow_metrics_mode"`
 	// FlowIncludePorts is the legacy "both ports" toggle for flow METRICS; it is
 	// OR'd with FlowSourcePort/FlowDestinationPort so existing configs keep working.
+	// It applies to the raw families (mode all/both); the rollup never carries ports.
 	FlowIncludePorts bool `yaml:"flow_include_ports"`
 	// FlowSourcePort / FlowDestinationPort independently add source.port /
 	// destination.port to flow METRICS (both default false; flow LOGS always carry
@@ -317,6 +330,11 @@ type CollectorConfig struct {
 	// (flowlogs only; 0 = unlimited). Excess is counted into
 	// tailscale.network.flow.logs_dropped; metrics are never capped.
 	MaxLogRecordsPerWindow int `yaml:"max_log_records_per_window"`
+	// FlowRollupTopN bounds the number of busiest source/destination node pairs the
+	// flow-metrics rollup keeps per flush (flowlogs only; only used when
+	// cardinality.flow_metrics_mode is rollup or both). Pairs beyond it fold into the
+	// __other__ series. 0 selects the default (500).
+	FlowRollupTopN int `yaml:"flow_rollup_top_n"`
 }
 
 // CheckpointConfig configures high-water-mark persistence.

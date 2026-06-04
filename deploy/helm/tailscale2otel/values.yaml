@@ -197,6 +197,11 @@ config:
       max_entries: 4096
 
   cardinality:
+    # -- Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N
+    # *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so
+    # totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection
+    # tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts).
+    flow_metrics_mode: rollup
     # -- Legacy "both ports" toggle for flow METRICS; OR'd with flow_source_port/flow_destination_port (ports are always on flow LOGS).
     flow_include_ports: false
     # -- Add source.port to flow METRICS (independent of flow_destination_port).
@@ -252,6 +257,9 @@ config:
       # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
       # tailscale.network.flow.logs_dropped; METRICS are never capped, only logs.
       max_log_records_per_window: 0
+      # -- Rollup only (cardinality.flow_metrics_mode=rollup/both): busiest src/dst node pairs kept per
+      # flush; the rest fold into the __other__ series. 0 = default (500).
+      flow_rollup_top_n: 500
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true

@@ -105,6 +105,15 @@ func (c *Config) Warnings() []string {
 			"basic_auth_password = an access policy token with profiles:write).")
 	}
 
+	// Both-mode emits the raw AND rollup flow-metric families; summing them in
+	// PromQL without filtering by metric name double-counts traffic.
+	if c.Cardinality.FlowMetricsMode == "both" {
+		w = append(w, "cardinality.flow_metrics_mode=both: both the raw (tailscale.network.io/packets) and "+
+			"rollup (tailscale.network.io.rollup/...) flow-metric families are emitted, so a PromQL query that "+
+			"sums them without filtering by metric name double-counts traffic (and roughly doubles series cost). "+
+			"Prefer flow_metrics_mode=rollup for bounded cardinality, or all for full per-connection detail.")
+	}
+
 	// Reverse DNS replaces the low-cardinality "external" bucket with per-host PTR
 	// names, which on flow METRICS can be roughly one series per external IP.
 	if c.Enrichment.ReverseDNS.Enabled {
@@ -177,6 +186,13 @@ func (c *Config) Validate() error {
 
 	if !oneOf(c.Collectors.Flowlogs.LogMode, "per_connection", "per_record", "off") {
 		return fmt.Errorf("collectors.flowlogs.log_mode %q invalid: must be one of per_connection, per_record, off", c.Collectors.Flowlogs.LogMode)
+	}
+
+	if !oneOf(c.Cardinality.FlowMetricsMode, "all", "rollup", "both") {
+		return fmt.Errorf("cardinality.flow_metrics_mode %q invalid: must be one of all, rollup, both", c.Cardinality.FlowMetricsMode)
+	}
+	if c.Collectors.Flowlogs.FlowRollupTopN < 0 {
+		return fmt.Errorf("collectors.flowlogs.flow_rollup_top_n %d invalid: must be >= 0 (0 selects the default)", c.Collectors.Flowlogs.FlowRollupTopN)
 	}
 
 	if c.Collectors.Devices.PostureLogMode != "" &&

@@ -48,6 +48,9 @@
                         "flow_include_ports": {
                             "type": "boolean"
                         },
+                        "flow_metrics_mode": {
+                            "type": "string"
+                        },
                         "flow_node_dims": {
                             "type": "boolean"
                         },
@@ -143,6 +146,9 @@
                             "properties": {
                                 "enabled": {
                                     "type": "boolean"
+                                },
+                                "flow_rollup_top_n": {
+                                    "type": "integer"
                                 },
                                 "initial_lookback": {
                                     "type": "string"

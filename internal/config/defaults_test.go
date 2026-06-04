@@ -74,6 +74,13 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Cardinality.MetricLimit != 10000 {
 		t.Errorf("Cardinality.MetricLimit = %d, want default 10000", cfg.Cardinality.MetricLimit)
 	}
+	// Flow metrics default to the bounded rollup family with a top-N of 500.
+	if cfg.Cardinality.FlowMetricsMode != "rollup" {
+		t.Errorf("Cardinality.FlowMetricsMode = %q, want default rollup", cfg.Cardinality.FlowMetricsMode)
+	}
+	if cfg.Collectors.Flowlogs.FlowRollupTopN != 500 {
+		t.Errorf("Flowlogs.FlowRollupTopN = %d, want default 500", cfg.Collectors.Flowlogs.FlowRollupTopN)
+	}
 	// New flow metric port/service toggles default off (ports stay off metrics
 	// by default, matching the legacy flow_include_ports default).
 	if cfg.Cardinality.FlowSourcePort || cfg.Cardinality.FlowDestinationPort || cfg.Cardinality.FlowDestinationService {

@@ -588,3 +588,52 @@ func TestWarnings_ReverseDNSCardinality(t *testing.T) {
 		t.Errorf("reverse_dns warning %q should mention reverse_dns and cardinality", w)
 	}
 }
+
+func TestValidateRejectsBadFlowMetricsMode(t *testing.T) {
+	err := loadErr(t, "cardinality:\n  flow_metrics_mode: telepathy\n")
+	if err == nil || !strings.Contains(err.Error(), "flow_metrics_mode") {
+		t.Fatalf("err = %v, want a flow_metrics_mode error", err)
+	}
+}
+
+func TestValidateAcceptsAllFlowMetricsModes(t *testing.T) {
+	for _, m := range []string{"all", "rollup", "both"} {
+		if err := loadErr(t, "cardinality:\n  flow_metrics_mode: "+m+"\n"); err != nil {
+			t.Errorf("flow_metrics_mode %q should be valid: %v", m, err)
+		}
+	}
+}
+
+func TestValidateRejectsNegativeRollupTopN(t *testing.T) {
+	err := loadErr(t, "collectors:\n  flowlogs:\n    flow_rollup_top_n: -1\n")
+	if err == nil || !strings.Contains(err.Error(), "flow_rollup_top_n") {
+		t.Fatalf("err = %v, want a flow_rollup_top_n error", err)
+	}
+}
+
+func TestValidateAcceptsZeroRollupTopN(t *testing.T) {
+	// 0 is valid and selects the in-code default at construction time.
+	if err := loadErr(t, "collectors:\n  flowlogs:\n    flow_rollup_top_n: 0\n"); err != nil {
+		t.Errorf("flow_rollup_top_n: 0 should be valid (selects default): %v", err)
+	}
+}
+
+// TestWarnings_FlowMetricsModeBoth pins the advisory that both-mode emits the raw
+// AND rollup families, so summing them in PromQL double-counts. The default
+// (rollup) and all-mode do not warn.
+func TestWarnings_FlowMetricsModeBoth(t *testing.T) {
+	c := config.Default()
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "flow_metrics_mode") {
+			t.Fatalf("default (rollup) should not warn about flow_metrics_mode; got %q", w)
+		}
+	}
+	c.Cardinality.FlowMetricsMode = "both"
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "flow_metrics_mode=both") {
+		t.Fatalf("both mode should warn naming flow_metrics_mode=both; got %q", w)
+	}
+	if !strings.Contains(strings.ToLower(w), "double-count") {
+		t.Errorf("both-mode warning should explain double-counting; got %q", w)
+	}
+}

@@ -35,6 +35,11 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		// tailscale.dst.node (srcNode/dstNode come from the processor's resolve()).
 		KeepExternalAddrs:      !cfg.Cardinality.CollapseExternal,
 		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
+		// Default "rollup": emit the bounded top-N *.rollup families instead of the
+		// raw per-connection io/packets. FlushRollup (runRollupFlusher) drains the
+		// accumulator on the OTLP export interval.
+		FlowMetricsMode: cfg.Cardinality.FlowMetricsMode,
+		RollupTopN:      cfg.Collectors.Flowlogs.FlowRollupTopN,
 	}
 }
 

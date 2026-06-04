@@ -79,6 +79,17 @@ type Options struct {
 	// counted into MetricLogsDropped, but ALL metrics keep flowing. A zero value
 	// (the default) means unlimited and preserves the current behavior exactly.
 	MaxLogRecordsPerWindow int
+	// FlowMetricsMode selects which flow metric families to emit: "all"
+	// (per-connection raw io/packets), "rollup" (bounded top-N *.rollup families
+	// only), or "both". An empty value means "all" — the safe library default; the
+	// config layer supplies the product default "rollup". In rollup/both mode the
+	// accumulated families are emitted by FlushRollup (driven on the export
+	// interval); poll and stream feed the same accumulator.
+	FlowMetricsMode string
+	// RollupTopN bounds the number of busiest src/dst node pairs kept per flush in
+	// rollup/both mode; the remainder folds into an __other__ series. A value <= 0
+	// selects a default.
+	RollupTopN int
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
@@ -87,6 +98,7 @@ type Options struct {
 type Processor struct {
 	cache        *enrich.DeviceCache
 	logMode      string
+	mode         string
 	srcPort      bool
 	dstPort      bool
 	dstService   bool
@@ -95,18 +107,26 @@ type Processor struct {
 	rdns         rdns.Resolver
 	dedup        *dedup.Set
 	maxLogs      int
+	// rollup is non-nil in "rollup"/"both" mode; it accumulates per-connection
+	// contributions and is drained by FlushRollup on the export interval.
+	rollup *rollupAccumulator
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
 // cache is tolerated; node resolution then yields "unknown".
 func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
-	mode := opts.LogMode
-	if mode == "" {
-		mode = logPerConnection
+	logMode := opts.LogMode
+	if logMode == "" {
+		logMode = logPerConnection
 	}
-	return &Processor{
+	flowMode := opts.FlowMetricsMode
+	if flowMode == "" {
+		flowMode = flowModeAll
+	}
+	p := &Processor{
 		cache:        cache,
-		logMode:      mode,
+		logMode:      logMode,
+		mode:         flowMode,
 		srcPort:      opts.IncludeSourcePort,
 		dstPort:      opts.IncludeDestinationPort,
 		dstService:   opts.IncludeDestinationService,
@@ -116,6 +136,10 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		dedup:        opts.Dedup,
 		maxLogs:      opts.MaxLogRecordsPerWindow,
 	}
+	if flowMode == flowModeRollup || flowMode == flowModeBoth {
+		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims)
+	}
+	return p
 }
 
 // logBudget gates flow LOG record emission for the volume guard. remaining < 0
@@ -177,6 +201,16 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
 	p.process(flow, e, budget)
 	p.flushDropped(budget, e)
+}
+
+// FlushRollup emits the accumulated bounded *.rollup counters and the
+// per-source-node unique gauges for the current interval, then resets the
+// accumulator. It is a no-op in "all" mode (nil accumulator). The app's rollup
+// flusher calls it once per export interval; the poll collector and the stream
+// receiver share one Processor and feed the same accumulator, so a single flush
+// drains both ingestion paths. Safe for concurrent use with Process/ProcessAll.
+func (p *Processor) FlushRollup(e telemetry.Emitter) {
+	p.rollup.Flush(e)
 }
 
 // process converts a single FlowLog, gating every flow LOG record through
@@ -255,39 +289,53 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	dstNode := p.resolve(cc.Dst, dstAddr)
 	dstService := serviceName(transport, dstPort)
 
-	// Metric attributes shared by io + packets points.
-	metricAttrs := telemetry.Attrs{
-		semconv.NetworkTransport: transport,
-		semconv.AttrTrafficType:  trafficType,
-	}
-	if p.nodes {
-		metricAttrs[semconv.AttrSrcNode] = srcNode
-		metricAttrs[semconv.AttrDstNode] = dstNode
-	}
-	if p.srcPort {
-		metricAttrs[semconv.SourcePort] = srcPort
-	}
-	if p.dstPort {
-		metricAttrs[semconv.DestinationPort] = dstPort
-	}
-	if p.dstService && dstService != "" {
-		metricAttrs[semconv.AttrDstService] = dstService
+	// Raw per-connection io/packets families (all/both mode). In rollup mode the
+	// bounded *.rollup families are emitted by FlushRollup from the accumulator
+	// instead; these high-cardinality raw families are suppressed.
+	if p.mode == flowModeAll || p.mode == flowModeBoth {
+		// Metric attributes shared by io + packets points.
+		metricAttrs := telemetry.Attrs{
+			semconv.NetworkTransport: transport,
+			semconv.AttrTrafficType:  trafficType,
+		}
+		if p.nodes {
+			metricAttrs[semconv.AttrSrcNode] = srcNode
+			metricAttrs[semconv.AttrDstNode] = dstNode
+		}
+		if p.srcPort {
+			metricAttrs[semconv.SourcePort] = srcPort
+		}
+		if p.dstPort {
+			metricAttrs[semconv.DestinationPort] = dstPort
+		}
+		if p.dstService && dstService != "" {
+			metricAttrs[semconv.AttrDstService] = dstService
+		}
+
+		// MetricIO (bytes): transmit + receive. Name/unit/description come from the
+		// catalog (catalog.go) so they cannot drift from the generated docs.
+		e.Counter(docIO.Name, docIO.Unit, docIO.Description,
+			float64(cc.TxBytes), dirAttrs(metricAttrs, semconv.DirectionTransmit))
+		e.Counter(docIO.Name, docIO.Unit, docIO.Description,
+			float64(cc.RxBytes), dirAttrs(metricAttrs, semconv.DirectionReceive))
+
+		// MetricPackets: transmit + receive.
+		e.Counter(docPackets.Name, docPackets.Unit, docPackets.Description,
+			float64(cc.TxPkts), dirAttrs(metricAttrs, semconv.DirectionTransmit))
+		e.Counter(docPackets.Name, docPackets.Unit, docPackets.Description,
+			float64(cc.RxPkts), dirAttrs(metricAttrs, semconv.DirectionReceive))
 	}
 
-	// MetricIO (bytes): transmit + receive. Name/unit/description come from the
-	// catalog (catalog.go) so they cannot drift from the generated docs.
-	e.Counter(docIO.Name, docIO.Unit, docIO.Description,
-		float64(cc.TxBytes), dirAttrs(metricAttrs, semconv.DirectionTransmit))
-	e.Counter(docIO.Name, docIO.Unit, docIO.Description,
-		float64(cc.RxBytes), dirAttrs(metricAttrs, semconv.DirectionReceive))
+	// Bounded rollup accumulation (rollup/both mode); drained by FlushRollup. The
+	// rollup deliberately carries no L4 ports — they stay in the flow logs and in
+	// the per-source-node unique gauges.
+	if p.rollup != nil {
+		p.rollup.record(transport, trafficType, srcNode, dstNode, dstService,
+			float64(cc.TxBytes), float64(cc.RxBytes), float64(cc.TxPkts), float64(cc.RxPkts))
+		p.rollup.observeUnique(srcNode, dstNode, dstPort)
+	}
 
-	// MetricPackets: transmit + receive.
-	e.Counter(docPackets.Name, docPackets.Unit, docPackets.Description,
-		float64(cc.TxPkts), dirAttrs(metricAttrs, semconv.DirectionTransmit))
-	e.Counter(docPackets.Name, docPackets.Unit, docPackets.Description,
-		float64(cc.RxPkts), dirAttrs(metricAttrs, semconv.DirectionReceive))
-
-	// MetricFlows: one flow observed.
+	// MetricFlows: one flow observed (low cardinality; emitted in every mode).
 	e.Counter(docFlows.Name, docFlows.Unit, docFlows.Description, 1, telemetry.Attrs{
 		semconv.NetworkTransport: transport,
 		semconv.AttrTrafficType:  trafficType,

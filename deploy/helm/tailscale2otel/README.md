@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.4.2](https://img.shields.io/badge/Version-0.4.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.4.3](https://img.shields.io/badge/Version-0.4.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -51,6 +51,7 @@ under `config:`).
 | config.cardinality.flow_destination_port | bool | `false` | Add destination.port to flow METRICS (independent of flow_source_port). |
 | config.cardinality.flow_destination_service | bool | `false` | Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS. |
 | config.cardinality.flow_include_ports | bool | `false` | Legacy "both ports" toggle for flow METRICS; OR'd with flow_source_port/flow_destination_port (ports are always on flow LOGS). |
+| config.cardinality.flow_metrics_mode | string | `"rollup"` | Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts). |
 | config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
 | config.cardinality.flow_source_port | bool | `false` | Add source.port to flow METRICS (independent of flow_destination_port). |
 | config.cardinality.key_per_entity | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
@@ -72,6 +73,7 @@ under `config:`).
 | config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
 | config.collectors.dns.interval | string | `"600s"` | Poll interval. |
 | config.collectors.flowlogs.enabled | bool | `true` | Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs). |
+| config.collectors.flowlogs.flow_rollup_top_n | int | `500` | Rollup only (cardinality.flow_metrics_mode=rollup/both): busiest src/dst node pairs kept per flush; the rest fold into the __other__ series. 0 = default (500). |
 | config.collectors.flowlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run when no checkpoint exists. |
 | config.collectors.flowlogs.interval | string | `"60s"` | Poll interval. |
 | config.collectors.flowlogs.lag | string | `"120s"` | Tail-hazard lag: never poll closer than this to now, so a window only closes once Tailscale has finished writing it (avoids missing late-arriving records). |

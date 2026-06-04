@@ -64,6 +64,12 @@ const (
 	TrafficPhysical = "physical"
 )
 
+// RollupOther is the sentinel tailscale.src.node / tailscale.dst.node value for
+// the folded-remainder series in the bounded *.rollup metrics: node pairs beyond
+// the configured top-N are aggregated under this value so per-(transport,
+// traffic_type, dst.service) totals stay exact.
+const RollupOther = "__other__"
+
 // network.type values (stable).
 const (
 	NetworkTypeIPv4 = "ipv4"
@@ -80,6 +86,8 @@ const (
 	UnitConnections   = "{connection}"
 	UnitTargets       = "{target}"
 	UnitSeries        = "{series}"
+	UnitPeers         = "{peer}"
+	UnitPorts         = "{port}"
 	UnitSeconds       = "s"
 	UnitDays          = "d"
 	UnitDimensionless = "1"
