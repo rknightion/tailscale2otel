@@ -309,6 +309,11 @@ type WebhookConfig struct {
 // SelfObservabilityConfig toggles emitting the collector's own telemetry.
 type SelfObservabilityConfig struct {
 	Enabled bool `yaml:"enabled"`
+	// InstanceID sets the service.instance.id resource attribute so multiple
+	// instances of the exporter are distinguishable in the backend. When empty
+	// it falls back to the host name (see internal/app instanceID). Supports
+	// ${ENV} expansion, e.g. "${POD_NAME}".
+	InstanceID string `yaml:"instance_id"`
 }
 
 // Load reads the YAML file at path, expands ${VAR}/$VAR references from the

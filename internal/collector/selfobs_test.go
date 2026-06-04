@@ -13,14 +13,21 @@ import (
 )
 
 // runRecorderScheduler starts a Scheduler wired to the given Recorder's emitter
-// with jitter disabled and a fixed clock, returning the recorder for assertions.
+// with jitter disabled, a fixed clock, and an in-memory checkpoint store.
 func runRecorderScheduler(t *testing.T, r *collector.Registry, rec *telemetrytest.Recorder, now time.Time, opts ...collector.SchedulerOption) {
+	t.Helper()
+	runRecorderSchedulerStore(t, r, rec, now, collector.NewMemoryStore(), opts...)
+}
+
+// runRecorderSchedulerStore is runRecorderScheduler with an injectable checkpoint
+// store, so tests can drive the checkpoint-persist failure path.
+func runRecorderSchedulerStore(t *testing.T, r *collector.Registry, rec *telemetrytest.Recorder, now time.Time, store collector.CheckpointStore, opts ...collector.SchedulerOption) {
 	t.Helper()
 	base := []collector.SchedulerOption{
 		collector.WithJitter(0),
 		collector.WithClock(func() time.Time { return now }),
 	}
-	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(), append(base, opts...)...)
+	s := collector.NewScheduler(rec.Emitter(), store, append(base, opts...)...)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _ = s.Run(ctx, r); close(done) }()
@@ -29,6 +36,13 @@ func runRecorderScheduler(t *testing.T, r *collector.Registry, rec *telemetrytes
 		<-done
 	})
 }
+
+// errSetStore forces a window to be computed (Get reports no checkpoint) and
+// then fails to persist it, exercising the checkpoint-persist error path.
+type errSetStore struct{}
+
+func (errSetStore) Get(string) (time.Time, bool) { return time.Time{}, false }
+func (errSetStore) Set(string, time.Time) error  { return errors.New("disk full") }
 
 // findPoint returns the first metric point for name carrying the given collector
 // attribute, and whether one was found.
@@ -236,6 +250,67 @@ func TestSelfObs_FailingWindowRecordsError(t *testing.T) {
 	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "win")
 	if !ok || success.Value != 0 {
 		t.Fatalf("window success = %+v (ok=%v), want gauge value 0 on error", success, ok)
+	}
+}
+
+func TestSelfObs_CheckpointPersistErrorRecorded(t *testing.T) {
+	now := time.Unix(2_000_000, 0).UTC()
+	r := collector.NewRegistry()
+	// The collect succeeds (returns a valid high-water mark), so the failure is
+	// isolated to the checkpoint Set call — not the scrape.
+	r.RegisterWindow(winFunc{name: "win", def: time.Millisecond, lag: time.Minute,
+		fn: func(_ context.Context, _, to time.Time, _ telemetry.Emitter) (time.Time, error) {
+			return to, nil
+		}}, time.Millisecond, 5*time.Minute, time.Hour)
+
+	rec := telemetrytest.New()
+	runRecorderSchedulerStore(t, r, rec, now, errSetStore{})
+
+	waitFor(t, func() bool {
+		p, ok := findPoint(rec, collector.MetricCheckpointPersistErrors, "win")
+		return ok && p.Value >= 1
+	}, 2*time.Second)
+
+	p, ok := findPoint(rec, collector.MetricCheckpointPersistErrors, "win")
+	if !ok {
+		t.Fatalf("%s not emitted", collector.MetricCheckpointPersistErrors)
+	}
+	if p.Kind != "sum" || !p.Monotonic {
+		t.Fatalf("checkpoint persist errors = %+v, want a monotonic sum (counter)", p)
+	}
+	if p.Unit != semconv.UnitDimensionless {
+		t.Fatalf("unit = %q, want %q", p.Unit, semconv.UnitDimensionless)
+	}
+	// The collect succeeded, so no scrape error should be recorded.
+	if pts := rec.MetricPoints(collector.MetricScrapeErrors); len(pts) != 0 {
+		t.Fatalf("scrape errors emitted despite a successful collect: %+v", pts)
+	}
+}
+
+func TestSelfObs_CheckpointPersistErrorSuppressedWhenDisabled(t *testing.T) {
+	now := time.Unix(2_000_000, 0).UTC()
+	ran := make(chan struct{}, 1)
+	r := collector.NewRegistry()
+	r.RegisterWindow(winFunc{name: "win", def: time.Millisecond, lag: time.Minute,
+		fn: func(_ context.Context, _, to time.Time, _ telemetry.Emitter) (time.Time, error) {
+			select {
+			case ran <- struct{}{}:
+			default:
+			}
+			return to, nil
+		}}, time.Millisecond, 5*time.Minute, time.Hour)
+
+	rec := telemetrytest.New()
+	runRecorderSchedulerStore(t, r, rec, now, errSetStore{}, collector.WithSelfObs(false))
+
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("window collector never ran")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if pts := rec.MetricPoints(collector.MetricCheckpointPersistErrors); len(pts) != 0 {
+		t.Fatalf("WithSelfObs(false): checkpoint persist errors emitted %d points, want 0", len(pts))
 	}
 }
 

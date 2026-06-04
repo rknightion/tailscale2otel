@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"maps"
+	"os"
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
@@ -24,6 +25,7 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 	return telemetry.Options{
 		ServiceName:    serviceName,
 		ServiceVersion: version,
+		InstanceID:     instanceID(cfg),
 		Protocol:       cfg.OTLP.Protocol,
 		Endpoint:       cfg.OTLP.Endpoint,
 		Headers:        headers,
@@ -34,6 +36,18 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		MetricInterval: cfg.OTLP.MetricInterval.D(),
 		SelfObsEnabled: cfg.SelfObservability.Enabled,
 	}
+}
+
+// instanceID resolves the service.instance.id resource attribute: the explicit
+// self_observability.instance_id when set, otherwise the host name. The hostname
+// policy lives here (the app layer) so internal/telemetry stays free of it; a
+// failed os.Hostname() yields "", which buildResource simply omits.
+func instanceID(cfg *config.Config) string {
+	if cfg.SelfObservability.InstanceID != "" {
+		return cfg.SelfObservability.InstanceID
+	}
+	host, _ := os.Hostname()
+	return host
 }
 
 // tsapiOptions maps the Tailscale config into tsapi.Options, selecting the

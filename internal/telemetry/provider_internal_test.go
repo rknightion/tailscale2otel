@@ -1,10 +1,13 @@
 package telemetry
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/resource"
 )
 
 // TestCumulativeTemporalitySelectorAlwaysCumulative pins the OTLP metric
@@ -25,6 +28,51 @@ func TestCumulativeTemporalitySelectorAlwaysCumulative(t *testing.T) {
 	for _, k := range kinds {
 		if got := cumulativeTemporalitySelector(k); got != metricdata.CumulativeTemporality {
 			t.Errorf("cumulativeTemporalitySelector(%v) = %v, want CumulativeTemporality", k, got)
+		}
+	}
+}
+
+// TestBuildResourceEnrichesAndMergesCleanly is the regression guard for the
+// resource enrichment: combining schemaless WithAttributes (service.*) with the
+// core host/os/process detectors (all sharing one semconv schema URL) must NOT
+// raise a schema-URL conflict, and the resulting resource must carry the
+// instance identity plus host/os/process attributes used to distinguish
+// instances in Grafana. A partial-resource error (e.g. a detector that can't
+// read its source in CI) is tolerated; a hard error is not.
+func TestBuildResourceEnrichesAndMergesCleanly(t *testing.T) {
+	res, err := buildResource(context.Background(), Options{
+		ServiceName:    "tailscale2otel",
+		ServiceVersion: "test",
+		InstanceID:     "inst-42",
+	})
+	if err != nil && !errors.Is(err, resource.ErrPartialResource) {
+		t.Fatalf("buildResource returned a non-partial error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("buildResource returned nil resource")
+	}
+	if res.SchemaURL() == "" {
+		t.Error("resource SchemaURL is empty; expected the semconv schema URL from the detectors")
+	}
+
+	got := map[string]string{}
+	for _, kv := range res.Attributes() {
+		got[string(kv.Key)] = kv.Value.AsString()
+	}
+	if got["service.instance.id"] != "inst-42" {
+		t.Errorf("service.instance.id = %q, want inst-42", got["service.instance.id"])
+	}
+	for _, key := range []string{
+		"service.name",
+		"host.name",
+		"os.type",
+		"process.pid",
+		"process.executable.name",
+		"process.runtime.name",
+		"process.runtime.version",
+	} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("resource missing attribute %q (have: %v)", key, got)
 		}
 	}
 }

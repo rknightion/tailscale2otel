@@ -29,6 +29,10 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
 - `selfobs.go` emits the framework `tailscale2otel.scrape.*` metrics (duration, success, errors, last
   timestamp), tagged with the `tailscale.collector` attribute, after every tick — classifying errors
   as `panic`/`timeout`/`error`.
+- `status.go`'s `StatusTracker` (wired via `WithStatusTracker`) records each collector's latest run
+  outcome — runs, failures, last started/finished/duration, last error — for the admin status page. It
+  records on **every** tick regardless of `WithSelfObs` (so the page works even when `scrape.*` emission
+  is suppressed); a nil tracker is a no-op. This is in-process introspection only — it emits no OTLP.
 
 ## Adding a new collector
 
@@ -59,7 +63,7 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
 - Feature-gated collectors (e.g. flowlogs) treat a 403 / feature-off as "idle" (emit `feature.enabled=0`,
   advance the checkpoint, no error), not as a failure.
 - **Rich device data needs `tsapi.DevicesRich()`** (raw `GET /devices?fields=all`), not the flat
-  `tsclient.Device` (no online flag, per-DERP latency, routes, os.version, or nodeId). Several fields
+  `tsclient.Device` (no online flag, per-DERP latency, routes, os.version, nodeId, or tags). Several fields
   are *derived*, not native: `device.online` from `LastSeen` recency (injectable clock via
   `export_test.go`), key "type" from `Capabilities`. `go doc` the type before assuming a field exists.
 - **Cross-source dedup keys are content-based / time-free** so the poll and stream copies of one record
@@ -72,3 +76,18 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
   → `:5252`, plain HTTP); reaching them across the tailnet needs an ACL grant opening TCP 5252 to the
   scraping node. Nodes < v1.78 have no endpoint → `node.up=0`. Per-target bearer/TLS is supported, but
   tailnet client metrics are unauthenticated by default.
+- **nodemetrics dynamic discovery + passthrough filters:** with `node_metrics.discovery.enabled` the
+  collector calls a `Discoverer` on its **own** interval (default 5m, separate from the scrape interval)
+  and UNIONS the result with the static `targets` (dedup by URL, **static wins**); a discovery *failure*
+  keeps the prior active set, so a flaky discoverer never empties the scrape set. The package stays
+  Tailscale-agnostic — `Discoverer` returns plain `Target`s; the concrete impl (`*nodeDiscoverer`: devices
+  API → targets, with online/external/tag filters and scheme/port/path shaping) lives in
+  `internal/app/nodediscovery.go`. Discovery emits `tailscale2otel.nodemetrics.discovery.{success,targets}`
+  every Collect. The `metric_allow`/`metric_deny` (anchored regex on the metric NAME) and `drop_labels`
+  (instance is never dropped) filters apply ONLY to forwarded samples in `emitSample` — never to
+  `tailscale.node.up` or the `discovery.*` gauges.
+- **Per-entity gauge toggles are the main cardinality lever:** `cardinality.{device,user,key}_per_entity`
+  gate the per-device/user/key gauges; switching one off falls back to just the aggregate
+  `tailscale.{devices,users,keys}.count` (the key-expiry WARN log still fires when `key_per_entity` is
+  off). `cardinality.collapse_external` buckets unresolved IPs as `external`/`unknown` AND, when
+  `flow_node_dims` is on, also sets the src/dst node labels on flow *metrics*.

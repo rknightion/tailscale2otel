@@ -102,6 +102,9 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if !cfg.SelfObservability.Enabled {
 		t.Errorf("SelfObservability.Enabled = false, want default true")
 	}
+	if cfg.SelfObservability.InstanceID != "" {
+		t.Errorf("SelfObservability.InstanceID = %q, want default empty", cfg.SelfObservability.InstanceID)
+	}
 	if !cfg.Admin.LandingPage {
 		t.Errorf("Admin.LandingPage = false, want default true")
 	}

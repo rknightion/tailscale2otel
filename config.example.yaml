@@ -137,6 +137,7 @@ webhook:
 
 self_observability:
   enabled: true                      # emit the exporter's own health metrics
+  instance_id: ""                    # service.instance.id resource attr; ""=> host name. Supports ${ENV}, e.g. "${POD_NAME}"
 
 # Admin HTTP server: liveness/readiness probes plus an optional status landing
 # page. The page exposes operational metadata (collector health, cardinality,

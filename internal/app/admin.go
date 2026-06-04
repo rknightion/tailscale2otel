@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 )
 
 // registerProbes registers the liveness (/healthz) and readiness (/readyz)
@@ -80,6 +82,7 @@ func (a *App) runAdmin(ctx context.Context) {
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			a.logger.Error("admin server stopped", "error", err)
+			a.componentError(appcatalog.ComponentAdmin)
 		}
 	}
 }

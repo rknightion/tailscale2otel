@@ -94,9 +94,26 @@ exporter health.
 | `tailscale2otel.api.requests` | `1` | counter | `tailscale2otel_api_requests_total` | `endpoint`, `http_response_status_code` | Tailscale API requests, by endpoint and HTTP status code. |
 | `tailscale2otel.api.retries` | `1` | counter | `tailscale2otel_api_retries_total` | `endpoint` | API retry attempts, by endpoint. |
 | `tailscale2otel.build_info` | `1` | gauge | `tailscale2otel_build_info_ratio` | `service_version`, `go_version` | Constant `1` build-info gauge; version/runtime carried as labels. |
+| `tailscale2otel.checkpoint.persist.errors` | `1` | counter | `tailscale2otel_checkpoint_persist_errors_total` | `tailscale_collector` | Count of checkpoint-persistence failures, by collector (the window succeeded but its high-water mark could not be saved). |
+| `tailscale2otel.component.errors` | `1` | counter | `tailscale2otel_component_errors_total` | `component` | Failures of non-collector subsystems (receivers, admin server, streaming auto-configure), by component. |
+| `tailscale2otel.dedup.evictions` | `1` | counter | `tailscale2otel_dedup_evictions_total` | `dedup_set` | Keys evicted from a de-duplication set because it was at capacity, by set (sustained growth means the set is undersized). |
+| `tailscale2otel.dedup.size` | `1` | gauge | `tailscale2otel_dedup_size_ratio` | `dedup_set` | Keys currently held in a cross-source de-duplication set, by set (a **count**, despite the `_ratio` suffix). |
 | `tailscale2otel.enrich.cache_age` | `s` | gauge | `tailscale2otel_enrich_cache_age_seconds` | — | Age of the device-enrichment cache (since last refresh). |
 | `tailscale2otel.enrich.cache_size` | `1` | gauge | `tailscale2otel_enrich_cache_size_ratio` | — | Number of devices in the enrichment cache (a **count**, despite `_ratio`). |
 | `tailscale2otel.export.failures` | `1` | counter | `tailscale2otel_export_failures_total` | `error_type` | OTLP export failures, by error class. |
+| `tailscale2otel.runtime.gc.count` | `1` | counter | `tailscale2otel_runtime_gc_count_total` | — | Completed garbage-collection cycles since process start. |
+| `tailscale2otel.runtime.gc.cpu_fraction` | `1` | gauge | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | — | Fraction of total CPU time used by the garbage collector since process start (0..1). |
+| `tailscale2otel.runtime.gc.next_target` | `By` | gauge | `tailscale2otel_runtime_gc_next_target_bytes` | — | Target heap size (bytes) for the next garbage collection. |
+| `tailscale2otel.runtime.gc.pause_time` | `s` | counter | `tailscale2otel_runtime_gc_pause_time_seconds_total` | — | Cumulative stop-the-world GC pause time since process start. |
+| `tailscale2otel.runtime.gomaxprocs` | `1` | gauge | `tailscale2otel_runtime_gomaxprocs_ratio` | — | Current GOMAXPROCS, the max OS threads executing Go code (a **count**, despite the `_ratio` suffix). |
+| `tailscale2otel.runtime.goroutines` | `1` | gauge | `tailscale2otel_runtime_goroutines_ratio` | — | Number of live goroutines (a **count**, despite the `_ratio` Prometheus suffix). |
+| `tailscale2otel.runtime.memory.alloc` | `By` | counter | `tailscale2otel_runtime_memory_alloc_bytes_total` | — | Cumulative bytes allocated on the heap since process start (includes freed). |
+| `tailscale2otel.runtime.memory.heap_alloc` | `By` | gauge | `tailscale2otel_runtime_memory_heap_alloc_bytes` | — | Bytes of allocated heap objects currently in use. |
+| `tailscale2otel.runtime.memory.heap_inuse` | `By` | gauge | `tailscale2otel_runtime_memory_heap_inuse_bytes` | — | Bytes in in-use heap spans. |
+| `tailscale2otel.runtime.memory.heap_objects` | `1` | gauge | `tailscale2otel_runtime_memory_heap_objects_ratio` | — | Number of live heap objects (a **count**, despite the `_ratio` suffix). |
+| `tailscale2otel.runtime.memory.heap_sys` | `By` | gauge | `tailscale2otel_runtime_memory_heap_sys_bytes` | — | Bytes of heap memory obtained from the OS. |
+| `tailscale2otel.runtime.memory.stack_inuse` | `By` | gauge | `tailscale2otel_runtime_memory_stack_inuse_bytes` | — | Bytes in in-use stack spans. |
+| `tailscale2otel.runtime.memory.sys` | `By` | gauge | `tailscale2otel_runtime_memory_sys_bytes` | — | Total bytes of memory obtained from the OS (the process's Go memory footprint). |
 | `tailscale2otel.scrape.duration` | `s` | gauge | `tailscale2otel_scrape_duration_seconds` | `tailscale_collector` | Wall-clock duration of the last scrape, per collector. |
 | `tailscale2otel.scrape.errors` | `1` | counter | `tailscale2otel_scrape_errors_total` | `tailscale_collector`, `error_type` | Count of scrape errors, by collector and error class. |
 | `tailscale2otel.scrape.last_timestamp` | `s` | gauge | `tailscale2otel_scrape_last_timestamp_seconds` | `tailscale_collector` | Unix timestamp the last scrape *finished* (success **or** failure); pair with `scrape.success` to detect last-success staleness. |
@@ -201,6 +218,7 @@ Health/throughput counters for the optional HEC log-stream receiver and the webh
 <!-- BEGIN GENERATED: metrics groups="Receivers" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
+| `tailscale.stream.decode_errors` | `{record}` | counter | `tailscale_stream_decode_errors_total` | `type` | Records that classified as a known type but failed to decode, by stream type (`flow`/`audit`). |
 | `tailscale.stream.records` | `{record}` | counter | `tailscale_stream_records_total` | `type` | Records accepted by the HEC stream receiver, by stream type (`flow`/`audit`). |
 | `tailscale.stream.rejected` | `{rejection}` | counter | `tailscale_stream_rejected_total` | `reason` | Records rejected by the stream receiver, by reason (`auth`/`unparsable`/`too_large`). |
 | `tailscale.webhook.events` | `{event}` | counter | `tailscale_webhook_events_total` | `tailscale_webhook_type` | Webhook events accepted, by Tailscale event type. |

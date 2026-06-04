@@ -26,8 +26,9 @@ import (
 
 // Metric/attribute constants exercised by the receiver tests.
 const (
-	metricRecords  = "tailscale.stream.records"
-	metricRejected = "tailscale.stream.rejected"
+	metricRecords      = "tailscale.stream.records"
+	metricRejected     = "tailscale.stream.rejected"
+	metricDecodeErrors = "tailscale.stream.decode_errors"
 
 	attrType   = "type"
 	attrReason = "reason"
@@ -488,6 +489,36 @@ func TestHandler_HECFlowRecord(t *testing.T) {
 	}
 	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
 		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+func TestHandler_MalformedFlowRecordCountsDecodeError(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	// Classifiable as a flow (has nodeId + traffic) but the typed FlowLog decode
+	// fails (start is a number, not an RFC3339 string). Batched with a valid flow
+	// so we can assert the good one still flows while the bad one is counted, not
+	// silently swallowed.
+	malformed := `{"nodeId":"x","virtualTraffic":[{"proto":6}],"start":123}`
+	body := captureFlowRecord + "\n" + malformed + "\n"
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
+	// The valid flow was still processed.
+	p := findPoint(t, rec.MetricPoints(metricRecords), map[string]string{attrType: typeFlow})
+	if p.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, p.Value)
+	}
+
+	// The malformed flow was counted as a decode error.
+	dp := findPoint(t, rec.MetricPoints(metricDecodeErrors), map[string]string{attrType: typeFlow})
+	if dp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricDecodeErrors, dp.Value)
+	}
+	if dp.Kind != "sum" || !dp.Monotonic {
+		t.Fatalf("decode_errors = %+v, want a monotonic sum (counter)", dp)
 	}
 }
 

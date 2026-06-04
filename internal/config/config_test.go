@@ -92,6 +92,7 @@ webhook:
   secret: "wsecret"
 self_observability:
   enabled: false
+  instance_id: "inst-42"
 `
 
 func TestLoadNestedValues(t *testing.T) {
@@ -199,6 +200,9 @@ func TestLoadNestedValues(t *testing.T) {
 	}
 	if cfg.SelfObservability.Enabled {
 		t.Errorf("SelfObservability.Enabled = true, want false")
+	}
+	if cfg.SelfObservability.InstanceID != "inst-42" {
+		t.Errorf("SelfObservability.InstanceID = %q, want inst-42", cfg.SelfObservability.InstanceID)
 	}
 }
 

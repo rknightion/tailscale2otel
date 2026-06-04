@@ -89,6 +89,32 @@ func TestAdd_EvictsOldestWhenOverCapacity(t *testing.T) {
 	}
 }
 
+func TestEvictions_CountsEachEvictedKey(t *testing.T) {
+	s := dedup.New(3)
+	if got := s.Evictions(); got != 0 {
+		t.Fatalf("Evictions() = %d before any eviction, want 0", got)
+	}
+	// Fill to capacity (no eviction yet), then push three more uniques: each
+	// evicts exactly one oldest key.
+	for _, k := range []string{"a", "b", "c"} {
+		s.Add(k)
+	}
+	if got := s.Evictions(); got != 0 {
+		t.Fatalf("Evictions() = %d at capacity, want 0", got)
+	}
+	for _, k := range []string{"d", "e", "f"} {
+		s.Add(k)
+	}
+	if got := s.Evictions(); got != 3 {
+		t.Fatalf("Evictions() = %d after 3 over-capacity adds, want 3", got)
+	}
+	// A duplicate add evicts nothing.
+	s.Add("f")
+	if got := s.Evictions(); got != 3 {
+		t.Fatalf("Evictions() = %d after a duplicate add, want 3 (unchanged)", got)
+	}
+}
+
 func TestAdd_DuplicateDoesNotEvict(t *testing.T) {
 	s := dedup.New(2)
 	s.Add("a")

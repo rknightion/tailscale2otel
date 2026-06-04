@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/pyroscope-go"
 
+	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
@@ -182,12 +183,21 @@ func (a *App) Run(ctx context.Context) error {
 	if a.cfg.SelfObservability.Enabled {
 		go runHeartbeat(ctx, a.emitter, heartbeatInterval)
 		go runCardinalityReporter(ctx, a.emitter, a.card, a.cfg.OTLP.MetricInterval.D())
+		go runRuntimeReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), readRuntimeStats)
+		go runDedupReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), map[string]*dedup.Set{
+			"flow":          a.flowDedup,
+			"audit":         a.auditDedup,
+			"webhook_cross": a.webhookDedup,
+		})
 	}
 
 	if a.streamSrv != nil {
 		go func() {
 			if err := a.streamSrv.Run(ctx); err != nil {
 				a.logger.Error("stream receiver stopped", "error", err)
+				if !isCleanShutdownErr(err) {
+					a.componentError(appcatalog.ComponentStream)
+				}
 			}
 		}()
 		if a.cfg.Streaming.AutoConfigure {
@@ -205,6 +215,9 @@ func (a *App) Run(ctx context.Context) error {
 		go func() {
 			if err := a.webhookSrv.Run(ctx); err != nil {
 				a.logger.Error("webhook receiver stopped", "error", err)
+				if !isCleanShutdownErr(err) {
+					a.componentError(appcatalog.ComponentWebhook)
+				}
 			}
 		}()
 	}
@@ -244,6 +257,7 @@ func (a *App) autoConfigureStreaming(ctx context.Context) {
 	for _, logType := range []string{"network", "configuration"} {
 		if err := a.client.ConfigureLogStream(ctx, logType, sink); err != nil {
 			a.logger.Error("streaming auto_configure failed", "log_type", logType, "error", err)
+			a.componentError(appcatalog.ComponentAutoConfigure)
 			continue
 		}
 		a.logger.Info("streaming auto_configure registered sink", "log_type", logType, "url", sink.URL)

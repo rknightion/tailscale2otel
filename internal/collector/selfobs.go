@@ -25,6 +25,11 @@ const (
 	// MetricScrapeLastTimestamp is a gauge of the unix time, in seconds, at which
 	// the most recent run finished.
 	MetricScrapeLastTimestamp = "tailscale2otel.scrape.last_timestamp"
+	// MetricCheckpointPersistErrors is a monotonic counter incremented when a
+	// window collector's high-water mark fails to persist to the checkpoint
+	// store (e.g. a disk error). The window itself succeeded; only the durable
+	// checkpoint write failed, so the next tick re-polls the same window.
+	MetricCheckpointPersistErrors = "tailscale2otel.checkpoint.persist.errors"
 )
 
 // error.type values for MetricScrapeErrors.
@@ -71,6 +76,15 @@ func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
 		}
 		e.Counter(docScrapeErrors.Name, docScrapeErrors.Unit, docScrapeErrors.Description, 1, errAttrs)
 	}
+}
+
+// emitCheckpointPersistError records one MetricCheckpointPersistErrors increment
+// for a collector whose checkpoint failed to persist, so a silently-failing
+// checkpoint store (which stalls window progress on restart) is alertable.
+func emitCheckpointPersistError(e telemetry.Emitter, collectorName string) {
+	e.Counter(docCheckpointPersistErrors.Name, docCheckpointPersistErrors.Unit,
+		docCheckpointPersistErrors.Description, 1,
+		telemetry.Attrs{semconv.AttrCollector: collectorName})
 }
 
 // scrapeErrorType classifies a failed run for the "error.type" attribute:

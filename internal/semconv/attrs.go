@@ -38,6 +38,13 @@ const (
 // Self-observability attribute keys.
 const (
 	AttrMetricName = "metric.name"
+	// AttrComponent classifies a non-collector subsystem failure
+	// (tailscale2otel.component.errors): "stream", "webhook", "admin",
+	// "auto_configure".
+	AttrComponent = "component"
+	// AttrDedupSet names the de-duplication set a metric describes
+	// (tailscale2otel.dedup.*): "flow", "audit", "webhook_cross".
+	AttrDedupSet = "dedup.set"
 )
 
 // network.io.direction values (stable).

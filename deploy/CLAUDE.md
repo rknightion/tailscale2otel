@@ -38,6 +38,16 @@ helm template t deploy/helm/tailscale2otel | less
 
 Bump `Chart.yaml` `version` on any chart change; `appVersion` tracks the app version the chart defaults to.
 
+## Admin & profiling endpoints
+
+The binary's admin server (chart `config.admin`) serves `/healthz` + `/readyz` probes, a human status
+landing page at `/` (+ machine-readable `/api/status.json`) when `admin.landing_page` is true (default),
+and `/debug/pprof` when `profiling.pprof.enabled` (pprof mounts on the admin server, so it requires
+`admin.enabled`). Two profiling paths for an o11y backend, both opt-in/off by default:
+**pull** — point Grafana Alloy's `pyroscope.scrape` at the admin `/debug/pprof`; or
+**push** — set `config.profiling.pyroscope` (Grafana Cloud Profiles needs `basic_auth_user` = the
+profiles instance ID and `basic_auth_password` = a `profiles:write` access-policy token).
+
 ## Release / publish pipelines
 
 - `release.yml` (on tag) — GoReleaser builds binaries + a multi-arch image to `ghcr.io`, **cosign**

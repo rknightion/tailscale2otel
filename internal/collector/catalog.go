@@ -50,12 +50,20 @@ var (
 		Attributes:  []string{semconv.AttrCollector},
 		Group:       groupSelfObs,
 	}
+	docCheckpointPersistErrors = metricdoc.Metric{
+		Name:        MetricCheckpointPersistErrors,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Counter,
+		Description: "Count of checkpoint-persistence failures, by collector (the window succeeded but its high-water mark could not be saved).",
+		Attributes:  []string{semconv.AttrCollector},
+		Group:       groupSelfObs,
+	}
 )
 
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp}
+	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docCheckpointPersistErrors}
 }
 
 // LogCatalog returns the log events this package emits (none).

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
@@ -33,6 +34,23 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	cancel()
+
+	// runtime.*: emit every gauge and (with non-zero seed values) every counter.
+	var last runtimeStats
+	emitRuntime(rec.Emitter(), runtimeStats{
+		goroutines: 1, gomaxprocs: 1, heapAlloc: 1, heapSys: 1, heapInuse: 1,
+		stackInuse: 1, sys: 1, heapObjects: 1, nextGC: 1, gcCPUFraction: 0.5,
+		numGC: 1, pauseTotalNs: 1, totalAlloc: 1,
+	}, &last)
+
+	// component.errors: emit one so its descriptor is validated too.
+	emitComponentError(rec.Emitter(), appcatalog.ComponentStream)
+
+	// dedup.size + dedup.evictions: a cap-1 set with one eviction emits both.
+	dset := dedup.New(1)
+	dset.Add("a")
+	dset.Add("b") // evicts "a" => evictions 1
+	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": dset}, map[string]uint64{})
 
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range appcatalog.Catalog() {

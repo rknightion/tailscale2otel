@@ -28,11 +28,19 @@ var (
 		Attributes:  []string{attrReason},
 		Group:       groupReceivers,
 	}
+	docStreamDecodeErrors = metricdoc.Metric{
+		Name:        MetricDecodeErrors,
+		Unit:        "{record}",
+		Instrument:  metricdoc.Counter,
+		Description: "Records that classified as a known type but failed to decode, by stream type (`flow`/`audit`).",
+		Attributes:  []string{attrType},
+		Group:       groupReceivers,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docStreamRecords, docStreamRejected}
+	return []metricdoc.Metric{docStreamRecords, docStreamRejected, docStreamDecodeErrors}
 }
 
 // LogCatalog returns the log events this package emits (none; flow/audit log

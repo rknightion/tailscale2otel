@@ -124,7 +124,31 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	if opts.InstanceID != "" {
 		attrs = append(attrs, attribute.String("service.instance.id", opts.InstanceID))
 	}
-	return resource.New(ctx, resource.WithAttributes(attrs...), resource.WithTelemetrySDK())
+	// The schemaless WithAttributes block carries the service.* identity; the core
+	// detectors add host/os/process attributes so multiple instances are
+	// distinguishable in Grafana. All detectors share one semconv schema URL, so
+	// merging them with the schemaless block cannot raise a schema-URL conflict.
+	// A narrow process subset is used deliberately — WithProcess() would also
+	// emit process.command_args and process.owner, which can leak deploy paths
+	// and usernames to the backend.
+	res, err := resource.New(ctx,
+		resource.WithAttributes(attrs...),
+		resource.WithTelemetrySDK(),
+		resource.WithHost(),
+		resource.WithOS(),
+		resource.WithProcessPID(),
+		resource.WithProcessExecutableName(),
+		resource.WithProcessRuntimeName(),
+		resource.WithProcessRuntimeVersion(),
+	)
+	// A partial resource (a detector that couldn't read its source — e.g.
+	// os.Hostname() failing) must NOT abort startup: the exporter's core job is
+	// unaffected, so continue with whatever attributes were resolved. Any other
+	// error (which, given the shared schema URL, should not occur) is fatal.
+	if err != nil && errors.Is(err, resource.ErrPartialResource) {
+		return res, nil
+	}
+	return res, err
 }
 
 // otlpHTTPURL appends the OTLP/HTTP per-signal path (/v1/metrics, /v1/logs) to a

@@ -14,11 +14,12 @@ const defaultCapacity = 4096
 // Set is a thread-safe bounded de-duplication set. The zero value is not ready
 // for use; construct one with New.
 type Set struct {
-	mu       sync.Mutex
-	capacity int
-	seen     map[string]struct{}
-	order    []string // insertion order, used to evict the oldest key first
-	head     int      // index into order of the oldest live key
+	mu        sync.Mutex
+	capacity  int
+	seen      map[string]struct{}
+	order     []string // insertion order, used to evict the oldest key first
+	head      int      // index into order of the oldest live key
+	evictions uint64   // cumulative count of keys evicted for capacity
 }
 
 // New returns a Set that remembers at most capacity keys. A capacity of zero or
@@ -67,6 +68,15 @@ func (s *Set) Cap() int {
 	return s.capacity
 }
 
+// Evictions reports the cumulative number of keys evicted because the set was at
+// capacity. A high or fast-growing value means the set is undersized for the
+// overlap window and may be dropping keys it should still remember.
+func (s *Set) Evictions() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.evictions
+}
+
 // evictLocked drops oldest keys until the set is within capacity. The caller
 // must hold s.mu.
 func (s *Set) evictLocked() {
@@ -75,6 +85,7 @@ func (s *Set) evictLocked() {
 		delete(s.seen, oldest)
 		s.order[s.head] = "" // release the string for GC
 		s.head++
+		s.evictions++
 	}
 	// Compact the order slice once the consumed prefix grows large, so it does
 	// not grow without bound under a long stream of unique keys.

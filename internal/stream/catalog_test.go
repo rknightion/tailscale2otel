@@ -54,6 +54,13 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		t.Fatalf("oversized-body status = %d, want 413", w.Code)
 	}
 
+	// (5) A malformed-but-classifiable flow record -> decode_errors{type=flow}.
+	//     Reuses the first recorder so it accumulates with the rest.
+	malformedFlow := `{"nodeId":"x","virtualTraffic":[{"proto":6}],"start":123}`
+	if w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(malformedFlow)); w.Code != http.StatusOK {
+		t.Fatalf("malformed-flow status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range stream.Catalog() {
 		declared[m.Name] = m

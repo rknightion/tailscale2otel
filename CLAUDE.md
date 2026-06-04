@@ -60,8 +60,16 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 - `cmd/tailscale2otel/main.go` — thin entrypoint: load config, build slog logger, `app.New` → `Run`.
   `version` is injected via `-ldflags -X main.version=...`.
 - `internal/app/` — **composition root**. `app.New` builds the telemetry provider, Tailscale client,
-  checkpoint store, shared flow/audit processors, receivers, and the collector registry; `collectors.go`
-  is where each collector is registered/gated. Start here to understand how everything connects.
+  checkpoint store, shared flow/audit processors, receivers, the collector registry, the admin HTTP
+  server (probes + status page + opt-in pprof), and the opt-in Pyroscope profiler; `collectors.go` is
+  where each collector is registered/gated. Start here to understand how everything connects. The admin
+  status page (`/` HTML + `/api/status.json`) is assembled in `status.go`/`admin_status.go` from
+  `internal/app/statusdata/` DTOs, rendered via the embedded template in `internal/app/statushtml/`
+  (self-contained — no CDN/external assets, so it renders on an air-gapped tailnet).
+- `internal/appcatalog/` — the app layer's self-obs metric descriptors (`tailscale2otel.up`,
+  `api.requests`, `api.retries`). A deliberate **leaf** package so `internal/catalog` can aggregate
+  these without importing `internal/app` (which imports `internal/catalog` for the status page — see the
+  import-cycle gotcha below).
 - `internal/collector/` — scheduler + registry + checkpoints, and one subpackage per source
   (devices, flowlogs, auditlogs, users, keys, settings, acl, dns, nodemetrics). See
   `internal/collector/CLAUDE.md` for the "add a collector" recipe.
@@ -111,10 +119,20 @@ Match these locally before claiming work is done.
   v1.44.0) and the log SDK (`go.opentelemetry.io/otel/log` v0.20.0) are version-locked and must move
   **together** (Renovate batches them into one lockstep PR) or the build breaks. The two tool modules
   use `replace ../..` and are CI-only — never runtime deps.
+- **`internal/catalog` must not import `internal/app`:** the admin status page (in `internal/app`)
+  imports `internal/catalog` to render the metric/log tables, so the app layer's own self-obs
+  descriptors live in the leaf package `internal/appcatalog` to keep the dependency one-way. Put new
+  app-layer descriptors there, not in `internal/app`; `internal/app/catalog_test.go` guards them against
+  their emit sites (`heartbeat.go`, `selfobs.go`).
+- **Profiling is opt-in and admin-coupled:** `/debug/pprof` mounts on the admin server, so
+  `profiling.pprof.enabled` requires `admin.enabled` (`Validate()` errors otherwise). The Pyroscope push
+  agent needs `profiling.pyroscope.server_address`; a `grafana.net` target also needs
+  `basic_auth_password` (a `profiles:write` access-policy token), which `Warnings()` flags. Mutex/block
+  profiles stay empty unless `mutex_profile_fraction`/`block_profile_rate` are set.
 - **Tailscale wire-format quirks — decode defensively:** flow-log `proto` is a *number* on the wire
   (`flowlog.transportName` maps IANA→name), and audit `old`/`new` are polymorphic
   (string|object|array|null), so both are `json.RawMessage`/typed loosely. Rich device data (online,
-  per-DERP latency, routes, os.version, nodeId) comes from `tsapi.DevicesRich()` (raw
+  per-DERP latency, routes, os.version, nodeId, tags) comes from `tsapi.DevicesRich()` (raw
   `GET /devices?fields=all`), **not** the flat `tsclient.Device`. Synthetic fixtures miss these —
   validate record-type changes against real captures in `.capture/`.
 - **OTLP/HTTP endpoint path is used as-is:** the otlphttp exporter does NOT append `/v1/{metrics,logs}`

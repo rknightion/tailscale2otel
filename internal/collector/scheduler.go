@@ -181,6 +181,9 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 	}
 	if err := s.store.Set(c.Name(), hwm); err != nil {
 		s.logger.Warn("checkpoint persist failed", "collector", c.Name(), "error", err)
+		if s.selfObs {
+			emitCheckpointPersistError(s.emitter, c.Name())
+		}
 	}
 	return nil
 }

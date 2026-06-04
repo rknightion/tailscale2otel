@@ -2,11 +2,37 @@ package app
 
 import (
 	"encoding/base64"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/config"
 )
+
+func TestInstanceID_ExplicitOverridesHostname(t *testing.T) {
+	cfg := config.Default()
+	cfg.SelfObservability.InstanceID = "inst-explicit"
+	if got := instanceID(cfg); got != "inst-explicit" {
+		t.Fatalf("instanceID = %q, want inst-explicit", got)
+	}
+}
+
+func TestInstanceID_FallsBackToHostname(t *testing.T) {
+	cfg := config.Default()
+	cfg.SelfObservability.InstanceID = ""
+	host, _ := os.Hostname()
+	if got := instanceID(cfg); got != host {
+		t.Fatalf("instanceID = %q, want hostname %q", got, host)
+	}
+}
+
+func TestTelemetryOptions_InstanceIDWired(t *testing.T) {
+	cfg := config.Default()
+	cfg.SelfObservability.InstanceID = "inst-99"
+	if got := telemetryOptions(cfg, "v1").InstanceID; got != "inst-99" {
+		t.Fatalf("telemetryOptions InstanceID = %q, want inst-99", got)
+	}
+}
 
 func TestTelemetryOptions_GrafanaCloudBasicAuth(t *testing.T) {
 	cfg := config.Default()

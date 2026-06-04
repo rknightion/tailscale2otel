@@ -1,7 +1,12 @@
 package app
 
 import (
+	"context"
+	"errors"
+	"net/http"
+
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -23,4 +28,32 @@ func apiObserver(e telemetry.Emitter) func(endpoint string, status, attempts int
 				float64(attempts-1), telemetry.Attrs{"endpoint": endpoint})
 		}
 	}
+}
+
+// emitComponentError records one tailscale2otel.component.errors increment for a
+// failed non-collector subsystem (receivers, admin server, auto-configure),
+// classified by component. Pass an appcatalog.Component* value to keep the
+// attribute set closed (bounded cardinality).
+func emitComponentError(e telemetry.Emitter, component string) {
+	e.Counter(appcatalog.DocComponentErrors.Name, appcatalog.DocComponentErrors.Unit,
+		appcatalog.DocComponentErrors.Description, 1,
+		telemetry.Attrs{semconv.AttrComponent: component})
+}
+
+// componentError emits a component-error increment when self-observability is
+// enabled, keeping the gate in one place for the call sites in Run/runAdmin.
+func (a *App) componentError(component string) {
+	if a.cfg.SelfObservability.Enabled {
+		emitComponentError(a.emitter, component)
+	}
+}
+
+// isCleanShutdownErr reports whether err is a normal stop signal (context
+// cancellation/deadline or a closed HTTP server, including wrapped) rather than
+// a real failure — so a SIGTERM does not register as a component error.
+func isCleanShutdownErr(err error) bool {
+	return err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, http.ErrServerClosed)
 }

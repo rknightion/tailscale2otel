@@ -35,6 +35,9 @@ string literals** for attribute keys or units, or the docs/Prometheus names drif
   rewrites the tables between the `<!-- BEGIN GENERATED -->` / `<!-- END GENERATED -->` markers in
   `docs/metrics.md`. **Edit catalogs in code, then regenerate — never hand-edit the generated tables.**
   Adding a new emitting package means adding it to the source lists in `internal/catalog/catalog.go`.
+  Exception: the **app layer's** self-obs descriptors live in the leaf package `internal/appcatalog`
+  (not `internal/app`) so `internal/catalog` can aggregate them without importing `internal/app`, which
+  itself imports `internal/catalog` to render the admin status page.
 
 Regenerate (from repo root):
 ```sh
@@ -58,6 +61,22 @@ Consequence to remember: a plain integer **count** declared as a unit-`"1"` gaug
 (e.g. `tailscale_devices_count_ratio`) even though it isn't a fraction. `*_seconds` expiry/last-seen
 gauges hold **absolute epoch timestamps** (dashboards subtract `time()`). When in doubt, run the tool
 and read the generated Prometheus-name column.
+
+## Cardinality self-tracking — `tailscale2otel.series.active`
+
+`cardinality.go`'s `CardinalityTracker` counts the distinct attribute combinations (time series) emitted
+per source metric. `Observe(name, attrs)` is called from the emit hot path for **every** data point
+(gated by self-obs — a nil tracker is a no-op); `Report(e)` runs once per OTLP export interval, emits one
+`tailscale2otel.series.active` gauge per source metric (keyed by the `metric.name` attribute), then
+**resets** the sets so each interval measures active-per-interval cardinality (a metric that stops
+emitting drops out rather than lingering at a stale value). Things to preserve when editing:
+
+- **Self-exclusion:** the tracker never measures `series.active` itself — both to avoid skew and to break
+  the `Report → Gauge → Observe` recursion. Keep the name-equality guard if you rename the metric.
+- **Per-metric cap** (`defaultSeriesCap` = 10000): at the cap the reported value pins at the cap (a
+  visible "≥ this" signal) and further distinct series stop being counted, bounding memory.
+- `Snapshot()` returns the last interval's counts (sorted by count desc) for in-process introspection —
+  the admin status page joins it with the catalog. It returns nil before the first `Report`.
 
 ## Testing & catalog gotchas
 

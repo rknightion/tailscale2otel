@@ -334,8 +334,10 @@ config:
     dedup_audit_events: false
 
   self_observability:
-    # -- Emit the exporter's own health metrics (scrape/api/export/build_info/enrich).
+    # -- Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime).
     enabled: true
+    # -- service.instance.id resource attribute; empty falls back to the pod/host name. Supports ${ENV} (e.g. "${POD_NAME}").
+    instance_id: ""
 
   # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
   # The page exposes operational metadata (collector health, cardinality, discovered

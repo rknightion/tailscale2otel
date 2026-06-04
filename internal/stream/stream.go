@@ -81,6 +81,10 @@ const (
 	// MetricRejected counts requests/records that could not be ingested. It
 	// carries a low-cardinality "reason" attribute ("auth" or "unparsable").
 	MetricRejected = "tailscale.stream.rejected"
+	// MetricDecodeErrors counts records that classified as a known type but whose
+	// typed decode failed (a malformed flow/audit record inside an otherwise
+	// valid request). Carries the "type" attribute ("flow" or "audit").
+	MetricDecodeErrors = "tailscale.stream.decode_errors"
 )
 
 // Attribute keys and values for the receiver's own counters.
@@ -232,13 +236,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var flows, audits, skipped int
+	var flows, audits, skipped, flowDecodeErr, auditDecodeErr int
 	for _, rec := range records {
 		switch classify(rec.raw) {
 		case kindFlow:
 			var f flowlog.FlowLog
 			if err := json.Unmarshal(rec.raw, &f); err != nil {
-				skipped++
+				flowDecodeErr++
 				continue
 			}
 			s.flowProc.Process(f, s.emitter)
@@ -246,7 +250,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		case kindAudit:
 			var ev audit.Event
 			if err := json.Unmarshal(rec.raw, &ev); err != nil {
-				skipped++
+				auditDecodeErr++
 				continue
 			}
 			// A streamed configuration-audit record carries no inner eventTime —
@@ -272,6 +276,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if audits > 0 {
 		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
 			telemetry.Attrs{attrType: typeAudit})
+	}
+	if flowDecodeErr > 0 {
+		s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
+			float64(flowDecodeErr), telemetry.Attrs{attrType: typeFlow})
+	}
+	if auditDecodeErr > 0 {
+		s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
+			float64(auditDecodeErr), telemetry.Attrs{attrType: typeAudit})
 	}
 	if skipped > 0 {
 		s.logger.Debug("stream: skipped unrecognized records", "count", skipped)

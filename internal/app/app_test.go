@@ -528,4 +528,13 @@ func TestApp_RunGracefulShutdown(t *testing.T) {
 	if bi[0].Attrs["service.version"] != "v9.9.9" {
 		t.Fatalf("build_info service.version = %q, want v9.9.9", bi[0].Attrs["service.version"])
 	}
+
+	// The runtime reporter must have been started by Run (it emits immediately).
+	if pts := rec.MetricPoints("tailscale2otel.runtime.goroutines"); len(pts) == 0 {
+		t.Fatal("tailscale2otel.runtime.goroutines not emitted; runtime reporter not wired into Run")
+	}
+	// The dedup reporter must have been started by Run and reported the flow set.
+	if !hasPointForSet(rec, "tailscale2otel.dedup.size", "flow") {
+		t.Fatal("tailscale2otel.dedup.size{flow} not emitted; dedup reporter not wired into Run")
+	}
 }
