@@ -48,6 +48,32 @@ func (a *App) componentError(component string) {
 	}
 }
 
+// Admin auth-rejection reasons label MetricAdminAuthRejected. A CLOSED set keeps
+// the "reason" attribute's cardinality bounded.
+const (
+	attrReason               = "reason"
+	reasonMissingCredentials = "missing_credentials"
+	reasonBadCredentials     = "bad_credentials"
+)
+
+// emitAdminAuthRejected records one tailscale2otel.admin.auth.rejected increment
+// for an admin request that failed the auth gate, classified by reason. The
+// descriptor lives in internal/appcatalog (see that package for why).
+func emitAdminAuthRejected(e telemetry.Emitter, reason string) {
+	e.Counter(appcatalog.DocAdminAuthRejected.Name, appcatalog.DocAdminAuthRejected.Unit,
+		appcatalog.DocAdminAuthRejected.Description, 1,
+		telemetry.Attrs{attrReason: reason})
+}
+
+// adminAuthRejected emits an admin auth-rejection increment when
+// self-observability is enabled, keeping the gate in one place for the admin
+// middleware call site.
+func (a *App) adminAuthRejected(reason string) {
+	if a.cfg.SelfObservability.Enabled {
+		emitAdminAuthRejected(a.emitter, reason)
+	}
+}
+
 // isCleanShutdownErr reports whether err is a normal stop signal (context
 // cancellation/deadline or a closed HTTP server, including wrapped) rather than
 // a real failure — so a SIGTERM does not register as a component error.

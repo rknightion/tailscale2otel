@@ -11,6 +11,14 @@
                 "admin": {
                     "type": "object",
                     "properties": {
+                        "auth": {
+                            "type": "object",
+                            "properties": {
+                                "token": {
+                                    "type": "string"
+                                }
+                            }
+                        },
                         "enabled": {
                             "type": "boolean"
                         },
@@ -320,6 +328,9 @@
                     "properties": {
                         "enabled": {
                             "type": "boolean"
+                        },
+                        "instance_id": {
+                            "type": "string"
                         }
                     }
                 },
@@ -533,6 +544,9 @@
         "secret": {
             "type": "object",
             "properties": {
+                "ADMIN_TOKEN": {
+                    "type": "string"
+                },
                 "GC_INSTANCE_ID": {
                     "type": "string"
                 },

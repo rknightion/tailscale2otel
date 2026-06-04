@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -42,9 +42,10 @@ under `config:`).
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| config.admin.auth.token | string | `"${ADMIN_TOKEN}"` | Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Keep it in a Secret/env var (see `secret`/`existingSecret`). Required when profiling.pprof.enabled. |
 | config.admin.enabled | bool | `false` | Enable the admin probe server. |
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
-| config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. |
+| config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
 | config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when flow_node_dims is true, the src/dst node labels on flow METRICS. |
 | config.cardinality.device_per_entity | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
 | config.cardinality.flow_include_ports | bool | `false` | Keep src/dst ports OFF flow METRICS (ports are always on flow LOGS). |
@@ -103,7 +104,7 @@ under `config:`).
 | config.otlp.tls.key_file | string | `""` | Client private key for mutual TLS. |
 | config.profiling.block_profile_rate | int | `0` | runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull. |
 | config.profiling.mutex_profile_fraction | int | `0` | runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull. |
-| config.profiling.pprof.enabled | bool | `false` | Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. |
+| config.profiling.pprof.enabled | bool | `false` | Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. Requires admin.enabled + admin.auth.token. |
 | config.profiling.pyroscope.basic_auth_password | string | `"${PYROSCOPE_BASIC_AUTH_PASSWORD}"` | Basic-auth password (backed by the PYROSCOPE_BASIC_AUTH_PASSWORD secret). |
 | config.profiling.pyroscope.basic_auth_user | string | `"${PYROSCOPE_BASIC_AUTH_USER}"` | Basic-auth user (backed by the PYROSCOPE_BASIC_AUTH_USER secret). |
 | config.profiling.pyroscope.enabled | bool | `false` | Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK). |
@@ -111,7 +112,8 @@ under `config:`).
 | config.profiling.pyroscope.tags | object | `{}` | Extra static labels merged onto every profile, e.g. { env: prod }. |
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
 | config.profiling.pyroscope.upload_rate | string | `"15s"` | How often profiles are flushed to the server. |
-| config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich). |
+| config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |
+| config.self_observability.instance_id | string | `""` | service.instance.id resource attribute; empty falls back to the pod/host name. Supports ${ENV} (e.g. "${POD_NAME}"). |
 | config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
 | config.streaming.decompress | string | `"auto"` | Body decompression: auto | gzip | zstd | none. |
 | config.streaming.enabled | bool | `false` | Enable the HEC-style streaming receiver. |
@@ -152,7 +154,8 @@ under `config:`).
 | podSecurityContext | object | `{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. |
 | replicaCount | int | `1` | Replica count. Keep at 1 — this is a singleton poller (no leader election); scaling up would double-emit every metric and log. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. The defaults suit a few-hundred-device tailnet; raise limits if you enable high-volume flow-log streaming or many node-metrics targets. |
-| secret | object | `{"GC_INSTANCE_ID":"","GC_OTLP_TOKEN":"","PYROSCOPE_BASIC_AUTH_PASSWORD":"","PYROSCOPE_BASIC_AUTH_USER":"","TS_API_KEY":"","TS_OAUTH_CLIENT_ID":"","TS_OAUTH_CLIENT_SECRET":"","TS_STREAM_HEC_TOKEN":"","TS_TAILNET":"","TS_WEBHOOK_SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These keys back the ${ENV} placeholders in `config` below. |
+| secret | object | `{"ADMIN_TOKEN":"","GC_INSTANCE_ID":"","GC_OTLP_TOKEN":"","PYROSCOPE_BASIC_AUTH_PASSWORD":"","PYROSCOPE_BASIC_AUTH_USER":"","TS_API_KEY":"","TS_OAUTH_CLIENT_ID":"","TS_OAUTH_CLIENT_SECRET":"","TS_STREAM_HEC_TOKEN":"","TS_TAILNET":"","TS_WEBHOOK_SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These keys back the ${ENV} placeholders in `config` below. |
+| secret.ADMIN_TOKEN | string | `""` | Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable config.profiling.pprof. /healthz and /readyz are never gated. |
 | secret.GC_INSTANCE_ID | string | `""` | Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth). |
 | secret.GC_OTLP_TOKEN | string | `""` | Grafana Cloud OTLP token (the password for OTLP basic auth). |
 | secret.PYROSCOPE_BASIC_AUTH_PASSWORD | string | `""` | Pyroscope basic-auth password (Grafana Cloud: an access policy token with profiles:write). |

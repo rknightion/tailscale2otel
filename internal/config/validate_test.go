@@ -110,6 +110,47 @@ func TestWarnings_GrafanaCloudProfilesNeedsAuth(t *testing.T) {
 	}
 }
 
+// TestWarnings_AdminExposedWithoutToken pins the advisory that steers operators
+// to protect the status page: when the admin server is enabled with the landing
+// page on a wildcard (all-interfaces) bind and no admin.auth.token, the status
+// page exposes internal state to anyone who can reach the port. Binding to a
+// loopback/tailnet address OR setting a token clears the advisory.
+func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
+	// Disabled admin => no advisory.
+	c := config.Default()
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "admin.auth.token") {
+			t.Fatalf("disabled admin should not warn about admin.auth.token; got %q", w)
+		}
+	}
+
+	// Enabled, landing page on the default wildcard bind, no token => advisory.
+	c = config.Default()
+	c.Admin.Enabled = true // landing_page defaults true, listen defaults ":9090"
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "admin.auth.token") {
+		t.Fatalf("admin exposed on a wildcard bind without a token should advise admin.auth.token; got %q", w)
+	}
+
+	// Same, but with a token set => no advisory.
+	c.Admin.Auth.Token = "s3cret"
+	for _, msg := range c.Warnings() {
+		if strings.Contains(msg, "admin.auth.token") {
+			t.Errorf("a configured token should clear the exposure advisory; got %q", msg)
+		}
+	}
+
+	// Enabled on a loopback bind without a token => no advisory (restricted bind).
+	c = config.Default()
+	c.Admin.Enabled = true
+	c.Admin.Listen = "127.0.0.1:9090"
+	for _, msg := range c.Warnings() {
+		if strings.Contains(msg, "admin.auth.token") {
+			t.Errorf("a loopback bind should not trigger the exposure advisory; got %q", msg)
+		}
+	}
+}
+
 func TestValidateProfilingPprofRequiresAdmin(t *testing.T) {
 	const y = "profiling:\n  pprof:\n    enabled: true\n"
 	err := loadErr(t, y)
@@ -122,9 +163,26 @@ func TestValidateProfilingPprofRequiresAdmin(t *testing.T) {
 }
 
 func TestValidateProfilingPprofValidWithAdmin(t *testing.T) {
-	const y = "admin:\n  enabled: true\nprofiling:\n  pprof:\n    enabled: true\n"
+	// pprof now also requires admin.auth.token (it can expose in-memory secrets
+	// via heap dumps), so a token is part of the minimal valid config.
+	const y = "admin:\n  enabled: true\n  auth:\n    token: \"s3cret\"\nprofiling:\n  pprof:\n    enabled: true\n"
 	if err := loadErr(t, y); err != nil {
-		t.Errorf("pprof with admin.enabled should be valid: %v", err)
+		t.Errorf("pprof with admin.enabled + auth.token should be valid: %v", err)
+	}
+}
+
+// TestValidateProfilingPprofRequiresToken pins the stricter pprof gate: because
+// the pprof handlers can leak in-memory secrets (heap/goroutine dumps), enabling
+// them without admin.auth.token is a hard configuration error even though the
+// status page itself only warns.
+func TestValidateProfilingPprofRequiresToken(t *testing.T) {
+	const y = "admin:\n  enabled: true\nprofiling:\n  pprof:\n    enabled: true\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: pprof enabled without admin.auth.token")
+	}
+	if !strings.Contains(err.Error(), "pprof") || !strings.Contains(err.Error(), "token") {
+		t.Errorf("error %q should mention pprof + token", err.Error())
 	}
 }
 

@@ -214,6 +214,8 @@ func TestLoadProfilingValues(t *testing.T) {
 admin:
   enabled: true
   landing_page: false
+  auth:
+    token: "admin-s3cret"
 profiling:
   pprof:
     enabled: true
@@ -238,6 +240,9 @@ profiling:
 
 	if cfg.Admin.LandingPage {
 		t.Errorf("Admin.LandingPage = true, want false")
+	}
+	if cfg.Admin.Auth.Token != "admin-s3cret" {
+		t.Errorf("Admin.Auth.Token = %q, want admin-s3cret", cfg.Admin.Auth.Token)
 	}
 	pr := cfg.Profiling
 	if !pr.Pprof.Enabled {

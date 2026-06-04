@@ -75,6 +75,12 @@ const (
 	ComponentAutoConfigure = "auto_configure"
 )
 
+// MetricAdminAuthRejected counts admin HTTP requests rejected by the admin auth
+// gate (the status page and pprof handlers), keyed by a CLOSED set of reasons so
+// cardinality stays bounded. The /healthz and /readyz probes are never gated and
+// never counted here.
+const MetricAdminAuthRejected = "tailscale2otel.admin.auth.rejected"
+
 // De-duplication self-observability metric names. The cross-source dedup sets
 // (poll vs stream, webhook vs audit) bound memory by evicting the oldest keys;
 // these expose their fill level and eviction pressure so an undersized set is
@@ -221,6 +227,16 @@ var DocComponentErrors = metricdoc.Metric{
 	Group:       GroupSelfObs,
 }
 
+// DocAdminAuthRejected is the admin auth-gate rejection counter descriptor.
+var DocAdminAuthRejected = metricdoc.Metric{
+	Name:        MetricAdminAuthRejected,
+	Unit:        semconv.UnitDimensionless,
+	Instrument:  metricdoc.Counter,
+	Description: "Admin HTTP requests rejected by the auth gate (status page + pprof), by reason.",
+	Attributes:  []string{"reason"},
+	Group:       GroupSelfObs,
+}
+
 // De-duplication set descriptors.
 var (
 	DocDedupSize = metricdoc.Metric{
@@ -251,6 +267,7 @@ func Catalog() []metricdoc.Metric {
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,
 		DocRuntimeGCCount, DocRuntimeGCPauseTime, DocRuntimeAllocBytes,
 		DocComponentErrors,
+		DocAdminAuthRejected,
 		DocDedupSize, DocDedupEvictions,
 	}
 }

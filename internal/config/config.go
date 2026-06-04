@@ -33,6 +33,17 @@ type AdminConfig struct {
 	// LandingPage (default true) serves a human-readable landing page at "/" and
 	// a machine-readable "/api/status.json" on the admin server.
 	LandingPage bool `yaml:"landing_page"`
+	// Auth optionally gates the status page and pprof behind a shared secret.
+	Auth AdminAuth `yaml:"auth"`
+}
+
+// AdminAuth gates the status page ("/" and "/api/status.json") and the pprof
+// handlers behind a shared secret. When Token is set, callers must present it as
+// the HTTP Basic password OR as "Authorization: Bearer <token>". The /healthz
+// and /readyz probes are never gated. Keep the token in an env var:
+// token: "${ADMIN_TOKEN}".
+type AdminAuth struct {
+	Token string `yaml:"token"`
 }
 
 // ProfilingConfig configures continuous/on-demand profiling. Everything here is

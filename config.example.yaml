@@ -145,18 +145,27 @@ self_observability:
 # Admin HTTP server: liveness/readiness probes plus an optional status landing
 # page. The page exposes operational metadata (collector health, cardinality,
 # discovered nodes, redacted config) but NEVER secret values. Bind it to a
-# tailnet/loopback address, not the public internet.
+# tailnet/loopback address, not the public internet. /healthz and /readyz are
+# never authenticated so cluster/compose health checks keep working.
 admin:
   enabled: false
-  listen: ":9090"                    # serves /healthz and /readyz
+  listen: ":9090"                    # serves /healthz and /readyz; for defense-in-depth bind to loopback (127.0.0.1:9090) or a tailnet IP so only the tailnet can reach it
   landing_page: true                 # serve a human landing page at / and machine-readable /api/status.json
+  auth:
+    # When set, the status page (/ and /api/status.json) and pprof require this
+    # token, presented as the HTTP Basic password (browsers prompt) OR as
+    # "Authorization: Bearer <token>" (curl/automation). Leave empty to keep the
+    # status page open (a startup WARN fires if it's exposed on a wildcard bind).
+    # Keep the secret in an env var, not in YAML.
+    token: "${ADMIN_TOKEN}"
 
 # Optional continuous/on-demand profiling. Everything here is OFF by default and
 # carries no Tailscale data. The pprof handlers are mounted on the admin server
-# (above), so pprof.enabled requires admin.enabled: true.
+# (above), so pprof.enabled requires admin.enabled: true AND admin.auth.token
+# (heap/goroutine dumps can expose in-memory secrets).
 profiling:
   pprof:
-    enabled: false                   # mount net/http/pprof debug handlers on the admin server (needs admin.enabled)
+    enabled: false                   # mount net/http/pprof debug handlers on the admin server (needs admin.enabled + admin.auth.token)
   pyroscope:
     enabled: false                   # run the Pyroscope continuous-profiling push agent
     server_address: ""               # REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net

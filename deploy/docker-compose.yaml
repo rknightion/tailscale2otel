@@ -27,6 +27,10 @@ services:
       TS_API_KEY: ${TS_API_KEY:-}
       GC_INSTANCE_ID: ${GC_INSTANCE_ID:-}
       GC_OTLP_TOKEN: ${GC_OTLP_TOKEN:-}
+      # Gates the admin status page (/ and /api/status.json) and pprof when
+      # admin.enabled. Leave empty to keep the status page open; required if you
+      # enable profiling.pprof. /healthz and /readyz are never gated.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
     # Uncomment to mount a custom config instead of the baked-in example.
     # volumes:
     #   - ./config.yaml:/etc/tailscale2otel/config.yaml:ro

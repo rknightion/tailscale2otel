@@ -91,6 +91,7 @@ exporter health.
 <!-- BEGIN GENERATED: metrics groups="Self-observability" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
+| `tailscale2otel.admin.auth.rejected` | `1` | counter | `tailscale2otel_admin_auth_rejected_total` | `reason` | Admin HTTP requests rejected by the auth gate (status page + pprof), by reason. |
 | `tailscale2otel.api.requests` | `1` | counter | `tailscale2otel_api_requests_total` | `endpoint`, `http_response_status_code` | Tailscale API requests, by endpoint and HTTP status code. |
 | `tailscale2otel.api.retries` | `1` | counter | `tailscale2otel_api_retries_total` | `endpoint` | API retry attempts, by endpoint. |
 | `tailscale2otel.build_info` | `1` | gauge | `tailscale2otel_build_info_ratio` | `service_version`, `go_version` | Constant `1` build-info gauge; version/runtime carried as labels. |

@@ -46,6 +46,9 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// component.errors: emit one so its descriptor is validated too.
 	emitComponentError(rec.Emitter(), appcatalog.ComponentStream)
 
+	// admin.auth.rejected: emit one so its descriptor is validated too.
+	emitAdminAuthRejected(rec.Emitter(), reasonBadCredentials)
+
 	// dedup.size + dedup.evictions: a cap-1 set with one eviction emits both.
 	dset := dedup.New(1)
 	dset.Add("a")

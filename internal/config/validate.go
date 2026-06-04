@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"slices"
 	"strings"
@@ -54,6 +55,19 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	// The admin status page (/ and /api/status.json) exposes internal state
+	// (collectors, device names, the config shape). When it is served on a
+	// wildcard (all-interfaces) bind with no admin.auth.token, anyone who can
+	// reach the port can read it. Steer the operator toward a token or a
+	// restricted (loopback/tailnet) bind. pprof is handled more strictly in
+	// Validate (it errors rather than warns).
+	if c.Admin.Enabled && c.Admin.LandingPage && c.Admin.Auth.Token == "" && isWildcardListen(c.Admin.Listen) {
+		w = append(w, "admin.landing_page is served on "+c.Admin.Listen+" without admin.auth.token: "+
+			"the status page exposes internal state (collectors, device names, config shape) to anyone "+
+			"who can reach the port. Set admin.auth.token, or bind admin.listen to a loopback/tailnet "+
+			"address (e.g. 127.0.0.1:9090).")
+	}
+
 	// Grafana Cloud Profiles authenticates Pyroscope pushes with HTTP basic auth
 	// (the user is the stack's profiles instance ID, the password an access
 	// policy token). A grafana.net endpoint with no basic_auth_password set will
@@ -66,6 +80,23 @@ func (c *Config) Warnings() []string {
 			"basic_auth_password = an access policy token with profiles:write).")
 	}
 	return w
+}
+
+// isWildcardListen reports whether addr binds to all interfaces (so a non-tailnet
+// host could reach it). An empty/unspecified host (":9090", "0.0.0.0:9090",
+// "[::]:9090") is a wildcard; a loopback or specific address (e.g. tailnet IP)
+// is not. A malformed address is treated as a wildcard so the advisory errs
+// toward warning.
+func isWildcardListen(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return true
+	}
+	if host == "" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
 }
 
 // pollsSource reports whether a window collector with the given source value
@@ -181,6 +212,13 @@ func (c *Config) Validate() error {
 	// they need it enabled; the Pyroscope push agent needs a server to push to.
 	if c.Profiling.Pprof.Enabled && !c.Admin.Enabled {
 		return fmt.Errorf("profiling.pprof.enabled requires admin.enabled: true")
+	}
+	// pprof exposes process internals (heap/goroutine dumps can contain
+	// in-memory secrets), so it must not be served unauthenticated: enabling it
+	// requires a shared admin.auth.token. The status page itself only warns
+	// (see Warnings); pprof is the stricter surface.
+	if c.Profiling.Pprof.Enabled && c.Admin.Auth.Token == "" {
+		return fmt.Errorf("profiling.pprof.enabled requires admin.auth.token to be set (pprof can expose in-memory secrets via heap dumps)")
 	}
 	if c.Profiling.Pyroscope.Enabled && c.Profiling.Pyroscope.ServerAddress == "" {
 		return fmt.Errorf("profiling.pyroscope.enabled requires profiling.pyroscope.server_address")

@@ -133,14 +133,19 @@ The page surfaces, live and in-process:
 - the device-enrichment cache, dedup-set occupancy, Go runtime stats, and a **redacted** config
   summary (secret *values* never appear — only which secrets are set, and OTLP header key names).
 
-Bind `admin.listen` to a tailnet or loopback address; the page is unauthenticated and meant for
-operators on the tailnet.
+For defense-in-depth, bind `admin.listen` to a tailnet or loopback address so only the tailnet can
+reach it. Set `admin.auth.token` (keep it in `${ADMIN_TOKEN}`) to require a shared secret on the
+status page and pprof — present it as the HTTP Basic password (browsers prompt) or as
+`Authorization: Bearer <token>`. `/healthz` and `/readyz` are **never** gated, so health checks keep
+working. With no token the status page stays open (a startup WARN fires if it's exposed on an
+all-interfaces bind); rejected requests increment `tailscale2otel.admin.auth.rejected`.
 
 **Continuous profiling** is opt-in (`profiling.*`, all off by default):
 
 - `profiling.pprof.enabled: true` mounts the standard `/debug/pprof/*` handlers on the admin server
   so Grafana Alloy's `pyroscope.scrape` (or `go tool pprof`) can **pull** profiles. Requires
-  `admin.enabled: true`.
+  `admin.enabled: true` **and** `admin.auth.token` (heap/goroutine dumps can expose in-memory
+  secrets, so pprof must not be served unauthenticated).
 - `profiling.pyroscope.enabled: true` **pushes** profiles to Pyroscope / Grafana Cloud Profiles via
   the [pyroscope-go](https://github.com/grafana/pyroscope-go) SDK (`server_address` required; basic
   auth via `PYROSCOPE_BASIC_AUTH_USER`/`PYROSCOPE_BASIC_AUTH_PASSWORD`).

@@ -94,6 +94,10 @@ secret:
   # this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so
   # unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook.
   TS_WEBHOOK_SECRET: ""
+  # -- Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the
+  # status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable
+  # config.profiling.pprof. /healthz and /readyz are never gated.
+  ADMIN_TOKEN: ""
   # -- Pyroscope basic-auth user (Grafana Cloud: the profiles instance ID). Set ONLY when you
   # enable config.profiling.pyroscope.
   PYROSCOPE_BASIC_AUTH_USER: ""
@@ -345,17 +349,21 @@ config:
   admin:
     # -- Enable the admin probe server.
     enabled: false
-    # -- Address the admin server binds; serves /healthz and /readyz.
+    # -- Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth.
     listen: ":9090"
     # -- Serve the human status page at / and machine-readable JSON at /api/status.json.
     landing_page: true
+    auth:
+      # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Keep it in a Secret/env var (see `secret`/`existingSecret`). Required when profiling.pprof.enabled.
+      token: "${ADMIN_TOKEN}"
 
   # Optional continuous/on-demand profiling. Everything here is OFF by default and
   # carries no Tailscale data. The pprof handlers mount on the admin server, so
-  # profiling.pprof.enabled requires admin.enabled: true.
+  # profiling.pprof.enabled requires admin.enabled: true AND admin.auth.token
+  # (heap/goroutine dumps can expose in-memory secrets).
   profiling:
     pprof:
-      # -- Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles.
+      # -- Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. Requires admin.enabled + admin.auth.token.
       enabled: false
     pyroscope:
       # -- Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK).
