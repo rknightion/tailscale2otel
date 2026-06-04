@@ -48,7 +48,7 @@ func pyroscopeConfig(cfg *config.Config, version string) pyroscope.Config {
 		ApplicationName:   serviceName,
 		ServerAddress:     p.ServerAddress,
 		BasicAuthUser:     p.BasicAuthUser,
-		BasicAuthPassword: p.BasicAuthPassword,
+		BasicAuthPassword: p.BasicAuthPassword.Reveal(),
 		TenantID:          p.TenantID,
 		Tags:              tags,
 		ProfileTypes:      pyroscopeProfileTypes(cfg.Profiling),

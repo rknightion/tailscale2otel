@@ -20,7 +20,7 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 	maps.Copy(headers, cfg.OTLP.Headers)
 	if gc := cfg.OTLP.GrafanaCloud; gc.InstanceID != "" {
 		headers["Authorization"] = "Basic " +
-			base64.StdEncoding.EncodeToString([]byte(gc.InstanceID+":"+gc.Token))
+			base64.StdEncoding.EncodeToString([]byte(gc.InstanceID+":"+gc.Token.Reveal()))
 	}
 	return telemetry.Options{
 		ServiceName:      serviceName,
@@ -63,10 +63,10 @@ func tsapiOptions(cfg *config.Config) tsapi.Options {
 		RateLimit:   cfg.Tailscale.HTTP.RateLimit,
 	}
 	if cfg.Tailscale.Auth.Method == "apikey" {
-		o.APIKey = cfg.Tailscale.Auth.APIKey
+		o.APIKey = cfg.Tailscale.Auth.APIKey.Reveal()
 	} else {
 		o.OAuthClientID = cfg.Tailscale.Auth.OAuth.ClientID
-		o.OAuthClientSecret = cfg.Tailscale.Auth.OAuth.ClientSecret
+		o.OAuthClientSecret = cfg.Tailscale.Auth.OAuth.ClientSecret.Reveal()
 		o.OAuthScopes = cfg.Tailscale.Auth.OAuth.Scopes
 	}
 	return o
@@ -81,7 +81,7 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI) nodem
 			URL:             t.URL,
 			Instance:        t.Instance,
 			Labels:          t.Labels,
-			BearerToken:     t.BearerToken,
+			BearerToken:     t.BearerToken.Reveal(),
 			BearerTokenFile: t.BearerTokenFile,
 			Headers:         t.Headers,
 		}

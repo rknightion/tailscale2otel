@@ -43,7 +43,7 @@ type AdminConfig struct {
 // and /readyz probes are never gated. Keep the token in an env var:
 // token: "${ADMIN_TOKEN}".
 type AdminAuth struct {
-	Token string `yaml:"token"`
+	Token Secret `yaml:"token"`
 }
 
 // ProfilingConfig configures continuous/on-demand profiling. Everything here is
@@ -73,7 +73,7 @@ type ProfilingPyroscope struct {
 	Enabled           bool              `yaml:"enabled"`
 	ServerAddress     string            `yaml:"server_address"`
 	BasicAuthUser     string            `yaml:"basic_auth_user"`
-	BasicAuthPassword string            `yaml:"basic_auth_password"`
+	BasicAuthPassword Secret            `yaml:"basic_auth_password"`
 	TenantID          string            `yaml:"tenant_id"`
 	UploadRate        Duration          `yaml:"upload_rate"`
 	Tags              map[string]string `yaml:"tags"`
@@ -90,13 +90,13 @@ type TailscaleConfig struct {
 type TailscaleAuth struct {
 	Method string      `yaml:"method"`
 	OAuth  OAuthConfig `yaml:"oauth"`
-	APIKey string      `yaml:"apikey"`
+	APIKey Secret      `yaml:"apikey"`
 }
 
 // OAuthConfig holds OAuth client-credentials settings.
 type OAuthConfig struct {
 	ClientID     string   `yaml:"client_id"`
-	ClientSecret string   `yaml:"client_secret"`
+	ClientSecret Secret   `yaml:"client_secret"`
 	Scopes       []string `yaml:"scopes"`
 	TokenURL     string   `yaml:"token_url"`
 }
@@ -130,7 +130,7 @@ type OTLPConfig struct {
 // GrafanaCloudConfig holds Grafana Cloud OTLP credentials.
 type GrafanaCloudConfig struct {
 	InstanceID string `yaml:"instance_id"`
-	Token      string `yaml:"token"`
+	Token      Secret `yaml:"token"`
 }
 
 // TLSConfig configures transport security for OTLP.
@@ -290,7 +290,7 @@ type NodeMetricsTarget struct {
 	URL             string                `yaml:"url"`
 	Instance        string                `yaml:"instance"`
 	Labels          map[string]string     `yaml:"labels"`
-	BearerToken     string                `yaml:"bearer_token"`
+	BearerToken     Secret                `yaml:"bearer_token"`
 	BearerTokenFile string                `yaml:"bearer_token_file"`
 	Headers         map[string]string     `yaml:"headers"`
 	TLS             *NodeMetricsTargetTLS `yaml:"tls"`
@@ -348,7 +348,7 @@ type StreamingConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
-	Token   string `yaml:"token"`
+	Token   Secret `yaml:"token"`
 	// PublicURL is the externally reachable URL Tailscale should POST logs to
 	// (this receiver's public endpoint). Required only when AutoConfigure is on,
 	// since it is the sink URL registered with Tailscale.
@@ -375,7 +375,7 @@ type WebhookConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
-	Secret  string `yaml:"secret"`
+	Secret  Secret `yaml:"secret"`
 	// Tolerance is the maximum age of a webhook's signed timestamp before it is
 	// rejected as a replay. Tailscale signs "<unix>.<body>", so this bounds how
 	// long a captured, validly-signed delivery can be replayed. 0 disables the

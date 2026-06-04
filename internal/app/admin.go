@@ -61,7 +61,7 @@ func adminAuthorized(r *http.Request, token string) bool {
 // prompt, records the rejection, and returns 401. The /healthz and /readyz
 // probes are registered separately and never wrapped.
 func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
-	token := a.cfg.Admin.Auth.Token
+	token := a.cfg.Admin.Auth.Token.Reveal()
 	if token == "" {
 		return next
 	}

@@ -278,7 +278,7 @@ func (a *App) autoConfigureStreaming(ctx context.Context) {
 	sink := tsapi.LogStreamConfig{
 		DestinationType: "splunk",
 		URL:             a.cfg.Streaming.PublicURL,
-		Token:           a.cfg.Streaming.Token,
+		Token:           a.cfg.Streaming.Token.Reveal(),
 	}
 	for _, logType := range []string{"network", "configuration"} {
 		if err := a.client.ConfigureLogStream(ctx, logType, sink); err != nil {

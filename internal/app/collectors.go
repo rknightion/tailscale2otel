@@ -131,7 +131,7 @@ func (a *App) buildReceivers() {
 		a.streamSrv = stream.New(stream.Options{
 			Listen:       a.cfg.Streaming.Listen,
 			Path:         a.cfg.Streaming.Path,
-			Token:        a.cfg.Streaming.Token,
+			Token:        a.cfg.Streaming.Token.Reveal(),
 			Decompress:   a.cfg.Streaming.Decompress,
 			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
 			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
@@ -154,7 +154,7 @@ func webhookOptions(c config.WebhookConfig) webhook.Options {
 	return webhook.Options{
 		Listen:    c.Listen,
 		Path:      c.Path,
-		Secret:    c.Secret,
+		Secret:    c.Secret.Reveal(),
 		Tolerance: c.Tolerance.D(),
 	}
 }
