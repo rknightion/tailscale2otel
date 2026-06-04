@@ -23,6 +23,12 @@ type Config struct {
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
 	Admin             AdminConfig             `yaml:"admin"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
+
+	// unsetEnvRefs records ${VAR} references in the source file that were undefined
+	// at load time (so they expanded to ""). Unexported, populated by Load, and
+	// surfaced via Warnings so a typo'd or missing credential variable is flagged
+	// instead of silently becoming an empty value.
+	unsetEnvRefs []string
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -407,8 +413,16 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
+	var unset []string
+	seen := map[string]struct{}{}
 	expanded := os.Expand(string(raw), func(key string) string {
-		v, _ := os.LookupEnv(key)
+		v, ok := os.LookupEnv(key)
+		if !ok {
+			if _, dup := seen[key]; !dup {
+				seen[key] = struct{}{}
+				unset = append(unset, key)
+			}
+		}
 		return v
 	})
 
@@ -416,6 +430,7 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	cfg.unsetEnvRefs = unset
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err

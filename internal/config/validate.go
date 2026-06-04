@@ -123,6 +123,13 @@ func (c *Config) Warnings() []string {
 			"LOGS only, set cardinality.flow_node_dims=false; otherwise size cardinality.metric_limit for "+
 			"the added cardinality.")
 	}
+
+	for _, name := range c.unsetEnvRefs {
+		w = append(w, fmt.Sprintf("config references ${%s} but that environment variable is "+
+			"undefined; it expanded to an empty string. If a credential or other required value "+
+			"depends on it, set the variable (and check the name for typos).", name))
+	}
+
 	return w
 }
 
