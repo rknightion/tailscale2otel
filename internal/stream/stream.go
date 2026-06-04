@@ -8,7 +8,7 @@
 // # Envelope (PINNED by a live capture — S4-10)
 //
 // The exact wire format was captured from the real TailscaleLogStreamPublisher
-// against the example lab (2026-06-03). Each POST body is one-or-more concatenated
+// against the example-tailnet lab (2026-06-03). Each POST body is one-or-more concatenated
 // Splunk-HEC objects with NO separators, each shaped:
 //
 //	{"time":<unixFloat>,"event":{<record>},"fields":{"recorded":<rfc3339>}}

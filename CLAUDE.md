@@ -137,9 +137,9 @@ Match these locally before claiming work is done.
   validate record-type changes against real captures in `.capture/`.
 - **OTLP/HTTP endpoint path is used as-is:** the otlphttp exporter does NOT append `/v1/{metrics,logs}`
   — `internal/telemetry.otlpHTTPURL()` does. A bare gateway URL 404s silently without it.
-- **Real-tailnet verification:** the lab is `example.com`; read-only OAuth + Grafana Cloud creds live in
-  gitignored `.secrets/creds.local.env` (`set -a; source .secrets/creds.local.env; set +a`), gcx
-  context `example`. `gcx metrics|logs query` needs BOTH `--from` and `--to`. Only the lab may be
-  reconfigured — `auto_configure` must NEVER target a real/production tailnet.
+- **Live-tailnet verification:** keep lab-specific names, addresses, identifiers, credentials, and
+  observability captures out of tracked files. Store secrets and raw captures only in ignored local
+  paths. `gcx metrics|logs query` needs BOTH `--from` and `--to`; `auto_configure` must NEVER target a
+  real/production tailnet.
 - **Conventional Commits:** commit messages follow `type(scope): subject` (see `git log`); Renovate and
   release tooling assume it.

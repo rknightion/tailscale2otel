@@ -156,7 +156,7 @@ const captureFlowRecord = `{"logged":"2026-06-02T19:00:01.346001489Z","nodeId":"
 // a JSON ARRAY ("new":["tag:grafana-pdc"]) and whose "old" is an empty STRING.
 // These polymorphic old/new values (string|object|array|null) must not derail
 // classification or decoding.
-const captureAuditRecord = `{"eventTime":"2026-06-02T19:00:05.558444283Z","type":"CONFIG","eventGroupID":"egExample0000000000000000000000000001","origin":"NODE","actor":{"id":"uExample1CNTRL","type":"USER","loginName":"alice@example.com","displayName":"Rob Knight"},"target":{"id":"nAuditTgt1CNTRL","name":"service-node.example.ts.net","type":"NODE","isEphemeral":true,"property":"ACL_TAGS"},"action":"UPDATE","old":"","new":["tag:grafana-pdc"]}`
+const captureAuditRecord = `{"eventTime":"2026-06-02T19:00:05.558444283Z","type":"CONFIG","eventGroupID":"egExample0000000000000000000000000001","origin":"NODE","actor":{"id":"uExample1CNTRL","type":"USER","loginName":"alice@example.com","displayName":"Alice Example"},"target":{"id":"nAuditTgt1CNTRL","name":"service-node.example.ts.net","type":"NODE","isEphemeral":true,"property":"ACL_TAGS"},"action":"UPDATE","old":"","new":["tag:grafana-pdc"]}`
 
 // assertFlowAndAuditOnce asserts that exactly one flow and one audit record
 // were processed and that no records were rejected.
