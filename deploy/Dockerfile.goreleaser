@@ -5,7 +5,12 @@
 # For source-based `docker build` (CI docker smoke, local dev), use the
 # multi-stage deploy/Dockerfile instead.
 FROM gcr.io/distroless/static-debian13:nonroot
-COPY tailscale2otel /usr/local/bin/tailscale2otel
+# dockers_v2 multi-platform builds stage each arch's binary under a
+# $TARGETPLATFORM/ subdir of the build context (e.g. linux/arm64/tailscale2otel),
+# so the binary COPY must be platform-qualified. extra_files (config.example.yaml)
+# land at the context root, so that COPY is not prefixed.
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/tailscale2otel /usr/local/bin/tailscale2otel
 COPY config.example.yaml /etc/tailscale2otel/config.yaml
 USER nonroot:nonroot
 # Streaming (HEC) and webhook receivers, if enabled in config.
