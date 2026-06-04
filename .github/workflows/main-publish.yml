@@ -10,7 +10,8 @@ name: Main publish (snapshot)
 # manifest. It also generates SLSA build provenance + an SBOM attestation,
 # keyless-signs the attestation manifests with cosign (GitHub OIDC), and
 # cosign-signs the GitHub Actions build cache so restored layers must match the
-# expected workflow identity.
+# expected workflow identity. A follow-up job explicitly cosign-signs the pushed
+# image digest itself so consumers can continue verifying the snapshot image.
 on:
   push:
     branches: [main]
@@ -40,7 +41,7 @@ jobs:
         run: echo "shortsha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
   image:
-    name: build + push + sign snapshot image
+    name: build + push snapshot image
     needs: vars
     # Manual dispatches can be started from arbitrary refs; only publish/sign
     # artifacts when the workflow is actually running on the protected main ref.
@@ -81,10 +82,47 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       github-token: ${{ github.token }}
 
+  sign-image:
+    name: sign snapshot image
+    runs-on: ubuntu-latest
+    needs: image
+    # Match the image job's branch guard so manually dispatched non-main refs
+    # cannot publish/sign main-named image snapshots.
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write # push the image signature to ghcr.io
+      id-token: write # keyless cosign signing via OIDC
+    steps:
+      # cosign signs by pulling/pushing registry artifacts, so it needs ghcr.io
+      # credentials in the Docker keychain (~/.docker/config.json).
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # cosign for keyless image signing. Pinned to a full v4 tag: cosign-installer
+      # publishes no moving `v4` tag, and installing cosign v3+ requires the v4 installer.
+      - uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: 'v3.0.6'
+
+      - name: sign image digest
+        env:
+          IMAGE: ghcr.io/rknightion/tailscale2otel
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          if [ -z "$DIGEST" ]; then
+            echo "::error::docker/github-builder did not expose an image digest to sign"
+            exit 1
+          fi
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
   chart:
     name: push + sign snapshot chart
     runs-on: ubuntu-latest
-    needs: [vars, image]
+    needs: [vars, sign-image]
     # Match the image job's branch guard so manually dispatched non-main refs
     # cannot publish/sign main-named chart snapshots.
     if: github.ref == 'refs/heads/main'
@@ -106,9 +144,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # cosign for keyless chart signing. Pinned to a full v4 tag: cosign-installer
-      # publishes no moving `v4` tag, and installing cosign v3+ requires the v4 installer.
-      - uses: sigstore/cosign-installer@v4.1.2
+      # cosign for keyless chart signing. Pinned to the immutable commit for cosign-installer v4.1.2;
+      # installing cosign v3+ requires the v4 installer.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
         with:
           cosign-release: 'v3.0.6'
 
