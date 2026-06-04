@@ -1,15 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "vulnerabilityAlerts": {
-    "automerge": true
+    "automerge": false
   },
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "lockFileMaintenance": {
     "enabled": true,
-    "automerge": true
+    "automerge": false
   },
   "automergeType": "pr",
-  "platformAutomerge": true,
+  "platformAutomerge": false,
   "packageRules": [
     {
       "description": "Never automerge release-please PRs - manual review required",
@@ -17,27 +17,27 @@
       "automerge": false
     },
     {
-      "description": "Automerge GitHub Actions",
+      "description": "Label GitHub Actions for manual review",
       "matchManagers": ["github-actions"],
       "labels": ["dep:gha"],
-      "automerge": true
+      "automerge": false
     },
     {
-      "description": "Automerge patch and minor updates for low risk",
+      "description": "Label patch and minor updates for manual review",
       "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true,
+      "automerge": false,
       "labels": ["dep:low-risk"]
     },
     {
-      "description": "Automerge pin updates",
+      "description": "Label pin updates for manual review",
       "matchUpdateTypes": ["pin"],
-      "automerge": true,
+      "automerge": false,
       "labels": ["dep:low-risk"]
     },
     {
-      "description": "Automerge digest updates (Docker, etc)",
+      "description": "Label digest updates (Docker, etc) for manual review",
       "matchUpdateTypes": ["digest"],
-      "automerge": true,
+      "automerge": false,
       "labels": ["dep:low-risk"]
     },
     {
