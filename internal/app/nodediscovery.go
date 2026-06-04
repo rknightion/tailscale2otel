@@ -46,7 +46,11 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 	if err != nil {
 		return nil, err
 	}
-	out := make([]nodemetrics.Target, 0, len(devs))
+	capHint := len(devs)
+	if d.cfg.MaxTargets > 0 && capHint > d.cfg.MaxTargets {
+		capHint = d.cfg.MaxTargets
+	}
+	out := make([]nodemetrics.Target, 0, capHint)
 	for i := range devs {
 		dev := &devs[i]
 		if !d.match(dev) {
@@ -57,6 +61,9 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 			continue // no usable Tailscale address
 		}
 		out = append(out, d.toTarget(dev, addr))
+		if d.cfg.MaxTargets > 0 && len(out) >= d.cfg.MaxTargets {
+			break
+		}
 	}
 	return out, nil
 }

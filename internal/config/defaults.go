@@ -95,12 +95,15 @@ func Default() *Config {
 				Interval: dur(600 * time.Second),
 			},
 			NodeMetrics: NodeMetricsConfig{
-				Enabled:  false,
-				Interval: dur(60 * time.Second),
-				Timeout:  dur(10 * time.Second),
+				Enabled:          false,
+				Interval:         dur(60 * time.Second),
+				Timeout:          dur(10 * time.Second),
+				MaxResponseBytes: 4 * 1024 * 1024,
+				MaxSamples:       50000,
 				Discovery: NodeMetricsDiscovery{
 					Enabled:           false,
 					Interval:          dur(5 * time.Minute),
+					MaxTargets:        1000,
 					Scheme:            "http",
 					Port:              5252,
 					Path:              "/metrics",

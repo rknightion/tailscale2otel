@@ -124,6 +124,12 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("collectors.node_metrics.targets[%d].url is required", i)
 			}
 		}
+		if nm.MaxResponseBytes <= 0 {
+			return fmt.Errorf("collectors.node_metrics.max_response_bytes must be > 0")
+		}
+		if nm.MaxSamples <= 0 {
+			return fmt.Errorf("collectors.node_metrics.max_samples must be > 0")
+		}
 		// Passthrough metric-name filters are anchored regexes; compile them up
 		// front so a bad pattern is a config error rather than a silent no-op.
 		for i, p := range nm.MetricAllow {
@@ -151,6 +157,9 @@ func (c *Config) Validate() error {
 			}
 			if d.Interval.D() <= 0 {
 				return fmt.Errorf("collectors.node_metrics.discovery.interval must be > 0")
+			}
+			if d.MaxTargets <= 0 {
+				return fmt.Errorf("collectors.node_metrics.discovery.max_targets must be > 0")
 			}
 		}
 	}

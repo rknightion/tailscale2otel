@@ -24,6 +24,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -45,6 +46,8 @@ const (
 	defaultInterval          = 60 * time.Second
 	defaultTimeout           = 10 * time.Second
 	defaultDiscoveryInterval = 5 * time.Minute
+	defaultMaxResponseBytes  = 4 * 1024 * 1024
+	defaultMaxSamples        = 50000
 
 	// metricUp is the per-target scrape health gauge.
 	metricUp = "tailscale.node.up"
@@ -124,6 +127,8 @@ type Options struct {
 	Now               func() time.Time
 	Discoverer        Discoverer
 	DiscoveryInterval time.Duration
+	MaxResponseBytes  int64
+	MaxSamples        int
 
 	// Passthrough filters applied to forwarded samples only (never to
 	// tailscale.node.up or the discovery.* gauges). MetricAllow/MetricDeny are
@@ -151,6 +156,8 @@ type Collector struct {
 	discoverer        Discoverer
 	discoveryInterval time.Duration
 	timeout           time.Duration // resolved scrape timeout, for building discovered clients
+	maxResponseBytes  int64
+	maxSamples        int
 
 	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
 	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
@@ -192,6 +199,14 @@ func New(opts Options) *Collector {
 	if opts.Discoverer != nil && discoveryInterval <= 0 {
 		discoveryInterval = defaultDiscoveryInterval
 	}
+	maxResponseBytes := opts.MaxResponseBytes
+	if maxResponseBytes <= 0 {
+		maxResponseBytes = defaultMaxResponseBytes
+	}
+	maxSamples := opts.MaxSamples
+	if maxSamples <= 0 {
+		maxSamples = defaultMaxSamples
+	}
 	static := resolveTargets(opts.Targets, timeout)
 	return &Collector{
 		static:            static,
@@ -201,6 +216,8 @@ func New(opts Options) *Collector {
 		discoverer:        opts.Discoverer,
 		discoveryInterval: discoveryInterval,
 		timeout:           timeout,
+		maxResponseBytes:  maxResponseBytes,
+		maxSamples:        maxSamples,
 		metricAllow:       compileAnchored(opts.MetricAllow),
 		metricDeny:        compileAnchored(opts.MetricDeny),
 		dropLabels:        toSet(opts.DropLabels),
@@ -428,6 +445,39 @@ func (c *Collector) clientOf(rt *resolvedTarget) *http.Client {
 	return c.client
 }
 
+// errResponseTooLarge is returned when a target response exceeds the configured
+// per-scrape byte budget.
+var errResponseTooLarge = fmt.Errorf("nodemetrics: response exceeds max_response_bytes")
+
+type maxBytesReadCloser struct {
+	r         io.ReadCloser
+	remaining int64
+}
+
+func limitedReadCloser(r io.ReadCloser, max int64) io.Reader {
+	if max <= 0 {
+		return r
+	}
+	return &maxBytesReadCloser{r: r, remaining: max}
+}
+
+func (r *maxBytesReadCloser) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		var one [1]byte
+		n, err := r.r.Read(one[:])
+		if n > 0 {
+			return 0, errResponseTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > r.remaining {
+		p = p[:int(r.remaining)]
+	}
+	n, err := r.r.Read(p)
+	r.remaining -= int64(n)
+	return n, err
+}
+
 // scrapeTarget fetches and re-emits one target. It always emits the per-target
 // tailscale.node.up health gauge (1 on success, 0 on any GET/read/parse error)
 // and returns a non-nil error on failure so Collect can count it.
@@ -463,7 +513,7 @@ func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, client *http.Cl
 		return fmt.Errorf("nodemetrics: GET %s: status %d", t.URL, resp.StatusCode)
 	}
 
-	samples, err := parse(resp.Body)
+	samples, err := parse(limitedReadCloser(resp.Body, c.maxResponseBytes), c.maxSamples)
 	if err != nil {
 		return err
 	}

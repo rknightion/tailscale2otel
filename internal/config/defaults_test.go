@@ -169,6 +169,12 @@ func TestNodeMetricsDefaults(t *testing.T) {
 	if len(nm.Targets) != 0 {
 		t.Errorf("NodeMetrics.Targets = %v, want empty by default", nm.Targets)
 	}
+	if nm.MaxResponseBytes != 4*1024*1024 {
+		t.Errorf("NodeMetrics.MaxResponseBytes = %d, want 4MiB", nm.MaxResponseBytes)
+	}
+	if nm.MaxSamples != 50000 {
+		t.Errorf("NodeMetrics.MaxSamples = %d, want 50000", nm.MaxSamples)
+	}
 }
 
 func TestNodeMetricsDiscoveryDefaults(t *testing.T) {
@@ -187,6 +193,9 @@ func TestNodeMetricsDiscoveryDefaults(t *testing.T) {
 	}
 	if d.Path != "/metrics" {
 		t.Errorf("Discovery.Path = %q, want /metrics", d.Path)
+	}
+	if d.MaxTargets != 1000 {
+		t.Errorf("Discovery.MaxTargets = %d, want 1000", d.MaxTargets)
 	}
 	if !d.OnlineOnly {
 		t.Errorf("Discovery.OnlineOnly = false, want default true")
@@ -216,6 +225,7 @@ collectors:
     discovery:
       enabled: true
       interval: 2m
+      max_targets: 12
       port: 9100
       online_only: false
       include_tags: ["tag:server"]
@@ -226,8 +236,8 @@ collectors:
 		t.Fatalf("Load: %v", err)
 	}
 	d := cfg.Collectors.NodeMetrics.Discovery
-	if !d.Enabled || d.Interval.D() != 2*time.Minute || d.Port != 9100 {
-		t.Fatalf("discovery enabled/interval/port = %v/%v/%d", d.Enabled, d.Interval.D(), d.Port)
+	if !d.Enabled || d.Interval.D() != 2*time.Minute || d.Port != 9100 || d.MaxTargets != 12 {
+		t.Fatalf("discovery enabled/interval/port/max_targets = %v/%v/%d/%d", d.Enabled, d.Interval.D(), d.Port, d.MaxTargets)
 	}
 	// An explicit false overrides the true default.
 	if d.OnlineOnly {
@@ -252,6 +262,8 @@ collectors:
   node_metrics:
     enabled: true
     interval: 30s
+    max_response_bytes: 2048
+    max_samples: 123
     targets:
       - url: http://100.64.0.1:5252/metrics
         instance: nodeA
@@ -267,6 +279,9 @@ collectors:
 	nm := cfg.Collectors.NodeMetrics
 	if !nm.Enabled || nm.Interval.D() != 30*time.Second {
 		t.Fatalf("node_metrics enabled/interval = %v/%v", nm.Enabled, nm.Interval.D())
+	}
+	if nm.MaxResponseBytes != 2048 || nm.MaxSamples != 123 {
+		t.Fatalf("node_metrics max_response_bytes/max_samples = %d/%d", nm.MaxResponseBytes, nm.MaxSamples)
 	}
 	// Interval set, Timeout omitted -> default preserved.
 	if nm.Timeout.D() != 10*time.Second {

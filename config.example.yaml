@@ -65,11 +65,13 @@ collectors:
   # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
   # them centrally over OTLP (counters as deltas, gauges as gauges, plus a per-target
   # tailscale.node.up gauge). Node identity is carried as the "instance" label, not an
-  # OTEL Resource. Off by default; disabled when no targets are configured.
+  # OTEL Resource. Off by default; enable with static targets and/or discovery.
   node_metrics:
     enabled: false
     interval: 60s
     timeout: 10s
+    max_response_bytes: 4194304  # per-target response cap (4 MiB)
+    max_samples: 50000           # per-target sample cap per scrape
     targets: []
       # - url: "http://100.64.0.10:5252/metrics"
       #   instance: "relay-1"          # defaults to the URL host:port if omitted
@@ -93,6 +95,7 @@ collectors:
     discovery:
       enabled: false
       interval: 5m
+      max_targets: 1000         # cap discovered scrape targets per refresh
       scheme: http              # http | https
       port: 5252                # tailscaled client metrics port
       path: /metrics

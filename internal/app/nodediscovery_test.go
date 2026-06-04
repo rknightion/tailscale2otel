@@ -148,6 +148,23 @@ func TestNodeDiscoverer_PassthroughLabels(t *testing.T) {
 	}
 }
 
+func TestNodeDiscoverer_MaxTargetsCapsDiscovery(t *testing.T) {
+	cfg := discoveryDefaults()
+	cfg.MaxTargets = 2
+	devs := []tsapi.RichDevice{
+		{Hostname: "a", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true},
+		{Hostname: "b", Addresses: []string{"100.64.0.2"}, ConnectedToControl: true},
+		{Hostname: "c", Addresses: []string{"100.64.0.3"}, ConnectedToControl: true},
+	}
+	got := mustDiscover(t, devs, cfg)
+	if len(got) != 2 {
+		t.Fatalf("targets = %d, want capped to 2; got %+v", len(got), got)
+	}
+	if got[0].URL != "http://100.64.0.1:5252/metrics" || got[1].URL != "http://100.64.0.2:5252/metrics" {
+		t.Fatalf("targets = %+v, want first two matching devices", got)
+	}
+}
+
 func TestNodeDiscoverer_APIErrorPropagates(t *testing.T) {
 	want := errors.New("boom")
 	_, err := newNodeDiscoverer(&fakeDevicesAPI{err: want}, discoveryDefaults()).Discover(context.Background())

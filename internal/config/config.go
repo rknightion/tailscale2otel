@@ -137,6 +137,10 @@ type NodeMetricsConfig struct {
 	Targets   []NodeMetricsTarget  `yaml:"targets"`
 	Discovery NodeMetricsDiscovery `yaml:"discovery"`
 
+	// Scrape limits bound memory and telemetry cardinality per target.
+	MaxResponseBytes int64 `yaml:"max_response_bytes"` // maximum response bytes read from one scrape
+	MaxSamples       int   `yaml:"max_samples"`        // maximum valid samples forwarded from one scrape
+
 	// Passthrough filters on the FORWARDED Prometheus samples. They never affect
 	// tailscale.node.up or the discovery.* gauges. A zero value means no filtering.
 	MetricAllow []string `yaml:"metric_allow"` // anchored regex on the forwarded metric NAME; if non-empty, a name must match one to be forwarded
@@ -161,6 +165,7 @@ type NodeMetricsDiscovery struct {
 	Path   string `yaml:"path"`   // default "/metrics"
 
 	// Filters.
+	MaxTargets      int      `yaml:"max_targets"`      // maximum discovered targets per refresh
 	OnlineOnly      bool     `yaml:"online_only"`      // default true: only connectedToControl devices
 	ExcludeExternal bool     `yaml:"exclude_external"` // default true: skip shared/external devices
 	IncludeTags     []string `yaml:"include_tags"`     // empty = match all; any-match
