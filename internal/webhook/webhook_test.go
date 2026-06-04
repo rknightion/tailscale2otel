@@ -169,6 +169,46 @@ func TestHandler_MultiSignatureRotationVerifies(t *testing.T) {
 	}
 }
 
+func TestHandler_MaxBodyBytesTooLargeRejectedBeforeSignature(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{
+		Path:         "/webhook",
+		Secret:       testSecret,
+		MaxBodyBytes: 8,
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	resp := doPost(t, s.Handler(), "/webhook", strings.Repeat("x", 100), "")
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusRequestEntityTooLarge)
+	}
+	pts := rec.MetricPoints("tailscale.webhook.rejected")
+	if len(pts) != 1 {
+		t.Fatalf("rejected metric points = %d, want 1 (%+v)", len(pts), pts)
+	}
+	if got := pts[0].Attrs["reason"]; got != "too_large" {
+		t.Fatalf("rejected reason = %q, want too_large", got)
+	}
+}
+
+func TestHandler_MaxBodyBytesUnderLimitStillVerifies(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{
+		Path:         "/webhook",
+		Secret:       testSecret,
+		MaxBodyBytes: int64(len(twoEventBody)),
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	ts := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
+	sig := signBody(testSecret, ts, twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := len(rec.LogRecords()); got != 2 {
+		t.Fatalf("LogRecords len = %d, want 2", got)
+	}
+}
+
 func TestHandler_TamperedSignatureRejected(t *testing.T) {
 	s, rec := newTestServer(t)
 

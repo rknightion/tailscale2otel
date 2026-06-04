@@ -53,6 +53,9 @@ const (
 	// MetricRejected counts rejected webhook requests, keyed by rejection reason.
 	MetricRejected = "tailscale.webhook.rejected"
 
+	// defaultMaxBodyBytes caps webhook request bodies when Options.MaxBodyBytes is 0.
+	defaultMaxBodyBytes = 64 << 20 // 64 MiB
+
 	// eventNamePrefix is prepended to the Tailscale event type to form the OTEL
 	// LogRecord EventName, e.g. "tailscale.webhook.nodeCreated".
 	eventNamePrefix = "tailscale.webhook."
@@ -110,6 +113,10 @@ type Options struct {
 	// Tolerance is the maximum age of a request timestamp before it is rejected
 	// as a replay. Zero disables the check.
 	Tolerance time.Duration
+	// MaxBodyBytes caps the raw request body size before signature verification,
+	// bounding unauthenticated memory use. 0 selects a 64 MiB default; a negative
+	// value disables the cap.
+	MaxBodyBytes int64
 }
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
@@ -187,6 +194,9 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr:              s.opts.Listen,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -218,8 +228,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	body, err := io.ReadAll(r.Body)
+	body, err := s.readBody(w, r)
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			s.rejectStatus(w, http.StatusRequestEntityTooLarge, "too_large", "request body exceeds max size", err)
+			return
+		}
 		s.reject(w, "read_error", "failed to read request body", err)
 		return
 	}
@@ -244,15 +259,31 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	limit := s.opts.MaxBodyBytes
+	if limit == 0 {
+		limit = defaultMaxBodyBytes
+	}
+	reader := r.Body
+	if limit >= 0 {
+		reader = http.MaxBytesReader(w, r.Body, limit)
+	}
+	return io.ReadAll(reader)
+}
+
 // reject records the rejection counter, logs at Warn, and writes a 401. A
 // "read_error" or "invalid_body" reason still uses 401 here for simplicity:
 // the body could not be authenticated as a well-formed signed payload.
 func (s *Server) reject(w http.ResponseWriter, reason, msg string, err error) {
+	s.rejectStatus(w, http.StatusUnauthorized, reason, msg, err)
+}
+
+func (s *Server) rejectStatus(w http.ResponseWriter, status int, reason, msg string, err error) {
 	s.logger.Warn(msg, "reason", reason, "error", err)
 	s.e.Counter(docWebhookRejected.Name, docWebhookRejected.Unit, docWebhookRejected.Description, 1, telemetry.Attrs{
 		attrReason: reason,
 	})
-	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	http.Error(w, http.StatusText(status), status)
 }
 
 // verify checks the signature header against the body using opts.Secret. It

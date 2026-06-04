@@ -604,6 +604,9 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr:              s.listen,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
