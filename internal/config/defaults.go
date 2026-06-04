@@ -142,9 +142,10 @@ func Default() *Config {
 			AutoConfigure: false,
 		},
 		Webhook: WebhookConfig{
-			Enabled: false,
-			Listen:  ":8089",
-			Path:    "/tailscale/webhook",
+			Enabled:   false,
+			Listen:    ":8089",
+			Path:      "/tailscale/webhook",
+			Tolerance: dur(5 * time.Minute),
 		},
 		SelfObservability: SelfObservabilityConfig{
 			Enabled: true,

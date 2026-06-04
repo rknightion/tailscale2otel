@@ -143,10 +143,18 @@ func (a *App) buildReceivers() {
 		if a.webhookDedup != nil {
 			wopts = append(wopts, webhook.WithDedup(a.webhookDedup))
 		}
-		a.webhookSrv = webhook.New(webhook.Options{
-			Listen: a.cfg.Webhook.Listen,
-			Path:   a.cfg.Webhook.Path,
-			Secret: a.cfg.Webhook.Secret,
-		}, a.emitter, a.logger, wopts...)
+		a.webhookSrv = webhook.New(webhookOptions(a.cfg.Webhook), a.emitter, a.logger, wopts...)
+	}
+}
+
+// webhookOptions maps the webhook config block to the receiver's Options. Kept as
+// a pure function so the config->Options wiring (notably the replay Tolerance) is
+// unit-tested rather than only exercised end-to-end.
+func webhookOptions(c config.WebhookConfig) webhook.Options {
+	return webhook.Options{
+		Listen:    c.Listen,
+		Path:      c.Path,
+		Secret:    c.Secret,
+		Tolerance: c.Tolerance.D(),
 	}
 }

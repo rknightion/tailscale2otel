@@ -261,6 +261,33 @@ func TestHandler_MissingSignatureRejected(t *testing.T) {
 	}
 }
 
+// TestHandler_StaleTimestampRejected verifies replay protection: with a Tolerance
+// configured, a correctly-signed request whose signed timestamp is older than the
+// tolerance window is rejected as stale rather than accepted (and replayed).
+func TestHandler_StaleTimestampRejected(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{
+		Path:      "/webhook",
+		Secret:    testSecret,
+		Tolerance: 5 * time.Minute,
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	old := time.Now().Add(-time.Hour)
+	sig := signBody(testSecret, old, twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 for a stale (replayed) timestamp", resp.StatusCode)
+	}
+	rej := rec.MetricPoints("tailscale.webhook.rejected")
+	if len(rej) != 1 || rej[0].Attrs["reason"] != "stale_timestamp" {
+		t.Fatalf("rejected = %+v, want one stale_timestamp", rej)
+	}
+	if len(rec.LogRecords()) != 0 {
+		t.Errorf("stale request must emit no event log records, got %d", len(rec.LogRecords()))
+	}
+}
+
 func TestHandler_RejectsNonPOST(t *testing.T) {
 	s, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/webhook", nil)

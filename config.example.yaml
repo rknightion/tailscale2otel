@@ -205,6 +205,7 @@ webhook:
   listen: ":8089"
   path: "/tailscale/webhook"
   secret: "${TS_WEBHOOK_SECRET}"     # HMAC-SHA256 verification
+  tolerance: "5m"                    # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false          # best-effort: drop a webhook event already counted via the audit logs
 
 self_observability:

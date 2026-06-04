@@ -376,6 +376,11 @@ type WebhookConfig struct {
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
 	Secret  string `yaml:"secret"`
+	// Tolerance is the maximum age of a webhook's signed timestamp before it is
+	// rejected as a replay. Tailscale signs "<unix>.<body>", so this bounds how
+	// long a captured, validly-signed delivery can be replayed. 0 disables the
+	// check; defaults to 5m.
+	Tolerance Duration `yaml:"tolerance"`
 	// DedupAuditEvents, when true, shares a best-effort cross-source de-dup set
 	// with the audit processor so a change reported by BOTH a webhook and the
 	// audit logs is counted once. Off by default (the type<->action mapping is

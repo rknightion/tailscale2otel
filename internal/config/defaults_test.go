@@ -126,6 +126,9 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Webhook.Listen != ":8089" || cfg.Webhook.Path != "/tailscale/webhook" {
 		t.Errorf("Webhook defaults = %q %q, want :8089 /tailscale/webhook", cfg.Webhook.Listen, cfg.Webhook.Path)
 	}
+	if cfg.Webhook.Tolerance.D() != 5*time.Minute {
+		t.Errorf("Webhook.Tolerance = %v, want 5m default (replay protection)", cfg.Webhook.Tolerance.D())
+	}
 	if !cfg.SelfObservability.Enabled {
 		t.Errorf("SelfObservability.Enabled = false, want default true")
 	}
