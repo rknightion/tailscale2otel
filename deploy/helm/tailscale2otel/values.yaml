@@ -40,10 +40,13 @@ podSecurityContext:
     type: RuntimeDefault
 # -- Container-level security context. Drops all capabilities and runs with a
 # read-only root filesystem (the app writes only to the optional checkpoint
-# volume).
+# volume). Runs as the distroless `nonroot` uid/gid 65532 (a high, non-system id
+# > 10000) to satisfy hardened-cluster policy.
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
+  runAsUser: 65532
+  runAsGroup: 65532
   capabilities:
     drop: ["ALL"]
 

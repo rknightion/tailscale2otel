@@ -166,6 +166,12 @@ Splunk-HEC sink on startup instead of configuring the stream by hand. It is off 
 > Note: Tailscale does not publicly document the exact HEC payload envelope; the receiver parses
 > defensively and the envelope should be confirmed by capturing a live stream in your environment.
 
+> Security: an empty `webhook.secret` skips HMAC verification and an empty `streaming.token` disables
+> receiver auth (and an undefined `${ENV}` reference expands to empty, so a typo silently disables
+> auth). `streaming.auto_configure` overwrites the tailnet's existing log-streaming sink. The exported
+> flow/audit telemetry also carries IPs, ports, device names, and user identities. See
+> [`SECURITY.md`](SECURITY.md) for the full data-handling and receiver-auth notes.
+
 ## Admin status page & profiling
 
 Enable the admin server (`admin.enabled: true`) and it serves liveness/readiness probes at

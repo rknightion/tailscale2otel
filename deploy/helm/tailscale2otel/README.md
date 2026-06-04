@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.4.1](https://img.shields.io/badge/Version-0.4.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -166,7 +166,7 @@ under `config:`).
 | secret.TS_STREAM_HEC_TOKEN | string | `""` | HEC token the streaming receiver expects ("Authorization: Splunk <token>"). Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op. |
 | secret.TS_TAILNET | string | `""` | Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet. |
 | secret.TS_WEBHOOK_SECRET | string | `""` | Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. CRITICAL: leaving this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook. |
-| securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container-level security context. Drops all capabilities and runs with a read-only root filesystem (the app writes only to the optional checkpoint volume). |
+| securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsGroup":65532,"runAsUser":65532}` | Container-level security context. Drops all capabilities and runs with a read-only root filesystem (the app writes only to the optional checkpoint volume). Runs as the distroless `nonroot` uid/gid 65532 (a high, non-system id > 10000) to satisfy hardened-cluster policy. |
 | serviceAccount.annotations | object | `{}` | Annotations to add to the ServiceAccount. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
 | serviceAccount.name | string | `""` | ServiceAccount name. Generated when empty. |

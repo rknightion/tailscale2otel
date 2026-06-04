@@ -189,7 +189,7 @@ func New(opts Options) *Collector {
 	}
 	client := opts.Client
 	if client == nil {
-		client = &http.Client{Timeout: timeout}
+		client = &http.Client{Timeout: timeout, CheckRedirect: noRedirect}
 	}
 	now := opts.Now
 	if now == nil {
@@ -277,9 +277,20 @@ func resolveTargets(ts []Target, timeout time.Duration) []resolvedTarget {
 		}
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		tr.TLSClientConfig = tc
-		out[i].client = &http.Client{Timeout: timeout, Transport: tr}
+		out[i].client = &http.Client{Timeout: timeout, Transport: tr, CheckRedirect: noRedirect}
 	}
 	return out
+}
+
+// noRedirect is the CheckRedirect for every scrape client: it stops the HTTP
+// client from following 3xx responses (SSRF-via-redirect guard). Returning
+// http.ErrUseLastResponse makes Do() return the 3xx response itself instead of
+// an error; fetchAndEmit then treats the non-2xx status as a failed scrape
+// (tailscale.node.up=0), so a redirect target's body is never fetched or
+// re-emitted. A compromised scrape target therefore cannot bounce the scraper at
+// internal URLs (cloud metadata, loopback admin ports).
+func noRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // buildTLSConfig builds a *tls.Config from a per-target TLSClientConfig, mirroring
@@ -287,6 +298,7 @@ func resolveTargets(ts []Target, timeout time.Duration) []resolvedTarget {
 // CertFile+KeyFile, plus InsecureSkipVerify and ServerName passthrough.
 func buildTLSConfig(t *TLSClientConfig) (*tls.Config, error) {
 	cfg := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: t.InsecureSkipVerify, //nolint:gosec // operator opt-in for proxied/self-signed targets; defaults false
 		ServerName:         t.ServerName,
 	}

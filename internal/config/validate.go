@@ -68,6 +68,31 @@ func (c *Config) Warnings() []string {
 			"address (e.g. 127.0.0.1:9090).")
 	}
 
+	// An enabled ingestion receiver with no credential accepts UNAUTHENTICATED
+	// input. The webhook receiver skips HMAC verification entirely when
+	// webhook.secret is empty (internal/webhook: an empty Secret bypasses verify),
+	// and the HEC streaming receiver disables token auth when streaming.token is
+	// empty (internal/stream: an empty token authorizes every request). Either lets
+	// anyone who can reach the port post forged events. Because an undefined ${ENV}
+	// reference expands silently to "" (config.Load uses os.Expand), a typo in the
+	// credential's env var name lands here too — so flag it rather than fail open
+	// quietly. (Unlike pprof, these are not hard-errored: a trusted-network or
+	// local-testing deployment behind an authenticating proxy is a legitimate use.)
+	if c.Webhook.Enabled && c.Webhook.Secret == "" {
+		w = append(w, "webhook.enabled=true with an empty webhook.secret: HMAC signature "+
+			"verification is SKIPPED, so anyone who can reach "+c.Webhook.Listen+" can post "+
+			"forged webhook events (and inflate metric cardinality via attacker-chosen event "+
+			"types). Set webhook.secret (an undefined ${ENV} expands to empty — check the env "+
+			"var name), or only run the receiver behind an authenticating proxy on a trusted network.")
+	}
+	if c.Streaming.Enabled && c.Streaming.Token == "" {
+		w = append(w, "streaming.enabled=true with an empty streaming.token: the HEC receiver "+
+			"authenticates NO requests, so anyone who can reach "+c.Streaming.Listen+" can inject "+
+			"arbitrary flow/audit records. Set streaming.token (an undefined ${ENV} expands to "+
+			"empty — check the env var name), or only run the receiver behind an authenticating "+
+			"proxy on a trusted network.")
+	}
+
 	// Grafana Cloud Profiles authenticates Pyroscope pushes with HTTP basic auth
 	// (the user is the stack's profiles instance ID, the password an access
 	// policy token). A grafana.net endpoint with no basic_auth_password set will

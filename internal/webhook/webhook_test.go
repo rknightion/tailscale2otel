@@ -332,6 +332,65 @@ func TestEmit_SeverityClassification(t *testing.T) {
 	}
 }
 
+// TestEmit_BoundsEventTypeCardinality pins the cardinality failsafe: the event
+// type is attacker-chosen on the wire, and when the webhook runs without a secret
+// (verification skipped) a flood of distinct types would otherwise explode the
+// metric's series and the log EventName cardinality. emit must collapse types
+// beyond a fixed distinct-type cap into a single overflow bucket, while leaving
+// the first (real-volume) types untouched. The cap is generous enough that
+// Tailscale's documented event set — and headroom for new ones — passes through
+// unchanged (forward compatibility); only an abnormal flood overflows.
+func TestEmit_BoundsEventTypeCardinality(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{}, rec.Emitter(), discard())
+
+	const flood = maxDistinctEventTypes * 8
+	for i := range flood {
+		s.emit(event{Type: fmt.Sprintf("evil-%d", i), Tailnet: "example.com", Message: "m"})
+	}
+
+	// Metric: distinct tailscale.webhook.type attribute values must be bounded.
+	types := map[string]struct{}{}
+	for _, p := range rec.MetricPoints("tailscale.webhook.events") {
+		types[p.Attrs["tailscale.webhook.type"]] = struct{}{}
+	}
+	if len(types) > maxDistinctEventTypes+1 {
+		t.Fatalf("distinct event-type attrs = %d, want <= %d (bounded)", len(types), maxDistinctEventTypes+1)
+	}
+	if _, ok := types[overflowType]; !ok {
+		t.Errorf("expected an %q bucket once the distinct-type cap is exceeded", overflowType)
+	}
+
+	// Log EventName cardinality must be bounded the same way (it embeds the type).
+	names := map[string]struct{}{}
+	for _, lr := range rec.LogRecords() {
+		names[lr.EventName] = struct{}{}
+	}
+	if len(names) > maxDistinctEventTypes+1 {
+		t.Fatalf("distinct log EventNames = %d, want <= %d (bounded)", len(names), maxDistinctEventTypes+1)
+	}
+	if _, ok := names[eventNamePrefix+overflowType]; !ok {
+		t.Errorf("expected an overflow log EventName %q", eventNamePrefix+overflowType)
+	}
+}
+
+// TestEmit_KnownTypesNotBucketed guards forward compatibility: a realistic number
+// of distinct types (Tailscale's documented set is ~25) must pass through emit
+// verbatim, never collapsed into the overflow bucket.
+func TestEmit_KnownTypesNotBucketed(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{}, rec.Emitter(), discard())
+
+	for i := range maxDistinctEventTypes {
+		s.emit(event{Type: fmt.Sprintf("type-%d", i), Tailnet: "example.com", Message: "m"})
+	}
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == eventNamePrefix+overflowType {
+			t.Fatalf("a type within the cap was bucketed as overflow: %q", lr.EventName)
+		}
+	}
+}
+
 func logNames(logs []telemetrytest.LogRecord) []string {
 	out := make([]string, 0, len(logs))
 	for _, lr := range logs {

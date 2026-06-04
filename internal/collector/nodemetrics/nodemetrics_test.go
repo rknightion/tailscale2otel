@@ -1552,3 +1552,39 @@ func TestCollector_Snapshot(t *testing.T) {
 		}
 	})
 }
+
+// TestScrape_DoesNotFollowRedirects is the SSRF-via-redirect guard (F-02): a
+// scrape target that 302-redirects to another host must NOT be followed. The
+// scraper must treat the redirect as a failed scrape (tailscale.node.up=0) and
+// must NOT emit the redirect target's metrics — otherwise a compromised tailnet
+// node could bounce the scraper at internal URLs (cloud metadata, loopback admin
+// ports) and have their bodies re-emitted.
+func TestScrape_DoesNotFollowRedirects(t *testing.T) {
+	// Server B serves a valid Prometheus body that must never be scraped.
+	bodyB := "# TYPE foo_total counter\nfoo_total 1\n"
+	srvB := serveText(&bodyB)
+	defer srvB.Close()
+
+	// Server A 302-redirects every request to server B.
+	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Redirect(w, &http.Request{}, srvB.URL, http.StatusFound)
+	}))
+	defer srvA.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: srvA.URL, Instance: "node-a"}},
+	})
+	rec := telemetrytest.New()
+	// All targets fail (the redirect is a non-2xx scrape), so Collect returns an
+	// error — that is the desired outcome.
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect() error = nil, want a redirected scrape to fail the only target")
+	}
+	if pts := rec.MetricPoints("foo_total"); len(pts) != 0 {
+		t.Fatalf("foo_total = %+v, want none (redirect must not be followed)", pts)
+	}
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 0 {
+		t.Fatalf("tailscale.node.up = %+v, want one down point (redirect = failed scrape)", up)
+	}
+}

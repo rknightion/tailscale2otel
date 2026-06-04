@@ -598,6 +598,12 @@
                 },
                 "readOnlyRootFilesystem": {
                     "type": "boolean"
+                },
+                "runAsGroup": {
+                    "type": "integer"
+                },
+                "runAsUser": {
+                    "type": "integer"
                 }
             }
         },

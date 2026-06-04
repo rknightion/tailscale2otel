@@ -269,7 +269,7 @@ func tlsConfig(opts Options) (*tls.Config, error) {
 	if opts.CAFile == "" && opts.CertFile == "" && opts.KeyFile == "" {
 		return nil, nil
 	}
-	cfg := &tls.Config{}
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if opts.CAFile != "" {
 		pem, err := os.ReadFile(opts.CAFile)
 		if err != nil {

@@ -1,0 +1,34 @@
+# trivy .trivyignore — suppressions for findings that are false positives for
+# this chart/image. Read automatically by `trivy config`/`trivy image` from the
+# repo root. One check ID per line; `#` lines are comments/justifications.
+#
+# Real container-hardening findings (KSV-0020/KSV-0021, runAsUser/runAsGroup >
+# 10000) are FIXED in values.yaml, not ignored.
+
+# KSV-0109 / KSV-01010 — "ConfigMap stores secrets / sensitive contents".
+# FALSE POSITIVE: the rendered config.yaml contains only ${ENV} placeholders for
+# secret fields (e.g. client_secret: "${TS_OAUTH_CLIENT_SECRET}"), never real
+# secret values. Actual secret VALUES are injected via the Kubernetes Secret +
+# envFrom and expanded at runtime; the chart's `secret:` block is the supported
+# path for real secret values. trivy flags the placeholder key NAMES, not data.
+KSV-0109
+KSV-01010
+
+# KSV-0110 — "resource in default namespace".
+# FALSE POSITIVE: the namespace is chosen at deploy time (`helm -n <ns>` /
+# `--namespace`); the chart never hardcodes metadata.namespace to `default`.
+KSV-0110
+
+# KSV-0125 — "image from an untrusted registry".
+# FALSE POSITIVE: ghcr.io/rknightion/tailscale2otel is the project's own
+# first-party publish registry, cosign keyless-signed via GitHub OIDC (see
+# deploy/CLAUDE.md release/publish pipelines).
+KSV-0125
+
+# DS-0026 — "no HEALTHCHECK instruction".
+# FALSE POSITIVE: the binary has NO always-on HTTP listener; its health endpoint
+# (/healthz) is opt-in and only served when admin.enabled is set. A Dockerfile
+# HEALTHCHECK hitting it would mark every default (admin-disabled) container
+# unhealthy. Operators who enable the admin server can add a compose/k8s probe;
+# the Helm chart already wires /healthz + /readyz when admin is enabled.
+DS-0026

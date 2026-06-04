@@ -151,6 +151,59 @@ func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
 	}
 }
 
+// TestWarnings_ReceiverAuthDisabled pins the advisories that steer operators away
+// from running an UNAUTHENTICATED ingestion receiver. The webhook receiver skips
+// HMAC verification entirely when webhook.secret is empty, and the streaming (HEC)
+// receiver disables token auth when streaming.token is empty — so an enabled
+// receiver with an empty credential accepts forged/unauthenticated input. Because
+// an undefined ${ENV} reference expands silently to "", a typo in the secret's env
+// var name lands here too. A disabled receiver, or a credential that is set, must
+// NOT warn.
+func TestWarnings_ReceiverAuthDisabled(t *testing.T) {
+	// Disabled receivers => no auth advisory.
+	c := config.Default()
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "webhook.secret") || strings.Contains(w, "streaming.token") {
+			t.Fatalf("disabled receivers should not warn about credentials; got %q", w)
+		}
+	}
+
+	// webhook enabled with an empty secret => advisory naming webhook.secret + HMAC.
+	c = config.Default()
+	c.Webhook.Enabled = true
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "webhook.secret") {
+		t.Fatalf("webhook enabled with empty secret should advise webhook.secret; got %q", w)
+	}
+	if !strings.Contains(strings.ToLower(w), "hmac") {
+		t.Errorf("webhook advisory should explain HMAC verification is skipped; got %q", w)
+	}
+
+	// webhook secret set => no webhook advisory.
+	c.Webhook.Secret = "whsec"
+	for _, msg := range c.Warnings() {
+		if strings.Contains(msg, "webhook.secret") {
+			t.Errorf("a configured webhook.secret should clear the advisory; got %q", msg)
+		}
+	}
+
+	// streaming enabled with an empty token => advisory naming streaming.token.
+	c = config.Default()
+	c.Streaming.Enabled = true
+	w = strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "streaming.token") {
+		t.Fatalf("streaming enabled with empty token should advise streaming.token; got %q", w)
+	}
+
+	// streaming token set => no streaming-auth advisory.
+	c.Streaming.Token = "hec-token"
+	for _, msg := range c.Warnings() {
+		if strings.Contains(msg, "streaming.token") {
+			t.Errorf("a configured streaming.token should clear the advisory; got %q", msg)
+		}
+	}
+}
+
 func TestValidateProfilingPprofRequiresAdmin(t *testing.T) {
 	const y = "profiling:\n  pprof:\n    enabled: true\n"
 	err := loadErr(t, y)

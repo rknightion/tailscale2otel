@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/dedup"
@@ -64,6 +65,19 @@ const (
 	attrType = "tailscale.webhook.type"
 	// attrReason labels a rejection by cause.
 	attrReason = "reason"
+
+	// maxDistinctEventTypes caps how many distinct event-type values are used as a
+	// metric attribute / log EventName before further new types collapse into
+	// overflowType. The event type is attacker-chosen on the wire, so when the
+	// receiver runs without a secret (verification skipped) an unauthenticated
+	// flood of unique types would otherwise explode the events metric's series and
+	// the log EventName cardinality. The cap sits well above Tailscale's documented
+	// event set (~25 types, see severityByType) so real traffic — and headroom for
+	// new types — passes through verbatim; only an abnormal flood overflows.
+	maxDistinctEventTypes = 64
+	// overflowType is the single bucket attacker/novel types collapse into once the
+	// distinct-type cap is reached.
+	overflowType = "other"
 )
 
 // severityByType is the explicit, per-type log-severity classification for
@@ -126,6 +140,12 @@ type Server struct {
 	logger *slog.Logger
 	now    func() time.Time // injectable clock; defaults to time.Now
 	dedup  *dedup.Set       // optional cross-source de-dup set (see WithDedup)
+
+	// typesMu guards seenTypes, the bounded set of distinct event types already
+	// admitted as a telemetry dimension. handle (and thus emit) runs concurrently
+	// per request, so access is mutex-guarded. See boundType / maxDistinctEventTypes.
+	typesMu   sync.Mutex
+	seenTypes map[string]struct{}
 }
 
 // Option configures a Server at construction time.
@@ -334,20 +354,47 @@ func (s *Server) emit(ev event) {
 		}
 	}
 
+	// The event type is attacker-chosen on the wire; bound its distinct values
+	// before using it as a metric attribute or log EventName. Severity is still
+	// derived from the ORIGINAL type (its lookup table is itself bounded), so a
+	// legitimately new WARN type is classified correctly even if it overflows.
+	dim := s.boundType(ev.Type)
+
 	s.e.LogEvent(telemetry.Event{
-		Name:      eventNamePrefix + ev.Type,
+		Name:      eventNamePrefix + dim,
 		Body:      ev.Message,
 		Severity:  severityForType(ev.Type),
 		Timestamp: parseTimestamp(ev.Timestamp),
 		Attrs: telemetry.Attrs{
-			attrType:            ev.Type,
+			attrType:            dim,
 			semconv.AttrTailnet: ev.Tailnet,
 		},
 	})
 
 	s.e.Counter(docWebhookEvents.Name, docWebhookEvents.Unit, docWebhookEvents.Description, 1, telemetry.Attrs{
-		attrType: ev.Type,
+		attrType: dim,
 	})
+}
+
+// boundType maps an event type to the value used as a telemetry dimension,
+// collapsing types beyond maxDistinctEventTypes distinct values into overflowType.
+// Already-admitted types (and overflowType itself) always pass through, so the
+// dimension's cardinality is capped at maxDistinctEventTypes+1 for the process
+// lifetime. Safe for concurrent use.
+func (s *Server) boundType(t string) string {
+	s.typesMu.Lock()
+	defer s.typesMu.Unlock()
+	if _, ok := s.seenTypes[t]; ok {
+		return t
+	}
+	if len(s.seenTypes) >= maxDistinctEventTypes {
+		return overflowType
+	}
+	if s.seenTypes == nil {
+		s.seenTypes = make(map[string]struct{}, maxDistinctEventTypes)
+	}
+	s.seenTypes[t] = struct{}{}
+	return t
 }
 
 // parseSignatureHeader splits the header into its timestamp and the list of v1

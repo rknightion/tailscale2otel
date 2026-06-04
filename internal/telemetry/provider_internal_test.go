@@ -2,13 +2,46 @@ package telemetry
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/pem"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
+
+// TestTLSConfigPinsMinVersionTLS12 guards the OTLP exporter client TLS config
+// against the semgrep missing-ssl-minversion finding: when CA/cert/key files
+// configure a *tls.Config, it must floor the negotiated version at TLS 1.2 so a
+// downgrade to TLS 1.0/1.1 is never possible. 1.2 (not 1.3) is the deliberate
+// floor for proxy / self-signed interop.
+func TestTLSConfigPinsMinVersionTLS12(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+
+	dir := t.TempDir()
+	caFile := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(caFile, pemBytes, 0o600); err != nil {
+		t.Fatalf("write CA file: %v", err)
+	}
+	cfg, err := tlsConfig(Options{CAFile: caFile})
+	if err != nil {
+		t.Fatalf("tlsConfig returned error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("tlsConfig returned nil; expected a config when CAFile is set")
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Errorf("cfg.MinVersion = %#x, want tls.VersionTLS12 (%#x)", cfg.MinVersion, tls.VersionTLS12)
+	}
+}
 
 // TestCumulativeTemporalitySelectorAlwaysCumulative pins the OTLP metric
 // temporality. Grafana Cloud / Mimir OTLP ingestion accepts CUMULATIVE only
