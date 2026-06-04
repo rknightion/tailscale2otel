@@ -31,9 +31,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # cosign (keyless image + checksum signing) and syft (SBOMs).
-      # Pinned to a full v4 tag: cosign-installer publishes no moving `v4` tag,
-      # and installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
-      - uses: sigstore/cosign-installer@v4.1.2
+      # Pinned to the immutable commit for cosign-installer v4.1.2;
+      # installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
         with:
           cosign-release: 'v3.0.6'
       - uses: anchore/sbom-action/download-syft@v0
