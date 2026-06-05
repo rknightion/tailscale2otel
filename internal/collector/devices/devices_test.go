@@ -909,3 +909,177 @@ func TestCollect_CacheSelfObs(t *testing.T) {
 		t.Fatalf("cache_size = %v, want %d", size[0].Value, len(devs))
 	}
 }
+
+// --- device posture attribute metrics: tailscale.device.attribute{,.info} ---
+
+// attrPostureMap spans value types and namespaces for the attribute-metric tests.
+func attrPostureMap() map[string]any {
+	return map[string]any{
+		"intune:isEncrypted":     true,        // bool   -> numeric gauge (1)
+		"intune:isSupervised":    false,       // bool   -> numeric gauge (0)
+		"intune:complianceState": "compliant", // string -> info gauge (value label)
+		"ip:country":             "GB",        // string -> info gauge
+		"custom:myScore":         float64(87), // number -> numeric gauge (87)
+		"node:os":                "linux",     // string, node namespace
+	}
+}
+
+// attrCollector builds a single-device posture collector with collect_posture on
+// and the given attribute-namespace allow-list, plus a fresh recorder.
+func attrCollector(devID string, posture map[string]any, ns ...string) (*devices.Collector, *telemetrytest.Recorder, *fakeAPI) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: []tsapi.RichDevice{{ID: devID, Hostname: "laptop", OS: "linux", ConnectedToControl: true}},
+		posture: map[string]map[string]any{devID: posture},
+	}
+	c := devices.New(api, cache, 0, false, true, devices.WithAttributeNamespaces(ns))
+	return c, telemetrytest.New(), api
+}
+
+func TestCollect_AttributeNumericBool(t *testing.T) {
+	c, rec, _ := attrCollector("dev1", map[string]any{
+		"intune:isEncrypted":  true,
+		"intune:isSupervised": false,
+	}, "intune")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.device.attribute")
+	if len(pts) != 2 {
+		t.Fatalf("numeric attribute points = %d, want 2; pts=%+v", len(pts), pts)
+	}
+	enc, ok := pointByAttr(pts, map[string]string{"attribute": "intune:isEncrypted"})
+	if !ok {
+		t.Fatalf("no numeric point for intune:isEncrypted; pts=%+v", pts)
+	}
+	if enc.Kind != "gauge" {
+		t.Fatalf("attribute kind = %q, want gauge", enc.Kind)
+	}
+	if enc.Unit != semconv.UnitDimensionless {
+		t.Fatalf("attribute unit = %q, want %q", enc.Unit, semconv.UnitDimensionless)
+	}
+	if enc.Value != 1 {
+		t.Fatalf("intune:isEncrypted=true => %v, want 1", enc.Value)
+	}
+	if enc.Attrs[semconv.HostID] != "dev1" || enc.Attrs[semconv.HostName] != "laptop" {
+		t.Fatalf("attribute identity labels = %+v", enc.Attrs)
+	}
+	if _, present := enc.Attrs["value"]; present {
+		t.Errorf("numeric attribute carries a value label = %q, want absent", enc.Attrs["value"])
+	}
+	sup, _ := pointByAttr(pts, map[string]string{"attribute": "intune:isSupervised"})
+	if sup.Value != 0 {
+		t.Fatalf("intune:isSupervised=false => %v, want 0", sup.Value)
+	}
+}
+
+func TestCollect_AttributeNumericNumber(t *testing.T) {
+	c, rec, _ := attrCollector("dev1", map[string]any{"custom:myScore": float64(87)}, "custom")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.device.attribute")
+	score, ok := pointByAttr(pts, map[string]string{"attribute": "custom:myScore"})
+	if !ok {
+		t.Fatalf("no numeric point for custom:myScore; pts=%+v", pts)
+	}
+	if score.Value != 87 {
+		t.Fatalf("custom:myScore = %v, want 87", score.Value)
+	}
+}
+
+func TestCollect_AttributeInfoString(t *testing.T) {
+	c, rec, _ := attrCollector("dev1", map[string]any{
+		"intune:complianceState": "compliant",
+		"ip:country":             "GB",
+	}, "intune", "ip")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.attribute"); len(pts) != 0 {
+		t.Fatalf("numeric points = %d, want 0 (all strings)", len(pts))
+	}
+	info := rec.MetricPoints("tailscale.device.attribute.info")
+	if len(info) != 2 {
+		t.Fatalf("info points = %d, want 2; pts=%+v", len(info), info)
+	}
+	comp, ok := pointByAttr(info, map[string]string{"attribute": "intune:complianceState", "value": "compliant"})
+	if !ok {
+		t.Fatalf("no info point for intune:complianceState=compliant; pts=%+v", info)
+	}
+	if comp.Kind != "gauge" || comp.Unit != semconv.UnitDimensionless {
+		t.Fatalf("info kind/unit = %q/%q, want gauge/%q", comp.Kind, comp.Unit, semconv.UnitDimensionless)
+	}
+	if comp.Value != 1 {
+		t.Fatalf("info value = %v, want 1 (constant)", comp.Value)
+	}
+	if comp.Attrs[semconv.HostID] != "dev1" {
+		t.Fatalf("info host.id = %q, want dev1", comp.Attrs[semconv.HostID])
+	}
+	if _, ok := pointByAttr(info, map[string]string{"attribute": "ip:country", "value": "GB"}); !ok {
+		t.Fatalf("no info point for ip:country=GB; pts=%+v", info)
+	}
+}
+
+func TestCollect_AttributeNamespaceAllowList(t *testing.T) {
+	// allow-list [intune, ip]: intune/ip keys promoted; node/custom dropped.
+	c, rec, _ := attrCollector("dev1", attrPostureMap(), "intune", "ip")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	num := rec.MetricPoints("tailscale.device.attribute")
+	info := rec.MetricPoints("tailscale.device.attribute.info")
+	if _, ok := pointByAttr(num, map[string]string{"attribute": "intune:isEncrypted"}); !ok {
+		t.Error("intune:isEncrypted not promoted (allow-listed)")
+	}
+	if _, ok := pointByAttr(info, map[string]string{"attribute": "ip:country"}); !ok {
+		t.Error("ip:country not promoted (allow-listed)")
+	}
+	if _, ok := pointByAttr(num, map[string]string{"attribute": "custom:myScore"}); ok {
+		t.Error("custom:myScore promoted but custom is not allow-listed")
+	}
+	if _, ok := pointByAttr(info, map[string]string{"attribute": "node:os"}); ok {
+		t.Error("node:os promoted but node is not allow-listed")
+	}
+}
+
+func TestCollect_AttributeWildcard(t *testing.T) {
+	// ["*"] promotes every namespace, including node and custom.
+	c, rec, _ := attrCollector("dev1", attrPostureMap(), "*")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	info := rec.MetricPoints("tailscale.device.attribute.info")
+	num := rec.MetricPoints("tailscale.device.attribute")
+	if _, ok := pointByAttr(info, map[string]string{"attribute": "node:os", "value": "linux"}); !ok {
+		t.Errorf("node:os not promoted under wildcard; info=%+v", info)
+	}
+	if _, ok := pointByAttr(num, map[string]string{"attribute": "custom:myScore"}); !ok {
+		t.Errorf("custom:myScore not promoted under wildcard; num=%+v", num)
+	}
+}
+
+func TestCollect_AttributeDisabledWithoutAllowList(t *testing.T) {
+	// No WithAttributeNamespaces => no attribute metrics, but the posture info
+	// gauge and posture log are unaffected.
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{devices: devs, posture: map[string]map[string]any{"3690401478992208": richPosture()}}
+	c := devices.New(api, cache, 0, false, true)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.attribute"); len(pts) != 0 {
+		t.Errorf("numeric attribute points = %d, want 0 (no allow-list)", len(pts))
+	}
+	if pts := rec.MetricPoints("tailscale.device.attribute.info"); len(pts) != 0 {
+		t.Errorf("info attribute points = %d, want 0 (no allow-list)", len(pts))
+	}
+	if pts := rec.MetricPoints("tailscale.device.posture"); len(pts) != 1 {
+		t.Errorf("posture info gauge = %d, want 1 (unaffected)", len(pts))
+	}
+	if postureLogCount(rec) != 1 {
+		t.Errorf("posture logs = %d, want 1 (unaffected)", postureLogCount(rec))
+	}
+}

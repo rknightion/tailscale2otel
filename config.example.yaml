@@ -83,7 +83,15 @@ collectors:
   # posture_log_mode (needs collect_posture): changes (default; log only when a device's posture
   # changes — full baseline dump on first scrape, deltas after) | always (every scrape) | off (no
   # log). The posture info-gauge metric (tailscale.device.posture) is emitted every scrape regardless.
-  devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false, posture_log_mode: changes }
+  #
+  # attribute_namespaces (needs collect_posture): which posture-attribute namespace prefixes (the part
+  # before ":" in a posture key) are promoted to the tailscale.device.attribute{,.info} metrics —
+  # booleans/numbers become a numeric gauge, strings/enums an info gauge with the value as a label.
+  # Default: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip] (MDM/identity integrations +
+  # geo). Use ["*"] for every namespace (incl. node, custom), or [] to disable. node:* is on the
+  # curated posture gauge already; custom:* is excluded by default (operator-defined cardinality).
+  devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false, posture_log_mode: changes,
+               attribute_namespaces: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip] }
 
   # flowlogs — network flow logs → aggregated traffic counters + per-connection logs.
   flowlogs:

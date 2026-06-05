@@ -43,6 +43,8 @@ const (
 	metricRoutesAdvertised = "tailscale.device.routes.advertised"
 	metricRoutesEnabled    = "tailscale.device.routes.enabled"
 	metricDevicesCount     = "tailscale.devices.count"
+	metricAttribute        = "tailscale.device.attribute"
+	metricAttributeInfo    = "tailscale.device.attribute.info"
 
 	metricCacheAge  = "tailscale2otel.enrich.cache_age"
 	metricCacheSize = "tailscale2otel.enrich.cache_size"
@@ -56,6 +58,11 @@ const (
 	attrExternal      = "tailscale.external"
 	attrDERPRegion    = "tailscale.derp.region"
 	attrDERPPreferred = "tailscale.derp.preferred"
+
+	// Posture attribute metric labels (tailscale.device.attribute{,.info}): the
+	// full namespaced posture key, and (info gauge only) its string value.
+	attrAttribute      = "attribute"
+	attrAttributeValue = "value"
 )
 
 // Curated posture label keys carried by the posture info gauge. Each maps a
@@ -114,6 +121,13 @@ type Collector struct {
 	perEntity      bool
 	postureLogMode string // "changes" (default) | "always" | "off"
 
+	// attrNamespaces is the set of posture-attribute namespace prefixes (the part
+	// before ":") promoted to the tailscale.device.attribute{,.info} metrics, and
+	// attrNamespaceWildcard promotes every namespace present. Empty set +
+	// non-wildcard disables the attribute metrics. Built by WithAttributeNamespaces.
+	attrNamespaces        map[string]bool
+	attrNamespaceWildcard bool
+
 	// lastPosture remembers each device's last-emitted posture signature
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
 	// device absent from the map is first-seen and counts as changed.
@@ -154,6 +168,30 @@ func normalizePostureLogMode(mode string) string {
 		return mode
 	default:
 		return postureLogChanges
+	}
+}
+
+// WithAttributeNamespaces sets the posture-attribute namespace allow-list: each
+// entry is a namespace prefix (the part before ":" in a posture key, e.g.
+// "intune", "ip") whose attributes are promoted to the
+// tailscale.device.attribute{,.info} metrics. The sentinel "*" promotes every
+// namespace present (including node and custom). An empty list (the default)
+// disables the attribute metrics; the posture info-gauge and posture log are
+// unaffected. Requires collect_posture (which fetches the attributes) — no extra
+// API calls are made, the already-fetched attribute map is reused.
+func WithAttributeNamespaces(ns []string) Option {
+	return func(c *Collector) {
+		c.attrNamespaces = make(map[string]bool, len(ns))
+		c.attrNamespaceWildcard = false
+		for _, n := range ns {
+			if n == "*" {
+				c.attrNamespaceWildcard = true
+				continue
+			}
+			if n = strings.TrimSpace(n); n != "" {
+				c.attrNamespaces[n] = true
+			}
+		}
 	}
 }
 
@@ -319,6 +357,12 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 	}
 	e.Gauge(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
 
+	// Promote the allow-listed posture attributes to queryable metrics (hybrid
+	// model), reusing the already-fetched attribute map — no extra API call.
+	if c.attrNamespaceWildcard || len(c.attrNamespaces) > 0 {
+		c.emitAttributes(e, d, attrs)
+	}
+
 	// Decide whether to emit the LOG. The signature is computed over the FULL
 	// posture map so any posture change (not just curated keys) fires the log.
 	sig := postureSignature(attrs)
@@ -351,6 +395,41 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		Body:     fmt.Sprintf("device %q has %d posture attribute(s)", d.Hostname, len(attrs)),
 		Attrs:    evAttrs,
 	})
+}
+
+// emitAttributes promotes the allow-listed posture attributes to metrics
+// (hybrid model): boolean and numeric values become the tailscale.device.attribute
+// gauge (where the value carries meaning — 0/1 for booleans, the number itself
+// otherwise); string/enum values become the tailscale.device.attribute.info gauge
+// (constant 1, the string carried as the `value` label). Attributes whose
+// namespace (the part before ":") is not allow-listed are skipped, as are
+// non-scalar values (posture values are documented as string|number|bool).
+func (c *Collector) emitAttributes(e telemetry.Emitter, d *tsapi.RichDevice, attrs map[string]any) {
+	for key, v := range attrs {
+		ns, _, ok := strings.Cut(key, ":")
+		if !ok {
+			continue // Tailscale posture keys are always namespaced.
+		}
+		if !c.attrNamespaceWildcard && !c.attrNamespaces[ns] {
+			continue
+		}
+		labels := telemetry.Attrs{
+			semconv.HostName: d.Hostname,
+			semconv.HostID:   d.ID,
+			attrAttribute:    key,
+		}
+		switch val := v.(type) {
+		case bool:
+			e.Gauge(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(val), labels)
+		case float64:
+			e.Gauge(docAttribute.Name, docAttribute.Unit, docAttribute.Description, val, labels)
+		case string:
+			labels[attrAttributeValue] = val
+			e.Gauge(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
+		default:
+			// Skip anything that isn't a scalar string/number/bool.
+		}
+	}
 }
 
 // postureSignature returns a stable string fingerprint of a posture map: each

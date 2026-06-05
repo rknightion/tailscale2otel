@@ -162,6 +162,8 @@ attribute set: `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user`
 <!-- BEGIN GENERATED: metrics groups="Devices" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
+| `tailscale.device.attribute` | `1` | gauge | `tailscale_device_attribute_ratio` | `host_name`, `host_id`, `attribute` | Numeric device posture attribute — boolean attributes as `0`/`1`, numeric attributes as their value (e.g. `intune:isEncrypted`, `custom:myScore`); one series per device per attribute, the namespaced posture key carried as the `attribute` label. **Gated** by `collect_posture` and the `attribute_namespaces` allow-list. |
+| `tailscale.device.attribute.info` | `1` | gauge | `tailscale_device_attribute_info_ratio` | `host_name`, `host_id`, `attribute`, `value` | String/enum device posture attribute info gauge (constant `1`); the namespaced posture key is the `attribute` label and its string value the `value` label (e.g. `intune:complianceState`=`compliant`, `ip:country`=`GB`). **Gated** by `collect_posture` and the `attribute_namespaces` allow-list. |
 | `tailscale.device.derp.latency` | `s` | gauge | `tailscale_device_derp_latency_seconds` | `host_name`, `host_id`, `tailscale_derp_region`, `tailscale_derp_preferred` | Latency from the device to a DERP region; one series per region. |
 | `tailscale.device.key.expiry` | `s` | gauge | `tailscale_device_key_expiry_seconds` | `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user`, `tailscale_tags` | Unix timestamp the device node key expires. |
 | `tailscale.device.last_seen` | `s` | gauge | `tailscale_device_last_seen_seconds` | `host_name`, `host_id`, `os_type`, `os_version`, `tailscale_user`, `tailscale_tags` | Unix timestamp the device was last seen. |
@@ -297,6 +299,22 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 > trail rather than a per-minute snapshot. Note that the device's own OS is `node_os` / `node_osVersion`
 > (and the metric's `os` / `os_version` labels); the resource-level `os_type` / `os_description` on
 > any signal describe the **collector** host, not the device.
+
+> **Device posture attributes as metrics (MDM/identity integrations).** Beyond the curated
+> `tailscale.device.posture` gauge above, the allow-listed posture-attribute namespaces (default:
+> `intune`, `jamf`, `kandji`, `crowdstrike`, `sentinelone`, `kolide`, `ip` — see
+> `collectors.devices.attribute_namespaces`) are promoted to two metrics, reusing the same per-device
+> attribute fetch (no extra API calls; both **gated** by `collect_posture`). Each attribute lands in
+> exactly one, by value type: booleans/numbers become **`tailscale_device_attribute_ratio`** (the value
+> carries meaning — `0`/`1` for booleans, the number otherwise), and strings/enums become
+> **`tailscale_device_attribute_info_ratio`** (constant `1`, the value carried in the `value` label).
+> So `avg(tailscale_device_attribute_ratio{attribute="intune:isEncrypted"})` is the encrypted-fleet
+> fraction, `tailscale_device_attribute_ratio{attribute="intune:isEncrypted"} == 0` finds unencrypted
+> devices, and `count by(value)(tailscale_device_attribute_info_ratio{attribute="intune:complianceState"})`
+> breaks the fleet down by compliance state. Series count ≈ devices × allow-listed attributes present
+> (bounded for enum/bool); `node:*` is omitted from the default (already on the curated posture gauge)
+> and `custom:*` is excluded by default since its values are operator-defined. Set
+> `attribute_namespaces: ["*"]` to promote every namespace, or `[]` to disable.
 
 ---
 

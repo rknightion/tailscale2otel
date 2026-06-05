@@ -331,6 +331,15 @@ type CollectorConfig struct {
 	// suppresses the log entirely. The posture info-gauge METRIC is emitted every
 	// scrape regardless of this setting.
 	PostureLogMode string `yaml:"posture_log_mode"`
+	// AttributeNamespaces lists the device posture-attribute namespace prefixes (the
+	// part before ":" in a posture key, e.g. "intune", "ip") promoted to the
+	// tailscale.device.attribute{,.info} metrics (devices collector; requires
+	// collect_posture, which fetches the attributes — no extra API calls). Default:
+	// the integration namespaces plus ip. The sentinel ["*"] promotes every namespace
+	// present (including node and custom). An explicit empty list ([]) disables the
+	// attribute metrics; node:* is excluded by default (already on the curated posture
+	// gauge) and custom:* by default (operator-defined, potentially unbounded values).
+	AttributeNamespaces []string `yaml:"attribute_namespaces"`
 	// MaxLogRecordsPerWindow caps flow LOG records emitted per poll window
 	// (flowlogs only; 0 = unlimited). Excess is counted into
 	// tailscale.network.flow.logs_dropped; metrics are never capped.

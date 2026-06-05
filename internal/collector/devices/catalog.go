@@ -137,6 +137,23 @@ var (
 		Attributes:  postureInfoAttrs,
 		Group:       groupDevices,
 	}
+
+	docAttribute = metricdoc.Metric{
+		Name:        metricAttribute,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Numeric device posture attribute — boolean attributes as `0`/`1`, numeric attributes as their value (e.g. `intune:isEncrypted`, `custom:myScore`); one series per device per attribute, the namespaced posture key carried as the `attribute` label. **Gated** by `collect_posture` and the `attribute_namespaces` allow-list.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute},
+		Group:       groupDevices,
+	}
+	docAttributeInfo = metricdoc.Metric{
+		Name:        metricAttributeInfo,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "String/enum device posture attribute info gauge (constant `1`); the namespaced posture key is the `attribute` label and its string value the `value` label (e.g. `intune:complianceState`=`compliant`, `ip:country`=`GB`). **Gated** by `collect_posture` and the `attribute_namespaces` allow-list.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute, attrAttributeValue},
+		Group:       groupDevices,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -144,6 +161,7 @@ func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docPostureInfo,
+		docAttribute, docAttributeInfo,
 		docCacheAge, docCacheSize,
 	}
 }

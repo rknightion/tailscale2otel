@@ -90,6 +90,20 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Collectors.Devices.PostureLogMode != "changes" {
 		t.Errorf("Devices.PostureLogMode = %q, want default changes", cfg.Collectors.Devices.PostureLogMode)
 	}
+	// Opt-out populated default: the integration namespaces plus ip are promoted
+	// to attribute metrics out of the box once collect_posture is enabled.
+	wantNS := []string{"intune", "jamf", "kandji", "crowdstrike", "sentinelone", "kolide", "ip"}
+	gotNS := cfg.Collectors.Devices.AttributeNamespaces
+	if len(gotNS) != len(wantNS) {
+		t.Errorf("Devices.AttributeNamespaces = %v, want %v", gotNS, wantNS)
+	} else {
+		for i := range wantNS {
+			if gotNS[i] != wantNS[i] {
+				t.Errorf("Devices.AttributeNamespaces[%d] = %q, want %q", i, gotNS[i], wantNS[i])
+				break
+			}
+		}
+	}
 	if cfg.Collectors.Flowlogs.Source != "poll" {
 		t.Errorf("Flowlogs.Source = %q, want default poll", cfg.Collectors.Flowlogs.Source)
 	}

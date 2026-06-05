@@ -85,7 +85,8 @@ func (a *App) registerCollectors() {
 		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture,
 			devices.WithPerEntity(a.cfg.Cardinality.DevicePerEntity),
-			devices.WithPostureLogMode(c.Devices.PostureLogMode)), c.Devices.Interval.D())
+			devices.WithPostureLogMode(c.Devices.PostureLogMode),
+			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces)), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
 		a.registry.Register(users.New(a.client, c.Users.Interval.D(),

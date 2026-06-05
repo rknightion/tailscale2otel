@@ -28,12 +28,14 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	api := &fakeAPI{
 		devices: devs,
 		posture: map[string]map[string]any{
-			"3690401478992208": {"custom:foo": "bar", "node:os": "linux"},
+			"3690401478992208": {"custom:foo": "bar", "node:os": "linux", "intune:isEncrypted": true},
 			"n-desktop":        {"custom:foo": "baz"},
 			"n-phone":          {},
 		},
 	}
-	c := devices.New(api, cache, 0, true, true)
+	// Wildcard attribute_namespaces so both the numeric and info attribute gauges
+	// (tailscale.device.attribute{,.info}) are emitted and drift-checked too.
+	c := devices.New(api, cache, 0, true, true, devices.WithAttributeNamespaces([]string{"*"}))
 
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -75,6 +77,17 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	}
 	if _, ok := declared["tailscale.device.posture"]; !ok {
 		t.Error("posture info gauge tailscale.device.posture not declared in devices.Catalog()")
+	}
+
+	// The attribute metrics (hybrid: numeric + info) must be emitted under a
+	// wildcard allow-list and declared in Catalog().
+	for _, name := range []string{"tailscale.device.attribute", "tailscale.device.attribute.info"} {
+		if pts := rec.MetricPoints(name); len(pts) == 0 {
+			t.Errorf("attribute metric %q not emitted with attribute_namespaces=[*]", name)
+		}
+		if _, ok := declared[name]; !ok {
+			t.Errorf("attribute metric %q not declared in devices.Catalog()", name)
+		}
 	}
 
 	logDeclared := map[string]bool{}

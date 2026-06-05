@@ -300,3 +300,26 @@ func TestLoadMissingFile(t *testing.T) {
 		t.Fatalf("expected error for missing file, got nil")
 	}
 }
+
+func TestLoadAttributeNamespaces(t *testing.T) {
+	// An explicit list overrides the populated default.
+	p := writeTemp(t, "collectors:\n  devices:\n    attribute_namespaces: [intune, ip]\n")
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := cfg.Collectors.Devices.AttributeNamespaces
+	if len(got) != 2 || got[0] != "intune" || got[1] != "ip" {
+		t.Fatalf("AttributeNamespaces = %v, want [intune ip]", got)
+	}
+
+	// An explicit empty list disables the attribute metrics (overrides the default).
+	p2 := writeTemp(t, "collectors:\n  devices:\n    attribute_namespaces: []\n")
+	cfg2, err := config.Load(p2)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg2.Collectors.Devices.AttributeNamespaces) != 0 {
+		t.Fatalf("explicit empty attribute_namespaces = %v, want empty (disabled)", cfg2.Collectors.Devices.AttributeNamespaces)
+	}
+}

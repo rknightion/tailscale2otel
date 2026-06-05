@@ -67,6 +67,10 @@ func Default() *Config {
 				CollectRoutes:  false,
 				CollectPosture: false,
 				PostureLogMode: "changes",
+				// Opt-out default: once collect_posture is on, the integration
+				// namespaces plus ip are promoted to attribute metrics. node is
+				// covered by the curated posture gauge; custom is excluded (unbounded).
+				AttributeNamespaces: []string{"intune", "jamf", "kandji", "crowdstrike", "sentinelone", "kolide", "ip"},
 			},
 			Flowlogs: CollectorConfig{
 				Enabled:         true,
