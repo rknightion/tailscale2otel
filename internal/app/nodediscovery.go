@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -29,12 +30,16 @@ var _ nodeDiscoveryAPI = (*tsapi.Client)(nil)
 type nodeDiscoverer struct {
 	api nodeDiscoveryAPI
 	cfg config.NodeMetricsDiscovery
+	log *slog.Logger
 }
 
 var _ nodemetrics.Discoverer = (*nodeDiscoverer)(nil)
 
-func newNodeDiscoverer(api nodeDiscoveryAPI, cfg config.NodeMetricsDiscovery) *nodeDiscoverer {
-	return &nodeDiscoverer{api: api, cfg: cfg}
+func newNodeDiscoverer(api nodeDiscoveryAPI, cfg config.NodeMetricsDiscovery, log *slog.Logger) *nodeDiscoverer {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &nodeDiscoverer{api: api, cfg: cfg, log: log}
 }
 
 // Discover lists the tailnet devices and converts the matching ones into scrape
@@ -65,7 +70,41 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 			break
 		}
 	}
+	d.disambiguateInstances(out)
 	return out, nil
+}
+
+// disambiguateInstances guarantees every non-empty instance label is unique
+// across the discovered set. Non-unique sources (instance_source: hostname — many
+// devices report the same OS hostname, classically "localhost") would otherwise
+// collapse those devices onto a single tailscale.node label, silently merging
+// their metrics and colliding the scraper's per-series delta tracking. Colliding
+// labels are suffixed with the node address so each device stays distinct, and a
+// WARN is logged so the operator can switch to instance_source: name (MagicDNS,
+// unique) or address. The "address" source uses an empty instance (the collector
+// derives a unique host:port from the URL) and so never collides here.
+func (d *nodeDiscoverer) disambiguateInstances(targets []nodemetrics.Target) {
+	counts := make(map[string]int, len(targets))
+	for i := range targets {
+		if inst := targets[i].Instance; inst != "" {
+			counts[inst]++
+		}
+	}
+	for inst, n := range counts {
+		if n > 1 {
+			d.log.Warn("node-metrics discovery: non-unique instance label; disambiguating by address",
+				"instance", inst, "devices", n, "instance_source", d.cfg.InstanceSource)
+		}
+	}
+	for i := range targets {
+		inst := targets[i].Instance
+		if inst == "" || counts[inst] < 2 {
+			continue
+		}
+		if u, err := url.Parse(targets[i].URL); err == nil && u.Hostname() != "" {
+			targets[i].Instance = inst + "@" + u.Hostname()
+		}
+	}
 }
 
 // match reports whether a device passes the online/external/tag filters.
@@ -141,7 +180,7 @@ func (d *nodeDiscoverer) toTarget(dev *tsapi.RichDevice, addr netip.Addr) nodeme
 
 	switch d.cfg.InstanceSource {
 	case "name":
-		t.Instance = dev.Name
+		t.Instance = magicDNSShort(dev.Name)
 	case "hostname":
 		t.Instance = dev.Hostname
 	default: // "address": leave empty so the collector derives host:port from the URL
@@ -159,4 +198,15 @@ func (d *nodeDiscoverer) toTarget(dev *tsapi.RichDevice, addr netip.Addr) nodeme
 		}
 	}
 	return t
+}
+
+// magicDNSShort returns the first DNS label of a MagicDNS name, e.g.
+// "jules.saga-turtle.ts.net" -> "jules" — the friendly short identity, which is
+// still unique within a tailnet (Tailscale dedupes device names). It returns the
+// input unchanged when there is no dot (already short, or empty).
+func magicDNSShort(name string) string {
+	if i := strings.IndexByte(name, '.'); i > 0 {
+		return name[:i]
+	}
+	return name
 }

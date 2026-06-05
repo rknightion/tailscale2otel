@@ -106,7 +106,7 @@ func (a *App) registerCollectors() {
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.
-		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.client))
+		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.client, a.logger))
 		a.registry.Register(a.nodeMetrics, nm.Interval.D())
 	}
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {

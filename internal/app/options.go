@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/base64"
+	"log/slog"
 	"maps"
 	"os"
 
@@ -74,7 +75,7 @@ func tsapiOptions(cfg *config.Config) tsapi.Options {
 
 // nodeMetricsOptions maps the node-metrics scraper config into
 // nodemetrics.Options, translating each configured target.
-func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI) nodemetrics.Options {
+func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, logger *slog.Logger) nodemetrics.Options {
 	targets := make([]nodemetrics.Target, 0, len(nm.Targets))
 	for _, t := range nm.Targets {
 		nt := nodemetrics.Target{
@@ -109,7 +110,7 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI) nodem
 	// Dynamic discovery: poll the Tailscale device inventory on its own interval
 	// and union the result with the static targets (handled by the collector).
 	if nm.Discovery.Enabled {
-		opts.Discoverer = newNodeDiscoverer(api, nm.Discovery)
+		opts.Discoverer = newNodeDiscoverer(api, nm.Discovery, logger)
 		opts.DiscoveryInterval = nm.Discovery.Interval.D()
 	}
 	return opts

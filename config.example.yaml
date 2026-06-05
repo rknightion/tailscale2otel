@@ -160,7 +160,14 @@ collectors:
       include_tags: []          # e.g. ["tag:server"]; empty = all devices
       exclude_tags: []          # wins over include_tags
       address_order: ipv4       # ipv4 | ipv6 (preferred family; falls back to the other)
-      instance_source: address  # address (host:port) | name (MagicDNS) | hostname
+      # tailscale_node identity label for each discovered target:
+      #   name     MagicDNS short name, e.g. "jules" (the FQDN's first label) — UNIQUE per tailnet (recommended)
+      #   address  Tailscale IP host:port — also unique (the built-in default when unset)
+      #   hostname OS hostname — short/friendly but NOT unique: phones and fresh installs
+      #            commonly report "localhost", so several devices would otherwise share a
+      #            single series. Colliding labels are auto-suffixed with the node address and
+      #            a WARN is logged, but prefer name (unique + friendly) or address.
+      instance_source: name
       include_host_labels: true # attach host.name/host.id for tailscale.device.* joins
       include_tags_label: true  # attach tailscale.tags
 

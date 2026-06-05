@@ -83,7 +83,11 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
   Tailscale-agnostic — `Discoverer` returns plain `Target`s; the concrete impl (`*nodeDiscoverer`: devices
   API → targets, with online/external/tag filters and scheme/port/path shaping) lives in
   `internal/app/nodediscovery.go`. Discovery emits `tailscale2otel.nodemetrics.discovery.{success,targets}`
-  every Collect. The `metric_allow`/`metric_deny` (anchored regex on the metric NAME) and `drop_labels`
+  every Collect. **Discovered instance labels are forced unique** before use: `instance_source:
+  hostname` is NOT unique (many devices report `localhost`), so colliding labels are auto-suffixed
+  with the node address (`localhost@100.x.y.z`) and a WARN is logged (`disambiguateInstances`);
+  prefer `name` (MagicDNS short name) or `address` (empty instance → collector derives a unique host:port).
+  The `metric_allow`/`metric_deny` (anchored regex on the metric NAME) and `drop_labels`
   (instance is never dropped) filters apply ONLY to forwarded samples in `emitSample` — never to
   `tailscale.node.up` or the `discovery.*` gauges.
 - **Per-entity gauge toggles are the main cardinality lever:** `cardinality.{device,user,key}_per_entity`

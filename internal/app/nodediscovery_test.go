@@ -1,8 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
@@ -10,6 +14,9 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
+
+// discardLog is a no-op logger for discoverer tests that don't assert on logs.
+func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 // fakeDevicesAPI satisfies nodeDiscoveryAPI for discoverer tests.
 type fakeDevicesAPI struct {
@@ -29,7 +36,7 @@ func discoveryDefaults() config.NodeMetricsDiscovery {
 
 func mustDiscover(t *testing.T, devs []tsapi.RichDevice, cfg config.NodeMetricsDiscovery) []nodemetrics.Target {
 	t.Helper()
-	got, err := newNodeDiscoverer(&fakeDevicesAPI{devs: devs}, cfg).Discover(context.Background())
+	got, err := newNodeDiscoverer(&fakeDevicesAPI{devs: devs}, cfg, discardLog()).Discover(context.Background())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -98,11 +105,11 @@ func TestNodeDiscoverer_EmptyAddressSkipped(t *testing.T) {
 }
 
 func TestNodeDiscoverer_InstanceSource(t *testing.T) {
-	dev := tsapi.RichDevice{Hostname: "host1", Name: "host1.ts.net", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true}
+	dev := tsapi.RichDevice{Hostname: "myhost", Name: "host1.tail-scale.ts.net", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true}
 	cases := map[string]string{
-		"address":  "", // empty so the collector derives host:port from the URL
-		"name":     "host1.ts.net",
-		"hostname": "host1",
+		"address":  "",       // empty so the collector derives host:port from the URL
+		"name":     "host1",  // MagicDNS short name: the FQDN's first label (tailnet domain stripped)
+		"hostname": "myhost", // OS hostname verbatim
 	}
 	for src, want := range cases {
 		cfg := discoveryDefaults()
@@ -165,9 +172,60 @@ func TestNodeDiscoverer_MaxTargetsCapsDiscovery(t *testing.T) {
 	}
 }
 
+func TestNodeDiscoverer_DisambiguatesCollidingInstances(t *testing.T) {
+	// Several devices commonly report the SAME OS hostname (e.g. phones default to
+	// "localhost"). With instance_source: hostname that would collapse them onto one
+	// tailscale.node label and silently merge their metrics — so colliding labels
+	// must be made unique.
+	cfg := discoveryDefaults()
+	cfg.InstanceSource = "hostname"
+	devs := []tsapi.RichDevice{
+		{Hostname: "localhost", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true},
+		{Hostname: "localhost", Addresses: []string{"100.64.0.2"}, ConnectedToControl: true},
+		{Hostname: "camden", Addresses: []string{"100.64.0.3"}, ConnectedToControl: true},
+	}
+	got := mustDiscover(t, devs, cfg)
+	if len(got) != 3 {
+		t.Fatalf("targets = %d, want 3", len(got))
+	}
+	counts := map[string]int{}
+	for _, tg := range got {
+		counts[tg.Instance]++
+	}
+	for inst, n := range counts {
+		if n > 1 {
+			t.Fatalf("instance %q appears %d times; collisions must be disambiguated: %+v", inst, n, got)
+		}
+	}
+	if counts["camden"] != 1 {
+		t.Fatalf("unique hostname should be preserved as-is; got %+v", got)
+	}
+	if counts["localhost"] != 0 {
+		t.Fatalf("colliding 'localhost' must be disambiguated, not left bare; got %+v", got)
+	}
+}
+
+func TestNodeDiscoverer_WarnsOnInstanceCollision(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	cfg := discoveryDefaults()
+	cfg.InstanceSource = "hostname"
+	devs := []tsapi.RichDevice{
+		{Hostname: "localhost", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true},
+		{Hostname: "localhost", Addresses: []string{"100.64.0.2"}, ConnectedToControl: true},
+	}
+	if _, err := newNodeDiscoverer(&fakeDevicesAPI{devs: devs}, cfg, log).Discover(context.Background()); err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "localhost") || !strings.Contains(out, "instance_source=hostname") {
+		t.Fatalf("want a collision WARN naming localhost + instance_source=hostname; got %q", out)
+	}
+}
+
 func TestNodeDiscoverer_APIErrorPropagates(t *testing.T) {
 	want := errors.New("boom")
-	_, err := newNodeDiscoverer(&fakeDevicesAPI{err: want}, discoveryDefaults()).Discover(context.Background())
+	_, err := newNodeDiscoverer(&fakeDevicesAPI{err: want}, discoveryDefaults(), discardLog()).Discover(context.Background())
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
 	}
