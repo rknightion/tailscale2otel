@@ -1,8 +1,11 @@
 package telemetry_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -14,7 +17,7 @@ import (
 func TestInstallExportErrorHandler_CountsHandledErrors(t *testing.T) {
 	rec := telemetrytest.New()
 
-	restore := telemetry.InstallExportErrorHandler(rec.Emitter())
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
 	defer restore()
 
 	otel.Handle(errors.New("export boom"))
@@ -38,10 +41,31 @@ func TestInstallExportErrorHandler_CountsHandledErrors(t *testing.T) {
 	}
 }
 
+func TestInstallExportErrorHandler_LogsErrorBody(t *testing.T) {
+	rec := telemetrytest.New()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), logger)
+	defer restore()
+
+	// The OTLP exporter surfaces Grafana Cloud's HTTP 400 body in the error it
+	// hands to otel.Handle; the handler must log it so the offending metric/label
+	// is visible instead of being collapsed to a coarse counter.
+	otel.Handle(errors.New(`failed to upload metrics: 400 Bad Request: duplicate label "tailscale_node"`))
+
+	// The slog TextHandler escapes the quotes in the wrapped error, so assert on
+	// the (escaping-agnostic) substrings that prove the backend's body was logged.
+	got := buf.String()
+	if !strings.Contains(got, "duplicate label") || !strings.Contains(got, "tailscale_node") {
+		t.Fatalf("export error body was not logged; got: %s", got)
+	}
+}
+
 func TestInstallExportErrorHandler_ClassifiesTimeout(t *testing.T) {
 	rec := telemetrytest.New()
 
-	restore := telemetry.InstallExportErrorHandler(rec.Emitter())
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
 	defer restore()
 
 	otel.Handle(context.DeadlineExceeded)
@@ -61,7 +85,7 @@ func TestInstallExportErrorHandler_RestoreReinstallsPrevious(t *testing.T) {
 	otel.SetErrorHandler(prev)
 
 	rec := telemetrytest.New()
-	restore := telemetry.InstallExportErrorHandler(rec.Emitter())
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
 
 	otel.Handle(errors.New("during"))
 	if prevCalled {

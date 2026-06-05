@@ -82,3 +82,32 @@ func (m Metric) PromLabels() []string {
 	}
 	return out
 }
+
+// PromLabelName returns key normalized to the Prometheus label name that Grafana
+// Cloud's OTLP ingestion assigns: every rune outside [A-Za-z0-9_] (notably the
+// dots in OTEL attribute keys) becomes '_', and a digit-leading result is
+// prefixed with '_' (Prometheus label names cannot start with a digit). Two
+// distinct OTEL attribute keys that map to the same value here fold into a single
+// Prometheus label after export — a duplicate label name Mimir rejects as
+// otlp_parse_error. The Emitter's collision guard uses this to detect that case.
+func PromLabelName(key string) string {
+	if key == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(key) + 1)
+	for i, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				b.WriteByte('_') // a label name may not start with a digit
+			}
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}

@@ -40,3 +40,29 @@ func TestPromLabels(t *testing.T) {
 		t.Errorf("PromLabels() = %q, want %q", got, want)
 	}
 }
+
+// TestPromLabelName pins single-key Prometheus label normalization, the rule the
+// Emitter's collision guard uses to decide when two OTEL attribute keys would
+// fold into one Prometheus label (and get the sample rejected as
+// otlp_parse_error). It must mirror Grafana Cloud's OTLP label normalization:
+// non-[A-Za-z0-9_] runes (notably dots) become '_', and a digit-leading result
+// is prefixed with '_'.
+func TestPromLabelName(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"tailscale.node", "tailscale_node"}, // dotted identity ...
+		{"tailscale_node", "tailscale_node"}, // ... folds onto the scraped spelling
+		{"host.name", "host_name"},
+		{"network.io.direction", "network_io_direction"},
+		{"instance", "instance"},
+		{"already_ok", "already_ok"},
+		{"with-dash", "with_dash"}, // other punctuation also sanitized
+		{"with:colon", "with_colon"},
+		{"9lives", "_9lives"}, // digit-leading gets a '_' prefix
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := metricdoc.PromLabelName(c.in); got != c.want {
+			t.Errorf("PromLabelName(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

@@ -77,7 +77,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if logger == nil {
 		logger = slog.Default()
 	}
-	provider, err := telemetry.NewProvider(ctx, telemetryOptions(cfg, version))
+	topts := telemetryOptions(cfg, version)
+	topts.Logger = logger // surfaces Emitter label-collision diagnostics
+	provider, err := telemetry.NewProvider(ctx, topts)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +146,7 @@ func newApp(
 		collector.WithSelfObs(cfg.SelfObservability.Enabled),
 		collector.WithStatusTracker(a.status))
 	if cfg.SelfObservability.Enabled {
-		a.restore = telemetry.InstallExportErrorHandler(emitter)
+		a.restore = telemetry.InstallExportErrorHandler(emitter, logger)
 		telemetry.EmitBuildInfo(emitter, version, runtime.Version())
 	}
 	// Shared cross-source de-duplication: the same flow window / audit event can

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -58,6 +59,10 @@ type Options struct {
 
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
+
+	// Logger receives diagnostics from the telemetry pipeline (currently
+	// label-collision resolutions in the Emitter). Nil disables that logging.
+	Logger *slog.Logger
 }
 
 // Provider owns the OTEL MeterProvider and LoggerProvider and exposes a single
@@ -109,7 +114,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	return &Provider{
 		mp:      mp,
 		lp:      lp,
-		emitter: newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card),
+		emitter: newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger),
 		card:    card,
 	}, nil
 }
@@ -160,6 +165,31 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 		return res, nil
 	}
 	return res, err
+}
+
+// reservedPromotedLabels returns the Prometheus label names that Grafana Cloud
+// promotes from the OTEL Resource onto every exported series: service.name→job,
+// service.instance.id→instance, plus the service_* labels (confirmed on live
+// series). A data-point attribute that normalizes to one of these would duplicate
+// the promoted label and get the whole sample rejected as otlp_parse_error, so the
+// Emitter drops it (the resource value wins). Host/OS/process resource attributes
+// are deliberately NOT reserved — Grafana keeps those in target_info only, so a
+// data-point host.name (e.g. the node-metrics passthrough) does not collide.
+func reservedPromotedLabels(opts Options) map[string]struct{} {
+	r := map[string]struct{}{
+		"job":      {},
+		"instance": {},
+	}
+	if opts.ServiceName != "" {
+		r["service_name"] = struct{}{}
+	}
+	if opts.ServiceVersion != "" {
+		r["service_version"] = struct{}{}
+	}
+	if opts.InstanceID != "" {
+		r["service_instance_id"] = struct{}{}
+	}
+	return r
 }
 
 // otlpHTTPURL appends the OTLP/HTTP per-signal path (/v1/metrics, /v1/logs) to a
