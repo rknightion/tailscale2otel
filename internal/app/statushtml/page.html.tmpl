@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Service.Name}} — status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234493f8'/%3E%3C/svg%3E">
 <style>
   :root{
     --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
@@ -47,6 +48,7 @@
     background:var(--panel2)}
   tr:last-child td{border-bottom:0}
   td.num{text-align:right;font-family:var(--mono)}
+  tr.bad>td{background:rgba(248,81,73,.07)}
   .mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
   details{background:var(--panel);border:1px solid var(--line);border-radius:10px}
   details>summary{cursor:pointer;padding:12px 16px;font-weight:600;user-select:none}
@@ -58,10 +60,26 @@
   .scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
   .scroll table{border:0;border-radius:0}
   .muted{color:var(--muted)}
-  .note{color:var(--muted);font-size:12px;margin-top:8px}
+  .note{color:var(--muted);font-size:12px;margin-top:2px}
+  .note.err{color:var(--err)}
   footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
-  .bar{height:4px;background:var(--panel2);border-radius:3px;margin-top:6px;overflow:hidden}
-  .bar>i{display:block;height:100%;background:var(--accent)}
+  nav.toc{position:sticky;top:0;z-index:5;display:flex;gap:16px;flex-wrap:wrap;
+    padding:10px 24px;background:rgba(15,20,25,.93);border-bottom:1px solid var(--line);
+    backdrop-filter:blur(4px);font-size:13px}
+  .reasons{padding:6px 24px;color:var(--warn);font-size:12px;font-family:var(--mono);
+    border-bottom:1px solid var(--line)}
+  #staleBanner{display:none;padding:8px 24px;background:rgba(210,153,34,.16);
+    color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
+  #staleBanner.show{display:block}
+  svg.spark{width:80px;height:22px;vertical-align:middle;display:inline-block}
+  svg.spark.card{width:100%;height:36px;display:block;margin-top:8px}
+  .outcome{display:inline-flex;gap:2px;align-items:center}
+  .outcome i{width:5px;height:14px;border-radius:1px;background:var(--ok);display:inline-block}
+  .outcome i.f{background:var(--err)}
+  .controls{display:inline-flex;gap:10px;align-items:center}
+  button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.ctl:hover{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -70,8 +88,20 @@
   <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}</span>
   {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
   <span class="spacer"></span>
-  <span class="badge ok">running</span>
+  <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
 </header>
+<div class="reasons" id="healthReasons"{{if not .HealthReasons}} style="display:none"{{end}}>{{range .HealthReasons}}{{.}} · {{end}}</div>
+<div id="staleBanner"></div>
+<nav class="toc">
+  <a href="#collectors">Collectors</a>
+  <a href="#api">API</a>
+  <a href="#cardinality">Cardinality</a>
+  <a href="#nodemetrics">Node metrics</a>
+  {{if .Devices}}<a href="#devices">Devices</a>{{end}}
+  <a href="#metrics">Metrics</a>
+  <a href="#logs">Logs</a>
+  <a href="#config">Config</a>
+</nav>
 <main>
 
   <section>
@@ -80,39 +110,74 @@
       <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s</div></div>
       <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
       <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
-      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
-      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div></div>
+      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div><svg class="spark card" id="goroutinesSpark"></svg></div>
+      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div><svg class="spark card" id="heapSpark"></svg></div>
+      <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">—</div><div class="sub">cycles/sec</div><svg class="spark card" id="gcRateSpark"></svg></div>
     </div>
   </section>
 
-  <section>
+  <section id="collectors">
     <h2>Collectors</h2>
     <table>
-      <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Last run</th><th class="num">Duration</th><th>Last error</th></tr></thead>
-      <tbody>
+      <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Success</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th><th class="num">Duration</th><th>Recent</th><th>Last error</th></tr></thead>
+      <tbody id="collBody">
       {{range .Collectors}}
-        <tr>
-          <td><code>{{.Name}}</code></td>
+        <tr{{if and .HasRun (not .LastSuccess)}} class="bad"{{end}}>
+          <td><code>{{.Name}}</code>{{with .Checkpoint}}<div class="note{{if .Stuck}} err{{end}}">checkpoint lag {{.Lag}}{{if .Stuck}} · stuck{{end}}</div>{{end}}</td>
           <td>{{if not .HasRun}}<span class="badge pending">pending</span>{{else if .LastSuccess}}<span class="badge ok">ok</span>{{else}}<span class="badge err">fail</span>{{end}}</td>
           <td class="num">{{.IntervalSec}}s</td>
+          <td class="num">{{if .HasRun}}{{printf "%.0f" .SuccessRatePct}}%{{else}}<span class="muted">—</span>{{end}}</td>
           <td class="num">{{.Runs}}</td>
-          <td class="num">{{.Failures}}</td>
-          <td class="num">{{if .HasRun}}{{.LastFinishedAt}}{{else}}—{{end}}</td>
-          <td class="num">{{if .HasRun}}{{.LastDurationMs}}ms{{else}}—{{end}}</td>
+          <td class="num">{{.Failures}}{{if gt .ConsecutiveFailures 0}} <span class="muted">({{.ConsecutiveFailures}}×)</span>{{end}}</td>
+          <td class="num">{{if .HasRun}}{{if le .NextRunInSec 0}}due{{else}}{{.NextRunIn}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num">{{if .HasRun}}{{.LastDurationMs}}ms{{else}}<span class="muted">—</span>{{end}}</td>
+          <td></td>
           <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="8" class="muted">No collectors enabled.</td></tr>
+        <tr><td colspan="10" class="muted">No collectors enabled.</td></tr>
       {{end}}
       </tbody>
     </table>
   </section>
 
-  <section>
+  <section id="api">
+    <h2>API health</h2>
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card" id="rateLimitCard"{{if not .API.RateLimit}} style="display:none"{{end}}>
+        <div class="k">Rate limited (429)</div>
+        <div class="v" id="rlCount">{{with .API.RateLimit}}{{.Count}}{{end}}</div>
+        <div class="sub">last <span id="rlLast">{{with .API.RateLimit}}{{.LastSeen}}{{end}}</span></div>
+      </div>
+    </div>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Endpoint</th><th class="num">Requests</th><th class="num">Errors</th><th class="num">Retries</th><th class="num">429s</th><th class="num">Last status</th><th class="num">Latency</th><th>Last error</th></tr></thead>
+      <tbody id="apiBody">
+      {{range .API.Endpoints}}
+        <tr>
+          <td><code>{{.Endpoint}}</code></td>
+          <td class="num">{{.Requests}}</td>
+          <td class="num">{{.Errors}}</td>
+          <td class="num">{{.Retries}}</td>
+          <td class="num">{{.RateLimited}}</td>
+          <td class="num">{{.LastStatus}}</td>
+          <td class="num"><span class="muted">—</span></td>
+          <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="muted">No API requests recorded yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section id="cardinality">
     <h2>Cardinality (active series, last export interval)</h2>
     {{if .Cardinality.Available}}
       <div class="cards" style="margin-bottom:12px">
-        <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{len .Cardinality.Series}} metrics</div></div>
+        <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{len .Cardinality.Series}} metrics</div><svg class="spark card" id="cardSpark"></svg></div>
       </div>
       <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'cardTable')">
       <div class="scroll">
@@ -130,7 +195,7 @@
     {{end}}
   </section>
 
-  <section>
+  <section id="nodemetrics">
     <h2>Node-metrics discovery</h2>
     {{if .NodeDiscovery.Enabled}}
       <details>
@@ -155,7 +220,7 @@
   </section>
 
   {{if .Devices}}
-  <section>
+  <section id="devices">
     <h2>Devices ({{len .Devices}})</h2>
     <details>
       <summary>{{len .Devices}} device(s) in the enrichment cache</summary>
@@ -181,7 +246,7 @@
   </section>
   {{end}}
 
-  <section>
+  <section id="metrics">
     <h2>Metrics catalog ({{len .Metrics}})</h2>
     <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'metricsTable')">
     <div class="scroll">
@@ -204,7 +269,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="logs">
     <h2>Log events ({{len .LogEvents}})</h2>
     <input class="filter" type="text" placeholder="Filter log events…" oninput="filterTable(this,'logsTable')">
     <div class="scroll">
@@ -224,7 +289,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="config">
     <h2>Configuration (secrets redacted)</h2>
     <div class="cards">
       <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
@@ -254,10 +319,15 @@
 <footer>
   Generated at <span id="generatedAt">{{.GeneratedAt}}</span> ·
   <a href="/api/status.json">JSON</a> ·
-  <noscript>static snapshot (enable JavaScript for live updates) ·</noscript>
-  auto-refreshing every 10s
+  <span class="controls"><button class="ctl" id="pauseBtn">Pause</button> <a href="#" id="refreshNow">refresh now</a></span> ·
+  updated <span id="updatedAgo">just now</span> ·
+  <noscript>static snapshot (enable JavaScript for live updates &amp; sparklines)</noscript>
 </footer>
 <script>
+var SVGNS = 'http://www.w3.org/2000/svg';
+var lastOkMs = Date.now();
+var pollTimer = null, paused = false;
+
 // Filter table rows by a case-insensitive substring of their text content.
 function filterTable(input, tableId){
   var q = input.value.toLowerCase();
@@ -266,22 +336,218 @@ function filterTable(input, tableId){
     rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
   }
 }
-// Poll the JSON endpoint and refresh the live scalar stats in place (tables
-// update on a full reload). Failures are ignored so a transient blip is silent.
-function setText(id, v){ var el=document.getElementById(id); if(el!=null&&v!=null) el.textContent=v; }
+
+function setText(id, v){ var e=document.getElementById(id); if(e!=null&&v!=null) e.textContent=v; }
+
+function el(tag, attrs, text){
+  var e=document.createElement(tag);
+  if(attrs){ for(var k in attrs){ if(attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]); } }
+  if(text!=null) e.textContent=text;
+  return e;
+}
+
+// relText renders an RFC3339 timestamp as a coarse "Nm ago" string.
+function relText(iso){
+  if(!iso) return '';
+  var t = Date.parse(iso); if(isNaN(t)) return iso;
+  return relMs(t);
+}
+function relMs(ms){
+  var s = Math.round((Date.now()-ms)/1000); if(s<0) s=0;
+  if(s<60) return s+'s ago';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+
+// drawSpark renders a min/max-normalized polyline into an inline <svg> from a
+// numeric array. Fewer than two points clears the svg (nothing to plot).
+function drawSpark(svg, arr, color){
+  if(!svg) return;
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  if(!arr || arr.length < 2) return;
+  var W=100, H=24, pad=2, n=arr.length, mn=arr[0], mx=arr[0], i;
+  for(i=1;i<n;i++){ if(arr[i]<mn) mn=arr[i]; if(arr[i]>mx) mx=arr[i]; }
+  var span=(mx-mn)||1, pts='';
+  for(i=0;i<n;i++){
+    var x=pad + i*(W-2*pad)/(n-1);
+    var y=H-pad - (arr[i]-mn)/span*(H-2*pad);
+    pts += (i?' ':'') + x.toFixed(1)+','+y.toFixed(1);
+  }
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('preserveAspectRatio','none');
+  var pl=document.createElementNS(SVGNS,'polyline');
+  pl.setAttribute('fill','none');
+  pl.setAttribute('stroke', color || 'var(--accent)');
+  pl.setAttribute('stroke-width','1.5');
+  pl.setAttribute('vector-effect','non-scaling-stroke');
+  pl.setAttribute('points', pts);
+  svg.appendChild(pl);
+}
+function newSpark(){ var s=document.createElementNS(SVGNS,'svg'); s.setAttribute('class','spark'); return s; }
+
+// outcomeStrip renders the last <=24 run outcomes as red/green cells.
+function outcomeStrip(arr){
+  var span=el('span',{'class':'outcome'});
+  if(!arr) return span;
+  var start = arr.length>24 ? arr.length-24 : 0;
+  for(var i=start;i<arr.length;i++){
+    var dot=el('i'); if(!arr[i]) dot.className='f';
+    dot.title = arr[i] ? 'ok' : 'fail';
+    span.appendChild(dot);
+  }
+  return span;
+}
+
+function statusBadge(c){
+  if(!c.has_run) return el('span',{'class':'badge pending'},'pending');
+  if(c.last_success) return el('span',{'class':'badge ok'},'ok');
+  return el('span',{'class':'badge err'},'fail');
+}
+
+function rebuildCollectors(rows){
+  var tb=document.getElementById('collBody'); if(!tb) return;
+  tb.textContent='';
+  if(!rows || !rows.length){
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'10','class':'muted'},'No collectors enabled.'));
+    tb.appendChild(tr0); return;
+  }
+  rows.forEach(function(c){
+    var tr=el('tr');
+    if((c.has_run && !c.last_success) || c.consecutive_failures>=3 || c.overdue || (c.checkpoint && c.checkpoint.stuck)) tr.className='bad';
+    var nameTd=el('td'); nameTd.appendChild(el('code',null,c.name));
+    if(c.checkpoint){
+      var sub=el('div',{'class':'note'+(c.checkpoint.stuck?' err':'')});
+      sub.textContent='checkpoint lag '+c.checkpoint.lag+(c.checkpoint.stuck?' · stuck':'');
+      nameTd.appendChild(sub);
+    }
+    tr.appendChild(nameTd);
+    var stTd=el('td'); stTd.appendChild(statusBadge(c)); tr.appendChild(stTd);
+    tr.appendChild(el('td',{'class':'num'}, c.interval_seconds+'s'));
+    tr.appendChild(el('td',{'class':'num'}, c.has_run ? Math.round(c.success_rate_pct)+'%' : '—'));
+    tr.appendChild(el('td',{'class':'num'}, String(c.runs)));
+    tr.appendChild(el('td',{'class':'num'}, String(c.failures)+(c.consecutive_failures>0?' ('+c.consecutive_failures+'×)':'')));
+    tr.appendChild(el('td',{'class':'num'}, c.has_run ? (c.next_run_in_seconds<=0?'due':c.next_run_in) : '—'));
+    var durTd=el('td',{'class':'num'});
+    durTd.appendChild(document.createTextNode(c.has_run ? c.last_duration_ms+'ms ' : '— '));
+    if(c.duration_ms_series && c.duration_ms_series.length>1){ var sp=newSpark(); durTd.appendChild(sp); drawSpark(sp, c.duration_ms_series); }
+    tr.appendChild(durTd);
+    var recTd=el('td'); recTd.appendChild(outcomeStrip(c.outcome_series)); tr.appendChild(recTd);
+    var errTd=el('td',{'class':'mono'});
+    if(c.last_error){ errTd.textContent=c.last_error; } else { errTd.appendChild(el('span',{'class':'muted'},'—')); }
+    tr.appendChild(errTd);
+    tb.appendChild(tr);
+  });
+}
+
+function rebuildAPI(info){
+  var tb=document.getElementById('apiBody'); if(!tb) return;
+  var eps = (info && info.endpoints) ? info.endpoints : [];
+  tb.textContent='';
+  if(!eps.length){
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'8','class':'muted'},'No API requests recorded yet.'));
+    tb.appendChild(tr0);
+  } else {
+    eps.forEach(function(e2){
+      var tr=el('tr');
+      var nameTd=el('td'); nameTd.appendChild(el('code',null,e2.endpoint)); tr.appendChild(nameTd);
+      tr.appendChild(el('td',{'class':'num'}, String(e2.requests)));
+      tr.appendChild(el('td',{'class':'num'}, String(e2.errors)));
+      tr.appendChild(el('td',{'class':'num'}, String(e2.retries)));
+      tr.appendChild(el('td',{'class':'num'}, String(e2.rate_limited)));
+      tr.appendChild(el('td',{'class':'num'}, e2.last_status ? String(e2.last_status) : '—'));
+      var latTd=el('td',{'class':'num'});
+      var s=e2.duration_ms_series;
+      if(s && s.length){ latTd.appendChild(document.createTextNode(s[s.length-1]+'ms ')); } else { latTd.appendChild(el('span',{'class':'muted'},'—')); }
+      if(s && s.length>1){ var sp=newSpark(); latTd.appendChild(sp); drawSpark(sp, s); }
+      tr.appendChild(latTd);
+      var errTd=el('td',{'class':'mono'});
+      if(e2.last_error){ errTd.textContent=e2.last_error; } else { errTd.appendChild(el('span',{'class':'muted'},'—')); }
+      tr.appendChild(errTd);
+      tb.appendChild(tr);
+    });
+  }
+  var rl=document.getElementById('rateLimitCard');
+  if(rl){
+    if(info && info.rate_limit){
+      rl.style.display='';
+      setText('rlCount', info.rate_limit.count);
+      setText('rlLast', info.rate_limit.last_seen ? relText(info.rate_limit.last_seen) : '—');
+    } else { rl.style.display='none'; }
+  }
+}
+
+function updateSparks(d){
+  if(d.runtime){
+    drawSpark(document.getElementById('goroutinesSpark'), d.runtime.goroutines_series);
+    drawSpark(document.getElementById('heapSpark'), d.runtime.heap_alloc_series);
+    drawSpark(document.getElementById('gcRateSpark'), d.runtime.gc_rate_series, 'var(--warn)');
+    var gr=d.runtime.gc_rate_series;
+    if(gr && gr.length) setText('gcRate', gr[gr.length-1].toFixed(2)+'/s');
+  }
+  if(d.cardinality) drawSpark(document.getElementById('cardSpark'), d.cardinality.total_series);
+}
+
+function setHealth(d){
+  var b=document.getElementById('healthBadge'); if(b){
+    b.textContent=d.health;
+    b.className='badge '+(d.health==='healthy'?'ok':d.health==='degraded'?'err':'pending');
+    b.title=(d.health_reasons||[]).join('\n');
+  }
+  var rb=document.getElementById('healthReasons');
+  if(rb){
+    if(d.health_reasons && d.health_reasons.length){ rb.textContent=d.health_reasons.join(' · '); rb.style.display=''; }
+    else { rb.style.display='none'; }
+  }
+}
+
+function setStale(on){
+  var b=document.getElementById('staleBanner'); if(!b) return;
+  if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); }
+  else { b.className=''; }
+}
+
 function refresh(){
-  fetch('/api/status.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+  fetch('/api/status.json',{cache:'no-store'}).then(function(r){
+    if(!r.ok) throw new Error('status '+r.status);
+    return r.json();
+  }).then(function(d){
+    lastOkMs=Date.now(); setStale(false);
     setText('uptime', d.service && d.service.uptime);
     setText('goroutines', d.runtime && d.runtime.goroutines);
     setText('heapAlloc', d.runtime && d.runtime.heap_alloc);
     setText('numGC', d.runtime && d.runtime.num_gc);
     setText('cacheDevices', d.device_cache && d.device_cache.devices);
     setText('cacheAge', d.device_cache && d.device_cache.age);
-    if (d.cardinality) setText('cardTotal', d.cardinality.total);
+    if(d.cardinality) setText('cardTotal', d.cardinality.total);
     setText('generatedAt', d.generated_at);
-  }).catch(function(){});
+    setHealth(d);
+    rebuildCollectors(d.collectors);
+    rebuildAPI(d.api);
+    updateSparks(d);
+  }).catch(function(){ setStale(true); });
 }
-setInterval(refresh, 10000);
+
+function startPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=setInterval(refresh, 10000); }
+function togglePause(){
+  paused=!paused;
+  var btn=document.getElementById('pauseBtn');
+  if(paused){ if(pollTimer){clearInterval(pollTimer); pollTimer=null;} if(btn) btn.textContent='Resume'; }
+  else { if(btn) btn.textContent='Pause'; refresh(); startPolling(); }
+}
+function tickFreshness(){
+  setText('updatedAgo', relMs(lastOkMs));
+  var b=document.getElementById('staleBanner');
+  if(b && b.className.indexOf('show')>=0) setStale(true);
+}
+
+(function init(){
+  var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click', togglePause);
+  var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); refresh(); });
+  refresh();
+  startPolling();
+  setInterval(tickFreshness, 1000);
+})();
 </script>
 </body>
 </html>

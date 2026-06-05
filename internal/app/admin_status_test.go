@@ -28,7 +28,15 @@ func TestStatusPage_HTMLRenders(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/html", ct)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"<!DOCTYPE html>", serviceName, "vtest", "Collectors", "Metrics catalog"} {
+	for _, want := range []string{
+		"<!DOCTYPE html>", serviceName, "vtest", "Collectors", "Metrics catalog",
+		`id="healthBadge"`, // at-a-glance health verdict in the header
+		`id="collBody"`,    // collectors table body that the poller live-rebuilds
+		`id="apiBody"`,     // API-health section table body
+		"API health",       // new API section heading
+		`id="staleBanner"`, // freshness indicator shown on poll failure
+		"drawSpark",        // inline-SVG sparkline renderer
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("HTML missing %q", want)
 		}

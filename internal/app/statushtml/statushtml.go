@@ -22,6 +22,17 @@ var tmpl = template.Must(template.New("page.html.tmpl").Funcs(funcs).ParseFS(fil
 var funcs = template.FuncMap{
 	// minus subtracts b from a (used to show "discovered = active - static").
 	"minus": func(a, b int) int { return a - b },
+	// healthClass maps a health verdict to its badge CSS class.
+	"healthClass": func(state string) string {
+		switch state {
+		case "healthy":
+			return "ok"
+		case "degraded":
+			return "err"
+		default: // "starting" and any unknown state
+			return "pending"
+		}
+	},
 }
 
 // Render writes the HTML status page for s to w.
