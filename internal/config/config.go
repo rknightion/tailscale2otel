@@ -220,17 +220,18 @@ type CardinalityConfig struct {
 
 // Collectors groups the per-collector configurations.
 type Collectors struct {
-	Devices     CollectorConfig   `yaml:"devices"`
-	Flowlogs    CollectorConfig   `yaml:"flowlogs"`
-	Auditlogs   CollectorConfig   `yaml:"auditlogs"`
-	Users       CollectorConfig   `yaml:"users"`
-	Keys        CollectorConfig   `yaml:"keys"`
-	Settings    CollectorConfig   `yaml:"settings"`
-	Acl         CollectorConfig   `yaml:"acl"`
-	Dns         CollectorConfig   `yaml:"dns"`
-	Contacts    CollectorConfig   `yaml:"contacts"`
-	Webhooks    CollectorConfig   `yaml:"webhooks"`
-	NodeMetrics NodeMetricsConfig `yaml:"node_metrics"`
+	Devices             CollectorConfig   `yaml:"devices"`
+	Flowlogs            CollectorConfig   `yaml:"flowlogs"`
+	Auditlogs           CollectorConfig   `yaml:"auditlogs"`
+	Users               CollectorConfig   `yaml:"users"`
+	Keys                CollectorConfig   `yaml:"keys"`
+	Settings            CollectorConfig   `yaml:"settings"`
+	Acl                 CollectorConfig   `yaml:"acl"`
+	Dns                 CollectorConfig   `yaml:"dns"`
+	Contacts            CollectorConfig   `yaml:"contacts"`
+	Webhooks            CollectorConfig   `yaml:"webhooks"`
+	PostureIntegrations CollectorConfig   `yaml:"posture_integrations"`
+	NodeMetrics         NodeMetricsConfig `yaml:"node_metrics"`
 }
 
 // NodeMetricsConfig configures the optional node-local metrics scraper, which

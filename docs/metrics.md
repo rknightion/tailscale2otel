@@ -246,6 +246,22 @@ creator are **never emitted**. The per-endpoint subscriptions gauge is gated by
 | `tailscale.webhook_endpoints.count` | `1` | gauge | `tailscale_webhook_endpoints_count_ratio` | — | Number of configured webhook endpoints (a **count**, despite `_ratio`). |
 <!-- END GENERATED -->
 
+### Posture integrations (`tailscale.posture_integration*.*`)
+
+Device-posture provider integrations (MDM/EDR such as Intune) and their sync health. Alert on
+`tailscale.posture_integration.last_sync` going stale. Provider identifiers
+(`clientId`/`tenantId`/`cloudId`) are never emitted.
+
+<!-- BEGIN GENERATED: metrics groups="Posture" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.posture_integration.last_sync` | `s` | gauge | `tailscale_posture_integration_last_sync_seconds` | `tailscale_posture_provider`, `tailscale_posture_integration` | Unix timestamp of the integration's last successful sync (alert on staleness). Emitted only once a sync has occurred. |
+| `tailscale.posture_integration.matched` | `1` | gauge | `tailscale_posture_integration_matched_ratio` | `tailscale_posture_provider`, `tailscale_posture_integration` | Devices matched to a provider host by the posture integration (a **count**); one series per provider/integration. |
+| `tailscale.posture_integration.possible_matched` | `1` | gauge | `tailscale_posture_integration_possible_matched_ratio` | `tailscale_posture_provider`, `tailscale_posture_integration` | Devices that could potentially be matched by the posture integration (a **count**). |
+| `tailscale.posture_integration.provider_hosts` | `1` | gauge | `tailscale_posture_integration_provider_hosts_ratio` | `tailscale_posture_provider`, `tailscale_posture_integration` | Hosts known to the posture provider (a **count**). |
+| `tailscale.posture_integrations.count` | `1` | gauge | `tailscale_posture_integrations_count_ratio` | — | Number of configured device-posture integrations (a **count**, despite `_ratio`). |
+<!-- END GENERATED -->
+
 ### Features (`tailscale.feature.*`)
 
 <!-- BEGIN GENERATED: metrics groups="Features" -->
