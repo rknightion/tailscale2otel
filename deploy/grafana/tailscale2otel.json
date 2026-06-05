@@ -1196,7 +1196,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_users_count_ratio[2h])) or vector(0)",
+                        "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio[2h]))) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -2757,7 +2757,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (os_type) (last_over_time(tailscale_devices_count_ratio[2h]))",
+                        "expr": "sum by (os_type) (max by (os_type, tailscale_authorized, tailscale_external) (last_over_time(tailscale_devices_count_ratio[2h])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{os_type}}",
@@ -2782,7 +2782,7 @@
                     "lastNotNull"
                   ],
                   "fields": "",
-                  "values": true
+                  "values": false
                 },
                 "orientation": "horizontal",
                 "displayMode": "gradient",
@@ -3313,7 +3313,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (tailscale_derp_region) (last_over_time(tailscale_device_derp_latency_seconds{tailscale_derp_preferred=\"true\"}[10m]))",
+                        "expr": "count by (tailscale_derp_region) (max by (tailscale_derp_region, host_name) (last_over_time(tailscale_device_derp_latency_seconds{tailscale_derp_preferred=\"true\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_derp_region}}",
@@ -3338,7 +3338,7 @@
                     "lastNotNull"
                   ],
                   "fields": "",
-                  "values": true
+                  "values": false
                 },
                 "orientation": "horizontal",
                 "displayMode": "gradient",
@@ -3560,36 +3560,52 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (ts_version) (last_over_time(tailscale_device_posture_ratio[2h]))",
-                        "instant": false,
-                        "range": true,
+                        "expr": "count by (ts_version) (max by (ts_version, host_name) (last_over_time(tailscale_device_posture_ratio[2h])))",
+                        "instant": true,
+                        "range": false,
                         "legendFormat": "{{ts_version}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "bargauge",
+            "group": "barchart",
             "version": "12.1.0",
             "spec": {
               "options": {
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": true
-                },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
-                "showUnfilled": true
+                "showValue": "auto",
+                "stacking": "none",
+                "legend": {
+                  "showLegend": false,
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
               },
               "fieldConfig": {
                 "defaults": {
@@ -4217,14 +4233,28 @@
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_src_node}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -4284,14 +4314,28 @@
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_dst_node}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -4347,18 +4391,32 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_rollup_bytes_total{network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_rollup_bytes_total{network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\", tailscale_dst_service!=\"\"}[$__rate_interval])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_dst_service}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -4889,14 +4947,28 @@
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_src_node}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -4956,14 +5028,28 @@
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_dst_node}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -5019,18 +5105,32 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_bytes_total{network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_bytes_total{network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\", tailscale_dst_service!=\"\"}[$__rate_interval])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_dst_service}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
@@ -6068,7 +6168,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_section) (last_over_time(tailscale_acl_rules_ratio[2h]))",
+                        "expr": "max by (tailscale_acl_section) (last_over_time(tailscale_acl_rules_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_acl_section}}",
@@ -6093,7 +6193,7 @@
                     "lastNotNull"
                   ],
                   "fields": "",
-                  "values": true
+                  "values": false
                 },
                 "orientation": "horizontal",
                 "displayMode": "gradient",
@@ -6642,36 +6742,52 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_user_role) (last_over_time(tailscale_users_count_ratio[2h]))",
-                        "instant": false,
-                        "range": true,
+                        "expr": "sum by (tailscale_user_role) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio[2h])))",
+                        "instant": true,
+                        "range": false,
                         "legendFormat": "{{tailscale_user_role}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "bargauge",
+            "group": "barchart",
             "version": "12.1.0",
             "spec": {
               "options": {
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": true
-                },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
-                "showUnfilled": true
+                "showValue": "auto",
+                "stacking": "none",
+                "legend": {
+                  "showLegend": false,
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
               },
               "fieldConfig": {
                 "defaults": {
@@ -6707,36 +6823,52 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_user_status) (last_over_time(tailscale_users_count_ratio[2h]))",
-                        "instant": false,
-                        "range": true,
+                        "expr": "sum by (tailscale_user_status) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio[2h])))",
+                        "instant": true,
+                        "range": false,
                         "legendFormat": "{{tailscale_user_status}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "bargauge",
+            "group": "barchart",
             "version": "12.1.0",
             "spec": {
               "options": {
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": true
-                },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
-                "showUnfilled": true
+                "showValue": "auto",
+                "stacking": "none",
+                "legend": {
+                  "showLegend": false,
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
               },
               "fieldConfig": {
                 "defaults": {
@@ -6772,36 +6904,52 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_user_type) (last_over_time(tailscale_users_count_ratio[2h]))",
-                        "instant": false,
-                        "range": true,
+                        "expr": "sum by (tailscale_user_type) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio[2h])))",
+                        "instant": true,
+                        "range": false,
                         "legendFormat": "{{tailscale_user_type}}",
-                        "format": "time_series"
+                        "format": "table"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": []
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true
+                      },
+                      "renameByName": {},
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
             }
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "bargauge",
+            "group": "barchart",
             "version": "12.1.0",
             "spec": {
               "options": {
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": true
-                },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
-                "showUnfilled": true
+                "showValue": "auto",
+                "stacking": "none",
+                "legend": {
+                  "showLegend": false,
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
               },
               "fieldConfig": {
                 "defaults": {
@@ -6979,7 +7127,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_user_invite_role, tailscale_user_invite_accepted) (last_over_time(tailscale_user_invites_count_ratio[2h]))",
+                        "expr": "max by (tailscale_user_invite_role, tailscale_user_invite_accepted) (last_over_time(tailscale_user_invites_count_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_user_invite_role}} accepted={{tailscale_user_invite_accepted}}",
@@ -7004,7 +7152,7 @@
                     "lastNotNull"
                   ],
                   "fields": "",
-                  "values": true
+                  "values": false
                 },
                 "orientation": "horizontal",
                 "displayMode": "gradient",
@@ -7044,7 +7192,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (last_over_time(tailscale_keys_count_ratio[2h]))",
+                        "expr": "max by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (last_over_time(tailscale_keys_count_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_key_type}} revoked={{tailscale_key_revoked}} invalid={{tailscale_key_invalid}}",
@@ -7069,7 +7217,7 @@
                     "lastNotNull"
                   ],
                   "fields": "",
-                  "values": true
+                  "values": false
                 },
                 "orientation": "horizontal",
                 "displayMode": "gradient",
@@ -9583,8 +9731,8 @@
         "kind": "Panel",
         "spec": {
           "id": 117,
-          "title": "Heap memory",
-          "description": "",
+          "title": "Memory breakdown",
+          "description": "Go memory obtained from the OS (runtime.memory.sys), stacked into in-use heap, idle/reserved heap, stacks, and other non-heap runtime (GC, mspan/mcache). Total height = total sys.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -9603,10 +9751,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_memory_heap_alloc_bytes",
+                        "expr": "max(tailscale2otel_runtime_memory_heap_inuse_bytes)",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "heap alloc",
+                        "legendFormat": "heap in-use",
                         "format": "time_series"
                       }
                     }
@@ -9625,10 +9773,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_memory_heap_inuse_bytes",
+                        "expr": "max(tailscale2otel_runtime_memory_heap_sys_bytes - tailscale2otel_runtime_memory_heap_inuse_bytes)",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "heap inuse",
+                        "legendFormat": "heap idle",
                         "format": "time_series"
                       }
                     }
@@ -9647,10 +9795,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_memory_heap_sys_bytes",
+                        "expr": "max(tailscale2otel_runtime_memory_stack_inuse_bytes)",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "heap sys",
+                        "legendFormat": "stack in-use",
                         "format": "time_series"
                       }
                     }
@@ -9669,10 +9817,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_memory_sys_bytes",
+                        "expr": "max(tailscale2otel_runtime_memory_sys_bytes - tailscale2otel_runtime_memory_heap_sys_bytes - tailscale2otel_runtime_memory_stack_inuse_bytes)",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "total sys",
+                        "legendFormat": "other (non-heap)",
                         "format": "time_series"
                       }
                     }
@@ -9707,10 +9855,14 @@
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
                     "lineWidth": 1,
-                    "fillOpacity": 5,
+                    "fillOpacity": 25,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "stacking": {
+                      "mode": "normal",
+                      "group": "A"
+                    }
                   }
                 },
                 "overrides": []
@@ -9743,7 +9895,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_goroutines_ratio",
+                        "expr": "max(tailscale2otel_runtime_goroutines_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "goroutines",
@@ -9765,7 +9917,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_memory_stack_inuse_bytes",
+                        "expr": "max(tailscale2otel_runtime_memory_stack_inuse_bytes)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "stack inuse",
@@ -9856,7 +10008,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_runtime_gc_count_total[$__rate_interval])",
+                        "expr": "sum(rate(tailscale2otel_runtime_gc_count_total[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "gc/s",
@@ -9930,7 +10082,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_runtime_gc_pause_time_seconds_total[$__rate_interval])",
+                        "expr": "sum(rate(tailscale2otel_runtime_gc_pause_time_seconds_total[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "pause s/s",
@@ -10004,7 +10156,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_runtime_gc_cpu_fraction_ratio",
+                        "expr": "max(tailscale2otel_runtime_gc_cpu_fraction_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "gc cpu",

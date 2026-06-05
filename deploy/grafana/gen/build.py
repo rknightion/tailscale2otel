@@ -156,7 +156,10 @@ def ts_custom(style="line", fill=15, width=1, stack=None, points="never", grad="
 
 
 def bargauge_opts(calc="lastNotNull", orient="horizontal", mode="gradient"):
-    return {"reduceOptions": {"calcs": [calc], "fields": "", "values": True},
+    # values=False: reduce each series to ONE bar via `calc`. values=True renders one
+    # bar per sample over the time range (a wall of identical bars), which hides the
+    # per-series legend (the "loads of 6's" / "just owner/active/member" symptom).
+    return {"reduceOptions": {"calcs": [calc], "fields": "", "values": False},
             "orientation": orient, "displayMode": mode, "showUnfilled": True}
 
 
@@ -326,7 +329,7 @@ def tab_overview():
         (panel("Updates available", "stat",
                [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_update_available_ratio"))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="value")), 3, 5),
-        (panel("Users", "stat", [prom_t("sum(%s) or vector(0)" % lot("tailscale_users_count_ratio", WIN_SLOW))],
+        (panel("Users", "stat", [prom_t("sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)) or vector(0)" % lot("tailscale_users_count_ratio", WIN_SLOW))],
                unit="short", options=stat_opts()), 3, 5),
         (panel("Device keys ≤7d", "stat",
                [prom_t("count((%s - time() < 7*86400) and (%s - time() > 0)) or vector(0)"
@@ -400,7 +403,7 @@ def tab_fleet():
         (panel("Distinct users", "stat", [prom_t("count(count by (tailscale_user) (%s))" % on)],
                unit="short", options=stat_opts()), 3, 5),
         (panel("Devices by OS", "bargauge",
-               [prom_t("sum by (os_type) (%s)" % lot("tailscale_devices_count_ratio", WIN_SLOW), legend="{{os_type}}")],
+               [prom_t("sum by (os_type) (max by (os_type, tailscale_authorized, tailscale_external) (%s))" % lot("tailscale_devices_count_ratio", WIN_SLOW), legend="{{os_type}}")],
                unit="short", options=bargauge_opts()), 9, 5),
     ]
     overtime = [
@@ -443,7 +446,7 @@ def tab_fleet():
                                                    rename={"host_name": "Host", "tailscale_derp_region": "Region",
                                                            "tailscale_derp_preferred": "Preferred", "Value": "Latency"})]), 14, 8),
         (panel("Preferred DERP regions", "bargauge",
-               [prom_t("count by (tailscale_derp_region) (%s)"
+               [prom_t("count by (tailscale_derp_region) (max by (tailscale_derp_region, host_name) (%s))"
                        % lot("tailscale_device_derp_latency_seconds{tailscale_derp_preferred=\"true\"}"),
                        legend="{{tailscale_derp_region}}")], unit="short", options=bargauge_opts()), 10, 8),
     ]
@@ -462,9 +465,10 @@ def tab_fleet():
                transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                   "service_instance_id", "service_name", "service_namespace", "Value"])],
                desc="Per-device posture: OS, client version, auto-update, encryption, track."), 16, 8),
-        (panel("Clients by version", "bargauge",
-               [prom_t("count by (ts_version) (%s)" % lot("tailscale_device_posture_ratio", WIN_SLOW), legend="{{ts_version}}")],
-               unit="short", options=bargauge_opts()), 8, 8),
+        (panel("Clients by version", "barchart",
+               [prom_t("count by (ts_version) (max by (ts_version, host_name) (%s))" % lot("tailscale_device_posture_ratio", WIN_SLOW), legend="{{ts_version}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
     ]
     return [row("Inventory", inv), row("Trends", overtime), row("Device health", tables),
             row("Connectivity / DERP", derp, present="has_derp"),
@@ -474,6 +478,9 @@ def tab_fleet():
 
 def tab_network():
     tf = "{network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}"
+    # tf, but also exclude unclassified (empty-label) services so the top-services
+    # barcharts name every bar instead of falling back to "Value" for the empty group.
+    tsf = tf[:-1] + ", tailscale_dst_service!=\"\"}"
     summary = [
         (panel("Throughput (now)", "stat",
                [prom_t("sum(rate(tailscale_network_io_rollup_bytes_total[%s])) or "
@@ -503,14 +510,17 @@ def tab_network():
                [prom_t("sum by (tailscale_traffic_type) (rate(tailscale_network_io_rollup_bytes_total%s[%s]))" % (tf, RI), legend="{{tailscale_traffic_type}}")],
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts()), 8, 7),
         (panel("Top $topn source nodes", "barchart",
-               [prom_t("topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_src_node}}", instant=True)],
-               unit="Bps", options=barchart_opts()), 8, 8),
+               [prom_t("topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_src_node}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
         (panel("Top $topn destination nodes", "barchart",
-               [prom_t("topk($topn, sum by (tailscale_dst_node) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_dst_node}}", instant=True)],
-               unit="Bps", options=barchart_opts()), 8, 8),
+               [prom_t("topk($topn, sum by (tailscale_dst_node) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_dst_node}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
         (panel("Top destination services", "barchart",
-               [prom_t("topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_dst_service}}", instant=True)],
-               unit="Bps", options=barchart_opts()), 8, 8),
+               [prom_t("topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tsf, RI), legend="{{tailscale_dst_service}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
         (panel("__other__ rollup share", "stat",
                [prom_t("(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_dst_node=\"__other__\"}[%s])) or vector(0)) / "
                        "clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total[%s])), 1)" % (RI, RI), instant=True)],
@@ -540,14 +550,17 @@ def tab_network():
                [prom_t("sum by (network_transport) (rate(tailscale_network_io_bytes_total%s[%s]))" % (tf, RI), legend="{{network_transport}}")],
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts()), 8, 7),
         (panel("Top $topn source nodes (raw)", "barchart",
-               [prom_t("topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_src_node}}", instant=True)],
-               unit="Bps", options=barchart_opts()), 8, 8),
+               [prom_t("topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_src_node}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
         (panel("Top $topn destination nodes (raw)", "barchart",
-               [prom_t("topk($topn, sum by (tailscale_dst_node) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_dst_node}}", instant=True)],
-               unit="Bps", options=barchart_opts()), 8, 8),
+               [prom_t("topk($topn, sum by (tailscale_dst_node) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_dst_node}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
         (panel("Top $topn destination services (raw)", "barchart",
-               [prom_t("topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_dst_service}}", instant=True)],
-               unit="Bps", options=barchart_opts()), 8, 8),
+               [prom_t("topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tsf, RI), legend="{{tailscale_dst_service}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 8),
     ]
     return [row("Flow summary", summary, present="has_flows"),
             row("Throughput & talkers — ROLLUP (bounded top-N)", rollup, present="has_rollup_flow"),
@@ -615,7 +628,7 @@ def tab_policy():
         (panel("ACL size", "stat", [prom_t("max(%s)" % lot("tailscale_acl_size_bytes", WIN_SLOW))],
                unit="bytes", options=stat_opts()), 6, 5),
         (panel("ACL rules by section", "bargauge",
-               [prom_t("sum by (tailscale_acl_section) (%s)" % lot("tailscale_acl_rules_ratio", WIN_SLOW), legend="{{tailscale_acl_section}}")],
+               [prom_t("max by (tailscale_acl_section) (%s)" % lot("tailscale_acl_rules_ratio", WIN_SLOW), legend="{{tailscale_acl_section}}")],
                unit="short", options=bargauge_opts()), 12, 5),
     ]
     dns = [
@@ -640,15 +653,18 @@ def tab_policy():
                desc="Per-feature enabled (1) / disabled (0)."), 12, 7),
     ]
     users = [
-        (panel("Users by role", "bargauge",
-               [prom_t("sum by (tailscale_user_role) (%s)" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_role}}")],
-               unit="short", options=bargauge_opts()), 8, 6),
-        (panel("Users by status", "bargauge",
-               [prom_t("sum by (tailscale_user_status) (%s)" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_status}}")],
-               unit="short", options=bargauge_opts()), 8, 6),
-        (panel("Users by type", "bargauge",
-               [prom_t("sum by (tailscale_user_type) (%s)" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_type}}")],
-               unit="short", options=bargauge_opts()), 8, 6),
+        (panel("Users by role", "barchart",
+               [prom_t("sum by (tailscale_user_role) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s))" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_role}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 6),
+        (panel("Users by status", "barchart",
+               [prom_t("sum by (tailscale_user_status) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s))" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_status}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 6),
+        (panel("Users by type", "barchart",
+               [prom_t("sum by (tailscale_user_type) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s))" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_type}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 8, 6),
     ]
     users_pe = [
         (panel("Per-user detail", "table",
@@ -666,13 +682,13 @@ def tab_policy():
     ]
     invites = [
         (panel("User invites", "bargauge",
-               [prom_t("sum by (tailscale_user_invite_role, tailscale_user_invite_accepted) (%s)" % lot("tailscale_user_invites_count_ratio", WIN_SLOW),
+               [prom_t("max by (tailscale_user_invite_role, tailscale_user_invite_accepted) (%s)" % lot("tailscale_user_invites_count_ratio", WIN_SLOW),
                        legend="{{tailscale_user_invite_role}} accepted={{tailscale_user_invite_accepted}}")],
                unit="short", options=bargauge_opts()), 24, 5),
     ]
     keys = [
         (panel("Keys by type", "bargauge",
-               [prom_t("sum by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
+               [prom_t("max by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
                        legend="{{tailscale_key_type}} revoked={{tailscale_key_revoked}} invalid={{tailscale_key_invalid}}")],
                unit="short", options=bargauge_opts()), 10, 7),
         (panel("Key expiry (time until)", "table",
@@ -812,23 +828,24 @@ def tab_diagnostics():
                unit="short", custom=ts_custom(), options=ts_opts()), 12, 6),
     ]
     runtime = [
-        (panel("Heap memory", "timeseries",
-               [prom_t("tailscale2otel_runtime_memory_heap_alloc_bytes", legend="heap alloc"),
-                prom_t("tailscale2otel_runtime_memory_heap_inuse_bytes", legend="heap inuse"),
-                prom_t("tailscale2otel_runtime_memory_heap_sys_bytes", legend="heap sys"),
-                prom_t("tailscale2otel_runtime_memory_sys_bytes", legend="total sys")],
-               unit="bytes", custom=ts_custom(fill=5), options=ts_opts(placement="right")), 12, 7),
+        (panel("Memory breakdown", "timeseries",
+               [prom_t("max(tailscale2otel_runtime_memory_heap_inuse_bytes)", legend="heap in-use"),
+                prom_t("max(tailscale2otel_runtime_memory_heap_sys_bytes - tailscale2otel_runtime_memory_heap_inuse_bytes)", legend="heap idle"),
+                prom_t("max(tailscale2otel_runtime_memory_stack_inuse_bytes)", legend="stack in-use"),
+                prom_t("max(tailscale2otel_runtime_memory_sys_bytes - tailscale2otel_runtime_memory_heap_sys_bytes - tailscale2otel_runtime_memory_stack_inuse_bytes)", legend="other (non-heap)")],
+               unit="bytes", custom=ts_custom(stack="normal", fill=25), options=ts_opts(placement="right"),
+               desc="Go memory obtained from the OS (runtime.memory.sys), stacked into in-use heap, idle/reserved heap, stacks, and other non-heap runtime (GC, mspan/mcache). Total height = total sys."), 12, 7),
         (panel("Goroutines & stack", "timeseries",
-               [prom_t("tailscale2otel_runtime_goroutines_ratio", legend="goroutines"),
-                prom_t("tailscale2otel_runtime_memory_stack_inuse_bytes", legend="stack inuse")],
+               [prom_t("max(tailscale2otel_runtime_goroutines_ratio)", legend="goroutines"),
+                prom_t("max(tailscale2otel_runtime_memory_stack_inuse_bytes)", legend="stack inuse")],
                unit="short", custom=ts_custom(), options=ts_opts(),
                overrides=[{"matcher": {"id": "byName", "options": "stack inuse"},
                            "properties": [{"id": "unit", "value": "bytes"}, {"id": "custom.axisPlacement", "value": "right"}]}]), 12, 7),
-        (panel("GC cycles/s", "timeseries", [prom_t("rate(tailscale2otel_runtime_gc_count_total[%s])" % RI, legend="gc/s")],
+        (panel("GC cycles/s", "timeseries", [prom_t("sum(rate(tailscale2otel_runtime_gc_count_total[%s]))" % RI, legend="gc/s")],
                unit="cps", custom=ts_custom(), options=ts_opts()), 8, 6),
-        (panel("GC pause/s", "timeseries", [prom_t("rate(tailscale2otel_runtime_gc_pause_time_seconds_total[%s])" % RI, legend="pause s/s")],
+        (panel("GC pause/s", "timeseries", [prom_t("sum(rate(tailscale2otel_runtime_gc_pause_time_seconds_total[%s]))" % RI, legend="pause s/s")],
                unit="s", custom=ts_custom(), options=ts_opts()), 8, 6),
-        (panel("GC CPU fraction", "timeseries", [prom_t("tailscale2otel_runtime_gc_cpu_fraction_ratio", legend="gc cpu")],
+        (panel("GC CPU fraction", "timeseries", [prom_t("max(tailscale2otel_runtime_gc_cpu_fraction_ratio)", legend="gc cpu")],
                unit="percentunit", custom=ts_custom(), options=ts_opts()), 8, 6),
     ]
     reliability = [
