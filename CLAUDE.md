@@ -12,6 +12,7 @@ go test -race ./...                  # unit + integration tests (race detector a
 go vet ./...
 golangci-lint run                    # lint (v2; config in .golangci.yml)
 golangci-lint fmt                    # apply gofmt + goimports (there is no separate gofmt step)
+go generate ./...                    # regenerate portservice data + install the git hooks (see below)
 ./tailscale2otel -config config.yaml # run; set otlp.protocol: stdout for local debug w/o a backend
 ```
 
@@ -34,10 +35,12 @@ go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just do
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` |
 
-> **Opt in to the pre-commit hook so you never forget:** `git config core.hooksPath .githooks` (once per
-> clone — it is not auto-installed). `.githooks/pre-commit` runs the script for *only* the artifacts your
-> staged changes touch and re-stages the result; it's a silent no-op otherwise. A missing tool is a loud
-> SKIP, never a block (CI's fail-on-diff stays the hard backstop); bypass a run with `git commit --no-verify`.
+> **The pre-commit hook installs itself.** Git can't run anything on clone (by design), so once per
+> clone run `go generate ./...` (or `scripts/setup.sh`) — either points `core.hooksPath` at `.githooks`
+> via `cmd/tailscale2otel/generate.go`. CI never runs `go generate`, so this never fires there.
+> `.githooks/pre-commit` then regenerates *only* the artifacts your staged changes touch and re-stages
+> them; it's a silent no-op otherwise. A missing tool is a loud SKIP, never a block (CI's fail-on-diff
+> stays the hard backstop); bypass a run with `git commit --no-verify`.
 
 > Gotcha: `tools/metricscatalog` and `tools/configcheck` are **separate Go modules** (own `go.mod`,
 > `replace ../..`). `go run ./tools/metricscatalog` from the repo root **fails** ("main module does
