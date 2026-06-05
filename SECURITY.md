@@ -21,9 +21,9 @@ read access to it can see this metadata. Scope backend credentials accordingly.
 Levers to reduce what leaves the tailnet (all under the `cardinality:` block in
 `config.example.yaml`):
 
-- `cardinality.flow_include_ports` (default `false`) — keeps ports **off** flow
-  *metrics*. Note that ports are always present on flow *logs* regardless of this
-  setting.
+- `cardinality.flow_source_port` / `cardinality.flow_destination_port` (both default
+  `false`) — keep ports **off** flow *metrics*. Note that ports are always present on
+  flow *logs* regardless of these settings.
 - `cardinality.collapse_external` (default `true`) — buckets unresolved IPs as
   `external`/`unknown` rather than emitting them as distinct series/labels.
 - `cardinality.flow_node_dims` (default `true`) — set `false` to omit src/dst

@@ -71,7 +71,6 @@ enrichment:
     negative_ttl: 2m
     max_entries: 2048
 cardinality:
-  flow_include_ports: true
   flow_node_dims: false
   collapse_external: false
   flow_source_port: true
@@ -163,9 +162,6 @@ func TestLoadNestedValues(t *testing.T) {
 	if rd := cfg.Enrichment.ReverseDNS; !rd.Enabled || rd.Server != "9.9.9.9" || rd.Timeout.D() != 3*time.Second ||
 		rd.CacheTTL.D() != 30*time.Minute || rd.NegativeTTL.D() != 2*time.Minute || rd.MaxEntries != 2048 {
 		t.Errorf("Enrichment.ReverseDNS = %+v, want enabled 9.9.9.9 3s/30m/2m/2048", cfg.Enrichment.ReverseDNS)
-	}
-	if !cfg.Cardinality.FlowIncludePorts {
-		t.Errorf("Cardinality.FlowIncludePorts = false, want true")
 	}
 	if cfg.Cardinality.FlowNodeDims {
 		t.Errorf("Cardinality.FlowNodeDims = true, want false")

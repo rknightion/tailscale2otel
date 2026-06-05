@@ -50,8 +50,7 @@ enrichment:
 
 cardinality:
   flow_metrics_mode: rollup          # rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into __other__ so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (≈2x series; summing double-counts).
-  flow_include_ports: false          # legacy: both ports on flow metrics (OR'd with the two below); ports are always on flow logs. Applies to the raw families (mode all/both); the rollup never carries ports
-  flow_source_port: false            # add source.port to flow metrics (independent of flow_destination_port)
+  flow_source_port: false            # add source.port to flow metrics (independent of flow_destination_port); ports are always on flow logs. Applies to the raw families (mode all/both); the rollup never carries ports
   flow_destination_port: false       # add destination.port to flow metrics
   flow_destination_service: false    # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics — bounded stand-in for destination.port; always on flow logs
   flow_node_dims: true               # include src/dst device names on flow metrics

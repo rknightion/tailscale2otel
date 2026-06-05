@@ -145,7 +145,9 @@ effect no matter whether logs arrive by poll or by stream.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `cardinality.flow_include_ports` | `false` | Include source/destination ports as attributes on flow **metrics**. Ports are always present on flow **logs** regardless. On = much higher cardinality. |
+| `cardinality.flow_source_port` | `false` | Add `source.port` as an attribute on flow **metrics** (raw families only). Ports are always present on flow **logs** regardless. On = higher cardinality. |
+| `cardinality.flow_destination_port` | `false` | Add `destination.port` as an attribute on flow **metrics** (raw families only). On = higher cardinality. |
+| `cardinality.flow_destination_service` | `false` | Add `tailscale.dst.service` (the IANA name for the destination port+transport, e.g. `tcp/443`→`https`) on flow **metrics** — a bounded, low-cardinality stand-in for the destination port. |
 | `cardinality.flow_node_dims` | `true` | Include source/destination device names (`tailscale.src.node`/`tailscale.dst.node`) on flow metrics. |
 | `cardinality.collapse_external` | `true` | Bucket unresolved/off-tailnet IPs as `external`/`unknown` instead of the raw address (on both flow logs and, when `flow_node_dims` is on, the flow-metric node labels). Off = one series per distinct external IP. |
 | `cardinality.device_per_entity` | `true` | Emit per-device gauges (online, last-seen, key-expiry, DERP latency, routes). `false` drops them, leaving only the aggregate `tailscale.devices.count`. |

@@ -144,7 +144,8 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 
 > Label gating on `network.io`/`network.packets`: `tailscale_src_node`/`tailscale_dst_node` are
 > gated by `cardinality.flow_node_dims` (**on** by default); `source_port`/`destination_port` are
-> gated by `cardinality.flow_include_ports` (**off** by default, as ports add cardinality).
+> gated by `cardinality.flow_source_port` / `cardinality.flow_destination_port` (both **off** by
+> default, as ports add cardinality).
 
 > **Per-metric cardinality cap.** Every metric is bounded by `cardinality.metric_limit` (default
 > 10000) — the OTLP SDK's hard limit on distinct series per instrument per export cycle. Series past

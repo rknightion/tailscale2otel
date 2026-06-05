@@ -78,8 +78,7 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Collectors.Flowlogs.FlowRollupTopN != 500 {
 		t.Errorf("Flowlogs.FlowRollupTopN = %d, want default 500", cfg.Collectors.Flowlogs.FlowRollupTopN)
 	}
-	// New flow metric port/service toggles default off (ports stay off metrics
-	// by default, matching the legacy flow_include_ports default).
+	// Flow metric port/service toggles default off (ports stay off metrics by default).
 	if cfg.Cardinality.FlowSourcePort || cfg.Cardinality.FlowDestinationPort || cfg.Cardinality.FlowDestinationService {
 		t.Errorf("Cardinality flow toggles = src %v / dst %v / service %v, want all default false",
 			cfg.Cardinality.FlowSourcePort, cfg.Cardinality.FlowDestinationPort, cfg.Cardinality.FlowDestinationService)

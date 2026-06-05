@@ -161,11 +161,13 @@ func TestFlowOptions_PortToggles(t *testing.T) {
 			def.IncludeSourcePort, def.IncludeDestinationPort, def.IncludeDestinationService)
 	}
 
-	// Legacy flow_include_ports enables BOTH ports (back-compat).
-	legacy := config.Default()
-	legacy.Cardinality.FlowIncludePorts = true
-	if got := flowOptions(legacy); !got.IncludeSourcePort || !got.IncludeDestinationPort {
-		t.Fatalf("flow_include_ports=true => src %v / dst %v, want both true", got.IncludeSourcePort, got.IncludeDestinationPort)
+	// Both granular toggles on => both ports (the explicit replacement for the
+	// removed legacy flow_include_ports umbrella).
+	both := config.Default()
+	both.Cardinality.FlowSourcePort = true
+	both.Cardinality.FlowDestinationPort = true
+	if got := flowOptions(both); !got.IncludeSourcePort || !got.IncludeDestinationPort {
+		t.Fatalf("flow_source_port+flow_destination_port => src %v / dst %v, want both true", got.IncludeSourcePort, got.IncludeDestinationPort)
 	}
 
 	// Independent source-only and destination-only.

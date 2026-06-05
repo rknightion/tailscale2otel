@@ -48,9 +48,6 @@
                         "flow_destination_service": {
                             "type": "boolean"
                         },
-                        "flow_include_ports": {
-                            "type": "boolean"
-                        },
                         "flow_metrics_mode": {
                             "type": "string"
                         },

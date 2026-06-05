@@ -181,10 +181,6 @@ type CardinalityConfig struct {
 	// The raw and rollup families share semantic conventions; the rollup attribute
 	// keys are a subset (no ports) plus the __other__ sentinel value.
 	FlowMetricsMode string `yaml:"flow_metrics_mode"`
-	// FlowIncludePorts is the legacy "both ports" toggle for flow METRICS; it is
-	// OR'd with FlowSourcePort/FlowDestinationPort so existing configs keep working.
-	// It applies to the raw families (mode all/both); the rollup never carries ports.
-	FlowIncludePorts bool `yaml:"flow_include_ports"`
 	// FlowSourcePort / FlowDestinationPort independently add source.port /
 	// destination.port to flow METRICS (both default false; flow LOGS always carry
 	// both ports regardless).

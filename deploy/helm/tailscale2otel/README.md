@@ -51,10 +51,9 @@ under `config:`).
 | config.cardinality.device_per_entity | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
 | config.cardinality.flow_destination_port | bool | `false` | Add destination.port to flow METRICS (independent of flow_source_port). |
 | config.cardinality.flow_destination_service | bool | `false` | Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS. |
-| config.cardinality.flow_include_ports | bool | `false` | Legacy "both ports" toggle for flow METRICS; OR'd with flow_source_port/flow_destination_port (ports are always on flow LOGS). |
 | config.cardinality.flow_metrics_mode | string | `"rollup"` | Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts). |
 | config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
-| config.cardinality.flow_source_port | bool | `false` | Add source.port to flow METRICS (independent of flow_destination_port). |
+| config.cardinality.flow_source_port | bool | `false` | Add source.port to flow METRICS (independent of flow_destination_port); ports are always on flow LOGS. |
 | config.cardinality.key_per_entity | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
 | config.cardinality.service_per_entity | bool | `true` | Emit the per-service ports/hosts gauges; false emits only tailscale.services.count. |
 | config.cardinality.user_per_entity | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |

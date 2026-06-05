@@ -49,7 +49,6 @@ func Default() *Config {
 		},
 		Cardinality: CardinalityConfig{
 			FlowMetricsMode:        "rollup",
-			FlowIncludePorts:       false,
 			FlowSourcePort:         false,
 			FlowDestinationPort:    false,
 			FlowDestinationService: false,

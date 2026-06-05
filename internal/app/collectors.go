@@ -27,11 +27,10 @@ import (
 func flowOptions(cfg *config.Config) flowlog.Options {
 	return flowlog.Options{
 		LogMode: cfg.Collectors.Flowlogs.LogMode,
-		// flow_include_ports is the legacy "both ports" toggle; OR it with the
-		// independent flow_source_port / flow_destination_port so old configs keep
-		// emitting both ports while new ones can drop either side.
-		IncludeSourcePort:         cfg.Cardinality.FlowIncludePorts || cfg.Cardinality.FlowSourcePort,
-		IncludeDestinationPort:    cfg.Cardinality.FlowIncludePorts || cfg.Cardinality.FlowDestinationPort,
+		// flow_source_port / flow_destination_port independently add source.port /
+		// destination.port to the raw flow metric families (both default off).
+		IncludeSourcePort:         cfg.Cardinality.FlowSourcePort,
+		IncludeDestinationPort:    cfg.Cardinality.FlowDestinationPort,
 		IncludeDestinationService: cfg.Cardinality.FlowDestinationService,
 		NodeDims:                  cfg.Cardinality.FlowNodeDims,
 		// collapse_external=true (the default) buckets unresolved/external addresses
