@@ -30,6 +30,12 @@ type RichDevice struct {
 	BlocksIncomingConnections bool
 	SSHEnabled                bool
 
+	// TailnetLockKey is the device's tailnet-lock public key (present on every
+	// node regardless of whether tailnet lock is enabled); TailnetLockError is
+	// non-empty when the node has a tailnet-lock problem (e.g. an unsigned node).
+	TailnetLockKey   string
+	TailnetLockError string
+
 	Created  time.Time
 	LastSeen time.Time
 	Expires  time.Time
@@ -81,6 +87,9 @@ type richDevice struct {
 	BlocksIncomingConnections bool `json:"blocksIncomingConnections"`
 	SSHEnabled                bool `json:"sshEnabled"`
 
+	TailnetLockKey   string `json:"tailnetLockKey"`
+	TailnetLockError string `json:"tailnetLockError"`
+
 	Created  time.Time `json:"created"`
 	LastSeen time.Time `json:"lastSeen"`
 	Expires  time.Time `json:"expires"`
@@ -128,6 +137,8 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 			ConnectedToControl:        d.ConnectedToControl,
 			BlocksIncomingConnections: d.BlocksIncomingConnections,
 			SSHEnabled:                d.SSHEnabled,
+			TailnetLockKey:            d.TailnetLockKey,
+			TailnetLockError:          d.TailnetLockError,
 			Created:                   d.Created,
 			LastSeen:                  d.LastSeen,
 			Expires:                   d.Expires,

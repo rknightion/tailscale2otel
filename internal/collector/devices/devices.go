@@ -50,6 +50,13 @@ const (
 	metricCacheSize = "tailscale2otel.enrich.cache_size"
 
 	eventPosture = "tailscale.device.posture"
+
+	metricTailnetLockErrors    = "tailscale.tailnet_lock.errors"
+	metricDerpRegionLatencyMin = "tailscale.derp.region.latency_min"
+	metricDerpRegionDevices    = "tailscale.derp.region.devices"
+	metricDerpRegionPreferred  = "tailscale.derp.region.preferred"
+
+	eventTailnetLockError = "tailscale.device.tailnet_lock_error"
 )
 
 // Attribute keys specific to this collector.
@@ -119,6 +126,7 @@ type Collector struct {
 	collectRoutes  bool
 	collectPosture bool
 	perEntity      bool
+	derpRollup     bool
 	postureLogMode string // "changes" (default) | "always" | "off"
 
 	// attrNamespaces is the set of posture-attribute namespace prefixes (the part
@@ -143,6 +151,15 @@ type Option func(*Collector)
 // tailscale.devices.count rollup, dropping the per-device series.
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
+}
+
+// WithDerpRegionRollup controls whether the tailnet-wide per-DERP-region rollup
+// gauges (latency_min, devices, preferred) are emitted (default true;
+// cardinality.derp_region_rollup). The rollup is computed from the per-device
+// DERP latency already fetched and is emitted independently of per_entity, so it
+// is the low-cardinality DERP view that survives when device_per_entity is off.
+func WithDerpRegionRollup(enabled bool) Option {
+	return func(c *Collector) { c.derpRollup = enabled }
 }
 
 // WithPostureLogMode controls how often the per-device posture LOG event fires
@@ -211,6 +228,7 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		collectRoutes:  collectRoutes,
 		collectPosture: collectPosture,
 		perEntity:      true,
+		derpRollup:     true,
 		postureLogMode: postureLogChanges,
 		lastPosture:    make(map[string]string),
 	}
@@ -251,6 +269,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		external   bool
 	}
 	counts := make(map[countKey]int, len(devs))
+	lockErrors := 0
 
 	for i := range devs {
 		d := &devs[i]
@@ -318,6 +337,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			c.emitPosture(ctx, e, d)
 		}
 
+		if d.TailnetLockError != "" {
+			lockErrors++
+			e.LogEvent(telemetry.Event{
+				Name:     docTailnetLockError.Name,
+				Severity: telemetry.SeverityError,
+				Body:     d.TailnetLockError,
+				Attrs:    telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID},
+			})
+		}
+
 		counts[countKey{os: d.OS, authorized: d.Authorized, external: d.IsExternal}]++
 	}
 
@@ -330,7 +359,53 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 	}
 
+	e.Gauge(docTailnetLockErrors.Name, docTailnetLockErrors.Unit, docTailnetLockErrors.Description,
+		float64(lockErrors), nil)
+
+	if c.derpRollup {
+		c.emitDERPRollup(e, devs)
+	}
+
 	return nil
+}
+
+// emitDERPRollup aggregates the per-device DERP latency already fetched into
+// tailnet-wide per-region gauges: the best (min) latency to each region, the
+// number of devices reporting it, and how many prefer it.
+func (c *Collector) emitDERPRollup(e telemetry.Emitter, devs []tsapi.RichDevice) {
+	type agg struct {
+		minMs     float64
+		haveMin   bool
+		devices   int
+		preferred int
+	}
+	byRegion := map[string]*agg{}
+	for i := range devs {
+		for region, derp := range devs[i].DERPLatency {
+			a := byRegion[region]
+			if a == nil {
+				a = &agg{}
+				byRegion[region] = a
+			}
+			a.devices++
+			if derp.Preferred {
+				a.preferred++
+			}
+			if !a.haveMin || derp.LatencyMs < a.minMs {
+				a.minMs = derp.LatencyMs
+				a.haveMin = true
+			}
+		}
+	}
+	for region, a := range byRegion {
+		attrs := telemetry.Attrs{attrDERPRegion: region}
+		e.Gauge(docDerpRegionLatencyMin.Name, docDerpRegionLatencyMin.Unit, docDerpRegionLatencyMin.Description,
+			a.minMs/1000, attrs)
+		e.Gauge(docDerpRegionDevices.Name, docDerpRegionDevices.Unit, docDerpRegionDevices.Description,
+			float64(a.devices), attrs)
+		e.Gauge(docDerpRegionPreferred.Name, docDerpRegionPreferred.Unit, docDerpRegionPreferred.Description,
+			float64(a.preferred), attrs)
+	}
 }
 
 // emitPosture fetches the posture attributes for one device, always emits the

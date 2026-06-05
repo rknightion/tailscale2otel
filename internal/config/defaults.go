@@ -60,6 +60,7 @@ func Default() *Config {
 			KeyPerEntity:           true,
 			WebhookPerEntity:       true,
 			ServicePerEntity:       true,
+			DerpRegionRollup:       true,
 			MetricLimit:            10000,
 		},
 		Collectors: Collectors{

@@ -211,6 +211,9 @@ type CardinalityConfig struct {
 	// ServicePerEntity (default true) gates the per-service tailscale.service.*
 	// gauges; false keeps only the aggregate tailscale.services.count.
 	ServicePerEntity bool `yaml:"service_per_entity"`
+	// DerpRegionRollup (default true) gates the tailnet-wide per-DERP-region
+	// rollup gauges (tailscale.derp.region.*) emitted by the devices collector.
+	DerpRegionRollup bool `yaml:"derp_region_rollup"`
 	// MetricLimit is the hard per-instrument cardinality limit: the maximum number
 	// of distinct attribute sets (series) a single metric may emit per collection
 	// cycle. Beyond it the OTLP SDK collapses further series into one

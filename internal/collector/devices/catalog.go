@@ -156,17 +156,65 @@ var (
 	}
 )
 
+// Tailnet-lock + per-DERP-region rollup descriptors (devices extension). The
+// rollup gauges are gated by cardinality.derp_region_rollup; the tailnet-lock
+// error count is unconditional (cheap, derived from the devices fetch).
+var derpRegionAttr = []string{attrDERPRegion}
+
+var (
+	docTailnetLockErrors = metricdoc.Metric{
+		Name:        metricTailnetLockErrors,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices with a non-empty tailnet-lock error (a **count**, despite `_ratio`); the only actionable tailnet-lock signal the API exposes (every node carries a lock key regardless of whether tailnet lock is enabled).",
+		Group:       groupDevices,
+	}
+	docDerpRegionLatencyMin = metricdoc.Metric{
+		Name:        metricDerpRegionLatencyMin,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Best (minimum) device→DERP-region latency across the tailnet; one series per region. **Gated** by `cardinality.derp_region_rollup`.",
+		Attributes:  derpRegionAttr,
+		Group:       groupDevices,
+	}
+	docDerpRegionDevices = metricdoc.Metric{
+		Name:        metricDerpRegionDevices,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices reporting latency to a DERP region (a **count**). **Gated** by `cardinality.derp_region_rollup`.",
+		Attributes:  derpRegionAttr,
+		Group:       groupDevices,
+	}
+	docDerpRegionPreferred = metricdoc.Metric{
+		Name:        metricDerpRegionPreferred,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices that prefer a DERP region (a **count**). **Gated** by `cardinality.derp_region_rollup`.",
+		Attributes:  derpRegionAttr,
+		Group:       groupDevices,
+	}
+
+	docTailnetLockError = metricdoc.LogEvent{
+		Name:        eventTailnetLockError,
+		Severity:    "ERROR",
+		Description: "Emitted per device when its tailnet-lock error is non-empty (e.g. an unsigned node); the error text is the log body.",
+		Attributes:  []string{semconv.HostName, semconv.HostID},
+		Group:       groupDevices,
+	}
+)
+
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docPostureInfo,
 		docAttribute, docAttributeInfo,
+		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docCacheAge, docCacheSize,
 	}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docPosture}
+	return []metricdoc.LogEvent{docPosture, docTailnetLockError}
 }
