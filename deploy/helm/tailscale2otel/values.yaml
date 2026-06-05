@@ -135,8 +135,6 @@ config:
         client_secret: "${TS_OAUTH_CLIENT_SECRET}"
         # -- OAuth scopes to request. "all:read" covers every read-only collector.
         scopes: ["all:read"]
-        # -- Tailscale OAuth token endpoint (override only for self-hosted/Headscale).
-        token_url: "https://api.tailscale.com/api/v2/oauth/token"
       # -- API key, used only when method: apikey.
       apikey: "${TS_API_KEY}"
     http:

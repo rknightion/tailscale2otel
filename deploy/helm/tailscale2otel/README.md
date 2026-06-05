@@ -140,7 +140,6 @@ under `config:`).
 | config.tailscale.auth.oauth.client_id | string | `"${TS_OAUTH_CLIENT_ID}"` | OAuth client ID (backed by the TS_OAUTH_CLIENT_ID secret). |
 | config.tailscale.auth.oauth.client_secret | string | `"${TS_OAUTH_CLIENT_SECRET}"` | OAuth client secret (backed by the TS_OAUTH_CLIENT_SECRET secret). |
 | config.tailscale.auth.oauth.scopes | list | `["all:read"]` | OAuth scopes to request. "all:read" covers every read-only collector. |
-| config.tailscale.auth.oauth.token_url | string | `"https://api.tailscale.com/api/v2/oauth/token"` | Tailscale OAuth token endpoint (override only for self-hosted/Headscale). |
 | config.tailscale.http.rate_limit | int | `0` | Global requests/sec across all collectors (0 = unlimited). |
 | config.tailscale.http.retry.base_delay | string | `"500ms"` | Initial backoff delay; doubles each retry up to max_delay. |
 | config.tailscale.http.retry.max_attempts | int | `4` | Max attempts per request (incl. the first) before giving up. |

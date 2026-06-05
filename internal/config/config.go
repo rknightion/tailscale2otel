@@ -104,7 +104,6 @@ type OAuthConfig struct {
 	ClientID     string   `yaml:"client_id"`
 	ClientSecret Secret   `yaml:"client_secret"`
 	Scopes       []string `yaml:"scopes"`
-	TokenURL     string   `yaml:"token_url"`
 }
 
 // TailscaleHTTPConfig configures the HTTP client used for the Tailscale API.

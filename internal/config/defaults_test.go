@@ -25,9 +25,6 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Tailscale.Auth.Method != "oauth" {
 		t.Errorf("Auth.Method = %q, want default oauth", cfg.Tailscale.Auth.Method)
 	}
-	if got := cfg.Tailscale.Auth.OAuth.TokenURL; got != "https://api.tailscale.com/api/v2/oauth/token" {
-		t.Errorf("OAuth.TokenURL = %q, want default token url", got)
-	}
 	if got := cfg.Tailscale.Auth.OAuth.Scopes; len(got) != 1 || got[0] != "all:read" {
 		t.Errorf("OAuth.Scopes = %v, want default [all:read]", got)
 	}

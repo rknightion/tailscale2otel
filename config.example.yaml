@@ -16,7 +16,6 @@ tailscale:
       client_id: "${TS_OAUTH_CLIENT_ID}"
       client_secret: "${TS_OAUTH_CLIENT_SECRET}"
       scopes: ["all:read"]           # least-privilege read scopes
-      token_url: "https://api.tailscale.com/api/v2/oauth/token"
     apikey: "${TS_API_KEY}"          # used only when method: apikey (expires <=90d, user-tied)
   http:
     timeout: 30s

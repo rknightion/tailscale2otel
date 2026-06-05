@@ -438,9 +438,6 @@
                                             "items": {
                                                 "type": "string"
                                             }
-                                        },
-                                        "token_url": {
-                                            "type": "string"
                                         }
                                     }
                                 }
