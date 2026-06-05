@@ -220,6 +220,18 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 | `tailscale.setting.users_external_tailnets_role` | `1` | gauge | `tailscale_setting_users_external_tailnets_role_ratio` | `tailscale_setting_role` | Info gauge (constant `1`); the user role allowed to join external tailnets, carried as the `tailscale.setting.role` label. |
 <!-- END GENERATED -->
 
+### Contacts (`tailscale.contact.*`)
+
+Tailnet contact verification status. The contact **email is never emitted** (PII); only whether each
+contact type (`account`/`support`/`security`) still needs verification — an unverified `security`
+contact is worth alerting on.
+
+<!-- BEGIN GENERATED: metrics groups="Contacts" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.contact.needs_verification` | `1` | gauge | `tailscale_contact_needs_verification_ratio` | `tailscale_contact_type` | `1` if the tailnet contact email still needs verification, else `0`; one series per contact type (`account`/`support`/`security`). The email address is never emitted. |
+<!-- END GENERATED -->
+
 ### Features (`tailscale.feature.*`)
 
 <!-- BEGIN GENERATED: metrics groups="Features" -->

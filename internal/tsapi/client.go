@@ -119,6 +119,11 @@ func (c *Client) Webhooks(ctx context.Context) ([]tsclient.Webhook, error) {
 	return c.ts.Webhooks().List(ctx)
 }
 
+// Contacts returns the tailnet's account/support/security contacts.
+func (c *Client) Contacts(ctx context.Context) (*tsclient.Contacts, error) {
+	return c.ts.Contacts().Get(ctx)
+}
+
 // PolicyFileRaw returns the raw HuJSON ACL policy and its ETag.
 func (c *Client) PolicyFileRaw(ctx context.Context) (*tsclient.RawACL, error) {
 	return c.ts.PolicyFile().Raw(ctx)

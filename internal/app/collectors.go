@@ -5,6 +5,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/collector/acl"
 	"github.com/rknightion/tailscale2otel/internal/collector/auditlogs"
+	"github.com/rknightion/tailscale2otel/internal/collector/contacts"
 	"github.com/rknightion/tailscale2otel/internal/collector/devices"
 	"github.com/rknightion/tailscale2otel/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/internal/collector/flowlogs"
@@ -104,6 +105,9 @@ func (a *App) registerCollectors() {
 	}
 	if c.Dns.Enabled {
 		a.registry.Register(dns.New(a.client, c.Dns.Interval.D()), c.Dns.Interval.D())
+	}
+	if c.Contacts.Enabled {
+		a.registry.Register(contacts.New(a.client, c.Contacts.Interval.D()), c.Contacts.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.

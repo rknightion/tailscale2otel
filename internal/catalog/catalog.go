@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/collector/acl"
+	"github.com/rknightion/tailscale2otel/internal/collector/contacts"
 	"github.com/rknightion/tailscale2otel/internal/collector/devices"
 	"github.com/rknightion/tailscale2otel/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/internal/collector/flowlogs"
@@ -39,6 +40,7 @@ var metricSources = []func() []metricdoc.Metric{
 	settings.Catalog,
 	acl.Catalog,
 	dns.Catalog,
+	contacts.Catalog,
 	flowlogs.Catalog,
 	nodemetrics.Catalog,
 	flowlog.Catalog,
@@ -58,6 +60,7 @@ var logSources = []func() []metricdoc.LogEvent{
 	settings.LogCatalog,
 	acl.LogCatalog,
 	dns.LogCatalog,
+	contacts.LogCatalog,
 	flowlogs.LogCatalog,
 	nodemetrics.LogCatalog,
 	flowlog.LogCatalog,

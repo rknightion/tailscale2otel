@@ -224,6 +224,7 @@ type Collectors struct {
 	Settings    CollectorConfig   `yaml:"settings"`
 	Acl         CollectorConfig   `yaml:"acl"`
 	Dns         CollectorConfig   `yaml:"dns"`
+	Contacts    CollectorConfig   `yaml:"contacts"`
 	NodeMetrics NodeMetricsConfig `yaml:"node_metrics"`
 }
 
