@@ -760,7 +760,35 @@ def tab_nodemetrics():
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Endpoints"})]), 12, 6),
     ]
-    return [row("Scraper health", health), row("Traffic (tailscaled)", traffic), row("Routing & health", routing)]
+    paths = [
+        (panel("% traffic via DERP relay by node", "timeseries",
+               [prom_t("sum by (tailscale_node) (rate(tailscaled_inbound_bytes_total{path=\"derp\"}[%s]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[%s])) / "
+                       "clamp_min(sum by (tailscale_node) (rate(tailscaled_inbound_bytes_total[%s]) + rate(tailscaled_outbound_bytes_total[%s])), 1)"
+                       % (RI, RI, RI, RI), legend="{{tailscale_node}}")],
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Fraction of each node's traffic relayed via DERP rather than sent direct. Sustained "
+                    "high values indicate NAT-traversal problems (added latency)."), 12, 7),
+        (panel("Throughput by path", "timeseries",
+               [prom_t("sum by (path) (rate(tailscaled_inbound_bytes_total[%s]) + rate(tailscaled_outbound_bytes_total[%s]))"
+                       % (RI, RI), legend="{{path}}")],
+               unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts(),
+               desc="Total tailnet throughput split by path: DERP relay vs direct IPv4 vs direct IPv6."), 12, 7),
+        (panel("Fleet DERP share (now)", "stat",
+               [prom_t("sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[%s]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[%s])) / "
+                       "clamp_min(sum(rate(tailscaled_inbound_bytes_total[%s]) + rate(tailscaled_outbound_bytes_total[%s])), 1)"
+                       % (RI, RI, RI, RI), instant=True)],
+               unit="percentunit", thresholds=thr([(None, "green"), (0.3, "yellow"), (0.6, "red")]),
+               options=stat_opts(color="background"),
+               desc="Fleet-wide fraction of bytes relayed via DERP."), 8, 6),
+        (panel("Path mix (DERP / IPv4 / IPv6)", "barchart",
+               [prom_t("sum by (path) (rate(tailscaled_inbound_bytes_total[%s]) + rate(tailscaled_outbound_bytes_total[%s]))"
+                       % (RI, RI), legend="{{path}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 16, 6),
+    ]
+    return [row("Scraper health", health), row("Traffic (tailscaled)", traffic),
+            row("Connection paths (DERP vs direct)", paths, present="has_path"),
+            row("Routing & health", routing)]
 
 
 def tab_diagnostics():
