@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.4.6](https://img.shields.io/badge/Version-0.4.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.4.7](https://img.shields.io/badge/Version-0.4.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -47,6 +47,7 @@ under `config:`).
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
 | config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
 | config.cardinality.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when flow_node_dims is true, the src/dst node labels on flow METRICS. |
+| config.cardinality.derp_region_rollup | bool | `true` | Emit the tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector. |
 | config.cardinality.device_per_entity | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
 | config.cardinality.flow_destination_port | bool | `false` | Add destination.port to flow METRICS (independent of flow_source_port). |
 | config.cardinality.flow_destination_service | bool | `false` | Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS. |
@@ -55,7 +56,9 @@ under `config:`).
 | config.cardinality.flow_node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
 | config.cardinality.flow_source_port | bool | `false` | Add source.port to flow METRICS (independent of flow_destination_port). |
 | config.cardinality.key_per_entity | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
+| config.cardinality.service_per_entity | bool | `true` | Emit the per-service ports/hosts gauges; false emits only tailscale.services.count. |
 | config.cardinality.user_per_entity | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |
+| config.cardinality.webhook_per_entity | bool | `true` | Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
 | config.checkpoint.store | string | `"memory"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
@@ -66,6 +69,8 @@ under `config:`).
 | config.collectors.auditlogs.lag | string | `"60s"` | Tail-hazard lag (see flowlogs.lag). |
 | config.collectors.auditlogs.max_window | string | `"6h"` | Maximum width of a single poll window. |
 | config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both. Pick ONE method per log type (see flowlogs.source): `both` risks double-counting and de-dup is only a best-effort failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true. |
+| config.collectors.contacts.enabled | bool | `true` | Enable the contacts collector (account/support/security contact verification; no emails emitted). |
+| config.collectors.contacts.interval | string | `"600s"` | Poll interval. |
 | config.collectors.devices.attribute_namespaces | list | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info} metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled. |
 | config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
 | config.collectors.devices.collect_routes | bool | `false` | Also collect advertised/enabled subnet routes and per-DERP latency via the rich GET /devices?fields=all endpoint. |
@@ -85,6 +90,8 @@ under `config:`).
 | config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
 | config.collectors.keys.interval | string | `"300s"` | Poll interval. |
+| config.collectors.log_stream.enabled | bool | `true` | Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error) when no SIEM sink is configured for a log type. |
+| config.collectors.log_stream.interval | string | `"600s"` | Poll interval. |
 | config.collectors.node_metrics.drop_labels | list | `[]` | Label keys stripped from every forwarded series (the instance label is never dropped). |
 | config.collectors.node_metrics.enabled | bool | `false` | Enable the node-metrics scraper. Requires at least one entry in `targets`. |
 | config.collectors.node_metrics.interval | string | `"60s"` | Scrape interval for every target. |
@@ -92,10 +99,17 @@ under `config:`).
 | config.collectors.node_metrics.metric_deny | list | `[]` | Passthrough deny-list: anchored regex; names matching any are dropped (after metric_allow). |
 | config.collectors.node_metrics.targets | list | `[]` | List of scrape targets. Each: {url, instance, labels{}, bearer_token, bearer_token_file, headers{}, tls{insecure,ca_file,cert_file,key_file}}. The "instance" label is the node identity. |
 | config.collectors.node_metrics.timeout | string | `"10s"` | Per-scrape HTTP timeout. |
+| config.collectors.posture_integrations.enabled | bool | `true` | Enable the device-posture-integration collector (MDM/EDR matched counts + last_sync staleness). |
+| config.collectors.posture_integrations.interval | string | `"600s"` | Poll interval. |
+| config.collectors.services.collect_hosts | bool | `false` | Also collect per-service backing-host detail (approval/configured state) — one extra API call per service (N+1). Off by default. |
+| config.collectors.services.enabled | bool | `true` | Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts). |
+| config.collectors.services.interval | string | `"600s"` | Poll interval. |
 | config.collectors.settings.enabled | bool | `true` | Enable the tailnet-settings collector (setting.enabled flags, key-duration). |
 | config.collectors.settings.interval | string | `"600s"` | Poll interval (settings change rarely). |
 | config.collectors.users.enabled | bool | `true` | Enable the users collector (users.count, per-user devices/connected/last_seen). |
 | config.collectors.users.interval | string | `"300s"` | Poll interval (user data changes slowly). |
+| config.collectors.webhooks.enabled | bool | `true` | Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret). |
+| config.collectors.webhooks.interval | string | `"600s"` | Poll interval. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
 | config.enrichment.reverse_dns.cache_ttl | string | `"1h"` | How long a resolved name is cached. |
 | config.enrichment.reverse_dns.enabled | bool | `false` | Opt-in reverse-DNS (PTR) enrichment of EXTERNAL flow addresses; resolved names replace the "external" bucket in tailscale.src/dst.node (flow logs always; flow metrics when flow_node_dims is on). On flow METRICS this can add ~one series per external IP. |

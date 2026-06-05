@@ -36,6 +36,9 @@
                         "collapse_external": {
                             "type": "boolean"
                         },
+                        "derp_region_rollup": {
+                            "type": "boolean"
+                        },
                         "device_per_entity": {
                             "type": "boolean"
                         },
@@ -60,7 +63,13 @@
                         "key_per_entity": {
                             "type": "boolean"
                         },
+                        "service_per_entity": {
+                            "type": "boolean"
+                        },
                         "user_per_entity": {
+                            "type": "boolean"
+                        },
+                        "webhook_per_entity": {
                             "type": "boolean"
                         }
                     }
@@ -109,6 +118,17 @@
                                     "type": "string"
                                 },
                                 "source": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "contacts": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
                                     "type": "string"
                                 }
                             }
@@ -193,6 +213,17 @@
                                 }
                             }
                         },
+                        "log_stream": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
                         "node_metrics": {
                             "type": "object",
                             "properties": {
@@ -219,6 +250,31 @@
                                 }
                             }
                         },
+                        "posture_integrations": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "services": {
+                            "type": "object",
+                            "properties": {
+                                "collect_hosts": {
+                                    "type": "boolean"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
                         "settings": {
                             "type": "object",
                             "properties": {
@@ -231,6 +287,17 @@
                             }
                         },
                         "users": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "webhooks": {
                             "type": "object",
                             "properties": {
                                 "enabled": {

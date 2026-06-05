@@ -231,6 +231,12 @@ config:
     user_per_entity: true
     # -- Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires).
     key_per_entity: true
+    # -- Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count.
+    webhook_per_entity: true
+    # -- Emit the per-service ports/hosts gauges; false emits only tailscale.services.count.
+    service_per_entity: true
+    # -- Emit the tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector.
+    derp_region_rollup: true
 
   collectors:
     devices:
@@ -314,6 +320,35 @@ config:
       enabled: true
       # -- Poll interval.
       interval: 600s
+    contacts:
+      # -- Enable the contacts collector (account/support/security contact verification; no emails emitted).
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
+    webhooks:
+      # -- Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret).
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
+    posture_integrations:
+      # -- Enable the device-posture-integration collector (MDM/EDR matched counts + last_sync staleness).
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
+    log_stream:
+      # -- Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error)
+      # when no SIEM sink is configured for a log type.
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
+    services:
+      # -- Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts).
+      enabled: true
+      # -- Poll interval.
+      interval: 600s
+      # -- Also collect per-service backing-host detail (approval/configured state) — one extra API
+      # call per service (N+1). Off by default.
+      collect_hosts: false
     # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
     # them centrally over OTLP. Off by default; disabled when no targets are configured.
     node_metrics:

@@ -59,6 +59,9 @@ cardinality:
   device_per_entity: true            # per-device gauges (online/last_seen/key.expiry/derp/routes); false = only tailscale.devices.count
   user_per_entity: true              # per-user gauges (devices/connected/last_seen); false = only tailscale.users.count
   key_per_entity: true               # per-key expiry gauge; false = only tailscale.keys.count (expiry WARN log still fires)
+  webhook_per_entity: true           # per-endpoint webhook subscriptions gauge; false = only tailscale.webhook_endpoints.count
+  service_per_entity: true           # per-service ports/hosts gauges; false = only tailscale.services.count
+  derp_region_rollup: true           # tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector
   metric_limit: 10000                # hard per-metric series cap (OTLP cardinality limit). Beyond it the SDK collapses extra series into otel_metric_overflow. 0/negative = unlimited. Shape cardinality with the toggles above; this is the safety cap.
 
 collectors:
@@ -126,6 +129,11 @@ collectors:
   settings:  { enabled: true, interval: 600s }
   acl:       { enabled: true, interval: 600s }
   dns:       { enabled: true, interval: 600s }
+  contacts:  { enabled: true, interval: 600s }              # account/support/security contact verification status (no emails emitted)
+  webhooks:  { enabled: true, interval: 600s }              # webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)
+  posture_integrations: { enabled: true, interval: 600s }   # MDM/EDR posture-integration sync health: matched counts + last_sync staleness
+  log_stream: { enabled: true, interval: 600s }             # log-streaming delivery health to a SIEM sink; self-gates to configured=0 (no error) when no sink
+  services:  { enabled: true, interval: 600s, collect_hosts: false } # Tailscale Services (VIP); collect_hosts adds N+1 per-service backing-host detail
   # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
   # them centrally over OTLP (counters as deltas, gauges as gauges, plus a per-target
   # tailscale.node.up gauge). Node identity is carried as the "instance" label, not an
