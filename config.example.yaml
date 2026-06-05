@@ -1,269 +1,242 @@
-# tailscale2otel example configuration.
-# Strings support ${ENV} / $ENV expansion, so keep secrets in environment variables.
+# tailscale2otel configuration.
+#
+# Configuration is layered: built-in defaults < this file < environment variables.
+# EVERY field can be set (or overridden) by an environment variable named with the
+# TS2OTEL_ prefix and "__" between nesting levels, e.g.
+#
+#   tailscale.auth.oauth.client_secret  ->  TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET
+#   otlp.endpoint                       ->  TS2OTEL_OTLP__ENDPOINT
+#   collectors.flowlogs.interval        ->  TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL
+#
+# Keep SECRETS in environment variables — the env layer overrides this file, so a
+# secret never has to appear here. This file is optional: with no -config flag the
+# exporter runs from defaults + environment alone (handy for containers).
+#
+# Every option below is shown with its default value and an explanatory comment.
+# Most users only need to set tailscale.* + otlp.* and leave the rest at defaults.
+# Prose reference: docs/configuration.md.
 
-log_level: info                      # debug | info | warn | error
+log_level: info                       # exporter's own log verbosity: debug | info | warn | error
 
+# ── Tailscale API connection ────────────────────────────────────────────────────
 tailscale:
-  # Your tailnet's name, or "-" for the default tailnet of the auth principal.
-  tailnet: "${TS_TAILNET}"
+  tailnet: "-"                        # "-" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. "example.com"
   auth:
-    # oauth (recommended) | apikey. Prefer an OAuth client: its scoped tokens are
-    # short-lived and NOT tied to a user. A personal API key (apikey) expires in
-    # <=90 days and stops working when the user who created it is removed — the
-    # exporter logs a WARN advising this when method: apikey.
-    method: oauth
-    oauth:
-      client_id: "${TS_OAUTH_CLIENT_ID}"
-      client_secret: "${TS_OAUTH_CLIENT_SECRET}"
-      scopes: ["all:read"]           # least-privilege read scopes
-    apikey: "${TS_API_KEY}"          # used only when method: apikey (expires <=90d, user-tied)
-  http:
-    timeout: 30s
-    retry: { max_attempts: 4, base_delay: 500ms, max_delay: 10s }
-    rate_limit: 0                    # global requests/sec across all collectors (0 = unlimited)
+    method: oauth                     # oauth (recommended) | apikey
+    oauth:                            # used when method: oauth — scoped, short-lived, not user-bound
+      client_id: ""                   # OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID)
+      client_secret: ""               # OAuth client secret — keep in env, not here (..._CLIENT_SECRET)
+      scopes:                         # least-privilege read scopes requested for the token
+        - all:read
+    apikey: ""                        # personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires <=90d and is tied to its creator
+  http:                               # HTTP client used for all Tailscale API calls
+    timeout: 30s                      # per-request timeout
+    retry:
+      max_attempts: 4                 # total attempts per request (1 = no retry); exponential backoff between tries
+      base_delay: 500ms               # initial backoff delay
+      max_delay: 10s                  # backoff ceiling
+    rate_limit: 0                     # global requests/sec across ALL collectors (0 = unlimited)
 
+# ── OTLP export destination ─────────────────────────────────────────────────────
 otlp:
-  protocol: http                     # http | grpc | stdout (stdout = local debug)
-  endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
-  # Convenience for Grafana Cloud: expands to an "Authorization: Basic <base64(instance:token)>" header.
-  grafana_cloud:
-    instance_id: "${GC_INSTANCE_ID}"
-    token: "${GC_OTLP_TOKEN}"
-  headers: {}                        # extra raw headers (alternative to grafana_cloud)
-  tls: { insecure: false, ca_file: "", cert_file: "", key_file: "" }
-  metric_interval: 60s               # how often metrics are pushed (aligned with the default 60s scrape cadence)
+  protocol: http                      # http | grpc | stdout (stdout = print signals to the console for local debug, no backend)
+  endpoint: https://otlp-gateway-prod-us-central-0.grafana.net/otlp   # OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself)
+  grafana_cloud:                      # convenience: instance_id + token become an "Authorization: Basic" header for Grafana Cloud
+    instance_id: ""                   # Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID)
+    token: ""                         # Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN)
+  headers: {}                         # extra raw OTLP headers, e.g. {X-Scope-OrgID: "1"} (alternative to grafana_cloud); FILE-ONLY (maps aren't settable via env)
+  tls:
+    insecure: false                   # skip TLS certificate verification (debugging only — do not use in production)
+    ca_file: ""                       # path to a custom CA bundle to trust
+    cert_file: ""                     # client certificate path (for mutual TLS)
+    key_file: ""                      # client private key path (for mutual TLS)
+  metric_interval: 60s                # how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape)
 
+# ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
 enrichment:
-  cache_ttl: 5m                      # staleness alarm threshold for the device cache
-  # Reverse-DNS (PTR) enrichment of EXTERNAL (non-Tailscale) flow addresses. When
-  # enabled, a resolved hostname replaces the "external" bucket / raw IP in
-  # tailscale.src.node / tailscale.dst.node (flow logs always; flow metrics when
-  # flow_node_dims is on). Lookups are async + cached, so the hot path never blocks.
-  # NOTE: on flow METRICS this can add ~one series per external IP — see metric_limit.
-  reverse_dns:
-    enabled: false                   # opt-in; off by default
-    server: ""                       # resolver "ip" or "ip:port" (default :53); empty = system/container resolver
-    timeout: 2s                      # per-lookup timeout
-    cache_ttl: 1h                    # how long a resolved name is cached
-    negative_ttl: 5m                 # how long a failed lookup is remembered (suppresses retries)
-    max_entries: 4096                # cache size bound (new external IPs beyond this are not resolved)
+  cache_ttl: 5m                       # staleness alarm threshold for the IP/nodeID -> name device cache
+  reverse_dns:                        # opt-in PTR enrichment: resolve EXTERNAL (non-Tailscale) flow IPs to hostnames
+    enabled: false                    # off by default (can add ~one flow-metric series per external IP when on)
+    server: ""                        # resolver "ip" or "ip:port" (default :53); empty = system/container resolver
+    timeout: 2s                       # per-lookup timeout
+    cache_ttl: 1h                     # how long a resolved name is cached
+    negative_ttl: 5m                  # how long a failed lookup is remembered (suppresses retries)
+    max_entries: 4096                 # PTR cache size bound (new external IPs beyond this are not resolved)
 
+# ── Cardinality (metric/label volume trade-offs) ────────────────────────────────
 cardinality:
-  flow_metrics_mode: rollup          # rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into __other__ so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (≈2x series; summing double-counts).
-  flow_source_port: false            # add source.port to flow metrics (independent of flow_destination_port); ports are always on flow logs. Applies to the raw families (mode all/both); the rollup never carries ports
-  flow_destination_port: false       # add destination.port to flow metrics
-  flow_destination_service: false    # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics — bounded stand-in for destination.port; always on flow logs
-  flow_node_dims: true               # include src/dst device names on flow metrics
-  collapse_external: true            # bucket unresolved IPs as external/unknown (also sets src/dst node metric labels when flow_node_dims is on)
-  device_per_entity: true            # per-device gauges (online/last_seen/key.expiry/derp/routes); false = only tailscale.devices.count
-  user_per_entity: true              # per-user gauges (devices/connected/last_seen); false = only tailscale.users.count
-  key_per_entity: true               # per-key expiry gauge; false = only tailscale.keys.count (expiry WARN log still fires)
-  webhook_per_entity: true           # per-endpoint webhook subscriptions gauge; false = only tailscale.webhook_endpoints.count
-  service_per_entity: true           # per-service ports/hosts gauges; false = only tailscale.services.count
-  derp_region_rollup: true           # tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector
-  metric_limit: 10000                # hard per-metric series cap (OTLP cardinality limit). Beyond it the SDK collapses extra series into otel_metric_overflow. 0/negative = unlimited. Shape cardinality with the toggles above; this is the safety cap.
+  metric_limit: 10000                 # hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited)
+  derp_region_rollup: true            # emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*)
+  flow:                               # shapes flow METRICS only — flow LOGS always carry full detail
+    metrics_mode: rollup              # rollup (bounded top-N, lowest cardinality) | all (raw per-connection) | both (≈2x series; summing double-counts)
+    rollup_top_n: 500                 # rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500)
+    source_port: false                # add source.port to flow metrics (raw modes only)
+    destination_port: false           # add destination.port to flow metrics (raw modes only)
+    destination_service: false        # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics
+    node_dims: true                   # include src/dst device names on flow metrics
+    collapse_external: true           # bucket unresolved IPs as external/unknown (keeps cardinality bounded)
+  per_entity:                         # emit one gauge series per entity (true) or only the aggregate *.count (false)
+    device: true                      # per-device gauges (online/last_seen/key_expiry/derp/routes)
+    user: true                        # per-user gauges (devices/connected/last_seen)
+    key: true                         # per-key expiry gauge (the expiry WARN log fires regardless)
+    webhook: true                     # per-endpoint webhook-subscriptions gauge
+    service: true                     # per-service ports/hosts gauges
 
+# ── Collectors ──────────────────────────────────────────────────────────────────
+# Each collector takes enabled + interval. The two LOG collectors (flowlogs,
+# auditlogs) also take a source and windowing fields. Pick exactly ONE ingestion
+# path per log type (source: poll OR stream) to avoid double-counting.
 collectors:
-  # Every collector takes `enabled` + `interval`. The two LOG collectors (flowlogs,
-  # auditlogs) ALSO take `source` and a set of windowing fields; the rest are simple
-  # point-in-time snapshots.
-  #
-  #   source: poll   (default) — this exporter PULLS logs from the Tailscale API once
-  #                  per `interval`, one time-window per tick.
-  #   source: stream           — logs are PUSHED to the `streaming:` receiver (Splunk-
-  #                  HEC) configured further below; this exporter does NOT poll. The
-  #                  windowing fields (interval, lag, initial_lookback, max_window) are
-  #                  IGNORED in this mode.
-  #   source: both             — poll AND accept the stream. Discouraged: the same
-  #                  record can be DOUBLE-COUNTED (cross-source de-duplication is a
-  #                  best-effort FAILSAFE, not a guarantee). A startup WARN fires.
-  #
-  # Pick exactly ONE method per log type. The output-shaping fields — flowlogs'
-  # log_mode and the cardinality.* block above — apply no matter which path delivers
-  # the records.
-
-  # posture_log_mode (needs collect_posture): changes (default; log only when a device's posture
-  # changes — full baseline dump on first scrape, deltas after) | always (every scrape) | off (no
-  # log). The posture info-gauge metric (tailscale.device.posture) is emitted every scrape regardless.
-  #
-  # attribute_namespaces (needs collect_posture): which posture-attribute namespace prefixes (the part
-  # before ":" in a posture key) are promoted to the tailscale.device.attribute{,.info} metrics —
-  # booleans/numbers become a numeric gauge, strings/enums an info gauge with the value as a label.
-  # Default: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip] (MDM/identity integrations +
-  # geo). Use ["*"] for every namespace (incl. node, custom), or [] to disable. node:* is on the
-  # curated posture gauge already; custom:* is excluded by default (operator-defined cardinality).
-  devices:   { enabled: true, interval: 60s, collect_routes: false, collect_posture: false, posture_log_mode: changes,
-               attribute_namespaces: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip] }
-
-  # flowlogs — network flow logs → aggregated traffic counters + per-connection logs.
-  flowlogs:
+  devices:                            # device inventory — REQUIRED for flow/audit IP->name enrichment (disabling it degrades names to unknown/external)
     enabled: true
-    source: poll                    # poll | stream | both  (see the header above)
-    interval: 60s                   # poll only — how often a window is polled (ignored when source: stream)
-    lag: 120s                       # poll only — only query up to now-lag, so late-arriving records aren't missed
-    initial_lookback: 5m            # poll only — cold-start reach-back used when there is no checkpoint yet
-    max_window: 1h                  # poll only — cap one tick's window so a long outage catches up over several ticks
-    log_mode: per_connection        # per_connection | per_record | off — log detail level (applies to poll AND stream)
-    max_log_records_per_window: 0   # cap flow LOG records per poll window (0 = unlimited); excess → tailscale.network.flow.logs_dropped. Metrics are never capped.
-    flow_rollup_top_n: 500          # rollup only (cardinality.flow_metrics_mode=rollup/both): busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500)
-
-  # auditlogs — configuration/audit events → event logs + a counter.
-  auditlogs:
+    interval: 60s                     # how often the device snapshot is polled
+    collect_routes: false             # also fetch advertised/primary subnet routes per device
+    collect_posture: false            # also fetch device posture (MDM/EDR) — enables the posture metrics + log
+    posture_log_mode: changes         # needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted
+    attribute_namespaces:             # needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable
+      - intune
+      - jamf
+      - kandji
+      - crowdstrike
+      - sentinelone
+      - kolide
+      - ip
+  flowlogs:                           # network flow logs -> traffic counters + per-connection logs
     enabled: true
-    source: poll                    # poll | stream | both  (see the header above)
-    interval: 60s                   # poll only — how often a window is polled (ignored when source: stream)
-    lag: 60s                        # poll only — only query up to now-lag, so late-arriving records aren't missed
-    initial_lookback: 5m            # poll only — cold-start reach-back used when there is no checkpoint yet
-    max_window: 6h                  # poll only — cap one tick's window so a long outage catches up over several ticks
-
-  # ── Streaming alternative: RECEIVE logs instead of polling ──────────────────
-  # To have Tailscale PUSH logs here, set source: stream on the log type(s) below
-  # and enable the `streaming:` receiver further down. In stream mode only enabled,
-  # source (and, for flowlogs, log_mode / max_log_records_per_window) take effect:
-  #   flowlogs:  { enabled: true, source: stream, log_mode: per_connection }
-  #   auditlogs: { enabled: true, source: stream }
-
-  users:     { enabled: true, interval: 300s }
-  keys:      { enabled: true, interval: 300s, expiry_warn: 168h }   # warn when a key expires within 7d
-  settings:  { enabled: true, interval: 600s }
-  acl:       { enabled: true, interval: 600s }
-  dns:       { enabled: true, interval: 600s }
-  contacts:  { enabled: true, interval: 600s }              # account/support/security contact verification status (no emails emitted)
-  webhooks:  { enabled: true, interval: 600s }              # webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)
-  posture_integrations: { enabled: true, interval: 600s }   # MDM/EDR posture-integration sync health: matched counts + last_sync staleness
-  log_stream: { enabled: true, interval: 600s }             # log-streaming delivery health to a SIEM sink; self-gates to configured=0 (no error) when no sink
-  services:  { enabled: true, interval: 600s, collect_hosts: false } # Tailscale Services (VIP); collect_hosts adds N+1 per-service backing-host detail
-  # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
-  # them centrally over OTLP (counters as deltas, gauges as gauges, plus a per-target
-  # tailscale.node.up gauge). Node identity is carried as the "instance" label, not an
-  # OTEL Resource. Off by default; enable with static targets and/or discovery.
-  node_metrics:
+    source: poll                      # poll (this exporter PULLS) | stream (Tailscale PUSHES to the streaming receiver) | both (discouraged: double-counts)
+    interval: 60s                     # poll only — how often a window is polled
+    lag: 120s                         # poll only — query only up to now-lag so late-arriving records aren't missed
+    initial_lookback: 5m              # poll only — cold-start reach-back when there is no checkpoint yet
+    max_window: 1h                    # poll only — cap one tick's window so a long outage catches up over several ticks
+    log_mode: per_connection          # per_connection | per_record | off — log detail level (applies to poll AND stream)
+    max_log_records_per_window: 0     # cap flow LOG records per window (0 = unlimited); excess -> tailscale.network.flow.logs_dropped (metrics are never capped)
+  auditlogs:                          # configuration/audit events -> event logs + a counter
+    enabled: true
+    source: poll                      # poll | stream | both (see flowlogs)
+    interval: 60s                     # poll only
+    lag: 60s                          # poll only
+    initial_lookback: 5m              # poll only
+    max_window: 6h                    # poll only
+  users:                              # user inventory (devices/connected/last_seen per user)
+    enabled: true
+    interval: 300s
+  keys:                               # auth-key inventory + expiry warnings
+    enabled: true
+    interval: 300s
+    expiry_warn: 168h                 # log a WARN when a key expires within this window (default 7d)
+  settings:                           # tailnet settings snapshot
+    enabled: true
+    interval: 600s
+  acl:                                # ACL policy snapshot
+    enabled: true
+    interval: 600s
+  dns:                                # DNS/MagicDNS settings snapshot
+    enabled: true
+    interval: 600s
+  contacts:                           # account/support/security contact verification status (no emails emitted)
+    enabled: true
+    interval: 600s
+  webhooks:                           # webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)
+    enabled: true
+    interval: 600s
+  posture_integrations:               # MDM/EDR posture-integration sync health: matched counts + last_sync staleness
+    enabled: true
+    interval: 600s
+  log_stream:                         # log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)
+    enabled: true
+    interval: 600s
+  services:                           # Tailscale Services (VIP) inventory
+    enabled: true
+    interval: 600s
+    collect_hosts: false              # also fetch per-service backing-host detail — one extra API call per service (N+1)
+  node_metrics:                       # OPTIONAL: scrape tailscaled per-node Prometheus /metrics and forward them centrally. Off by default; see docs/node-metrics.md
     enabled: false
-    interval: 60s
-    timeout: 10s
-    max_response_bytes: 4194304  # per-target response cap (4 MiB)
-    max_samples: 50000           # per-target sample cap per scrape
-    targets: []
-      # - url: "http://100.64.0.10:5252/metrics"
-      #   instance: "relay-1"          # defaults to the URL host:port if omitted
-      #   labels: { role: "relay" }    # extra static labels merged onto every series
-      # Optional per-target auth/TLS for PROXIED/HTTPS targets (native tailscaled
-      # endpoints are plain HTTP and need none of this):
-      # - url: "https://relay-2.ts.net:5252/metrics"
-      #   bearer_token_file: "/run/secrets/scrape-token"   # read fresh each scrape; or bearer_token: "..."
+    interval: 60s                     # how often each target is scraped
+    timeout: 10s                      # per-scrape HTTP timeout
+    max_response_bytes: 4194304       # per-target response cap (4 MiB) — bounds memory
+    max_samples: 50000                # per-target sample cap per scrape — bounds cardinality
+    targets: []                       # static targets (FILE-ONLY — a list of objects can't be set via env). Example:
+      # - url: http://100.64.0.10:5252/metrics
+      #   instance: relay-1           # identity label; defaults to the URL host:port
+      #   labels: { role: relay }     # extra static labels merged onto every series
+      #   bearer_token_file: /run/secrets/scrape-token   # or bearer_token: "..." (for proxied/HTTPS targets)
       #   headers: { X-Scope-OrgID: "1" }
-      #   tls: { ca_file: "/etc/ssl/ca.pem", server_name: "relay-2.ts.net", insecure_skip_verify: false }
-    # Passthrough filters on the FORWARDED scraped series (they never affect
-    # tailscale.node.up or the discovery.* gauges). Anchored regex on the metric NAME.
-    metric_allow: []           # if non-empty, only metric names matching one of these regexes are forwarded
-    metric_deny: []            # metric names matching any of these regexes are dropped (applied after allow)
-    drop_labels: []            # label keys stripped from every forwarded series (instance is never dropped)
-    # Optional: DISCOVER scrape targets dynamically from the Tailscale devices API.
-    # Discovered targets are UNIONED (deduped by URL) with the static `targets` above,
-    # so this is fully backward-compatible. The devices API is polled on its own
-    # `interval` (default 5m), separate from the scrape `interval`. No ACL parsing is
-    # done: a node the scraper cannot reach simply reports tailscale.node.up=0.
-    discovery:
+      #   tls: { ca_file: /etc/ca.pem, server_name: relay.ts.net, insecure_skip_verify: false }
+    metric_allow: []                  # if non-empty, only forwarded metric names matching one of these anchored regexes are kept
+    metric_deny: []                   # forwarded metric names matching any of these anchored regexes are dropped (after allow)
+    drop_labels: []                   # label keys stripped from every forwarded series (the instance label is never dropped)
+    discovery:                        # OPTIONAL: discover scrape targets from the Tailscale devices API (unioned with static targets)
       enabled: false
-      interval: 5m
-      max_targets: 1000         # cap discovered scrape targets per refresh
-      scheme: http              # http | https
-      port: 5252                # tailscaled client metrics port
-      path: /metrics
-      online_only: true         # only devices connected to the control plane
-      exclude_external: true    # skip shared/external devices
-      include_tags: []          # e.g. ["tag:server"]; empty = all devices
-      exclude_tags: []          # wins over include_tags
-      address_order: ipv4       # ipv4 | ipv6 (preferred family; falls back to the other)
-      # tailscale_node identity label for each discovered target:
-      #   name     MagicDNS short name, e.g. "jules" (the FQDN's first label) — UNIQUE per tailnet (recommended)
-      #   address  Tailscale IP host:port — also unique (the built-in default when unset)
-      #   hostname OS hostname — short/friendly but NOT unique: phones and fresh installs
-      #            commonly report "localhost", so several devices would otherwise share a
-      #            single series. Colliding labels are auto-suffixed with the node address and
-      #            a WARN is logged, but prefer name (unique + friendly) or address.
-      instance_source: name
-      include_host_labels: true # attach host.name/host.id for tailscale.device.* joins
-      include_tags_label: true  # attach tailscale.tags
+      interval: 5m                    # how often the device inventory is re-scanned for targets
+      max_targets: 1000               # cap discovered targets per refresh
+      scheme: http                    # http | https — metrics endpoint scheme on each device
+      port: 5252                      # tailscaled client-metrics port
+      path: /metrics                  # metrics endpoint path
+      online_only: true               # only devices currently connected to the control plane
+      exclude_external: true          # skip shared/external devices
+      include_tags: []                # only devices with one of these tags (empty = all), e.g. ["tag:server"]
+      exclude_tags: []                # devices with any of these tags are skipped (wins over include_tags)
+      address_order: ipv4             # ipv4 | ipv6 — preferred address family (falls back to the other)
+      instance_source: name           # identity label per target: name (MagicDNS short name, unique+friendly — default) | address (Tailscale host:port, always unique) | hostname (OS hostname, NOT unique — collisions like "localhost" are auto-suffixed)
+      include_host_labels: true       # attach host.name/host.id for joins with tailscale.device.*
+      include_tags_label: true        # attach tailscale.tags to each target's series
 
-# Checkpointing remembers how far each POLLED log collector (flowlogs/auditlogs with
-# source: poll|both) has read, so a restart resumes without gaps or large overlaps.
-# It is unused if you stream both log types or disable them.
-#   store: memory — keep the high-water mark in RAM only. Simplest; needs no volume.
-#                   On restart the poller cold-starts from initial_lookback, so any
-#                   downtime longer than that leaves a GAP. Fine for streaming or
-#                   stateless deployments where the checkpoint is unused or disposable.
-#   store: file   — persist to file_path (atomic JSON write each tick). Survives
-#                   restarts, resuming from the exact high-water mark (no gap; minor
-#                   overlap is de-duplicated). Use when you POLL logs and want
-#                   continuity. Needs a writable, PERSISTENT path (e.g. a mounted
-#                   volume); an empty file_path silently falls back to memory.
+# ── Checkpointing (resume polled log collectors after a restart) ────────────────
 checkpoint:
-  store: memory                      # memory | file
-  file_path: "/var/lib/tailscale2otel/checkpoints.json"   # only used when store: file
+  store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)
+  file_path: /var/lib/tailscale2otel/checkpoints.json   # used when store: file — mount a writable, persistent path here (the dir is auto-created)
 
-# Optional Splunk-HEC-compatible receiver for streamed logs. When you enable this,
-# set collectors.flowlogs.source and collectors.auditlogs.source to `stream` (NOT poll
-# or both) so each log type is ingested by exactly ONE path. Running both the poller and
-# this receiver for the same log type risks double-counting; cross-source de-duplication
-# is a best-effort failsafe only, and the exporter WARNs at startup if both are active.
+# ── Streaming receiver (OPTIONAL: RECEIVE logs instead of polling) ──────────────
+# When enabled, set collectors.{flowlogs,auditlogs}.source to stream so each log
+# type is ingested by exactly one path.
 streaming:
-  enabled: false
-  listen: ":8088"
-  path: "/services/collector/event"
-  token: "${TS_STREAM_HEC_TOKEN}"    # expected as 'Authorization: Splunk <token>'
-  public_url: ""                     # externally reachable receiver URL; REQUIRED when auto_configure: true
-  tls: { cert_file: "", key_file: "" }   # HTTPS is required by Tailscale; a `tailscale cert` works for private endpoints
-  decompress: auto                   # auto | gzip | zstd | none
-  # PUT this receiver as a Splunk-HEC log-streaming sink on startup. Needs enabled:
-  # true, public_url, and an OAuth client with the log_streaming scope. Off by default.
-  auto_configure: false
-  max_body_bytes: 0                  # cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed)
+  enabled: false                      # run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream)
+  listen: ":8088"                     # bind address for the Splunk-HEC-compatible receiver
+  path: /services/collector/event     # HEC endpoint path Tailscale POSTs to
+  token: ""                           # expected as "Authorization: Splunk <token>" (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN)
+  public_url: ""                      # externally reachable receiver URL; REQUIRED only when auto_configure: true
+  tls:
+    cert_file: ""                     # HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints)
+    key_file: ""                      # HTTPS key
+  decompress: auto                    # auto | gzip | zstd | none — request body decompression
+  auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink (needs enabled + public_url + the log_streaming OAuth scope)
+  max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413)
 
-# Optional webhook receiver for real-time Tailscale events.
+# ── Webhook receiver (OPTIONAL: real-time Tailscale events) ─────────────────────
 webhook:
-  enabled: false
-  listen: ":8089"
-  path: "/tailscale/webhook"
-  secret: "${TS_WEBHOOK_SECRET}"     # HMAC-SHA256 verification
-  tolerance: "5m"                    # reject signed timestamps older than this (replay window); "0" disables the check
-  dedup_audit_events: false          # best-effort: drop a webhook event already counted via the audit logs
+  enabled: false                      # run the receiver for real-time Tailscale webhook events
+  listen: ":8089"                     # bind address for the webhook receiver
+  path: /tailscale/webhook            # endpoint path Tailscale POSTs events to
+  secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN)
+  tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
+  dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
 
+# ── Self-observability (the exporter's own health telemetry) ────────────────────
 self_observability:
-  enabled: true                      # emit the exporter's own health metrics
-  instance_id: ""                    # service.instance.id resource attr; ""=> host name. Supports ${ENV}, e.g. "${POD_NAME}"
+  enabled: true                       # emit tailscale2otel.up, api.requests, runtime metrics, etc.
+  instance_id: ""                     # service.instance.id resource attr; empty => host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME
 
-# Admin HTTP server: liveness/readiness probes plus an optional status landing
-# page. The page exposes operational metadata (collector health, cardinality,
-# discovered nodes, redacted config) but NEVER secret values. Bind it to a
-# tailnet/loopback address, not the public internet. /healthz and /readyz are
-# never authenticated so cluster/compose health checks keep working.
+# ── Admin HTTP server (OPTIONAL: probes + status page + pprof mount) ────────────
+# Bind to a loopback/tailnet address, not the public internet. /healthz and /readyz
+# are never authenticated so health checks keep working.
 admin:
-  enabled: false
-  listen: ":9090"                    # serves /healthz and /readyz; for defense-in-depth bind to loopback (127.0.0.1:9090) or a tailnet IP so only the tailnet can reach it
-  landing_page: true                 # serve a human landing page at / and machine-readable /api/status.json
+  enabled: false                      # run the admin HTTP server (probes + status page + optional pprof mount)
+  listen: ":9090"                     # serves /healthz, /readyz, and the status page
+  landing_page: true                  # serve the human status page at / and machine-readable /api/status.json
   auth:
-    # When set, the status page (/ and /api/status.json) and pprof require this
-    # token, presented as the HTTP Basic password (browsers prompt) OR as
-    # "Authorization: Bearer <token>" (curl/automation). Leave empty to keep the
-    # status page open (a startup WARN fires if it's exposed on a wildcard bind).
-    # Keep the secret in an env var, not in YAML.
-    token: "${ADMIN_TOKEN}"
+    token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind)
 
-# Optional continuous/on-demand profiling. Everything here is OFF by default and
-# carries no Tailscale data. The pprof handlers are mounted on the admin server
-# (above), so pprof.enabled requires admin.enabled: true AND admin.auth.token
-# (heap/goroutine dumps can expose in-memory secrets).
+# ── Profiling (OPTIONAL: all off by default, carries no Tailscale data) ─────────
 profiling:
   pprof:
-    enabled: false                   # mount net/http/pprof debug handlers on the admin server (needs admin.enabled + admin.auth.token)
+    enabled: false                    # mount net/http/pprof on the admin server (REQUIRES admin.enabled + admin.auth.token — heap dumps can expose in-memory secrets)
   pyroscope:
-    enabled: false                   # run the Pyroscope continuous-profiling push agent
-    server_address: ""               # REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net
-    basic_auth_user: "${PYROSCOPE_BASIC_AUTH_USER}"         # Grafana Cloud: the profiles instance ID
-    basic_auth_password: "${PYROSCOPE_BASIC_AUTH_PASSWORD}" # Grafana Cloud: an access policy token with profiles:write
-    tenant_id: ""                    # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
-    upload_rate: 60s                 # how often profiles are flushed; 15s is needless overhead for a low-traffic exporter — 60s aligns with otlp.metric_interval
-    tags: {}                         # extra static labels merged onto every profile, e.g. { env: prod }
-  mutex_profile_fraction: 0          # runtime.SetMutexProfileFraction (0 = disabled)
-  block_profile_rate: 0              # runtime.SetBlockProfileRate (0 = disabled)
+    enabled: false                    # run the Pyroscope continuous-profiling push agent
+    server_address: ""                # REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net
+    basic_auth_user: ""               # Grafana Cloud: the profiles instance ID (set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER)
+    basic_auth_password: ""           # Grafana Cloud: a profiles:write access-policy token (..._BASIC_AUTH_PASSWORD)
+    tenant_id: ""                     # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
+    upload_rate: 60s                  # how often profiles are flushed
+    tags: {}                          # extra static labels merged onto every profile, e.g. { env: prod }
+  mutex_profile_fraction: 0           # runtime.SetMutexProfileFraction (0 = disabled)
+  block_profile_rate: 0               # runtime.SetBlockProfileRate (0 = disabled)

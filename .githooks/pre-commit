@@ -25,6 +25,7 @@ staged="$(git diff --cached --name-only --diff-filter=ACMR)"
 # Decide which generated artifacts the staged changes could have invalidated.
 helm_inputs='^deploy/helm/tailscale2otel/(Chart\.yaml|values\.yaml|README\.md\.gotmpl)$'
 metrics_inputs='(^internal/.*\.go$|^tools/metricscatalog/)'
+envref_inputs='(^config\.example\.yaml$|^internal/config/envref\.go$)'
 
 targets=()
 git_add=()
@@ -35,6 +36,10 @@ fi
 if grep -Eq "$metrics_inputs" <<<"$staged"; then
   targets+=(metrics)
   git_add+=(docs/metrics.md)
+fi
+if grep -Eq "$envref_inputs" <<<"$staged"; then
+  targets+=(envref)
+  git_add+=(docs/env-vars.md)
 fi
 
 [ ${#targets[@]} -eq 0 ] && exit 0

@@ -154,7 +154,14 @@ terminate, **the grant is the access-control boundary** — keep it as narrow as
 ## Wiring up the scraper
 
 The scraper lives under [`collectors.node_metrics`](../config.example.yaml) and is **off by
-default**. A minimal static-target config for native endpoints needs nothing more than the URL:
+default**.
+
+> **Static targets and per-target labels/headers must be set via a config file**, not environment
+> variables. The `targets` field is a list of structs; flat `TS2OTEL_*` env vars can only override
+> scalar fields. Scalar scraper settings (enabled, interval, timeout, metric_allow, etc.) can be
+> overridden via env as usual — e.g. `TS2OTEL_COLLECTORS__NODE_METRICS__INTERVAL=30s`.
+
+A minimal static-target config for native endpoints needs nothing more than the URL:
 
 ```yaml
 collectors:
@@ -194,7 +201,13 @@ scrape and reports `tailscale.node.up=0` for that collection.
 
 When dynamic discovery is enabled, `discovery.max_targets` caps the number of discovered devices that
 can become scrape targets in one refresh (default `1000`). Use `include_tags`/`exclude_tags` together
-with this cap to keep automatic discovery scoped to the nodes you intend to scrape.
+with this cap to keep automatic discovery scoped to the nodes you intend to scrape. Both accept
+comma-separated values as env vars:
+
+```sh
+TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_TAGS=tag:server,tag:relay
+TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__EXCLUDE_TAGS=tag:exit-node
+```
 
 ### Optional per-target auth & TLS (proxied / HTTPS targets only)
 

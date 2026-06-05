@@ -58,12 +58,21 @@ spec:
             - name: config
               mountPath: /etc/tailscale2otel
               readOnly: true
+            - name: checkpoints
+              mountPath: /var/lib/tailscale2otel
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: {{ include "tailscale2otel.fullname" . }}
+        - name: checkpoints
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "tailscale2otel.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

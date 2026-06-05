@@ -20,18 +20,20 @@ go generate ./...                    # regenerate portservice data + install the
 
 ### Regenerate generated artifacts (required before commit when you touch them)
 
-Three files are committed but **generated** — each a pure function of its inputs and each gated in CI
+Four files are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
-without the README). `scripts/regen-generated.sh` reproduces all three locally, byte-for-byte with CI:
+without the README). `scripts/regen-generated.sh` reproduces all four locally, byte-for-byte with CI:
 
 ```sh
-scripts/regen-generated.sh        # all three (pass helm / helm-docs / helm-schema / metrics to scope)
+scripts/regen-generated.sh        # all (pass helm / helm-docs / helm-schema / metrics / envref to scope)
 go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just docs/metrics.md
+go test ./internal/config -run TestEnvReferenceDocInSync -update       # just docs/env-vars.md
 ```
 
 | generated file | inputs | tool |
 | --- | --- | --- |
 | `docs/metrics.md` | the in-code telemetry catalog | `tools/metricscatalog` |
+| `docs/env-vars.md` | `config.example.yaml` (keys, defaults, inline comments) | `TestEnvReferenceDocInSync -update` (root module; no separate tool) |
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` |
 
@@ -48,8 +50,10 @@ go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just do
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-CI re-validates all three via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
-`docs/metrics.md` via `metricscatalog -check`). The local tools above are installed on this machine.
+CI re-validates all four via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` via `TestEnvReferenceDocInSync` in the
+normal `go test -race ./...` run — no extra workflow step). The local tools above are installed on this
+machine.
 
 ## Development methodology
 
@@ -106,7 +110,7 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   (bounded FIFO failsafe) — alternate ingestion paths that feed the **same** processors as the pollers.
 - `internal/flowlog/`, `internal/audit/` — record types + shared processors (used by both poll & stream).
 - `internal/enrich/` — in-memory device cache (IP/nodeID → name) populated by the devices collector.
-- `internal/config/` — YAML config with `${ENV}` expansion, defaults, `Validate()` and advisory `Warnings()`.
+- `internal/config/` — layered config loader (defaults → YAML → `TS2OTEL_*` env), `Validate()` and advisory `Warnings()`.
 - `tools/metricscatalog/` (docs/metrics.md generator), `tools/configcheck/` (validates config via the
   real `config.Load`, catching cross-field rules JSON Schema can't express).
 - `deploy/` — Dockerfiles, docker-compose, Helm chart, Grafana dashboards, Prometheus alert rules. See `deploy/CLAUDE.md`.
@@ -121,8 +125,15 @@ Match these locally before claiming work is done.
 
 ## Config & secrets
 
-- `config.example.yaml` is the committed canonical config (all keys documented). Copy to `config.yaml`.
-- All string values support `${ENV}` expansion — **keep secrets in env vars, not in YAML**.
+- Configuration is **layered**: built-in defaults < optional YAML file < environment variables. The
+  YAML file is optional — passing no `-config` flag runs from defaults + env alone (handy for
+  containers). See `docs/configuration.md` for the full reference.
+- **`TS2OTEL_*` env convention:** every config field is settable via `TS2OTEL_` + the dotted key
+  path, with `__` between levels (e.g. `tailscale.auth.oauth.client_secret` →
+  `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`). Env overrides the file. **Keep secrets in env
+  vars — they never need to appear in YAML.**
+- `config.example.yaml` is the committed starter config showing the common knobs; the full key-by-key
+  reference is `docs/configuration.md`.
 - `config.local.yaml`, `config.smoke.yaml`, `config.lowlog.yaml`, `.env.local`, and `.secrets/` are
   **gitignored** — never commit credentials. `/checkpoints.json` and `/.capture/` (captured real-tailnet
   fixtures) are also ignored.

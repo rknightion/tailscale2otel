@@ -48,7 +48,7 @@ type Collector struct {
 type Option func(*Collector)
 
 // WithPerEntity controls whether the per-endpoint subscriptions gauge is emitted
-// (default true); false (cardinality.webhook_per_entity) keeps only the
+// (default true); false (cardinality.per_entity.webhook) keeps only the
 // aggregate webhook_endpoints.count.
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }

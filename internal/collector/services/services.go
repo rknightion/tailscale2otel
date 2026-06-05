@@ -52,7 +52,7 @@ type Collector struct {
 type Option func(*Collector)
 
 // WithPerEntity controls whether the per-service gauges (ports, hosts) are
-// emitted (default true); false (cardinality.service_per_entity) keeps only the
+// emitted (default true); false (cardinality.per_entity.service) keeps only the
 // aggregate services.count.
 func WithPerEntity(enabled bool) Option { return func(c *Collector) { c.perEntity = enabled } }
 

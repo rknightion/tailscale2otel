@@ -17,21 +17,23 @@
 The entire application config lives under a single top-level `config:` key in
 `values.yaml` (the single source of truth, kept in sync with
 `config.example.yaml`). It is rendered verbatim into a ConfigMap as `config.yaml`.
-Secrets are `${ENV}` placeholders expanded at runtime from the injected Secret.
+Secrets are injected exclusively via `TS2OTEL_*` environment variables from the
+Secret — they never appear in the ConfigMap.
 
 Helm deep-merges maps, so single-key overrides work without restating the rest:
 
 ```sh
 helm install t deploy/helm/tailscale2otel \
-  --set secret.TS_OAUTH_CLIENT_ID=... \
-  --set secret.TS_OAUTH_CLIENT_SECRET=... \
-  --set secret.GC_INSTANCE_ID=... \
-  --set secret.GC_OTLP_TOKEN=... \
+  --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=..." \
+  --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=..." \
+  --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=..." \
+  --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=..." \
   --set config.log_level=debug
 ```
 
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
-under `config:`).
+under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
+`${VAR}` placeholders removed from config).
 
 {{ template "chart.requirementsSection" . }}
 

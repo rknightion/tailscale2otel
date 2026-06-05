@@ -155,10 +155,9 @@ func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
 // from running an UNAUTHENTICATED ingestion receiver. The webhook receiver skips
 // HMAC verification entirely when webhook.secret is empty, and the streaming (HEC)
 // receiver disables token auth when streaming.token is empty — so an enabled
-// receiver with an empty credential accepts forged/unauthenticated input. Because
-// an undefined ${ENV} reference expands silently to "", a typo in the secret's env
-// var name lands here too. A disabled receiver, or a credential that is set, must
-// NOT warn.
+// receiver with an empty credential accepts forged/unauthenticated input. A
+// credential left empty (unset, or a mistyped TS2OTEL_* env var name) lands here.
+// A disabled receiver, or a credential that is set, must NOT warn.
 func TestWarnings_ReceiverAuthDisabled(t *testing.T) {
 	// Disabled receivers => no auth advisory.
 	c := config.Default()
@@ -590,31 +589,31 @@ func TestWarnings_ReverseDNSCardinality(t *testing.T) {
 }
 
 func TestValidateRejectsBadFlowMetricsMode(t *testing.T) {
-	err := loadErr(t, "cardinality:\n  flow_metrics_mode: telepathy\n")
-	if err == nil || !strings.Contains(err.Error(), "flow_metrics_mode") {
-		t.Fatalf("err = %v, want a flow_metrics_mode error", err)
+	err := loadErr(t, "cardinality:\n  flow:\n    metrics_mode: telepathy\n")
+	if err == nil || !strings.Contains(err.Error(), "metrics_mode") {
+		t.Fatalf("err = %v, want a metrics_mode error", err)
 	}
 }
 
 func TestValidateAcceptsAllFlowMetricsModes(t *testing.T) {
 	for _, m := range []string{"all", "rollup", "both"} {
-		if err := loadErr(t, "cardinality:\n  flow_metrics_mode: "+m+"\n"); err != nil {
-			t.Errorf("flow_metrics_mode %q should be valid: %v", m, err)
+		if err := loadErr(t, "cardinality:\n  flow:\n    metrics_mode: "+m+"\n"); err != nil {
+			t.Errorf("flow.metrics_mode %q should be valid: %v", m, err)
 		}
 	}
 }
 
 func TestValidateRejectsNegativeRollupTopN(t *testing.T) {
-	err := loadErr(t, "collectors:\n  flowlogs:\n    flow_rollup_top_n: -1\n")
-	if err == nil || !strings.Contains(err.Error(), "flow_rollup_top_n") {
-		t.Fatalf("err = %v, want a flow_rollup_top_n error", err)
+	err := loadErr(t, "cardinality:\n  flow:\n    rollup_top_n: -1\n")
+	if err == nil || !strings.Contains(err.Error(), "rollup_top_n") {
+		t.Fatalf("err = %v, want a rollup_top_n error", err)
 	}
 }
 
 func TestValidateAcceptsZeroRollupTopN(t *testing.T) {
 	// 0 is valid and selects the in-code default at construction time.
-	if err := loadErr(t, "collectors:\n  flowlogs:\n    flow_rollup_top_n: 0\n"); err != nil {
-		t.Errorf("flow_rollup_top_n: 0 should be valid (selects default): %v", err)
+	if err := loadErr(t, "cardinality:\n  flow:\n    rollup_top_n: 0\n"); err != nil {
+		t.Errorf("cardinality.flow.rollup_top_n: 0 should be valid (selects default): %v", err)
 	}
 }
 
@@ -624,14 +623,14 @@ func TestValidateAcceptsZeroRollupTopN(t *testing.T) {
 func TestWarnings_FlowMetricsModeBoth(t *testing.T) {
 	c := config.Default()
 	for _, w := range c.Warnings() {
-		if strings.Contains(w, "flow_metrics_mode") {
-			t.Fatalf("default (rollup) should not warn about flow_metrics_mode; got %q", w)
+		if strings.Contains(w, "metrics_mode") {
+			t.Fatalf("default (rollup) should not warn about flow.metrics_mode; got %q", w)
 		}
 	}
-	c.Cardinality.FlowMetricsMode = "both"
+	c.Cardinality.Flow.MetricsMode = "both"
 	w := strings.Join(c.Warnings(), "\n")
-	if !strings.Contains(w, "flow_metrics_mode=both") {
-		t.Fatalf("both mode should warn naming flow_metrics_mode=both; got %q", w)
+	if !strings.Contains(w, "flow.metrics_mode=both") {
+		t.Fatalf("both mode should warn naming flow.metrics_mode=both; got %q", w)
 	}
 	if !strings.Contains(strings.ToLower(w), "double-count") {
 		t.Errorf("both-mode warning should explain double-counting; got %q", w)

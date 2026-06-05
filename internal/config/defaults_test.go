@@ -1,10 +1,12 @@
 package config_test
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
@@ -19,8 +21,8 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.LogLevel != "warn" {
 		t.Errorf("LogLevel = %q, want warn (the one set field)", cfg.LogLevel)
 	}
-	if cfg.Tailscale.Tailnet != "example.com" {
-		t.Errorf("Tailnet = %q, want default example.com", cfg.Tailscale.Tailnet)
+	if cfg.Tailscale.Tailnet != "-" {
+		t.Errorf("Tailnet = %q, want default \"-\" (auth principal's default tailnet)", cfg.Tailscale.Tailnet)
 	}
 	if cfg.Tailscale.Auth.Method != "oauth" {
 		t.Errorf("Auth.Method = %q, want default oauth", cfg.Tailscale.Auth.Method)
@@ -58,30 +60,30 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 			rd.Timeout.D(), rd.CacheTTL.D(), rd.NegativeTTL.D(), rd.MaxEntries)
 	}
 	// Default true booleans.
-	if !cfg.Cardinality.FlowNodeDims {
-		t.Errorf("Cardinality.FlowNodeDims = false, want default true")
+	if !cfg.Cardinality.Flow.NodeDims {
+		t.Errorf("Cardinality.Flow.NodeDims = false, want default true")
 	}
-	if !cfg.Cardinality.CollapseExternal {
-		t.Errorf("Cardinality.CollapseExternal = false, want default true")
+	if !cfg.Cardinality.Flow.CollapseExternal {
+		t.Errorf("Cardinality.Flow.CollapseExternal = false, want default true")
 	}
-	if !cfg.Cardinality.DevicePerEntity || !cfg.Cardinality.UserPerEntity || !cfg.Cardinality.KeyPerEntity {
+	if !cfg.Cardinality.PerEntity.Device || !cfg.Cardinality.PerEntity.User || !cfg.Cardinality.PerEntity.Key {
 		t.Errorf("Cardinality per-entity toggles = %v/%v/%v, want all default true",
-			cfg.Cardinality.DevicePerEntity, cfg.Cardinality.UserPerEntity, cfg.Cardinality.KeyPerEntity)
+			cfg.Cardinality.PerEntity.Device, cfg.Cardinality.PerEntity.User, cfg.Cardinality.PerEntity.Key)
 	}
 	if cfg.Cardinality.MetricLimit != 10000 {
 		t.Errorf("Cardinality.MetricLimit = %d, want default 10000", cfg.Cardinality.MetricLimit)
 	}
 	// Flow metrics default to the bounded rollup family with a top-N of 500.
-	if cfg.Cardinality.FlowMetricsMode != "rollup" {
-		t.Errorf("Cardinality.FlowMetricsMode = %q, want default rollup", cfg.Cardinality.FlowMetricsMode)
+	if cfg.Cardinality.Flow.MetricsMode != "rollup" {
+		t.Errorf("Cardinality.Flow.MetricsMode = %q, want default rollup", cfg.Cardinality.Flow.MetricsMode)
 	}
-	if cfg.Collectors.Flowlogs.FlowRollupTopN != 500 {
-		t.Errorf("Flowlogs.FlowRollupTopN = %d, want default 500", cfg.Collectors.Flowlogs.FlowRollupTopN)
+	if cfg.Cardinality.Flow.RollupTopN != 500 {
+		t.Errorf("Cardinality.Flow.RollupTopN = %d, want default 500", cfg.Cardinality.Flow.RollupTopN)
 	}
 	// Flow metric port/service toggles default off (ports stay off metrics by default).
-	if cfg.Cardinality.FlowSourcePort || cfg.Cardinality.FlowDestinationPort || cfg.Cardinality.FlowDestinationService {
+	if cfg.Cardinality.Flow.SourcePort || cfg.Cardinality.Flow.DestinationPort || cfg.Cardinality.Flow.DestinationService {
 		t.Errorf("Cardinality flow toggles = src %v / dst %v / service %v, want all default false",
-			cfg.Cardinality.FlowSourcePort, cfg.Cardinality.FlowDestinationPort, cfg.Cardinality.FlowDestinationService)
+			cfg.Cardinality.Flow.SourcePort, cfg.Cardinality.Flow.DestinationPort, cfg.Cardinality.Flow.DestinationService)
 	}
 	if !cfg.Collectors.Devices.Enabled {
 		t.Errorf("Devices.Enabled = false, want default true")
@@ -121,8 +123,8 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Collectors.Settings.Interval.D() != 600*time.Second {
 		t.Errorf("Settings.Interval = %v, want default 600s", cfg.Collectors.Settings.Interval.D())
 	}
-	if cfg.Checkpoint.Store != "memory" {
-		t.Errorf("Checkpoint.Store = %q, want default memory", cfg.Checkpoint.Store)
+	if cfg.Checkpoint.Store != "file" {
+		t.Errorf("Checkpoint.Store = %q, want default file", cfg.Checkpoint.Store)
 	}
 	if cfg.Checkpoint.FilePath != "/var/lib/tailscale2otel/checkpoints.json" {
 		t.Errorf("Checkpoint.FilePath = %q, want default path", cfg.Checkpoint.FilePath)
@@ -206,8 +208,10 @@ collectors:
 self_observability:
   enabled: false
 cardinality:
-  flow_node_dims: false
-  device_per_entity: false
+  flow:
+    node_dims: false
+  per_entity:
+    device: false
 `
 	p := writeTemp(t, y)
 	cfg, err := config.Load(p)
@@ -220,28 +224,54 @@ cardinality:
 	if cfg.SelfObservability.Enabled {
 		t.Errorf("SelfObservability.Enabled = true, want false (explicit override)")
 	}
-	if cfg.Cardinality.FlowNodeDims {
-		t.Errorf("Cardinality.FlowNodeDims = true, want false (explicit override)")
+	if cfg.Cardinality.Flow.NodeDims {
+		t.Errorf("Cardinality.Flow.NodeDims = true, want false (explicit override)")
 	}
-	if cfg.Cardinality.DevicePerEntity {
-		t.Errorf("Cardinality.DevicePerEntity = true, want false (explicit override)")
+	if cfg.Cardinality.PerEntity.Device {
+		t.Errorf("Cardinality.PerEntity.Device = true, want false (explicit override)")
 	}
 	// Sibling defaults untouched.
 	if cfg.Collectors.Devices.Interval.D() != 60*time.Second {
 		t.Errorf("Devices.Interval = %v, want default 60s preserved", cfg.Collectors.Devices.Interval.D())
 	}
-	if !cfg.Cardinality.CollapseExternal {
-		t.Errorf("Cardinality.CollapseExternal = false, want default true preserved")
+	if !cfg.Cardinality.Flow.CollapseExternal {
+		t.Errorf("Cardinality.Flow.CollapseExternal = false, want default true preserved")
 	}
-	if !cfg.Cardinality.UserPerEntity || !cfg.Cardinality.KeyPerEntity {
+	if !cfg.Cardinality.PerEntity.User || !cfg.Cardinality.PerEntity.Key {
 		t.Errorf("sibling per-entity toggles = %v/%v, want default true preserved",
-			cfg.Cardinality.UserPerEntity, cfg.Cardinality.KeyPerEntity)
+			cfg.Cardinality.PerEntity.User, cfg.Cardinality.PerEntity.Key)
 	}
 }
 
 func TestDefaultIsValid(t *testing.T) {
 	if err := config.Default().Validate(); err != nil {
 		t.Fatalf("Default() should be valid: %v", err)
+	}
+}
+
+// TestExampleConfigMatchesDefaults guards that config.example.yaml stays aligned
+// with the in-code Default(): loading the shipped example must yield exactly the
+// same configuration as Default(), so the example faithfully documents our real
+// defaults and never silently overrides them. The comparison is on the YAML
+// encoding, which normalizes nil-vs-empty collections (an omitted list and an
+// explicit [] are the same configuration). If this fails, you changed a default
+// in code (defaults.go) or in the example without updating the other.
+func TestExampleConfigMatchesDefaults(t *testing.T) {
+	ex, err := config.Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example: %v", err)
+	}
+	exYAML, err := yaml.Marshal(ex)
+	if err != nil {
+		t.Fatalf("marshal example: %v", err)
+	}
+	defYAML, err := yaml.Marshal(config.Default())
+	if err != nil {
+		t.Fatalf("marshal defaults: %v", err)
+	}
+	if string(exYAML) != string(defYAML) {
+		t.Errorf("config.example.yaml has drifted from config.Default() — update whichever is stale so the "+
+			"example documents the real defaults.\n--- config.example.yaml ---\n%s\n--- config.Default() ---\n%s", exYAML, defYAML)
 	}
 }
 
@@ -297,8 +327,8 @@ func TestNodeMetricsDiscoveryDefaults(t *testing.T) {
 	if d.AddressOrder != "ipv4" {
 		t.Errorf("Discovery.AddressOrder = %q, want ipv4", d.AddressOrder)
 	}
-	if d.InstanceSource != "address" {
-		t.Errorf("Discovery.InstanceSource = %q, want address", d.InstanceSource)
+	if d.InstanceSource != "name" {
+		t.Errorf("Discovery.InstanceSource = %q, want name", d.InstanceSource)
 	}
 	if !d.IncludeHostLabels {
 		t.Errorf("Discovery.IncludeHostLabels = false, want default true")

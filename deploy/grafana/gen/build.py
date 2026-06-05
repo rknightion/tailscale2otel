@@ -774,7 +774,7 @@ def tab_policy():
         (panel("Port rules per service", "bargauge",
                [prom_t("max by (tailscale_service_name) (%s)" % lot("tailscale_service_ports", WIN_SLOW), legend="{{tailscale_service_name}}")],
                unit="short", options=bargauge_opts(),
-               desc="Port rules exposed by each Service. Gated by cardinality.service_per_entity."), 18, 6),
+               desc="Port rules exposed by each Service. Gated by cardinality.per_entity.service."), 18, 6),
         (panel("Backing hosts by service", "table",
                [prom_t(sv(lot("tailscale_service_hosts_ratio", WIN_SLOW)), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
@@ -784,7 +784,7 @@ def tab_policy():
                                                                "tailscale_service_configured": "Configured",
                                                                "Value": "Hosts"})],
                desc="Backing-host count per Service, bucketed by approval + configured state. "
-                    "Gated by collect_hosts + cardinality.service_per_entity."), 24, 7),
+                    "Gated by collect_hosts + cardinality.per_entity.service."), 24, 7),
     ]
     return [row("Access control (ACL)", acl), row("DNS", dns), row("Settings & features", settings),
             row("Services / VIP", services_vip, present="has_services"),

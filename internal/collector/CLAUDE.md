@@ -55,8 +55,10 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
 
 ## Gotchas
 
-- Collectors share one `config.CollectorConfig` union type; only window collectors read
-  `Lag`/`InitialLookback`/`MaxWindow`, and only `flowlogs`/`auditlogs` interpret `Source`.
+- Each collector has its own typed config struct — `config.SimpleCollector` (just `Enabled`+`Interval`)
+  for the snapshot collectors, plus `DevicesCollector`/`FlowlogsCollector`/`AuditlogsCollector`/
+  `KeysCollector`/`ServicesCollector` for the ones with extra fields. Only the window collectors
+  (`flowlogs`/`auditlogs`) carry `Source`/`Lag`/`InitialLookback`/`MaxWindow`.
 - `flowlogs`/`auditlogs` pollers and the `stream`/`webhook` receivers feed the **same** `flowlog.Processor`
   / `audit.Processor`. Don't duplicate emission logic in the collector — put it in the processor so both
   paths stay identical.
@@ -90,8 +92,8 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
   The `metric_allow`/`metric_deny` (anchored regex on the metric NAME) and `drop_labels`
   (instance is never dropped) filters apply ONLY to forwarded samples in `emitSample` — never to
   `tailscale.node.up` or the `discovery.*` gauges.
-- **Per-entity gauge toggles are the main cardinality lever:** `cardinality.{device,user,key}_per_entity`
+- **Per-entity gauge toggles are the main cardinality lever:** `cardinality.per_entity.{device,user,key}`
   gate the per-device/user/key gauges; switching one off falls back to just the aggregate
-  `tailscale.{devices,users,keys}.count` (the key-expiry WARN log still fires when `key_per_entity` is
-  off). `cardinality.collapse_external` buckets unresolved IPs as `external`/`unknown` AND, when
-  `flow_node_dims` is on, also sets the src/dst node labels on flow *metrics*.
+  `tailscale.{devices,users,keys}.count` (the key-expiry WARN log still fires when `per_entity.key` is
+  off). `cardinality.flow.collapse_external` buckets unresolved IPs as `external`/`unknown` AND, when
+  `cardinality.flow.node_dims` is on, also sets the src/dst node labels on flow *metrics*.

@@ -23,7 +23,18 @@ consumed by operators or by the release pipelines.
 Since chart **0.2.0** the entire app config lives under `values.yaml` `config:` (it is rendered
 verbatim into the ConfigMap's `config.yaml`). This is deliberate: there is **no separate chart-specific
 config schema to keep in sync** — edit `config:` in `values.yaml`, not the template. Secrets come from
-`secret:`/`existingSecret` and are injected as env vars (the config references them via `${ENV}`).
+`secret:`/`existingSecret` and are injected as `TS2OTEL_*` env vars that override the corresponding
+config fields at runtime — secrets never appear in the ConfigMap (no `${VAR}` placeholders).
+
+**Since chart 0.5.0** the secret keys follow the systematic `TS2OTEL_` prefix + `__`-separated nesting
+convention (e.g. `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`). This is a BREAKING rename from the
+old `TS_*`/`GC_*`/`ADMIN_TOKEN`/`PYROSCOPE_*` keys.
+
+**Checkpoint persistence (chart 0.5.1+):** `config.checkpoint.store` defaults to `file`; the
+checkpoint directory `/var/lib/tailscale2otel` is pre-seeded in the image (owned by uid 65532) and
+mounted via an `emptyDir` by default. Set `persistence.enabled=true` to create a PVC for durable
+storage across pod rescheduling. The app gracefully falls back to in-memory if the path is not
+writable (a WARN is logged), so no crash occurs on misconfiguration.
 
 Two files in the chart are **generated and drift-checked in CI** (the `Helm` workflow) — regenerate by
 matching the actions in `.github/workflows/helm.yml`, do not hand-edit:

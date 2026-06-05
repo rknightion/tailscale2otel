@@ -33,41 +33,57 @@
                 "cardinality": {
                     "type": "object",
                     "properties": {
-                        "collapse_external": {
-                            "type": "boolean"
-                        },
                         "derp_region_rollup": {
                             "type": "boolean"
                         },
-                        "device_per_entity": {
-                            "type": "boolean"
+                        "flow": {
+                            "type": "object",
+                            "properties": {
+                                "collapse_external": {
+                                    "type": "boolean"
+                                },
+                                "destination_port": {
+                                    "type": "boolean"
+                                },
+                                "destination_service": {
+                                    "type": "boolean"
+                                },
+                                "metrics_mode": {
+                                    "type": "string"
+                                },
+                                "node_dims": {
+                                    "type": "boolean"
+                                },
+                                "rollup_top_n": {
+                                    "type": "integer"
+                                },
+                                "source_port": {
+                                    "type": "boolean"
+                                }
+                            }
                         },
-                        "flow_destination_port": {
-                            "type": "boolean"
+                        "metric_limit": {
+                            "type": "integer"
                         },
-                        "flow_destination_service": {
-                            "type": "boolean"
-                        },
-                        "flow_metrics_mode": {
-                            "type": "string"
-                        },
-                        "flow_node_dims": {
-                            "type": "boolean"
-                        },
-                        "flow_source_port": {
-                            "type": "boolean"
-                        },
-                        "key_per_entity": {
-                            "type": "boolean"
-                        },
-                        "service_per_entity": {
-                            "type": "boolean"
-                        },
-                        "user_per_entity": {
-                            "type": "boolean"
-                        },
-                        "webhook_per_entity": {
-                            "type": "boolean"
+                        "per_entity": {
+                            "type": "object",
+                            "properties": {
+                                "device": {
+                                    "type": "boolean"
+                                },
+                                "key": {
+                                    "type": "boolean"
+                                },
+                                "service": {
+                                    "type": "boolean"
+                                },
+                                "user": {
+                                    "type": "boolean"
+                                },
+                                "webhook": {
+                                    "type": "boolean"
+                                }
+                            }
                         }
                     }
                 },
@@ -169,9 +185,6 @@
                             "properties": {
                                 "enabled": {
                                     "type": "boolean"
-                                },
-                                "flow_rollup_top_n": {
-                                    "type": "integer"
                                 },
                                 "initial_lookback": {
                                     "type": "string"
@@ -605,6 +618,26 @@
         "nodeSelector": {
             "type": "object"
         },
+        "persistence": {
+            "type": "object",
+            "properties": {
+                "accessMode": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "existingClaim": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "string"
+                },
+                "storageClass": {
+                    "type": "string"
+                }
+            }
+        },
         "podAnnotations": {
             "type": "object"
         },
@@ -660,37 +693,37 @@
         "secret": {
             "type": "object",
             "properties": {
-                "ADMIN_TOKEN": {
+                "TS2OTEL_ADMIN__AUTH__TOKEN": {
                     "type": "string"
                 },
-                "GC_INSTANCE_ID": {
+                "TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID": {
                     "type": "string"
                 },
-                "GC_OTLP_TOKEN": {
+                "TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN": {
                     "type": "string"
                 },
-                "PYROSCOPE_BASIC_AUTH_PASSWORD": {
+                "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD": {
                     "type": "string"
                 },
-                "PYROSCOPE_BASIC_AUTH_USER": {
+                "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER": {
                     "type": "string"
                 },
-                "TS_API_KEY": {
+                "TS2OTEL_STREAMING__TOKEN": {
                     "type": "string"
                 },
-                "TS_OAUTH_CLIENT_ID": {
+                "TS2OTEL_TAILSCALE__AUTH__APIKEY": {
                     "type": "string"
                 },
-                "TS_OAUTH_CLIENT_SECRET": {
+                "TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID": {
                     "type": "string"
                 },
-                "TS_STREAM_HEC_TOKEN": {
+                "TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET": {
                     "type": "string"
                 },
-                "TS_TAILNET": {
+                "TS2OTEL_TAILSCALE__TAILNET": {
                     "type": "string"
                 },
-                "TS_WEBHOOK_SECRET": {
+                "TS2OTEL_WEBHOOK__SECRET": {
                     "type": "string"
                 }
             }

@@ -2,15 +2,18 @@
 #
 # Usage:
 #   1. Put your secrets in a .env file next to this compose file (gitignored), e.g.:
-#        TS_TAILNET=example.com
-#        TS_OAUTH_CLIENT_ID=...
-#        TS_OAUTH_CLIENT_SECRET=...
-#        GC_INSTANCE_ID=...
-#        GC_OTLP_TOKEN=...
+#        TS2OTEL_TAILSCALE__TAILNET=example.com
+#        TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=...
+#        TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=...
+#        TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=...
+#        TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=...
 #   2. docker compose -f deploy/docker-compose.yaml up --build
 #
-# The image bakes config.example.yaml at /etc/tailscale2otel/config.yaml, which
-# reads every secret from the environment via ${ENV} expansion.
+# The container runs from built-in defaults + TS2OTEL_* environment variables.
+# No config file is required — secrets are injected purely via env vars.
+#
+# To use a config file instead (or in addition), uncomment the volume block and
+# command override at the bottom of this service definition.
 services:
   tailscale2otel:
     build:
@@ -24,25 +27,39 @@ services:
     # ~10% under this so the Go GC backs off before the cgroup OOM-kills the process.
     mem_limit: 256m
     environment:
-      TS_TAILNET: ${TS_TAILNET:--}
-      TS_OAUTH_CLIENT_ID: ${TS_OAUTH_CLIENT_ID:-}
-      TS_OAUTH_CLIENT_SECRET: ${TS_OAUTH_CLIENT_SECRET:-}
-      TS_API_KEY: ${TS_API_KEY:-}
-      GC_INSTANCE_ID: ${GC_INSTANCE_ID:-}
-      GC_OTLP_TOKEN: ${GC_OTLP_TOKEN:-}
+      TS2OTEL_TAILSCALE__TAILNET: ${TS2OTEL_TAILSCALE__TAILNET:-}
+      TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID: ${TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID:-}
+      TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET: ${TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET:-}
+      TS2OTEL_TAILSCALE__AUTH__APIKEY: ${TS2OTEL_TAILSCALE__AUTH__APIKEY:-}
+      TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ${TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID:-}
+      TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN: ${TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN:-}
       # Gates the admin status page (/ and /api/status.json) and pprof when
       # admin.enabled. Leave empty to keep the status page open; required if you
       # enable profiling.pprof. /healthz and /readyz are never gated.
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      TS2OTEL_ADMIN__AUTH__TOKEN: ${TS2OTEL_ADMIN__AUTH__TOKEN:-}
       # Go runtime GC tuning. This is a near-idle poller with a tiny live heap, so the
       # default GOGC=100 fires frequent (individually cheap) collections; GOGC=200
       # halves that frequency. GOMEMLIMIT is a soft backstop ~10% below mem_limit.
       GOGC: ${GOGC:-200}
       GOMEMLIMIT: ${GOMEMLIMIT:-230MiB}
-    # Uncomment to mount a custom config instead of the baked-in example.
+    # Checkpoint persistence: window cursors survive container recreation via a
+    # named volume. Docker copies the image directory (owned by uid 65532) on
+    # first creation, so the nonroot user can write without extra chmod.
+    # Alternative: bind-mount a host directory pre-chowned to uid 65532, e.g.:
+    #   - ./checkpoints:/var/lib/tailscale2otel
+    # (the app WARNs and falls back to in-memory if the path is not writable)
+    volumes:
+      - checkpoints:/var/lib/tailscale2otel
+    # File-based config (optional): uncomment to mount a config file and pass -config.
     # volumes:
     #   - ./config.yaml:/etc/tailscale2otel/config.yaml:ro
+    # command: ["-config", "/etc/tailscale2otel/config.yaml"]
     # Streaming (HEC) + webhook receivers, only if enabled in config:
     # ports:
     #   - "8088:8088"
     #   - "8089:8089"
+
+# Named volume for checkpoint persistence. Created once by Docker and inherits
+# the /var/lib/tailscale2otel directory ownership from the image (uid 65532).
+volumes:
+  checkpoints: {}

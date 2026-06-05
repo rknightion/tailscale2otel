@@ -1,10 +1,8 @@
 package config_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -73,11 +71,12 @@ enrichment:
     negative_ttl: 2m
     max_entries: 2048
 cardinality:
-  flow_node_dims: false
-  collapse_external: false
-  flow_source_port: true
-  flow_destination_port: true
-  flow_destination_service: true
+  flow:
+    node_dims: false
+    collapse_external: false
+    source_port: true
+    destination_port: true
+    destination_service: true
 collectors:
   devices:
     enabled: false
@@ -165,12 +164,12 @@ func TestLoadNestedValues(t *testing.T) {
 		rd.CacheTTL.D() != 30*time.Minute || rd.NegativeTTL.D() != 2*time.Minute || rd.MaxEntries != 2048 {
 		t.Errorf("Enrichment.ReverseDNS = %+v, want enabled 9.9.9.9 3s/30m/2m/2048", cfg.Enrichment.ReverseDNS)
 	}
-	if cfg.Cardinality.FlowNodeDims {
-		t.Errorf("Cardinality.FlowNodeDims = true, want false")
+	if cfg.Cardinality.Flow.NodeDims {
+		t.Errorf("Cardinality.Flow.NodeDims = true, want false")
 	}
-	if !cfg.Cardinality.FlowSourcePort || !cfg.Cardinality.FlowDestinationPort || !cfg.Cardinality.FlowDestinationService {
+	if !cfg.Cardinality.Flow.SourcePort || !cfg.Cardinality.Flow.DestinationPort || !cfg.Cardinality.Flow.DestinationService {
 		t.Errorf("Cardinality flow toggles = src %v / dst %v / service %v, want all true",
-			cfg.Cardinality.FlowSourcePort, cfg.Cardinality.FlowDestinationPort, cfg.Cardinality.FlowDestinationService)
+			cfg.Cardinality.Flow.SourcePort, cfg.Cardinality.Flow.DestinationPort, cfg.Cardinality.Flow.DestinationService)
 	}
 
 	// Collectors struct with per-collector fields.
@@ -293,140 +292,26 @@ profiling:
 	}
 }
 
+// TestLoadMissingFile: a config path that was explicitly given but cannot be
+// read is a hard error.
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := config.Load("/nonexistent/path/config.yaml"); err == nil {
 		t.Fatalf("expected error for missing file, got nil")
 	}
 }
 
-// hasEnvRefAdvisory reports whether any warning is the undefined-${ENV} advisory
-// naming the given variable (e.g. "TS_API_KEY"). It keys on the advisory's
-// "references ${VAR}" phrasing so it is not confused with other advisories that
-// merely mention the same field name (e.g. the webhook-secret HMAC advisory).
-func hasEnvRefAdvisory(cfg *config.Config, name string) bool {
-	want := "references ${" + name + "}"
-	for _, w := range cfg.Warnings() {
-		if strings.Contains(w, want) {
-			return true
-		}
-	}
-	return false
-}
-
-// TestLoad_EnvRefAdvisory_IgnoresComments: the undefined-${ENV} advisory scans
-// config VALUES, not comments. A ${VAR} that appears only inside a YAML comment
-// is documentation and must not warn; an undefined ${VAR} in an active value
-// still must.
-func TestLoad_EnvRefAdvisory_IgnoresComments(t *testing.T) {
-	const y = `
-otlp:
-  protocol: stdout
-  # docs example: you can set a header to ${T2O_ADV_COMMENT_ONLY}
-  headers:
-    X-Org: "${T2O_ADV_ACTIVE_VALUE}"
-`
-	cfg, err := config.Load(writeTemp(t, y))
+// TestLoadNoFileIsValid: with no path (""), the config loads from defaults +
+// environment alone — the env-only container deployment path.
+func TestLoadNoFileIsValid(t *testing.T) {
+	cfg, err := config.Load("")
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("Load(\"\") should succeed from defaults: %v", err)
 	}
-	if hasEnvRefAdvisory(cfg, "T2O_ADV_COMMENT_ONLY") {
-		t.Errorf("a ${VAR} that appears only in a comment must not warn; got:\n%s",
-			strings.Join(cfg.Warnings(), "\n"))
+	if cfg.OTLP.Protocol != "http" {
+		t.Errorf("OTLP.Protocol = %q, want default http", cfg.OTLP.Protocol)
 	}
-	if !hasEnvRefAdvisory(cfg, "T2O_ADV_ACTIVE_VALUE") {
-		t.Errorf("an undefined ${VAR} in an active value must warn; got:\n%s",
-			strings.Join(cfg.Warnings(), "\n"))
-	}
-}
-
-// TestLoad_EnvRefAdvisory_SkipsInactiveAPIKey: tailscale.auth.apikey is only used
-// when method=apikey. An undefined ${VAR} there must not warn under method=oauth
-// (the field is inactive), but must warn under method=apikey.
-func TestLoad_EnvRefAdvisory_SkipsInactiveAPIKey(t *testing.T) {
-	const tmpl = `
-tailscale:
-  auth:
-    method: %s
-    apikey: "${T2O_ADV_APIKEY}"
-otlp:
-  protocol: stdout
-`
-	oauthCfg, err := config.Load(writeTemp(t, fmt.Sprintf(tmpl, "oauth")))
-	if err != nil {
-		t.Fatalf("Load oauth: %v", err)
-	}
-	if hasEnvRefAdvisory(oauthCfg, "T2O_ADV_APIKEY") {
-		t.Errorf("apikey ${VAR} under method=oauth is inactive and must not warn; got:\n%s",
-			strings.Join(oauthCfg.Warnings(), "\n"))
-	}
-
-	apikeyCfg, err := config.Load(writeTemp(t, fmt.Sprintf(tmpl, "apikey")))
-	if err != nil {
-		t.Fatalf("Load apikey: %v", err)
-	}
-	if !hasEnvRefAdvisory(apikeyCfg, "T2O_ADV_APIKEY") {
-		t.Errorf("apikey ${VAR} under method=apikey is active and must warn; got:\n%s",
-			strings.Join(apikeyCfg.Warnings(), "\n"))
-	}
-}
-
-// TestLoad_EnvRefAdvisory_SkipsDisabledWebhookSecret: webhook.secret is only used
-// by an enabled webhook receiver. An undefined ${VAR} there must not produce the
-// env-ref advisory when webhook.enabled=false, but must when it is enabled.
-func TestLoad_EnvRefAdvisory_SkipsDisabledWebhookSecret(t *testing.T) {
-	const off = `
-otlp:
-  protocol: stdout
-webhook:
-  enabled: false
-  secret: "${T2O_ADV_WHSEC}"
-`
-	offCfg, err := config.Load(writeTemp(t, off))
-	if err != nil {
-		t.Fatalf("Load webhook-off: %v", err)
-	}
-	if hasEnvRefAdvisory(offCfg, "T2O_ADV_WHSEC") {
-		t.Errorf("webhook.secret ${VAR} with webhook disabled is inactive and must not warn; got:\n%s",
-			strings.Join(offCfg.Warnings(), "\n"))
-	}
-
-	const on = `
-otlp:
-  protocol: stdout
-webhook:
-  enabled: true
-  listen: "127.0.0.1:8089"
-  secret: "${T2O_ADV_WHSEC}"
-`
-	onCfg, err := config.Load(writeTemp(t, on))
-	if err != nil {
-		t.Fatalf("Load webhook-on: %v", err)
-	}
-	if !hasEnvRefAdvisory(onCfg, "T2O_ADV_WHSEC") {
-		t.Errorf("webhook.secret ${VAR} with webhook enabled is active and must warn; got:\n%s",
-			strings.Join(onCfg.Warnings(), "\n"))
-	}
-}
-
-// TestLoad_ExampleConfig_NoSpuriousEnvRefAdvisories reproduces the exact symptom
-// seen on the camden deployment: loading the shipped config.example.yaml with all
-// secret env vars unset must NOT advise on ${ENV}/${POD_NAME} (which appear only
-// in explanatory comments) nor on ${TS_API_KEY}/${TS_WEBHOOK_SECRET} (inactive:
-// the example uses method=oauth and webhook.enabled=false).
-func TestLoad_ExampleConfig_NoSpuriousEnvRefAdvisories(t *testing.T) {
-	path := filepath.Join("..", "..", "config.example.yaml")
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("config.example.yaml not found: %v", err)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load example: %v", err)
-	}
-	for _, name := range []string{"ENV", "POD_NAME", "TS_API_KEY", "TS_WEBHOOK_SECRET"} {
-		if hasEnvRefAdvisory(cfg, name) {
-			t.Errorf("config.example.yaml must not produce an env-ref advisory for ${%s}; got:\n%s",
-				name, strings.Join(cfg.Warnings(), "\n"))
-		}
+	if !cfg.Collectors.Devices.Enabled {
+		t.Errorf("Devices.Enabled = false, want default true")
 	}
 }
 

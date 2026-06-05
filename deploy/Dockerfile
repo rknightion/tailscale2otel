@@ -15,13 +15,27 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/tailscale2otel ./cmd/tailscale2otel
+# Create the default checkpoint directory so the distroless runtime image has it
+# pre-seeded with the correct ownership (uid/gid 65532 = nonroot).
+RUN mkdir -p /var/lib/tailscale2otel
 
 # ---- runtime ----
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/tailscale2otel /usr/local/bin/tailscale2otel
-COPY config.example.yaml /etc/tailscale2otel/config.yaml
+# Pre-seeded checkpoint directory (owned by nonroot 65532:65532). Checkpoints
+# persist here across container restarts when no external volume is mounted
+# (ephemeral — lost on container recreation). Mount a named volume or host
+# bind-mount at /var/lib/tailscale2otel for durable persistence.
+COPY --from=build --chown=65532:65532 /var/lib/tailscale2otel /var/lib/tailscale2otel
+# config.example.yaml is copied for reference; it is NOT loaded by default.
+# The exporter runs from built-in defaults + TS2OTEL_* environment variables.
+# To use a config file, mount it and add -config /path/to/config.yaml, e.g.:
+#   docker run -v ./config.yaml:/etc/tailscale2otel/config.yaml:ro \
+#              ghcr.io/rknightion/tailscale2otel:latest \
+#              -config /etc/tailscale2otel/config.yaml
+COPY config.example.yaml /etc/tailscale2otel/config.example.yaml
 USER nonroot:nonroot
 # Streaming (HEC) and webhook receivers, if enabled in config.
 EXPOSE 8088 8089
 ENTRYPOINT ["/usr/local/bin/tailscale2otel"]
-CMD ["-config", "/etc/tailscale2otel/config.yaml"]
+CMD []

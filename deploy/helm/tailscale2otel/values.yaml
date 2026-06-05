@@ -82,46 +82,48 @@ affinity: {}
 # --- Secrets ---
 # Provide credentials either inline here (rendered into a Secret) OR reference an
 # existing Secret via existingSecret. Inline values win only when existingSecret is "".
-# -- Name of a pre-created Secret exposing the env keys below. When set, no Secret is rendered.
+# -- Name of a pre-created Secret exposing the TS2OTEL_* env keys. When set, no Secret is rendered.
 existingSecret: ""
-# -- Inline secret values rendered into a Secret and injected via envFrom. These keys back
-# the ${ENV} placeholders in `config` below.
+# -- Inline secret values rendered into a Secret and injected via envFrom. These
+# TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at
+# runtime — secrets never appear in the ConfigMap.
 secret:
   # -- Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet.
-  TS_TAILNET: ""
+  TS2OTEL_TAILSCALE__TAILNET: ""
   # -- OAuth client ID (recommended auth; needs the "all:read" scope). Used when config.tailscale.auth.method=oauth.
-  TS_OAUTH_CLIENT_ID: ""
-  # -- OAuth client secret paired with TS_OAUTH_CLIENT_ID.
-  TS_OAUTH_CLIENT_SECRET: ""
+  TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID: ""
+  # -- OAuth client secret paired with TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID.
+  TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET: ""
   # -- Tailscale API key. Used ONLY when config.tailscale.auth.method=apikey. Prefer OAuth: a
   # personal API key expires in <=90 days and is tied to the user that created it (stops working
   # when that user is removed). The exporter logs a WARN when method=apikey.
-  TS_API_KEY: ""
+  TS2OTEL_TAILSCALE__AUTH__APIKEY: ""
   # -- Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth).
-  GC_INSTANCE_ID: ""
+  TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ""
   # -- Grafana Cloud OTLP token (the password for OTLP basic auth).
-  GC_OTLP_TOKEN: ""
+  TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN: ""
   # -- HEC token the streaming receiver expects ("Authorization: Splunk <token>").
   # Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op.
-  TS_STREAM_HEC_TOKEN: ""
+  TS2OTEL_STREAMING__TOKEN: ""
   # -- Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. CRITICAL: leaving
   # this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so
   # unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook.
-  TS_WEBHOOK_SECRET: ""
+  TS2OTEL_WEBHOOK__SECRET: ""
   # -- Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the
   # status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable
   # config.profiling.pprof. /healthz and /readyz are never gated.
-  ADMIN_TOKEN: ""
+  TS2OTEL_ADMIN__AUTH__TOKEN: ""
   # -- Pyroscope basic-auth user (Grafana Cloud: the profiles instance ID). Set ONLY when you
   # enable config.profiling.pyroscope.
-  PYROSCOPE_BASIC_AUTH_USER: ""
+  TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER: ""
   # -- Pyroscope basic-auth password (Grafana Cloud: an access policy token with profiles:write).
-  PYROSCOPE_BASIC_AUTH_PASSWORD: ""
+  TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD: ""
 
 # --- App config ---
 # The FULL application config, rendered verbatim into a ConfigMap as config.yaml.
 # This is the single source of truth (kept in sync with config.example.yaml).
-# Strings support ${ENV} / $ENV expansion at runtime against the Secret above.
+# Secrets are injected exclusively via TS2OTEL_* environment variables from the
+# Secret above — no ${VAR} placeholders appear in the ConfigMap.
 # Helm deep-merges maps, so single-key overrides keep working, e.g.:
 #   --set config.log_level=debug
 #   --set config.collectors.flowlogs.interval=30s
@@ -131,21 +133,22 @@ config:
 
   tailscale:
     # -- Tailnet name, or "-" for the auth principal's default tailnet.
-    tailnet: "${TS_TAILNET}"
+    # Override with TS2OTEL_TAILSCALE__TAILNET env var (set via secret above).
+    tailnet: ""
     auth:
       # -- Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped
       # tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the
       # exporter logs a WARN when apikey is selected.
       method: oauth
       oauth:
-        # -- OAuth client ID (backed by the TS_OAUTH_CLIENT_ID secret).
-        client_id: "${TS_OAUTH_CLIENT_ID}"
-        # -- OAuth client secret (backed by the TS_OAUTH_CLIENT_SECRET secret).
-        client_secret: "${TS_OAUTH_CLIENT_SECRET}"
+        # -- OAuth client ID. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID (secret).
+        client_id: ""
+        # -- OAuth client secret. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET (secret).
+        client_secret: ""
         # -- OAuth scopes to request. "all:read" covers every read-only collector.
         scopes: ["all:read"]
-      # -- API key, used only when method: apikey.
-      apikey: "${TS_API_KEY}"
+      # -- API key, used only when method: apikey. Set via TS2OTEL_TAILSCALE__AUTH__APIKEY (secret).
+      apikey: ""
     http:
       # -- Per-request HTTP timeout for Tailscale API calls.
       timeout: 30s
@@ -167,10 +170,12 @@ config:
     endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
     grafana_cloud:
       # -- Grafana Cloud instance/stack ID. Convenience: expands to an
-      # "Authorization: Basic <base64(instance_id:token)>" header. Leave both empty to use `headers`.
-      instance_id: "${GC_INSTANCE_ID}"
+      # "Authorization: Basic <base64(instance_id:token)>" header.
+      # Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret).
+      instance_id: ""
       # -- Grafana Cloud OTLP token paired with instance_id.
-      token: "${GC_OTLP_TOKEN}"
+      # Set via TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN (secret).
+      token: ""
     # -- Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend).
     headers: {}
     tls:
@@ -192,7 +197,7 @@ config:
     reverse_dns:
       # -- Opt-in reverse-DNS (PTR) enrichment of EXTERNAL flow addresses; resolved names replace
       # the "external" bucket in tailscale.src/dst.node (flow logs always; flow metrics when
-      # flow_node_dims is on). On flow METRICS this can add ~one series per external IP.
+      # cardinality.flow.node_dims is on). On flow METRICS this can add ~one series per external IP.
       enabled: false
       # -- Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver.
       server: ""
@@ -206,35 +211,41 @@ config:
       max_entries: 4096
 
   cardinality:
-    # -- Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N
-    # *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so
-    # totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection
-    # tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts).
-    flow_metrics_mode: rollup
-    # -- Add source.port to flow METRICS (independent of flow_destination_port); ports are always on flow LOGS.
-    flow_source_port: false
-    # -- Add destination.port to flow METRICS (independent of flow_source_port).
-    flow_destination_port: false
-    # -- Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS.
-    flow_destination_service: false
-    # -- Include src/dst device names as dimensions on flow metrics.
-    flow_node_dims: true
-    # -- Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and,
-    # when flow_node_dims is true, the src/dst node labels on flow METRICS.
-    collapse_external: true
-    # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
-    # aggregate tailscale.devices.count rollup.
-    device_per_entity: true
-    # -- Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count.
-    user_per_entity: true
-    # -- Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires).
-    key_per_entity: true
-    # -- Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count.
-    webhook_per_entity: true
-    # -- Emit the per-service ports/hosts gauges; false emits only tailscale.services.count.
-    service_per_entity: true
-    # -- Emit the tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector.
+    # -- Hard per-metric series cap (0/negative = unlimited).
+    metric_limit: 10000
+    # -- Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector.
     derp_region_rollup: true
+    flow:
+      # -- Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N
+      # *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so
+      # totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection
+      # tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts).
+      metrics_mode: rollup
+      # -- Rollup only: busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500).
+      rollup_top_n: 500
+      # -- Add source.port to flow METRICS (independent of destination_port); ports are always on flow LOGS.
+      source_port: false
+      # -- Add destination.port to flow METRICS (independent of source_port).
+      destination_port: false
+      # -- Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS.
+      destination_service: false
+      # -- Include src/dst device names as dimensions on flow metrics.
+      node_dims: true
+      # -- Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and,
+      # when node_dims is true, the src/dst node labels on flow METRICS.
+      collapse_external: true
+    per_entity:
+      # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
+      # aggregate tailscale.devices.count rollup.
+      device: true
+      # -- Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count.
+      user: true
+      # -- Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires).
+      key: true
+      # -- Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count.
+      webhook: true
+      # -- Emit the per-service ports/hosts gauges; false emits only tailscale.services.count.
+      service: true
 
   collectors:
     devices:
@@ -273,9 +284,6 @@ config:
       # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
       # tailscale.network.flow.logs_dropped; METRICS are never capped, only logs.
       max_log_records_per_window: 0
-      # -- Rollup only (cardinality.flow_metrics_mode=rollup/both): busiest src/dst node pairs kept per
-      # flush; the rest fold into the __other__ series. 0 = default (500).
-      flow_rollup_top_n: 500
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true
@@ -369,7 +377,7 @@ config:
   checkpoint:
     # -- Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does
     # initial_lookback); "file" persists them atomically (needs a writable volume at file_path).
-    store: memory
+    store: file
     # -- Checkpoint file path when store: file (mount a writable volume here).
     file_path: "/var/lib/tailscale2otel/checkpoints.json"
 
@@ -377,6 +385,7 @@ config:
   # flowlogs/auditlogs source to `stream` (NOT poll/both) so each log type is ingested by
   # exactly ONE path; running both the poller and this receiver for the same log type risks
   # double-counting (cross-source de-dup is a best-effort failsafe, WARNed at startup).
+  # Token: set via TS2OTEL_STREAMING__TOKEN (secret).
   streaming:
     # -- Enable the HEC-style streaming receiver.
     enabled: false
@@ -384,8 +393,8 @@ config:
     listen: ":8088"
     # -- HTTP path the receiver serves (the Splunk-HEC event endpoint).
     path: "/services/collector/event"
-    # -- Expected as 'Authorization: Splunk <token>'. Empty disables token auth.
-    token: "${TS_STREAM_HEC_TOKEN}"
+    # -- Expected as 'Authorization: Splunk <token>'. Set via TS2OTEL_STREAMING__TOKEN (secret).
+    token: ""
     # -- Externally reachable receiver URL; REQUIRED when auto_configure: true.
     public_url: ""
     tls:
@@ -402,6 +411,7 @@ config:
     max_body_bytes: 0
 
   # Optional webhook receiver for real-time Tailscale events.
+  # Secret: set via TS2OTEL_WEBHOOK__SECRET (secret).
   webhook:
     # -- Enable the webhook receiver.
     enabled: false
@@ -410,14 +420,16 @@ config:
     # -- HTTP path the receiver serves.
     path: "/tailscale/webhook"
     # -- HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs).
-    secret: "${TS_WEBHOOK_SECRET}"
+    # Set via TS2OTEL_WEBHOOK__SECRET (secret).
+    secret: ""
     # -- Best-effort: drop a webhook event already counted via the audit logs (off by default).
     dedup_audit_events: false
 
   self_observability:
     # -- Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime).
     enabled: true
-    # -- service.instance.id resource attribute; empty falls back to the pod/host name. Supports ${ENV} (e.g. "${POD_NAME}").
+    # -- service.instance.id resource attribute; empty falls back to the pod/host name. Override
+    # with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API).
     instance_id: ""
 
   # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
@@ -431,8 +443,8 @@ config:
     # -- Serve the human status page at / and machine-readable JSON at /api/status.json.
     landing_page: true
     auth:
-      # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Keep it in a Secret/env var (see `secret`/`existingSecret`). Required when profiling.pprof.enabled.
-      token: "${ADMIN_TOKEN}"
+      # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled.
+      token: ""
 
   # Optional continuous/on-demand profiling. Everything here is OFF by default and
   # carries no Tailscale data. The pprof handlers mount on the admin server, so
@@ -447,10 +459,10 @@ config:
       enabled: false
       # -- Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled.
       server_address: ""
-      # -- Basic-auth user (backed by the PYROSCOPE_BASIC_AUTH_USER secret).
-      basic_auth_user: "${PYROSCOPE_BASIC_AUTH_USER}"
-      # -- Basic-auth password (backed by the PYROSCOPE_BASIC_AUTH_PASSWORD secret).
-      basic_auth_password: "${PYROSCOPE_BASIC_AUTH_PASSWORD}"
+      # -- Basic-auth user (Grafana Cloud: the profiles instance ID). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER (secret).
+      basic_auth_user: ""
+      # -- Basic-auth password (Grafana Cloud: an access policy token with profiles:write). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD (secret).
+      basic_auth_password: ""
       # -- X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud).
       tenant_id: ""
       # -- How often profiles are flushed to the server.
@@ -461,3 +473,17 @@ config:
     mutex_profile_fraction: 0
     # -- runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull.
     block_profile_rate: 0
+
+# --- Checkpoint persistence ---
+persistence:
+  # -- Persist checkpoints (window cursors) across restarts. When false, an emptyDir is used
+  # (survives container restarts within a pod, but not rescheduling); when true, a PVC is created.
+  enabled: false
+  # -- StorageClass for the PVC (empty = cluster default). Only used when enabled.
+  storageClass: ""
+  # -- PVC access mode.
+  accessMode: ReadWriteOnce
+  # -- PVC size (checkpoints are tiny).
+  size: 64Mi
+  # -- Use an existing PVC instead of creating one (empty = create one). Only used when enabled.
+  existingClaim: ""

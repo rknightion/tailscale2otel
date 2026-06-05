@@ -145,10 +145,10 @@ func TestFlowOptions_RollupMode(t *testing.T) {
 	if def.RollupTopN != 500 {
 		t.Fatalf("default RollupTopN = %d, want 500", def.RollupTopN)
 	}
-	// Overrides propagate from cardinality + flowlogs config.
+	// Overrides propagate from cardinality.flow config.
 	cfg := config.Default()
-	cfg.Cardinality.FlowMetricsMode = "both"
-	cfg.Collectors.Flowlogs.FlowRollupTopN = 42
+	cfg.Cardinality.Flow.MetricsMode = "both"
+	cfg.Cardinality.Flow.RollupTopN = 42
 	if got := flowOptions(cfg); got.FlowMetricsMode != "both" || got.RollupTopN != 42 {
 		t.Fatalf("flowOptions mode/topN = %q/%d, want both/42", got.FlowMetricsMode, got.RollupTopN)
 	}
@@ -164,28 +164,28 @@ func TestFlowOptions_PortToggles(t *testing.T) {
 	// Both granular toggles on => both ports (the explicit replacement for the
 	// removed legacy flow_include_ports umbrella).
 	both := config.Default()
-	both.Cardinality.FlowSourcePort = true
-	both.Cardinality.FlowDestinationPort = true
+	both.Cardinality.Flow.SourcePort = true
+	both.Cardinality.Flow.DestinationPort = true
 	if got := flowOptions(both); !got.IncludeSourcePort || !got.IncludeDestinationPort {
-		t.Fatalf("flow_source_port+flow_destination_port => src %v / dst %v, want both true", got.IncludeSourcePort, got.IncludeDestinationPort)
+		t.Fatalf("cardinality.flow.source_port+cardinality.flow.destination_port => src %v / dst %v, want both true", got.IncludeSourcePort, got.IncludeDestinationPort)
 	}
 
 	// Independent source-only and destination-only.
 	srcOnly := config.Default()
-	srcOnly.Cardinality.FlowSourcePort = true
+	srcOnly.Cardinality.Flow.SourcePort = true
 	if got := flowOptions(srcOnly); !got.IncludeSourcePort || got.IncludeDestinationPort {
-		t.Fatalf("flow_source_port=true => src %v / dst %v, want true/false", got.IncludeSourcePort, got.IncludeDestinationPort)
+		t.Fatalf("cardinality.flow.source_port=true => src %v / dst %v, want true/false", got.IncludeSourcePort, got.IncludeDestinationPort)
 	}
 	dstOnly := config.Default()
-	dstOnly.Cardinality.FlowDestinationPort = true
+	dstOnly.Cardinality.Flow.DestinationPort = true
 	if got := flowOptions(dstOnly); got.IncludeSourcePort || !got.IncludeDestinationPort {
-		t.Fatalf("flow_destination_port=true => src %v / dst %v, want false/true", got.IncludeSourcePort, got.IncludeDestinationPort)
+		t.Fatalf("cardinality.flow.destination_port=true => src %v / dst %v, want false/true", got.IncludeSourcePort, got.IncludeDestinationPort)
 	}
 
 	// Service toggle maps through.
 	svc := config.Default()
-	svc.Cardinality.FlowDestinationService = true
+	svc.Cardinality.Flow.DestinationService = true
 	if got := flowOptions(svc); !got.IncludeDestinationService {
-		t.Fatal("flow_destination_service=true => IncludeDestinationService false, want true")
+		t.Fatal("cardinality.flow.destination_service=true => IncludeDestinationService false, want true")
 	}
 }

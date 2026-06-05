@@ -48,8 +48,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 The rendered config.yaml. Always sourced from .Values.config so there is a single
 source of truth and no chart<->config drift. The full default config map lives in
 values.yaml under `config:`; Helm deep-merges maps, so single-key overrides
-(e.g. --set config.log_level=debug) keep working. Secrets stay as ${ENV}
-placeholders here and are expanded at runtime from the envFrom Secret.
+(e.g. --set config.log_level=debug) keep working. Secrets contain no values here —
+they are injected exclusively via TS2OTEL_* environment variables from the envFrom
+Secret, which override the corresponding fields in this file at runtime.
 */}}
 {{- define "tailscale2otel.config" -}}
 {{ .Values.config | toYaml }}

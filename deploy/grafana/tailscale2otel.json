@@ -10046,7 +10046,7 @@
         "spec": {
           "id": 117,
           "title": "Port rules per service",
-          "description": "Port rules exposed by each Service. Gated by cardinality.service_per_entity.",
+          "description": "Port rules exposed by each Service. Gated by cardinality.per_entity.service.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10111,7 +10111,7 @@
         "spec": {
           "id": 118,
           "title": "Backing hosts by service",
-          "description": "Backing-host count per Service, bucketed by approval + configured state. Gated by collect_hosts + cardinality.service_per_entity.",
+          "description": "Backing-host count per Service, bucketed by approval + configured state. Gated by collect_hosts + cardinality.per_entity.service.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

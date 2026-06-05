@@ -13,15 +13,15 @@ import (
 // asserts what the processor actually emits matches these declarations.
 //
 // The flow node-dimension attributes (src/dst node) are gated by
-// cardinality.flow_node_dims, the source/destination port attributes by
-// cardinality.flow_source_port / flow_destination_port, and tailscale.dst.service
-// by cardinality.flow_destination_service; all are listed here as the full
+// cardinality.flow.node_dims, the source/destination port attributes by
+// cardinality.flow.source_port / cardinality.flow.destination_port, and tailscale.dst.service
+// by cardinality.flow.destination_service; all are listed here as the full
 // possible attribute set (gating is documented in prose). On flow LOGS the ports
 // and tailscale.dst.service are always present (the latter when the destination
 // port maps to a known service).
 const groupNetwork = "Network / flow"
 
-// Rollup + unique metric names, emitted only when cardinality.flow_metrics_mode
+// Rollup + unique metric names, emitted only when cardinality.flow.metrics_mode
 // is "rollup" or "both" (the bounded *.rollup families are the default metric
 // path). The accumulator in rollup.go emits these; FlushRollup drives it.
 const (
@@ -76,7 +76,7 @@ var (
 		Name:        MetricIORollup,
 		Unit:        semconv.UnitBytes,
 		Instrument:  metricdoc.Counter,
-		Description: "Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node=\"__other__\" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow_metrics_mode is rollup or both (the default).",
+		Description: "Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node=\"__other__\" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow.metrics_mode is rollup or both (the default).",
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService,
@@ -98,7 +98,7 @@ var (
 		Name:        MetricUniqueDstPeers,
 		Unit:        semconv.UnitPeers,
 		Instrument:  metricdoc.Gauge,
-		Description: "Distinct destination nodes (peers) observed per source node in the last rollup flush interval (exact count, reset each flush). Emitted when cardinality.flow_metrics_mode is rollup or both and flow node dimensions are on.",
+		Description: "Distinct destination nodes (peers) observed per source node in the last rollup flush interval (exact count, reset each flush). Emitted when cardinality.flow.metrics_mode is rollup or both and cardinality.flow.node_dims are on.",
 		Attributes:  []string{semconv.AttrSrcNode},
 		Group:       groupNetwork,
 	}

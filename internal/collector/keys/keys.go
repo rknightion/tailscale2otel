@@ -65,7 +65,7 @@ type Collector struct {
 type Option func(*Collector)
 
 // WithPerEntity controls whether the per-key tailscale.key.expiry gauge is
-// emitted. The default is true; false (cardinality.key_per_entity) emits only
+// emitted. The default is true; false (cardinality.per_entity.key) emits only
 // the aggregate tailscale.keys.count rollup. The expiry-warning log event is
 // unaffected (it always fires within expiryWarn).
 func WithPerEntity(enabled bool) Option {
@@ -132,7 +132,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 		if !k.Expires.IsZero() {
 			// The per-key expiry gauge (one series per key) is gated by
-			// cardinality.key_per_entity; the expiry-warning log below always
+			// cardinality.per_entity.key; the expiry-warning log below always
 			// fires regardless, so operators never lose the warning.
 			if c.perEntity {
 				e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,

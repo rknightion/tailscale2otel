@@ -26,7 +26,7 @@ const defaultRollupTopN = 500
 // applied only at Flush), these bound peak memory *between* flushes so a flood of
 // unique flow keys cannot grow the accumulator without limit. This is the
 // attacker-amplified case: raw src/dst addresses become live map keys when
-// collapse_external is off or reverse_dns is on, and reach record/observeUnique
+// cardinality.flow.collapse_external is off or reverse_dns is on, and reach record/observeUnique
 // via the (possibly unauthenticated) stream receiver. Overflow folds into the
 // __other__ remainder (counters) or saturates the set (unique gauges); see
 // record and addToSet. The caps sit far above any legitimate per-interval volume.
@@ -78,7 +78,7 @@ type rollupAccumulator struct {
 }
 
 // newRollupAccumulator returns an accumulator keeping the busiest topN node pairs
-// per flush. nodes mirrors flow_node_dims: when false the rollup carries no node
+// per flush. nodes mirrors cardinality.flow.node_dims: when false the rollup carries no node
 // dimensions and the per-source-node unique gauges are suppressed.
 func newRollupAccumulator(topN int, nodes bool) *rollupAccumulator {
 	if topN <= 0 {

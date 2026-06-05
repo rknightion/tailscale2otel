@@ -291,7 +291,7 @@ func TestNewApp_WiresSharedFlowDedup(t *testing.T) {
 	// Observe the raw io family directly: dedup runs in process() before either
 	// metric family, so it is mode-independent; "all" keeps the synchronous io
 	// emission this test sums (the rollup family buffers until FlushRollup).
-	cfg.Cardinality.FlowMetricsMode = "all"
+	cfg.Cardinality.Flow.MetricsMode = "all"
 	rec := telemetrytest.New()
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
 
@@ -346,7 +346,7 @@ func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
 	cfg.Tailscale.Tailnet = "example.com"
 	// Observe the raw io family directly (dedup is mode-independent; see
 	// TestNewApp_WiresSharedFlowDedup).
-	cfg.Cardinality.FlowMetricsMode = "all"
+	cfg.Cardinality.Flow.MetricsMode = "all"
 	cfg.Streaming.Enabled = true
 	cfg.Streaming.Path = "/services/collector/event"
 	rec := telemetrytest.New()

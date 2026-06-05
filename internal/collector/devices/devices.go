@@ -147,7 +147,7 @@ type Option func(*Collector)
 
 // WithPerEntity controls whether the per-device gauges (online, last_seen,
 // key.expiry, update_available, DERP latency, routes) are emitted. The default
-// is true; false (cardinality.device_per_entity) emits only the aggregate
+// is true; false (cardinality.per_entity.device) emits only the aggregate
 // tailscale.devices.count rollup, dropping the per-device series.
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
@@ -157,7 +157,7 @@ func WithPerEntity(enabled bool) Option {
 // gauges (latency_min, devices, preferred) are emitted (default true;
 // cardinality.derp_region_rollup). The rollup is computed from the per-device
 // DERP latency already fetched and is emitted independently of per_entity, so it
-// is the low-cardinality DERP view that survives when device_per_entity is off.
+// is the low-cardinality DERP view that survives when cardinality.per_entity.device is off.
 func WithDerpRegionRollup(enabled bool) Option {
 	return func(c *Collector) { c.derpRollup = enabled }
 }
@@ -275,7 +275,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		d := &devs[i]
 
 		// Per-device gauges (one series per device) are gated by
-		// cardinality.device_per_entity; when off, only the aggregate
+		// cardinality.per_entity.device; when off, only the aggregate
 		// devices.count rollup below is emitted.
 		if c.perEntity {
 			idAttrs := telemetry.Attrs{

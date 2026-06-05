@@ -21,12 +21,12 @@ read access to it can see this metadata. Scope backend credentials accordingly.
 Levers to reduce what leaves the tailnet (all under the `cardinality:` block in
 `config.example.yaml`):
 
-- `cardinality.flow_source_port` / `cardinality.flow_destination_port` (both default
+- `cardinality.flow.source_port` / `cardinality.flow.destination_port` (both default
   `false`) — keep ports **off** flow *metrics*. Note that ports are always present on
   flow *logs* regardless of these settings.
-- `cardinality.collapse_external` (default `true`) — buckets unresolved IPs as
+- `cardinality.flow.collapse_external` (default `true`) — buckets unresolved IPs as
   `external`/`unknown` rather than emitting them as distinct series/labels.
-- `cardinality.flow_node_dims` (default `true`) — set `false` to omit src/dst
+- `cardinality.flow.node_dims` (default `true`) — set `false` to omit src/dst
   device names from flow metrics.
 
 Disabling the `devices` collector does **not** remove IPs from the payload — it
@@ -47,10 +47,12 @@ Always set these when exposing a receiver, especially on a wildcard/all-interfac
 bind or without TLS. Tailscale requires HTTPS for the streaming sink; a
 `tailscale cert` works for private tailnet endpoints.
 
-> All config string values are `${ENV}`-expanded, and an **undefined `${ENV}`
-> reference expands silently to the empty string**. A typo in the env var name
-> (e.g. `${TS_WEBOOK_SECRET}`) therefore silently disables auth rather than
-> failing loudly. Double-check that the referenced env vars are actually set.
+> Any field can be set via a `TS2OTEL_*` environment variable (the env layer
+> overrides the file), and an **empty credential silently disables auth** — for
+> example a mistyped variable name (`TS2OTEL_WEBHOOK__SECRT`) leaves the secret
+> empty rather than failing loudly. The startup log WARNs on a `TS2OTEL_*`
+> variable that matches no config key, but double-check that auth credentials are
+> actually set.
 
 ## `streaming.auto_configure` footgun
 
@@ -61,9 +63,9 @@ configuration you do not intend to replace. It is off by default.
 
 ## Secrets handling
 
-- Keep secrets in **environment variables referenced via `${ENV}`**, never as
-  literal values in YAML. `config.local.yaml`, `.env.local`, and `.secrets/` are
-  gitignored for this reason.
+- Keep secrets in **`TS2OTEL_*` environment variables** (the env layer overrides
+  the file), never as literal values in YAML. `config.local.yaml`, `.env.local`,
+  and `.secrets/` are gitignored for this reason.
 - The admin **status page redacts secret values** — it emits only `*Set` booleans
   (e.g. `webhook_secret_set`) and OTLP header key names, never the values.
 - Secrets are **never logged**.

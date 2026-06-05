@@ -3,6 +3,16 @@ name: tailscale2otel
 description: Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 type: application
 # Chart version — bump on chart changes.
+# 0.5.1: checkpoint.store defaults to `file` (mirrors app default); add persistence.*
+# values to create a PVC for durable checkpoint storage (off by default, uses emptyDir).
+# The Dockerfile pre-seeds /var/lib/tailscale2otel owned by nonroot (65532) and
+# docker-compose gains a named `checkpoints` volume so persistence works out of the box.
+# 0.5.0: BREAKING — switch to layered config (defaults < file < env vars). Secret
+# keys renamed to systematic TS2OTEL_* convention (e.g. TS_OAUTH_CLIENT_SECRET ->
+# TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET). ${VAR} placeholders removed from
+# config.yaml (secrets injected via env override, never in the ConfigMap). Cardinality
+# restructured: cardinality.flow.* and cardinality.per_entity.* replace the flat keys;
+# flow_rollup_top_n moved from collectors.flowlogs to cardinality.flow.rollup_top_n.
 # 0.4.8: remove the legacy cardinality.flow_include_ports toggle (superseded by the
 # granular flow_source_port / flow_destination_port).
 # 0.4.5: add goRuntime.{gogc,memLimit} -> GOGC/GOMEMLIMIT container env (Go GC tuning;
@@ -17,7 +27,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.4.8
+version: 0.5.1
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "0.1.0"
 home: https://github.com/rknightion/tailscale2otel

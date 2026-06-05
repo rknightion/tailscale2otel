@@ -18,7 +18,7 @@ import (
 var version = "dev"
 
 func main() {
-	configPath := flag.String("config", "config.yaml", "path to the YAML config file")
+	configPath := flag.String("config", "", "path to the YAML config file (empty = env-only defaults)")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)

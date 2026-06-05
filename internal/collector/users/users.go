@@ -59,7 +59,7 @@ type Collector struct {
 type Option func(*Collector)
 
 // WithPerEntity controls whether the per-user gauges (devices, connected,
-// last_seen) are emitted. The default is true; false (cardinality.user_per_entity)
+// last_seen) are emitted. The default is true; false (cardinality.per_entity.user)
 // emits only the aggregate tailscale.users.count / user_invites.count rollups.
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
@@ -117,7 +117,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		counts[k]++
 
 		// Per-user gauges (one series per user) are gated by
-		// cardinality.user_per_entity; when off, only the aggregate
+		// cardinality.per_entity.user; when off, only the aggregate
 		// users.count / user_invites.count rollups are emitted.
 		if !c.perEntity {
 			continue

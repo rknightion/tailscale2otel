@@ -135,16 +135,16 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 | `tailscale.network.flow.logs_dropped` | `{record}` | counter | `tailscale_network_flow_logs_dropped_total` | — | Flow LOG records suppressed by the per-window volume guard (collectors.flowlogs.max_log_records_per_window); 0 unless truncating. Metrics are never dropped, only logs. |
 | `tailscale.network.flows` | `{flow}` | counter | `tailscale_network_flows_total` | `network_transport`, `tailscale_traffic_type` | Count of distinct flows observed (lower cardinality than network.io/packets). |
 | `tailscale.network.io` | `By` | counter | `tailscale_network_io_bytes_total` | `network_io_direction`, `network_transport`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `source_port`, `destination_port`, `tailscale_dst_service` | Bytes transferred on the tailnet, by direction, transport, traffic type, and source/destination node. |
-| `tailscale.network.io.rollup` | `By` | counter | `tailscale_network_io_rollup_bytes_total` | `network_io_direction`, `network_transport`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_dst_service` | Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node="__other__" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow_metrics_mode is rollup or both (the default). |
+| `tailscale.network.io.rollup` | `By` | counter | `tailscale_network_io_rollup_bytes_total` | `network_io_direction`, `network_transport`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_dst_service` | Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node="__other__" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow.metrics_mode is rollup or both (the default). |
 | `tailscale.network.packets` | `{packet}` | counter | `tailscale_network_packets_total` | `network_io_direction`, `network_transport`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `source_port`, `destination_port`, `tailscale_dst_service` | Packets transferred on the tailnet, with the same dimensions as network.io. |
 | `tailscale.network.packets.rollup` | `{packet}` | counter | `tailscale_network_packets_rollup_total` | `network_io_direction`, `network_transport`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_dst_service` | Packets transferred on the tailnet, with the same bounded top-N rollup dimensions as network.io.rollup. |
-| `tailscale.network.unique.dst_peers` | `{peer}` | gauge | `tailscale_network_unique_dst_peers` | `tailscale_src_node` | Distinct destination nodes (peers) observed per source node in the last rollup flush interval (exact count, reset each flush). Emitted when cardinality.flow_metrics_mode is rollup or both and flow node dimensions are on. |
+| `tailscale.network.unique.dst_peers` | `{peer}` | gauge | `tailscale_network_unique_dst_peers` | `tailscale_src_node` | Distinct destination nodes (peers) observed per source node in the last rollup flush interval (exact count, reset each flush). Emitted when cardinality.flow.metrics_mode is rollup or both and cardinality.flow.node_dims are on. |
 | `tailscale.network.unique.dst_ports` | `{port}` | gauge | `tailscale_network_unique_dst_ports` | `tailscale_src_node` | Distinct destination ports observed per source node in the last rollup flush interval (exact count, reset each flush) — port-level visibility without per-port series. |
 <!-- END GENERATED -->
 
 > Label gating on `network.io`/`network.packets`: `tailscale_src_node`/`tailscale_dst_node` are
-> gated by `cardinality.flow_node_dims` (**on** by default); `source_port`/`destination_port` are
-> gated by `cardinality.flow_source_port` / `cardinality.flow_destination_port` (both **off** by
+> gated by `cardinality.flow.node_dims` (**on** by default); `source_port`/`destination_port` are
+> gated by `cardinality.flow.source_port` / `cardinality.flow.destination_port` (both **off** by
 > default, as ports add cardinality).
 
 > **Per-metric cardinality cap.** Every metric is bounded by `cardinality.metric_limit` (default
@@ -204,7 +204,7 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 <!-- END GENERATED -->
 
 > Per-entity gauge gating: the per-device, per-user, and per-key gauges above are gated by
-> `cardinality.device_per_entity` / `user_per_entity` / `key_per_entity` (all **on** by default).
+> `cardinality.per_entity.device` / `cardinality.per_entity.user` / `cardinality.per_entity.key` (all **on** by default).
 > Set one to `false` to drop that collector's per-entity series and keep only its aggregate
 > `*.count` roll-up; the key-expiry **warning log** still fires regardless.
 
@@ -242,12 +242,12 @@ contact is worth alerting on.
 Inventory of configured webhook **endpoints** (where Tailscale posts event notifications) — distinct
 from the [stream/webhook receiver](#receivers--stream--webhook) metrics. Endpoint URL, secret and
 creator are **never emitted**. The per-endpoint subscriptions gauge is gated by
-`cardinality.webhook_per_entity`.
+`cardinality.per_entity.webhook`.
 
 <!-- BEGIN GENERATED: metrics groups="Webhooks" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
-| `tailscale.webhook_endpoint.subscriptions` | `1` | gauge | `tailscale_webhook_endpoint_subscriptions_ratio` | `tailscale_webhook_endpoint_id`, `tailscale_webhook_endpoint_provider` | Number of event categories a webhook endpoint is subscribed to (a **count**); one series per endpoint. **Gated** by `cardinality.webhook_per_entity`. The endpoint URL/secret/creator are never emitted. |
+| `tailscale.webhook_endpoint.subscriptions` | `1` | gauge | `tailscale_webhook_endpoint_subscriptions_ratio` | `tailscale_webhook_endpoint_id`, `tailscale_webhook_endpoint_provider` | Number of event categories a webhook endpoint is subscribed to (a **count**); one series per endpoint. **Gated** by `cardinality.per_entity.webhook`. The endpoint URL/secret/creator are never emitted. |
 | `tailscale.webhook_endpoints.count` | `1` | gauge | `tailscale_webhook_endpoints_count_ratio` | — | Number of configured webhook endpoints (a **count**, despite `_ratio`). |
 <!-- END GENERATED -->
 
@@ -293,14 +293,14 @@ error noise). The error **text** is on the `tailscale.logstream.error` log event
 
 Tailscale Services (VIP services) and their backing hosts. Service addresses, comments and
 annotations are **never emitted**. The per-service `ports`/`hosts` gauges are gated by
-`cardinality.service_per_entity`; `hosts` additionally requires `collect_hosts` (one extra API call
+`cardinality.per_entity.service`; `hosts` additionally requires `collect_hosts` (one extra API call
 per service).
 
 <!-- BEGIN GENERATED: metrics groups="Services" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
-| `tailscale.service.hosts` | `1` | gauge | `tailscale_service_hosts_ratio` | `tailscale_service_name`, `tailscale_service_approval`, `tailscale_service_configured` | Backing-host **count** for a Tailscale Service, bucketed by approval + configured state; one series per service/approval/configured. **Gated** by `collect_hosts` (N+1 calls) and `cardinality.service_per_entity`. |
-| `tailscale.service.ports` | `{port}` | gauge | `tailscale_service_ports` | `tailscale_service_name` | Number of port rules exposed by a Tailscale Service; one series per service. **Gated** by `cardinality.service_per_entity`. |
+| `tailscale.service.hosts` | `1` | gauge | `tailscale_service_hosts_ratio` | `tailscale_service_name`, `tailscale_service_approval`, `tailscale_service_configured` | Backing-host **count** for a Tailscale Service, bucketed by approval + configured state; one series per service/approval/configured. **Gated** by `collect_hosts` (N+1 calls) and `cardinality.per_entity.service`. |
+| `tailscale.service.ports` | `{port}` | gauge | `tailscale_service_ports` | `tailscale_service_name` | Number of port rules exposed by a Tailscale Service; one series per service. **Gated** by `cardinality.per_entity.service`. |
 | `tailscale.services.count` | `1` | gauge | `tailscale_services_count_ratio` | — | Number of Tailscale Services (VIP services) in the tailnet (a **count**, despite `_ratio`). |
 <!-- END GENERATED -->
 

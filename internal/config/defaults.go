@@ -12,7 +12,7 @@ func Default() *Config {
 	return &Config{
 		LogLevel: "info",
 		Tailscale: TailscaleConfig{
-			Tailnet: "example.com",
+			Tailnet: "-", // the authenticated principal's default tailnet (works out of the box for single-tailnet OAuth)
 			Auth: TailscaleAuth{
 				Method: "oauth",
 				OAuth: OAuthConfig{
@@ -48,22 +48,27 @@ func Default() *Config {
 			},
 		},
 		Cardinality: CardinalityConfig{
-			FlowMetricsMode:        "rollup",
-			FlowSourcePort:         false,
-			FlowDestinationPort:    false,
-			FlowDestinationService: false,
-			FlowNodeDims:           true,
-			CollapseExternal:       true,
-			DevicePerEntity:        true,
-			UserPerEntity:          true,
-			KeyPerEntity:           true,
-			WebhookPerEntity:       true,
-			ServicePerEntity:       true,
-			DerpRegionRollup:       true,
-			MetricLimit:            10000,
+			MetricLimit:      10000,
+			DerpRegionRollup: true,
+			Flow: FlowCardinality{
+				MetricsMode:        "rollup",
+				RollupTopN:         500,
+				SourcePort:         false,
+				DestinationPort:    false,
+				DestinationService: false,
+				NodeDims:           true,
+				CollapseExternal:   true,
+			},
+			PerEntity: PerEntityCardinality{
+				Device:  true,
+				User:    true,
+				Key:     true,
+				Webhook: true,
+				Service: true,
+			},
 		},
 		Collectors: Collectors{
-			Devices: CollectorConfig{
+			Devices: DevicesCollector{
 				Enabled:        true,
 				Interval:       dur(60 * time.Second),
 				CollectRoutes:  false,
@@ -74,7 +79,7 @@ func Default() *Config {
 				// covered by the curated posture gauge; custom is excluded (unbounded).
 				AttributeNamespaces: []string{"intune", "jamf", "kandji", "crowdstrike", "sentinelone", "kolide", "ip"},
 			},
-			Flowlogs: CollectorConfig{
+			Flowlogs: FlowlogsCollector{
 				Enabled:         true,
 				Source:          "poll",
 				Interval:        dur(60 * time.Second),
@@ -82,9 +87,8 @@ func Default() *Config {
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(1 * time.Hour),
 				LogMode:         "per_connection",
-				FlowRollupTopN:  500,
 			},
-			Auditlogs: CollectorConfig{
+			Auditlogs: AuditlogsCollector{
 				Enabled:         true,
 				Source:          "poll",
 				Interval:        dur(60 * time.Second),
@@ -92,44 +96,44 @@ func Default() *Config {
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(6 * time.Hour),
 			},
-			Users: CollectorConfig{
+			Users: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(300 * time.Second),
 			},
-			Keys: CollectorConfig{
+			Keys: KeysCollector{
 				Enabled:    true,
 				Interval:   dur(300 * time.Second),
 				ExpiryWarn: dur(168 * time.Hour),
 			},
-			Settings: CollectorConfig{
+			Settings: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Acl: CollectorConfig{
+			Acl: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Dns: CollectorConfig{
+			Dns: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Contacts: CollectorConfig{
+			Contacts: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Webhooks: CollectorConfig{
+			Webhooks: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			PostureIntegrations: CollectorConfig{
+			PostureIntegrations: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			LogStream: CollectorConfig{
+			LogStream: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Services: CollectorConfig{
+			Services: ServicesCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
@@ -149,14 +153,14 @@ func Default() *Config {
 					OnlineOnly:        true,
 					ExcludeExternal:   true,
 					AddressOrder:      "ipv4",
-					InstanceSource:    "address",
+					InstanceSource:    "name", // MagicDNS short name: unique per tailnet AND human-friendly
 					IncludeHostLabels: true,
 					IncludeTagsLabel:  true,
 				},
 			},
 		},
 		Checkpoint: CheckpointConfig{
-			Store:    "memory",
+			Store:    "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
 			FilePath: "/var/lib/tailscale2otel/checkpoints.json",
 		},
 		Streaming: StreamingConfig{

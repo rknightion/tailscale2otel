@@ -22,7 +22,7 @@ var (
 		Name:        metricEndpointSubs,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "Number of event categories a webhook endpoint is subscribed to (a **count**); one series per endpoint. **Gated** by `cardinality.webhook_per_entity`. The endpoint URL/secret/creator are never emitted.",
+		Description: "Number of event categories a webhook endpoint is subscribed to (a **count**); one series per endpoint. **Gated** by `cardinality.per_entity.webhook`. The endpoint URL/secret/creator are never emitted.",
 		Attributes:  []string{attrEndpointID, attrEndpointProvider},
 		Group:       groupWebhooks,
 	}

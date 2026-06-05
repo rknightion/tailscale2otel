@@ -35,44 +35,99 @@ stream, and key-expiry signals out of the box.
 
 ## Quick start
 
-### Docker
+### Docker (env-only — no file to mount)
+
+The config file is optional. Pass a handful of `TS2OTEL_*` environment variables and the exporter
+starts from built-in defaults plus those overrides — nothing to mount:
 
 ```sh
 docker build -f deploy/Dockerfile -t tailscale2otel .
 docker run --rm \
-  -e TS_TAILNET=example.com \
-  -e TS_OAUTH_CLIENT_ID=... -e TS_OAUTH_CLIENT_SECRET=... \
-  -e GC_INSTANCE_ID=... -e GC_OTLP_TOKEN=... \
+  -e TS2OTEL_TAILSCALE__TAILNET=example.com \
+  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
+  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
+  -e TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=<stack-id> \
+  -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
   tailscale2otel
+```
+
+### Docker (with a config file)
+
+If you prefer a YAML file for the non-secret fields, mount it and pass `-config`:
+
+```sh
+docker run --rm \
+  -v "$PWD/config.yaml:/etc/tailscale2otel/config.yaml:ro" \
+  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
+  -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
+  tailscale2otel -config /etc/tailscale2otel/config.yaml
 ```
 
 ### Binary
 
 ```sh
 go build -o tailscale2otel ./cmd/tailscale2otel
-cp config.example.yaml config.yaml   # then edit / set env vars
+cp config.example.yaml config.yaml   # then edit; secrets stay in env vars
 ./tailscale2otel -config config.yaml
 ```
 
 ### Local debug (no backend)
 
-Set `otlp.protocol: stdout` to print metrics & logs to the console.
+Set `TS2OTEL_OTLP__PROTOCOL=stdout` (or `otlp.protocol: stdout` in YAML) to print metrics & logs to
+the console.
 
 ## Configuration
 
-Copy [`config.example.yaml`](./config.example.yaml) and edit it (or just set the `${ENV}` vars it
-references — every string value supports `${ENV}` expansion, so keep secrets in environment
-variables). That commented example is the fastest way in; for an exhaustive, per-key reference of
-**every** setting, default, and gotcha, see **[`docs/configuration.md`](./docs/configuration.md)**.
+Configuration is **layered** — lowest precedence first:
+
+1. **Built-in defaults** — the exporter runs without a config file at all.
+2. **YAML file** (optional) — pass `-config path/to/config.yaml`; the file overrides defaults for
+   any keys it mentions.
+3. **Environment variables** — highest precedence; override both defaults and the file.
+
+Every config field is settable via an env var named `TS2OTEL_` + the dotted key path, with `__`
+(double underscore) between nesting levels and single underscores within a name preserved:
+
+| Config key | Environment variable |
+|---|---|
+| `tailscale.auth.oauth.client_secret` | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET` |
+| `otlp.endpoint` | `TS2OTEL_OTLP__ENDPOINT` |
+| `collectors.flowlogs.interval` | `TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL` |
+| `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
+
+The **complete list** of every `TS2OTEL_*` variable, with defaults and descriptions, lives in
+[`docs/env-vars.md`](./docs/env-vars.md) (generated from `config.example.yaml`).
+
+Keep secrets (tokens, client secrets) in env vars — they never need to appear in YAML. Scalar list
+fields (e.g. `tailscale.auth.oauth.scopes`) accept a comma-separated env value. Map fields
+(`otlp.headers`) and the `node_metrics.targets` list-of-structs must be set via a config file.
+
+A `TS2OTEL_*` env var that does not match any known config key is logged at startup as a **WARN** —
+this usually indicates a typo in the variable name.
+
+[`config.example.yaml`](./config.example.yaml) shows the common knobs with comments; for an
+exhaustive, per-key reference of **every** setting, default, and gotcha, see
+**[`docs/configuration.md`](./docs/configuration.md)**.
 
 **Authentication** — prefer an [OAuth client](https://tailscale.com/kb/1215/oauth-clients)
 (`method: oauth`, no fixed expiry, auto-refreshing) with least-privilege read scopes; an API key
-(`method: apikey`) also works.
+(`method: apikey`) also works. Set credentials via env vars:
+
+```sh
+TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<id>
+TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<secret>
+```
 
 **Grafana Cloud** — set `otlp.protocol: http`, point `otlp.endpoint` at your
 `https://otlp-gateway-<region>.grafana.net/otlp`, and fill `otlp.grafana_cloud.{instance_id,token}`;
-the Basic-auth header is built for you. For a self-hosted Collector/Alloy, use `protocol: grpc` or
-`http` with your own endpoint/headers.
+the Basic-auth header is built for you. Set the token via env var:
+
+```sh
+TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=<stack-id>
+TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token>
+```
+
+For a self-hosted Collector/Alloy, use `protocol: grpc` or `http` with your own endpoint/headers.
 
 ### Log collectors: poll vs. stream
 
@@ -111,13 +166,14 @@ Checkpoints record how far each *polled* log collector has read, so a restart re
 or large overlaps. They matter **only** when `flowlogs`/`auditlogs` use `source: poll` (or `both`);
 if you stream both log types — or disable them — the checkpoint store is unused.
 
-- **`checkpoint.store: memory`** (default) — held in RAM only. Simplest, needs no volume, but on
-  restart the poller cold-starts from `initial_lookback`, so any downtime longer than that leaves a
-  gap. Fine for streamed or stateless deployments.
-- **`checkpoint.store: file`** — persisted to `checkpoint.file_path` (atomic write each tick) and
-  reloaded at startup, so polling resumes from the exact high-water mark across restarts (minor
-  overlap is de-duplicated). Use this when you poll logs and want continuity; it needs a writable,
-  **persistent** path such as a mounted volume. An empty `file_path` silently falls back to memory.
+- **`checkpoint.store: file`** (default) — persisted to `checkpoint.file_path` (atomic write each
+  tick) and reloaded at startup, so polling resumes from the exact high-water mark across restarts
+  (minor overlap is de-duplicated). Mount a writable, **persistent** path at the file's directory (a
+  volume in Docker/Kubernetes) so it survives restarts. If the path isn't writable, the exporter logs
+  a WARN and falls back to memory rather than erroring — so it's safe everywhere.
+- **`checkpoint.store: memory`** — held in RAM only. Needs no volume, but on restart the poller
+  cold-starts from `initial_lookback`, so any downtime longer than that leaves a gap. Fine for
+  streamed or stateless deployments.
 
 ## Collectors
 
@@ -167,10 +223,12 @@ Splunk-HEC sink on startup instead of configuring the stream by hand. It is off 
 > defensively and the envelope should be confirmed by capturing a live stream in your environment.
 
 > Security: an empty `webhook.secret` skips HMAC verification and an empty `streaming.token` disables
-> receiver auth (and an undefined `${ENV}` reference expands to empty, so a typo silently disables
-> auth). `streaming.auto_configure` overwrites the tailnet's existing log-streaming sink. The exported
-> flow/audit telemetry also carries IPs, ports, device names, and user identities. See
-> [`SECURITY.md`](SECURITY.md) for the full data-handling and receiver-auth notes.
+> receiver auth. Set these via `TS2OTEL_WEBHOOK__SECRET` and `TS2OTEL_STREAMING__TOKEN` — an env var
+> that is not set resolves to empty and silently disables auth, so double-check the variable names
+> (a typo is logged at startup as a WARN). `streaming.auto_configure` overwrites the tailnet's
+> existing log-streaming sink. The exported flow/audit telemetry also carries IPs, ports, device
+> names, and user identities. See [`SECURITY.md`](SECURITY.md) for the full data-handling and
+> receiver-auth notes.
 
 ## Admin status page & profiling
 
@@ -187,8 +245,8 @@ The page surfaces, live and in-process:
   summary (secret *values* never appear — only which secrets are set, and OTLP header key names).
 
 For defense-in-depth, bind `admin.listen` to a tailnet or loopback address so only the tailnet can
-reach it. Set `admin.auth.token` (keep it in `${ADMIN_TOKEN}`) to require a shared secret on the
-status page and pprof — present it as the HTTP Basic password (browsers prompt) or as
+reach it. Set `admin.auth.token` (via `TS2OTEL_ADMIN__AUTH__TOKEN`) to require a shared secret on
+the status page and pprof — present it as the HTTP Basic password (browsers prompt) or as
 `Authorization: Bearer <token>`. `/healthz` and `/readyz` are **never** gated, so health checks keep
 working. With no token the status page stays open (a startup WARN fires if it's exposed on an
 all-interfaces bind); rejected requests increment `tailscale2otel.admin.auth.rejected`.
@@ -201,7 +259,8 @@ all-interfaces bind); rejected requests increment `tailscale2otel.admin.auth.rej
   secrets, so pprof must not be served unauthenticated).
 - `profiling.pyroscope.enabled: true` **pushes** profiles to Pyroscope / Grafana Cloud Profiles via
   the [pyroscope-go](https://github.com/grafana/pyroscope-go) SDK (`server_address` required; basic
-  auth via `PYROSCOPE_BASIC_AUTH_USER`/`PYROSCOPE_BASIC_AUTH_PASSWORD`).
+  auth via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER` /
+  `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD`).
 - Mutex/block profiles are off until `profiling.mutex_profile_fraction` / `profiling.block_profile_rate`
   are set above zero (they apply to both the push and pull paths).
 

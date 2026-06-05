@@ -33,15 +33,16 @@ func (c *Config) Warnings() []string {
 	// guarantee — so flag the configuration rather than relying on it silently.
 	if c.Streaming.Enabled {
 		dualLogCollectors := []struct {
-			name string
-			cfg  CollectorConfig
+			name    string
+			enabled bool
+			source  string
 		}{
-			{"flowlogs", c.Collectors.Flowlogs},
-			{"auditlogs", c.Collectors.Auditlogs},
+			{"flowlogs", c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Source},
+			{"auditlogs", c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Source},
 		}
 		for _, col := range dualLogCollectors {
-			if col.cfg.Enabled && pollsSource(col.cfg.Source) {
-				src := col.cfg.Source
+			if col.enabled && pollsSource(col.source) {
+				src := col.source
 				if src == "" {
 					src = "poll"
 				}
@@ -73,23 +74,23 @@ func (c *Config) Warnings() []string {
 	// webhook.secret is empty (internal/webhook: an empty Secret bypasses verify),
 	// and the HEC streaming receiver disables token auth when streaming.token is
 	// empty (internal/stream: an empty token authorizes every request). Either lets
-	// anyone who can reach the port post forged events. Because an undefined ${ENV}
-	// reference expands silently to "" (config.Load uses os.Expand), a typo in the
-	// credential's env var name lands here too — so flag it rather than fail open
-	// quietly. (Unlike pprof, these are not hard-errored: a trusted-network or
+	// anyone who can reach the port post forged events. A credential left empty —
+	// whether unset in the file or via a mistyped TS2OTEL_* env var name — lands
+	// here, so flag it rather than fail open quietly. (Unlike pprof, these are not
+	// hard-errored: a trusted-network or
 	// local-testing deployment behind an authenticating proxy is a legitimate use.)
 	if c.Webhook.Enabled && c.Webhook.Secret == "" {
 		w = append(w, "webhook.enabled=true with an empty webhook.secret: HMAC signature "+
 			"verification is SKIPPED, so anyone who can reach "+c.Webhook.Listen+" can post "+
 			"forged webhook events (and inflate metric cardinality via attacker-chosen event "+
-			"types). Set webhook.secret (an undefined ${ENV} expands to empty — check the env "+
-			"var name), or only run the receiver behind an authenticating proxy on a trusted network.")
+			"types). Set webhook.secret (e.g. TS2OTEL_WEBHOOK__SECRET — check the env var name), "+
+			"or only run the receiver behind an authenticating proxy on a trusted network.")
 	}
 	if c.Streaming.Enabled && c.Streaming.Token == "" {
 		w = append(w, "streaming.enabled=true with an empty streaming.token: the HEC receiver "+
 			"authenticates NO requests, so anyone who can reach "+c.Streaming.Listen+" can inject "+
-			"arbitrary flow/audit records. Set streaming.token (an undefined ${ENV} expands to "+
-			"empty — check the env var name), or only run the receiver behind an authenticating "+
+			"arbitrary flow/audit records. Set streaming.token (e.g. TS2OTEL_STREAMING__TOKEN — "+
+			"check the env var name), or only run the receiver behind an authenticating "+
 			"proxy on a trusted network.")
 	}
 
@@ -107,11 +108,11 @@ func (c *Config) Warnings() []string {
 
 	// Both-mode emits the raw AND rollup flow-metric families; summing them in
 	// PromQL without filtering by metric name double-counts traffic.
-	if c.Cardinality.FlowMetricsMode == "both" {
-		w = append(w, "cardinality.flow_metrics_mode=both: both the raw (tailscale.network.io/packets) and "+
+	if c.Cardinality.Flow.MetricsMode == "both" {
+		w = append(w, "cardinality.flow.metrics_mode=both: both the raw (tailscale.network.io/packets) and "+
 			"rollup (tailscale.network.io.rollup/...) flow-metric families are emitted, so a PromQL query that "+
 			"sums them without filtering by metric name double-counts traffic (and roughly doubles series cost). "+
-			"Prefer flow_metrics_mode=rollup for bounded cardinality, or all for full per-connection detail.")
+			"Prefer flow.metrics_mode=rollup for bounded cardinality, or all for full per-connection detail.")
 	}
 
 	// Reverse DNS replaces the low-cardinality "external" bucket with per-host PTR
@@ -124,10 +125,10 @@ func (c *Config) Warnings() []string {
 			"the added cardinality.")
 	}
 
-	for _, name := range c.unsetEnvRefs {
-		w = append(w, fmt.Sprintf("config references ${%s} but that environment variable is "+
-			"undefined; it expanded to an empty string. If a credential or other required value "+
-			"depends on it, set the variable (and check the name for typos).", name))
+	for _, name := range c.unknownEnv {
+		w = append(w, fmt.Sprintf("environment variable %s does not match any configuration key "+
+			"and was ignored — check the name for typos (keys use the %s prefix with %q as the "+
+			"nesting delimiter, e.g. %sOTLP%sENDPOINT).", name, EnvPrefix, envNestDelim, EnvPrefix, envNestDelim))
 	}
 
 	return w
@@ -170,24 +171,18 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
 	}
 
-	// Per-collector source validation. Empty source is allowed for collectors
-	// that don't use one (users, keys, settings, acl, dns).
-	collectors := []struct {
-		name string
-		cfg  CollectorConfig
+	// Source validation. Only the two log collectors have a source; an empty
+	// value defaults to poll.
+	logCollectors := []struct {
+		name   string
+		source string
 	}{
-		{"devices", c.Collectors.Devices},
-		{"flowlogs", c.Collectors.Flowlogs},
-		{"auditlogs", c.Collectors.Auditlogs},
-		{"users", c.Collectors.Users},
-		{"keys", c.Collectors.Keys},
-		{"settings", c.Collectors.Settings},
-		{"acl", c.Collectors.Acl},
-		{"dns", c.Collectors.Dns},
+		{"flowlogs", c.Collectors.Flowlogs.Source},
+		{"auditlogs", c.Collectors.Auditlogs.Source},
 	}
-	for _, col := range collectors {
-		if col.cfg.Source != "" && !oneOf(col.cfg.Source, "poll", "stream", "both") {
-			return fmt.Errorf("collectors.%s.source %q invalid: must be one of poll, stream, both", col.name, col.cfg.Source)
+	for _, col := range logCollectors {
+		if col.source != "" && !oneOf(col.source, "poll", "stream", "both") {
+			return fmt.Errorf("collectors.%s.source %q invalid: must be one of poll, stream, both", col.name, col.source)
 		}
 	}
 
@@ -195,11 +190,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("collectors.flowlogs.log_mode %q invalid: must be one of per_connection, per_record, off", c.Collectors.Flowlogs.LogMode)
 	}
 
-	if !oneOf(c.Cardinality.FlowMetricsMode, "all", "rollup", "both") {
-		return fmt.Errorf("cardinality.flow_metrics_mode %q invalid: must be one of all, rollup, both", c.Cardinality.FlowMetricsMode)
+	if !oneOf(c.Cardinality.Flow.MetricsMode, "all", "rollup", "both") {
+		return fmt.Errorf("cardinality.flow.metrics_mode %q invalid: must be one of all, rollup, both", c.Cardinality.Flow.MetricsMode)
 	}
-	if c.Collectors.Flowlogs.FlowRollupTopN < 0 {
-		return fmt.Errorf("collectors.flowlogs.flow_rollup_top_n %d invalid: must be >= 0 (0 selects the default)", c.Collectors.Flowlogs.FlowRollupTopN)
+	if c.Cardinality.Flow.RollupTopN < 0 {
+		return fmt.Errorf("cardinality.flow.rollup_top_n %d invalid: must be >= 0 (0 selects the default)", c.Cardinality.Flow.RollupTopN)
 	}
 
 	if c.Collectors.Devices.PostureLogMode != "" &&

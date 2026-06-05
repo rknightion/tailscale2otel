@@ -1,10 +1,10 @@
 # Configuration Reference
 
-This is the exhaustive, per-key reference for the `tailscale2otel` YAML configuration. It is the
-companion to two other docs:
+This is the exhaustive, per-key reference for `tailscale2otel` configuration. It is the companion to
+two other docs:
 
-- **[`config.example.yaml`](../config.example.yaml)** — the canonical, commented example. Copy it,
-  edit, and you have a working config; it is the fastest way to get started.
+- **[`config.example.yaml`](../config.example.yaml)** — a commented starter showing the common knobs.
+  The fastest way to get started.
 - **[`docs/metrics.md`](./metrics.md)** — every metric and log signal the exporter emits (and the
   OTLP→Prometheus name normalization you query in Grafana Cloud).
 
@@ -14,14 +14,74 @@ setting.
 > This file is **hand-maintained** (unlike `docs/metrics.md`, which is generated). If you change the
 > config schema in `internal/config/`, update this page too.
 
+## Layered configuration
+
+Configuration is loaded in three layers, lowest precedence first:
+
+1. **Built-in defaults** — the exporter runs without a config file; any key you do not set keeps its
+   default (defined in [`internal/config/defaults.go`](../internal/config/defaults.go)).
+2. **YAML file** (optional) — pass `-config path/to/file.yaml`; the file overrides defaults for any
+   key it mentions. A non-existent path passed with `-config` is an error; omitting `-config`
+   entirely is not.
+3. **Environment variables** — highest precedence; override both defaults and the file.
+
+## Environment-variable convention
+
+Every config field is settable via an environment variable:
+
+- **Prefix:** `TS2OTEL_`
+- **Nesting delimiter:** `__` (double underscore) between levels
+- **Within a name:** single underscores are preserved (e.g. `client_id` stays `CLIENT_ID`)
+
+> For the **complete, generated list** of every `TS2OTEL_*` variable with its default and
+> description, see [`env-vars.md`](env-vars.md). The samples below just illustrate the rule.
+
+### Mapping examples
+
+| Config key | Environment variable |
+|---|---|
+| `tailscale.auth.oauth.client_id` | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID` |
+| `tailscale.auth.oauth.client_secret` | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET` |
+| `tailscale.auth.apikey` | `TS2OTEL_TAILSCALE__AUTH__APIKEY` |
+| `otlp.endpoint` | `TS2OTEL_OTLP__ENDPOINT` |
+| `otlp.grafana_cloud.token` | `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN` |
+| `collectors.flowlogs.interval` | `TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL` |
+| `collectors.flowlogs.source` | `TS2OTEL_COLLECTORS__FLOWLOGS__SOURCE` |
+| `streaming.token` | `TS2OTEL_STREAMING__TOKEN` |
+| `webhook.secret` | `TS2OTEL_WEBHOOK__SECRET` |
+| `admin.auth.token` | `TS2OTEL_ADMIN__AUTH__TOKEN` |
+| `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
+| `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
+
+### Scalar lists
+
+Fields whose type is a list of strings accept a **comma-separated value** as an env var. Examples:
+
+```sh
+TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES=all:read,log_streaming
+TS2OTEL_COLLECTORS__NODE_METRICS__METRIC_ALLOW=tailscaled_inbound.*,tailscaled_outbound.*
+TS2OTEL_COLLECTORS__NODE_METRICS__DROP_LABELS=job,prometheus_replica
+TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_TAGS=tag:server,tag:relay
+TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES=intune,jamf,ip
+```
+
+### File-only fields
+
+These fields cannot be set via flat env vars because they are maps or lists of structs:
+
+- `otlp.headers` — use the YAML file (or use `otlp.grafana_cloud` for Grafana Cloud).
+- `collectors.node_metrics.targets` — each target is a struct; static targets require a YAML file.
+- `profiling.pyroscope.tags` — a string→string map; set via YAML.
+
+### Unknown-variable advisory
+
+A `TS2OTEL_*` env var that does not match any known config key is logged at startup as a **WARN** —
+this almost always means a typo in the variable name. The exporter still starts; the variable is
+ignored.
+
 ## Conventions
 
-- **Default** is the value used when you omit the key. Loading starts from the built-in defaults
-  ([`internal/config/defaults.go`](../internal/config/defaults.go)) and overlays your YAML on top, so
-  any key you leave out keeps its default.
-- **`${ENV}` expansion** — every string value supports `${VAR}` / `$VAR` expansion from the process
-  environment. Keep secrets (tokens, client secrets, passwords) in environment variables, not in the
-  YAML file. An unset variable expands to an empty string.
+- **Default** is the value used when the key is not set in either the file or an env var.
 - **Durations** use Go's syntax: `500ms`, `30s`, `5m`, `1h`, `168h` (= 7 days).
 - **Validation** — invalid enum values and inconsistent combinations are rejected at startup by
   `Config.Validate()` (the exporter refuses to start). Softer issues are surfaced as startup
@@ -56,7 +116,7 @@ setting.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `tailscale.tailnet` | `example.com` (placeholder) | Your tailnet's name, or `-` for the default tailnet of the authenticating principal. Set this — the built-in default is a placeholder. |
+| `tailscale.tailnet` | `-` | Your tailnet's name (e.g. `example.com`), or `-` (the default) for the authenticating principal's default tailnet — which works out of the box for a single-tailnet OAuth client. Set an explicit name only if the principal has access to multiple tailnets. |
 
 ### `tailscale.auth`
 
@@ -65,11 +125,10 @@ Prefer OAuth: its tokens are short-lived, auto-refreshing, and not bound to a us
 | Key | Default | Description |
 |-----|---------|-------------|
 | `tailscale.auth.method` | `oauth` | Authentication method. One of `oauth` (recommended) or `apikey`. |
-| `tailscale.auth.oauth.client_id` | `""` | OAuth client ID. Required when `method: oauth`. |
-| `tailscale.auth.oauth.client_secret` | `""` | OAuth client secret. Required when `method: oauth`; keep it in an env var. |
-| `tailscale.auth.oauth.scopes` | `["all:read"]` | OAuth scopes requested for the token. Least-privilege read scopes are the default; add `log_streaming` if you use `streaming.auto_configure`. |
-| `tailscale.auth.oauth.token_url` | `https://api.tailscale.com/api/v2/oauth/token` | Token endpoint. Rarely changed. |
-| `tailscale.auth.apikey` | `""` | Personal API key. Used **only** when `method: apikey`. |
+| `tailscale.auth.oauth.client_id` | `""` | OAuth client ID. Required when `method: oauth`. Set via `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID`. |
+| `tailscale.auth.oauth.client_secret` | `""` | OAuth client secret. Required when `method: oauth`. Set via `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`. |
+| `tailscale.auth.oauth.scopes` | `["all:read"]` | OAuth scopes requested for the token. Least-privilege read scopes are the default; add `log_streaming` if you use `streaming.auto_configure`. Comma-separated in env: `TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES=all:read,log_streaming`. |
+| `tailscale.auth.apikey` | `""` | Personal API key. Used **only** when `method: apikey`. Set via `TS2OTEL_TAILSCALE__AUTH__APIKEY`. |
 
 > **WARN (advisory):** `method: apikey` triggers a startup warning — a personal API key expires in
 > ≤90 days and stops working when the user who created it is suspended or removed. For an unattended
@@ -108,8 +167,8 @@ header is built for you (no need to hand-craft it in `otlp.headers`).
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `otlp.grafana_cloud.instance_id` | `""` | Grafana Cloud OTLP instance/stack ID (the Basic-auth username). |
-| `otlp.grafana_cloud.token` | `""` | Grafana Cloud OTLP token (the Basic-auth password). Keep it in an env var. |
+| `otlp.grafana_cloud.instance_id` | `""` | Grafana Cloud OTLP instance/stack ID (the Basic-auth username). Set via `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID`. |
+| `otlp.grafana_cloud.token` | `""` | Grafana Cloud OTLP token (the Basic-auth password). Set via `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN`. |
 
 ### `otlp.tls`
 
@@ -136,6 +195,22 @@ audit records.
 > Enrichment depends on the `devices` collector. If `devices` is disabled, flow/audit IP→name
 > resolution silently degrades to `unknown`/`external`.
 
+### `enrichment.reverse_dns`
+
+Optional async reverse-DNS (PTR) enrichment of external (non-Tailscale) flow addresses. Off by
+default. When enabled, resolved hostnames replace the `external` bucket / raw IP in
+`tailscale.src.node` / `tailscale.dst.node` on flow logs and metrics. Lookups are async and cached;
+the hot path never blocks.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enrichment.reverse_dns.enabled` | `false` | Turn on reverse-DNS enrichment of external flow addresses. |
+| `enrichment.reverse_dns.server` | `""` | Resolver to query as `ip` or `ip:port` (default port 53). Empty = system resolver. |
+| `enrichment.reverse_dns.timeout` | `2s` | Per-lookup timeout. |
+| `enrichment.reverse_dns.cache_ttl` | `1h` | Positive-result cache TTL. |
+| `enrichment.reverse_dns.negative_ttl` | `5m` | Failed-lookup cache TTL. |
+| `enrichment.reverse_dns.max_entries` | `4096` | Cache size bound. |
+
 ---
 
 ## `cardinality` — metric/label cardinality controls
@@ -143,16 +218,39 @@ audit records.
 These knobs trade detail for active-series count. They apply to the shared processors, so they take
 effect no matter whether logs arrive by poll or by stream.
 
+### Top-level cardinality keys
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `cardinality.flow_source_port` | `false` | Add `source.port` as an attribute on flow **metrics** (raw families only). Ports are always present on flow **logs** regardless. On = higher cardinality. |
-| `cardinality.flow_destination_port` | `false` | Add `destination.port` as an attribute on flow **metrics** (raw families only). On = higher cardinality. |
-| `cardinality.flow_destination_service` | `false` | Add `tailscale.dst.service` (the IANA name for the destination port+transport, e.g. `tcp/443`→`https`) on flow **metrics** — a bounded, low-cardinality stand-in for the destination port. |
-| `cardinality.flow_node_dims` | `true` | Include source/destination device names (`tailscale.src.node`/`tailscale.dst.node`) on flow metrics. |
-| `cardinality.collapse_external` | `true` | Bucket unresolved/off-tailnet IPs as `external`/`unknown` instead of the raw address (on both flow logs and, when `flow_node_dims` is on, the flow-metric node labels). Off = one series per distinct external IP. |
-| `cardinality.device_per_entity` | `true` | Emit per-device gauges (online, last-seen, key-expiry, DERP latency, routes). `false` drops them, leaving only the aggregate `tailscale.devices.count`. |
-| `cardinality.user_per_entity` | `true` | Emit per-user gauges (devices, connected, last-seen). `false` leaves only `tailscale.users.count`. |
-| `cardinality.key_per_entity` | `true` | Emit the per-key expiry gauge. `false` leaves only `tailscale.keys.count` (the "expiring soon" WARN log still fires). |
+| `cardinality.metric_limit` | `10000` | Hard per-instrument series cap. Beyond this the OTLP SDK collapses extra series into `otel_metric_overflow` (silent loss of detail). Size it above your busiest flow-metric cardinality. `0` or negative = unlimited. |
+| `cardinality.derp_region_rollup` | `true` | Emit tailnet-wide per-DERP-region rollup gauges (`tailscale.derp.region.*`) from the devices collector. |
+
+### `cardinality.flow` — flow metric shaping
+
+These knobs affect flow **metrics** only. Flow **logs** always carry full detail regardless.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cardinality.flow.metrics_mode` | `rollup` | Which flow metric families to emit. `rollup` — bounded top-N `*.rollup` families (lowest cardinality; adds per-source-node `tailscale.network.unique.*` gauges). `all` — per-connection raw families shaped by the toggles below. `both` — emit both (≈2× series; summing them double-counts — a startup WARN fires). |
+| `cardinality.flow.rollup_top_n` | `500` | Number of busiest source/destination node pairs kept when `metrics_mode` is `rollup` or `both`; the rest fold into `__other__`. `0` selects the default (500). |
+| `cardinality.flow.source_port` | `false` | Add `source.port` to flow **metrics** (raw families only). Ports are always present on flow **logs**. On = higher cardinality. |
+| `cardinality.flow.destination_port` | `false` | Add `destination.port` to flow **metrics** (raw families only). On = higher cardinality. |
+| `cardinality.flow.destination_service` | `false` | Add `tailscale.dst.service` (the IANA name for the destination port+transport, e.g. `tcp/443`→`https`) to flow **metrics** — a bounded, low-cardinality stand-in for the destination port. |
+| `cardinality.flow.node_dims` | `true` | Include `tailscale.src.node`/`tailscale.dst.node` device names on flow metrics. |
+| `cardinality.flow.collapse_external` | `true` | Bucket unresolved/off-tailnet IPs as `external`/`unknown` instead of the raw address. Off = one series per distinct external IP. |
+
+### `cardinality.per_entity` — per-entity gauge gates
+
+When a toggle is `false`, only the low-cardinality aggregate `*.count` rollup is emitted; the
+per-entity gauge series (one per device/user/key/…) are dropped. All default `true`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cardinality.per_entity.device` | `true` | Emit per-device gauges (online, last-seen, key-expiry, DERP latency, routes). `false` leaves only `tailscale.devices.count`. |
+| `cardinality.per_entity.user` | `true` | Emit per-user gauges (devices, connected, last-seen). `false` leaves only `tailscale.users.count`. |
+| `cardinality.per_entity.key` | `true` | Emit the per-key expiry gauge. `false` leaves only `tailscale.keys.count` (the "expiring soon" WARN log still fires). |
+| `cardinality.per_entity.webhook` | `true` | Emit per-webhook gauges. `false` leaves only the aggregate count. |
+| `cardinality.per_entity.service` | `true` | Emit per-service gauges. `false` leaves only the aggregate count. |
 
 ---
 
@@ -207,7 +305,9 @@ received record. Either way, **metrics are never capped — only logs.**
 | `collectors.devices.enabled` | `true` | Emit device gauges + counts and **populate the enrichment cache**. |
 | `collectors.devices.interval` | `60s` | Poll cadence. |
 | `collectors.devices.collect_routes` | `false` | Also emit per-device subnet-route gauges. Read from the inline device data — **no extra API call**. |
-| `collectors.devices.collect_posture` | `false` | Also fetch device posture attributes (one **extra API call per device per tick**) and emit a posture log event per device. |
+| `collectors.devices.collect_posture` | `false` | Also fetch device posture attributes (one **extra API call per device per tick**) and emit posture log events. |
+| `collectors.devices.posture_log_mode` | `changes` | Controls the `tailscale.device.posture` log (requires `collect_posture`). `changes` — full dump on first scrape then deltas only. `always` — every scrape. `off` — suppress the log (the posture gauge metric is still emitted). |
+| `collectors.devices.attribute_namespaces` | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Device posture-attribute namespace prefixes promoted to `tailscale.device.attribute{,.info}` metrics (requires `collect_posture`). `["*"]` promotes every namespace; `[]` disables the attribute metrics. Comma-separated in env: `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES=intune,jamf`. |
 
 ### `collectors.flowlogs`
 
@@ -247,6 +347,18 @@ Configuration/audit events → event logs + a counter.
 | `collectors.settings.enabled` / `.interval` | `true` / `600s` | Tailnet feature-toggle gauges. |
 | `collectors.acl.enabled` / `.interval` | `true` / `600s` | ACL size + a "policy changed" signal (detected by ETag). |
 | `collectors.dns.enabled` / `.interval` | `true` / `600s` | Nameserver / search-path / split-zone counts and the MagicDNS flag. |
+| `collectors.contacts.enabled` / `.interval` | `true` / `600s` | Tailnet security-contact gauges. |
+| `collectors.webhooks.enabled` / `.interval` | `true` / `600s` | Configured webhook gauges and per-webhook status. |
+| `collectors.posture_integrations.enabled` / `.interval` | `true` / `600s` | MDM/EDR posture-integration gauges. |
+| `collectors.log_stream.enabled` / `.interval` | `true` / `600s` | Log-streaming configuration gauges. |
+
+### `collectors.services`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `collectors.services.enabled` | `true` | Emit Tailscale VIP-Services gauges and counts. |
+| `collectors.services.interval` | `600s` | Poll cadence. |
+| `collectors.services.collect_hosts` | `false` | Also fetch per-service backing-host detail — one extra API call per service (N+1). Off by default. |
 
 ### `collectors.node_metrics`
 
@@ -306,7 +418,7 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 | `include_tags` | `[]` | If non-empty, only devices with one of these tags (e.g. `["tag:server"]`). |
 | `exclude_tags` | `[]` | Devices with any of these tags are skipped (wins over `include_tags`). |
 | `address_order` | `ipv4` | Preferred address family, `ipv4` \| `ipv6` (falls back to the other). |
-| `instance_source` | `address` | `instance` label source: `address` (host:port), `name` (MagicDNS), or `hostname`. |
+| `instance_source` | `name` | Identity-label source: `name` (MagicDNS short name — unique per tailnet **and** human-friendly; the default), `address` (Tailscale host:port — always unique), or `hostname` (OS hostname — **not** unique; collisions like `localhost` are auto-suffixed with the address + a WARN). |
 | `include_host_labels` | `true` | Attach `host.name`/`host.id` for joins with `tailscale.device.*`. |
 | `include_tags_label` | `true` | Attach `tailscale.tags`. |
 
@@ -320,17 +432,19 @@ Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs`
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `checkpoint.store` | `memory` | `memory` \| `file`. See below. |
-| `checkpoint.file_path` | `/var/lib/tailscale2otel/checkpoints.json` | Where the file store persists. Used only when `store: file`. An empty value silently falls back to `memory`. |
+| `checkpoint.store` | `file` | `file` \| `memory`. See below. |
+| `checkpoint.file_path` | `/var/lib/tailscale2otel/checkpoints.json` | Where the file store persists. Used only when `store: file`. The parent directory is created automatically; if it cannot be made writable the exporter logs a WARN and falls back to `memory`. |
 
+- **`file`** (default) — the high-water mark is persisted to `file_path` with an atomic write on each
+  tick and reloaded at startup, so polling **resumes from the exact high-water mark** across restarts
+  (minor boundary overlap is de-duplicated). For the checkpoint to actually survive a restart, mount a
+  writable, **persistent** path at the file's directory (a volume in Kubernetes/Docker). If the path is
+  not writable (e.g. a read-only root filesystem with no volume, or a local run without access to
+  `/var/lib`), the exporter logs a WARN and transparently falls back to `memory` rather than erroring.
 - **`memory`** — the high-water mark lives in RAM only and is lost on restart. After a restart the
   poller cold-starts from `initial_lookback`, so any **downtime longer than `initial_lookback` leaves
   a gap**. Needs no volume; fine for streamed or stateless deployments where the checkpoint is unused
   or disposable.
-- **`file`** — the high-water mark is persisted to `file_path` with an atomic write on each tick and
-  reloaded at startup, so polling **resumes from the exact high-water mark** across restarts (minor
-  boundary overlap is de-duplicated). Use this when you poll logs and want continuity. It needs a
-  writable, **persistent** path — e.g. a mounted volume in Kubernetes/Docker.
 
 ---
 
@@ -345,7 +459,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.enabled` | `false` | Run the HEC receiver. |
 | `streaming.listen` | `:8088` | Listen address. |
 | `streaming.path` | `/services/collector/event` | HEC event path. |
-| `streaming.token` | `""` | Expected as `Authorization: Splunk <token>`. Keep it in an env var. |
+| `streaming.token` | `""` | Expected as `Authorization: Splunk <token>`. Set via `TS2OTEL_STREAMING__TOKEN`. |
 | `streaming.public_url` | `""` | Externally reachable receiver URL. **Required when `auto_configure: true`** (it is the sink URL registered with Tailscale). |
 | `streaming.tls.cert_file` / `.key_file` | `""` | HTTPS is required by Tailscale; a `tailscale cert` works for private tailnet endpoints. |
 | `streaming.decompress` | `auto` | Request-body decompression: `auto` \| `gzip` \| `zstd` \| `none`. |
@@ -367,7 +481,8 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.enabled` | `false` | Run the webhook receiver. |
 | `webhook.listen` | `:8089` | Listen address. |
 | `webhook.path` | `/tailscale/webhook` | Webhook path. |
-| `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Keep it in an env var. |
+| `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Set via `TS2OTEL_WEBHOOK__SECRET`. |
+| `webhook.tolerance` | `5m` | Reject signed timestamps older than this (the replay window). `0` disables the timestamp check. |
 | `webhook.dedup_audit_events` | `false` | Best-effort: drop a webhook event already counted via the audit logs (shares a cross-source de-dup set with the audit processor). |
 
 ---
@@ -377,7 +492,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | Key | Default | Description |
 |-----|---------|-------------|
 | `self_observability.enabled` | `true` | Emit the exporter's own health metrics (`tailscale2otel.*`: scrape duration/success/errors, API requests/retries, cardinality, …). |
-| `self_observability.instance_id` | `""` | Sets the `service.instance.id` resource attribute so multiple exporter instances are distinguishable. Empty falls back to the host name. Supports `${ENV}`, e.g. `"${POD_NAME}"`. |
+| `self_observability.instance_id` | `""` | Sets the `service.instance.id` resource attribute so multiple exporter instances are distinguishable. Empty falls back to the host name. In Kubernetes set via env: `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME`. |
 
 ---
 
@@ -393,7 +508,7 @@ internet.
 | `admin.enabled` | `false` | Run the admin server (`/healthz`, `/readyz`, and — unless disabled — the status page). |
 | `admin.listen` | `:9090` | Listen address. For defense-in-depth bind to loopback (`127.0.0.1:9090`) or a tailnet IP. |
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
-| `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. `/healthz` and `/readyz` are never gated. Keep it in an env var. |
+| `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. `/healthz` and `/readyz` are never gated. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
 
 > **WARN (advisory):** if `landing_page` is served on a wildcard (all-interfaces) bind with no
 > `admin.auth.token`, a startup warning fires — the page exposes internal state to anyone who can
@@ -411,11 +526,11 @@ Tailscale data. The pprof handlers mount on the admin server.
 | `profiling.pprof.enabled` | `false` | Mount `net/http/pprof` handlers on the admin server so Alloy's `pyroscope.scrape` (or `go tool pprof`) can pull profiles. |
 | `profiling.pyroscope.enabled` | `false` | Run the Pyroscope continuous-profiling push agent. |
 | `profiling.pyroscope.server_address` | `""` | Pyroscope/Grafana Cloud Profiles URL. **Required when `pyroscope.enabled`.** |
-| `profiling.pyroscope.basic_auth_user` | `""` | Grafana Cloud: the profiles instance ID (Basic-auth user). |
-| `profiling.pyroscope.basic_auth_password` | `""` | Grafana Cloud: an access-policy token with `profiles:write` (Basic-auth password). Keep it in an env var. |
+| `profiling.pyroscope.basic_auth_user` | `""` | Grafana Cloud: the profiles instance ID (Basic-auth user). Set via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER`. |
+| `profiling.pyroscope.basic_auth_password` | `""` | Grafana Cloud: an access-policy token with `profiles:write` (Basic-auth password). Set via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD`. |
 | `profiling.pyroscope.tenant_id` | `""` | `X-Scope-OrgID` for multi-tenant servers (leave empty for Grafana Cloud). |
-| `profiling.pyroscope.upload_rate` | `15s` | How often profiles are flushed to the server. |
-| `profiling.pyroscope.tags` | `{}` | Extra static labels merged onto every profile, e.g. `{ env: prod }`. |
+| `profiling.pyroscope.upload_rate` | `60s` | How often profiles are flushed to the server. |
+| `profiling.pyroscope.tags` | `{}` | Extra static labels merged onto every profile, e.g. `{ env: prod }`. Must be set via YAML (map field). |
 | `profiling.mutex_profile_fraction` | `0` | `runtime.SetMutexProfileFraction` (`0` = disabled). Mutex profiles stay empty until set. |
 | `profiling.block_profile_rate` | `0` | `runtime.SetBlockProfileRate` (`0` = disabled). Block profiles stay empty until set. |
 

@@ -27,23 +27,23 @@ import (
 func flowOptions(cfg *config.Config) flowlog.Options {
 	return flowlog.Options{
 		LogMode: cfg.Collectors.Flowlogs.LogMode,
-		// flow_source_port / flow_destination_port independently add source.port /
+		// cardinality.flow.source_port / cardinality.flow.destination_port independently add source.port /
 		// destination.port to the raw flow metric families (both default off).
-		IncludeSourcePort:         cfg.Cardinality.FlowSourcePort,
-		IncludeDestinationPort:    cfg.Cardinality.FlowDestinationPort,
-		IncludeDestinationService: cfg.Cardinality.FlowDestinationService,
-		NodeDims:                  cfg.Cardinality.FlowNodeDims,
-		// collapse_external=true (the default) buckets unresolved/external addresses
+		IncludeSourcePort:         cfg.Cardinality.Flow.SourcePort,
+		IncludeDestinationPort:    cfg.Cardinality.Flow.DestinationPort,
+		IncludeDestinationService: cfg.Cardinality.Flow.DestinationService,
+		NodeDims:                  cfg.Cardinality.Flow.NodeDims,
+		// cardinality.flow.collapse_external=true (the default) buckets unresolved/external addresses
 		// as external/unknown; false preserves the raw IP. This affects BOTH flow LOGS
-		// and, when flow_node_dims is true, the flow METRIC attrs tailscale.src.node /
+		// and, when cardinality.flow.node_dims is true, the flow METRIC attrs tailscale.src.node /
 		// tailscale.dst.node (srcNode/dstNode come from the processor's resolve()).
-		KeepExternalAddrs:      !cfg.Cardinality.CollapseExternal,
+		KeepExternalAddrs:      !cfg.Cardinality.Flow.CollapseExternal,
 		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
 		// Default "rollup": emit the bounded top-N *.rollup families instead of the
 		// raw per-connection io/packets. FlushRollup (runRollupFlusher) drains the
 		// accumulator on the OTLP export interval.
-		FlowMetricsMode: cfg.Cardinality.FlowMetricsMode,
-		RollupTopN:      cfg.Collectors.Flowlogs.FlowRollupTopN,
+		FlowMetricsMode: cfg.Cardinality.Flow.MetricsMode,
+		RollupTopN:      cfg.Cardinality.Flow.RollupTopN,
 	}
 }
 
@@ -88,18 +88,18 @@ func (a *App) registerCollectors() {
 	if c.Devices.Enabled {
 		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture,
-			devices.WithPerEntity(a.cfg.Cardinality.DevicePerEntity),
+			devices.WithPerEntity(a.cfg.Cardinality.PerEntity.Device),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
 			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup)), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
 		a.registry.Register(users.New(a.client, c.Users.Interval.D(),
-			users.WithPerEntity(a.cfg.Cardinality.UserPerEntity)), c.Users.Interval.D())
+			users.WithPerEntity(a.cfg.Cardinality.PerEntity.User)), c.Users.Interval.D())
 	}
 	if c.Keys.Enabled {
 		a.registry.Register(keys.New(a.client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
-			keys.WithPerEntity(a.cfg.Cardinality.KeyPerEntity)), c.Keys.Interval.D())
+			keys.WithPerEntity(a.cfg.Cardinality.PerEntity.Key)), c.Keys.Interval.D())
 	}
 	if c.Settings.Enabled {
 		a.registry.Register(settings.New(a.client, c.Settings.Interval.D()), c.Settings.Interval.D())
@@ -115,7 +115,7 @@ func (a *App) registerCollectors() {
 	}
 	if c.Webhooks.Enabled {
 		a.registry.Register(webhooks.New(a.client, c.Webhooks.Interval.D(),
-			webhooks.WithPerEntity(a.cfg.Cardinality.WebhookPerEntity)), c.Webhooks.Interval.D())
+			webhooks.WithPerEntity(a.cfg.Cardinality.PerEntity.Webhook)), c.Webhooks.Interval.D())
 	}
 	if c.PostureIntegrations.Enabled {
 		a.registry.Register(postureintegrations.New(a.client, c.PostureIntegrations.Interval.D()), c.PostureIntegrations.Interval.D())
@@ -125,7 +125,7 @@ func (a *App) registerCollectors() {
 	}
 	if c.Services.Enabled {
 		a.registry.Register(services.New(a.client, c.Services.Interval.D(),
-			services.WithPerEntity(a.cfg.Cardinality.ServicePerEntity),
+			services.WithPerEntity(a.cfg.Cardinality.PerEntity.Service),
 			services.WithCollectHosts(c.Services.CollectHosts)), c.Services.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {

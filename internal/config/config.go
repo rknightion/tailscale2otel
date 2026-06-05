@@ -1,13 +1,40 @@
-// Package config loads, env-expands, defaults, and validates the
-// tailscale2otel YAML configuration into typed Go structs.
+// Package config loads, defaults, and validates the tailscale2otel
+// configuration into typed Go structs.
+//
+// Configuration is layered, lowest precedence first: built-in defaults
+// (Default) -> an optional YAML file -> environment variables. Every field is
+// settable via an environment variable named with the TS2OTEL_ prefix and "__"
+// as the nesting delimiter (single underscores inside a name are preserved):
+//
+//	TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID -> tailscale.auth.oauth.client_id
+//	TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL    -> collectors.flowlogs.interval
+//
+// The env layer overrides the file, so secrets live in environment variables
+// and never need to appear in the YAML. The file is optional: with no -config
+// path the process runs from defaults + environment alone (handy for
+// containers).
 package config
 
 import (
 	"fmt"
-	"os"
-	"slices"
 
-	"gopkg.in/yaml.v3"
+	"github.com/go-viper/mapstructure/v2"
+	"github.com/knadh/koanf/parsers/yaml"
+	env "github.com/knadh/koanf/providers/env/v2"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/structs"
+	"github.com/knadh/koanf/v2"
+)
+
+// EnvPrefix is the prefix for every configuration environment variable.
+const EnvPrefix = "TS2OTEL_"
+
+// keyDelim is koanf's internal key-path delimiter; envNestDelim is the token
+// that separates nesting levels in an environment-variable name (so a single
+// underscore within a level, e.g. client_id, is preserved).
+const (
+	keyDelim     = "."
+	envNestDelim = "__"
 )
 
 // Config is the root configuration document.
@@ -25,14 +52,10 @@ type Config struct {
 	Admin             AdminConfig             `yaml:"admin"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 
-	// unsetEnvRefs records ${VAR} references in the config VALUES that were
-	// undefined at load time (so they expanded to ""). Comments are NOT scanned —
-	// a ${VAR} that appears only in documentation carries no runtime meaning — and
-	// references feeding an inactive optional credential are skipped (see
-	// collectUnsetEnvRefs). Unexported, populated by Load, and surfaced via
-	// Warnings so a typo'd or missing credential variable is flagged instead of
-	// silently becoming an empty value.
-	unsetEnvRefs []string
+	// unknownEnv records TS2OTEL_* environment variables that did not map to any
+	// known config key (a likely typo — they were ignored). Unexported, populated
+	// by Load, surfaced via Warnings.
+	unknownEnv []string
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -51,7 +74,7 @@ type AdminConfig struct {
 // handlers behind a shared secret. When Token is set, callers must present it as
 // the HTTP Basic password OR as "Authorization: Bearer <token>". The /healthz
 // and /readyz probes are never gated. Keep the token in an env var:
-// token: "${ADMIN_TOKEN}".
+// TS2OTEL_ADMIN__AUTH__TOKEN.
 type AdminAuth struct {
 	Token Secret `yaml:"token"`
 }
@@ -171,82 +194,174 @@ type ReverseDNSConfig struct {
 	MaxEntries  int      `yaml:"max_entries"`  // cache size bound
 }
 
-// CardinalityConfig controls metric/label cardinality trade-offs.
+// CardinalityConfig controls metric/label cardinality trade-offs. The two big
+// knob groups are nested: Flow (the flow-metric shaping toggles) and PerEntity
+// (whether to emit one gauge series per device/user/key/... or only the
+// low-cardinality aggregate counts).
 type CardinalityConfig struct {
-	// FlowMetricsMode selects which flow metric families to emit:
+	// MetricLimit is the hard per-instrument cardinality limit: the maximum number
+	// of distinct attribute sets (series) a single metric may emit per collection
+	// cycle. Beyond it the OTLP SDK collapses further series into one
+	// otel_metric_overflow series (silent loss of detail), so size it above your
+	// busiest flow-metric cardinality. Cardinality is primarily shaped by the
+	// Flow toggles; this is the safety cap. Default 10000; 0 or negative disables
+	// the limit (unlimited).
+	MetricLimit int `yaml:"metric_limit"`
+	// DerpRegionRollup (default true) gates the tailnet-wide per-DERP-region
+	// rollup gauges (tailscale.derp.region.*) emitted by the devices collector.
+	DerpRegionRollup bool `yaml:"derp_region_rollup"`
+	// Flow shapes the flow-metric families and their attributes.
+	Flow FlowCardinality `yaml:"flow"`
+	// PerEntity gates the per-entity gauges of the inventory collectors.
+	PerEntity PerEntityCardinality `yaml:"per_entity"`
+}
+
+// FlowCardinality shapes the flow-metric families and the attributes carried on
+// them. Flow LOGS are unaffected by these toggles (they always carry full
+// detail); these knobs only bound the cardinality of flow METRICS.
+type FlowCardinality struct {
+	// MetricsMode selects which flow metric families to emit:
 	//   "rollup" (default) — bounded top-N *.rollup families: the busiest
-	//     source/destination node pairs by bytes are kept (flow_rollup_top_n) and the
+	//     source/destination node pairs by bytes are kept (RollupTopN) and the
 	//     remainder folds into an __other__ series per transport/traffic_type/service
 	//     so totals are preserved. Carries no L4 ports. Lowest cardinality; also adds
 	//     the per-source-node tailscale.network.unique.* gauges.
 	//   "all"  — per-connection raw tailscale.network.io/packets, shaped by the
 	//     toggles below (highest fidelity, highest cardinality).
 	//   "both" — emit BOTH families (≈2x series; summing them double-counts — see Warnings).
-	// The raw and rollup families share semantic conventions; the rollup attribute
-	// keys are a subset (no ports) plus the __other__ sentinel value.
-	FlowMetricsMode string `yaml:"flow_metrics_mode"`
-	// FlowSourcePort / FlowDestinationPort independently add source.port /
-	// destination.port to flow METRICS (both default false; flow LOGS always carry
-	// both ports regardless).
-	FlowSourcePort      bool `yaml:"flow_source_port"`
-	FlowDestinationPort bool `yaml:"flow_destination_port"`
-	// FlowDestinationService adds tailscale.dst.service (the IANA service name for
-	// the destination port+transport, e.g. tcp/443 -> "https") to flow METRICS as a
-	// bounded, low-cardinality stand-in for the destination port. Default false;
-	// flow LOGS always carry it when the port maps to a known service.
-	FlowDestinationService bool `yaml:"flow_destination_service"`
-	FlowNodeDims           bool `yaml:"flow_node_dims"`
-	CollapseExternal       bool `yaml:"collapse_external"`
-	// DevicePerEntity/UserPerEntity/KeyPerEntity (default true) gate the
-	// per-entity gauges in the devices/users/keys collectors. When false, only
-	// the low-cardinality aggregate *.count rollups are emitted (the per-entity
-	// gauges, one series per device/user/key, are dropped).
-	DevicePerEntity bool `yaml:"device_per_entity"`
-	UserPerEntity   bool `yaml:"user_per_entity"`
-	KeyPerEntity    bool `yaml:"key_per_entity"`
-	// WebhookPerEntity (default true) gates the per-endpoint
-	// tailscale.webhook_endpoint.subscriptions gauge; false keeps only the
-	// aggregate tailscale.webhook_endpoints.count.
-	WebhookPerEntity bool `yaml:"webhook_per_entity"`
-	// ServicePerEntity (default true) gates the per-service tailscale.service.*
-	// gauges; false keeps only the aggregate tailscale.services.count.
-	ServicePerEntity bool `yaml:"service_per_entity"`
-	// DerpRegionRollup (default true) gates the tailnet-wide per-DERP-region
-	// rollup gauges (tailscale.derp.region.*) emitted by the devices collector.
-	DerpRegionRollup bool `yaml:"derp_region_rollup"`
-	// MetricLimit is the hard per-instrument cardinality limit: the maximum number
-	// of distinct attribute sets (series) a single metric may emit per collection
-	// cycle. Beyond it the OTLP SDK collapses further series into one
-	// otel_metric_overflow series (silent loss of detail), so size it above your
-	// busiest flow-metric cardinality. Cardinality is primarily shaped by the
-	// toggles above (ports/node-dims/collapse-external); this is the safety cap.
-	// Default 10000; 0 or negative disables the limit (unlimited).
-	MetricLimit int `yaml:"metric_limit"`
+	MetricsMode string `yaml:"metrics_mode"`
+	// RollupTopN bounds the number of busiest source/destination node pairs the
+	// flow-metrics rollup keeps per flush (only used when MetricsMode is rollup or
+	// both). Pairs beyond it fold into the __other__ series. 0 selects the default
+	// (500).
+	RollupTopN int `yaml:"rollup_top_n"`
+	// SourcePort / DestinationPort independently add source.port / destination.port
+	// to flow METRICS (both default false; flow LOGS always carry both ports).
+	SourcePort      bool `yaml:"source_port"`
+	DestinationPort bool `yaml:"destination_port"`
+	// DestinationService adds tailscale.dst.service (the IANA service name for the
+	// destination port+transport, e.g. tcp/443 -> "https") to flow METRICS as a
+	// bounded, low-cardinality stand-in for the destination port. Default false.
+	DestinationService bool `yaml:"destination_service"`
+	// NodeDims (default true) includes the src/dst device names on flow metrics.
+	NodeDims bool `yaml:"node_dims"`
+	// CollapseExternal (default true) buckets unresolved IPs as external/unknown.
+	CollapseExternal bool `yaml:"collapse_external"`
 }
 
-// Collectors groups the per-collector configurations.
+// PerEntityCardinality gates the per-entity gauges of the inventory collectors.
+// When a toggle is false, only the low-cardinality aggregate *.count rollup is
+// emitted (the per-entity gauges, one series per device/user/key/..., are
+// dropped). All default true.
+type PerEntityCardinality struct {
+	Device  bool `yaml:"device"`
+	User    bool `yaml:"user"`
+	Key     bool `yaml:"key"`
+	Webhook bool `yaml:"webhook"`
+	Service bool `yaml:"service"`
+}
+
+// Collectors groups the per-collector configurations. Each collector exposes
+// only the fields that apply to it: the inventory snapshots take just
+// enabled+interval (SimpleCollector); the two log collectors add a source and
+// windowing fields; devices/keys/services have their own extras.
 type Collectors struct {
-	Devices             CollectorConfig   `yaml:"devices"`
-	Flowlogs            CollectorConfig   `yaml:"flowlogs"`
-	Auditlogs           CollectorConfig   `yaml:"auditlogs"`
-	Users               CollectorConfig   `yaml:"users"`
-	Keys                CollectorConfig   `yaml:"keys"`
-	Settings            CollectorConfig   `yaml:"settings"`
-	Acl                 CollectorConfig   `yaml:"acl"`
-	Dns                 CollectorConfig   `yaml:"dns"`
-	Contacts            CollectorConfig   `yaml:"contacts"`
-	Webhooks            CollectorConfig   `yaml:"webhooks"`
-	PostureIntegrations CollectorConfig   `yaml:"posture_integrations"`
-	LogStream           CollectorConfig   `yaml:"log_stream"`
-	Services            CollectorConfig   `yaml:"services"`
-	NodeMetrics         NodeMetricsConfig `yaml:"node_metrics"`
+	Devices             DevicesCollector   `yaml:"devices"`
+	Flowlogs            FlowlogsCollector  `yaml:"flowlogs"`
+	Auditlogs           AuditlogsCollector `yaml:"auditlogs"`
+	Users               SimpleCollector    `yaml:"users"`
+	Keys                KeysCollector      `yaml:"keys"`
+	Settings            SimpleCollector    `yaml:"settings"`
+	Acl                 SimpleCollector    `yaml:"acl"`
+	Dns                 SimpleCollector    `yaml:"dns"`
+	Contacts            SimpleCollector    `yaml:"contacts"`
+	Webhooks            SimpleCollector    `yaml:"webhooks"`
+	PostureIntegrations SimpleCollector    `yaml:"posture_integrations"`
+	LogStream           SimpleCollector    `yaml:"log_stream"`
+	Services            ServicesCollector  `yaml:"services"`
+	NodeMetrics         NodeMetricsConfig  `yaml:"node_metrics"`
+}
+
+// SimpleCollector is a point-in-time inventory collector: it just polls a
+// snapshot on its Interval.
+type SimpleCollector struct {
+	Enabled  bool     `yaml:"enabled"`
+	Interval Duration `yaml:"interval"`
+}
+
+// DevicesCollector configures the devices collector. Besides the snapshot
+// interval it gates the optional routes/posture fetches and the posture log.
+type DevicesCollector struct {
+	Enabled        bool     `yaml:"enabled"`
+	Interval       Duration `yaml:"interval"`
+	CollectRoutes  bool     `yaml:"collect_routes"`
+	CollectPosture bool     `yaml:"collect_posture"`
+	// PostureLogMode controls the tailscale.device.posture LOG (requires
+	// collect_posture): "changes" (default) logs a device only when its posture
+	// changes since the last scrape — a full baseline dump on the first scrape,
+	// then deltas; "always" logs every scrape; "off" suppresses the log. The
+	// posture info-gauge METRIC is emitted every scrape regardless.
+	PostureLogMode string `yaml:"posture_log_mode"`
+	// AttributeNamespaces lists the device posture-attribute namespace prefixes (the
+	// part before ":" in a posture key, e.g. "intune", "ip") promoted to the
+	// tailscale.device.attribute{,.info} metrics (requires collect_posture). The
+	// sentinel ["*"] promotes every namespace present; an explicit empty list ([])
+	// disables the attribute metrics.
+	AttributeNamespaces []string `yaml:"attribute_namespaces"`
+}
+
+// FlowlogsCollector configures the network-flow-logs collector. Source selects
+// the ingestion path (poll/stream/both); the windowing fields apply only when
+// polling.
+type FlowlogsCollector struct {
+	Enabled         bool     `yaml:"enabled"`
+	Source          string   `yaml:"source"`
+	Interval        Duration `yaml:"interval"`         // poll only
+	Lag             Duration `yaml:"lag"`              // poll only
+	InitialLookback Duration `yaml:"initial_lookback"` // poll only
+	MaxWindow       Duration `yaml:"max_window"`       // poll only
+	// LogMode sets the per-connection/per-record/off log detail (applies to poll
+	// AND stream).
+	LogMode string `yaml:"log_mode"`
+	// MaxLogRecordsPerWindow caps flow LOG records emitted per poll window (0 =
+	// unlimited). Excess is counted into tailscale.network.flow.logs_dropped;
+	// metrics are never capped.
+	MaxLogRecordsPerWindow int `yaml:"max_log_records_per_window"`
+}
+
+// AuditlogsCollector configures the configuration/audit-events collector. Source
+// selects the ingestion path; the windowing fields apply only when polling.
+type AuditlogsCollector struct {
+	Enabled         bool     `yaml:"enabled"`
+	Source          string   `yaml:"source"`
+	Interval        Duration `yaml:"interval"`         // poll only
+	Lag             Duration `yaml:"lag"`              // poll only
+	InitialLookback Duration `yaml:"initial_lookback"` // poll only
+	MaxWindow       Duration `yaml:"max_window"`       // poll only
+}
+
+// KeysCollector configures the keys collector. ExpiryWarn sets how far ahead of
+// a key's expiry the WARN log fires.
+type KeysCollector struct {
+	Enabled    bool     `yaml:"enabled"`
+	Interval   Duration `yaml:"interval"`
+	ExpiryWarn Duration `yaml:"expiry_warn"`
+}
+
+// ServicesCollector configures the Tailscale Services (VIP) collector.
+// CollectHosts adds per-service backing-host detail — one extra API call per
+// service (N+1). Off by default.
+type ServicesCollector struct {
+	Enabled      bool     `yaml:"enabled"`
+	Interval     Duration `yaml:"interval"`
+	CollectHosts bool     `yaml:"collect_hosts"`
 }
 
 // NodeMetricsConfig configures the optional node-local metrics scraper, which
 // scrapes a configured list of Prometheus-text /metrics endpoints (e.g.
 // tailscaled per-node metrics) and re-emits them centrally. It is off by
 // default and disabled when no targets are configured. Node identity is carried
-// as the "instance" label, not as an OTEL Resource.
+// as a label, not as an OTEL Resource.
 type NodeMetricsConfig struct {
 	Enabled   bool                 `yaml:"enabled"`
 	Interval  Duration             `yaml:"interval"`
@@ -326,49 +441,6 @@ type NodeMetricsTargetTLS struct {
 	ServerName         string `yaml:"server_name"`
 }
 
-// CollectorConfig is the union of all per-collector options. Not every field
-// applies to every collector; unused fields stay at their zero value.
-type CollectorConfig struct {
-	Enabled         bool     `yaml:"enabled"`
-	Source          string   `yaml:"source"`
-	Interval        Duration `yaml:"interval"`
-	Lag             Duration `yaml:"lag"`
-	InitialLookback Duration `yaml:"initial_lookback"`
-	MaxWindow       Duration `yaml:"max_window"`
-	LogMode         string   `yaml:"log_mode"`
-	ExpiryWarn      Duration `yaml:"expiry_warn"`
-	CollectRoutes   bool     `yaml:"collect_routes"`
-	CollectPosture  bool     `yaml:"collect_posture"`
-	// CollectHosts (services collector) enables per-service backing-host detail —
-	// one extra API call per service (N+1). Off by default.
-	CollectHosts bool `yaml:"collect_hosts"`
-	// PostureLogMode controls the tailscale.device.posture LOG (devices collector,
-	// requires collect_posture): "changes" (default) logs a device only when its
-	// posture changes since the last scrape — a full baseline dump on the first
-	// scrape, then deltas; "always" logs every scrape (the prior behavior); "off"
-	// suppresses the log entirely. The posture info-gauge METRIC is emitted every
-	// scrape regardless of this setting.
-	PostureLogMode string `yaml:"posture_log_mode"`
-	// AttributeNamespaces lists the device posture-attribute namespace prefixes (the
-	// part before ":" in a posture key, e.g. "intune", "ip") promoted to the
-	// tailscale.device.attribute{,.info} metrics (devices collector; requires
-	// collect_posture, which fetches the attributes — no extra API calls). Default:
-	// the integration namespaces plus ip. The sentinel ["*"] promotes every namespace
-	// present (including node and custom). An explicit empty list ([]) disables the
-	// attribute metrics; node:* is excluded by default (already on the curated posture
-	// gauge) and custom:* by default (operator-defined, potentially unbounded values).
-	AttributeNamespaces []string `yaml:"attribute_namespaces"`
-	// MaxLogRecordsPerWindow caps flow LOG records emitted per poll window
-	// (flowlogs only; 0 = unlimited). Excess is counted into
-	// tailscale.network.flow.logs_dropped; metrics are never capped.
-	MaxLogRecordsPerWindow int `yaml:"max_log_records_per_window"`
-	// FlowRollupTopN bounds the number of busiest source/destination node pairs the
-	// flow-metrics rollup keeps per flush (flowlogs only; only used when
-	// cardinality.flow_metrics_mode is rollup or both). Pairs beyond it fold into the
-	// __other__ series. 0 selects the default (500).
-	FlowRollupTopN int `yaml:"flow_rollup_top_n"`
-}
-
 // CheckpointConfig configures high-water-mark persistence.
 type CheckpointConfig struct {
 	Store    string `yaml:"store"`
@@ -415,8 +487,7 @@ type WebhookConfig struct {
 	Tolerance Duration `yaml:"tolerance"`
 	// DedupAuditEvents, when true, shares a best-effort cross-source de-dup set
 	// with the audit processor so a change reported by BOTH a webhook and the
-	// audit logs is counted once. Off by default (the type<->action mapping is
-	// best-effort; see internal/webhook crossKey). See also S4-11.
+	// audit logs is counted once. Off by default.
 	DedupAuditEvents bool `yaml:"dedup_audit_events"`
 }
 
@@ -424,126 +495,58 @@ type WebhookConfig struct {
 type SelfObservabilityConfig struct {
 	Enabled bool `yaml:"enabled"`
 	// InstanceID sets the service.instance.id resource attribute so multiple
-	// instances of the exporter are distinguishable in the backend. When empty
-	// it falls back to the host name (see internal/app instanceID). Supports
-	// ${ENV} expansion, e.g. "${POD_NAME}".
+	// instances of the exporter are distinguishable in the backend. When empty it
+	// falls back to the host name (see internal/app instanceID). Set it from the
+	// environment, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME.
 	InstanceID string `yaml:"instance_id"`
 }
 
-// Load reads the YAML file at path, expands ${VAR}/$VAR references from the
-// environment, applies defaults for unset fields, validates, and returns the
-// resulting Config.
+// Load builds the configuration by layering, lowest precedence first: built-in
+// defaults, an optional YAML file at path (skipped when path is ""), and
+// TS2OTEL_* environment variables. The merged result is validated before it is
+// returned. A non-empty path that cannot be read is an error; absence of a path
+// is not (defaults + environment are sufficient to run).
 func Load(path string) (*Config, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config %s: %w", path, err)
+	k := koanf.New(keyDelim)
+
+	// 1. Built-in defaults (the single source of default values). Loading them
+	//    through koanf also gives us the full set of valid keys for the
+	//    unknown-env advisory below.
+	if err := k.Load(structs.Provider(Default(), "yaml"), nil); err != nil {
+		return nil, fmt.Errorf("load defaults: %w", err)
+	}
+	validKeys := append([]string(nil), k.Keys()...)
+
+	// 2. Optional YAML file (overrides defaults).
+	if path != "" {
+		if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
+			return nil, fmt.Errorf("read config %s: %w", path, err)
+		}
 	}
 
-	expanded := os.Expand(string(raw), func(key string) string {
-		return os.Getenv(key)
-	})
-
-	cfg := Default()
-	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	// 3. Environment overrides (highest precedence).
+	if err := k.Load(env.Provider(keyDelim, env.Opt{
+		Prefix:        EnvPrefix,
+		TransformFunc: envTransform,
+	}), nil); err != nil {
+		return nil, fmt.Errorf("load environment: %w", err)
 	}
 
-	// Populate the undefined-${ENV} advisory from the config VALUES (comments are
-	// not scanned), skipping references that feed an inactive optional credential:
-	// the apikey when method != apikey, and the webhook secret when the webhook
-	// receiver is disabled. cfg already has defaults applied, so these gates read
-	// the effective values.
-	cfg.unsetEnvRefs = collectUnsetEnvRefs(raw,
-		cfg.Tailscale.Auth.Method == "apikey",
-		cfg.Webhook.Enabled,
-	)
+	var cfg Config
+	if err := k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{
+		Tag: "yaml",
+		DecoderConfig: &mapstructure.DecoderConfig{
+			Result:           &cfg,
+			WeaklyTypedInput: true, // env values are strings ("60s", "true", "10")
+			DecodeHook:       durationDecodeHook(),
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
 
+	cfg.unknownEnv = unknownEnvVars(validKeys)
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	return cfg, nil
-}
-
-// collectUnsetEnvRefs scans the VALUES of the raw (still unexpanded) YAML for
-// ${VAR}/$VAR references whose environment variable is undefined (so they
-// expanded to "") and returns each such variable name once. Comments are ignored
-// — parsing into a generic tree drops them — because a ${VAR} that appears only
-// in documentation has no runtime effect. References on an inactive optional
-// field are skipped via the active flags: apikeyActive gates
-// tailscale.auth.apikey and webhookActive gates webhook.secret, so a missing env
-// var for a credential the deployment does not use is not flagged. Best-effort:
-// YAML it cannot parse yields no refs rather than failing the load (Load's typed
-// parse of the expanded text is the authority).
-func collectUnsetEnvRefs(raw []byte, apikeyActive, webhookActive bool) []string {
-	var doc any
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil
-	}
-	if !apikeyActive {
-		blankYAMLPath(doc, "tailscale", "auth", "apikey")
-	}
-	if !webhookActive {
-		blankYAMLPath(doc, "webhook", "secret")
-	}
-
-	var unset []string
-	seen := map[string]struct{}{}
-	walkEnvRefs(doc, func(key string) {
-		if _, ok := os.LookupEnv(key); ok {
-			return
-		}
-		if _, dup := seen[key]; dup {
-			return
-		}
-		seen[key] = struct{}{}
-		unset = append(unset, key)
-	})
-	// Stable order: the tree walk visits map keys in random order, but the
-	// advisories should read the same on every start.
-	slices.Sort(unset)
-	return unset
-}
-
-// blankYAMLPath sets the scalar at the given key path within a generic YAML tree
-// (map[string]any nodes) to "" so its ${VAR} references are not collected. A
-// missing or non-mapping path is a no-op.
-func blankYAMLPath(doc any, path ...string) {
-	m, ok := doc.(map[string]any)
-	if !ok {
-		return
-	}
-	for i, key := range path {
-		if i == len(path)-1 {
-			if _, exists := m[key]; exists {
-				m[key] = ""
-			}
-			return
-		}
-		next, ok := m[key].(map[string]any)
-		if !ok {
-			return
-		}
-		m = next
-	}
-}
-
-// walkEnvRefs visits every string scalar in a generic YAML tree and reports each
-// ${VAR}/$VAR reference it contains via emit, using the same os.Expand grammar
-// the loader uses for substitution.
-func walkEnvRefs(v any, emit func(name string)) {
-	switch t := v.(type) {
-	case map[string]any:
-		for _, val := range t {
-			walkEnvRefs(val, emit)
-		}
-	case []any:
-		for _, val := range t {
-			walkEnvRefs(val, emit)
-		}
-	case string:
-		os.Expand(t, func(name string) string {
-			emit(name)
-			return ""
-		})
-	}
+	return &cfg, nil
 }

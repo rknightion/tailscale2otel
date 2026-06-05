@@ -6,11 +6,12 @@
 # 10000) are FIXED in values.yaml, not ignored.
 
 # KSV-0109 / KSV-01010 — "ConfigMap stores secrets / sensitive contents".
-# FALSE POSITIVE: the rendered config.yaml contains only ${ENV} placeholders for
-# secret fields (e.g. client_secret: "${TS_OAUTH_CLIENT_SECRET}"), never real
-# secret values. Actual secret VALUES are injected via the Kubernetes Secret +
-# envFrom and expanded at runtime; the chart's `secret:` block is the supported
-# path for real secret values. trivy flags the placeholder key NAMES, not data.
+# FALSE POSITIVE: the rendered config.yaml carries only empty placeholders for
+# secret fields (e.g. client_secret: ""), never real secret values. Actual secret
+# VALUES are injected as TS2OTEL_* environment variables via the Kubernetes Secret
+# + envFrom (the env layer overrides the file at load time); the chart's `secret:`
+# block is the supported path for real secret values. trivy flags the secret key
+# NAMES in the config, not data.
 KSV-0109
 KSV-01010
 

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -108,7 +110,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		_ = provider.Shutdown(ctx)
 		return nil, err
 	}
-	store, err := checkpointStore(cfg)
+	store, err := checkpointStore(cfg, logger)
 	if err != nil {
 		_ = provider.Shutdown(ctx)
 		return nil, err
@@ -232,7 +234,7 @@ func (a *App) Run(ctx context.Context) error {
 	// Bounded flow-metric rollups (the default output): drain the accumulator on
 	// the export interval. Independent of self-observability — it must run whenever
 	// rollup metrics are the configured output.
-	if m := a.cfg.Cardinality.FlowMetricsMode; m == "rollup" || m == "both" {
+	if m := a.cfg.Cardinality.Flow.MetricsMode; m == "rollup" || m == "both" {
 		go runRollupFlusher(ctx, a.flowProc, a.emitter, a.cfg.OTLP.MetricInterval.D())
 	}
 
@@ -315,9 +317,37 @@ func (a *App) autoConfigureStreaming(ctx context.Context) {
 	}
 }
 
-func checkpointStore(cfg *config.Config) (collector.CheckpointStore, error) {
-	if cfg.Checkpoint.Store == "file" && cfg.Checkpoint.FilePath != "" {
-		return collector.NewFileStore(cfg.Checkpoint.FilePath)
+// checkpointStore builds the configured checkpoint store. For store: file it
+// ensures the parent directory exists and is writable; if it is not (e.g. a
+// read-only root filesystem with no mounted volume, or a local run without
+// access to /var/lib), it logs a WARN and falls back to the in-memory store so
+// the exporter still runs (window collectors just cold-start from
+// initial_lookback after a restart) instead of erroring on every checkpoint write.
+func checkpointStore(cfg *config.Config, logger *slog.Logger) (collector.CheckpointStore, error) {
+	if cfg.Checkpoint.Store != "file" || cfg.Checkpoint.FilePath == "" {
+		return collector.NewMemoryStore(), nil
 	}
-	return collector.NewMemoryStore(), nil
+	if err := ensureWritableDir(filepath.Dir(cfg.Checkpoint.FilePath)); err != nil {
+		logger.Warn("checkpoint.store=file but the path is not writable; falling back to in-memory checkpoints "+
+			"(window cursors will not survive a restart). Mount a writable volume at the directory, or set checkpoint.store=memory to silence this.",
+			"file_path", cfg.Checkpoint.FilePath, "error", err)
+		return collector.NewMemoryStore(), nil
+	}
+	return collector.NewFileStore(cfg.Checkpoint.FilePath)
+}
+
+// ensureWritableDir creates dir (and parents) if needed and verifies it is
+// writable by creating and removing a probe file, so an unwritable path is
+// detected once at startup rather than on every checkpoint write.
+func ensureWritableDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	probe, err := os.CreateTemp(dir, ".checkpoint-probe-*")
+	if err != nil {
+		return err
+	}
+	name := probe.Name()
+	_ = probe.Close()
+	return os.Remove(name)
 }

@@ -22,7 +22,7 @@ var (
 		Name:        metricPorts,
 		Unit:        semconv.UnitPorts,
 		Instrument:  metricdoc.Gauge,
-		Description: "Number of port rules exposed by a Tailscale Service; one series per service. **Gated** by `cardinality.service_per_entity`.",
+		Description: "Number of port rules exposed by a Tailscale Service; one series per service. **Gated** by `cardinality.per_entity.service`.",
 		Attributes:  []string{attrName},
 		Group:       groupServices,
 	}
@@ -30,7 +30,7 @@ var (
 		Name:        metricHosts,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "Backing-host **count** for a Tailscale Service, bucketed by approval + configured state; one series per service/approval/configured. **Gated** by `collect_hosts` (N+1 calls) and `cardinality.service_per_entity`.",
+		Description: "Backing-host **count** for a Tailscale Service, bucketed by approval + configured state; one series per service/approval/configured. **Gated** by `collect_hosts` (N+1 calls) and `cardinality.per_entity.service`.",
 		Attributes:  []string{attrName, attrApproval, attrConfigured},
 		Group:       groupServices,
 	}
