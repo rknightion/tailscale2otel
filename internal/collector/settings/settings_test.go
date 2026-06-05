@@ -5,20 +5,19 @@ import (
 	"testing"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // fakeAPI implements the narrow settings api interface for tests.
 type fakeAPI struct {
-	settings *tsclient.TailnetSettings
+	settings *tsapi.TailnetSettings
 	err      error
 	calls    int
 }
 
-func (f *fakeAPI) TailnetSettings(_ context.Context) (*tsclient.TailnetSettings, error) {
+func (f *fakeAPI) TailnetSettings(_ context.Context) (*tsapi.TailnetSettings, error) {
 	f.calls++
 	if f.err != nil {
 		return nil, f.err
@@ -45,13 +44,15 @@ func TestNameAndDefaultInterval(t *testing.T) {
 var _ collector.SnapshotCollector = (*Collector)(nil)
 
 func TestCollectEmitsEnabledPerBool(t *testing.T) {
-	api := &fakeAPI{settings: &tsclient.TailnetSettings{
+	api := &fakeAPI{settings: &tsapi.TailnetSettings{
 		DevicesApprovalOn:           true,
 		DevicesAutoUpdatesOn:        false,
 		UsersApprovalOn:             true,
 		NetworkFlowLoggingOn:        false,
 		RegionalRoutingOn:           true,
 		PostureIdentityCollectionOn: false,
+		HTTPSEnabled:                true,
+		ACLsExternallyManagedOn:     false,
 		DevicesKeyDurationDays:      180,
 	}}
 	rec := telemetrytest.New()
@@ -83,6 +84,8 @@ func TestCollectEmitsEnabledPerBool(t *testing.T) {
 		"network_flow_logging":        0,
 		"regional_routing":            1,
 		"posture_identity_collection": 0,
+		"https_enabled":               1,
+		"acls_externally_managed":     0,
 	}
 	for name, val := range want {
 		got, ok := byName[name]
@@ -99,7 +102,7 @@ func TestCollectEmitsEnabledPerBool(t *testing.T) {
 }
 
 func TestCollectEmitsKeyDuration(t *testing.T) {
-	api := &fakeAPI{settings: &tsclient.TailnetSettings{DevicesKeyDurationDays: 90}}
+	api := &fakeAPI{settings: &tsapi.TailnetSettings{DevicesKeyDurationDays: 90}}
 	rec := telemetrytest.New()
 
 	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
@@ -119,6 +122,30 @@ func TestCollectEmitsKeyDuration(t *testing.T) {
 	}
 	if p.Value != 90 {
 		t.Fatalf("devices_key_duration value = %v, want 90", p.Value)
+	}
+}
+
+func TestCollectEmitsExternalTailnetsRole(t *testing.T) {
+	api := &fakeAPI{settings: &tsapi.TailnetSettings{UsersRoleAllowedToJoinExternalTailnets: "member"}}
+	rec := telemetrytest.New()
+
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.setting.users_external_tailnets_role")
+	if len(pts) != 1 {
+		t.Fatalf("role points = %d, want 1", len(pts))
+	}
+	p := pts[0]
+	if p.Kind != "gauge" {
+		t.Fatalf("role kind = %q, want gauge", p.Kind)
+	}
+	if p.Value != 1 {
+		t.Fatalf("role value = %v, want 1 (info gauge)", p.Value)
+	}
+	if got := p.Attrs["tailscale.setting.role"]; got != "member" {
+		t.Fatalf("role attr = %q, want member", got)
 	}
 }
 

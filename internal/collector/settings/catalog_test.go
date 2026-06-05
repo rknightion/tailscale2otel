@@ -4,20 +4,19 @@ import (
 	"context"
 	"testing"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // catalogFakeAPI is a minimal settings api implementation for the external
 // catalog test (the internal-package fakeAPI is not visible here).
 type catalogFakeAPI struct {
-	settings *tsclient.TailnetSettings
+	settings *tsapi.TailnetSettings
 }
 
-func (f *catalogFakeAPI) TailnetSettings(context.Context) (*tsclient.TailnetSettings, error) {
+func (f *catalogFakeAPI) TailnetSettings(context.Context) (*tsapi.TailnetSettings, error) {
 	return f.settings, nil
 }
 
@@ -29,7 +28,7 @@ func (f *catalogFakeAPI) TailnetSettings(context.Context) (*tsclient.TailnetSett
 // duration ensure both declared metrics are emitted.
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
-	c := settings.New(&catalogFakeAPI{settings: &tsclient.TailnetSettings{
+	c := settings.New(&catalogFakeAPI{settings: &tsapi.TailnetSettings{
 		DevicesApprovalOn:           true,
 		DevicesAutoUpdatesOn:        false,
 		UsersApprovalOn:             true,

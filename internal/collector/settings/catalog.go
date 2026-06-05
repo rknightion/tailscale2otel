@@ -29,11 +29,19 @@ var (
 		Description: "Configured device key expiry duration, in days.",
 		Group:       groupSettings,
 	}
+	docSettingRole = metricdoc.Metric{
+		Name:        metricSettingRole,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Info gauge (constant `1`); the user role allowed to join external tailnets, carried as the `tailscale.setting.role` label.",
+		Attributes:  []string{attrSettingRole},
+		Group:       groupSettings,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docSettingEnabled, docSettingKeyDuration}
+	return []metricdoc.Metric{docSettingEnabled, docSettingKeyDuration, docSettingRole}
 }
 
 // LogCatalog returns the log events this package emits (none).

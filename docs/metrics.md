@@ -217,6 +217,7 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 | `tailscale.dns.split_zones.count` | `1` | gauge | `tailscale_dns_split_zones_count_ratio` | — | Number of split-DNS zones configured (a **count**). |
 | `tailscale.setting.devices_key_duration` | `d` | gauge | `tailscale_setting_devices_key_duration_days` | — | Configured device key expiry duration, in days. |
 | `tailscale.setting.enabled` | `1` | gauge | `tailscale_setting_enabled_ratio` | `tailscale_setting_name` | `1` if the named tailnet setting is enabled, else `0`. |
+| `tailscale.setting.users_external_tailnets_role` | `1` | gauge | `tailscale_setting_users_external_tailnets_role_ratio` | `tailscale_setting_role` | Info gauge (constant `1`); the user role allowed to join external tailnets, carried as the `tailscale.setting.role` label. |
 <!-- END GENERATED -->
 
 ### Features (`tailscale.feature.*`)

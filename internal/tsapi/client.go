@@ -114,11 +114,6 @@ func (c *Client) Keys(ctx context.Context) ([]tsclient.Key, error) {
 	return c.ts.Keys().List(ctx, true)
 }
 
-// TailnetSettings returns the tailnet feature settings.
-func (c *Client) TailnetSettings(ctx context.Context) (*tsclient.TailnetSettings, error) {
-	return c.ts.TailnetSettings().Get(ctx)
-}
-
 // Webhooks lists configured webhook endpoints.
 func (c *Client) Webhooks(ctx context.Context) ([]tsclient.Webhook, error) {
 	return c.ts.Webhooks().List(ctx)

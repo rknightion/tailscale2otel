@@ -8,9 +8,8 @@ import (
 	"context"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 const defaultInterval = 600 * time.Second
@@ -19,15 +18,19 @@ const defaultInterval = 600 * time.Second
 const (
 	metricEnabled     = "tailscale.setting.enabled"
 	metricKeyDuration = "tailscale.setting.devices_key_duration"
+	metricSettingRole = "tailscale.setting.users_external_tailnets_role"
 )
 
 // attrSettingName labels a setting.enabled point with its stable feature name.
 const attrSettingName = "tailscale.setting.name"
 
+// attrSettingRole carries the external-tailnets role enum on the role info gauge.
+const attrSettingRole = "tailscale.setting.role"
+
 // api is the narrow slice of the Tailscale client this collector needs. It is
 // satisfied by *tsapi.Client.
 type api interface {
-	TailnetSettings(ctx context.Context) (*tsclient.TailnetSettings, error)
+	TailnetSettings(ctx context.Context) (*tsapi.TailnetSettings, error)
 }
 
 // Collector implements collector.SnapshotCollector for tailnet settings.
@@ -73,6 +76,8 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		{"network_flow_logging", s.NetworkFlowLoggingOn},
 		{"regional_routing", s.RegionalRoutingOn},
 		{"posture_identity_collection", s.PostureIdentityCollectionOn},
+		{"https_enabled", s.HTTPSEnabled},
+		{"acls_externally_managed", s.ACLsExternallyManagedOn},
 	}
 	for _, b := range bools {
 		e.Gauge(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
@@ -81,6 +86,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	e.Gauge(docSettingKeyDuration.Name, docSettingKeyDuration.Unit, docSettingKeyDuration.Description,
 		float64(s.DevicesKeyDurationDays), nil)
+
+	// Info gauge (constant 1) carrying the external-tailnets role enum as a label.
+	e.Gauge(docSettingRole.Name, docSettingRole.Unit, docSettingRole.Description,
+		1, telemetry.Attrs{attrSettingRole: s.UsersRoleAllowedToJoinExternalTailnets})
 
 	return nil
 }
