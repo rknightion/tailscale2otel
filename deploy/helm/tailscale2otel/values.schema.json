@@ -116,6 +116,12 @@
                         "devices": {
                             "type": "object",
                             "properties": {
+                                "attribute_namespaces": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
                                 "collect_posture": {
                                     "type": "boolean"
                                 },

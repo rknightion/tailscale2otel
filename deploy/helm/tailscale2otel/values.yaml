@@ -243,6 +243,9 @@ config:
       collect_routes: false
       # -- Emit per-device posture attributes as log records (gated; requires posture identity on).
       collect_posture: false
+      # -- Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info}
+      # metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled.
+      attribute_namespaces: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]
     flowlogs:
       # -- Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs).
       enabled: true
