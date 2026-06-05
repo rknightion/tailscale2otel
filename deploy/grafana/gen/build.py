@@ -273,6 +273,7 @@ def build_variables():
         query_var("os_type", "OS", "label_values(tailscale_device_online_ratio, os_type)"),
         query_var("host_name", "Host", "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)"),
         query_var("device_user", "Device user", "label_values(tailscale_device_online_ratio, tailscale_user)"),
+        query_var("device_tag", "Tag", "label_values(tailscale_device_online_ratio, tailscale_tags)"),
         query_var("net_transport", "Transport", "label_values(tailscale_network_flows_total, network_transport)"),
         query_var("traffic_type", "Traffic type", "label_values(tailscale_network_flows_total, tailscale_traffic_type)"),
         query_var("collector", "Collector", "label_values(tailscale2otel_scrape_success_ratio, tailscale_collector)"),
@@ -298,6 +299,8 @@ def build_variables():
         ("has_invites", "tailscale_user_invites_count_ratio"),
         ("has_api_retry", "tailscale2otel_api_retries_total"),
         ("has_scrape_err", "tailscale2otel_scrape_errors_total"),
+        ("has_path", "tailscaled_inbound_bytes_total"),
+        ("has_audit", "tailscale_config_audit_events_total"),
     ]
     for (name, metric) in presence:
         v.append(presence_var(name, metric))
@@ -868,6 +871,81 @@ def tab_diagnostics():
             row("Go runtime", runtime), row("Reliability", reliability, present="has_scrape_err")]
 
 
+def tab_cardinality():
+    OVF = "{otel_metric_overflow=\"true\", __name__=~\"tailscale.*\"}"
+    overflow = [
+        (panel("Metrics over cardinality cap", "stat",
+               [prom_t("count(count by (__name__) (%s)) or vector(0)" % OVF, instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Metric families that exceeded the per-metric series cap (cardinality.metric_limit, "
+                    "default 10000) and are now collapsing excess series into one otel_metric_overflow "
+                    "series — SILENT per-series detail loss. >0 means raise metric_limit or lower flow "
+                    "cardinality (ephemeral source_port is the biggest driver)."), 6, 5),
+        (panel("Busiest metric — % of cap", "stat",
+               [prom_t("max(tailscale2otel_series_active) / 10000", instant=True)],
+               unit="percentunit", min_=0, max_=1, thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Highest per-metric active-series count as a fraction of the 10k cap."), 6, 5),
+        (panel("Total active series", "stat",
+               [prom_t("sum(tailscale2otel_series_active)", instant=True)],
+               unit="short", options=stat_opts(graph="area", color="value"),
+               desc="Sum of active series across all tailscale2otel metrics (a proxy for ingest cost)."), 6, 5),
+        (panel("Metric families tracked", "stat",
+               [prom_t("count(tailscale2otel_series_active)", instant=True)],
+               unit="short", options=stat_opts()), 6, 5),
+        (panel("Overflowing families", "table",
+               [prom_t("count by (__name__) (%s)" % OVF, instant=True, fmt="table")],
+               novalue="No metrics over cap — all series fully resolved.",
+               transformations=[organize(exclude=["Time", "Value", "job", "instance",
+                                                   "service_instance_id", "service_name", "service_namespace"],
+                                          rename={"__name__": "Metric"})],
+               desc="Metric families currently over the per-metric cap (otel_metric_overflow=true)."), 24, 6),
+    ]
+    budget = [
+        (panel("Active series vs 10k cap (top $topn)", "bargauge",
+               [prom_t("topk($topn, tailscale2otel_series_active)", legend="{{metric_name}}")],
+               unit="short", max_=10000, thresholds=thr([(None, "green"), (8000, "yellow"), (10000, "red")]),
+               options=bargauge_opts(),
+               desc="Per-metric active series against the cap. Watch the flow families."), 12, 8),
+        (panel("Active series over time (top $topn)", "timeseries",
+               [prom_t("topk($topn, tailscale2otel_series_active)", legend="{{metric_name}}")],
+               unit="short", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
+    ]
+    flow = [
+        (panel("Flow series: raw vs bounded rollup", "timeseries",
+               [prom_t("max(tailscale2otel_series_active{metric_name=\"tailscale.network.io\"})", legend="io raw"),
+                prom_t("max(tailscale2otel_series_active{metric_name=\"tailscale.network.io.rollup\"})", legend="io rollup"),
+                prom_t("max(tailscale2otel_series_active{metric_name=\"tailscale.network.packets\"})", legend="packets raw"),
+                prom_t("max(tailscale2otel_series_active{metric_name=\"tailscale.network.packets.rollup\"})", legend="packets rollup")],
+               unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Raw flow families saturate the 10k cap; the bounded rollup stays small. When raw is "
+                    "at cap, trust the ROLLUP talker panels on the Network tab."), 12, 7),
+        (panel("__other__ rollup share", "stat",
+               [prom_t("(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_dst_node=\"__other__\"}[%s])) or vector(0)) / "
+                       "clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total[%s])), 1)" % (RI, RI), instant=True)],
+               unit="percentunit", thresholds=thr([(None, "green"), (0.5, "yellow"), (0.8, "red")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of rollup bytes folded into the bounded __other__ bucket. High = many small talkers."), 6, 7),
+        (panel("Flow log records dropped/s", "timeseries",
+               [prom_t("sum(rate(tailscale_network_flow_logs_dropped_total[%s])) or vector(0)" % RI, legend="dropped/s")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Flow LOG records suppressed by the per-window volume guard "
+                    "(collectors.flowlogs.max_log_records_per_window). Metrics are never dropped, only logs."), 6, 7),
+    ]
+    dedup = [
+        (panel("Dedup set size", "timeseries", [prom_t("tailscale2otel_dedup_size_ratio", legend="{{dedup_set}}")],
+               unit="short", custom=ts_custom(), options=ts_opts(),
+               desc="Keys held in each cross-source de-duplication set (a count)."), 12, 6),
+        (panel("Dedup evictions/s", "timeseries",
+               [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[%s]))" % RI, legend="{{dedup_set}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Sustained evictions mean a dedup set is undersized."), 12, 6),
+    ]
+    return [row("Cardinality cap & overflow", overflow), row("Series budget", budget),
+            row("Flow cardinality drivers", flow), row("Cross-source dedup", dedup)]
+
+
 # ---------------------------------------------------------------------------
 # assembly
 # ---------------------------------------------------------------------------
@@ -886,6 +964,7 @@ def build(uid, title, flat, only=None, folder=None):
         ("Policy & Config", tab_policy, None),
         ("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
         ("Exporter Diagnostics", tab_diagnostics, None),
+        ("Cardinality & Cost", tab_cardinality, None),
     ]
     if only:
         tab_defs = [d for d in tab_defs if d[0] == only]
