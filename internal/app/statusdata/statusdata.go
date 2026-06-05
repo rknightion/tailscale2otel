@@ -140,6 +140,9 @@ type CardinalityInfo struct {
 	Available bool        `json:"available"`
 	Total     int         `json:"total"`
 	Series    []SeriesRow `json:"series,omitempty"`
+	// TotalSeries is the recent trend of the total active-series count (oldest
+	// first), feeding the cardinality sparkline. Populated only when self-obs is on.
+	TotalSeries []int `json:"total_series,omitempty"`
 }
 
 // SeriesRow is the active-series count for one source metric.
@@ -163,13 +166,17 @@ type ProfilingInfo struct {
 	PyroscopeServer  string `json:"pyroscope_server,omitempty"`
 }
 
-// RuntimeInfo is a point-in-time Go runtime snapshot.
+// RuntimeInfo is a point-in-time Go runtime snapshot plus short-term trend
+// series (oldest first) feeding the runtime sparklines.
 type RuntimeInfo struct {
-	Goroutines int    `json:"goroutines"`
-	HeapAllocB uint64 `json:"heap_alloc_bytes"`
-	HeapAlloc  string `json:"heap_alloc"`
-	NumGC      uint32 `json:"num_gc"`
-	GOMAXPROCS int    `json:"gomaxprocs"`
+	Goroutines       int       `json:"goroutines"`
+	HeapAllocB       uint64    `json:"heap_alloc_bytes"`
+	HeapAlloc        string    `json:"heap_alloc"`
+	NumGC            uint32    `json:"num_gc"`
+	GOMAXPROCS       int       `json:"gomaxprocs"`
+	GoroutinesSeries []int     `json:"goroutines_series,omitempty"`
+	HeapAllocSeries  []uint64  `json:"heap_alloc_series,omitempty"`
+	GCRateSeries     []float64 `json:"gc_rate_series,omitempty"`
 }
 
 // MetricRow is one entry of the emitted-metrics catalog table. Series is the

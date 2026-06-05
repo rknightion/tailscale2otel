@@ -44,19 +44,20 @@ const autoConfigureTimeout = 30 * time.Second
 
 // App is the assembled, runnable service.
 type App struct {
-	cfg       *config.Config
-	version   string    // injected build version, for the status page
-	startTime time.Time // process start, for uptime on the status page
-	emitter   telemetry.Emitter
-	card      *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
-	shutdown  func(context.Context) error   // flushes telemetry on stop
-	restore   func()                        // restores the prior otel error handler
-	client    *tsapi.Client
-	cache     *enrich.DeviceCache
-	registry  *collector.Registry
-	sched     *collector.Scheduler
-	status    *collector.StatusTracker // per-collector run outcomes, for the status page
-	logger    *slog.Logger
+	cfg         *config.Config
+	version     string    // injected build version, for the status page
+	startTime   time.Time // process start, for uptime on the status page
+	emitter     telemetry.Emitter
+	card        *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
+	shutdown    func(context.Context) error   // flushes telemetry on stop
+	restore     func()                        // restores the prior otel error handler
+	client      *tsapi.Client
+	cache       *enrich.DeviceCache
+	registry    *collector.Registry
+	sched       *collector.Scheduler
+	status      *collector.StatusTracker // per-collector run outcomes, for the status page
+	runtimeHist *runtimeHistory          // short-term runtime/cardinality trends, for the status page
+	logger      *slog.Logger
 
 	flowProc     *flowlog.Processor
 	auditProc    *audit.Processor
@@ -131,16 +132,17 @@ func newApp(
 		logger = slog.Default()
 	}
 	a := &App{
-		cfg:       cfg,
-		version:   version,
-		startTime: time.Now(),
-		emitter:   emitter,
-		shutdown:  shutdown,
-		client:    client,
-		cache:     enrich.NewDeviceCache(),
-		registry:  collector.NewRegistry(),
-		status:    collector.NewStatusTracker(),
-		logger:    logger,
+		cfg:         cfg,
+		version:     version,
+		startTime:   time.Now(),
+		emitter:     emitter,
+		shutdown:    shutdown,
+		client:      client,
+		cache:       enrich.NewDeviceCache(),
+		registry:    collector.NewRegistry(),
+		status:      collector.NewStatusTracker(),
+		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
+		logger:      logger,
 	}
 	a.sched = collector.NewScheduler(emitter, store,
 		collector.WithLogger(logger),
@@ -206,6 +208,11 @@ func (a *App) Run(ctx context.Context) error {
 			"webhook_cross": a.webhookDedup,
 		})
 	}
+
+	// Short-term runtime/cardinality history for the admin status page's
+	// sparklines. Introspection-only (no OTLP), so it runs regardless of
+	// self-observability — the status page is useful even with self-obs off.
+	go runSampler(ctx, a.runtimeHist, samplerInterval, readRuntimeStats, a.cardinalityTotal)
 
 	// Bounded flow-metric rollups (the default output): drain the accumulator on
 	// the export interval. Independent of self-observability — it must run whenever

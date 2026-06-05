@@ -75,6 +75,16 @@ func (a *App) buildStatus() statusdata.Status {
 		Config:      a.redactedConfigSummary(),
 		GeneratedAt: now.UTC().Format(rfc3339),
 	}
+	if a.runtimeHist != nil {
+		s.Runtime.GoroutinesSeries = a.runtimeHist.goroutines.Values()
+		s.Runtime.HeapAllocSeries = a.runtimeHist.heapAlloc.Values()
+		s.Runtime.GCRateSeries = a.runtimeHist.gcRate.Values()
+		// The cardinality trend is meaningful only with self-obs on (otherwise the
+		// total is a flat zero), matching the gating of the cardinality section.
+		if a.cfg.SelfObservability.Enabled {
+			s.Cardinality.TotalSeries = a.runtimeHist.cardTotal.Values()
+		}
+	}
 	s.Health, s.HealthReasons = deriveHealth(s.Collectors)
 	return s
 }
