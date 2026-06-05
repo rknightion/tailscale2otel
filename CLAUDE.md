@@ -38,6 +38,11 @@ The Helm `values.schema.json` and chart `README.md` are also generated, but in C
 - **Work directly on `main`:** this repo does not use feature branches — commit straight to `main`
   (and push only when the user asks) unless the user explicitly directs otherwise. Don't create
   branches or worktrees for changes on your own; the default "branch first" reflex is overridden here.
+- **Specs & plans are local-only, never committed:** brainstorming design specs and implementation
+  plans live under `docs/superpowers/` (gitignored) — written to disk for reference but never entered
+  into git history. Always **adversarially self-review** a spec or plan before acting on it: scan for
+  placeholders, contradictions, hidden assumptions, and scope creep, and treat your own plan as
+  something to attack rather than rubber-stamp.
 - **TDD is the rule:** failing test → watch it fail for the right reason → minimal code → green →
   refactor. Standard-library `testing` only — **no testify**.
 - **Assert telemetry, not internals:** every collector/processor test drives the code against
