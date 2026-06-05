@@ -244,6 +244,42 @@ func TestCollect_Online(t *testing.T) {
 	}
 }
 
+func TestCollect_OnlineTags(t *testing.T) {
+	// Local fixture (not sampleDevices) so this can't disturb other tests:
+	// one tagged device, one untagged.
+	devs := []tsapi.RichDevice{
+		{ID: "id-tagged", Hostname: "server1", OS: "linux",
+			ConnectedToControl: true, Tags: []string{"tag:server", "tag:lab"}},
+		{ID: "id-untagged", Hostname: "laptop1", OS: "darwin",
+			User: "alice@example.com", ConnectedToControl: true},
+	}
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device.online")
+
+	// Tagged device carries comma-joined tags (matches nodediscovery formatting).
+	tagged, ok := pointByAttr(pts, map[string]string{semconv.HostID: "id-tagged"})
+	if !ok {
+		t.Fatal("no online point for tagged device")
+	}
+	if tagged.Attrs[semconv.AttrTags] != "tag:server,tag:lab" {
+		t.Fatalf("online tailscale.tags = %q, want %q", tagged.Attrs[semconv.AttrTags], "tag:server,tag:lab")
+	}
+
+	// Untagged device omits the label entirely (like os.version when empty).
+	untagged, ok := pointByAttr(pts, map[string]string{semconv.HostID: "id-untagged"})
+	if !ok {
+		t.Fatal("no online point for untagged device")
+	}
+	if _, present := untagged.Attrs[semconv.AttrTags]; present {
+		t.Fatalf("untagged tailscale.tags present = %q, want omitted", untagged.Attrs[semconv.AttrTags])
+	}
+}
+
 func TestCollect_LastSeen(t *testing.T) {
 	devs := sampleDevices()
 	c, _, _ := newCollector(t, devs)

@@ -230,6 +230,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if d.Distro.Version != "" {
 				idAttrs[semconv.OSVersion] = d.Distro.Version
 			}
+			// tailscale.tags: comma-joined ACL tags (matches the node-metrics
+			// label in nodediscovery.go). Omitted for untagged devices, like
+			// os.version above. Functionally dependent on the device, so it adds
+			// no new series — just a richer label on the existing per-device ones.
+			if len(d.Tags) > 0 {
+				idAttrs[semconv.AttrTags] = strings.Join(d.Tags, ",")
+			}
 
 			e.Gauge(docOnline.Name, docOnline.Unit, docOnline.Description,
 				boolToFloat(d.ConnectedToControl), idAttrs)

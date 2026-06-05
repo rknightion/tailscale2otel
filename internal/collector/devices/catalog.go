@@ -26,8 +26,9 @@ const (
 
 // deviceIdentityAttrs is the common per-device identity attribute set carried by
 // the per-device gauges. os.version is present only for devices that report a
-// distro version, so it appears here as part of the full possible set.
-var deviceIdentityAttrs = []string{semconv.HostName, semconv.HostID, semconv.OSType, semconv.OSVersion, semconv.AttrUser}
+// distro version, and tailscale.tags only for devices that carry ACL tags, so
+// both appear here as part of the full possible set.
+var deviceIdentityAttrs = []string{semconv.HostName, semconv.HostID, semconv.OSType, semconv.OSVersion, semconv.AttrUser, semconv.AttrTags}
 
 // postureInfoAttrs is the curated label set carried by the posture info gauge:
 // device identity (host.name/host.id) plus the curated subset of posture
