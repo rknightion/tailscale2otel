@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,10 +25,13 @@ type Config struct {
 	Admin             AdminConfig             `yaml:"admin"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 
-	// unsetEnvRefs records ${VAR} references in the source file that were undefined
-	// at load time (so they expanded to ""). Unexported, populated by Load, and
-	// surfaced via Warnings so a typo'd or missing credential variable is flagged
-	// instead of silently becoming an empty value.
+	// unsetEnvRefs records ${VAR} references in the config VALUES that were
+	// undefined at load time (so they expanded to ""). Comments are NOT scanned —
+	// a ${VAR} that appears only in documentation carries no runtime meaning — and
+	// references feeding an inactive optional credential are skipped (see
+	// collectUnsetEnvRefs). Unexported, populated by Load, and surfaced via
+	// Warnings so a typo'd or missing credential variable is flagged instead of
+	// silently becoming an empty value.
 	unsetEnvRefs []string
 }
 
@@ -435,27 +439,111 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
-	var unset []string
-	seen := map[string]struct{}{}
 	expanded := os.Expand(string(raw), func(key string) string {
-		v, ok := os.LookupEnv(key)
-		if !ok {
-			if _, dup := seen[key]; !dup {
-				seen[key] = struct{}{}
-				unset = append(unset, key)
-			}
-		}
-		return v
+		return os.Getenv(key)
 	})
 
 	cfg := Default()
 	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
-	cfg.unsetEnvRefs = unset
+
+	// Populate the undefined-${ENV} advisory from the config VALUES (comments are
+	// not scanned), skipping references that feed an inactive optional credential:
+	// the apikey when method != apikey, and the webhook secret when the webhook
+	// receiver is disabled. cfg already has defaults applied, so these gates read
+	// the effective values.
+	cfg.unsetEnvRefs = collectUnsetEnvRefs(raw,
+		cfg.Tailscale.Auth.Method == "apikey",
+		cfg.Webhook.Enabled,
+	)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// collectUnsetEnvRefs scans the VALUES of the raw (still unexpanded) YAML for
+// ${VAR}/$VAR references whose environment variable is undefined (so they
+// expanded to "") and returns each such variable name once. Comments are ignored
+// — parsing into a generic tree drops them — because a ${VAR} that appears only
+// in documentation has no runtime effect. References on an inactive optional
+// field are skipped via the active flags: apikeyActive gates
+// tailscale.auth.apikey and webhookActive gates webhook.secret, so a missing env
+// var for a credential the deployment does not use is not flagged. Best-effort:
+// YAML it cannot parse yields no refs rather than failing the load (Load's typed
+// parse of the expanded text is the authority).
+func collectUnsetEnvRefs(raw []byte, apikeyActive, webhookActive bool) []string {
+	var doc any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil
+	}
+	if !apikeyActive {
+		blankYAMLPath(doc, "tailscale", "auth", "apikey")
+	}
+	if !webhookActive {
+		blankYAMLPath(doc, "webhook", "secret")
+	}
+
+	var unset []string
+	seen := map[string]struct{}{}
+	walkEnvRefs(doc, func(key string) {
+		if _, ok := os.LookupEnv(key); ok {
+			return
+		}
+		if _, dup := seen[key]; dup {
+			return
+		}
+		seen[key] = struct{}{}
+		unset = append(unset, key)
+	})
+	// Stable order: the tree walk visits map keys in random order, but the
+	// advisories should read the same on every start.
+	slices.Sort(unset)
+	return unset
+}
+
+// blankYAMLPath sets the scalar at the given key path within a generic YAML tree
+// (map[string]any nodes) to "" so its ${VAR} references are not collected. A
+// missing or non-mapping path is a no-op.
+func blankYAMLPath(doc any, path ...string) {
+	m, ok := doc.(map[string]any)
+	if !ok {
+		return
+	}
+	for i, key := range path {
+		if i == len(path)-1 {
+			if _, exists := m[key]; exists {
+				m[key] = ""
+			}
+			return
+		}
+		next, ok := m[key].(map[string]any)
+		if !ok {
+			return
+		}
+		m = next
+	}
+}
+
+// walkEnvRefs visits every string scalar in a generic YAML tree and reports each
+// ${VAR}/$VAR reference it contains via emit, using the same os.Expand grammar
+// the loader uses for substitution.
+func walkEnvRefs(v any, emit func(name string)) {
+	switch t := v.(type) {
+	case map[string]any:
+		for _, val := range t {
+			walkEnvRefs(val, emit)
+		}
+	case []any:
+		for _, val := range t {
+			walkEnvRefs(val, emit)
+		}
+	case string:
+		os.Expand(t, func(name string) string {
+			emit(name)
+			return ""
+		})
+	}
 }
