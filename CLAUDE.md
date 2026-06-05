@@ -19,10 +19,25 @@ golangci-lint fmt                    # apply gofmt + goimports (there is no sepa
 
 ### Regenerate generated artifacts (required before commit when you touch them)
 
+Three files are committed but **generated** — each a pure function of its inputs and each gated in CI
+by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
+without the README). `scripts/regen-generated.sh` reproduces all three locally, byte-for-byte with CI:
+
 ```sh
-# docs/metrics.md — regenerated from the in-code telemetry catalog (NOT hand-edited).
-go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"
+scripts/regen-generated.sh        # all three (pass helm / helm-docs / helm-schema / metrics to scope)
+go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just docs/metrics.md
 ```
+
+| generated file | inputs | tool |
+| --- | --- | --- |
+| `docs/metrics.md` | the in-code telemetry catalog | `tools/metricscatalog` |
+| `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` |
+| `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` |
+
+> **Opt in to the pre-commit hook so you never forget:** `git config core.hooksPath .githooks` (once per
+> clone — it is not auto-installed). `.githooks/pre-commit` runs the script for *only* the artifacts your
+> staged changes touch and re-stages the result; it's a silent no-op otherwise. A missing tool is a loud
+> SKIP, never a block (CI's fail-on-diff stays the hard backstop); bypass a run with `git commit --no-verify`.
 
 > Gotcha: `tools/metricscatalog` and `tools/configcheck` are **separate Go modules** (own `go.mod`,
 > `replace ../..`). `go run ./tools/metricscatalog` from the repo root **fails** ("main module does
@@ -30,8 +45,8 @@ go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-The Helm `values.schema.json` and chart `README.md` are also generated, but in CI by GitHub Actions
-(see `deploy/CLAUDE.md`); there is no local Go command for them.
+CI re-validates all three via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+`docs/metrics.md` via `metricscatalog -check`). The local tools above are installed on this machine.
 
 ## Development methodology
 

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# Keep committed generated artifacts in sync with their sources, so a hand-edit
+# (e.g. bumping Chart.yaml without regenerating README.md) never lands a commit
+# that CI's fail-on-diff gates will reject.
+#
+# It only does work when your *staged* changes touch an artifact's inputs, then
+# regenerates and re-stages that artifact so it's committed atomically with the
+# change. Scoped this way the hook is a no-op (and silent) on the vast majority
+# of commits.
+#
+# Enable once per clone (it is NOT installed automatically):
+#   git config core.hooksPath .githooks
+#
+# Bypass for a single commit if ever needed: git commit --no-verify
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Staged paths (Added/Copied/Modified/Renamed — skip Deletions).
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+[ -z "$staged" ] && exit 0
+
+# Decide which generated artifacts the staged changes could have invalidated.
+helm_inputs='^deploy/helm/tailscale2otel/(Chart\.yaml|values\.yaml|README\.md\.gotmpl)$'
+metrics_inputs='(^internal/.*\.go$|^tools/metricscatalog/)'
+
+targets=()
+git_add=()
+if grep -Eq "$helm_inputs" <<<"$staged"; then
+  targets+=(helm)
+  git_add+=(deploy/helm/tailscale2otel/README.md deploy/helm/tailscale2otel/values.schema.json)
+fi
+if grep -Eq "$metrics_inputs" <<<"$staged"; then
+  targets+=(metrics)
+  git_add+=(docs/metrics.md)
+fi
+
+[ ${#targets[@]} -eq 0 ] && exit 0
+
+if [ ! -x scripts/regen-generated.sh ]; then
+  echo "pre-commit: scripts/regen-generated.sh missing/not executable — skipping regen (CI will gate)" >&2
+  exit 0
+fi
+
+echo "pre-commit: regenerating generated artifacts (${targets[*]})"
+scripts/regen-generated.sh "${targets[@]}"
+
+# Re-stage anything regeneration touched so it's committed atomically, then
+# report which artifacts actually changed vs HEAD (so the commit's new contents
+# are no surprise).
+git add -- "${git_add[@]}" 2>/dev/null || true
+for f in "${git_add[@]}"; do
+  if [ -e "$f" ] && ! git diff --cached --quiet HEAD -- "$f" 2>/dev/null; then
+    echo "pre-commit: re-staged regenerated $f"
+  fi
+done
+
+exit 0
