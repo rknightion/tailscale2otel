@@ -30,10 +30,10 @@ jobs:
     name: helm lint + template + schema + docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
 
       - name: helm lint
         run: helm lint "$CHART_DIR"
@@ -44,7 +44,7 @@ jobs:
       # Regenerate values.schema.json (draft-07; Helm only validates draft-07) and
       # fail if the committed copy drifts. The committed file is the baseline.
       - name: values.schema.json is in sync (losisin/helm-values-schema-json)
-        uses: losisin/helm-values-schema-json-action@v2
+        uses: losisin/helm-values-schema-json-action@02bda41b469ccfb3f0abb35f4211e598b0b6ea3e # v2
         with:
           values: ${{ env.CHART_DIR }}/values.yaml
           output: ${{ env.CHART_DIR }}/values.schema.json
@@ -54,7 +54,7 @@ jobs:
       # Regenerate the chart README from README.md.gotmpl + value annotations and
       # fail if it drifts from the committed copy.
       - name: helm-docs is in sync (norwoodj/helm-docs)
-        uses: losisin/helm-docs-github-action@v2
+        uses: losisin/helm-docs-github-action@3a4528e97c49a5e83de6b78c50c61c8ee5c9f944 # v2
         with:
           chart-search-root: ${{ env.CHART_DIR }}
           fail-on-diff: true
@@ -63,12 +63,12 @@ jobs:
     name: config.Load validates example + rendered config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
