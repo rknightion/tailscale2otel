@@ -35,6 +35,9 @@ The Helm `values.schema.json` and chart `README.md` are also generated, but in C
 
 ## Development methodology
 
+- **Work directly on `main`:** this repo does not use feature branches — commit straight to `main`
+  (and push only when the user asks) unless the user explicitly directs otherwise. Don't create
+  branches or worktrees for changes on your own; the default "branch first" reflex is overridden here.
 - **TDD is the rule:** failing test → watch it fail for the right reason → minimal code → green →
   refactor. Standard-library `testing` only — **no testify**.
 - **Assert telemetry, not internals:** every collector/processor test drives the code against

@@ -16,3 +16,9 @@ config.smoke.yaml
 
 .DS_Store
 config.lowlog.yaml
+
+tailscale-api.json
+
+tailscale-api.yaml
+
+docs/superpowers/plans/
