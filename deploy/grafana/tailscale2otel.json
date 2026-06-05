@@ -6308,7 +6308,8 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "noValue": "0"
                 },
                 "overrides": []
               }
@@ -6386,7 +6387,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "0"
                 },
                 "overrides": []
               }

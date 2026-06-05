@@ -1004,11 +1004,13 @@ def tab_security():
                unit="cps", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right")), 12, 7),
         (panel("Audit events (range)", "stat",
                [loki_t("sum(count_over_time(%s [$__range]))" % AUD, instant=True)],
-               unit="short", options=stat_opts(color="value")), 6, 7),
+               unit="short", novalue="0", options=stat_opts(color="value")), 6, 7),
         (panel("Failed changes — WARN (range)", "stat",
                # severity field is severity_text (value "INFO"/"WARN"), verified live — NOT `severity`.
+               # novalue="0": LogQL count_over_time over an empty match yields no series (not 0),
+               # so show 0 rather than "No data" on a healthy tailnet with no WARN audits.
                [loki_t("sum(count_over_time(%s | severity_text=`WARN` [$__range]))" % AUD, instant=True)],
-               unit="short", thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
+               unit="short", novalue="0", thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
                desc="Audit events emitted at WARN (the event carried an error)."), 6, 7),
         # Rendered as timeseries, not barchart — this dashboard has no Loki barchart
         # precedent (all barcharts are Prometheus instant+table); the proven Loki
