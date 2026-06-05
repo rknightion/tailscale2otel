@@ -2346,7 +2346,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale_feature_enabled_ratio",
+                        "expr": "max by (tailscale_feature) (tailscale_feature_enabled_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_feature}}",
@@ -2422,7 +2422,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale_setting_enabled_ratio",
+                        "expr": "max by (tailscale_setting_name) (tailscale_setting_enabled_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_setting_name}}",
@@ -3158,7 +3158,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[10m]) == 1",
+                        "expr": "max without (service_version) (last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[10m])) == 1",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3237,7 +3237,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_key_expiry_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[2h]) - time()",
+                        "expr": "max without (service_version) (last_over_time(tailscale_device_key_expiry_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[2h])) - time()",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3316,7 +3316,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_device_last_seen_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[2h])",
+                        "expr": "time() - max without (service_version) (last_over_time(tailscale_device_last_seen_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3395,7 +3395,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}[10m])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3540,7 +3540,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_routes_advertised{host_name=~\"$host_name\"}[10m])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_device_routes_advertised{host_name=~\"$host_name\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3562,7 +3562,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_routes_enabled{host_name=~\"$host_name\"}[10m])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_device_routes_enabled{host_name=~\"$host_name\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3648,7 +3648,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_posture_ratio{host_name=~\"$host_name\"}[2h])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_device_posture_ratio{host_name=~\"$host_name\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4717,7 +4717,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_network_unique_dst_peers[10m])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_network_unique_dst_peers[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4794,7 +4794,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_network_unique_dst_ports[10m])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_network_unique_dst_ports[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -7897,7 +7897,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_setting_enabled_ratio[2h])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_setting_enabled_ratio[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8038,7 +8038,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_feature_enabled_ratio[2h])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_feature_enabled_ratio[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8356,7 +8356,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_user_connected_ratio[2h])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_user_connected_ratio[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8378,7 +8378,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_user_devices_ratio[2h])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_user_devices_ratio[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8400,7 +8400,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_user_last_seen_seconds[2h])",
+                        "expr": "time() - max without (service_version) (last_over_time(tailscale_user_last_seen_seconds[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8628,7 +8628,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_key_expiry_seconds[2h]) - time()",
+                        "expr": "max without (service_version) (last_over_time(tailscale_key_expiry_seconds[2h])) - time()",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9013,7 +9013,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_node_up_ratio[15m])",
+                        "expr": "max without (service_version) (last_over_time(tailscale_node_up_ratio[15m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9384,7 +9384,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscaled_advertised_routes[15m])",
+                        "expr": "max without (service_version) (last_over_time(tailscaled_advertised_routes[15m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9461,7 +9461,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscaled_approved_routes[15m])",
+                        "expr": "max without (service_version) (last_over_time(tailscaled_approved_routes[15m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9538,7 +9538,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscaled_health_messages[15m])",
+                        "expr": "max without (service_version) (last_over_time(tailscaled_health_messages[15m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9615,7 +9615,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscaled_home_derp_region_id[15m])",
+                        "expr": "max without (service_version) (last_over_time(tailscaled_home_derp_region_id[15m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9692,7 +9692,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscaled_peer_relay_endpoints[15m])",
+                        "expr": "max without (service_version) (last_over_time(tailscaled_peer_relay_endpoints[15m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -10465,7 +10465,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_scrape_duration_seconds{tailscale_collector=~\"$collector\"}",
+                        "expr": "max by (tailscale_collector) (tailscale2otel_scrape_duration_seconds{tailscale_collector=~\"$collector\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_collector}}",
@@ -10539,7 +10539,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_scrape_success_ratio{tailscale_collector=~\"$collector\"}",
+                        "expr": "max by (tailscale_collector) (tailscale2otel_scrape_success_ratio{tailscale_collector=~\"$collector\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_collector}}",
@@ -10615,7 +10615,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale2otel_scrape_last_timestamp_seconds{tailscale_collector=~\"$collector\"}[10m])",
+                        "expr": "time() - max without (service_version) (last_over_time(tailscale2otel_scrape_last_timestamp_seconds{tailscale_collector=~\"$collector\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -11070,7 +11070,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, tailscale2otel_series_active)",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{metric_name}}",
@@ -11144,7 +11144,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_dedup_size_ratio",
+                        "expr": "max by (dedup_set) (tailscale2otel_dedup_size_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{dedup_set}}",
@@ -12015,7 +12015,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_runtime_memory_alloc_bytes_total[$__rate_interval])",
+                        "expr": "sum(rate(tailscale2otel_runtime_memory_alloc_bytes_total[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "alloc/s",
@@ -12831,7 +12831,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, tailscale2otel_series_active)",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{metric_name}}",
@@ -12914,7 +12914,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, tailscale2otel_series_active)",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{metric_name}}",
@@ -13285,7 +13285,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale2otel_dedup_size_ratio",
+                        "expr": "max by (dedup_set) (tailscale2otel_dedup_size_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{dedup_set}}",

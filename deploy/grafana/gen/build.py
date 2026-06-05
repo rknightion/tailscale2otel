@@ -59,6 +59,18 @@ def lot(metric, w=WIN_FAST):
     return "last_over_time(%s[%s])" % (metric, w)
 
 
+def sv(expr):
+    """Strip the deploy-churning service_version label from a raw instant-vector expr.
+
+    service_version is a promoted resource label on every exporter series, so a redeploy
+    forks each series (new color, duplicate legend / extra table row, a constant 'Version'
+    column) for one staleness window. `max without (service_version)` collapses the fork
+    while preserving every other label (host_name, tailscale_collector, …) so renames and
+    organize() still resolve. Use on raw `lot(...)` table/stat exprs that have no other
+    aggregation. NOT for the Diagnostics 'Build info' table, which shows Version on purpose."""
+    return "max without (service_version) (%s)" % expr
+
+
 # ---------------------------------------------------------------------------
 # low-level builders
 # ---------------------------------------------------------------------------
@@ -381,10 +393,10 @@ def tab_overview():
                unit="short", custom=ts_custom(fill=10), options=ts_opts()), 8, 7),
     ]
     capabilities = [
-        (panel("Tailnet features", "timeseries", [prom_t("tailscale_feature_enabled_ratio", legend="{{tailscale_feature}}")],
+        (panel("Tailnet features", "timeseries", [prom_t("max by (tailscale_feature) (tailscale_feature_enabled_ratio)", legend="{{tailscale_feature}}")],
                unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=0, points="always"),
                options=ts_opts(placement="right"), desc="Per-feature enabled (1) / disabled (0)."), 12, 6),
-        (panel("Tailnet settings", "timeseries", [prom_t("tailscale_setting_enabled_ratio", legend="{{tailscale_setting_name}}")],
+        (panel("Tailnet settings", "timeseries", [prom_t("max by (tailscale_setting_name) (tailscale_setting_enabled_ratio)", legend="{{tailscale_setting_name}}")],
                unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=0, points="always"),
                options=ts_opts(placement="right")), 12, 6),
     ]
@@ -427,21 +439,21 @@ def tab_fleet():
     ]
     tables = [
         (panel("Updates available", "table",
-               [prom_t("%s == 1" % lot("tailscale_device_update_available_ratio" + df), instant=True, fmt="table")],
+               [prom_t("%s == 1" % sv(lot("tailscale_device_update_available_ratio" + df)), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                    "service_instance_id", "service_name", "service_namespace", "Value"],
                                           rename={"host_name": "Host", "os_type": "OS", "os_version": "OS version",
                                                   "tailscale_user": "User"})],
                desc="Devices with a client update available."), 8, 8),
         (panel("Device key expiry (time until)", "table",
-               [prom_t("%s - time()" % lot("tailscale_device_key_expiry_seconds" + df, WIN_SLOW), instant=True, fmt="table")],
+               [prom_t("%s - time()" % sv(lot("tailscale_device_key_expiry_seconds" + df, WIN_SLOW)), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                              "service_instance_id", "service_name", "service_namespace"],
                                                     rename={"host_name": "Host", "tailscale_user": "User",
                                                             "Value": "Expires in"})],
                desc="Time until each device node key expires."), 8, 8),
         (panel("Last seen (time since)", "table",
-               [prom_t("time() - %s" % lot("tailscale_device_last_seen_seconds" + df, WIN_SLOW), instant=True, fmt="table")],
+               [prom_t("time() - %s" % sv(lot("tailscale_device_last_seen_seconds" + df, WIN_SLOW)), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"host_name": "Host", "tailscale_user": "User",
@@ -450,7 +462,7 @@ def tab_fleet():
     ]
     derp = [
         (panel("DERP latency by host / region", "table",
-               [prom_t(lot("tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}"), instant=True, fmt="table")],
+               [prom_t(sv(lot("tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}")), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"host_name": "Host", "tailscale_derp_region": "Region",
@@ -462,8 +474,8 @@ def tab_fleet():
     ]
     routes = [
         (panel("Subnet routes — advertised vs enabled", "table",
-               [prom_t(lot("tailscale_device_routes_advertised{host_name=~\"$host_name\"}"), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_device_routes_enabled{host_name=~\"$host_name\"}"), instant=True, fmt="table", refid="B")],
+               [prom_t(sv(lot("tailscale_device_routes_advertised{host_name=~\"$host_name\"}")), instant=True, fmt="table", refid="A"),
+                prom_t(sv(lot("tailscale_device_routes_enabled{host_name=~\"$host_name\"}")), instant=True, fmt="table", refid="B")],
                unit="short", transformations=[merge(),
                                               organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                                 "service_instance_id", "service_name", "service_namespace"],
@@ -471,7 +483,7 @@ def tab_fleet():
     ]
     posture = [
         (panel("Posture overview", "table",
-               [prom_t(lot("tailscale_device_posture_ratio{host_name=~\"$host_name\"}", WIN_SLOW), instant=True, fmt="table")],
+               [prom_t(sv(lot("tailscale_device_posture_ratio{host_name=~\"$host_name\"}", WIN_SLOW)), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                   "service_instance_id", "service_name", "service_namespace", "Value"])],
                desc="Per-device posture: OS, client version, auto-update, encryption, track."), 16, 8),
@@ -537,13 +549,13 @@ def tab_network():
                unit="percentunit", thresholds=thr([(None, "green"), (0.5, "yellow"), (0.8, "red")]),
                options=stat_opts(color="background"), desc="Fraction of rollup bytes folded into the bounded __other__ bucket."), 8, 6),
         (panel("Unique dst peers per src", "table",
-               [prom_t(lot("tailscale_network_unique_dst_peers"), instant=True, fmt="table")],
+               [prom_t(sv(lot("tailscale_network_unique_dst_peers")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_src_node": "Source node", "Value": "Unique peers"})],
                desc="Distinct destination peers per source node (last flush)."), 8, 6),
         (panel("Unique dst ports per src", "table",
-               [prom_t(lot("tailscale_network_unique_dst_ports"), instant=True, fmt="table")],
+               [prom_t(sv(lot("tailscale_network_unique_dst_ports")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_src_node": "Source node", "Value": "Unique ports"})],
@@ -649,14 +661,14 @@ def tab_policy():
         (panel("Split-DNS zones", "stat", [prom_t("max(%s)" % lot("tailscale_dns_split_zones_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
     ]
     settings = [
-        (panel("Tailnet settings", "table", [prom_t(lot("tailscale_setting_enabled_ratio", WIN_SLOW), instant=True, fmt="table")],
+        (panel("Tailnet settings", "table", [prom_t(sv(lot("tailscale_setting_enabled_ratio", WIN_SLOW)), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_setting_name": "Setting", "Value": "Enabled"})],
                desc="Per-setting enabled (1) / disabled (0)."), 8, 7),
         (panel("Device key duration", "stat", [prom_t("max(%s)" % lot("tailscale_setting_devices_key_duration_days", WIN_SLOW))],
                unit="d", options=stat_opts()), 4, 7),
-        (panel("Tailnet features", "table", [prom_t(lot("tailscale_feature_enabled_ratio", WIN_SLOW), instant=True, fmt="table")],
+        (panel("Tailnet features", "table", [prom_t(sv(lot("tailscale_feature_enabled_ratio", WIN_SLOW)), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_feature": "Feature", "Value": "Enabled"})],
@@ -678,9 +690,9 @@ def tab_policy():
     ]
     users_pe = [
         (panel("Per-user detail", "table",
-               [prom_t(lot("tailscale_user_connected_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_user_devices_ratio", WIN_SLOW), instant=True, fmt="table", refid="B"),
-                prom_t("time() - %s" % lot("tailscale_user_last_seen_seconds", WIN_SLOW), instant=True, fmt="table", refid="C")],
+               [prom_t(sv(lot("tailscale_user_connected_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
+                prom_t(sv(lot("tailscale_user_devices_ratio", WIN_SLOW)), instant=True, fmt="table", refid="B"),
+                prom_t("time() - %s" % sv(lot("tailscale_user_last_seen_seconds", WIN_SLOW)), instant=True, fmt="table", refid="C")],
                transformations=[merge(),
                                 organize(exclude=["Time", "__name__", "job", "instance", "enduser_id",
                                                   "service_instance_id", "service_name", "service_namespace"],
@@ -702,7 +714,7 @@ def tab_policy():
                        legend="{{tailscale_key_type}} revoked={{tailscale_key_revoked}} invalid={{tailscale_key_invalid}}")],
                unit="short", options=bargauge_opts()), 10, 7),
         (panel("Key expiry (time until)", "table",
-               [prom_t("%s - time()" % lot("tailscale_key_expiry_seconds", WIN_SLOW), instant=True, fmt="table")],
+               [prom_t("%s - time()" % sv(lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"tailscale_key_id": "Key ID", "tailscale_key_type": "Type",
@@ -724,7 +736,7 @@ def tab_nodemetrics():
                mappings=UP_MAP, thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background")), 5, 5),
         (panel("Discovered targets", "stat", [prom_t("max(%s)" % lot("tailscale2otel_nodemetrics_discovery_targets"))],
                unit="short", options=stat_opts()), 5, 5),
-        (panel("Node up", "table", [prom_t(lot("tailscale_node_up_ratio", "15m"), instant=True, fmt="table")],
+        (panel("Node up", "table", [prom_t(sv(lot("tailscale_node_up_ratio", "15m")), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_node": "Node", "Value": "Up"})],
@@ -745,24 +757,24 @@ def tab_nodemetrics():
                unit="pps", custom=ts_custom(), options=ts_opts()), 12, 7),
     ]
     routing = [
-        (panel("Advertised routes", "table", [prom_t(lot("tailscaled_advertised_routes", "15m"), instant=True, fmt="table")],
+        (panel("Advertised routes", "table", [prom_t(sv(lot("tailscaled_advertised_routes", "15m")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Advertised"})]), 8, 7),
-        (panel("Approved routes", "table", [prom_t(lot("tailscaled_approved_routes", "15m"), instant=True, fmt="table")],
+        (panel("Approved routes", "table", [prom_t(sv(lot("tailscaled_approved_routes", "15m")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Approved"})]), 8, 7),
-        (panel("Health messages", "table", [prom_t(lot("tailscaled_health_messages", "15m"), instant=True, fmt="table")],
+        (panel("Health messages", "table", [prom_t(sv(lot("tailscaled_health_messages", "15m")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Messages"})],
                desc="tailscaled self-reported health warnings."), 8, 7),
-        (panel("Home DERP region", "table", [prom_t(lot("tailscaled_home_derp_region_id", "15m"), instant=True, fmt="table")],
+        (panel("Home DERP region", "table", [prom_t(sv(lot("tailscaled_home_derp_region_id", "15m")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Region ID"})]), 12, 6),
-        (panel("Peer relay endpoints", "table", [prom_t(lot("tailscaled_peer_relay_endpoints", "15m"), instant=True, fmt="table")],
+        (panel("Peer relay endpoints", "table", [prom_t(sv(lot("tailscaled_peer_relay_endpoints", "15m")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Endpoints"})]), 12, 6),
@@ -817,13 +829,13 @@ def tab_diagnostics():
     ]
     collectors = [
         (panel("Scrape duration by collector", "timeseries",
-               [prom_t("tailscale2otel_scrape_duration_seconds%s" % cf, legend="{{tailscale_collector}}")],
+               [prom_t("max by (tailscale_collector) (tailscale2otel_scrape_duration_seconds%s)" % cf, legend="{{tailscale_collector}}")],
                unit="s", custom=ts_custom(), options=ts_opts(placement="right")), 12, 7),
         (panel("Scrape success by collector", "timeseries",
-               [prom_t("tailscale2otel_scrape_success_ratio%s" % cf, legend="{{tailscale_collector}}")],
+               [prom_t("max by (tailscale_collector) (tailscale2otel_scrape_success_ratio%s)" % cf, legend="{{tailscale_collector}}")],
                unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=10), options=ts_opts(placement="right")), 12, 7),
         (panel("Last scrape age", "table",
-               [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds" + cf), instant=True, fmt="table")],
+               [prom_t("time() - %s" % sv(lot("tailscale2otel_scrape_last_timestamp_seconds" + cf)), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"tailscale_collector": "Collector", "Value": "Age"})],
@@ -850,10 +862,10 @@ def tab_diagnostics():
     ]
     cardinality = [
         (panel("Active series by metric (top $topn)", "timeseries",
-               [prom_t("topk($topn, tailscale2otel_series_active)", legend="{{metric_name}}")],
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))", legend="{{metric_name}}")],
                unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Per-metric active series (cap 10k). Watch the flow families."), 12, 8),
-        (panel("Dedup set size", "timeseries", [prom_t("tailscale2otel_dedup_size_ratio", legend="{{dedup_set}}")],
+        (panel("Dedup set size", "timeseries", [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="{{dedup_set}}")],
                unit="short", custom=ts_custom(), options=ts_opts()), 6, 8),
         (panel("Dedup evictions/s", "timeseries",
                [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[%s]))" % RI, legend="{{dedup_set}}")],
@@ -891,7 +903,7 @@ def tab_diagnostics():
                unit="bytes", custom=ts_custom(), options=ts_opts(),
                desc="Live heap vs the heap size that triggers the next GC; the gap is GC headroom."), 8, 6),
         (panel("Heap alloc churn", "timeseries",
-               [prom_t("rate(tailscale2otel_runtime_memory_alloc_bytes_total[%s])" % RI, legend="alloc/s")],
+               [prom_t("sum(rate(tailscale2otel_runtime_memory_alloc_bytes_total[%s]))" % RI, legend="alloc/s")],
                unit="Bps", custom=ts_custom(), options=ts_opts(),
                desc="Cumulative heap-allocation rate (includes freed); allocation churn / GC pressure."), 8, 6),
         (panel("Live heap objects", "timeseries",
@@ -952,12 +964,12 @@ def tab_cardinality():
     ]
     budget = [
         (panel("Active series vs 10k cap (top $topn)", "bargauge",
-               [prom_t("topk($topn, tailscale2otel_series_active)", legend="{{metric_name}}")],
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))", legend="{{metric_name}}")],
                unit="short", max_=10000, thresholds=thr([(None, "green"), (8000, "yellow"), (10000, "red")]),
                options=bargauge_opts(),
                desc="Per-metric active series against the cap. Watch the flow families."), 12, 8),
         (panel("Active series over time (top $topn)", "timeseries",
-               [prom_t("topk($topn, tailscale2otel_series_active)", legend="{{metric_name}}")],
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))", legend="{{metric_name}}")],
                unit="short", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
     ]
     flow = [
@@ -982,7 +994,7 @@ def tab_cardinality():
                     "(collectors.flowlogs.max_log_records_per_window). Metrics are never dropped, only logs."), 6, 7),
     ]
     dedup = [
-        (panel("Dedup set size", "timeseries", [prom_t("tailscale2otel_dedup_size_ratio", legend="{{dedup_set}}")],
+        (panel("Dedup set size", "timeseries", [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="{{dedup_set}}")],
                unit="short", custom=ts_custom(), options=ts_opts(),
                desc="Keys held in each cross-source de-duplication set (a count)."), 12, 6),
         (panel("Dedup evictions/s", "timeseries",
