@@ -393,7 +393,9 @@ def tab_overview():
 
 
 def tab_fleet():
-    df = "{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\"}"
+    # tailscale_tags=~"$device_tag" (allValue ".*") matches series that lack the
+    # label too, so untagged devices still appear under "All".
+    df = "{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}"
     on = lot("tailscale_device_online_ratio" + df)
     inv = [
         (panel("Online", "stat", [prom_t("count(%s == 1) or vector(0)" % on)],
@@ -408,6 +410,11 @@ def tab_fleet():
         (panel("Devices by OS", "bargauge",
                [prom_t("sum by (os_type) (max by (os_type, tailscale_authorized, tailscale_external) (%s))" % lot("tailscale_devices_count_ratio", WIN_SLOW), legend="{{os_type}}")],
                unit="short", options=bargauge_opts()), 9, 5),
+        (panel("Devices by tag", "bargauge",
+               [prom_t("count by (tailscale_tags) (%s)" % lot("tailscale_device_online_ratio" + df), legend="{{tailscale_tags}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Device count per ACL tag combination (untagged devices group under an empty bar). "
+                    "Requires the tailscale.tags label (exporter >= this release)."), 9, 5),
     ]
     overtime = [
         (panel("Online vs total", "timeseries",
