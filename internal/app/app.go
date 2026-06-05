@@ -87,7 +87,8 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 
 	tsOpts := tsapiOptions(cfg)
 	if cfg.SelfObservability.Enabled {
-		tsOpts.OnRequest = apiObserver(emitter)
+		obs := apiObserver(emitter)
+		tsOpts.OnRequest = func(i tsapi.RequestInfo) { obs(i.Endpoint, i.Status, i.Attempts) }
 	}
 	client, err := tsapi.NewClient(tsOpts)
 	if err != nil {

@@ -2,6 +2,7 @@ package tsapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -26,21 +27,31 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	}, nil
 }
 
+// errRoundTripper always fails with a transport error, exercising the err!=0,
+// status==0 path of observe.
+type errRoundTripper struct {
+	err   error
+	calls int
+}
+
+func (f *errRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	f.calls++
+	return nil, f.err
+}
+
 func TestRetryTransport_ObserverSeesFinalStatusAndAttempts(t *testing.T) {
 	var (
-		gotEndpoint string
-		gotStatus   = -1
-		gotAttempts = -1
-		calls       int
+		got   RequestInfo
+		calls int
 	)
 	rt := &retryTransport{
 		base:      &fakeRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}},
 		max:       3,
 		baseDelay: time.Millisecond,
 		maxDelay:  2 * time.Millisecond,
-		onRequest: func(endpoint string, status, attempts int) {
+		onRequest: func(i RequestInfo) {
 			calls++
-			gotEndpoint, gotStatus, gotAttempts = endpoint, status, attempts
+			got = i
 		},
 	}
 
@@ -59,27 +70,32 @@ func TestRetryTransport_ObserverSeesFinalStatusAndAttempts(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("observer called %d times, want exactly 1", calls)
 	}
-	if gotStatus != http.StatusOK {
-		t.Fatalf("observed status = %d, want 200", gotStatus)
+	if got.Status != http.StatusOK {
+		t.Fatalf("observed status = %d, want 200", got.Status)
 	}
-	if gotAttempts != 2 {
-		t.Fatalf("observed attempts = %d, want 2", gotAttempts)
+	if got.Attempts != 2 {
+		t.Fatalf("observed attempts = %d, want 2", got.Attempts)
 	}
-	if gotEndpoint != "devices" {
-		t.Fatalf("observed endpoint = %q, want %q", gotEndpoint, "devices")
+	if got.Endpoint != "devices" {
+		t.Fatalf("observed endpoint = %q, want %q", got.Endpoint, "devices")
+	}
+	if got.Duration <= 0 {
+		t.Fatalf("observed duration = %v, want > 0", got.Duration)
+	}
+	if got.Err != "" {
+		t.Fatalf("observed err = %q, want empty", got.Err)
 	}
 }
 
 func TestRetryTransport_ObserverFirstTry(t *testing.T) {
-	var gotAttempts, gotStatus int
-	var gotEndpoint string
+	var got RequestInfo
 	rt := &retryTransport{
 		base:      &fakeRoundTripper{statuses: []int{http.StatusOK}},
 		max:       3,
 		baseDelay: time.Millisecond,
 		maxDelay:  2 * time.Millisecond,
-		onRequest: func(endpoint string, status, attempts int) {
-			gotEndpoint, gotStatus, gotAttempts = endpoint, status, attempts
+		onRequest: func(i RequestInfo) {
+			got = i
 		},
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
@@ -87,14 +103,57 @@ func TestRetryTransport_ObserverFirstTry(t *testing.T) {
 	if _, err := rt.RoundTrip(req); err != nil {
 		t.Fatalf("RoundTrip: %v", err)
 	}
-	if gotAttempts != 1 {
-		t.Fatalf("attempts = %d, want 1", gotAttempts)
+	if got.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", got.Attempts)
 	}
-	if gotStatus != http.StatusOK {
-		t.Fatalf("status = %d", gotStatus)
+	if got.Status != http.StatusOK {
+		t.Fatalf("status = %d", got.Status)
 	}
-	if gotEndpoint != "logging/network" {
-		t.Fatalf("endpoint = %q, want logging/network", gotEndpoint)
+	if got.Endpoint != "logging/network" {
+		t.Fatalf("endpoint = %q, want logging/network", got.Endpoint)
+	}
+	if got.Duration <= 0 {
+		t.Fatalf("duration = %v, want > 0", got.Duration)
+	}
+	if got.Err != "" {
+		t.Fatalf("err = %q, want empty", got.Err)
+	}
+}
+
+// TestRetryTransport_ObserverTransportError verifies that when every attempt
+// fails at the transport layer (no HTTP response), the observer sees Status==0
+// and a non-empty Err carrying the transport error text.
+func TestRetryTransport_ObserverTransportError(t *testing.T) {
+	var got RequestInfo
+	base := &errRoundTripper{err: errors.New("dial tcp: connection refused")}
+	rt := &retryTransport{
+		base:      base,
+		max:       2,
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+		onRequest: func(i RequestInfo) {
+			got = i
+		},
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	if _, err := rt.RoundTrip(req); err == nil {
+		t.Fatalf("RoundTrip err = nil, want transport error")
+	}
+	if got.Status != 0 {
+		t.Fatalf("status = %d, want 0 on transport error", got.Status)
+	}
+	if got.Attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", got.Attempts)
+	}
+	if got.Endpoint != "devices" {
+		t.Fatalf("endpoint = %q, want devices", got.Endpoint)
+	}
+	if got.Err == "" {
+		t.Fatalf("err = empty, want transport error text")
+	}
+	if got.Duration <= 0 {
+		t.Fatalf("duration = %v, want > 0", got.Duration)
 	}
 }
 

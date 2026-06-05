@@ -20,6 +20,17 @@ func (t *authKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return t.base.RoundTrip(r)
 }
 
+// RequestInfo describes one completed logical API request (after all retries),
+// reported to Options.OnRequest. Err is the transport error string ("" on an
+// HTTP response of any status); it never contains response body or header data.
+type RequestInfo struct {
+	Endpoint string        // low-cardinality label (endpointLabel)
+	Status   int           // final HTTP status, 0 on transport error
+	Attempts int           // total attempts incl. the first
+	Duration time.Duration // wall-clock of the whole logical request (incl. retries/backoff)
+	Err      string        // transport error text, "" when an HTTP response was received
+}
+
 // retryTransport retries 429 and 5xx responses (and transport errors) with
 // exponential backoff, honoring Retry-After. Safe for the idempotent, bodyless
 // GETs used by this package.
@@ -30,12 +41,12 @@ type retryTransport struct {
 	maxDelay  time.Duration
 
 	// onRequest, when non-nil, is called exactly once after the final attempt
-	// of each logical request with a low-cardinality endpoint label, the final
-	// HTTP status (0 on transport error) and the total attempt count.
-	onRequest func(endpoint string, status, attempts int)
+	// of each logical request with a RequestInfo describing the outcome.
+	onRequest func(RequestInfo)
 }
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	start := time.Now()
 	var (
 		resp  *http.Response
 		err   error
@@ -49,18 +60,18 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if req.GetBody != nil {
 			body, gbErr := req.GetBody()
 			if gbErr != nil {
-				t.observe(req, nil, gbErr, attempt)
+				t.observe(req, nil, gbErr, attempt, start)
 				return nil, gbErr
 			}
 			attemptReq.Body = body
 		}
 		resp, err = t.base.RoundTrip(attemptReq)
 		if err == nil && resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
-			t.observe(req, resp, err, attempt)
+			t.observe(req, resp, err, attempt, start)
 			return resp, nil
 		}
 		if attempt >= t.max {
-			t.observe(req, resp, err, attempt)
+			t.observe(req, resp, err, attempt, start)
 			return resp, err
 		}
 		sleep := delay
@@ -73,7 +84,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		select {
 		case <-req.Context().Done():
-			t.observe(req, nil, req.Context().Err(), attempt)
+			t.observe(req, nil, req.Context().Err(), attempt, start)
 			return nil, req.Context().Err()
 		case <-time.After(sleep):
 		}
@@ -84,7 +95,9 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // observe reports a completed logical request to the configured hook, if any.
-func (t *retryTransport) observe(req *http.Request, resp *http.Response, err error, attempts int) {
+// start is the monotonic time the logical request began (captured in RoundTrip),
+// used to compute the wall-clock duration across all retries and backoff.
+func (t *retryTransport) observe(req *http.Request, resp *http.Response, err error, attempts int, start time.Time) {
 	if t.onRequest == nil {
 		return
 	}
@@ -92,7 +105,17 @@ func (t *retryTransport) observe(req *http.Request, resp *http.Response, err err
 	if err == nil && resp != nil {
 		status = resp.StatusCode
 	}
-	t.onRequest(endpointLabel(req.URL.Path), status, attempts)
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
+	t.onRequest(RequestInfo{
+		Endpoint: endpointLabel(req.URL.Path),
+		Status:   status,
+		Attempts: attempts,
+		Duration: time.Since(start),
+		Err:      errStr,
+	})
 }
 
 // endpointLabel derives a stable, low-cardinality label from an API request
