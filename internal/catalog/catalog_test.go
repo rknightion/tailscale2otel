@@ -23,6 +23,7 @@ var canonicalGroups = map[string]bool{
 	"Webhooks":           true,
 	"Posture":            true,
 	"Log streaming":      true,
+	"Services":           true,
 	"Features":           true,
 	"Receivers":          true,
 	"Node metrics":       true,
@@ -90,6 +91,7 @@ func TestContainsRepresentativeSignals(t *testing.T) {
 		"tailscale.webhook_endpoints.count",
 		"tailscale.posture_integrations.count",
 		"tailscale.logstream.configured",
+		"tailscale.services.count",
 	} {
 		if !metricNames[want] {
 			t.Errorf("aggregate metric catalog missing %q", want)

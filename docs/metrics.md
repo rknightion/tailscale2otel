@@ -284,6 +284,21 @@ error noise). The error **text** is on the `tailscale.logstream.error` log event
 | `tailscale.logstream.spoofed_entries` | `{event}` | counter | `tailscale_logstream_spoofed_entries_total` | `tailscale_logstream_type` | Log entries rejected as spoofed. |
 <!-- END GENERATED -->
 
+### Tailscale Services / VIP (`tailscale.service*.*`)
+
+Tailscale Services (VIP services) and their backing hosts. Service addresses, comments and
+annotations are **never emitted**. The per-service `ports`/`hosts` gauges are gated by
+`cardinality.service_per_entity`; `hosts` additionally requires `collect_hosts` (one extra API call
+per service).
+
+<!-- BEGIN GENERATED: metrics groups="Services" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.service.hosts` | `1` | gauge | `tailscale_service_hosts_ratio` | `tailscale_service_name`, `tailscale_service_approval`, `tailscale_service_configured` | Backing-host **count** for a Tailscale Service, bucketed by approval + configured state; one series per service/approval/configured. **Gated** by `collect_hosts` (N+1 calls) and `cardinality.service_per_entity`. |
+| `tailscale.service.ports` | `{port}` | gauge | `tailscale_service_ports` | `tailscale_service_name` | Number of port rules exposed by a Tailscale Service; one series per service. **Gated** by `cardinality.service_per_entity`. |
+| `tailscale.services.count` | `1` | gauge | `tailscale_services_count_ratio` | — | Number of Tailscale Services (VIP services) in the tailnet (a **count**, despite `_ratio`). |
+<!-- END GENERATED -->
+
 ### Features (`tailscale.feature.*`)
 
 <!-- BEGIN GENERATED: metrics groups="Features" -->

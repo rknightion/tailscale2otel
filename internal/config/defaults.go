@@ -59,6 +59,7 @@ func Default() *Config {
 			UserPerEntity:          true,
 			KeyPerEntity:           true,
 			WebhookPerEntity:       true,
+			ServicePerEntity:       true,
 			MetricLimit:            10000,
 		},
 		Collectors: Collectors{
@@ -125,6 +126,10 @@ func Default() *Config {
 				Interval: dur(600 * time.Second),
 			},
 			LogStream: CollectorConfig{
+				Enabled:  true,
+				Interval: dur(600 * time.Second),
+			},
+			Services: CollectorConfig{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},

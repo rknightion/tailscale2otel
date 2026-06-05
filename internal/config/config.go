@@ -208,6 +208,9 @@ type CardinalityConfig struct {
 	// tailscale.webhook_endpoint.subscriptions gauge; false keeps only the
 	// aggregate tailscale.webhook_endpoints.count.
 	WebhookPerEntity bool `yaml:"webhook_per_entity"`
+	// ServicePerEntity (default true) gates the per-service tailscale.service.*
+	// gauges; false keeps only the aggregate tailscale.services.count.
+	ServicePerEntity bool `yaml:"service_per_entity"`
 	// MetricLimit is the hard per-instrument cardinality limit: the maximum number
 	// of distinct attribute sets (series) a single metric may emit per collection
 	// cycle. Beyond it the OTLP SDK collapses further series into one
@@ -232,6 +235,7 @@ type Collectors struct {
 	Webhooks            CollectorConfig   `yaml:"webhooks"`
 	PostureIntegrations CollectorConfig   `yaml:"posture_integrations"`
 	LogStream           CollectorConfig   `yaml:"log_stream"`
+	Services            CollectorConfig   `yaml:"services"`
 	NodeMetrics         NodeMetricsConfig `yaml:"node_metrics"`
 }
 
@@ -332,6 +336,9 @@ type CollectorConfig struct {
 	ExpiryWarn      Duration `yaml:"expiry_warn"`
 	CollectRoutes   bool     `yaml:"collect_routes"`
 	CollectPosture  bool     `yaml:"collect_posture"`
+	// CollectHosts (services collector) enables per-service backing-host detail —
+	// one extra API call per service (N+1). Off by default.
+	CollectHosts bool `yaml:"collect_hosts"`
 	// PostureLogMode controls the tailscale.device.posture LOG (devices collector,
 	// requires collect_posture): "changes" (default) logs a device only when its
 	// posture changes since the last scrape — a full baseline dump on the first
