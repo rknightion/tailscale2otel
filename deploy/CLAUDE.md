@@ -9,8 +9,13 @@ consumed by operators or by the release pipelines.
   `Dockerfile.goreleaser` — the variant GoReleaser uses for the published multi-arch image.
 - `docker-compose.yaml` — local/single-host run (this is how it's deployed on `node-a`).
 - `helm/tailscale2otel/` — Helm chart (see below).
-- `grafana/*.json` — four importable Grafana 13 dashboards (fleet, network, audit-events,
-  exporter-health). Datasource-agnostic via `${DS_PROM}`/`${DS_LOKI}` vars. See `grafana/README.md`.
+- `grafana/tailscale2otel.json` — the **flagship** dashboard: one comprehensive multi-tab
+  dashboard using the Grafana **v2 schema** (`dashboard.grafana.app/v2`, Grafana 13+) with
+  conditional rendering. **Generated** from `grafana/gen/build.py` (dashboards-as-code, stdlib
+  Python) — edit the generator, not the JSON; regenerate with `python3 grafana/gen/build.py --out
+  grafana/tailscale2otel.json`. Plus four **legacy** standalone classic-schema dashboards
+  (`tailscale-{fleet,network,audit-events,exporter-health}.json`, datasource-agnostic via
+  `${DS_PROM}`/`${DS_LOKI}`). See `grafana/README.md`.
 - `alerts/tailscale2otel.rules.yaml` — Prometheus/Grafana alert rules. See `alerts/README.md`.
 
 ## Helm chart — config is single-source
