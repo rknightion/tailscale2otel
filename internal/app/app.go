@@ -55,8 +55,10 @@ type App struct {
 	cache       *enrich.DeviceCache
 	registry    *collector.Registry
 	sched       *collector.Scheduler
-	status      *collector.StatusTracker // per-collector run outcomes, for the status page
-	runtimeHist *runtimeHistory          // short-term runtime/cardinality trends, for the status page
+	status      *collector.StatusTracker  // per-collector run outcomes, for the status page
+	runtimeHist *runtimeHistory           // short-term runtime/cardinality trends, for the status page
+	apiStats    *APIStats                 // per-endpoint Tailscale API request stats, for the status page
+	store       collector.CheckpointStore // checkpoint store; read for window-collector state on the status page
 	logger      *slog.Logger
 
 	flowProc     *flowlog.Processor
@@ -86,10 +88,20 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 	emitter := provider.Emitter()
 
+	// One combined request hook: APIStats always records (the status page's API
+	// panel must work even with self-obs off), and apiObserver additionally emits
+	// OTLP only when self-observability is enabled.
+	apiStats := NewAPIStats()
 	tsOpts := tsapiOptions(cfg)
+	var obs func(string, int, int)
 	if cfg.SelfObservability.Enabled {
-		obs := apiObserver(emitter)
-		tsOpts.OnRequest = func(i tsapi.RequestInfo) { obs(i.Endpoint, i.Status, i.Attempts) }
+		obs = apiObserver(emitter)
+	}
+	tsOpts.OnRequest = func(i tsapi.RequestInfo) {
+		if obs != nil {
+			obs(i.Endpoint, i.Status, i.Attempts)
+		}
+		apiStats.Record(i)
 	}
 	client, err := tsapi.NewClient(tsOpts)
 	if err != nil {
@@ -102,7 +114,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		return nil, err
 	}
 
-	a := newApp(cfg, version, logger, emitter, provider.Shutdown, client, store)
+	a := newApp(cfg, version, logger, emitter, provider.Shutdown, client, store, apiStats)
 	a.card = provider.Cardinality()
 
 	// Continuous profiling is opt-in. startProfiling also applies the runtime
@@ -127,6 +139,7 @@ func newApp(
 	shutdown func(context.Context) error,
 	client *tsapi.Client,
 	store collector.CheckpointStore,
+	apiStats *APIStats,
 ) *App {
 	if logger == nil {
 		logger = slog.Default()
@@ -142,6 +155,8 @@ func newApp(
 		registry:    collector.NewRegistry(),
 		status:      collector.NewStatusTracker(),
 		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
+		apiStats:    apiStats,
+		store:       store,
 		logger:      logger,
 	}
 	a.sched = collector.NewScheduler(emitter, store,

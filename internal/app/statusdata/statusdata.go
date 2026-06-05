@@ -23,10 +23,41 @@ type Status struct {
 	Receivers     ReceiversInfo     `json:"receivers"`
 	Profiling     ProfilingInfo     `json:"profiling"`
 	Runtime       RuntimeInfo       `json:"runtime"`
+	API           APIInfo           `json:"api"`
 	Metrics       []MetricRow       `json:"metrics"`
 	LogEvents     []LogRow          `json:"log_events"`
 	Config        ConfigSummary     `json:"config"`
 	GeneratedAt   string            `json:"generated_at"`
+}
+
+// APIInfo summarizes Tailscale API request health per endpoint. RateLimit is set
+// only once a 429 has been observed.
+type APIInfo struct {
+	Endpoints []APIEndpoint `json:"endpoints"`
+	RateLimit *APIRateLimit `json:"rate_limit,omitempty"`
+}
+
+// APIEndpoint is one low-cardinality endpoint's request aggregates. LastError is
+// the transport error text only (never response data); LastAt/Last429At are
+// RFC3339.
+type APIEndpoint struct {
+	Endpoint         string  `json:"endpoint"`
+	Requests         int64   `json:"requests"`
+	Errors           int64   `json:"errors"`
+	Retries          int64   `json:"retries"`
+	RateLimited      int64   `json:"rate_limited"`
+	LastStatus       int     `json:"last_status"`
+	LastError        string  `json:"last_error,omitempty"`
+	LastAt           string  `json:"last_at,omitempty"`
+	Last429At        string  `json:"last_429_at,omitempty"`
+	DurationMsSeries []int64 `json:"duration_ms_series,omitempty"`
+}
+
+// APIRateLimit is the observed rate-limit signal: how many 429s have been seen
+// and when the most recent one was.
+type APIRateLimit struct {
+	LastSeen string `json:"last_seen,omitempty"` // RFC3339
+	Count    int64  `json:"count"`
 }
 
 // ServiceInfo is the identity/liveness header of the page.

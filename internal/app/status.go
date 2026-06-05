@@ -8,6 +8,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/internal/catalog"
+	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
@@ -70,6 +71,7 @@ func (a *App) buildStatus() statusdata.Status {
 			PyroscopeServer:  a.cfg.Profiling.Pyroscope.ServerAddress,
 		},
 		Runtime:     runtimeInfo(),
+		API:         a.apiInfo(),
 		Metrics:     metricRows(metrics, cardByName),
 		LogEvents:   logRows(catalog.LogEvents()),
 		Config:      a.redactedConfigSummary(),
@@ -120,9 +122,66 @@ func (a *App) collectorStatuses(now time.Time) []statusdata.CollectorStatus {
 			cs.DurationMsSeries = h.DurationMs
 			cs.OutcomeSeries = h.Outcomes
 		}
+		if wc, ok := e.Collector.(collector.WindowCollector); ok && a.store != nil {
+			if hwm, has := a.store.Get(name); has {
+				lag := now.Sub(hwm)
+				cs.Checkpoint = &statusdata.CheckpointStatus{
+					HighWaterMark: hwm.UTC().Format(rfc3339),
+					LagSec:        int64(lag.Seconds()),
+					Lag:           humanDuration(lag),
+					// Not advancing: the high-water mark trails "now" by well over
+					// the collector's own lag plus a few intervals of slack.
+					Stuck: lag > wc.Lag()+checkpointStuckMargin*e.Interval,
+				}
+			}
+		}
 		out = append(out, cs)
 	}
 	return out
+}
+
+// checkpointStuckMargin is the number of poll intervals (beyond a window
+// collector's own Lag) a checkpoint may trail "now" before it is flagged stuck.
+const checkpointStuckMargin = 3
+
+// apiInfo builds the API-health section from the per-endpoint request stats. The
+// rate-limit summary is set only once a 429 has been observed.
+func (a *App) apiInfo() statusdata.APIInfo {
+	snaps := a.apiStats.Snapshot()
+	info := statusdata.APIInfo{Endpoints: make([]statusdata.APIEndpoint, 0, len(snaps))}
+	var total429 int64
+	var last429 time.Time
+	for _, s := range snaps {
+		ep := statusdata.APIEndpoint{
+			Endpoint:         s.Endpoint,
+			Requests:         s.Requests,
+			Errors:           s.Errors,
+			Retries:          s.Retries,
+			RateLimited:      s.RateLimited,
+			LastStatus:       s.LastStatus,
+			LastError:        s.LastErr,
+			DurationMsSeries: s.DurMs,
+		}
+		if !s.LastAt.IsZero() {
+			ep.LastAt = s.LastAt.UTC().Format(rfc3339)
+		}
+		if !s.Last429At.IsZero() {
+			ep.Last429At = s.Last429At.UTC().Format(rfc3339)
+		}
+		info.Endpoints = append(info.Endpoints, ep)
+		total429 += s.RateLimited
+		if s.Last429At.After(last429) {
+			last429 = s.Last429At
+		}
+	}
+	if total429 > 0 {
+		rl := &statusdata.APIRateLimit{Count: total429}
+		if !last429.IsZero() {
+			rl.LastSeen = last429.UTC().Format(rfc3339)
+		}
+		info.RateLimit = rl
+	}
+	return info
 }
 
 func (a *App) cacheInfo() statusdata.CacheInfo {

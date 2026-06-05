@@ -92,7 +92,7 @@ func hasCollector(a *App, name string) bool {
 func baseTestApp(t *testing.T, cfg *config.Config, baseURL string, rec *telemetrytest.Recorder) *App {
 	t.Helper()
 	return newApp(cfg, "vtest", nil, rec.Emitter(), func(context.Context) error { return nil },
-		newTestClient(t, baseURL), collector.NewMemoryStore())
+		newTestClient(t, baseURL), collector.NewMemoryStore(), NewAPIStats())
 }
 
 // TestNewApp_ReverseDNSGating verifies the async reverse-DNS cache is constructed
@@ -572,7 +572,7 @@ func TestApp_RunGracefulShutdown(t *testing.T) {
 	shutdown := func(context.Context) error { shutdownCalled = true; return nil }
 
 	a := newApp(cfg, "v9.9.9", nil, rec.Emitter(), shutdown,
-		newTestClient(t, ts.URL), collector.NewMemoryStore())
+		newTestClient(t, ts.URL), collector.NewMemoryStore(), NewAPIStats())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
