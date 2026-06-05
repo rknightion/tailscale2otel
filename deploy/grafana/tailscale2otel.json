@@ -976,6 +976,166 @@
           "skipUrlSync": true,
           "sort": "disabled"
         }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "has_posture_integration",
+          "label": "has_posture_integration",
+          "hide": "hideVariable",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "",
+            "datasource": {
+              "name": "${ds_prometheus}"
+            },
+            "spec": {
+              "query": "label_values(tailscale_posture_integrations_count_ratio, __name__)",
+              "refId": "has_posture_integration"
+            }
+          },
+          "current": {
+            "text": "",
+            "value": ""
+          },
+          "options": [],
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "refresh": "onDashboardLoad",
+          "regex": "",
+          "skipUrlSync": true,
+          "sort": "disabled"
+        }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "has_logstream",
+          "label": "has_logstream",
+          "hide": "hideVariable",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "",
+            "datasource": {
+              "name": "${ds_prometheus}"
+            },
+            "spec": {
+              "query": "label_values(tailscale_logstream_configured_ratio, __name__)",
+              "refId": "has_logstream"
+            }
+          },
+          "current": {
+            "text": "",
+            "value": ""
+          },
+          "options": [],
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "refresh": "onDashboardLoad",
+          "regex": "",
+          "skipUrlSync": true,
+          "sort": "disabled"
+        }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "has_services",
+          "label": "has_services",
+          "hide": "hideVariable",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "",
+            "datasource": {
+              "name": "${ds_prometheus}"
+            },
+            "spec": {
+              "query": "label_values(tailscale_services_count_ratio, __name__)",
+              "refId": "has_services"
+            }
+          },
+          "current": {
+            "text": "",
+            "value": ""
+          },
+          "options": [],
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "refresh": "onDashboardLoad",
+          "regex": "",
+          "skipUrlSync": true,
+          "sort": "disabled"
+        }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "has_tailnet_lock",
+          "label": "has_tailnet_lock",
+          "hide": "hideVariable",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "",
+            "datasource": {
+              "name": "${ds_prometheus}"
+            },
+            "spec": {
+              "query": "label_values(tailscale_tailnet_lock_errors_ratio, __name__)",
+              "refId": "has_tailnet_lock"
+            }
+          },
+          "current": {
+            "text": "",
+            "value": ""
+          },
+          "options": [],
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "refresh": "onDashboardLoad",
+          "regex": "",
+          "skipUrlSync": true,
+          "sort": "disabled"
+        }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "has_derp_rollup",
+          "label": "has_derp_rollup",
+          "hide": "hideVariable",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "",
+            "datasource": {
+              "name": "${ds_prometheus}"
+            },
+            "spec": {
+              "query": "label_values(tailscale_derp_region_devices_ratio, __name__)",
+              "refId": "has_derp_rollup"
+            }
+          },
+          "current": {
+            "text": "",
+            "value": ""
+          },
+          "options": [],
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": false,
+          "refresh": "onDashboardLoad",
+          "regex": "",
+          "skipUrlSync": true,
+          "sort": "disabled"
+        }
       }
     ],
     "elements": {
@@ -6178,6 +6338,621 @@
         "kind": "Panel",
         "spec": {
           "id": 69,
+          "title": "Streams configured",
+          "description": "Configuration/network log streams delivering to a SIEM sink.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum(max by (tailscale_logstream_type) (last_over_time(tailscale_logstream_configured_ratio[2h]))) or vector(0)",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "colorMode": "value",
+                "graphMode": "none",
+                "textMode": "auto",
+                "justifyMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-70": {
+        "kind": "Panel",
+        "spec": {
+          "id": 70,
+          "title": "Last delivery error",
+          "description": "1 if any stream's last delivery reported an error (see the Delivery errors log).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(last_over_time(tailscale_logstream_error_ratio[10m])) or vector(0)",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "colorMode": "background",
+                "graphMode": "none",
+                "textMode": "auto",
+                "justifyMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "OK",
+                          "color": "green",
+                          "index": 0
+                        },
+                        "1": {
+                          "text": "ERROR",
+                          "color": "red",
+                          "index": 1
+                        }
+                      }
+                    }
+                  ],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": null,
+                        "color": "green"
+                      },
+                      {
+                        "value": 1,
+                        "color": "red"
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-71": {
+        "kind": "Panel",
+        "spec": {
+          "id": 71,
+          "title": "Delivery throughput by type",
+          "description": "",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_bytes_total[$__rate_interval]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_logstream_type}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "Bps",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 15,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-72": {
+        "kind": "Panel",
+        "spec": {
+          "id": 72,
+          "title": "Entries delivered/s by type",
+          "description": "",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_entries_sent_total[$__rate_interval]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_logstream_type}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "cps",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 15,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-73": {
+        "kind": "Panel",
+        "spec": {
+          "id": 73,
+          "title": "Failed requests/s by type",
+          "description": "Failed delivery requests to the sink \u2014 alert on a sustained rate.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[$__rate_interval]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_logstream_type}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "cps",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 15,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-74": {
+        "kind": "Panel",
+        "spec": {
+          "id": 74,
+          "title": "Backpressure: spoofed & max-body/s",
+          "description": "Entries rejected as spoofed and requests that hit the max body size (SIEM backpressure).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_spoofed_entries_total[$__rate_interval]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "spoofed {{tailscale_logstream_type}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_max_body_requests_total[$__rate_interval]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "max-body {{tailscale_logstream_type}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "cps",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 15,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-75": {
+        "kind": "Panel",
+        "spec": {
+          "id": 75,
+          "title": "Last activity age by type",
+          "description": "Time since the most recent delivery activity per log type (alert on staleness).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "time() - max without (service_version) (last_over_time(tailscale_logstream_last_activity_seconds[2h]))",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "__name__": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true
+                      },
+                      "renameByName": {
+                        "tailscale_logstream_type": "Log type",
+                        "Value": "Last activity age"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-76": {
+        "kind": "Panel",
+        "spec": {
+          "id": 76,
+          "title": "Delivery errors",
+          "description": "Per-stream delivery errors; the error text is the log body.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_loki}"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.logstream.error` |~ `$log_filter`",
+                        "queryType": "range",
+                        "maxLines": 100,
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-77": {
+        "kind": "Panel",
+        "spec": {
+          "id": 77,
           "title": "Audit actions over time",
           "description": "",
           "links": [],
@@ -6251,10 +7026,10 @@
           }
         }
       },
-      "panel-70": {
+      "panel-78": {
         "kind": "Panel",
         "spec": {
-          "id": 70,
+          "id": 78,
           "title": "Audit events (range)",
           "description": "",
           "links": [],
@@ -6317,10 +7092,10 @@
           }
         }
       },
-      "panel-71": {
+      "panel-79": {
         "kind": "Panel",
         "spec": {
-          "id": 71,
+          "id": 79,
           "title": "Failed changes \u2014 WARN (range)",
           "description": "Audit events emitted at WARN (the event carried an error).",
           "links": [],
@@ -6396,10 +7171,10 @@
           }
         }
       },
-      "panel-72": {
+      "panel-80": {
         "kind": "Panel",
         "spec": {
-          "id": 72,
+          "id": 80,
           "title": "Top $topn actors over time",
           "description": "",
           "links": [],
@@ -6469,10 +7244,10 @@
           }
         }
       },
-      "panel-73": {
+      "panel-81": {
         "kind": "Panel",
         "spec": {
-          "id": 73,
+          "id": 81,
           "title": "Top $topn targets over time",
           "description": "",
           "links": [],
@@ -6542,10 +7317,10 @@
           }
         }
       },
-      "panel-74": {
+      "panel-82": {
         "kind": "Panel",
         "spec": {
-          "id": 74,
+          "id": 82,
           "title": "Audit events by target type",
           "description": "",
           "links": [],
@@ -6619,10 +7394,10 @@
           }
         }
       },
-      "panel-75": {
+      "panel-83": {
         "kind": "Panel",
         "spec": {
-          "id": 75,
+          "id": 83,
           "title": "Recent configuration changes",
           "description": "Live audit stream; filter with the Log filter variable.",
           "links": [],
@@ -6678,10 +7453,10 @@
           }
         }
       },
-      "panel-76": {
+      "panel-84": {
         "kind": "Panel",
         "spec": {
-          "id": 76,
+          "id": 84,
           "title": "Auto-update coverage",
           "description": "Fraction of devices with Tailscale client auto-update enabled.",
           "links": [],
@@ -6763,10 +7538,10 @@
           }
         }
       },
-      "panel-77": {
+      "panel-85": {
         "kind": "Panel",
         "spec": {
-          "id": 77,
+          "id": 85,
           "title": "State-encryption coverage",
           "description": "Fraction of devices reporting an encrypted local state store.",
           "links": [],
@@ -6848,10 +7623,10 @@
           }
         }
       },
-      "panel-78": {
+      "panel-86": {
         "kind": "Panel",
         "spec": {
-          "id": 78,
+          "id": 86,
           "title": "Devices needing update",
           "description": "",
           "links": [],
@@ -6927,10 +7702,10 @@
           }
         }
       },
-      "panel-79": {
+      "panel-87": {
         "kind": "Panel",
         "spec": {
-          "id": 79,
+          "id": 87,
           "title": "Release track split",
           "description": "",
           "links": [],
@@ -7008,10 +7783,10 @@
           }
         }
       },
-      "panel-80": {
+      "panel-88": {
         "kind": "Panel",
         "spec": {
-          "id": 80,
+          "id": 88,
           "title": "Client version distribution",
           "description": "",
           "links": [],
@@ -7089,10 +7864,10 @@
           }
         }
       },
-      "panel-81": {
+      "panel-89": {
         "kind": "Panel",
         "spec": {
-          "id": 81,
+          "id": 89,
           "title": "Device keys \u22647d",
           "description": "",
           "links": [],
@@ -7172,10 +7947,10 @@
           }
         }
       },
-      "panel-82": {
+      "panel-90": {
         "kind": "Panel",
         "spec": {
-          "id": 82,
+          "id": 90,
           "title": "Device keys \u226430d",
           "description": "",
           "links": [],
@@ -7238,10 +8013,10 @@
           }
         }
       },
-      "panel-83": {
+      "panel-91": {
         "kind": "Panel",
         "spec": {
-          "id": 83,
+          "id": 91,
           "title": "API/auth keys \u22647d",
           "description": "",
           "links": [],
@@ -7317,10 +8092,10 @@
           }
         }
       },
-      "panel-84": {
+      "panel-92": {
         "kind": "Panel",
         "spec": {
-          "id": 84,
+          "id": 92,
           "title": "API/auth keys \u226430d",
           "description": "",
           "links": [],
@@ -7383,10 +8158,527 @@
           }
         }
       },
-      "panel-85": {
+      "panel-93": {
         "kind": "Panel",
         "spec": {
-          "id": 85,
+          "id": 93,
+          "title": "Integrations configured",
+          "description": "Configured device-posture (MDM/EDR) integrations, e.g. Intune.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(last_over_time(tailscale_posture_integrations_count_ratio[2h])) or vector(0)",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "colorMode": "value",
+                "graphMode": "none",
+                "textMode": "auto",
+                "justifyMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-94": {
+        "kind": "Panel",
+        "spec": {
+          "id": 94,
+          "title": "Devices matched by integration",
+          "description": "Devices matched to a provider host by each posture integration.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration) (last_over_time(tailscale_posture_integration_matched_ratio[2h]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_posture_provider}} / {{tailscale_posture_integration}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "orientation": "horizontal",
+                "displayMode": "gradient",
+                "showUnfilled": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-95": {
+        "kind": "Panel",
+        "spec": {
+          "id": 95,
+          "title": "Oldest sync age",
+          "description": "Time since the least-recently-synced integration last synced (alert on staleness).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(time() - max without (service_version) (last_over_time(tailscale_posture_integration_last_sync_seconds[2h]))) or vector(0)",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "colorMode": "background",
+                "graphMode": "none",
+                "textMode": "auto",
+                "justifyMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s",
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": null,
+                        "color": "green"
+                      },
+                      {
+                        "value": 3600,
+                        "color": "yellow"
+                      },
+                      {
+                        "value": 86400,
+                        "color": "red"
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-96": {
+        "kind": "Panel",
+        "spec": {
+          "id": 96,
+          "title": "Integration sync detail",
+          "description": "Per integration: matched / possible-match / provider-host counts and sync age.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max without (service_version) (last_over_time(tailscale_posture_integration_matched_ratio[2h]))",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max without (service_version) (last_over_time(tailscale_posture_integration_possible_matched_ratio[2h]))",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max without (service_version) (last_over_time(tailscale_posture_integration_provider_hosts_ratio[2h]))",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "D",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "time() - max without (service_version) (last_over_time(tailscale_posture_integration_last_sync_seconds[2h]))",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "merge",
+                  "spec": {
+                    "options": {}
+                  }
+                },
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "__name__": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true
+                      },
+                      "renameByName": {
+                        "tailscale_posture_provider": "Provider",
+                        "tailscale_posture_integration": "Integration",
+                        "Value #A": "Matched",
+                        "Value #B": "Possible",
+                        "Value #C": "Provider hosts",
+                        "Value #D": "Last sync age"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Last sync age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-97": {
+        "kind": "Panel",
+        "spec": {
+          "id": 97,
+          "title": "Tailnet-lock errors",
+          "description": "Devices with a non-empty tailnet-lock error (e.g. an unsigned node). >0 means a signing node must sign the affected keys.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(last_over_time(tailscale_tailnet_lock_errors_ratio[10m])) or vector(0)",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "colorMode": "background",
+                "graphMode": "none",
+                "textMode": "auto",
+                "justifyMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": null,
+                        "color": "green"
+                      },
+                      {
+                        "value": 1,
+                        "color": "red"
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-98": {
+        "kind": "Panel",
+        "spec": {
+          "id": 98,
+          "title": "Nodes with tailnet-lock errors",
+          "description": "Per-device tailnet-lock error events; the error text is the log body.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_loki}"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.tailnet_lock_error` |~ `$log_filter`",
+                        "queryType": "range",
+                        "maxLines": 100,
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-99": {
+        "kind": "Panel",
+        "spec": {
+          "id": 99,
           "title": "ACL last changed",
           "description": "",
           "links": [],
@@ -7449,10 +8741,10 @@
           }
         }
       },
-      "panel-86": {
+      "panel-100": {
         "kind": "Panel",
         "spec": {
-          "id": 86,
+          "id": 100,
           "title": "ACL size",
           "description": "",
           "links": [],
@@ -7515,10 +8807,10 @@
           }
         }
       },
-      "panel-87": {
+      "panel-101": {
         "kind": "Panel",
         "spec": {
-          "id": 87,
+          "id": 101,
           "title": "ACL rules by section",
           "description": "",
           "links": [],
@@ -7580,10 +8872,10 @@
           }
         }
       },
-      "panel-88": {
+      "panel-102": {
         "kind": "Panel",
         "spec": {
-          "id": 88,
+          "id": 102,
           "title": "MagicDNS",
           "description": "",
           "links": [],
@@ -7675,10 +8967,10 @@
           }
         }
       },
-      "panel-89": {
+      "panel-103": {
         "kind": "Panel",
         "spec": {
-          "id": 89,
+          "id": 103,
           "title": "Nameservers",
           "description": "",
           "links": [],
@@ -7741,10 +9033,10 @@
           }
         }
       },
-      "panel-90": {
+      "panel-104": {
         "kind": "Panel",
         "spec": {
-          "id": 90,
+          "id": 104,
           "title": "Search paths",
           "description": "",
           "links": [],
@@ -7807,10 +9099,10 @@
           }
         }
       },
-      "panel-91": {
+      "panel-105": {
         "kind": "Panel",
         "spec": {
-          "id": 91,
+          "id": 105,
           "title": "Split-DNS zones",
           "description": "",
           "links": [],
@@ -7873,10 +9165,10 @@
           }
         }
       },
-      "panel-92": {
+      "panel-106": {
         "kind": "Panel",
         "spec": {
-          "id": 92,
+          "id": 106,
           "title": "Tailnet settings",
           "description": "Per-setting enabled (1) / disabled (0).",
           "links": [],
@@ -7948,10 +9240,10 @@
           }
         }
       },
-      "panel-93": {
+      "panel-107": {
         "kind": "Panel",
         "spec": {
-          "id": 93,
+          "id": 107,
           "title": "Device key duration",
           "description": "",
           "links": [],
@@ -8014,10 +9306,10 @@
           }
         }
       },
-      "panel-94": {
+      "panel-108": {
         "kind": "Panel",
         "spec": {
-          "id": 94,
+          "id": 108,
           "title": "Tailnet features",
           "description": "Per-feature enabled (1) / disabled (0).",
           "links": [],
@@ -8089,10 +9381,10 @@
           }
         }
       },
-      "panel-95": {
+      "panel-109": {
         "kind": "Panel",
         "spec": {
-          "id": 95,
+          "id": 109,
           "title": "Users by role",
           "description": "",
           "links": [],
@@ -8170,10 +9462,10 @@
           }
         }
       },
-      "panel-96": {
+      "panel-110": {
         "kind": "Panel",
         "spec": {
-          "id": 96,
+          "id": 110,
           "title": "Users by status",
           "description": "",
           "links": [],
@@ -8251,10 +9543,10 @@
           }
         }
       },
-      "panel-97": {
+      "panel-111": {
         "kind": "Panel",
         "spec": {
-          "id": 97,
+          "id": 111,
           "title": "Users by type",
           "description": "",
           "links": [],
@@ -8332,10 +9624,10 @@
           }
         }
       },
-      "panel-98": {
+      "panel-112": {
         "kind": "Panel",
         "spec": {
-          "id": 98,
+          "id": 112,
           "title": "Per-user detail",
           "description": "Per-user connected / device count / time since last seen.",
           "links": [],
@@ -8474,10 +9766,10 @@
           }
         }
       },
-      "panel-99": {
+      "panel-113": {
         "kind": "Panel",
         "spec": {
-          "id": 99,
+          "id": 113,
           "title": "User invites",
           "description": "",
           "links": [],
@@ -8539,10 +9831,10 @@
           }
         }
       },
-      "panel-100": {
+      "panel-114": {
         "kind": "Panel",
         "spec": {
-          "id": 100,
+          "id": 114,
           "title": "Keys by type",
           "description": "",
           "links": [],
@@ -8604,10 +9896,10 @@
           }
         }
       },
-      "panel-101": {
+      "panel-115": {
         "kind": "Panel",
         "spec": {
-          "id": 101,
+          "id": 115,
           "title": "Key expiry (time until)",
           "description": "Time until each API/auth key expires.",
           "links": [],
@@ -8683,10 +9975,220 @@
           }
         }
       },
-      "panel-102": {
+      "panel-116": {
         "kind": "Panel",
         "spec": {
-          "id": 102,
+          "id": 116,
+          "title": "Services (VIP)",
+          "description": "Tailscale Services (VIP services) advertised in the tailnet.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(last_over_time(tailscale_services_count_ratio[2h])) or vector(0)",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "colorMode": "value",
+                "graphMode": "none",
+                "textMode": "auto",
+                "justifyMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-117": {
+        "kind": "Panel",
+        "spec": {
+          "id": 117,
+          "title": "Port rules per service",
+          "description": "Port rules exposed by each Service. Gated by cardinality.service_per_entity.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (tailscale_service_name) (last_over_time(tailscale_service_ports[2h]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_service_name}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "orientation": "horizontal",
+                "displayMode": "gradient",
+                "showUnfilled": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-118": {
+        "kind": "Panel",
+        "spec": {
+          "id": 118,
+          "title": "Backing hosts by service",
+          "description": "Backing-host count per Service, bucketed by approval + configured state. Gated by collect_hosts + cardinality.service_per_entity.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max without (service_version) (last_over_time(tailscale_service_hosts_ratio[2h]))",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "__name__": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true
+                      },
+                      "renameByName": {
+                        "tailscale_service_name": "Service",
+                        "tailscale_service_approval": "Approval",
+                        "tailscale_service_configured": "Configured",
+                        "Value": "Hosts"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-119": {
+        "kind": "Panel",
+        "spec": {
+          "id": 119,
           "title": "Targets up",
           "description": "",
           "links": [],
@@ -8762,10 +10264,10 @@
           }
         }
       },
-      "panel-103": {
+      "panel-120": {
         "kind": "Panel",
         "spec": {
-          "id": 103,
+          "id": 120,
           "title": "Targets total",
           "description": "",
           "links": [],
@@ -8828,10 +10330,10 @@
           }
         }
       },
-      "panel-104": {
+      "panel-121": {
         "kind": "Panel",
         "spec": {
-          "id": 104,
+          "id": 121,
           "title": "Discovery OK",
           "description": "",
           "links": [],
@@ -8923,10 +10425,10 @@
           }
         }
       },
-      "panel-105": {
+      "panel-122": {
         "kind": "Panel",
         "spec": {
-          "id": 105,
+          "id": 122,
           "title": "Discovered targets",
           "description": "",
           "links": [],
@@ -8989,10 +10491,10 @@
           }
         }
       },
-      "panel-106": {
+      "panel-123": {
         "kind": "Panel",
         "spec": {
-          "id": 106,
+          "id": 123,
           "title": "Node up",
           "description": "Per-target scrape health (1=up).",
           "links": [],
@@ -9064,10 +10566,10 @@
           }
         }
       },
-      "panel-107": {
+      "panel-124": {
         "kind": "Panel",
         "spec": {
-          "id": 107,
+          "id": 124,
           "title": "Inbound bytes/s",
           "description": "",
           "links": [],
@@ -9138,10 +10640,10 @@
           }
         }
       },
-      "panel-108": {
+      "panel-125": {
         "kind": "Panel",
         "spec": {
-          "id": 108,
+          "id": 125,
           "title": "Outbound bytes/s",
           "description": "",
           "links": [],
@@ -9212,10 +10714,10 @@
           }
         }
       },
-      "panel-109": {
+      "panel-126": {
         "kind": "Panel",
         "spec": {
-          "id": 109,
+          "id": 126,
           "title": "Inbound packets/s",
           "description": "",
           "links": [],
@@ -9286,10 +10788,10 @@
           }
         }
       },
-      "panel-110": {
+      "panel-127": {
         "kind": "Panel",
         "spec": {
-          "id": 110,
+          "id": 127,
           "title": "Outbound packets/s",
           "description": "",
           "links": [],
@@ -9360,10 +10862,10 @@
           }
         }
       },
-      "panel-111": {
+      "panel-128": {
         "kind": "Panel",
         "spec": {
-          "id": 111,
+          "id": 128,
           "title": "Advertised routes",
           "description": "",
           "links": [],
@@ -9437,10 +10939,10 @@
           }
         }
       },
-      "panel-112": {
+      "panel-129": {
         "kind": "Panel",
         "spec": {
-          "id": 112,
+          "id": 129,
           "title": "Approved routes",
           "description": "",
           "links": [],
@@ -9514,10 +11016,10 @@
           }
         }
       },
-      "panel-113": {
+      "panel-130": {
         "kind": "Panel",
         "spec": {
-          "id": 113,
+          "id": 130,
           "title": "Health messages",
           "description": "tailscaled self-reported health warnings.",
           "links": [],
@@ -9591,10 +11093,10 @@
           }
         }
       },
-      "panel-114": {
+      "panel-131": {
         "kind": "Panel",
         "spec": {
-          "id": 114,
+          "id": 131,
           "title": "Home DERP region",
           "description": "",
           "links": [],
@@ -9668,10 +11170,10 @@
           }
         }
       },
-      "panel-115": {
+      "panel-132": {
         "kind": "Panel",
         "spec": {
-          "id": 115,
+          "id": 132,
           "title": "Peer relay endpoints",
           "description": "",
           "links": [],
@@ -9745,10 +11247,10 @@
           }
         }
       },
-      "panel-116": {
+      "panel-133": {
         "kind": "Panel",
         "spec": {
-          "id": 116,
+          "id": 133,
           "title": "% traffic via DERP relay by node",
           "description": "Fraction of each node's traffic relayed via DERP rather than sent direct. Sustained high values indicate NAT-traversal problems (added latency).",
           "links": [],
@@ -9821,10 +11323,10 @@
           }
         }
       },
-      "panel-117": {
+      "panel-134": {
         "kind": "Panel",
         "spec": {
-          "id": 117,
+          "id": 134,
           "title": "Throughput by path",
           "description": "Total tailnet throughput split by path: DERP relay vs direct IPv4 vs direct IPv6.",
           "links": [],
@@ -9899,10 +11401,10 @@
           }
         }
       },
-      "panel-118": {
+      "panel-135": {
         "kind": "Panel",
         "spec": {
-          "id": 118,
+          "id": 135,
           "title": "Fleet DERP share (now)",
           "description": "Fleet-wide fraction of bytes relayed via DERP.",
           "links": [],
@@ -9982,10 +11484,10 @@
           }
         }
       },
-      "panel-119": {
+      "panel-136": {
         "kind": "Panel",
         "spec": {
-          "id": 119,
+          "id": 136,
           "title": "Path mix (DERP / IPv4 / IPv6)",
           "description": "",
           "links": [],
@@ -10063,10 +11565,205 @@
           }
         }
       },
-      "panel-120": {
+      "panel-137": {
         "kind": "Panel",
         "spec": {
-          "id": 120,
+          "id": 137,
+          "title": "Best latency per DERP region",
+          "description": "Best (minimum) device\u2192DERP-region latency across the tailnet, per region.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (tailscale_derp_region) (last_over_time(tailscale_derp_region_latency_min_seconds[10m]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_derp_region}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "orientation": "horizontal",
+                "displayMode": "gradient",
+                "showUnfilled": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-138": {
+        "kind": "Panel",
+        "spec": {
+          "id": 138,
+          "title": "Devices per DERP region",
+          "description": "Number of devices reporting latency to each DERP region.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (tailscale_derp_region) (last_over_time(tailscale_derp_region_devices_ratio[10m]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_derp_region}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "orientation": "horizontal",
+                "displayMode": "gradient",
+                "showUnfilled": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-139": {
+        "kind": "Panel",
+        "spec": {
+          "id": 139,
+          "title": "Preferred DERP region distribution",
+          "description": "Number of devices that prefer each DERP region.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (tailscale_derp_region) (last_over_time(tailscale_derp_region_preferred_ratio[10m]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_derp_region}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "bargauge",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "orientation": "horizontal",
+                "displayMode": "gradient",
+                "showUnfilled": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-140": {
+        "kind": "Panel",
+        "spec": {
+          "id": 140,
           "title": "Exporter up",
           "description": "",
           "links": [],
@@ -10158,10 +11855,10 @@
           }
         }
       },
-      "panel-121": {
+      "panel-141": {
         "kind": "Panel",
         "spec": {
-          "id": 121,
+          "id": 141,
           "title": "Collectors OK",
           "description": "",
           "links": [],
@@ -10233,10 +11930,10 @@
           }
         }
       },
-      "panel-122": {
+      "panel-142": {
         "kind": "Panel",
         "spec": {
-          "id": 122,
+          "id": 142,
           "title": "Goroutines",
           "description": "",
           "links": [],
@@ -10299,10 +11996,10 @@
           }
         }
       },
-      "panel-123": {
+      "panel-143": {
         "kind": "Panel",
         "spec": {
-          "id": 123,
+          "id": 143,
           "title": "GOMAXPROCS",
           "description": "",
           "links": [],
@@ -10365,10 +12062,10 @@
           }
         }
       },
-      "panel-124": {
+      "panel-144": {
         "kind": "Panel",
         "spec": {
-          "id": 124,
+          "id": 144,
           "title": "Build info",
           "description": "Version / Go version (labels).",
           "links": [],
@@ -10441,10 +12138,10 @@
           }
         }
       },
-      "panel-125": {
+      "panel-145": {
         "kind": "Panel",
         "spec": {
-          "id": 125,
+          "id": 145,
           "title": "Scrape duration by collector",
           "description": "",
           "links": [],
@@ -10515,10 +12212,10 @@
           }
         }
       },
-      "panel-126": {
+      "panel-146": {
         "kind": "Panel",
         "spec": {
-          "id": 126,
+          "id": 146,
           "title": "Scrape success by collector",
           "description": "",
           "links": [],
@@ -10591,10 +12288,10 @@
           }
         }
       },
-      "panel-127": {
+      "panel-147": {
         "kind": "Panel",
         "spec": {
-          "id": 127,
+          "id": 147,
           "title": "Last scrape age",
           "description": "Seconds since each collector's last scrape.",
           "links": [],
@@ -10668,10 +12365,10 @@
           }
         }
       },
-      "panel-128": {
+      "panel-148": {
         "kind": "Panel",
         "spec": {
-          "id": 128,
+          "id": 148,
           "title": "Scrape errors/s by collector / type",
           "description": "",
           "links": [],
@@ -10742,10 +12439,10 @@
           }
         }
       },
-      "panel-129": {
+      "panel-149": {
         "kind": "Panel",
         "spec": {
-          "id": 129,
+          "id": 149,
           "title": "API requests/s by status",
           "description": "",
           "links": [],
@@ -10820,10 +12517,10 @@
           }
         }
       },
-      "panel-130": {
+      "panel-150": {
         "kind": "Panel",
         "spec": {
-          "id": 130,
+          "id": 150,
           "title": "API requests/s by endpoint",
           "description": "",
           "links": [],
@@ -10898,10 +12595,10 @@
           }
         }
       },
-      "panel-131": {
+      "panel-151": {
         "kind": "Panel",
         "spec": {
-          "id": 131,
+          "id": 151,
           "title": "API retries/s by endpoint",
           "description": "",
           "links": [],
@@ -10972,10 +12669,10 @@
           }
         }
       },
-      "panel-132": {
+      "panel-152": {
         "kind": "Panel",
         "spec": {
-          "id": 132,
+          "id": 152,
           "title": "Export failures/s by type",
           "description": "",
           "links": [],
@@ -11046,10 +12743,10 @@
           }
         }
       },
-      "panel-133": {
+      "panel-153": {
         "kind": "Panel",
         "spec": {
-          "id": 133,
+          "id": 153,
           "title": "Active series by metric (top $topn)",
           "description": "Per-metric active series (cap 10k). Watch the flow families.",
           "links": [],
@@ -11120,10 +12817,10 @@
           }
         }
       },
-      "panel-134": {
+      "panel-154": {
         "kind": "Panel",
         "spec": {
-          "id": 134,
+          "id": 154,
           "title": "Dedup set size",
           "description": "",
           "links": [],
@@ -11194,10 +12891,10 @@
           }
         }
       },
-      "panel-135": {
+      "panel-155": {
         "kind": "Panel",
         "spec": {
-          "id": 135,
+          "id": 155,
           "title": "Dedup evictions/s",
           "description": "",
           "links": [],
@@ -11268,10 +12965,10 @@
           }
         }
       },
-      "panel-136": {
+      "panel-156": {
         "kind": "Panel",
         "spec": {
-          "id": 136,
+          "id": 156,
           "title": "Enrich cache age",
           "description": "",
           "links": [],
@@ -11342,10 +13039,10 @@
           }
         }
       },
-      "panel-137": {
+      "panel-157": {
         "kind": "Panel",
         "spec": {
-          "id": 137,
+          "id": 157,
           "title": "Enrich cache size",
           "description": "",
           "links": [],
@@ -11416,10 +13113,10 @@
           }
         }
       },
-      "panel-138": {
+      "panel-158": {
         "kind": "Panel",
         "spec": {
-          "id": 138,
+          "id": 158,
           "title": "Memory breakdown",
           "description": "Go memory obtained from the OS (runtime.memory.sys), stacked into in-use heap, idle/reserved heap, stacks, and other non-heap runtime (GC, mspan/mcache). Total height = total sys.",
           "links": [],
@@ -11560,10 +13257,10 @@
           }
         }
       },
-      "panel-139": {
+      "panel-159": {
         "kind": "Panel",
         "spec": {
-          "id": 139,
+          "id": 159,
           "title": "Goroutines & stack",
           "description": "",
           "links": [],
@@ -11673,10 +13370,10 @@
           }
         }
       },
-      "panel-140": {
+      "panel-160": {
         "kind": "Panel",
         "spec": {
-          "id": 140,
+          "id": 160,
           "title": "GC cycles/s",
           "description": "",
           "links": [],
@@ -11747,10 +13444,10 @@
           }
         }
       },
-      "panel-141": {
+      "panel-161": {
         "kind": "Panel",
         "spec": {
-          "id": 141,
+          "id": 161,
           "title": "GC pause/s",
           "description": "",
           "links": [],
@@ -11821,10 +13518,10 @@
           }
         }
       },
-      "panel-142": {
+      "panel-162": {
         "kind": "Panel",
         "spec": {
-          "id": 142,
+          "id": 162,
           "title": "GC CPU fraction",
           "description": "",
           "links": [],
@@ -11895,10 +13592,10 @@
           }
         }
       },
-      "panel-143": {
+      "panel-163": {
         "kind": "Panel",
         "spec": {
-          "id": 143,
+          "id": 163,
           "title": "GC next-target vs live heap",
           "description": "Live heap vs the heap size that triggers the next GC; the gap is GC headroom.",
           "links": [],
@@ -11991,10 +13688,10 @@
           }
         }
       },
-      "panel-144": {
+      "panel-164": {
         "kind": "Panel",
         "spec": {
-          "id": 144,
+          "id": 164,
           "title": "Heap alloc churn",
           "description": "Cumulative heap-allocation rate (includes freed); allocation churn / GC pressure.",
           "links": [],
@@ -12065,10 +13762,10 @@
           }
         }
       },
-      "panel-145": {
+      "panel-165": {
         "kind": "Panel",
         "spec": {
-          "id": 145,
+          "id": 165,
           "title": "Live heap objects",
           "description": "Number of live heap objects (a count, despite the _ratio suffix).",
           "links": [],
@@ -12139,10 +13836,10 @@
           }
         }
       },
-      "panel-146": {
+      "panel-166": {
         "kind": "Panel",
         "spec": {
-          "id": 146,
+          "id": 166,
           "title": "Scrape errors/s",
           "description": "",
           "links": [],
@@ -12213,10 +13910,10 @@
           }
         }
       },
-      "panel-147": {
+      "panel-167": {
         "kind": "Panel",
         "spec": {
-          "id": 147,
+          "id": 167,
           "title": "Checkpoint persist errors/s",
           "description": "",
           "links": [],
@@ -12287,10 +13984,10 @@
           }
         }
       },
-      "panel-148": {
+      "panel-168": {
         "kind": "Panel",
         "spec": {
-          "id": 148,
+          "id": 168,
           "title": "Component errors/s",
           "description": "",
           "links": [],
@@ -12361,10 +14058,10 @@
           }
         }
       },
-      "panel-149": {
+      "panel-169": {
         "kind": "Panel",
         "spec": {
-          "id": 149,
+          "id": 169,
           "title": "Admin auth rejected/s",
           "description": "",
           "links": [],
@@ -12435,10 +14132,10 @@
           }
         }
       },
-      "panel-150": {
+      "panel-170": {
         "kind": "Panel",
         "spec": {
-          "id": 150,
+          "id": 170,
           "title": "Metrics over cardinality cap",
           "description": "Metric families that exceeded the per-metric series cap (cardinality.metric_limit, default 10000) and are now collapsing excess series into one otel_metric_overflow series \u2014 SILENT per-series detail loss. >0 means raise metric_limit or lower flow cardinality (ephemeral source_port is the biggest driver).",
           "links": [],
@@ -12514,10 +14211,10 @@
           }
         }
       },
-      "panel-151": {
+      "panel-171": {
         "kind": "Panel",
         "spec": {
-          "id": 151,
+          "id": 171,
           "title": "Busiest metric \u2014 % of cap",
           "description": "Highest per-metric active-series count as a fraction of the 10k cap.",
           "links": [],
@@ -12599,10 +14296,10 @@
           }
         }
       },
-      "panel-152": {
+      "panel-172": {
         "kind": "Panel",
         "spec": {
-          "id": 152,
+          "id": 172,
           "title": "Total active series",
           "description": "Sum of active series across all tailscale2otel metrics (a proxy for ingest cost).",
           "links": [],
@@ -12665,10 +14362,10 @@
           }
         }
       },
-      "panel-153": {
+      "panel-173": {
         "kind": "Panel",
         "spec": {
-          "id": 153,
+          "id": 173,
           "title": "Metric families tracked",
           "description": "",
           "links": [],
@@ -12731,10 +14428,10 @@
           }
         }
       },
-      "panel-154": {
+      "panel-174": {
         "kind": "Panel",
         "spec": {
-          "id": 154,
+          "id": 174,
           "title": "Overflowing families",
           "description": "Metric families currently over the per-metric cap (otel_metric_overflow=true).",
           "links": [],
@@ -12807,10 +14504,10 @@
           }
         }
       },
-      "panel-155": {
+      "panel-175": {
         "kind": "Panel",
         "spec": {
-          "id": 155,
+          "id": 175,
           "title": "Active series vs 10k cap (top $topn)",
           "description": "Per-metric active series against the cap. Watch the flow families.",
           "links": [],
@@ -12890,10 +14587,10 @@
           }
         }
       },
-      "panel-156": {
+      "panel-176": {
         "kind": "Panel",
         "spec": {
-          "id": 156,
+          "id": 176,
           "title": "Active series over time (top $topn)",
           "description": "",
           "links": [],
@@ -12964,10 +14661,10 @@
           }
         }
       },
-      "panel-157": {
+      "panel-177": {
         "kind": "Panel",
         "spec": {
-          "id": 157,
+          "id": 177,
           "title": "Flow series: raw vs bounded rollup",
           "description": "Raw flow families saturate the 10k cap; the bounded rollup stays small. When raw is at cap, trust the ROLLUP talker panels on the Network tab.",
           "links": [],
@@ -13104,10 +14801,10 @@
           }
         }
       },
-      "panel-158": {
+      "panel-178": {
         "kind": "Panel",
         "spec": {
-          "id": 158,
+          "id": 178,
           "title": "__other__ rollup share",
           "description": "Fraction of rollup bytes folded into the bounded __other__ bucket. High = many small talkers.",
           "links": [],
@@ -13187,10 +14884,10 @@
           }
         }
       },
-      "panel-159": {
+      "panel-179": {
         "kind": "Panel",
         "spec": {
-          "id": 159,
+          "id": 179,
           "title": "Flow log records dropped/s",
           "description": "Flow LOG records suppressed by the per-window volume guard (collectors.flowlogs.max_log_records_per_window). Metrics are never dropped, only logs.",
           "links": [],
@@ -13261,10 +14958,10 @@
           }
         }
       },
-      "panel-160": {
+      "panel-180": {
         "kind": "Panel",
         "spec": {
-          "id": 160,
+          "id": 180,
           "title": "Dedup set size",
           "description": "Keys held in each cross-source de-duplication set (a count).",
           "links": [],
@@ -13335,10 +15032,10 @@
           }
         }
       },
-      "panel-161": {
+      "panel-181": {
         "kind": "Panel",
         "spec": {
-          "id": 161,
+          "id": 181,
           "title": "Dedup evictions/s",
           "description": "Sustained evictions mean a dedup set is undersized.",
           "links": [],
@@ -14599,6 +16296,141 @@
                     {
                       "kind": "RowsLayoutRow",
                       "spec": {
+                        "title": "Log streaming delivery (SIEM)",
+                        "collapse": false,
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 4,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-69"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 4,
+                                  "y": 0,
+                                  "width": 4,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-70"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 8,
+                                  "y": 0,
+                                  "width": 8,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-71"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 16,
+                                  "y": 0,
+                                  "width": 8,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-72"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 6,
+                                  "width": 8,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-73"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 8,
+                                  "y": 6,
+                                  "width": 8,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-74"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 16,
+                                  "y": 6,
+                                  "width": 8,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-75"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 12,
+                                  "width": 16,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-76"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "conditionalRendering": {
+                          "kind": "ConditionalRenderingGroup",
+                          "spec": {
+                            "visibility": "show",
+                            "condition": "and",
+                            "items": [
+                              {
+                                "kind": "ConditionalRenderingVariable",
+                                "spec": {
+                                  "variable": "has_logstream",
+                                  "operator": "matches",
+                                  "value": ".+"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
                         "title": "Webhooks",
                         "collapse": false,
                         "layout": {
@@ -14812,7 +16644,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-69"
+                                    "name": "panel-77"
                                   }
                                 }
                               },
@@ -14825,7 +16657,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-70"
+                                    "name": "panel-78"
                                   }
                                 }
                               },
@@ -14838,7 +16670,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-71"
+                                    "name": "panel-79"
                                   }
                                 }
                               },
@@ -14851,7 +16683,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-72"
+                                    "name": "panel-80"
                                   }
                                 }
                               },
@@ -14864,7 +16696,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-73"
+                                    "name": "panel-81"
                                   }
                                 }
                               },
@@ -14877,7 +16709,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-74"
+                                    "name": "panel-82"
                                   }
                                 }
                               },
@@ -14890,7 +16722,7 @@
                                   "height": 10,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-75"
+                                    "name": "panel-83"
                                   }
                                 }
                               }
@@ -14919,6 +16751,89 @@
                     {
                       "kind": "RowsLayoutRow",
                       "spec": {
+                        "title": "Posture integrations (MDM/EDR sync)",
+                        "collapse": false,
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 6,
+                                  "height": 5,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-93"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 6,
+                                  "y": 0,
+                                  "width": 12,
+                                  "height": 5,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-94"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 18,
+                                  "y": 0,
+                                  "width": 6,
+                                  "height": 5,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-95"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 5,
+                                  "width": 24,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-96"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "conditionalRendering": {
+                          "kind": "ConditionalRenderingGroup",
+                          "spec": {
+                            "visibility": "show",
+                            "condition": "and",
+                            "items": [
+                              {
+                                "kind": "ConditionalRenderingVariable",
+                                "spec": {
+                                  "variable": "has_posture_integration",
+                                  "operator": "matches",
+                                  "value": ".+"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
                         "title": "Security posture",
                         "collapse": false,
                         "layout": {
@@ -14934,7 +16849,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-76"
+                                    "name": "panel-84"
                                   }
                                 }
                               },
@@ -14947,7 +16862,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-77"
+                                    "name": "panel-85"
                                   }
                                 }
                               },
@@ -14960,7 +16875,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-78"
+                                    "name": "panel-86"
                                   }
                                 }
                               },
@@ -14973,7 +16888,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-79"
+                                    "name": "panel-87"
                                   }
                                 }
                               },
@@ -14986,7 +16901,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-80"
+                                    "name": "panel-88"
                                   }
                                 }
                               }
@@ -15015,6 +16930,63 @@
                     {
                       "kind": "RowsLayoutRow",
                       "spec": {
+                        "title": "Tailnet lock",
+                        "collapse": false,
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 6,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-97"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 6,
+                                  "y": 0,
+                                  "width": 18,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-98"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "conditionalRendering": {
+                          "kind": "ConditionalRenderingGroup",
+                          "spec": {
+                            "visibility": "show",
+                            "condition": "and",
+                            "items": [
+                              {
+                                "kind": "ConditionalRenderingVariable",
+                                "spec": {
+                                  "variable": "has_tailnet_lock",
+                                  "operator": "matches",
+                                  "value": ".+"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
                         "title": "Key & access expiry risk",
                         "collapse": false,
                         "layout": {
@@ -15030,7 +17002,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-81"
+                                    "name": "panel-89"
                                   }
                                 }
                               },
@@ -15043,7 +17015,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-82"
+                                    "name": "panel-90"
                                   }
                                 }
                               },
@@ -15056,7 +17028,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-83"
+                                    "name": "panel-91"
                                   }
                                 }
                               },
@@ -15069,7 +17041,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-84"
+                                    "name": "panel-92"
                                   }
                                 }
                               }
@@ -15109,7 +17081,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-85"
+                                    "name": "panel-99"
                                   }
                                 }
                               },
@@ -15122,7 +17094,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-86"
+                                    "name": "panel-100"
                                   }
                                 }
                               },
@@ -15135,7 +17107,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-87"
+                                    "name": "panel-101"
                                   }
                                 }
                               }
@@ -15162,7 +17134,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-88"
+                                    "name": "panel-102"
                                   }
                                 }
                               },
@@ -15175,7 +17147,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-89"
+                                    "name": "panel-103"
                                   }
                                 }
                               },
@@ -15188,7 +17160,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-90"
+                                    "name": "panel-104"
                                   }
                                 }
                               },
@@ -15201,7 +17173,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-91"
+                                    "name": "panel-105"
                                   }
                                 }
                               }
@@ -15228,7 +17200,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-92"
+                                    "name": "panel-106"
                                   }
                                 }
                               },
@@ -15241,7 +17213,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-93"
+                                    "name": "panel-107"
                                   }
                                 }
                               },
@@ -15254,8 +17226,78 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-94"
+                                    "name": "panel-108"
                                   }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "Services / VIP",
+                        "collapse": false,
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 6,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-116"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 6,
+                                  "y": 0,
+                                  "width": 18,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-117"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 6,
+                                  "width": 24,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-118"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "conditionalRendering": {
+                          "kind": "ConditionalRenderingGroup",
+                          "spec": {
+                            "visibility": "show",
+                            "condition": "and",
+                            "items": [
+                              {
+                                "kind": "ConditionalRenderingVariable",
+                                "spec": {
+                                  "variable": "has_services",
+                                  "operator": "matches",
+                                  "value": ".+"
                                 }
                               }
                             ]
@@ -15281,7 +17323,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-95"
+                                    "name": "panel-109"
                                   }
                                 }
                               },
@@ -15294,7 +17336,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-96"
+                                    "name": "panel-110"
                                   }
                                 }
                               },
@@ -15307,7 +17349,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-97"
+                                    "name": "panel-111"
                                   }
                                 }
                               }
@@ -15334,7 +17376,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-98"
+                                    "name": "panel-112"
                                   }
                                 }
                               }
@@ -15378,7 +17420,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-99"
+                                    "name": "panel-113"
                                   }
                                 }
                               }
@@ -15422,7 +17464,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-100"
+                                    "name": "panel-114"
                                   }
                                 }
                               },
@@ -15435,7 +17477,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-101"
+                                    "name": "panel-115"
                                   }
                                 }
                               }
@@ -15475,7 +17517,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-102"
+                                    "name": "panel-119"
                                   }
                                 }
                               },
@@ -15488,7 +17530,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-103"
+                                    "name": "panel-120"
                                   }
                                 }
                               },
@@ -15501,7 +17543,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-104"
+                                    "name": "panel-121"
                                   }
                                 }
                               },
@@ -15514,7 +17556,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-105"
+                                    "name": "panel-122"
                                   }
                                 }
                               },
@@ -15527,7 +17569,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-106"
+                                    "name": "panel-123"
                                   }
                                 }
                               }
@@ -15554,7 +17596,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-107"
+                                    "name": "panel-124"
                                   }
                                 }
                               },
@@ -15567,7 +17609,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-108"
+                                    "name": "panel-125"
                                   }
                                 }
                               },
@@ -15580,7 +17622,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-109"
+                                    "name": "panel-126"
                                   }
                                 }
                               },
@@ -15593,7 +17635,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-110"
+                                    "name": "panel-127"
                                   }
                                 }
                               }
@@ -15620,7 +17662,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-116"
+                                    "name": "panel-133"
                                   }
                                 }
                               },
@@ -15633,7 +17675,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-117"
+                                    "name": "panel-134"
                                   }
                                 }
                               },
@@ -15646,7 +17688,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-118"
+                                    "name": "panel-135"
                                   }
                                 }
                               },
@@ -15659,7 +17701,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-119"
+                                    "name": "panel-136"
                                   }
                                 }
                               }
@@ -15688,6 +17730,76 @@
                     {
                       "kind": "RowsLayoutRow",
                       "spec": {
+                        "title": "DERP regions (tailnet rollup)",
+                        "collapse": false,
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 8,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-137"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 8,
+                                  "y": 0,
+                                  "width": 8,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-138"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 16,
+                                  "y": 0,
+                                  "width": 8,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-139"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "conditionalRendering": {
+                          "kind": "ConditionalRenderingGroup",
+                          "spec": {
+                            "visibility": "show",
+                            "condition": "and",
+                            "items": [
+                              {
+                                "kind": "ConditionalRenderingVariable",
+                                "spec": {
+                                  "variable": "has_derp_rollup",
+                                  "operator": "matches",
+                                  "value": ".+"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
                         "title": "Routing & health",
                         "collapse": false,
                         "layout": {
@@ -15703,7 +17815,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-111"
+                                    "name": "panel-128"
                                   }
                                 }
                               },
@@ -15716,7 +17828,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-112"
+                                    "name": "panel-129"
                                   }
                                 }
                               },
@@ -15729,7 +17841,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-113"
+                                    "name": "panel-130"
                                   }
                                 }
                               },
@@ -15742,7 +17854,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-114"
+                                    "name": "panel-131"
                                   }
                                 }
                               },
@@ -15755,7 +17867,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-115"
+                                    "name": "panel-132"
                                   }
                                 }
                               }
@@ -15812,7 +17924,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-120"
+                                    "name": "panel-140"
                                   }
                                 }
                               },
@@ -15825,7 +17937,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-121"
+                                    "name": "panel-141"
                                   }
                                 }
                               },
@@ -15838,7 +17950,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-122"
+                                    "name": "panel-142"
                                   }
                                 }
                               },
@@ -15851,7 +17963,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-123"
+                                    "name": "panel-143"
                                   }
                                 }
                               },
@@ -15864,7 +17976,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-124"
+                                    "name": "panel-144"
                                   }
                                 }
                               }
@@ -15891,7 +18003,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-125"
+                                    "name": "panel-145"
                                   }
                                 }
                               },
@@ -15904,7 +18016,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-126"
+                                    "name": "panel-146"
                                   }
                                 }
                               },
@@ -15917,7 +18029,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-127"
+                                    "name": "panel-147"
                                   }
                                 }
                               },
@@ -15930,7 +18042,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-128"
+                                    "name": "panel-148"
                                   }
                                 }
                               }
@@ -15957,7 +18069,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-129"
+                                    "name": "panel-149"
                                   }
                                 }
                               },
@@ -15970,7 +18082,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-130"
+                                    "name": "panel-150"
                                   }
                                 }
                               }
@@ -15997,7 +18109,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-131"
+                                    "name": "panel-151"
                                   }
                                 }
                               },
@@ -16010,7 +18122,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-132"
+                                    "name": "panel-152"
                                   }
                                 }
                               }
@@ -16054,7 +18166,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-133"
+                                    "name": "panel-153"
                                   }
                                 }
                               },
@@ -16067,7 +18179,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-134"
+                                    "name": "panel-154"
                                   }
                                 }
                               },
@@ -16080,7 +18192,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-135"
+                                    "name": "panel-155"
                                   }
                                 }
                               }
@@ -16107,7 +18219,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-136"
+                                    "name": "panel-156"
                                   }
                                 }
                               },
@@ -16120,7 +18232,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-137"
+                                    "name": "panel-157"
                                   }
                                 }
                               }
@@ -16147,7 +18259,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-138"
+                                    "name": "panel-158"
                                   }
                                 }
                               },
@@ -16160,7 +18272,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-139"
+                                    "name": "panel-159"
                                   }
                                 }
                               },
@@ -16173,7 +18285,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-140"
+                                    "name": "panel-160"
                                   }
                                 }
                               },
@@ -16186,7 +18298,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-141"
+                                    "name": "panel-161"
                                   }
                                 }
                               },
@@ -16199,7 +18311,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-142"
+                                    "name": "panel-162"
                                   }
                                 }
                               },
@@ -16212,7 +18324,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-143"
+                                    "name": "panel-163"
                                   }
                                 }
                               },
@@ -16225,7 +18337,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-144"
+                                    "name": "panel-164"
                                   }
                                 }
                               },
@@ -16238,7 +18350,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-145"
+                                    "name": "panel-165"
                                   }
                                 }
                               }
@@ -16265,7 +18377,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-146"
+                                    "name": "panel-166"
                                   }
                                 }
                               },
@@ -16278,7 +18390,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-147"
+                                    "name": "panel-167"
                                   }
                                 }
                               },
@@ -16291,7 +18403,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-148"
+                                    "name": "panel-168"
                                   }
                                 }
                               },
@@ -16304,7 +18416,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-149"
+                                    "name": "panel-169"
                                   }
                                 }
                               }
@@ -16361,7 +18473,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-150"
+                                    "name": "panel-170"
                                   }
                                 }
                               },
@@ -16374,7 +18486,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-151"
+                                    "name": "panel-171"
                                   }
                                 }
                               },
@@ -16387,7 +18499,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-152"
+                                    "name": "panel-172"
                                   }
                                 }
                               },
@@ -16400,7 +18512,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-153"
+                                    "name": "panel-173"
                                   }
                                 }
                               },
@@ -16413,7 +18525,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-154"
+                                    "name": "panel-174"
                                   }
                                 }
                               }
@@ -16440,7 +18552,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-155"
+                                    "name": "panel-175"
                                   }
                                 }
                               },
@@ -16453,7 +18565,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-156"
+                                    "name": "panel-176"
                                   }
                                 }
                               }
@@ -16480,7 +18592,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-157"
+                                    "name": "panel-177"
                                   }
                                 }
                               },
@@ -16493,7 +18605,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-158"
+                                    "name": "panel-178"
                                   }
                                 }
                               },
@@ -16506,7 +18618,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-159"
+                                    "name": "panel-179"
                                   }
                                 }
                               }
@@ -16533,7 +18645,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-160"
+                                    "name": "panel-180"
                                   }
                                 }
                               },
@@ -16546,7 +18658,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-161"
+                                    "name": "panel-181"
                                   }
                                 }
                               }

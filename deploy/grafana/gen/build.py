@@ -313,6 +313,14 @@ def build_variables():
         ("has_scrape_err", "tailscale2otel_scrape_errors_total"),
         ("has_path", "tailscaled_inbound_bytes_total"),
         ("has_audit", "tailscale_config_audit_events_total"),
+        # new collectors (3131e672+): all emit nothing until the tailnet actually has the
+        # data (no MDM posture integrations / VIP services / tailnet-lock errors / SIEM sink,
+        # and DERP rollup is gated by cardinality.derp_region_rollup) — so gate every row.
+        ("has_posture_integration", "tailscale_posture_integrations_count_ratio"),
+        ("has_logstream", "tailscale_logstream_configured_ratio"),
+        ("has_services", "tailscale_services_count_ratio"),
+        ("has_tailnet_lock", "tailscale_tailnet_lock_errors_ratio"),
+        ("has_derp_rollup", "tailscale_derp_region_devices_ratio"),
     ]
     for (name, metric) in presence:
         v.append(presence_var(name, metric))
@@ -638,7 +646,44 @@ def tab_events():
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.posture` |~ `$log_filter`", maxlines=200)],
                options=logs_opts()), 24, 9),
     ]
+    streamhealth = [
+        (panel("Streams configured", "stat",
+               [prom_t("sum(max by (tailscale_logstream_type) (%s)) or vector(0)" % lot("tailscale_logstream_configured_ratio", WIN_SLOW), instant=True)],
+               unit="short", options=stat_opts(color="value"),
+               desc="Configuration/network log streams delivering to a SIEM sink."), 4, 6),
+        (panel("Last delivery error", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_logstream_error_ratio", WIN_FAST), instant=True)],
+               mappings=vmap({"0": {"text": "OK", "color": "green", "index": 0},
+                              "1": {"text": "ERROR", "color": "red", "index": 1}}),
+               thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
+               desc="1 if any stream's last delivery reported an error (see the Delivery errors log)."), 4, 6),
+        (panel("Delivery throughput by type", "timeseries",
+               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_bytes_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
+               unit="Bps", custom=ts_custom(), options=ts_opts()), 8, 6),
+        (panel("Entries delivered/s by type", "timeseries",
+               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_entries_sent_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts()), 8, 6),
+        (panel("Failed requests/s by type", "timeseries",
+               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Failed delivery requests to the sink — alert on a sustained rate."), 8, 6),
+        (panel("Backpressure: spoofed & max-body/s", "timeseries",
+               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_spoofed_entries_total[%s]))" % RI, legend="spoofed {{tailscale_logstream_type}}", refid="A"),
+                prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_max_body_requests_total[%s]))" % RI, legend="max-body {{tailscale_logstream_type}}", refid="B")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Entries rejected as spoofed and requests that hit the max body size (SIEM backpressure)."), 8, 6),
+        (panel("Last activity age by type", "table",
+               [prom_t("time() - %s" % sv(lot("tailscale_logstream_last_activity_seconds", WIN_SLOW)), instant=True, fmt="table")],
+               unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
+                                                            "service_instance_id", "service_name", "service_namespace"],
+                                                   rename={"tailscale_logstream_type": "Log type", "Value": "Last activity age"})],
+               desc="Time since the most recent delivery activity per log type (alert on staleness)."), 8, 6),
+        (panel("Delivery errors", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.logstream.error` |~ `$log_filter`", maxlines=100)],
+               options=logs_opts(), desc="Per-stream delivery errors; the error text is the log body."), 16, 7),
+    ]
     return [row("Audit & event rates", rates), row("Stream ingestion", ingest, present="has_stream"),
+            row("Log streaming delivery (SIEM)", streamhealth, present="has_logstream"),
             row("Webhooks", webhook, present="has_webhook"), row("Log explorer", logstream),
             row("Flow logs", flowlogs, present="has_flows"), row("Posture logs", posturelogs, present="has_posture")]
 
@@ -721,7 +766,28 @@ def tab_policy():
                                                            "tailscale_key_description": "Description", "Value": "Expires in"})],
                desc="Time until each API/auth key expires."), 14, 7),
     ]
+    services_vip = [
+        (panel("Services (VIP)", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_services_count_ratio", WIN_SLOW), instant=True)],
+               unit="short", options=stat_opts(color="value"),
+               desc="Tailscale Services (VIP services) advertised in the tailnet."), 6, 6),
+        (panel("Port rules per service", "bargauge",
+               [prom_t("max by (tailscale_service_name) (%s)" % lot("tailscale_service_ports", WIN_SLOW), legend="{{tailscale_service_name}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Port rules exposed by each Service. Gated by cardinality.service_per_entity."), 18, 6),
+        (panel("Backing hosts by service", "table",
+               [prom_t(sv(lot("tailscale_service_hosts_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
+                                                                "service_instance_id", "service_name", "service_namespace"],
+                                                       rename={"tailscale_service_name": "Service",
+                                                               "tailscale_service_approval": "Approval",
+                                                               "tailscale_service_configured": "Configured",
+                                                               "Value": "Hosts"})],
+               desc="Backing-host count per Service, bucketed by approval + configured state. "
+                    "Gated by collect_hosts + cardinality.service_per_entity."), 24, 7),
+    ]
     return [row("Access control (ACL)", acl), row("DNS", dns), row("Settings & features", settings),
+            row("Services / VIP", services_vip, present="has_services"),
             row("Users", users), row("Per-user detail", users_pe, present="has_users_pe"),
             row("User invites", invites, present="has_invites"), row("API keys", keys)]
 
@@ -805,8 +871,23 @@ def tab_nodemetrics():
                unit="Bps", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])]), 16, 6),
     ]
+    derprollup = [
+        (panel("Best latency per DERP region", "bargauge",
+               [prom_t("max by (tailscale_derp_region) (%s)" % lot("tailscale_derp_region_latency_min_seconds"), legend="{{tailscale_derp_region}}")],
+               unit="s", options=bargauge_opts(),
+               desc="Best (minimum) device→DERP-region latency across the tailnet, per region."), 8, 7),
+        (panel("Devices per DERP region", "bargauge",
+               [prom_t("max by (tailscale_derp_region) (%s)" % lot("tailscale_derp_region_devices_ratio"), legend="{{tailscale_derp_region}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Number of devices reporting latency to each DERP region."), 8, 7),
+        (panel("Preferred DERP region distribution", "bargauge",
+               [prom_t("max by (tailscale_derp_region) (%s)" % lot("tailscale_derp_region_preferred_ratio"), legend="{{tailscale_derp_region}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Number of devices that prefer each DERP region."), 8, 7),
+    ]
     return [row("Scraper health", health), row("Traffic (tailscaled)", traffic),
             row("Connection paths (DERP vs direct)", paths, present="has_path"),
+            row("DERP regions (tailnet rollup)", derprollup, present="has_derp_rollup"),
             row("Routing & health", routing)]
 
 
@@ -1095,8 +1176,52 @@ def tab_security():
                        % (lot("tailscale_key_expiry_seconds", WIN_SLOW), lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True)],
                unit="short", options=stat_opts()), 6, 5),
     ]
+    posture_integ = [
+        (panel("Integrations configured", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_posture_integrations_count_ratio", WIN_SLOW), instant=True)],
+               unit="short", options=stat_opts(color="value"),
+               desc="Configured device-posture (MDM/EDR) integrations, e.g. Intune."), 6, 5),
+        (panel("Devices matched by integration", "bargauge",
+               [prom_t("max by (tailscale_posture_provider, tailscale_posture_integration) (%s)"
+                       % lot("tailscale_posture_integration_matched_ratio", WIN_SLOW),
+                       legend="{{tailscale_posture_provider}} / {{tailscale_posture_integration}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Devices matched to a provider host by each posture integration."), 12, 5),
+        (panel("Oldest sync age", "stat",
+               [prom_t("max(time() - %s) or vector(0)" % sv(lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW)), instant=True)],
+               unit="s", thresholds=thr([(None, "green"), (3600, "yellow"), (86400, "red")]),
+               options=stat_opts(color="background"),
+               desc="Time since the least-recently-synced integration last synced (alert on staleness)."), 6, 5),
+        (panel("Integration sync detail", "table",
+               [prom_t(sv(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
+                prom_t(sv(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW)), instant=True, fmt="table", refid="B"),
+                prom_t(sv(lot("tailscale_posture_integration_provider_hosts_ratio", WIN_SLOW)), instant=True, fmt="table", refid="C"),
+                prom_t("time() - %s" % sv(lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW)), instant=True, fmt="table", refid="D")],
+               transformations=[merge(),
+                                organize(exclude=["Time", "__name__", "job", "instance",
+                                                  "service_instance_id", "service_name", "service_namespace"],
+                                         rename={"tailscale_posture_provider": "Provider",
+                                                 "tailscale_posture_integration": "Integration",
+                                                 "Value #A": "Matched", "Value #B": "Possible",
+                                                 "Value #C": "Provider hosts", "Value #D": "Last sync age"})],
+               overrides=[{"matcher": {"id": "byName", "options": "Last sync age"},
+                           "properties": [{"id": "unit", "value": "s"}]}],
+               desc="Per integration: matched / possible-match / provider-host counts and sync age."), 24, 7),
+    ]
+    tlock = [
+        (panel("Tailnet-lock errors", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_tailnet_lock_errors_ratio", WIN_FAST), instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
+               desc="Devices with a non-empty tailnet-lock error (e.g. an unsigned node). >0 means a "
+                    "signing node must sign the affected keys."), 6, 6),
+        (panel("Nodes with tailnet-lock errors", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.tailnet_lock_error` |~ `$log_filter`", maxlines=100)],
+               options=logs_opts(), desc="Per-device tailnet-lock error events; the error text is the log body."), 18, 6),
+    ]
     return [row("Configuration audit", audit, present="has_audit"),
+            row("Posture integrations (MDM/EDR sync)", posture_integ, present="has_posture_integration"),
             row("Security posture", posture, present="has_posture"),
+            row("Tailnet lock", tlock, present="has_tailnet_lock"),
             row("Key & access expiry risk", expiry)]
 
 
