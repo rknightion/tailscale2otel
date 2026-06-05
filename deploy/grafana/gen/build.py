@@ -946,6 +946,98 @@ def tab_cardinality():
             row("Flow cardinality drivers", flow), row("Cross-source dedup", dedup)]
 
 
+def tab_security():
+    AUD = "{service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit`"
+    POS = lot("tailscale_device_posture_ratio", WIN_FAST)  # posture is emitted every scrape
+    audit = [
+        (panel("Audit actions over time", "timeseries",
+               [loki_t("sum by (tailscale_audit_action) (count_over_time(%s [$__auto]))" % AUD,
+                       legend="{{tailscale_audit_action}}")],
+               unit="cps", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right")), 12, 7),
+        (panel("Audit events (range)", "stat",
+               [loki_t("sum(count_over_time(%s [$__range]))" % AUD, instant=True)],
+               unit="short", options=stat_opts(color="value")), 6, 7),
+        (panel("Failed changes — WARN (range)", "stat",
+               # severity field is severity_text (value "INFO"/"WARN"), verified live — NOT `severity`.
+               [loki_t("sum(count_over_time(%s | severity_text=`WARN` [$__range]))" % AUD, instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
+               desc="Audit events emitted at WARN (the event carried an error)."), 6, 7),
+        # Rendered as timeseries, not barchart — this dashboard has no Loki barchart
+        # precedent (all barcharts are Prometheus instant+table); the proven Loki
+        # aggregation pattern here is the range timeseries (see "Log volume by event").
+        (panel("Top $topn actors over time", "timeseries",
+               [loki_t("topk($topn, sum by (tailscale_actor_login) "
+                       "(count_over_time(%s | tailscale_actor_login != `` [$__auto])))" % AUD,
+                       legend="{{tailscale_actor_login}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
+        (panel("Top $topn targets over time", "timeseries",
+               [loki_t("topk($topn, sum by (tailscale_target_name) "
+                       "(count_over_time(%s | tailscale_target_name != `` [$__auto])))" % AUD,
+                       legend="{{tailscale_target_name}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
+        (panel("Audit events by target type", "timeseries",
+               [loki_t("sum by (tailscale_target_type) "
+                       "(count_over_time(%s | tailscale_target_type != `` [$__auto]))" % AUD,
+                       legend="{{tailscale_target_type}}")],
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 24, 7),
+        (panel("Recent configuration changes", "logs",
+               [loki_t("%s |~ `$log_filter`" % AUD, maxlines=200)],
+               options=logs_opts(), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
+    ]
+    posture = [
+        # The {label=...} selector MUST be INSIDE last_over_time(...) — appending a
+        # matcher to a function result (lot(x){...}) is a PromQL parse error.
+        (panel("Auto-update coverage", "stat",
+               [prom_t("count(%s) / clamp_min(count(%s), 1)"
+                       % (lot("tailscale_device_posture_ratio{auto_update=\"true\"}", WIN_FAST),
+                          lot("tailscale_device_posture_ratio", WIN_FAST)), instant=True)],
+               unit="percentunit", min_=0, max_=1, thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of devices with Tailscale client auto-update enabled."), 6, 6),
+        (panel("State-encryption coverage", "stat",
+               [prom_t("count(%s) / clamp_min(count(%s), 1)"
+                       % (lot("tailscale_device_posture_ratio{encrypted=\"true\"}", WIN_FAST),
+                          lot("tailscale_device_posture_ratio", WIN_FAST)), instant=True)],
+               unit="percentunit", min_=0, max_=1, thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of devices reporting an encrypted local state store."), 6, 6),
+        (panel("Devices needing update", "stat",
+               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_update_available_ratio"), instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="background")), 6, 6),
+        (panel("Release track split", "barchart",
+               [prom_t("count by (track) (max by (track, host_id) (%s))" % POS,
+                       legend="{{track}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 6, 6),
+        (panel("Client version distribution", "barchart",
+               [prom_t("count by (ts_version) (max by (ts_version, host_id) (%s))" % POS,
+                       legend="{{ts_version}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 24, 7),
+    ]
+    expiry = [
+        (panel("Device keys ≤7d", "stat",
+               [prom_t("count((%s - time() < 7*86400) and (%s - time() > 0)) or vector(0)"
+                       % (lot("tailscale_device_key_expiry_seconds", WIN_SLOW), lot("tailscale_device_key_expiry_seconds", WIN_SLOW)), instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (3, "red")]), options=stat_opts(color="background")), 6, 5),
+        (panel("Device keys ≤30d", "stat",
+               [prom_t("count((%s - time() < 30*86400) and (%s - time() > 0)) or vector(0)"
+                       % (lot("tailscale_device_key_expiry_seconds", WIN_SLOW), lot("tailscale_device_key_expiry_seconds", WIN_SLOW)), instant=True)],
+               unit="short", options=stat_opts()), 6, 5),
+        (panel("API/auth keys ≤7d", "stat",
+               [prom_t("count((%s - time() < 7*86400) and (%s - time() > 0)) or vector(0)"
+                       % (lot("tailscale_key_expiry_seconds", WIN_SLOW), lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="background")), 6, 5),
+        (panel("API/auth keys ≤30d", "stat",
+               [prom_t("count((%s - time() < 30*86400) and (%s - time() > 0)) or vector(0)"
+                       % (lot("tailscale_key_expiry_seconds", WIN_SLOW), lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True)],
+               unit="short", options=stat_opts()), 6, 5),
+    ]
+    return [row("Configuration audit", audit, present="has_audit"),
+            row("Security posture", posture, present="has_posture"),
+            row("Key & access expiry risk", expiry)]
+
+
 # ---------------------------------------------------------------------------
 # assembly
 # ---------------------------------------------------------------------------
@@ -961,6 +1053,7 @@ def build(uid, title, flat, only=None, folder=None):
         ("Fleet & Devices", tab_fleet, None),
         ("Network & Flows", tab_network, None),
         ("Events & Logs", tab_events, None),
+        ("Security & Audit", tab_security, None),
         ("Policy & Config", tab_policy, None),
         ("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
         ("Exporter Diagnostics", tab_diagnostics, None),
