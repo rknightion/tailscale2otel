@@ -1,11 +1,22 @@
 # tailscale2otel — Alerting rules
 
-Prometheus-style alerting rules that complement the four Grafana dashboards in
-[`../grafana/`](../grafana/). One file:
+Alerting + recording rules that complement the Grafana dashboards in
+[`../grafana/`](../grafana/). Two delivery models, two files — pick one (don't
+load overlapping rules into both, or they fire twice):
 
-- [`tailscale2otel.rules.yaml`](tailscale2otel.rules.yaml) — standard
-  `groups:` / `rules:` rule-group YAML (`alert:` / `expr:` / `for:` / `labels:`
-  / `annotations:`).
+- [`tailscale2otel.grafana-rules.yaml`](tailscale2otel.grafana-rules.yaml) —
+  **Grafana-managed** rules (Grafana evaluates them: `noDataState`/`execErrState`,
+  `isPaused`, mixed Prometheus+Loki in one ruleset). Grafana *file-provisioning*
+  format (`apiVersion: 1` + `groups:`). **Generated** — see
+  [Grafana-managed rules](#grafana-managed-rules-recommended) below.
+- [`tailscale2otel.rules.yaml`](tailscale2otel.rules.yaml) — the
+  **datasource-managed** equivalent: standard Prometheus/Mimir/Loki *ruler*
+  `groups:` / `rules:` YAML (`alert:` / `expr:` / `for:` …). Hand-maintained; the
+  original baseline set.
+
+> *Grafana-managed* rules are evaluated by Grafana itself and can span datasources;
+> *datasource-managed* rules are loaded into the datasource's own ruler
+> (Mimir/Cortex/Loki). The two files overlap in intent.
 
 ## Important: metric names assume OTLP → Prometheus normalization
 
@@ -25,7 +36,113 @@ and [`../../docs/metrics.md`](../../docs/metrics.md)):
 If you run a non-Grafana OTEL backend with different translation rules, adjust
 the metric names accordingly.
 
-## Alerts
+## Grafana-managed rules (recommended)
+
+[`tailscale2otel.grafana-rules.yaml`](tailscale2otel.grafana-rules.yaml) is
+**generated** by [`gen/build_rules.py`](gen/build_rules.py) (stdlib Python, no
+PyYAML) — edit the generator, not the YAML:
+
+```bash
+python3 gen/build_rules.py --out tailscale2otel.grafana-rules.yaml
+```
+
+Every rule is the canonical Grafana 3-node pipeline — **A** (datasource query) →
+**B** (reduce, `last`) → **C** (threshold), `condition: C` — so it round-trips
+cleanly through the Grafana UI/API. Datasource UIDs are the portable Grafana Cloud
+defaults (`grafanacloud-prom` / `grafanacloud-logs`); swap them for a self-hosted
+stack. All rules carry `service: tailscale2otel` plus a `severity` label.
+
+**Default-disabled by design.** Only a high-signal *starter set* ships enabled
+(`isPaused: false`); the rest are `isPaused: true` — enable them in the UI when you
+want them. Gated/optional signals (posture integrations, log streaming, services,
+tailnet-lock, DERP rollups, node discovery) are *absent* until the tailnet has the
+data, so their rules use `noDataState: OK` (absent ⇒ not firing).
+
+### `tailscale2otel-health` — exporter self-health
+
+| Rule | Severity | Default | Fires when |
+|---|---|---|---|
+| `CollectorScrapeStale` | warning | ✅ on | a collector hasn't completed a scrape in >1h (wedged; success gauge can stay stale at 1) |
+| `MetricCardinalityCapped` | warning | ✅ on | a metric pinned at the 10k series cap → silent per-series loss |
+| `SeriesBudgetHigh` | warning | ⏸ off | busiest metric > 8000 series (approaching the cap) |
+| `TailscaleAPIAuthFailing` | critical | ✅ on | API returns 401/403 → credentials broken, all polling fails |
+| `TailscaleAPIRateLimited` | warning | ⏸ off | API returns 429 (throttled) |
+| `TailscaleAPIServerErrors` | warning | ⏸ off | API 5xx rate > 0.05/s |
+| `APIRetriesElevated` | warning | ⏸ off | API retry rate > 0.1/s |
+| `CheckpointPersistErrors` | warning | ✅ on | a collector can't persist its high-water mark (replay/dup risk) |
+| `ComponentErrors` | warning | ✅ on | a non-collector subsystem (receiver/admin/auto-configure) is erroring |
+| `DedupSetSaturated` | warning | ⏸ off | a dedup set is evicting (undersized → double-count risk) |
+| `EnrichCacheStale` | warning | ✅ on | enrichment cache > 1h old → flow/audit names degrade to `unknown` |
+| `NodeMetricsDiscoveryFailing` | warning | ⏸ off | dynamic node-target discovery failing |
+| `AdminAuthRejectionsHigh` | info | ⏸ off | elevated admin-auth rejections (probing/misconfig) |
+| `GCCPUFractionHigh` | info | ⏸ off | GC CPU fraction > 0.25 (low value — near-idle service) |
+
+### `tailscale2otel-security` — security & governance
+
+| Rule | Severity | Default | Fires when |
+|---|---|---|---|
+| `TailnetLockErrors` | warning | ✅ on | a device has a tailnet-lock error (e.g. unsigned node) |
+| `AuditConfigChangeWARN` (Loki) | warning | ✅ on | a `tailscale.config.audit` log was emitted at WARN (change carried an error) |
+| `DeviceKeyExpiringCritical` | critical | ✅ on | a device node key expires within **48h** (critical tier above the 7-day warning) |
+| `AuthKeyExpiringCritical` | critical | ✅ on | an auth/API key expires within **48h** |
+| `PostureAutoUpdateCoverageLow` | warning | ✅ on | < 80% of devices have client auto-update enabled |
+| `PostureEncryptionCoverageLow` | warning | ⏸ off | < 80% of devices report an encrypted state store |
+| `DevicesNeedingUpdate` | info | ⏸ off | > 5 devices have a client update available |
+| `TailnetContactUnverified` | warning | ✅ on | a tailnet contact is unverified (security notices may not be delivered) |
+
+### `tailscale2otel-integrations` — integration & delivery health
+
+| Rule | Severity | Default | Fires when |
+|---|---|---|---|
+| `PostureIntegrationSyncStale` | warning | ✅ on | an MDM/EDR posture integration hasn't synced in >24h |
+| `LogStreamDeliveryFailing` | warning | ✅ on | SIEM log delivery is failing (`requests_failed` rate > 0) |
+| `LogStreamStalled` | warning | ⏸ off | a configured stream has no delivery activity for >1h |
+| `LogStreamBackpressure` | info | ⏸ off | delivery requests hitting the max body size |
+| `LogStreamSpoofedEntries` | warning | ⏸ off | log entries rejected as spoofed |
+
+### `tailscale2otel-network` — connectivity
+
+| Rule | Severity | Default | Fires when |
+|---|---|---|---|
+| `HighDERPRelayUsage` | warning | ✅ on | > 50% of fleet bytes relayed via DERP (NAT-traversal problems) |
+| `DERPRegionLatencyHigh` | info | ⏸ off | best latency to a DERP region > 150ms |
+| `NoFlowData` | info | ⏸ off | ~0 flow records for an hour while flow logging is on |
+
+### `tailscale2otel-recording` — recording rules
+
+| Recorded metric | Default | Definition |
+|---|---|---|
+| `tailscale:devices_online:count` | ⏸ off | devices currently online (deploy-stable) |
+| `tailscale:posture_autoupdate:ratio` | ✅ on | fraction of devices with auto-update on |
+| `tailscale:posture_encrypted:ratio` | ✅ on | fraction of devices with encrypted state |
+| `tailscale:derp_relay:byte_fraction` | ✅ on | fleet DERP byte fraction (precomputes the heavy 4-rate query) |
+| `tailscale:flow_throughput:bytes:rate5m` | ⏸ off | total flow throughput (rollup or raw) |
+| `tailscale2otel:series_active:sum` | ✅ on | total active series (ingest-cost proxy) |
+| `tailscale:device_keys_expiring_7d:count` | ⏸ off | device keys expiring within 7 days |
+
+> **Heads-up on recording rules:** Grafana-managed recording rules need the
+> recording-rules feature + a writable Prometheus/Mimir target on your stack;
+> they write `tailscale:*` series back to it. Leave them paused if your stack
+> doesn't support them.
+
+### Importing the Grafana-managed file
+
+- **File provisioning** (self-hosted / Alloy): drop the file in
+  `/etc/grafana/provisioning/alerting/` and restart Grafana. It creates a
+  `tailscale2otel` folder and the rule groups.
+- **HTTP provisioning API:** `POST /api/v1/provisioning/alert-rules` per rule (or
+  use Terraform `grafana_rule_group` / [Grizzly](https://grafana.github.io/grizzly/)
+  which consume this same model).
+- **Grafana Cloud UI:** the file-provisioning format isn't importable via the UI's
+  "Import alert rules" (that path takes Prometheus rules — use the
+  `tailscale2otel.rules.yaml` file there instead). For Cloud, prefer Terraform/Grizzly
+  or the provisioning API.
+
+Wire the `severity` label (`critical` / `warning` / `info`) into your notification
+policy. Thresholds, `for:` windows and the enabled/paused split all live in
+`gen/build_rules.py`.
+
+## Datasource-managed baseline (`tailscale2otel.rules.yaml`)
 
 | Alert | Severity | Fires when | Dashboard |
 |---|---|---|---|
