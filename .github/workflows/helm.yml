@@ -9,13 +9,11 @@ on:
       - "internal/config/**"
       - "tools/configcheck/**"
       - ".github/workflows/helm.yml"
+  # No path filter here on purpose: "helm lint + template + schema + docs" is a
+  # required status check on `main`, so it must report on EVERY pull request. A
+  # paths filter would skip the workflow on non-helm PRs, leaving them blocked on
+  # a required check that never reports. The push trigger above stays path-scoped.
   pull_request:
-    paths:
-      - "deploy/helm/**"
-      - "config.example.yaml"
-      - "internal/config/**"
-      - "tools/configcheck/**"
-      - ".github/workflows/helm.yml"
 
 permissions:
   contents: read
