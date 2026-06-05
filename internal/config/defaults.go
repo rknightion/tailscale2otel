@@ -156,7 +156,7 @@ func Default() *Config {
 		},
 		Profiling: ProfilingConfig{
 			Pyroscope: ProfilingPyroscope{
-				UploadRate: dur(15 * time.Second),
+				UploadRate: dur(60 * time.Second),
 			},
 		},
 	}

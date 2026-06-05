@@ -501,6 +501,17 @@
         "fullnameOverride": {
             "type": "string"
         },
+        "goRuntime": {
+            "type": "object",
+            "properties": {
+                "gogc": {
+                    "type": "string"
+                },
+                "memLimit": {
+                    "type": "string"
+                }
+            }
+        },
         "image": {
             "type": "object",
             "properties": {

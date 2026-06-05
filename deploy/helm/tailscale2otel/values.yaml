@@ -63,6 +63,15 @@ resources:
     cpu: 500m
     memory: 256Mi
 
+# -- Go runtime tuning, injected as container env vars. This is a near-idle poller
+# with a tiny live heap, so the Go default GOGC=100 fires frequent (individually
+# cheap) collections that dominate the CPU profile; raising GOGC cuts that GC share.
+goRuntime:
+  # -- GOGC: heap-growth percentage between collections (Go default 100). Empty ("") leaves the Go default.
+  gogc: "200"
+  # -- GOMEMLIMIT soft memory cap, e.g. "230MiB" (keep ~10% under resources.limits.memory). Empty ("") leaves it unset.
+  memLimit: ""
+
 # -- Node selector for pod scheduling.
 nodeSelector: {}
 # -- Tolerations for pod scheduling.

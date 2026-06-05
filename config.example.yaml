@@ -241,7 +241,7 @@ profiling:
     basic_auth_user: "${PYROSCOPE_BASIC_AUTH_USER}"         # Grafana Cloud: the profiles instance ID
     basic_auth_password: "${PYROSCOPE_BASIC_AUTH_PASSWORD}" # Grafana Cloud: an access policy token with profiles:write
     tenant_id: ""                    # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
-    upload_rate: 15s                 # how often profiles are flushed to the server
+    upload_rate: 60s                 # how often profiles are flushed; 15s is needless overhead for a low-traffic exporter — 60s aligns with otlp.metric_interval
     tags: {}                         # extra static labels merged onto every profile, e.g. { env: prod }
   mutex_profile_fraction: 0          # runtime.SetMutexProfileFraction (0 = disabled)
   block_profile_rate: 0              # runtime.SetBlockProfileRate (0 = disabled)

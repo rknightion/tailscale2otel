@@ -11,9 +11,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // TestTLSConfigPinsMinVersionTLS12 guards the OTLP exporter client TLS config
@@ -127,5 +130,56 @@ func TestOTLPHTTPURL(t *testing.T) {
 		if got := otlpHTTPURL(c.base, c.signal); got != c.want {
 			t.Errorf("otlpHTTPURL(%q, %q) = %q, want %q", c.base, c.signal, got, c.want)
 		}
+	}
+}
+
+// TestMeterProviderDisablesExemplars guards that metrics run with exemplars OFF.
+// The app configures no TracerProvider, so the SDK's default trace-based exemplar
+// filter would allocate a reservoir per series that can never be populated (there
+// are no spans) yet is still walked and serialized on every export — pure
+// dead-weight allocation/CPU. metricProviderOptions must pin
+// exemplar.AlwaysOffFilter, so even a measurement recorded under a SAMPLED span
+// context — the one case the default filter WOULD capture — attaches no exemplar.
+func TestMeterProviderDisablesExemplars(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(append(
+		metricProviderOptions(resource.Empty(), 10000),
+		sdkmetric.WithReader(reader),
+	)...)
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	ctr, err := mp.Meter("test").Int64Counter("t.exemplar.probe")
+	if err != nil {
+		t.Fatalf("Int64Counter: %v", err)
+	}
+
+	// A valid, sampled span context is exactly what the default TraceBasedFilter
+	// samples into an exemplar; with AlwaysOffFilter it must be ignored.
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0x01},
+		SpanID:     trace.SpanID{0x01},
+		TraceFlags: trace.FlagsSampled,
+	}))
+	ctr.Add(ctx, 1, metric.WithAttributes(attribute.String("k", "v")))
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	exemplars := 0
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				continue
+			}
+			for _, dp := range sum.DataPoints {
+				exemplars += len(dp.Exemplars)
+			}
+		}
+	}
+	if exemplars != 0 {
+		t.Errorf("got %d metric exemplar(s); want 0 (exemplars must be disabled — no TracerProvider exists to populate them)", exemplars)
 	}
 }

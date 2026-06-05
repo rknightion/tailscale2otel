@@ -20,6 +20,9 @@ services:
         VERSION: ${VERSION:-compose}
     image: ghcr.io/rknightion/tailscale2otel:latest
     restart: unless-stopped
+    # Hard memory ceiling (matches the Helm chart default). GOMEMLIMIT below sits
+    # ~10% under this so the Go GC backs off before the cgroup OOM-kills the process.
+    mem_limit: 256m
     environment:
       TS_TAILNET: ${TS_TAILNET:--}
       TS_OAUTH_CLIENT_ID: ${TS_OAUTH_CLIENT_ID:-}
@@ -31,6 +34,11 @@ services:
       # admin.enabled. Leave empty to keep the status page open; required if you
       # enable profiling.pprof. /healthz and /readyz are never gated.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # Go runtime GC tuning. This is a near-idle poller with a tiny live heap, so the
+      # default GOGC=100 fires frequent (individually cheap) collections; GOGC=200
+      # halves that frequency. GOMEMLIMIT is a soft backstop ~10% below mem_limit.
+      GOGC: ${GOGC:-200}
+      GOMEMLIMIT: ${GOMEMLIMIT:-230MiB}
     # Uncomment to mount a custom config instead of the baked-in example.
     # volumes:
     #   - ./config.yaml:/etc/tailscale2otel/config.yaml:ro

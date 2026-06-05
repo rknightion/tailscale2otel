@@ -3,6 +3,8 @@ name: tailscale2otel
 description: Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 type: application
 # Chart version — bump on chart changes.
+# 0.4.5: add goRuntime.{gogc,memLimit} -> GOGC/GOMEMLIMIT container env (Go GC tuning;
+# GOGC defaults to 200 to halve GC frequency on this near-idle poller).
 # 0.4.1: set container securityContext runAsUser/runAsGroup to 65532 (distroless
 # nonroot uid/gid > 10000) to satisfy hardened-cluster policy (trivy KSV-0020/0021).
 # 0.4.0: add admin.auth.token (shared-secret gate for the status page + pprof)

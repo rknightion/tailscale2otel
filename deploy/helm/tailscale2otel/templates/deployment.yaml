@@ -41,6 +41,17 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "tailscale2otel.secretName" . }}
+          {{- if or .Values.goRuntime.gogc .Values.goRuntime.memLimit }}
+          env:
+            {{- if .Values.goRuntime.gogc }}
+            - name: GOGC
+              value: {{ .Values.goRuntime.gogc | quote }}
+            {{- end }}
+            {{- if .Values.goRuntime.memLimit }}
+            - name: GOMEMLIMIT
+              value: {{ .Values.goRuntime.memLimit | quote }}
+            {{- end }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:

@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/exemplar"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"google.golang.org/grpc/credentials"
@@ -74,6 +75,27 @@ type Provider struct {
 	card    *CardinalityTracker // nil unless self-observability is enabled
 }
 
+// metricProviderOptions returns the MeterProvider options shared by the production
+// pipeline and tests — everything except the reader, which differs (a PeriodicReader
+// in production, a ManualReader in tests). Centralizing them here lets the
+// cardinality-limit and exemplar-filter behavior be asserted against an in-memory
+// reader without duplicating the wiring.
+func metricProviderOptions(res *resource.Resource, cardinalityLimit int) []sdkmetric.Option {
+	return []sdkmetric.Option{
+		sdkmetric.WithResource(res),
+		// Hard per-instrument cardinality limit (0/neg = unlimited). Raises the SDK
+		// default of 2000 to whatever the app configures (default 10000); beyond it
+		// the SDK emits otel_metric_overflow.
+		sdkmetric.WithCardinalityLimit(cardinalityLimit),
+		// We configure no TracerProvider (metrics + logs only), so the SDK's default
+		// trace-based exemplar filter would allocate a reservoir per series that can
+		// never be populated yet is still walked and serialized on every export.
+		// Disable exemplars outright to drop that dead-weight alloc/CPU and shrink the
+		// OTLP payload. Revisit if tracing is ever added.
+		sdkmetric.WithExemplarFilter(exemplar.AlwaysOffFilter),
+	}
+}
+
 // NewProvider builds the telemetry pipeline for the given options.
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	res, err := buildResource(ctx, opts)
@@ -93,14 +115,10 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
+	mp := sdkmetric.NewMeterProvider(append(
+		metricProviderOptions(res, opts.CardinalityLimit),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(interval))),
-		// Hard per-instrument cardinality limit (0/neg = unlimited). Raises the SDK
-		// default of 2000 to whatever the app configures (default 10000); beyond it
-		// the SDK emits otel_metric_overflow.
-		sdkmetric.WithCardinalityLimit(opts.CardinalityLimit),
-	)
+	)...)
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithResource(res),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),

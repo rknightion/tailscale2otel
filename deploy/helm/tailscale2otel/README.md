@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.4.4](https://img.shields.io/badge/Version-0.4.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.4.5](https://img.shields.io/badge/Version-0.4.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -153,6 +153,9 @@ under `config:`).
 | config.webhook.secret | string | `"${TS_WEBHOOK_SECRET}"` | HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs). |
 | existingSecret | string | `""` | Name of a pre-created Secret exposing the env keys below. When set, no Secret is rendered. |
 | fullnameOverride | string | `""` | Fully override the generated resource names. |
+| goRuntime | object | `{"gogc":"200","memLimit":""}` | Go runtime tuning, injected as container env vars. This is a near-idle poller with a tiny live heap, so the Go default GOGC=100 fires frequent (individually cheap) collections that dominate the CPU profile; raising GOGC cuts that GC share. |
+| goRuntime.gogc | string | `"200"` | GOGC: heap-growth percentage between collections (Go default 100). Empty ("") leaves the Go default. |
+| goRuntime.memLimit | string | `""` | GOMEMLIMIT soft memory cap, e.g. "230MiB" (keep ~10% under resources.limits.memory). Empty ("") leaves it unset. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.repository | string | `"ghcr.io/rknightion/tailscale2otel"` | Container image repository. |
 | image.tag | string | `""` | Image tag. Defaults to .Chart.appVersion when empty. |

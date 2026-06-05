@@ -138,7 +138,7 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 }
 
 // TestProfilingDefaults pins the off-by-default continuous-profiling block:
-// pprof + pyroscope disabled, the pyroscope upload_rate defaulting to 15s, and
+// pprof + pyroscope disabled, the pyroscope upload_rate defaulting to 60s, and
 // the mutex/block fractions left at 0 (sampling disabled).
 func TestProfilingDefaults(t *testing.T) {
 	cfg := config.Default()
@@ -149,8 +149,8 @@ func TestProfilingDefaults(t *testing.T) {
 	if p.Pyroscope.Enabled {
 		t.Errorf("Profiling.Pyroscope.Enabled = true, want default false")
 	}
-	if p.Pyroscope.UploadRate.D() != 15*time.Second {
-		t.Errorf("Profiling.Pyroscope.UploadRate = %v, want default 15s", p.Pyroscope.UploadRate.D())
+	if p.Pyroscope.UploadRate.D() != 60*time.Second {
+		t.Errorf("Profiling.Pyroscope.UploadRate = %v, want default 60s", p.Pyroscope.UploadRate.D())
 	}
 	if p.MutexProfileFraction != 0 {
 		t.Errorf("Profiling.MutexProfileFraction = %d, want default 0", p.MutexProfileFraction)
