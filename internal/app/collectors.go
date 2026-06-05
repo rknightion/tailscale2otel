@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
 	"github.com/rknightion/tailscale2otel/internal/collector/users"
+	"github.com/rknightion/tailscale2otel/internal/collector/webhooks"
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/rdns"
@@ -108,6 +109,10 @@ func (a *App) registerCollectors() {
 	}
 	if c.Contacts.Enabled {
 		a.registry.Register(contacts.New(a.client, c.Contacts.Interval.D()), c.Contacts.Interval.D())
+	}
+	if c.Webhooks.Enabled {
+		a.registry.Register(webhooks.New(a.client, c.Webhooks.Interval.D(),
+			webhooks.WithPerEntity(a.cfg.Cardinality.WebhookPerEntity)), c.Webhooks.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.

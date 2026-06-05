@@ -204,6 +204,10 @@ type CardinalityConfig struct {
 	DevicePerEntity bool `yaml:"device_per_entity"`
 	UserPerEntity   bool `yaml:"user_per_entity"`
 	KeyPerEntity    bool `yaml:"key_per_entity"`
+	// WebhookPerEntity (default true) gates the per-endpoint
+	// tailscale.webhook_endpoint.subscriptions gauge; false keeps only the
+	// aggregate tailscale.webhook_endpoints.count.
+	WebhookPerEntity bool `yaml:"webhook_per_entity"`
 	// MetricLimit is the hard per-instrument cardinality limit: the maximum number
 	// of distinct attribute sets (series) a single metric may emit per collection
 	// cycle. Beyond it the OTLP SDK collapses further series into one
@@ -225,6 +229,7 @@ type Collectors struct {
 	Acl         CollectorConfig   `yaml:"acl"`
 	Dns         CollectorConfig   `yaml:"dns"`
 	Contacts    CollectorConfig   `yaml:"contacts"`
+	Webhooks    CollectorConfig   `yaml:"webhooks"`
 	NodeMetrics NodeMetricsConfig `yaml:"node_metrics"`
 }
 

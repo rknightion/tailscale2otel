@@ -232,6 +232,20 @@ contact is worth alerting on.
 | `tailscale.contact.needs_verification` | `1` | gauge | `tailscale_contact_needs_verification_ratio` | `tailscale_contact_type` | `1` if the tailnet contact email still needs verification, else `0`; one series per contact type (`account`/`support`/`security`). The email address is never emitted. |
 <!-- END GENERATED -->
 
+### Webhook endpoints (`tailscale.webhook_endpoint*.*`)
+
+Inventory of configured webhook **endpoints** (where Tailscale posts event notifications) — distinct
+from the [stream/webhook receiver](#receivers--stream--webhook) metrics. Endpoint URL, secret and
+creator are **never emitted**. The per-endpoint subscriptions gauge is gated by
+`cardinality.webhook_per_entity`.
+
+<!-- BEGIN GENERATED: metrics groups="Webhooks" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.webhook_endpoint.subscriptions` | `1` | gauge | `tailscale_webhook_endpoint_subscriptions_ratio` | `tailscale_webhook_endpoint_id`, `tailscale_webhook_endpoint_provider` | Number of event categories a webhook endpoint is subscribed to (a **count**); one series per endpoint. **Gated** by `cardinality.webhook_per_entity`. The endpoint URL/secret/creator are never emitted. |
+| `tailscale.webhook_endpoints.count` | `1` | gauge | `tailscale_webhook_endpoints_count_ratio` | — | Number of configured webhook endpoints (a **count**, despite `_ratio`). |
+<!-- END GENERATED -->
+
 ### Features (`tailscale.feature.*`)
 
 <!-- BEGIN GENERATED: metrics groups="Features" -->

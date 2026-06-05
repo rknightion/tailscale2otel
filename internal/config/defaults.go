@@ -58,6 +58,7 @@ func Default() *Config {
 			DevicePerEntity:        true,
 			UserPerEntity:          true,
 			KeyPerEntity:           true,
+			WebhookPerEntity:       true,
 			MetricLimit:            10000,
 		},
 		Collectors: Collectors{
@@ -112,6 +113,10 @@ func Default() *Config {
 				Interval: dur(600 * time.Second),
 			},
 			Contacts: CollectorConfig{
+				Enabled:  true,
+				Interval: dur(600 * time.Second),
+			},
+			Webhooks: CollectorConfig{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
