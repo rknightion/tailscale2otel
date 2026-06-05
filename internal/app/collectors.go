@@ -10,6 +10,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/internal/collector/flowlogs"
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
+	"github.com/rknightion/tailscale2otel/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
@@ -117,6 +118,9 @@ func (a *App) registerCollectors() {
 	}
 	if c.PostureIntegrations.Enabled {
 		a.registry.Register(postureintegrations.New(a.client, c.PostureIntegrations.Interval.D()), c.PostureIntegrations.Interval.D())
+	}
+	if c.LogStream.Enabled {
+		a.registry.Register(logstream.New(a.client, c.LogStream.Interval.D()), c.LogStream.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.

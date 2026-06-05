@@ -231,6 +231,7 @@ type Collectors struct {
 	Contacts            CollectorConfig   `yaml:"contacts"`
 	Webhooks            CollectorConfig   `yaml:"webhooks"`
 	PostureIntegrations CollectorConfig   `yaml:"posture_integrations"`
+	LogStream           CollectorConfig   `yaml:"log_stream"`
 	NodeMetrics         NodeMetricsConfig `yaml:"node_metrics"`
 }
 

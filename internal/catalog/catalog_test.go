@@ -22,6 +22,7 @@ var canonicalGroups = map[string]bool{
 	"Contacts":           true,
 	"Webhooks":           true,
 	"Posture":            true,
+	"Log streaming":      true,
 	"Features":           true,
 	"Receivers":          true,
 	"Node metrics":       true,
@@ -88,6 +89,7 @@ func TestContainsRepresentativeSignals(t *testing.T) {
 		"tailscale.contact.needs_verification",
 		"tailscale.webhook_endpoints.count",
 		"tailscale.posture_integrations.count",
+		"tailscale.logstream.configured",
 	} {
 		if !metricNames[want] {
 			t.Errorf("aggregate metric catalog missing %q", want)
@@ -98,7 +100,7 @@ func TestContainsRepresentativeSignals(t *testing.T) {
 	for _, e := range catalog.LogEvents() {
 		logNames[e.Name] = true
 	}
-	for _, want := range []string{"tailscale.network.flow", "tailscale.config.audit", "tailscale.key.expiring"} {
+	for _, want := range []string{"tailscale.network.flow", "tailscale.config.audit", "tailscale.key.expiring", "tailscale.logstream.error"} {
 		if !logNames[want] {
 			t.Errorf("aggregate log catalog missing %q", want)
 		}

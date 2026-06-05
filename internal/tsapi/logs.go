@@ -3,7 +3,6 @@ package tsapi
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -54,7 +53,7 @@ func (c *Client) getJSON(ctx context.Context, urlStr string, out any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<14))
-		return fmt.Errorf("tsapi: GET %s: status %d: %s", urlStr, resp.StatusCode, string(body))
+		return &StatusError{Method: http.MethodGet, URL: urlStr, Code: resp.StatusCode, Body: string(body)}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }

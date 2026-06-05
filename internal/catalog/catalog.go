@@ -18,6 +18,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/internal/collector/flowlogs"
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
+	"github.com/rknightion/tailscale2otel/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
@@ -45,6 +46,7 @@ var metricSources = []func() []metricdoc.Metric{
 	contacts.Catalog,
 	webhooks.Catalog,
 	postureintegrations.Catalog,
+	logstream.Catalog,
 	flowlogs.Catalog,
 	nodemetrics.Catalog,
 	flowlog.Catalog,
@@ -67,6 +69,7 @@ var logSources = []func() []metricdoc.LogEvent{
 	contacts.LogCatalog,
 	webhooks.LogCatalog,
 	postureintegrations.LogCatalog,
+	logstream.LogCatalog,
 	flowlogs.LogCatalog,
 	nodemetrics.LogCatalog,
 	flowlog.LogCatalog,

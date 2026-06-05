@@ -88,6 +88,7 @@ const (
 	UnitSeries        = "{series}"
 	UnitPeers         = "{peer}"
 	UnitPorts         = "{port}"
+	UnitRequests      = "{request}"
 	UnitSeconds       = "s"
 	UnitDays          = "d"
 	UnitDimensionless = "1"

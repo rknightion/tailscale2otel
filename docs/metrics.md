@@ -262,6 +262,28 @@ Device-posture provider integrations (MDM/EDR such as Intune) and their sync hea
 | `tailscale.posture_integrations.count` | `1` | gauge | `tailscale_posture_integrations_count_ratio` | — | Number of configured device-posture integrations (a **count**, despite `_ratio`). |
 <!-- END GENERATED -->
 
+### Log streaming health (`tailscale.logstream.*`)
+
+Tailscale's own view of whether it is successfully delivering your **configuration** and **network**
+logs to a configured SIEM sink (a meta-signal, independent of the flow/audit collectors). The
+cumulative counters are emitted as **deltas** (use `rate()`). On a tailnet with no SIEM sink the
+status endpoint returns 4xx/empty → `tailscale.logstream.configured` = 0 and no health series (no
+error noise). The error **text** is on the `tailscale.logstream.error` log event, never a metric label.
+
+<!-- BEGIN GENERATED: metrics groups="Log streaming" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.logstream.bytes_sent` | `By` | counter | `tailscale_logstream_bytes_sent_bytes_total` | `tailscale_logstream_type` | Bytes delivered to the log-stream sink (emitted as the delta of Tailscale's cumulative counter). |
+| `tailscale.logstream.configured` | `1` | gauge | `tailscale_logstream_configured_ratio` | `tailscale_logstream_type` | `1` if a log stream is configured for this log type, else `0`. |
+| `tailscale.logstream.entries_sent` | `{event}` | counter | `tailscale_logstream_entries_sent_total` | `tailscale_logstream_type` | Log entries delivered to the sink. |
+| `tailscale.logstream.error` | `1` | gauge | `tailscale_logstream_error_ratio` | `tailscale_logstream_type` | `1` if the last delivery reported an error, else `0`. The error text is on the `tailscale.logstream.error` LOG event, never a label. |
+| `tailscale.logstream.last_activity` | `s` | gauge | `tailscale_logstream_last_activity_seconds` | `tailscale_logstream_type` | Unix timestamp of the most recent delivery activity (alert on staleness). |
+| `tailscale.logstream.max_body_requests` | `{request}` | counter | `tailscale_logstream_max_body_requests_total` | `tailscale_logstream_type` | Delivery requests that hit the maximum body size (a SIEM backpressure signal). |
+| `tailscale.logstream.requests` | `{request}` | counter | `tailscale_logstream_requests_total` | `tailscale_logstream_type` | Total delivery requests to the sink. |
+| `tailscale.logstream.requests_failed` | `{request}` | counter | `tailscale_logstream_requests_failed_total` | `tailscale_logstream_type` | Failed delivery requests to the sink (alert on a sustained rate). |
+| `tailscale.logstream.spoofed_entries` | `{event}` | counter | `tailscale_logstream_spoofed_entries_total` | `tailscale_logstream_type` | Log entries rejected as spoofed. |
+<!-- END GENERATED -->
+
 ### Features (`tailscale.feature.*`)
 
 <!-- BEGIN GENERATED: metrics groups="Features" -->
@@ -323,6 +345,7 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 | `tailscale.config.audit` | INFO | `tailscale_audit_action`, `tailscale_audit_origin`, `tailscale_audit_event_group_id`, `enduser_id`, `tailscale_actor_login`, `tailscale_actor_display`, `tailscale_target_id`, `tailscale_target_name`, `tailscale_target_type`, `tailscale_target_property`, `tailscale_audit_old`, `tailscale_audit_new`, `tailscale_audit_details`, `error` | Per configuration-audit event: actor, target, action, and (when present) the before/after change. Emitted at **WARN** when the event carries an error, otherwise INFO. |
 | `tailscale.device.posture` | INFO | `host_name`, `host_id` | Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API. **Gated** by `collect_posture`; by default emitted only when a device's posture changes (see `posture_log_mode`). |
 | `tailscale.key.expiring` | WARN | `tailscale_key_id`, `tailscale_key_type`, `tailscale_key_description`, `tailscale_key_expires_in_seconds` | Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp). |
+| `tailscale.logstream.error` | ERROR | `tailscale_logstream_type` | Emitted when a log stream's last delivery reported an error; the error text is the log body. |
 | `tailscale.network.flow` | INFO | `source_address`, `source_port`, `destination_address`, `destination_port`, `network_transport`, `network_type`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_dst_service`, `tailscale_node_id`, `tailscale_node_hostname`, `tailscale_connections`, `tailscale_tx_bytes`, `tailscale_rx_bytes`, `tailscale_tx_packets`, `tailscale_rx_packets` | Per-connection (per_connection) or per-record (per_record) network-flow detail: the 5-tuple, transport, traffic type, source/destination node, and tx/rx bytes & packets. |
 | `tailscale.webhook.<type>` | INFO / WARN by type | `tailscale_webhook_type`, `tailscale_tailnet` | Per webhook event; `<type>` is the Tailscale event type. Emitted at **WARN** for attention-worthy types (node key expiry, needs-approval/authorization/signature, deletions), otherwise INFO. The client-misconfig health events `exitNodeIPForwardingNotEnabled`/`subnetIPForwardingNotEnabled` are INFO and surfaced via the `NodeIPForwardingMisconfigured` alert. |
 <!-- END GENERATED -->

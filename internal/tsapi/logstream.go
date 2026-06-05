@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"time"
 )
 
 // LogStreamConfig is the log-streaming sink configuration PUT to Tailscale.
@@ -58,4 +59,40 @@ func (c *Client) putJSON(ctx context.Context, urlStr string, body any) error {
 		return fmt.Errorf("tsapi: PUT %s: status %d %s: %s", urlStr, resp.StatusCode, http.StatusText(resp.StatusCode), string(snippet))
 	}
 	return nil
+}
+
+// LogStreamStatus is the delivery-health status of a configured log stream, from
+// GET /api/v2/tailnet/{tailnet}/logging/{logType}/stream/status. Only the fields
+// tailscale2otel emits are decoded; the rate*/nanosecond fields on the wire are
+// intentionally ignored (rates are derivable via PromQL on the counters).
+type LogStreamStatus struct {
+	LastActivity       time.Time `json:"lastActivity"`
+	LastError          string    `json:"lastError"`
+	MaxBodySize        int64     `json:"maxBodySize"`
+	MaxNumEntries      int64     `json:"maxNumEntries"`
+	NumSpoofedEntries  int64     `json:"numSpoofedEntries"`
+	NumBytesSent       int64     `json:"numBytesSent"`
+	NumEntriesSent     int64     `json:"numEntriesSent"`
+	NumFailedRequests  int64     `json:"numFailedRequests"`
+	NumTotalRequests   int64     `json:"numTotalRequests"`
+	NumMaxBodyRequests int64     `json:"numMaxBodyRequests"`
+}
+
+// LogStreamStatus fetches the delivery-health status of the configured log
+// stream for logType ("network" | "configuration"). A non-2xx response is
+// returned as a *StatusError; a 4xx typically means no stream is configured for
+// that log type.
+func (c *Client) LogStreamStatus(ctx context.Context, logType string) (*LogStreamStatus, error) {
+	switch logType {
+	case "network", "configuration":
+	default:
+		return nil, fmt.Errorf("tsapi: invalid logType %q (want \"network\" or \"configuration\")", logType)
+	}
+	u := *c.baseURL
+	u.Path = path.Join(c.baseURL.Path, "/api/v2/tailnet", c.tailnet, "logging", logType, "stream", "status")
+	var out LogStreamStatus
+	if err := c.getJSON(ctx, u.String(), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
