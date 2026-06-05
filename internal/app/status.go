@@ -54,7 +54,7 @@ func (a *App) buildStatus() statusdata.Status {
 			Insecure:        a.cfg.OTLP.TLS.Insecure,
 			MetricIntervalS: int64(a.cfg.OTLP.MetricInterval.D().Seconds()),
 		},
-		Collectors:    a.collectorStatuses(),
+		Collectors:    a.collectorStatuses(now),
 		Cache:         a.cacheInfo(),
 		Dedup:         a.dedupInfo(),
 		Devices:       a.deviceRows(),
@@ -75,11 +75,13 @@ func (a *App) buildStatus() statusdata.Status {
 		Config:      a.redactedConfigSummary(),
 		GeneratedAt: now.UTC().Format(rfc3339),
 	}
+	s.Health, s.HealthReasons = deriveHealth(s.Collectors)
 	return s
 }
 
-func (a *App) collectorStatuses() []statusdata.CollectorStatus {
+func (a *App) collectorStatuses(now time.Time) []statusdata.CollectorStatus {
 	runs := a.status.Snapshot()
+	hist := a.status.HistorySnapshot()
 	entries := a.registry.Entries()
 	out := make([]statusdata.CollectorStatus, 0, len(entries))
 	for _, e := range entries {
@@ -97,6 +99,16 @@ func (a *App) collectorStatuses() []statusdata.CollectorStatus {
 			cs.LastDurationMs = r.LastDuration.Milliseconds()
 			cs.LastSuccess = r.LastSuccess
 			cs.LastError = r.LastError
+			cs.ConsecutiveFailures = r.ConsecutiveFailures
+			cs.SuccessRatePct = successRatePct(r.Runs, r.Failures)
+			d := nextRunIn(r.LastFinished, e.Interval, now)
+			cs.NextRunInSec = int64(d.Seconds())
+			cs.NextRunIn = humanDuration(d)
+			cs.Overdue = isOverdue(r.LastFinished, e.Interval, now)
+		}
+		if h, ok := hist[name]; ok {
+			cs.DurationMsSeries = h.DurationMs
+			cs.OutcomeSeries = h.Outcomes
 		}
 		out = append(out, cs)
 	}

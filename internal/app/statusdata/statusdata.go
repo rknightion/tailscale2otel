@@ -8,7 +8,11 @@ package statusdata
 
 // Status is the full admin status snapshot.
 type Status struct {
-	Service       ServiceInfo       `json:"service"`
+	Service ServiceInfo `json:"service"`
+	// Health is the at-a-glance verdict: "healthy", "degraded" or "starting".
+	// HealthReasons explains a non-healthy verdict (empty when healthy).
+	Health        string            `json:"health"`
+	HealthReasons []string          `json:"health_reasons,omitempty"`
 	Telemetry     TelemetryInfo     `json:"telemetry"`
 	Collectors    []CollectorStatus `json:"collectors"`
 	Cache         CacheInfo         `json:"device_cache"`
@@ -57,6 +61,33 @@ type CollectorStatus struct {
 	LastDurationMs int64  `json:"last_duration_ms"`
 	LastSuccess    bool   `json:"last_success"`
 	LastError      string `json:"last_error,omitempty"`
+	// ConsecutiveFailures is the current unbroken run of failures (0 on the last
+	// success). SuccessRatePct is (runs-failures)/runs over the process lifetime.
+	ConsecutiveFailures int64   `json:"consecutive_failures"`
+	SuccessRatePct      float64 `json:"success_rate_pct"`
+	// NextRunInSec is the time until the next scheduled tick (0 when due/overdue);
+	// NextRunIn is the same as a human string. Overdue is set when the collector
+	// has not run in over twice its interval (a wedged-tick signal).
+	NextRunInSec int64  `json:"next_run_in_seconds"`
+	NextRunIn    string `json:"next_run_in,omitempty"`
+	Overdue      bool   `json:"overdue,omitempty"`
+	// DurationMsSeries and OutcomeSeries are the recent-run history (oldest first,
+	// aligned) feeding the per-collector duration sparkline and outcome strip.
+	DurationMsSeries []int64 `json:"duration_ms_series,omitempty"`
+	OutcomeSeries    []bool  `json:"outcome_series,omitempty"`
+	// Checkpoint is the window-collector checkpoint state (nil for snapshot
+	// collectors, which keep no checkpoint).
+	Checkpoint *CheckpointStatus `json:"checkpoint,omitempty"`
+}
+
+// CheckpointStatus is a window collector's persisted high-water-mark state. Lag
+// is how far the high-water mark trails "now"; Stuck is set when that lag has
+// grown well beyond the collector's interval (i.e. the window is not advancing).
+type CheckpointStatus struct {
+	HighWaterMark string `json:"high_water_mark,omitempty"` // RFC3339
+	LagSec        int64  `json:"lag_seconds"`
+	Lag           string `json:"lag"`
+	Stuck         bool   `json:"stuck"`
 }
 
 // CacheInfo summarizes the device-enrichment cache.

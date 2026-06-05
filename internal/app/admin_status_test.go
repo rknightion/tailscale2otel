@@ -79,6 +79,13 @@ func TestStatusJSON_Shape(t *testing.T) {
 	if got.Cardinality.Available {
 		t.Errorf("cardinality should be unavailable when self-observability is off")
 	}
+	// buildStatus must always set a valid health verdict (deriveHealth's logic is
+	// covered exhaustively in health_test.go).
+	switch got.Health {
+	case healthHealthy, healthDegraded, healthStarting:
+	default:
+		t.Errorf("health = %q, want one of healthy/degraded/starting", got.Health)
+	}
 }
 
 func TestStatusPage_RedactsSecrets(t *testing.T) {
