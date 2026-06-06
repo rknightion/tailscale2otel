@@ -317,7 +317,7 @@ func TestCancelOnCloseBody(t *testing.T) {
 }
 
 // blockingRoundTripper blocks until the request context is done, then returns
-// its error — modelling a hung attempt.
+// its error — modeling a hung attempt.
 type blockingRoundTripper struct{ calls int }
 
 func (b *blockingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
