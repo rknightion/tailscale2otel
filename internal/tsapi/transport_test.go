@@ -236,6 +236,43 @@ func TestRetryTransport_ResendsBodyOnRetry(t *testing.T) {
 	}
 }
 
+func TestRetryAfter(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name  string
+		in    string
+		want  time.Duration // used when exact; -1 means "small positive"
+		exact bool
+	}{
+		{"empty", "", 0, true},
+		{"seconds", "5", 5 * time.Second, true},
+		{"zero seconds", "0", 0, true},
+		{"negative seconds", "-3", 0, true},
+		{"garbage", "soon", 0, true},
+		{"http date future", now.Add(7 * time.Second).UTC().Format(http.TimeFormat), -1, false},
+		{"http date past", now.Add(-7 * time.Second).UTC().Format(http.TimeFormat), 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := retryAfter(c.in)
+			switch {
+			case c.exact:
+				if got != c.want {
+					t.Fatalf("retryAfter(%q) = %v, want %v", c.in, got, c.want)
+				}
+			case c.want == -1:
+				if got <= 0 || got > 8*time.Second {
+					t.Fatalf("retryAfter(%q) = %v, want a small positive duration", c.in, got)
+				}
+			default: // past date -> 0 (clamped)
+				if got != 0 {
+					t.Fatalf("retryAfter(%q) = %v, want 0", c.in, got)
+				}
+			}
+		})
+	}
+}
+
 func TestEndpointLabel(t *testing.T) {
 	cases := []struct {
 		path string

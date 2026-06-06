@@ -147,8 +147,16 @@ func retryAfter(h string) time.Duration {
 	if h == "" {
 		return 0
 	}
-	if secs, err := strconv.Atoi(h); err == nil && secs >= 0 {
+	if secs, err := strconv.Atoi(h); err == nil {
+		if secs <= 0 {
+			return 0
+		}
 		return time.Duration(secs) * time.Second
+	}
+	if when, err := http.ParseTime(h); err == nil {
+		if d := time.Until(when); d > 0 {
+			return d
+		}
 	}
 	return 0
 }
