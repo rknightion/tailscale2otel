@@ -154,10 +154,7 @@ func endpointLabel(p string) string {
 func computeBackoff(delay, maxDelay time.Duration, rnd float64) (sleep, next time.Duration) {
 	half := delay / 2
 	sleep = half + time.Duration(rnd*float64(half))
-	next = delay * 2
-	if next > maxDelay {
-		next = maxDelay
-	}
+	next = min(delay*2, maxDelay)
 	return sleep, next
 }
 
