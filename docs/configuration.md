@@ -140,7 +140,7 @@ The HTTP client used for all Tailscale API calls.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `tailscale.http.timeout` | `30s` | Per-request timeout. |
+| `tailscale.http.timeout` | `30s` | Per-attempt timeout for each Tailscale API call (connect + headers + body read). Retries and `Retry-After` backoff are NOT counted against it, so a retried request can exceed this; total attempts are bounded by `max_attempts`. |
 | `tailscale.http.retry.max_attempts` | `4` | Maximum attempts per request (initial try + retries) under exponential backoff. |
 | `tailscale.http.retry.base_delay` | `500ms` | Initial backoff delay. |
 | `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. |

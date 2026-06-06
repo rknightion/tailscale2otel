@@ -30,7 +30,7 @@ tailscale:
         - all:read
     apikey: ""                        # personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires <=90d and is tied to its creator
   http:                               # HTTP client used for all Tailscale API calls
-    timeout: 30s                      # per-request timeout
+    timeout: 30s                      # per-attempt timeout (each retry attempt; a retried request may take longer, and long Retry-After waits are honored)
     retry:
       max_attempts: 4                 # total attempts per request (1 = no retry); exponential backoff between tries
       base_delay: 500ms               # initial backoff delay
