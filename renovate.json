@@ -53,6 +53,12 @@
       "matchCurrentVersion": "< 1.0.0",
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": false
+    },
+    {
+      "description": "Ignore the self-module reference: the tools/* modules `require github.com/rknightion/tailscale2otel` but `replace ../..` makes Go always build from local code, so the require version is cosmetic. Bumping it on every release (see PR #19) is pure noise. Last rule so enabled:false is never re-enabled by the broad automerge rules above.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/rknightion/tailscale2otel"],
+      "enabled": false
     }
   ]
 }
