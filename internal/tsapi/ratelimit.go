@@ -72,11 +72,17 @@ func (l *limiter) Wait(ctx context.Context) error {
 	}
 }
 
+// rateWaiter blocks until a request may proceed (or ctx is done). *limiter is
+// the production implementation; tests substitute a fake.
+type rateWaiter interface {
+	Wait(ctx context.Context) error
+}
+
 // rateLimitTransport waits for a limiter token before each round-trip. It is the
-// outermost transport so every logical request is rate limited.
+// retry transport's base, so every attempt (including retries) is rate limited.
 type rateLimitTransport struct {
 	base http.RoundTripper
-	lim  *limiter
+	lim  rateWaiter
 }
 
 func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
