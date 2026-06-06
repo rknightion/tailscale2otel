@@ -61,3 +61,39 @@ func TestBuildStatus_HasAPISection(t *testing.T) {
 		t.Errorf("API.Endpoints should be a non-nil (possibly empty) slice")
 	}
 }
+
+// TestBuildStatus_CollectorInfo asserts each collector row carries the
+// admin-tooltip data: a one-line purpose and the metrics it emits, sourced from
+// the in-code catalog.
+func TestBuildStatus_CollectorInfo(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Collectors.Devices.Enabled = true
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+
+	st := a.buildStatus()
+	var dev *statusdata.CollectorStatus
+	for i := range st.Collectors {
+		if st.Collectors[i].Name == "devices" {
+			dev = &st.Collectors[i]
+		}
+	}
+	if dev == nil {
+		t.Fatal("devices collector missing from status")
+	}
+	if dev.Description == "" {
+		t.Error("devices collector has no info description")
+	}
+	found := false
+	for _, m := range dev.Metrics {
+		if m.Name == "tailscale.device.online" {
+			if m.Description == "" {
+				t.Error("tailscale.device.online has empty description")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("devices metrics missing tailscale.device.online; got %v", dev.Metrics)
+	}
+}

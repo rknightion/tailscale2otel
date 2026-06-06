@@ -102,6 +102,7 @@ func (a *App) collectorStatuses(now time.Time) []statusdata.CollectorStatus {
 			Name:        name,
 			IntervalSec: int64(e.Interval.Seconds()),
 		}
+		cs.Description, cs.Metrics = collectorBrief(name)
 		if r, ok := runs[name]; ok && r.Runs > 0 {
 			cs.HasRun = true
 			cs.Runs = r.Runs

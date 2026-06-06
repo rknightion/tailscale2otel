@@ -62,6 +62,27 @@
   .muted{color:var(--muted)}
   .note{color:var(--muted);font-size:12px;margin-top:2px}
   .note.err{color:var(--err)}
+  /* Per-collector info affordance: a small ⓘ whose popover (purpose + emitted
+     metrics) is positioned with fixed coords by JS so the collectors table's
+     overflow:hidden can't clip it. The server-rendered no-JS fallback uses a
+     native title= tooltip on the same .collector-info span. */
+  .collector-info{position:relative;display:inline-block;margin-left:6px;
+    color:var(--muted);font-size:12px;line-height:1;cursor:help;user-select:none}
+  .collector-info:hover,.collector-info:focus{color:var(--accent);outline:none}
+  .cinfo-tip{position:fixed;left:0;top:0;z-index:50;display:none;width:360px;
+    max-height:340px;overflow:auto;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);
+    font-weight:400;text-transform:none;letter-spacing:normal;white-space:normal;
+    text-align:left;cursor:auto}
+  .collector-info:hover .cinfo-tip,.collector-info:focus .cinfo-tip{display:block}
+  .cinfo-purpose{display:block;color:var(--fg);font-size:12px;line-height:1.5}
+  .cinfo-metrics{display:block;margin-top:8px;padding-top:8px;
+    border-top:1px solid var(--line)}
+  .cinfo-m{display:block;margin:7px 0}
+  .cinfo-m code{font-size:11px}
+  .cinfo-d{display:block;color:var(--muted);font-size:11px;line-height:1.45;
+    margin-top:2px}
   footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
   nav.toc{position:sticky;top:0;z-index:5;display:flex;gap:16px;flex-wrap:wrap;
     padding:10px 24px;background:rgba(15,20,25,.93);border-bottom:1px solid var(--line);
@@ -123,7 +144,7 @@
       <tbody id="collBody">
       {{range .Collectors}}
         <tr{{if and .HasRun (not .LastSuccess)}} class="bad"{{end}}>
-          <td><code>{{.Name}}</code>{{with .Checkpoint}}<div class="note{{if .Stuck}} err{{end}}">checkpoint lag {{.Lag}}{{if .Stuck}} · stuck{{end}}</div>{{end}}</td>
+          <td><code>{{.Name}}</code>{{if .Description}} <span class="collector-info" tabindex="0" title="{{.Description}}{{range .Metrics}}&#10;• {{.Name}} — {{.Description}}{{end}}">&#9432;</span>{{end}}{{with .Checkpoint}}<div class="note{{if .Stuck}} err{{end}}">checkpoint lag {{.Lag}}{{if .Stuck}} · stuck{{end}}</div>{{end}}</td>
           <td>{{if not .HasRun}}<span class="badge pending">pending</span>{{else if .LastSuccess}}<span class="badge ok">ok</span>{{else}}<span class="badge err">fail</span>{{end}}</td>
           <td class="num">{{.IntervalSec}}s</td>
           <td class="num">{{if .HasRun}}{{printf "%.0f" .SuccessRatePct}}%{{else}}<span class="muted">—</span>{{end}}</td>
@@ -405,6 +426,39 @@ function statusBadge(c){
   return el('span',{'class':'badge err'},'fail');
 }
 
+// collectorInfo builds the ⓘ affordance for a collector: a small icon whose
+// popover lists the collector's purpose and the metrics it emits. The popover is
+// position:fixed and placed on hover/focus so the table's overflow:hidden can't
+// clip it. Returns null when the collector carries no doc data.
+function collectorInfo(c){
+  if(!c.description && !(c.metrics && c.metrics.length)) return null;
+  var wrap=el('span',{'class':'collector-info','tabindex':'0','aria-label':'About '+c.name});
+  wrap.appendChild(document.createTextNode('ⓘ'));
+  var tip=el('span',{'class':'cinfo-tip'});
+  if(c.description) tip.appendChild(el('span',{'class':'cinfo-purpose'}, c.description));
+  if(c.metrics && c.metrics.length){
+    var list=el('span',{'class':'cinfo-metrics'});
+    c.metrics.forEach(function(m){
+      var row=el('span',{'class':'cinfo-m'});
+      row.appendChild(el('code',null,m.name));
+      if(m.description) row.appendChild(el('span',{'class':'cinfo-d'}, m.description));
+      list.appendChild(row);
+    });
+    tip.appendChild(list);
+  }
+  wrap.appendChild(tip);
+  function place(){
+    var r=wrap.getBoundingClientRect(), w=360, left=r.left, top=r.bottom;
+    if(left+w > window.innerWidth-8) left=window.innerWidth-8-w;
+    if(left<8) left=8;
+    tip.style.left=Math.round(left)+'px';
+    tip.style.top=Math.round(top)+'px';
+  }
+  wrap.addEventListener('mouseenter', place);
+  wrap.addEventListener('focus', place);
+  return wrap;
+}
+
 function rebuildCollectors(rows){
   var tb=document.getElementById('collBody'); if(!tb) return;
   tb.textContent='';
@@ -416,6 +470,7 @@ function rebuildCollectors(rows){
     var tr=el('tr');
     if((c.has_run && !c.last_success) || c.consecutive_failures>=3 || c.overdue || (c.checkpoint && c.checkpoint.stuck)) tr.className='bad';
     var nameTd=el('td'); nameTd.appendChild(el('code',null,c.name));
+    var info=collectorInfo(c); if(info) nameTd.appendChild(info);
     if(c.checkpoint){
       var sub=el('div',{'class':'note'+(c.checkpoint.stuck?' err':'')});
       sub.textContent='checkpoint lag '+c.checkpoint.lag+(c.checkpoint.stuck?' · stuck':'');

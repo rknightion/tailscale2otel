@@ -106,9 +106,22 @@ type CollectorStatus struct {
 	// aligned) feeding the per-collector duration sparkline and outcome strip.
 	DurationMsSeries []int64 `json:"duration_ms_series,omitempty"`
 	OutcomeSeries    []bool  `json:"outcome_series,omitempty"`
+	// Description is a one-line explanation of what this collector does, and
+	// Metrics lists the signals it emits — both surfaced as the per-collector
+	// info tooltip on the admin page. Sourced from the in-code metric catalog so
+	// the tooltip can never drift from what is actually emitted.
+	Description string        `json:"description,omitempty"`
+	Metrics     []MetricBrief `json:"metrics,omitempty"`
 	// Checkpoint is the window-collector checkpoint state (nil for snapshot
 	// collectors, which keep no checkpoint).
 	Checkpoint *CheckpointStatus `json:"checkpoint,omitempty"`
+}
+
+// MetricBrief is one signal a collector emits, shown in the collector's info
+// tooltip (the OTEL source name plus its human description).
+type MetricBrief struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // CheckpointStatus is a window collector's persisted high-water-mark state. Lag

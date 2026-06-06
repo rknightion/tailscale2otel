@@ -54,3 +54,37 @@ func TestRender_Populated(t *testing.T) {
 		}
 	}
 }
+
+// TestRender_CollectorInfoTooltip asserts the per-collector info affordance is
+// present: the server-rendered no-JS fallback carries the purpose + metric
+// names, and the client-side rebuild reads the new JSON fields so the rich
+// popover survives the auto-refresh.
+func TestRender_CollectorInfoTooltip(t *testing.T) {
+	s := statusdata.Status{
+		Collectors: []statusdata.CollectorStatus{{
+			Name:        "devices",
+			HasRun:      true,
+			LastSuccess: true,
+			Description: "Lists every tailnet device and refreshes the enrichment cache.",
+			Metrics: []statusdata.MetricBrief{
+				{Name: "tailscale.device.online", Description: "1 if the device is online."},
+			},
+		}},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"Lists every tailnet device", // server fallback purpose
+		"tailscale.device.online",    // server fallback metric name
+		"collector-info",             // tooltip affordance hook (CSS + JS)
+		"c.description",              // JS rebuild reads the field
+		"c.metrics",                  // JS rebuild reads the field
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
