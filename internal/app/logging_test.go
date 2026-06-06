@@ -15,6 +15,18 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
+// TestWithComponent locks the per-subsystem log tag contract: the key must be
+// "component" (semconv.AttrComponent) so Loki filters like {component="tsapi"}
+// work.
+func TestWithComponent(t *testing.T) {
+	var buf bytes.Buffer
+	log := withComponent(slog.New(slog.NewTextHandler(&buf, nil)), compTSAPI)
+	log.Info("hi")
+	if !strings.Contains(buf.String(), "component=tsapi") {
+		t.Fatalf("log = %q, want component=tsapi", buf.String())
+	}
+}
+
 // appWithLog builds an App via the newApp seam writing logs to buf.
 func appWithLog(t *testing.T, buf *bytes.Buffer) *App {
 	t.Helper()

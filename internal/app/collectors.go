@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/collector/acl"
 	"github.com/rknightion/tailscale2otel/internal/collector/auditlogs"
 	"github.com/rknightion/tailscale2otel/internal/collector/contacts"
@@ -130,7 +131,7 @@ func (a *App) registerCollectors() {
 	}
 	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.
-		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.client, a.logger))
+		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.client, withComponent(a.logger, compNodeMetrics)))
 		a.registry.Register(a.nodeMetrics, nm.Interval.D())
 	}
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
@@ -160,14 +161,14 @@ func (a *App) buildReceivers() {
 			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
 			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
 			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
-		}, a.flowProc, a.auditProc, a.emitter, a.logger)
+		}, a.flowProc, a.auditProc, a.emitter, withComponent(a.logger, appcatalog.ComponentStream))
 	}
 	if a.cfg.Webhook.Enabled {
 		var wopts []webhook.Option
 		if a.webhookDedup != nil {
 			wopts = append(wopts, webhook.WithDedup(a.webhookDedup))
 		}
-		a.webhookSrv = webhook.New(webhookOptions(a.cfg.Webhook), a.emitter, a.logger, wopts...)
+		a.webhookSrv = webhook.New(webhookOptions(a.cfg.Webhook), a.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
 	}
 }
 

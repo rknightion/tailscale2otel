@@ -23,6 +23,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/rdns"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/stream"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
@@ -78,12 +79,30 @@ type App struct {
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
 // construction; Run takes its own ctx.
+// Subsystem names used to tag each component's logger (semconv.AttrComponent),
+// so operational logs are filterable per-subsystem (e.g. component=tsapi). The
+// stream/webhook receivers reuse the appcatalog.Component* names that also label
+// the component-error metric.
+const (
+	compTelemetry   = "telemetry"
+	compTSAPI       = "tsapi"
+	compCollector   = "collector"
+	compCheckpoint  = "checkpoint"
+	compProfiling   = "profiling"
+	compNodeMetrics = "nodemetrics"
+)
+
+// withComponent returns a logger that tags every record with its subsystem name.
+func withComponent(l *slog.Logger, component string) *slog.Logger {
+	return l.With(semconv.AttrComponent, component)
+}
+
 func New(ctx context.Context, cfg *config.Config, version string, logger *slog.Logger) (*App, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	topts := telemetryOptions(cfg, version)
-	topts.Logger = logger // surfaces Emitter label-collision diagnostics
+	topts.Logger = withComponent(logger, compTelemetry) // surfaces Emitter label-collision diagnostics
 	provider, err := telemetry.NewProvider(ctx, topts)
 	if err != nil {
 		return nil, err
@@ -95,7 +114,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// OTLP only when self-observability is enabled.
 	apiStats := NewAPIStats()
 	tsOpts := tsapiOptions(cfg)
-	tsOpts.Logger = logger
+	tsOpts.Logger = withComponent(logger, compTSAPI)
 	var obs func(string, int, int)
 	if cfg.SelfObservability.Enabled {
 		obs = apiObserver(emitter)
@@ -111,7 +130,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		_ = provider.Shutdown(ctx)
 		return nil, err
 	}
-	store, err := checkpointStore(cfg, logger)
+	store, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
 	if err != nil {
 		_ = provider.Shutdown(ctx)
 		return nil, err
@@ -123,9 +142,10 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// Continuous profiling is opt-in. startProfiling also applies the runtime
 	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
 	// to reach Pyroscope is non-fatal: the exporter's core job is unaffected.
-	prof, err := startProfiling(cfg, version, logger)
+	profLogger := withComponent(logger, compProfiling)
+	prof, err := startProfiling(cfg, version, profLogger)
 	if err != nil {
-		logger.Error("pyroscope profiler failed to start", "error", err)
+		profLogger.Error("pyroscope profiler failed to start", "error", err)
 	}
 	a.profiler = prof
 	return a, nil
@@ -163,11 +183,11 @@ func newApp(
 		logger:      logger,
 	}
 	a.sched = collector.NewScheduler(emitter, store,
-		collector.WithLogger(logger),
+		collector.WithLogger(withComponent(logger, compCollector)),
 		collector.WithSelfObs(cfg.SelfObservability.Enabled),
 		collector.WithStatusTracker(a.status))
 	if cfg.SelfObservability.Enabled {
-		a.restore = telemetry.InstallExportErrorHandler(emitter, logger)
+		a.restore = telemetry.InstallExportErrorHandler(emitter, withComponent(logger, compTelemetry))
 		telemetry.EmitBuildInfo(emitter, runtime.Version())
 	}
 	// Shared cross-source de-duplication: the same flow window / audit event can
