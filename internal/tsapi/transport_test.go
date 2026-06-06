@@ -236,6 +236,28 @@ func TestRetryTransport_ResendsBodyOnRetry(t *testing.T) {
 	}
 }
 
+func TestComputeBackoff(t *testing.T) {
+	maxDelay := 10 * time.Second
+	// rnd=0 -> sleep == delay/2 (lower bound); next == delay*2 capped.
+	sleep, next := computeBackoff(1*time.Second, maxDelay, 0)
+	if sleep != 500*time.Millisecond {
+		t.Fatalf("rnd=0 sleep = %v, want 500ms", sleep)
+	}
+	if next != 2*time.Second {
+		t.Fatalf("next = %v, want 2s", next)
+	}
+	// rnd just below 1 -> sleep approaches delay (upper bound, exclusive).
+	sleep, _ = computeBackoff(1*time.Second, maxDelay, 0.999)
+	if sleep < 500*time.Millisecond || sleep >= 1*time.Second {
+		t.Fatalf("rnd~1 sleep = %v, want in [500ms, 1s)", sleep)
+	}
+	// next is capped at maxDelay.
+	_, next = computeBackoff(8*time.Second, maxDelay, 0)
+	if next != maxDelay {
+		t.Fatalf("capped next = %v, want %v", next, maxDelay)
+	}
+}
+
 func TestRetryAfter(t *testing.T) {
 	now := time.Now()
 	cases := []struct {

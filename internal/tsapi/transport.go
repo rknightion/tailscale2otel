@@ -2,6 +2,7 @@ package tsapi
 
 import (
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,6 +41,10 @@ type retryTransport struct {
 	baseDelay time.Duration
 	maxDelay  time.Duration
 
+	// rnd, when non-nil, supplies the jitter fraction in [0,1) (tests inject a
+	// fixed value); nil uses math/rand.
+	rnd func() float64
+
 	// onRequest, when non-nil, is called exactly once after the final attempt
 	// of each logical request with a RequestInfo describing the outcome.
 	onRequest func(RequestInfo)
@@ -74,10 +79,11 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			t.observe(req, resp, err, attempt, start)
 			return resp, err
 		}
-		sleep := delay
+		jittered, next := computeBackoff(delay, t.maxDelay, t.rndFloat())
+		sleep := jittered
 		if resp != nil {
 			if ra := retryAfter(resp.Header.Get("Retry-After")); ra > 0 {
-				sleep = ra
+				sleep = ra // honor server backoff exactly; no jitter
 			}
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 			_ = resp.Body.Close()
@@ -88,9 +94,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, req.Context().Err()
 		case <-time.After(sleep):
 		}
-		if delay *= 2; delay > t.maxDelay {
-			delay = t.maxDelay
-		}
+		delay = next
 	}
 }
 
@@ -141,6 +145,29 @@ func endpointLabel(p string) string {
 		return "device"
 	}
 	return p
+}
+
+// computeBackoff returns the equal-jittered sleep for the current delay and the
+// next (doubled, capped) base delay. rnd must be in [0,1). Equal jitter keeps
+// sleep in [delay/2, delay), so retries from collectors throttled together do
+// not align.
+func computeBackoff(delay, maxDelay time.Duration, rnd float64) (sleep, next time.Duration) {
+	half := delay / 2
+	sleep = half + time.Duration(rnd*float64(half))
+	next = delay * 2
+	if next > maxDelay {
+		next = maxDelay
+	}
+	return sleep, next
+}
+
+// rndFloat returns the jitter fraction in [0,1), using the injected source when
+// set (tests) or math/rand/v2 otherwise.
+func (t *retryTransport) rndFloat() float64 {
+	if t.rnd != nil {
+		return t.rnd()
+	}
+	return rand.Float64() //nolint:gosec // G404: backoff jitter is not security-sensitive (math/rand/v2)
 }
 
 func retryAfter(h string) time.Duration {
