@@ -1,6 +1,7 @@
 package tsapi
 
 import (
+	"context"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -45,10 +46,36 @@ type retryTransport struct {
 	// fixed value); nil uses math/rand.
 	rnd func() float64
 
+	// attemptTimeout bounds each individual HTTP attempt (connect + headers +
+	// body read), not the whole retried request. Zero disables it. Backoff
+	// sleeps are NOT bounded by it — they wait on the parent request context, so
+	// a long Retry-After is honored.
+	attemptTimeout time.Duration
+
 	// onRequest, when non-nil, is called exactly once after the final attempt
 	// of each logical request with a RequestInfo describing the outcome.
 	onRequest func(RequestInfo)
 }
+
+// cancelOnCloseBody ties a per-attempt context's cancel to the lifetime of the
+// response body: the deadline keeps covering body reads, and the context is
+// released when the caller closes the body. This is the same pattern the stdlib
+// http.Client uses for its own Timeout.
+type cancelOnCloseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *cancelOnCloseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
+}
+
+// logFinal and logRetry are filled in by Task 5 (status-aware logging); no-ops
+// for now so the per-attempt-timeout restructure compiles independently.
+func (t *retryTransport) logFinal(*http.Request, *http.Response, error, int)               {}
+func (t *retryTransport) logRetry(*http.Request, *http.Response, error, int, time.Duration) {}
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
@@ -58,24 +85,37 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		delay = t.baseDelay
 	)
 	for attempt := 1; ; attempt++ {
-		attemptReq := req.Clone(req.Context())
+		actx := req.Context()
+		var cancel context.CancelFunc
+		if t.attemptTimeout > 0 {
+			actx, cancel = context.WithTimeout(req.Context(), t.attemptTimeout)
+		}
+		attemptReq := req.Clone(actx)
 		// Clone shares the original Body reader, which the previous attempt would
 		// have drained; rewind it from GetBody so a retried request with a body
 		// (e.g. a PUT) re-sends its payload. GetBody is nil for bodyless GETs.
 		if req.GetBody != nil {
 			body, gbErr := req.GetBody()
 			if gbErr != nil {
+				if cancel != nil {
+					cancel()
+				}
 				t.observe(req, nil, gbErr, attempt, start)
 				return nil, gbErr
 			}
 			attemptReq.Body = body
 		}
 		resp, err = t.base.RoundTrip(attemptReq)
-		if err == nil && resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
-			t.observe(req, resp, err, attempt, start)
-			return resp, nil
-		}
-		if attempt >= t.max {
+		retryable := err != nil || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+		if !retryable || attempt >= t.max {
+			t.logFinal(req, resp, err, attempt)
+			if cancel != nil {
+				if resp != nil && resp.Body != nil {
+					resp.Body = &cancelOnCloseBody{ReadCloser: resp.Body, cancel: cancel}
+				} else {
+					cancel()
+				}
+			}
 			t.observe(req, resp, err, attempt, start)
 			return resp, err
 		}
@@ -88,6 +128,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 			_ = resp.Body.Close()
 		}
+		if cancel != nil {
+			cancel() // attempt is done; body drained — release the per-attempt ctx
+		}
+		t.logRetry(req, resp, err, attempt, sleep)
 		select {
 		case <-req.Context().Done():
 			t.observe(req, nil, req.Context().Err(), attempt, start)

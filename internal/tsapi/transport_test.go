@@ -295,6 +295,102 @@ func TestRetryAfter(t *testing.T) {
 	}
 }
 
+func TestCancelOnCloseBody(t *testing.T) {
+	called := false
+	b := &cancelOnCloseBody{ReadCloser: io.NopCloser(strings.NewReader("hi")), cancel: func() { called = true }}
+	got, _ := io.ReadAll(b)
+	if string(got) != "hi" {
+		t.Fatalf("read = %q, want hi", got)
+	}
+	if called {
+		t.Fatal("cancel called before Close")
+	}
+	if err := b.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !called {
+		t.Fatal("cancel not called on Close")
+	}
+}
+
+// blockingRoundTripper blocks until the request context is done, then returns
+// its error — modelling a hung attempt.
+type blockingRoundTripper struct{ calls int }
+
+func (b *blockingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	b.calls++
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+func TestRetryTransport_PerAttemptTimeoutBoundsHungAttempt(t *testing.T) {
+	rt := &retryTransport{
+		base:           &blockingRoundTripper{},
+		max:            2,
+		baseDelay:      time.Millisecond,
+		maxDelay:       2 * time.Millisecond,
+		attemptTimeout: 20 * time.Millisecond,
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	start := time.Now()
+	_, err := rt.RoundTrip(req)
+	if err == nil {
+		t.Fatal("err = nil, want a deadline error")
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want bounded by per-attempt timeout", elapsed)
+	}
+}
+
+func TestRetryTransport_BackoffNotClippedByAttemptTimeout(t *testing.T) {
+	// attemptTimeout is tiny, but the backoff sleep waits on the parent context,
+	// so the full (jittered) sleep must elapse between the 429 and the retry.
+	rt := &retryTransport{
+		base:           &fakeRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}},
+		max:            2,
+		baseDelay:      60 * time.Millisecond,
+		maxDelay:       60 * time.Millisecond,
+		attemptTimeout: 5 * time.Millisecond,
+		rnd:            func() float64 { return 0 }, // sleep == delay/2 == 30ms
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	start := time.Now()
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if elapsed := time.Since(start); elapsed < 25*time.Millisecond {
+		t.Fatalf("elapsed = %v, want >= ~30ms (backoff not clipped to attemptTimeout)", elapsed)
+	}
+}
+
+func TestRetryTransport_WrapsBodyForCancel(t *testing.T) {
+	rt := &retryTransport{
+		base:           &fakeRoundTripper{statuses: []int{http.StatusOK}},
+		max:            2,
+		baseDelay:      time.Millisecond,
+		maxDelay:       2 * time.Millisecond,
+		attemptTimeout: time.Second,
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if _, ok := resp.Body.(*cancelOnCloseBody); !ok {
+		t.Fatalf("resp.Body type = %T, want *cancelOnCloseBody", resp.Body)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
 func TestEndpointLabel(t *testing.T) {
 	cases := []struct {
 		path string

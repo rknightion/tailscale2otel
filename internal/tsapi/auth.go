@@ -21,11 +21,12 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 	wrap := func(base http.RoundTripper) http.RoundTripper {
 		limited := wrapRateLimit(base, opts.RateLimit)
 		return &retryTransport{
-			base:      limited,
-			max:       max(opts.MaxAttempts, 1),
-			baseDelay: orDuration(opts.BaseDelay, 500*time.Millisecond),
-			maxDelay:  orDuration(opts.MaxDelay, 10*time.Second),
-			onRequest: opts.OnRequest,
+			base:           limited,
+			max:            max(opts.MaxAttempts, 1),
+			baseDelay:      orDuration(opts.BaseDelay, 500*time.Millisecond),
+			maxDelay:       orDuration(opts.MaxDelay, 10*time.Second),
+			attemptTimeout: timeout,
+			onRequest:      opts.OnRequest,
 		}
 	}
 
@@ -39,12 +40,15 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 			Scopes:       opts.OAuthScopes,
 			BaseURL:      opts.BaseURL,
 		}.HTTPClient()
-		oc.Timeout = timeout
+		// No whole-client timeout: it would bound the entire retry chain incl.
+		// backoff sleeps, so a long Retry-After could never be honored. The
+		// retryTransport applies attemptTimeout per attempt instead.
+		oc.Timeout = 0
 		oc.Transport = wrap(oc.Transport)
 		return oc, nil
 	case opts.APIKey != "":
 		return &http.Client{
-			Timeout:   timeout,
+			Timeout:   0, // per-attempt timeout lives in retryTransport (see OAuth path)
 			Transport: wrap(&authKeyTransport{base: http.DefaultTransport, key: opts.APIKey}),
 		}, nil
 	default:
