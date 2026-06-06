@@ -51,7 +51,7 @@ jobs:
       packages: write # push image + attestations to ghcr.io
       id-token: write # keyless cosign signing (attestations + build cache) via OIDC
     # Pinned to the latest full tag; docker/github-builder also has a moving `v1`.
-    uses: docker/github-builder/.github/workflows/build.yml@v1.10.0
+    uses: docker/github-builder/.github/workflows/build.yml@70ac3fc303efa83d2b94905e6ab78bb83cbdc2ae # v1.11.0
     with:
       output: image
       push: true
