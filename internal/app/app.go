@@ -247,12 +247,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	if a.streamSrv != nil {
 		go func() {
-			if err := a.streamSrv.Run(ctx); err != nil {
-				a.logger.Error("stream receiver stopped", "error", err)
-				if !isCleanShutdownErr(err) {
-					a.componentError(appcatalog.ComponentStream)
-				}
-			}
+			a.recordReceiverStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
 		if a.cfg.Streaming.AutoConfigure {
 			// Off the hot path: registering the sink makes a network call to
@@ -267,12 +262,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.webhookSrv != nil {
 		go func() {
-			if err := a.webhookSrv.Run(ctx); err != nil {
-				a.logger.Error("webhook receiver stopped", "error", err)
-				if !isCleanShutdownErr(err) {
-					a.componentError(appcatalog.ComponentWebhook)
-				}
-			}
+			a.recordReceiverStop(appcatalog.ComponentWebhook, a.webhookSrv.Run(ctx))
 		}()
 	}
 	if a.adminSrv != nil {

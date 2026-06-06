@@ -74,6 +74,19 @@ func (a *App) adminAuthRejected(reason string) {
 	}
 }
 
+// recordReceiverStop logs a receiver's terminal error (tagged with its
+// component for per-subsystem log filtering) and flags a component error. A
+// normal stop signal — context cancellation/deadline or a closed server — is
+// suppressed entirely, so a SIGTERM is neither logged at ERROR nor counted,
+// matching runAdmin's handling of http.ErrServerClosed.
+func (a *App) recordReceiverStop(component string, err error) {
+	if isCleanShutdownErr(err) {
+		return
+	}
+	a.logger.With(semconv.AttrComponent, component).Error("receiver stopped", "error", err)
+	a.componentError(component)
+}
+
 // isCleanShutdownErr reports whether err is a normal stop signal (context
 // cancellation/deadline or a closed HTTP server, including wrapped) rather than
 // a real failure — so a SIGTERM does not register as a component error.
