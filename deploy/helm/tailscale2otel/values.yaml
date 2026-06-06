@@ -203,12 +203,12 @@ config:
       server: ""
       # -- Per-lookup timeout.
       timeout: 2s
-      # -- How long a resolved name is cached.
-      cache_ttl: 1h
+      # -- How long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low).
+      cache_ttl: 24h
       # -- How long a failed lookup is remembered (suppresses retries).
       negative_ttl: 5m
-      # -- Cache size bound; new external IPs beyond this are not resolved.
-      max_entries: 4096
+      # -- Cache size bound; new external IPs beyond this are not resolved (~150 bytes/entry).
+      max_entries: 50000
 
   cardinality:
     # -- Hard per-metric series cap (0/negative = unlimited).

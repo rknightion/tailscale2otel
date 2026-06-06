@@ -54,9 +54,9 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Enrichment.ReverseDNS.Enabled {
 		t.Errorf("Enrichment.ReverseDNS.Enabled = true, want default false (opt-in)")
 	}
-	if rd := cfg.Enrichment.ReverseDNS; rd.Timeout.D() != 2*time.Second || rd.CacheTTL.D() != time.Hour ||
-		rd.NegativeTTL.D() != 5*time.Minute || rd.MaxEntries != 4096 {
-		t.Errorf("Enrichment.ReverseDNS defaults = timeout %v / ttl %v / neg %v / max %d, want 2s/1h/5m/4096",
+	if rd := cfg.Enrichment.ReverseDNS; rd.Timeout.D() != 2*time.Second || rd.CacheTTL.D() != 24*time.Hour ||
+		rd.NegativeTTL.D() != 5*time.Minute || rd.MaxEntries != 50000 {
+		t.Errorf("Enrichment.ReverseDNS defaults = timeout %v / ttl %v / neg %v / max %d, want 2s/24h/5m/50000",
 			rd.Timeout.D(), rd.CacheTTL.D(), rd.NegativeTTL.D(), rd.MaxEntries)
 	}
 	// Default true booleans.

@@ -27,6 +27,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/webhooks"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/internal/rdns"
 	"github.com/rknightion/tailscale2otel/internal/stream"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/webhook"
@@ -53,6 +54,7 @@ var metricSources = []func() []metricdoc.Metric{
 	nodemetrics.Catalog,
 	flowlog.Catalog,
 	audit.Catalog,
+	rdns.Catalog,
 	stream.Catalog,
 	webhook.Catalog,
 }

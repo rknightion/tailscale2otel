@@ -179,7 +179,13 @@ func newApp(
 	// Opt-in reverse-DNS enrichment of external flow addresses. The async cache is
 	// retained on App so Run can drain its background workers on shutdown.
 	if cfg.Enrichment.ReverseDNS.Enabled {
-		a.rdnsCache = rdns.New(rdnsOptions(cfg))
+		ropts := rdnsOptions(cfg)
+		// Emit the cache's self-obs metrics only when self-observability is on; the
+		// admin status page reads Stats() directly regardless.
+		if cfg.SelfObservability.Enabled {
+			ropts.Emitter = emitter
+		}
+		a.rdnsCache = rdns.New(ropts)
 		fopts.RDNS = a.rdnsCache
 	}
 	a.flowProc = flowlog.NewProcessor(a.cache, fopts)

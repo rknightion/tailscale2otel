@@ -16,6 +16,7 @@ type Status struct {
 	Telemetry     TelemetryInfo     `json:"telemetry"`
 	Collectors    []CollectorStatus `json:"collectors"`
 	Cache         CacheInfo         `json:"device_cache"`
+	RDNS          RDNSInfo          `json:"reverse_dns"`
 	Dedup         []DedupInfo       `json:"dedup_sets"`
 	Devices       []DeviceRow       `json:"devices"`
 	NodeDiscovery NodeDiscovery     `json:"node_discovery"`
@@ -139,6 +140,27 @@ type CacheInfo struct {
 	Devices int    `json:"devices"`
 	AgeSec  int64  `json:"age_seconds"`
 	Age     string `json:"age"`
+}
+
+// RDNSInfo summarizes the reverse-DNS (PTR) enrichment cache. Enabled is false
+// when enrichment.reverse_dns.enabled is off (the rest of the fields are then
+// zero). HitRatePct is hits/(hits+misses+negatives) over the process lifetime.
+type RDNSInfo struct {
+	Enabled        bool    `json:"enabled"`
+	Size           int     `json:"size"`
+	Capacity       int     `json:"capacity"`
+	TTL            string  `json:"ttl,omitempty"`
+	NegativeTTL    string  `json:"negative_ttl,omitempty"`
+	Hits           int64   `json:"hits"`
+	Misses         int64   `json:"misses"`
+	Negatives      int64   `json:"negatives"`
+	QuerySuccess   int64   `json:"query_success"`
+	QueryFail      int64   `json:"query_fail"`
+	EvictedExpired int64   `json:"evicted_expired"`
+	EvictedPurged  int64   `json:"evicted_purged"`
+	Overflows      int64   `json:"overflows"`
+	HitRatePct     float64 `json:"hit_rate_pct"`
+	LastPurge      string  `json:"last_purge,omitempty"` // RFC3339
 }
 
 // DedupInfo is one cross-source de-duplication set's occupancy.

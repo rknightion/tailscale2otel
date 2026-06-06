@@ -119,6 +119,7 @@
   <a href="#cardinality">Cardinality</a>
   <a href="#nodemetrics">Node metrics</a>
   {{if .Devices}}<a href="#devices">Devices</a>{{end}}
+  <a href="#rdns">Reverse DNS</a>
   <a href="#metrics">Metrics</a>
   <a href="#logs">Logs</a>
   <a href="#config">Config</a>
@@ -266,6 +267,26 @@
     </details>
   </section>
   {{end}}
+
+  <section id="rdns">
+    <h2>Reverse DNS (PTR) cache</h2>
+    {{if .RDNS.Enabled}}
+    <div class="cards">
+      <div class="card"><div class="k">Entries</div><div class="v" id="rdnsSize">{{.RDNS.Size}}</div><div class="sub">of {{.RDNS.Capacity}} max</div></div>
+      <div class="card"><div class="k">Hit rate</div><div class="v" id="rdnsHitRate">{{printf "%.1f" .RDNS.HitRatePct}}%</div><div class="sub">hit <span id="rdnsHits">{{.RDNS.Hits}}</span> · miss <span id="rdnsMisses">{{.RDNS.Misses}}</span> · neg <span id="rdnsNegatives">{{.RDNS.Negatives}}</span></div></div>
+      <div class="card"><div class="k">Resolver queries</div><div class="v" id="rdnsQueries">{{add64 .RDNS.QuerySuccess .RDNS.QueryFail}}</div><div class="sub">ok <span id="rdnsQuerySuccess">{{.RDNS.QuerySuccess}}</span> · fail <span id="rdnsQueryFail">{{.RDNS.QueryFail}}</span></div></div>
+      <div class="card"><div class="k">Overflows</div><div class="v" id="rdnsOverflows">{{.RDNS.Overflows}}</div><div class="sub">at-capacity drops{{if .RDNS.Overflows}} — raise max_entries{{end}}</div></div>
+      <div class="card"><div class="k">Evictions</div><div class="v" id="rdnsEvicted">{{add64 .RDNS.EvictedExpired .RDNS.EvictedPurged}}</div><div class="sub">expired <span id="rdnsEvictedExpired">{{.RDNS.EvictedExpired}}</span> · purged <span id="rdnsEvictedPurged">{{.RDNS.EvictedPurged}}</span></div></div>
+      <div class="card"><div class="k">TTL</div><div class="v" style="font-size:16px">{{.RDNS.TTL}}</div><div class="sub">negative {{.RDNS.NegativeTTL}}</div></div>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <button class="ctl" id="rdnsPurgeBtn">Purge cache</button>
+      <span class="muted" id="rdnsPurgeMsg">{{if .RDNS.LastPurge}}last purged {{.RDNS.LastPurge}}{{end}}</span>
+    </div>
+    {{else}}
+    <p class="muted">Reverse-DNS enrichment is disabled (<code>enrichment.reverse_dns.enabled=false</code>). External flow addresses stay bucketed as <code>external</code>; no PTR lookups are made.</p>
+    {{end}}
+  </section>
 
   <section id="metrics">
     <h2>Metrics catalog ({{len .Metrics}})</h2>
@@ -574,6 +595,7 @@ function refresh(){
     setText('numGC', d.runtime && d.runtime.num_gc);
     setText('cacheDevices', d.device_cache && d.device_cache.devices);
     setText('cacheAge', d.device_cache && d.device_cache.age);
+    updateRDNS(d.reverse_dns);
     if(d.cardinality) setText('cardTotal', d.cardinality.total);
     setText('generatedAt', d.generated_at);
     setHealth(d);
@@ -583,6 +605,26 @@ function refresh(){
   }).catch(function(){ setStale(true); });
 }
 
+function updateRDNS(r){
+  if(!r || !r.enabled) return;
+  setText('rdnsSize', r.size);
+  setText('rdnsHitRate', (r.hit_rate_pct!=null?r.hit_rate_pct.toFixed(1):'0.0')+'%');
+  setText('rdnsHits', r.hits); setText('rdnsMisses', r.misses); setText('rdnsNegatives', r.negatives);
+  setText('rdnsQueries', (r.query_success||0)+(r.query_fail||0));
+  setText('rdnsQuerySuccess', r.query_success); setText('rdnsQueryFail', r.query_fail);
+  setText('rdnsOverflows', r.overflows);
+  setText('rdnsEvicted', (r.evicted_expired||0)+(r.evicted_purged||0));
+  setText('rdnsEvictedExpired', r.evicted_expired); setText('rdnsEvictedPurged', r.evicted_purged);
+}
+function purgeRDNS(){
+  if(!confirm('Purge the reverse-DNS cache? Cached PTR names will be re-resolved on the next sighting.')) return;
+  var btn=document.getElementById('rdnsPurgeBtn'); if(btn) btn.disabled=true;
+  fetch('/api/rdns/purge',{method:'POST',headers:{'X-Requested-With':'fetch'},cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error('status '+r.status); return r.json(); })
+    .then(function(d){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purged '+d.purged+' entr'+(d.purged===1?'y':'ies'); refresh(); })
+    .catch(function(e){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purge failed: '+e.message; })
+    .finally(function(){ if(btn) btn.disabled=false; });
+}
 function startPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=setInterval(refresh, 10000); }
 function togglePause(){
   paused=!paused;
@@ -599,6 +641,7 @@ function tickFreshness(){
 (function init(){
   var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click', togglePause);
   var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); refresh(); });
+  var pb=document.getElementById('rdnsPurgeBtn'); if(pb) pb.addEventListener('click', purgeRDNS);
   refresh();
   startPolling();
   setInterval(tickFreshness, 1000);

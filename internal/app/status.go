@@ -57,6 +57,7 @@ func (a *App) buildStatus() statusdata.Status {
 		},
 		Collectors:    a.collectorStatuses(now),
 		Cache:         a.cacheInfo(),
+		RDNS:          a.rdnsInfo(),
 		Dedup:         a.dedupInfo(),
 		Devices:       a.deviceRows(),
 		NodeDiscovery: a.nodeDiscovery(),
@@ -192,6 +193,38 @@ func (a *App) cacheInfo() statusdata.CacheInfo {
 		AgeSec:  int64(age.Seconds()),
 		Age:     humanDuration(age),
 	}
+}
+
+// rdnsInfo snapshots the reverse-DNS cache for the status page. It reads Stats()
+// directly so the numbers show regardless of whether self-observability (which
+// gates the OTEL metrics) is on. Returns a disabled marker when the cache is off.
+func (a *App) rdnsInfo() statusdata.RDNSInfo {
+	if a.rdnsCache == nil {
+		return statusdata.RDNSInfo{Enabled: false}
+	}
+	s := a.rdnsCache.Stats()
+	info := statusdata.RDNSInfo{
+		Enabled:        true,
+		Size:           s.Size,
+		Capacity:       s.Capacity,
+		TTL:            humanDuration(s.TTL),
+		NegativeTTL:    humanDuration(s.NegativeTTL),
+		Hits:           s.Hits,
+		Misses:         s.Misses,
+		Negatives:      s.Negatives,
+		QuerySuccess:   s.QuerySuccess,
+		QueryFail:      s.QueryFail,
+		EvictedExpired: s.EvictedExpired,
+		EvictedPurged:  s.EvictedPurged,
+		Overflows:      s.Overflows,
+	}
+	if total := s.Hits + s.Misses + s.Negatives; total > 0 {
+		info.HitRatePct = float64(s.Hits) / float64(total) * 100
+	}
+	if !s.LastPurge.IsZero() {
+		info.LastPurge = s.LastPurge.UTC().Format(rfc3339)
+	}
+	return info
 }
 
 func (a *App) dedupInfo() []statusdata.DedupInfo {

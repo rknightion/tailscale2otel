@@ -42,9 +42,9 @@ func Default() *Config {
 			ReverseDNS: ReverseDNSConfig{
 				Enabled:     false,
 				Timeout:     dur(2 * time.Second),
-				CacheTTL:    dur(1 * time.Hour),
+				CacheTTL:    dur(24 * time.Hour),
 				NegativeTTL: dur(5 * time.Minute),
-				MaxEntries:  4096,
+				MaxEntries:  50000,
 			},
 		},
 		Cardinality: CardinalityConfig{

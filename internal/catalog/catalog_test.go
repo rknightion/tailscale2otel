@@ -27,6 +27,7 @@ var canonicalGroups = map[string]bool{
 	"Features":           true,
 	"Receivers":          true,
 	"Node metrics":       true,
+	"Reverse DNS":        true,
 }
 
 func TestMetrics_NoDuplicateNames(t *testing.T) {

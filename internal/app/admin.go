@@ -104,6 +104,7 @@ func (a *App) buildAdminServer() *http.Server {
 	if a.cfg.Admin.LandingPage {
 		mux.HandleFunc("/", a.requireAdminAuth(a.handleIndex))
 		mux.HandleFunc("/api/status.json", a.requireAdminAuth(a.handleStatusJSON))
+		mux.HandleFunc("/api/rdns/purge", a.requireAdminAuth(a.handleRDNSPurge))
 	}
 	if a.cfg.Profiling.Pprof.Enabled {
 		registerPprof(mux, a.requireAdminAuth)

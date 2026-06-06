@@ -59,9 +59,9 @@ enrichment:
     enabled: false                    # off by default (can add ~one flow-metric series per external IP when on)
     server: ""                        # resolver "ip" or "ip:port" (default :53); empty = system/container resolver
     timeout: 2s                       # per-lookup timeout
-    cache_ttl: 1h                     # how long a resolved name is cached
+    cache_ttl: 24h                    # how long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low)
     negative_ttl: 5m                  # how long a failed lookup is remembered (suppresses retries)
-    max_entries: 4096                 # PTR cache size bound (new external IPs beyond this are not resolved)
+    max_entries: 50000                # PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry)
 
 # ── Cardinality (metric/label volume trade-offs) ────────────────────────────────
 cardinality:

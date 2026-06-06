@@ -51,9 +51,9 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ENABLED` | `false` | off by default (can add ~one flow-metric series per external IP when on) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__SERVER` | `""` | resolver "ip" or "ip:port" (default :53); empty = system/container resolver |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__TIMEOUT` | `2s` | per-lookup timeout |
-| `TS2OTEL_ENRICHMENT__REVERSE_DNS__CACHE_TTL` | `1h` | how long a resolved name is cached |
+| `TS2OTEL_ENRICHMENT__REVERSE_DNS__CACHE_TTL` | `24h` | how long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__NEGATIVE_TTL` | `5m` | how long a failed lookup is remembered (suppresses retries) |
-| `TS2OTEL_ENRICHMENT__REVERSE_DNS__MAX_ENTRIES` | `4096` | PTR cache size bound (new external IPs beyond this are not resolved) |
+| `TS2OTEL_ENRICHMENT__REVERSE_DNS__MAX_ENTRIES` | `50000` | PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry) |
 | `TS2OTEL_CARDINALITY__METRIC_LIMIT` | `10000` | hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited) |
 | `TS2OTEL_CARDINALITY__DERP_REGION_ROLLUP` | `true` | emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) |
 | `TS2OTEL_CARDINALITY__FLOW__METRICS_MODE` | `rollup` | rollup (bounded top-N, lowest cardinality) \| all (raw per-connection) \| both (≈2x series; summing double-counts) |

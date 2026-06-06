@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.5.1](https://img.shields.io/badge/Version-0.5.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.5.2](https://img.shields.io/badge/Version-0.5.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -113,9 +113,9 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.collectors.webhooks.enabled | bool | `true` | Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret). |
 | config.collectors.webhooks.interval | string | `"600s"` | Poll interval. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
-| config.enrichment.reverse_dns.cache_ttl | string | `"1h"` | How long a resolved name is cached. |
+| config.enrichment.reverse_dns.cache_ttl | string | `"24h"` | How long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low). |
 | config.enrichment.reverse_dns.enabled | bool | `false` | Opt-in reverse-DNS (PTR) enrichment of EXTERNAL flow addresses; resolved names replace the "external" bucket in tailscale.src/dst.node (flow logs always; flow metrics when cardinality.flow.node_dims is on). On flow METRICS this can add ~one series per external IP. |
-| config.enrichment.reverse_dns.max_entries | int | `4096` | Cache size bound; new external IPs beyond this are not resolved. |
+| config.enrichment.reverse_dns.max_entries | int | `50000` | Cache size bound; new external IPs beyond this are not resolved (~150 bytes/entry). |
 | config.enrichment.reverse_dns.negative_ttl | string | `"5m"` | How long a failed lookup is remembered (suppresses retries). |
 | config.enrichment.reverse_dns.server | string | `""` | Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver. |
 | config.enrichment.reverse_dns.timeout | string | `"2s"` | Per-lookup timeout. |
