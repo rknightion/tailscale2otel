@@ -59,7 +59,7 @@ func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
 
 func runScheduler(t *testing.T, r *collector.Registry, store collector.CheckpointStore, opts ...collector.SchedulerOption) context.CancelFunc {
 	t.Helper()
-	s := collector.NewScheduler(noopEmitter{}, store, append([]collector.SchedulerOption{collector.WithJitter(0)}, opts...)...)
+	s := collector.NewScheduler(noopEmitter{}, store, append([]collector.SchedulerOption{collector.WithStaggerWindow(0)}, opts...)...)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _ = s.Run(ctx, r); close(done) }()
@@ -102,6 +102,21 @@ func TestScheduler_StatusTrackerRecordsOutcomes(t *testing.T) {
 	if s["boom"].LastSuccess || !strings.Contains(s["boom"].LastError, "kaboom") {
 		t.Errorf("boom = %+v, want panic error containing %q", s["boom"], "kaboom")
 	}
+}
+
+func TestScheduler_RunsFirstTickPromptly(t *testing.T) {
+	var calls atomic.Int64
+	r := collector.NewRegistry()
+	// A long interval: the first tick must NOT wait a full interval. With the
+	// old "stagger, then block on the first ticker tick" loop, the first run
+	// wouldn't happen for an hour — fresh data must land promptly at startup.
+	r.Register(snapFunc{name: "slow", def: time.Hour, fn: func(context.Context, telemetry.Emitter) error {
+		calls.Add(1)
+		return nil
+	}}, time.Hour)
+
+	runScheduler(t, r, collector.NewMemoryStore())
+	waitFor(t, func() bool { return calls.Load() > 0 }, 2*time.Second)
 }
 
 func TestScheduler_InvokesSnapshotCollector(t *testing.T) {

@@ -24,7 +24,7 @@ func runRecorderScheduler(t *testing.T, r *collector.Registry, rec *telemetrytes
 func runRecorderSchedulerStore(t *testing.T, r *collector.Registry, rec *telemetrytest.Recorder, now time.Time, store collector.CheckpointStore, opts ...collector.SchedulerOption) {
 	t.Helper()
 	base := []collector.SchedulerOption{
-		collector.WithJitter(0),
+		collector.WithStaggerWindow(0),
 		collector.WithClock(func() time.Time { return now }),
 	}
 	s := collector.NewScheduler(rec.Emitter(), store, append(base, opts...)...)

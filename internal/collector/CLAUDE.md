@@ -18,9 +18,12 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
 
 ## Scheduling, checkpoints, failure isolation
 
-- `scheduler.go` runs one goroutine per registered collector, on its own ticker, with startup jitter
-  (default ~10% of interval) to desync collectors. A panic or error in one tick is **recovered**, logged,
-  and still emits scrape metrics — it never stops the scheduler or other collectors.
+- `scheduler.go` runs one goroutine per registered collector, on its own ticker. Each collector runs its
+  **first tick promptly** at startup — after a small random stagger bounded by an absolute window
+  (`defaultStaggerWindow`, 3s; `WithStaggerWindow`), *not* a fraction of the interval — then every
+  `Interval`. The stagger desyncs collectors (no API thundering herd, and same-interval collectors stay
+  spread) without making a 600s collector wait minutes for first data. A panic or error in one tick is
+  **recovered**, logged, and still emits scrape metrics — it never stops the scheduler or other collectors.
 - Window collectors use `checkpoint.go` (`CheckpointStore`: file-backed JSON written atomically, or
   in-memory). `window.go` computes the next `[from, to]` from the last checkpoint, honoring
   `InitialLookback` (cold start) and `MaxWindow` (cap a long catch-up). The Tailscale window is

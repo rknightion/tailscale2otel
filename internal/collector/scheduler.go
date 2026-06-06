@@ -17,18 +17,26 @@ type Scheduler struct {
 	emitter telemetry.Emitter
 	store   CheckpointStore
 	now     func() time.Time
-	jitter  float64
-	logger  *slog.Logger
-	selfObs bool
-	status  *StatusTracker // optional; records per-collector run outcomes for the status page
+	// staggerWindow bounds the random startup delay applied to each collector's
+	// first tick, to de-synchronize polls (see WithStaggerWindow). Zero disables it.
+	staggerWindow time.Duration
+	logger        *slog.Logger
+	selfObs       bool
+	status        *StatusTracker // optional; records per-collector run outcomes for the status page
 }
 
 // SchedulerOption configures a Scheduler.
 type SchedulerOption func(*Scheduler)
 
-// WithJitter sets the fractional jitter (0..1) applied to the initial tick of
-// each collector, to de-synchronize polls. Zero disables jitter.
-func WithJitter(f float64) SchedulerOption { return func(s *Scheduler) { s.jitter = f } }
+// WithStaggerWindow sets the upper bound on the random startup delay applied to
+// each collector's first tick, used to de-synchronize collectors so they don't
+// hit the Tailscale API in lock-step. The delay is an absolute duration,
+// independent of the collector's Interval: the first tick always fires within
+// this window (then every Interval thereafter). Zero makes every first tick
+// fire immediately. Defaults to defaultStaggerWindow.
+func WithStaggerWindow(d time.Duration) SchedulerOption {
+	return func(s *Scheduler) { s.staggerWindow = d }
+}
 
 // WithClock overrides the time source (used in tests).
 func WithClock(now func() time.Time) SchedulerOption { return func(s *Scheduler) { s.now = now } }
@@ -51,12 +59,12 @@ func WithStatusTracker(t *StatusTracker) SchedulerOption { return func(s *Schedu
 // emitter and checkpoint store.
 func NewScheduler(e telemetry.Emitter, store CheckpointStore, opts ...SchedulerOption) *Scheduler {
 	s := &Scheduler{
-		emitter: e,
-		store:   store,
-		now:     time.Now,
-		jitter:  0.1,
-		logger:  slog.Default(),
-		selfObs: true,
+		emitter:       e,
+		store:         store,
+		now:           time.Now,
+		staggerWindow: defaultStaggerWindow,
+		logger:        slog.Default(),
+		selfObs:       true,
 	}
 	for _, o := range opts {
 		o(s)
@@ -79,8 +87,15 @@ func (s *Scheduler) Run(ctx context.Context, r *Registry) error {
 	return ctx.Err()
 }
 
+// defaultStaggerWindow bounds the random startup delay applied to each
+// collector's first tick. It de-synchronizes collectors (so they don't poll the
+// Tailscale API in lock-step) without delaying the first poll by a fraction of a
+// potentially long interval: a 600s collector still produces data within seconds
+// of startup, not 10 minutes later.
+const defaultStaggerWindow = 3 * time.Second
+
 func (s *Scheduler) runLoop(ctx context.Context, e Entry) {
-	if d := s.initialDelay(e.Interval); d > 0 {
+	if d := s.initialDelay(); d > 0 {
 		t := time.NewTimer(d)
 		select {
 		case <-ctx.Done():
@@ -89,6 +104,14 @@ func (s *Scheduler) runLoop(ctx context.Context, e Entry) {
 		case <-t.C:
 		}
 	}
+	// Run the first tick immediately after the stagger so fresh data lands
+	// within seconds of startup rather than one full Interval later.
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+	s.runTick(ctx, e)
 	ticker := time.NewTicker(e.Interval)
 	defer ticker.Stop()
 	for {
@@ -101,11 +124,11 @@ func (s *Scheduler) runLoop(ctx context.Context, e Entry) {
 	}
 }
 
-func (s *Scheduler) initialDelay(interval time.Duration) time.Duration {
-	if s.jitter <= 0 {
+func (s *Scheduler) initialDelay() time.Duration {
+	if s.staggerWindow <= 0 {
 		return 0
 	}
-	return time.Duration(rand.Float64() * s.jitter * float64(interval)) //nolint:gosec // G404: scheduling jitter is not security-sensitive
+	return time.Duration(rand.Float64() * float64(s.staggerWindow)) //nolint:gosec // G404: scheduling jitter is not security-sensitive
 }
 
 // runTick executes one collection, recovering from panics so a single bad
