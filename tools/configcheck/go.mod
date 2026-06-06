@@ -6,7 +6,7 @@ module github.com/rknightion/tailscale2otel/tools/configcheck
 
 go 1.26.4
 
-require github.com/rknightion/tailscale2otel v0.0.0
+require github.com/rknightion/tailscale2otel v0.1.0
 
 require (
 	github.com/fatih/structs v1.1.0 // indirect
