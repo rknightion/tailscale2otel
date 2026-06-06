@@ -27,6 +27,7 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 			maxDelay:       orDuration(opts.MaxDelay, 10*time.Second),
 			attemptTimeout: timeout,
 			onRequest:      opts.OnRequest,
+			logger:         opts.Logger,
 		}
 	}
 

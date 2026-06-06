@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 // fakeRoundTripper returns canned responses in order, one per call.
@@ -389,6 +392,109 @@ func TestRetryTransport_WrapsBodyForCancel(t *testing.T) {
 	if err := resp.Body.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+}
+
+// recordingHandler captures slog records for assertions.
+type recordingHandler struct{ records []slog.Record }
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+func levelOf(t *testing.T, h *recordingHandler, wantMsgSub string) slog.Level {
+	t.Helper()
+	for _, r := range h.records {
+		if strings.Contains(r.Message, wantMsgSub) {
+			return r.Level
+		}
+	}
+	t.Fatalf("no log record containing %q (have %d records)", wantMsgSub, len(h.records))
+	return 0
+}
+
+func runWithLog(t *testing.T, statuses []int) *recordingHandler {
+	t.Helper()
+	h := &recordingHandler{}
+	rt := &retryTransport{
+		base:      &fakeRoundTripper{statuses: statuses},
+		max:       len(statuses),
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+		rnd:       func() float64 { return 0 },
+		logger:    slog.New(h),
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	return h
+}
+
+func TestTransportLogging(t *testing.T) {
+	t.Run("429 backoff logs INFO", func(t *testing.T) {
+		h := runWithLog(t, []int{http.StatusTooManyRequests, http.StatusOK})
+		if lvl := levelOf(t, h, "rate limited"); lvl != slog.LevelInfo {
+			t.Fatalf("429 backoff level = %v, want INFO", lvl)
+		}
+	})
+	t.Run("5xx backoff logs DEBUG", func(t *testing.T) {
+		h := runWithLog(t, []int{http.StatusInternalServerError, http.StatusOK})
+		if lvl := levelOf(t, h, "retrying"); lvl != slog.LevelDebug {
+			t.Fatalf("5xx backoff level = %v, want DEBUG", lvl)
+		}
+	})
+	t.Run("final 401 logs ERROR", func(t *testing.T) {
+		h := runWithLog(t, []int{http.StatusUnauthorized})
+		if lvl := levelOf(t, h, "unauthorized"); lvl != slog.LevelError {
+			t.Fatalf("401 level = %v, want ERROR", lvl)
+		}
+	})
+	t.Run("final 403 logs nothing", func(t *testing.T) {
+		h := runWithLog(t, []int{http.StatusForbidden})
+		if len(h.records) != 0 {
+			t.Fatalf("403 produced %d log records, want 0", len(h.records))
+		}
+	})
+	t.Run("oauth retrieve 401 logs ERROR", func(t *testing.T) {
+		h := &recordingHandler{}
+		rt := &retryTransport{
+			base:      &errRoundTripper{err: &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusUnauthorized}}},
+			max:       1,
+			baseDelay: time.Millisecond,
+			maxDelay:  2 * time.Millisecond,
+			logger:    slog.New(h),
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		if _, err := rt.RoundTrip(req); err == nil {
+			t.Fatal("want error")
+		}
+		if lvl := levelOf(t, h, "OAuth token request failed"); lvl != slog.LevelError {
+			t.Fatalf("oauth 401 level = %v, want ERROR", lvl)
+		}
+	})
+	t.Run("nil logger does not panic", func(t *testing.T) {
+		rt := &retryTransport{
+			base:      &fakeRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}},
+			max:       2,
+			baseDelay: time.Millisecond,
+			maxDelay:  2 * time.Millisecond,
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		if _, err := rt.RoundTrip(req); err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+	})
 }
 
 func TestEndpointLabel(t *testing.T) {

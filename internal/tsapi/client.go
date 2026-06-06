@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -42,6 +43,11 @@ type Options struct {
 	// request's wall-clock duration and any transport error text. For
 	// self-observability.
 	OnRequest func(RequestInfo)
+
+	// Logger, when non-nil, receives status-aware transport logs (429 retries at
+	// INFO, 5xx retries at DEBUG, auth failures at ERROR). Nil disables transport
+	// logging.
+	Logger *slog.Logger
 
 	// RateLimit caps the request rate, in requests per second, across the whole
 	// client. Zero means unlimited (pure pass-through).

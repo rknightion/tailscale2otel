@@ -95,6 +95,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// OTLP only when self-observability is enabled.
 	apiStats := NewAPIStats()
 	tsOpts := tsapiOptions(cfg)
+	tsOpts.Logger = logger
 	var obs func(string, int, int)
 	if cfg.SelfObservability.Enabled {
 		obs = apiObserver(emitter)

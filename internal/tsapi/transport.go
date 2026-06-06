@@ -2,12 +2,16 @@ package tsapi
 
 import (
 	"context"
+	"errors"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 // authKeyTransport injects a Bearer token on each request.
@@ -55,6 +59,10 @@ type retryTransport struct {
 	// onRequest, when non-nil, is called exactly once after the final attempt
 	// of each logical request with a RequestInfo describing the outcome.
 	onRequest func(RequestInfo)
+
+	// logger, when non-nil, records status-aware retry/outcome events: 429
+	// backoff at INFO, 5xx/transport backoff at DEBUG, an auth failure at ERROR.
+	logger *slog.Logger
 }
 
 // cancelOnCloseBody ties a per-attempt context's cancel to the lifetime of the
@@ -72,10 +80,52 @@ func (b *cancelOnCloseBody) Close() error {
 	return err
 }
 
-// logFinal and logRetry are filled in by Task 5 (status-aware logging); no-ops
-// for now so the per-attempt-timeout restructure compiles independently.
-func (t *retryTransport) logFinal(*http.Request, *http.Response, error, int)               {}
-func (t *retryTransport) logRetry(*http.Request, *http.Response, error, int, time.Duration) {}
+// logRetry records a backoff before a retry: 429 at INFO (otherwise invisible —
+// a throttled-then-recovered request produces no error), 5xx/transport at DEBUG.
+func (t *retryTransport) logRetry(req *http.Request, resp *http.Response, err error, attempt int, sleep time.Duration) {
+	if t.logger == nil {
+		return
+	}
+	ep := endpointLabel(req.URL.Path)
+	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+		t.logger.Info("tailscale API rate limited; backing off",
+			"endpoint", ep, "attempt", attempt, "status", resp.StatusCode, "sleep", sleep)
+		return
+	}
+	args := []any{"endpoint", ep, "attempt", attempt, "sleep", sleep}
+	if resp != nil {
+		args = append(args, "status", resp.StatusCode)
+	}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	t.logger.Debug("retrying tailscale API request", args...)
+}
+
+// logFinal records the terminal outcome of a request. Only an unambiguous auth
+// failure is logged, at ERROR: a 401 HTTP response (mainly the API-key path) or
+// an OAuth token request that failed with 401/403 (the OAuth path returns this
+// as a transport error, not an HTTP response). Other statuses are owned by the
+// collector scheduler (avoids per-tick 4xx spam and double-logging exhausted
+// retries).
+func (t *retryTransport) logFinal(req *http.Request, resp *http.Response, err error, attempt int) {
+	if t.logger == nil {
+		return
+	}
+	ep := endpointLabel(req.URL.Path)
+	switch {
+	case resp != nil && resp.StatusCode == http.StatusUnauthorized:
+		t.logger.Error("tailscale API request unauthorized; check credentials",
+			"endpoint", ep, "attempts", attempt)
+	case err != nil:
+		var re *oauth2.RetrieveError
+		if errors.As(err, &re) && re.Response != nil &&
+			(re.Response.StatusCode == http.StatusUnauthorized || re.Response.StatusCode == http.StatusForbidden) {
+			t.logger.Error("tailscale OAuth token request failed; check client credentials",
+				"endpoint", ep, "attempts", attempt, "status", re.Response.StatusCode)
+		}
+	}
+}
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
