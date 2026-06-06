@@ -30,10 +30,10 @@ jobs:
     name: helm lint + template + schema + docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
 
       - name: helm lint
         run: helm lint "$CHART_DIR"
@@ -44,7 +44,7 @@ jobs:
       # Regenerate values.schema.json (draft-07; Helm only validates draft-07) and
       # fail if the committed copy drifts. The committed file is the baseline.
       - name: values.schema.json is in sync (losisin/helm-values-schema-json)
-        uses: losisin/helm-values-schema-json-action@02bda41b469ccfb3f0abb35f4211e598b0b6ea3e # v2
+        uses: losisin/helm-values-schema-json-action@39cdf80504f6c95ad3c4f317e2135e2509ea56bb # v3
         with:
           values: ${{ env.CHART_DIR }}/values.yaml
           output: ${{ env.CHART_DIR }}/values.schema.json
@@ -63,12 +63,12 @@ jobs:
     name: config.Load validates example + rendered config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true

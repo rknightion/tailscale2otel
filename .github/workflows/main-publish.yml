@@ -96,7 +96,7 @@ jobs:
     steps:
       # cosign signs by pulling/pushing registry artifacts, so it needs ghcr.io
       # credentials in the Docker keychain (~/.docker/config.json).
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -131,14 +131,14 @@ jobs:
       packages: write # push chart to ghcr.io
       id-token: write # keyless cosign signing via OIDC
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
 
       # cosign signs by pulling the pushed chart, so it needs ghcr.io creds via the
       # Docker keychain (~/.docker/config.json). `helm registry login` below only
       # authenticates helm, not cosign — hence this explicit docker login.
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
