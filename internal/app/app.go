@@ -167,7 +167,7 @@ func newApp(
 		collector.WithStatusTracker(a.status))
 	if cfg.SelfObservability.Enabled {
 		a.restore = telemetry.InstallExportErrorHandler(emitter, logger)
-		telemetry.EmitBuildInfo(emitter, version, runtime.Version())
+		telemetry.EmitBuildInfo(emitter, runtime.Version())
 	}
 	// Shared cross-source de-duplication: the same flow window / audit event can
 	// arrive from both the poll collector and the streaming receiver, which share

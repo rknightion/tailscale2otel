@@ -19,7 +19,7 @@ import (
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
 
-	telemetry.EmitBuildInfo(rec.Emitter(), "v1.2.3", "go1.26")
+	telemetry.EmitBuildInfo(rec.Emitter(), "go1.26")
 	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
 	defer restore()
 	otel.Handle(errors.New("boom"))

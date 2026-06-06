@@ -39,13 +39,18 @@ func errorType(err error) string {
 }
 
 // EmitBuildInfo records the "tailscale2otel.build_info" gauge with a constant
-// value of 1, carrying the service and Go versions as attributes. Empty values
-// are omitted so absent build metadata does not pollute the attribute set.
-func EmitBuildInfo(e Emitter, version, goVersion string) {
+// value of 1, carrying the Go runtime version as an attribute. An empty value is
+// omitted so absent build metadata does not pollute the attribute set.
+//
+// The service version is deliberately NOT emitted as a data-point attribute: it
+// already lives on the OTEL Resource (service.version), which Grafana Cloud
+// promotes to a service_version label on every exported series — including this
+// one. Emitting it here too produced a duplicate label that Mimir rejects as an
+// otlp_parse_error (the Emitter's collision guard then dropped it, logging a WARN
+// on startup). The resource copy carries identical information, so build_info
+// keeps showing service_version with zero data loss and no warning.
+func EmitBuildInfo(e Emitter, goVersion string) {
 	attrs := Attrs{}
-	if version != "" {
-		attrs["service.version"] = version
-	}
 	if goVersion != "" {
 		attrs["go.version"] = goVersion
 	}

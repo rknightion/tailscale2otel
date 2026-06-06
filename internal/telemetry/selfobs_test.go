@@ -102,10 +102,10 @@ func TestInstallExportErrorHandler_RestoreReinstallsPrevious(t *testing.T) {
 	}
 }
 
-func TestEmitBuildInfo_EmitsGaugeWithVersions(t *testing.T) {
+func TestEmitBuildInfo_EmitsGaugeWithGoVersion(t *testing.T) {
 	rec := telemetrytest.New()
 
-	telemetry.EmitBuildInfo(rec.Emitter(), "v1.2.3", "go1.26")
+	telemetry.EmitBuildInfo(rec.Emitter(), "go1.26")
 
 	points := rec.MetricPoints("tailscale2otel.build_info")
 	if len(points) != 1 {
@@ -121,27 +121,27 @@ func TestEmitBuildInfo_EmitsGaugeWithVersions(t *testing.T) {
 	if p.Value != 1 {
 		t.Fatalf("value = %v, want 1", p.Value)
 	}
-	if got := p.Attrs["service.version"]; got != "v1.2.3" {
-		t.Fatalf("service.version = %q, want v1.2.3", got)
-	}
 	if got := p.Attrs["go.version"]; got != "go1.26" {
 		t.Fatalf("go.version = %q, want go1.26", got)
 	}
+	// The service version must NOT be emitted as a data-point attribute: it is
+	// promoted from the resource and would otherwise collide as a duplicate
+	// service_version label (otlp_parse_error).
+	if _, ok := p.Attrs["service.version"]; ok {
+		t.Fatalf("service.version should not be a data-point attribute, attrs=%v", p.Attrs)
+	}
 }
 
-func TestEmitBuildInfo_SkipsEmptyValues(t *testing.T) {
+func TestEmitBuildInfo_SkipsEmptyGoVersion(t *testing.T) {
 	rec := telemetrytest.New()
 
-	telemetry.EmitBuildInfo(rec.Emitter(), "", "go1.26")
+	telemetry.EmitBuildInfo(rec.Emitter(), "")
 
 	points := rec.MetricPoints("tailscale2otel.build_info")
 	if len(points) != 1 {
 		t.Fatalf("got %d data points, want 1", len(points))
 	}
-	if _, ok := points[0].Attrs["service.version"]; ok {
-		t.Fatalf("service.version should be absent for empty value, attrs=%v", points[0].Attrs)
-	}
-	if got := points[0].Attrs["go.version"]; got != "go1.26" {
-		t.Fatalf("go.version = %q, want go1.26", got)
+	if _, ok := points[0].Attrs["go.version"]; ok {
+		t.Fatalf("go.version should be absent for empty value, attrs=%v", points[0].Attrs)
 	}
 }

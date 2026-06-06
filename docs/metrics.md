@@ -94,7 +94,7 @@ exporter health.
 | `tailscale2otel.admin.auth.rejected` | `1` | counter | `tailscale2otel_admin_auth_rejected_total` | `reason` | Admin HTTP requests rejected by the auth gate (status page + pprof), by reason. |
 | `tailscale2otel.api.requests` | `1` | counter | `tailscale2otel_api_requests_total` | `endpoint`, `http_response_status_code` | Tailscale API requests, by endpoint and HTTP status code. |
 | `tailscale2otel.api.retries` | `1` | counter | `tailscale2otel_api_retries_total` | `endpoint` | API retry attempts, by endpoint. |
-| `tailscale2otel.build_info` | `1` | gauge | `tailscale2otel_build_info_ratio` | `service_version`, `go_version` | Constant `1` build-info gauge; version/runtime carried as labels. |
+| `tailscale2otel.build_info` | `1` | gauge | `tailscale2otel_build_info_ratio` | `go_version` | Constant `1` build-info gauge; the Go runtime version is carried as the `go.version` label (the service version is promoted from the resource as `service_version`). |
 | `tailscale2otel.checkpoint.persist.errors` | `1` | counter | `tailscale2otel_checkpoint_persist_errors_total` | `tailscale_collector` | Count of checkpoint-persistence failures, by collector (the window succeeded but its high-water mark could not be saved). |
 | `tailscale2otel.component.errors` | `1` | counter | `tailscale2otel_component_errors_total` | `component` | Failures of non-collector subsystems (receivers, admin server, streaming auto-configure), by component. |
 | `tailscale2otel.dedup.evictions` | `1` | counter | `tailscale2otel_dedup_evictions_total` | `dedup_set` | Keys evicted from a de-duplication set because it was at capacity, by set (sustained growth means the set is undersized). |
