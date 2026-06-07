@@ -10,7 +10,8 @@ tags:
 `tailscale2otel` is a single static Go binary that bridges the Tailscale observability surface to
 any OpenTelemetry backend. It polls the Tailscale API (and optionally receives streamed logs or
 webhooks), runs each data source through a typed conversion pipeline, and pushes the resulting
-metrics and logs over OTLP — all without writing a single line of PromQL or touching a sidecar.
+metrics and logs (and, optionally, self-observability traces) over OTLP — all without writing a
+single line of PromQL or touching a sidecar.
 
 ## High-level data flow
 
@@ -23,7 +24,7 @@ flowchart LR
     end
 
     subgraph Collectors ["internal/collector (one per source)"]
-        D[devices / users / keys\nsettings / acl / dns\nnodemetrics]
+        D[devices / users / keys\nsettings / acl / dns\nservices / contacts / webhooks\nposture / log_stream / nodemetrics]
         E[flowlogs / auditlogs\nwindow collectors]
     end
 
@@ -75,7 +76,8 @@ config gates. Start here when you want to understand how a new data source would
 `internal/collector` defines two interfaces:
 
 - **`SnapshotCollector`** — a point-in-time read, called on a fixed interval. Used by `devices`,
-  `users`, `keys`, `settings`, `acl`, `dns`, and `nodemetrics`. Stateless between ticks (the `acl`
+  `users`, `keys`, `settings`, `acl`, `dns`, `services`, `contacts`, `webhooks`,
+  `posture_integrations`, `log_stream`, and `nodemetrics`. Stateless between ticks (the `acl`
   collector is the exception: it stores an ETag to skip unchanged responses).
 - **`WindowCollector`** — a time-windowed read, called with an explicit `[from, to]` range. Used
   by `flowlogs` and `auditlogs`. Each run returns a high-water mark that becomes the `from` of the
@@ -133,14 +135,32 @@ retried on the next tick.
 tailscale2otel emits its own health signals as OTLP metrics (see [Metrics](metrics.md) for the
 full catalog):
 
-- `tailscale2otel.scrape.*` — per-collector duration, success/failure counts, and last-run
-  timestamp, tagged with `tailscale.collector`.
+- `tailscale2otel.scrape.*` — per-collector duration, success/failure counts, last-run timestamp,
+  staleness (seconds since last success), and budget (last duration ÷ interval; ≥ 1 means risk of
+  interval overrun), tagged with `tailscale.collector`.
 - `tailscale2otel.up` — overall heartbeat gauge.
-- `tailscale2otel.series.active` — per-source-metric active time-series count (cardinality
-  headroom tracking).
-- `tailscale2otel.api.requests` / `api.retries` — Tailscale API call counters.
+- `tailscale2otel.series.*` — per-source-metric active time-series count (`series.active`, pinned at
+  the cap), the effective cap itself (`series.limit`, omitted when unlimited), and a 0/1 overflow flag
+  (`series.overflowing`) that fires when excess series are silently dropped into `otel_metric_overflow`.
+  Together these let you alert on cardinality cap hits without hardcoding the limit in PromQL.
+- `tailscale2otel.api.requests` / `api.retries` — Tailscale API call counters, plus
+  `tailscale2otel.api.duration` — a per-request latency histogram (with trace exemplars when
+  `tracing.enabled`).
+- **Export-cost & ingest volume (C8):** `tailscale2otel.export.datapoints` / `export.log_records`
+  (the DPM/log-cost proxy) and `tailscale2otel.ingest.records` / `ingest.size` (per poll/stream/webhook
+  path), plus `tailscale2otel.series.by_group`.
+- **Health (C9):** `tailscale2otel.config.warnings` / `config.valid` (runtime view of
+  `Validate()`/`Warnings()`), the standard `process.uptime` / `process.cpu.time`, and checkpoint health
+  (`checkpoint.disk.size`, `checkpoint.persist.age`). The dedup failsafe exposes
+  `tailscale2otel.dedup.hits` (duplicates suppressed per set).
+- **Receivers:** the Splunk-HEC and webhook receivers each emit `*.inflight` and `*.request.duration`
+  alongside their record counters (see [Streaming & Webhooks](streaming-webhooks.md)).
 
-In addition, an admin HTTP server (default `:8080`) serves:
+When `tracing.enabled` is set, a `TracerProvider` is also built in `app.New` and the scheduler,
+Tailscale API client, and receivers emit spans (one root span per scrape cycle, child spans per API
+request, one span per receiver request) over the same `otlp.*` endpoint.
+
+In addition, an admin HTTP server (default `:9090`) serves:
 
 - `/` — an HTML status page with live collector health, cardinality table, the metrics/log catalog,
   discovered node-metrics targets, and a redacted config view.

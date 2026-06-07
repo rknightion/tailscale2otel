@@ -1,8 +1,9 @@
 # tailscale2otel
 
 Poll the [Tailscale API](https://tailscale.com/api) for every available kind of observability
-data and export it as **OpenTelemetry-native metrics and logs** — optimized for Grafana Cloud
-(OTLP) but compatible with any OTEL backend.
+data and export it as **OpenTelemetry-native metrics and logs** (plus an optional **traces** pillar
+for the exporter's own self-observability) — optimized for Grafana Cloud (OTLP) but compatible with
+any OTEL backend.
 
 Tailscale exposes a rich observability surface (network flow logs, configuration audit logs, a
 detailed device inventory, users, keys, settings, ACL, DNS) but no Prometheus endpoint, and it
@@ -16,9 +17,17 @@ stream, and key-expiry signals out of the box.
 - **Network flow logs → metrics + logs.** Aggregated `tailscale.network.io`/`.packets`/`.flows`
   counters (low cardinality) for dashboards & alerting, plus full-fidelity per-connection flow
   records as OTEL logs for drill-down. Source IPs are enriched to device names.
-- **Configuration audit logs → logs + counter.**
-- **Device inventory, users, keys, settings, ACL, DNS** → gauges (online status, key expiry,
-  per-user device counts, feature toggles, …).
+- **Configuration audit logs → logs + counters,** including a curated security-/lifecycle-categorized
+  change counter (`tailscale.config.audit.changes`) for low-noise alerting.
+- **Device inventory, users, keys, settings, ACL, DNS** → gauges (online status, connectivity/NAT
+  quality, exit-node & subnet-router analytics, fleet hygiene roll-ups, key expiry, per-user device
+  counts, feature toggles, …). Key inventory spans auth keys, OAuth clients, and API tokens; ACL
+  policy is scored for structural risk (wildcard / unrestricted / auto-approver / SSH / posture).
+- **Self update-available + device version-skew** signals from the GitHub/Tailscale release feeds
+  (both opt-out for air-gapped deployments).
+- **Optional OTEL traces pillar** (`tracing.enabled`, off by default) — spans per scrape cycle,
+  Tailscale API request, and receiver request, with exemplars linking `tailscale2otel.api.duration`
+  to the originating API span. Reuses the `otlp.*` endpoint.
 - **Two ingestion paths for logs (pick one):** poll the API, or receive Tailscale's **log
   streaming** via a built-in Splunk-HEC-compatible receiver — both feed the same conversion
   pipeline. Choose one method per log type; running both is a discouraged fallback guarded by a

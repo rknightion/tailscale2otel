@@ -62,17 +62,19 @@ collectors:
 !!! warning "`auto_configure` overwrites the existing sink"
     When `auto_configure: true`, the service **overwrites** whatever log-streaming sink is already configured for the tailnet. Never enable it against a tailnet whose streaming configuration you do not intend to replace.
 
-**Self-observability.** The receiver emits three counters for its own health:
+**Self-observability.** The receiver emits these metrics for its own health:
 
 | Metric | Description |
 |---|---|
 | `tailscale.stream.records` | Records successfully routed to a processor (`type`: `flow` or `audit`) |
 | `tailscale.stream.rejected` | Requests/records not ingested (`reason`: `auth`, `unparsable`, or `too_large`) |
 | `tailscale.stream.decode_errors` | Records classified as a known type but whose typed decode failed |
+| `tailscale.stream.inflight` | In-flight HTTP requests currently being processed (UpDownCounter) — useful for backpressure monitoring |
+| `tailscale.stream.request.duration` | Wall-clock duration of HEC request handling, in seconds (histogram) |
 
 ## Webhook receiver
 
-When `webhook.enabled: true`, `tailscale2otel` binds an HTTP endpoint that receives real-time Tailscale event notifications. Each event is emitted as an OTEL log record (with severity INFO or WARN depending on event type) and increments a `tailscale.webhook.events` counter keyed by event type.
+When `webhook.enabled: true`, `tailscale2otel` binds an HTTP endpoint that receives real-time Tailscale event notifications. Each event is emitted as an OTEL log record (with severity INFO or WARN depending on event type) and increments a `tailscale.webhook.events` counter keyed by event type. The receiver also emits `tailscale.webhook.inflight` (in-flight requests, UpDownCounter) and `tailscale.webhook.request.duration` (handler wall-clock time, histogram) for backpressure and latency monitoring.
 
 ```yaml
 webhook:

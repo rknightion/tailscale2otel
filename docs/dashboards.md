@@ -33,10 +33,10 @@ python3 gen/build.py --out tailscale2otel.json
 | Tab | What it covers |
 |---|---|
 | **Overview** | At-a-glance health: device counts, key expiry, ACL age, flow-logging state, cardinality, and a features matrix. |
-| **Fleet & Devices** | Inventory, OS breakdown, trends, device health tables, DERP latency, and subnet routes. |
+| **Fleet & Devices** | Inventory, OS breakdown, trends, device health tables, DERP latency, subnet routes, connectivity/NAT quality, exit-node and subnet-router analytics, and fleet hygiene roll-ups (untagged, ephemeral, tag, and version distributions). |
 | **Network & Flows** | Flow summary, bounded rollup and raw throughput sections (each shown only when present), top talkers, and `__other__` share. |
 | **Events & Logs** | Audit/webhook rates, stream health, a Loki log explorer, and dedicated flow/posture log streams. |
-| **Policy & Config** | ACL, DNS, settings, users (by role/status/type), and API keys. |
+| **Policy & Config** | ACL (size + risk-scoring), DNS, settings, users (by role/status/type), and key inventory (auth keys, OAuth clients, and API tokens). |
 | **Node Metrics** | Per-node scraper health and forwarded `tailscaled_*` series (conditionally rendered). |
 | **Exporter Diagnostics** | Per-collector scrape duration/success/errors, API request stats, cardinality, enrichment cache, and Go runtime. |
 

@@ -122,6 +122,11 @@ collectors:
 
 See [Streaming & Webhooks](streaming-webhooks.md) for when to prefer `stream` over `poll`.
 
+!!! tip "Confirm the dedup failsafe is firing"
+    `tailscale2otel_dedup_hits_total` counts duplicate keys suppressed per set — a non-zero value
+    means the best-effort cross-source de-duplicate set actually caught overlapping records. It is a
+    diagnostic that both paths are active, not a substitute for picking one path.
+
 ---
 
 ## Flow/audit enrichment shows `unknown` or `external`
@@ -202,3 +207,25 @@ instead.
     The `tailscale.node.up` gauge (→ `tailscale_node_up_ratio`) is the canonical per-node health
     signal. It carries the `tailscale_node` label and is always emitted regardless of
     `metric_allow`/`metric_deny` filters. Use it for scrape-health alerting.
+
+---
+
+## Tracing enabled but no spans appear
+
+**Cause.** With `tracing.enabled: true` but a `*traceidratio` sampler and `tracing.sampler_arg: 0`,
+the sampler records **no** spans. The startup log emits a WARN for this combination.
+
+**Fix.** Set a non-zero `tracing.sampler_arg` (e.g. `1.0` to record everything, `0.1` for 10%), or
+use the `always_on` sampler. Also confirm the OTLP backend's access token carries `traces:write` —
+on Grafana Cloud, missing that scope drops trace export while metrics/logs still flow.
+
+---
+
+## Suspected misconfiguration at runtime
+
+**Cause.** `Validate()` errors and advisory `Warnings()` are logged at startup, but they are also
+surfaced as live gauges so you can alert without scraping logs.
+
+**Diagnosis.** Query `tailscale2otel_config_warnings_ratio` (count of advisory warnings) and
+`tailscale2otel_config_valid_ratio` (`0` when `Validate()` failed). Both are emitted each export
+cycle. The admin status page also renders the redacted config and any warnings.

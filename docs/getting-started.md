@@ -27,7 +27,8 @@ Before you begin, you need:
 - A **Grafana Cloud stack** with an OTLP endpoint and a token. From your stack's **Connections →
   OpenTelemetry** page, note your OTLP gateway URL (format:
   `https://otlp-gateway-<region>.grafana.net/otlp`), your stack/instance ID, and generate an
-  access-policy token with `metrics:write` and `logs:write` scopes.
+  access-policy token with `metrics:write` and `logs:write` scopes. If you enable the optional
+  traces pillar (`tracing.enabled: true`), add `traces:write` to the token as well.
 
 ## Minimal env-only configuration
 

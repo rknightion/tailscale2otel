@@ -37,11 +37,21 @@ Rules are organised into four groups:
 - **`tailscale2otel-health`** — exporter self-health (scrape staleness, cardinality cap, API auth
   failures, checkpoint errors, enrichment cache age, and more)
 - **`tailscale2otel-security`** — tailnet security and governance (tailnet-lock errors, key expiry,
-  posture coverage, unverified contacts)
+  posture coverage, unverified contacts). The ACL risk-scoring gauges and the curated
+  `tailscale.config.audit.changes` counter are natural additions here — e.g.
+  `tailscale_acl_unrestricted_rules_ratio > 0` (any-to-any non-deny rules),
+  `tailscale_acl_ssh_wildcard_ratio > 0` (wildcard SSH rules), or
+  `increase(tailscale_config_audit_changes_total{change_category="auth_provider"}[1h]) > 0`.
 - **`tailscale2otel-integrations`** — MDM/EDR posture sync, log-stream delivery health
 - **`tailscale2otel-network`** — DERP relay usage, region latency, flow data presence
 - **`tailscale2otel-recording`** — precomputed recording rules (DERP byte fraction, posture ratios,
   total active series)
+
+!!! tip "Limit-agnostic cardinality alerting"
+    Prefer `count(tailscale2otel_series_overflowing_ratio == 1) > 0` for a cardinality-overflow
+    alert — it needs no hardcoded threshold and stays correct when `cardinality.metric_limit` is
+    changed. `tailscale2otel_scrape_budget_ratio` (last scrape duration ÷ interval; nearing `1` =
+    risk of interval overrun) is another `tailscale2otel-health` signal worth enabling.
 
 !!! tip "Default-disabled by design"
     Only a high-signal starter set ships with `isPaused: false`. The rest are `isPaused: true` —

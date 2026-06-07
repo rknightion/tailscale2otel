@@ -256,7 +256,7 @@ per-entity gauge series (one per device/user/key/…) are dropped. All default `
 |-----|---------|-------------|
 | `cardinality.per_entity.device` | `true` | Emit per-device gauges (online, last-seen, key-expiry, DERP latency, routes). `false` leaves only `tailscale.devices.count`. |
 | `cardinality.per_entity.user` | `true` | Emit per-user gauges (devices, connected, last-seen). `false` leaves only `tailscale.users.count`. |
-| `cardinality.per_entity.key` | `true` | Emit the per-key expiry gauge. `false` leaves only `tailscale.keys.count` (the "expiring soon" WARN log still fires). |
+| `cardinality.per_entity.key` | `true` | Emit the per-key gauges (`tailscale.key.expiry`, `tailscale.key.scopes`, `tailscale.key.preauthorized`). `false` leaves only `tailscale.keys.count` (the "expiring soon" WARN log still fires). |
 | `cardinality.per_entity.webhook` | `true` | Emit per-webhook gauges. `false` leaves only the aggregate count. |
 | `cardinality.per_entity.service` | `true` | Emit per-service gauges. `false` leaves only the aggregate count. |
 
@@ -354,11 +354,11 @@ Configuration/audit events → event logs + a counter.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `collectors.users.enabled` / `.interval` | `true` / `300s` | User/role/status counts and per-user device & connection gauges. |
-| `collectors.keys.enabled` / `.interval` | `true` / `300s` | Auth-key expiry gauges, counts, and an "expiring soon" WARN log. |
+| `collectors.keys.enabled` / `.interval` | `true` / `300s` | Key inventory gauges (auth keys, OAuth clients, and API tokens via the unified key model), counts bucketed by `type`/`auth_kind`/`revoked`/`invalid`, and an "expiring soon" WARN log. Per-key `key.expiry`/`key.scopes`/`key.preauthorized` gauges are gated by `cardinality.per_entity.key`. |
 | `collectors.keys.expiry_warn` | `168h` | Emit the "expiring soon" WARN log when a key expires within this window (default 7 days). |
 | `collectors.settings.enabled` / `.interval` | `true` / `600s` | Tailnet feature-toggle gauges. |
-| `collectors.acl.enabled` / `.interval` | `true` / `600s` | ACL size + a "policy changed" signal (detected by ETag). |
-| `collectors.dns.enabled` / `.interval` | `true` / `600s` | Nameserver / search-path / split-zone counts and the MagicDNS flag. |
+| `collectors.acl.enabled` / `.interval` | `true` / `600s` | ACL size + a "policy changed" signal (detected by ETag), plus policy risk-scoring gauges (wildcard / unrestricted / auto-approver / SSH-wildcard / posture-gated rules). |
+| `collectors.dns.enabled` / `.interval` | `true` / `600s` | Nameserver / search-path / split-zone counts, the MagicDNS and override-local flags, the count of exit-node-eligible resolvers, and a per-resolver info gauge (`tailscale.dns.resolver`) labeled by address, kind, domain, and exit-node eligibility. |
 | `collectors.contacts.enabled` / `.interval` | `true` / `600s` | Tailnet security-contact gauges. |
 | `collectors.webhooks.enabled` / `.interval` | `true` / `600s` | Configured webhook gauges and per-webhook status. |
 | `collectors.posture_integrations.enabled` / `.interval` | `true` / `600s` | MDM/EDR posture-integration gauges. |
