@@ -755,7 +755,7 @@ def tab_policy():
     ]
     keys = [
         (panel("Keys by type", "bargauge",
-               [prom_t("max by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
+               [prom_t("sum by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
                        legend="{{tailscale_key_type}} revoked={{tailscale_key_revoked}} invalid={{tailscale_key_invalid}}")],
                unit="short", options=bargauge_opts()), 10, 7),
         (panel("Key expiry (time until)", "table",

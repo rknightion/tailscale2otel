@@ -9855,7 +9855,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (last_over_time(tailscale_keys_count_ratio[2h]))",
+                        "expr": "sum by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (last_over_time(tailscale_keys_count_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_key_type}} revoked={{tailscale_key_revoked}} invalid={{tailscale_key_invalid}}",

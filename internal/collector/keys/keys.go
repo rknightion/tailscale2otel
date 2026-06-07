@@ -77,10 +77,11 @@ type Collector struct {
 // Option configures optional Collector behavior.
 type Option func(*Collector)
 
-// WithPerEntity controls whether the per-key tailscale.key.expiry gauge is
-// emitted. The default is true; false (cardinality.per_entity.key) emits only
-// the aggregate tailscale.keys.count rollup. The expiry-warning log event is
-// unaffected (it always fires within expiryWarn).
+// WithPerEntity controls whether the per-key gauges (tailscale.key.expiry,
+// tailscale.key.scopes, tailscale.key.preauthorized) are emitted. The default
+// is true; false (cardinality.per_entity.key) emits only the aggregate
+// tailscale.keys.count rollup. The expiry-warning log event is unaffected (it
+// always fires within expiryWarn).
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
 }

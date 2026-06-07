@@ -1,7 +1,8 @@
 // Package tsapi wraps the Tailscale API: the official tsclient for snapshot
-// resources (devices, users, keys, DNS, ACL, settings, webhooks) plus a thin
-// custom doer for the two log-polling endpoints the client does not cover.
-// Both share one authenticated, retrying *http.Client.
+// resources (devices, users, DNS, ACL, settings, webhooks, contacts) plus a thin
+// custom doer for resources the client does not cover or under-populates (key
+// inventory, posture, log polling, and other raw-decode endpoints). Both share
+// one authenticated, retrying *http.Client.
 package tsapi
 
 import (
