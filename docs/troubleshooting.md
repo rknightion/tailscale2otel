@@ -82,7 +82,7 @@ otlp:
 ```
 
 The per-signal suffixes (`/v1/metrics`, `/v1/logs`) are appended automatically. See
-[Configuration](configuration.md#otlp--the-otlp-exporter) for the Grafana Cloud default.
+[Configuration](configuration.md#otlp-the-otlp-exporter) for the Grafana Cloud default.
 
 ### Wrong `otlp.protocol`
 

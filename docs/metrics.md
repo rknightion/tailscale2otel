@@ -271,7 +271,7 @@ contact is worth alerting on.
 ### Webhook endpoints (`tailscale.webhook_endpoint*.*`)
 
 Inventory of configured webhook **endpoints** (where Tailscale posts event notifications) — distinct
-from the [stream/webhook receiver](#receivers--stream--webhook) metrics. Endpoint URL, secret and
+from the [stream/webhook receiver](#receivers-stream-webhook-tailscalestream-tailscalewebhook) metrics. Endpoint URL, secret and
 creator are **never emitted**. The per-endpoint subscriptions gauge is gated by
 `cardinality.per_entity.webhook`.
 

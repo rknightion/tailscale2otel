@@ -95,17 +95,17 @@ ignored.
 ## Contents
 
 - [Top level](#top-level)
-- [`tailscale` — API connection & authentication](#tailscale--api-connection--authentication)
-- [`otlp` — the OTLP exporter](#otlp--the-otlp-exporter)
-- [`enrichment` — device-name cache](#enrichment--device-name-cache)
-- [`cardinality` — metric/label cardinality controls](#cardinality--metriclabel-cardinality-controls)
-- [`collectors` — per-source polling](#collectors--per-source-polling)
-- [`checkpoint` — poll high-water marks](#checkpoint--poll-high-water-marks)
-- [`streaming` — Splunk-HEC log receiver](#streaming--splunk-hec-log-receiver)
-- [`webhook` — event webhook receiver](#webhook--event-webhook-receiver)
-- [`self_observability` — the exporter's own telemetry](#self_observability--the-exporters-own-telemetry)
-- [`admin` — admin HTTP server (probes + status page)](#admin--admin-http-server-probes--status-page)
-- [`profiling` — pprof & Pyroscope](#profiling--pprof--pyroscope)
+- [`tailscale` — API connection & authentication](#tailscale-api-connection-authentication)
+- [`otlp` — the OTLP exporter](#otlp-the-otlp-exporter)
+- [`enrichment` — device-name cache](#enrichment-device-name-cache)
+- [`cardinality` — metric/label cardinality controls](#cardinality-metriclabel-cardinality-controls)
+- [`collectors` — per-source polling](#collectors-per-source-polling)
+- [`checkpoint` — poll high-water marks](#checkpoint-poll-high-water-marks)
+- [`streaming` — Splunk-HEC log receiver](#streaming-splunk-hec-log-receiver)
+- [`webhook` — event webhook receiver](#webhook-event-webhook-receiver)
+- [`self_observability` — the exporter's own telemetry](#self_observability-the-exporters-own-telemetry)
+- [`admin` — admin HTTP server (probes + status page)](#admin-admin-http-server-probes-status-page)
+- [`profiling` — pprof & Pyroscope](#profiling-pprof-pyroscope)
 
 ---
 
@@ -278,7 +278,7 @@ snapshots.
 
 - **`poll`** (default) — the exporter pulls logs from the Tailscale API on `interval`, one
   time-window per tick.
-- **`stream`** — logs are **pushed** to the [`streaming`](#streaming--splunk-hec-log-receiver)
+- **`stream`** — logs are **pushed** to the [`streaming`](#streaming-splunk-hec-log-receiver)
   receiver instead; the exporter does not poll this log type.
 - **`both`** — poll *and* accept the stream. **Discouraged:** the same record can be double-counted.
   Cross-source de-duplication is a best-effort failsafe, not a guarantee, and a startup WARN fires.
@@ -324,7 +324,7 @@ Network flow logs → aggregated traffic counters + per-connection flow logs.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `collectors.flowlogs.enabled` | `true` | Whether flow logs are collected. |
-| `collectors.flowlogs.source` | `poll` | `poll` \| `stream` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs--auditlogs-only). |
+| `collectors.flowlogs.source` | `poll` | `poll` \| `stream` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs-auditlogs-only). |
 | `collectors.flowlogs.interval` | `60s` | Poll cadence (poll only). |
 | `collectors.flowlogs.lag` | `120s` | Tail-safety margin; query up to `now − lag` (poll only). Flow logs have a noticeable tail, hence the larger default than audit. |
 | `collectors.flowlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
@@ -339,7 +339,7 @@ Configuration/audit events → event logs + a counter.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `collectors.auditlogs.enabled` | `true` | Whether audit logs are collected. |
-| `collectors.auditlogs.source` | `poll` | `poll` \| `stream` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs--auditlogs-only). |
+| `collectors.auditlogs.source` | `poll` | `poll` \| `stream` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs-auditlogs-only). |
 | `collectors.auditlogs.interval` | `60s` | Poll cadence (poll only). |
 | `collectors.auditlogs.lag` | `60s` | Tail-safety margin (poll only). |
 | `collectors.auditlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
