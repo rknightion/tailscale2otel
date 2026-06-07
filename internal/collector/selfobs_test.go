@@ -3,7 +3,10 @@ package collector_test
 import (
 	"context"
 	"errors"
+	"math"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
@@ -343,9 +346,119 @@ func TestSelfObs_DisabledEmitsNoScrapeMetrics(t *testing.T) {
 		collector.MetricScrapeSuccess,
 		collector.MetricScrapeErrors,
 		collector.MetricScrapeLastTimestamp,
+		collector.MetricScrapeStaleness,
+		collector.MetricScrapeBudget,
 	} {
 		if pts := rec.MetricPoints(name); len(pts) != 0 {
 			t.Fatalf("WithSelfObs(false): %s emitted %d points, want 0", name, len(pts))
 		}
+	}
+}
+
+func TestSelfObs_StalenessGrowsWhileFailing(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0).UTC()
+	var nowNs atomic.Int64
+	nowNs.Store(base.UnixNano())
+	clock := func() time.Time { return time.Unix(0, nowNs.Load()).UTC() }
+
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "bad", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		nowNs.Add(int64(time.Minute)) // advance the wall clock one minute per run
+		return errors.New("boom")
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0), collector.WithClock(clock))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = s.Run(ctx, r); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	waitFor(t, func() bool {
+		p, ok := findPoint(rec, collector.MetricScrapeStaleness, "bad")
+		return ok && p.Value >= 60
+	}, 2*time.Second)
+
+	p, ok := findPoint(rec, collector.MetricScrapeStaleness, "bad")
+	if !ok {
+		t.Fatalf("%s not emitted", collector.MetricScrapeStaleness)
+	}
+	if p.Kind != "gauge" || p.Unit != semconv.UnitSeconds {
+		t.Fatalf("staleness = %+v, want gauge in seconds", p)
+	}
+	if p.Value < 60 {
+		t.Fatalf("staleness value = %v, want >= 60 (>= one advance since the never-reached last success)", p.Value)
+	}
+}
+
+func TestSelfObs_BudgetReflectsDurationOverInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			interval = 100 * time.Millisecond
+			work     = 25 * time.Millisecond
+		)
+		r := collector.NewRegistry()
+		r.Register(snapFunc{name: "slow", def: interval, fn: func(context.Context, telemetry.Emitter) error {
+			time.Sleep(work) // fake-clock sleep → the measured duration is exactly `work`
+			return nil
+		}}, interval)
+
+		rec := telemetrytest.New()
+		s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+			collector.WithStaggerWindow(0))
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() { _ = s.Run(ctx, r) }()
+
+		synctest.Wait()  // barrier: scheduler goroutine has reached time.Sleep(work) inside the collector (no emit yet)
+		time.Sleep(work) // advance fake clock past the collector's sleep
+		synctest.Wait()  // first tick completes; goroutines block on the ticker
+
+		p, ok := findPoint(rec, collector.MetricScrapeBudget, "slow")
+		if !ok {
+			t.Fatalf("%s not emitted", collector.MetricScrapeBudget)
+		}
+		if p.Kind != "gauge" || p.Unit != semconv.UnitDimensionless {
+			t.Fatalf("budget = %+v, want a dimensionless gauge", p)
+		}
+		want := work.Seconds() / interval.Seconds() // 0.25
+		if math.Abs(p.Value-want) > 1e-9 {
+			t.Fatalf("budget value = %v, want %v (duration/interval)", p.Value, want)
+		}
+	})
+}
+
+func TestSelfObs_StalenessZeroWhileSucceeding(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0).UTC()
+	var nowNs atomic.Int64
+	nowNs.Store(base.UnixNano())
+	clock := func() time.Time { return time.Unix(0, nowNs.Load()).UTC() }
+
+	r := collector.NewRegistry()
+	r.Register(snapFunc{name: "ok", def: time.Millisecond, fn: func(context.Context, telemetry.Emitter) error {
+		nowNs.Add(int64(time.Minute)) // clock marches on, but the run succeeds
+		return nil
+	}}, time.Millisecond)
+
+	rec := telemetrytest.New()
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0), collector.WithClock(clock))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = s.Run(ctx, r); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	waitFor(t, func() bool {
+		_, ok := findPoint(rec, collector.MetricScrapeStaleness, "ok")
+		return ok
+	}, 2*time.Second)
+
+	p, ok := findPoint(rec, collector.MetricScrapeStaleness, "ok")
+	if !ok {
+		t.Fatalf("%s not emitted", collector.MetricScrapeStaleness)
+	}
+	if p.Value != 0 {
+		t.Fatalf("staleness value = %v, want 0 (resets on every success even as the clock advances)", p.Value)
 	}
 }

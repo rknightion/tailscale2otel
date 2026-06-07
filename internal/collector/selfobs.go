@@ -25,6 +25,19 @@ const (
 	// MetricScrapeLastTimestamp is a gauge of the unix time, in seconds, at which
 	// the most recent run finished.
 	MetricScrapeLastTimestamp = "tailscale2otel.scrape.last_timestamp"
+	// MetricScrapeStaleness is a gauge of the seconds elapsed since this
+	// collector's last *successful* run. It counts up from process start until
+	// the first success (so a collector that has never succeeded shows a growing,
+	// alertable value rather than an absent series) and resets to ~0 on every
+	// successful run. Explicit is friendlier than deriving freshness from
+	// scrape.last_timestamp + scrape.success.
+	MetricScrapeStaleness = "tailscale2otel.scrape.staleness"
+	// MetricScrapeBudget is a gauge of the last run's duration as a fraction of
+	// the collector's poll interval (duration ÷ interval). Values near or above
+	// `1` mean a scrape is taking about as long as (or longer than) its interval
+	// — little headroom, risk of overrun. The unit-`1` gauge normalizes to
+	// tailscale2otel_scrape_budget_ratio under OTLP→Prometheus.
+	MetricScrapeBudget = "tailscale2otel.scrape.budget"
 	// MetricCheckpointPersistErrors is a monotonic counter incremented when a
 	// window collector's high-water mark fails to persist to the checkpoint
 	// store (e.g. a disk error). The window itself succeeded; only the durable
@@ -45,14 +58,16 @@ const (
 type scrapeResult struct {
 	collector  string
 	duration   time.Duration
+	interval   time.Duration
 	finishedAt time.Time
+	staleness  time.Duration
 	err        error
 	panicked   bool
 }
 
-// emitScrapeMetrics records the four per-collector scrape metrics for one run
-// using the given emitter. It always emits duration, success, and
-// last_timestamp; the errors counter is incremented only when the run failed.
+// emitScrapeMetrics records the per-collector scrape metrics for one run using
+// the given emitter. It always emits the gauges; the errors counter is
+// incremented only when the run failed.
 func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
 	attrs := telemetry.Attrs{semconv.AttrCollector: res.collector}
 
@@ -68,6 +83,14 @@ func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
 
 	e.Gauge(docScrapeLastTimestamp.Name, docScrapeLastTimestamp.Unit, docScrapeLastTimestamp.Description,
 		float64(res.finishedAt.Unix()), attrs)
+
+	e.Gauge(docScrapeStaleness.Name, docScrapeStaleness.Unit, docScrapeStaleness.Description,
+		res.staleness.Seconds(), attrs)
+
+	if res.interval > 0 { // guard: a zero/negative interval would make the ratio NaN (0/0) or Inf
+		e.Gauge(docScrapeBudget.Name, docScrapeBudget.Unit, docScrapeBudget.Description,
+			res.duration.Seconds()/res.interval.Seconds(), attrs)
+	}
 
 	if failed {
 		errAttrs := telemetry.Attrs{

@@ -50,6 +50,22 @@ var (
 		Attributes:  []string{semconv.AttrCollector},
 		Group:       groupSelfObs,
 	}
+	docScrapeStaleness = metricdoc.Metric{
+		Name:        MetricScrapeStaleness,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Seconds since this collector's last successful scrape (counts up from process start until the first success); pair with `scrape.success` for freshness alerting.",
+		Attributes:  []string{semconv.AttrCollector},
+		Group:       groupSelfObs,
+	}
+	docScrapeBudget = metricdoc.Metric{
+		Name:        MetricScrapeBudget,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Last scrape duration as a fraction of the collector's poll interval (duration ÷ interval); values near or above `1` mean the scrape risks overrunning its interval.",
+		Attributes:  []string{semconv.AttrCollector},
+		Group:       groupSelfObs,
+	}
 	docCheckpointPersistErrors = metricdoc.Metric{
 		Name:        MetricCheckpointPersistErrors,
 		Unit:        semconv.UnitDimensionless,
@@ -63,7 +79,7 @@ var (
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docCheckpointPersistErrors}
+	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docCheckpointPersistErrors}
 }
 
 // LogCatalog returns the log events this package emits (none).

@@ -95,6 +95,10 @@ func (s *Scheduler) Run(ctx context.Context, r *Registry) error {
 const defaultStaggerWindow = 3 * time.Second
 
 func (s *Scheduler) runLoop(ctx context.Context, e Entry) {
+	// Baseline for scrape.staleness: until the first successful run, staleness
+	// counts up from here (loop start), so a collector that never succeeds shows
+	// a growing — and therefore alertable — value.
+	lastSuccess := s.now()
 	if d := s.initialDelay(); d > 0 {
 		t := time.NewTimer(d)
 		select {
@@ -111,7 +115,7 @@ func (s *Scheduler) runLoop(ctx context.Context, e Entry) {
 		return
 	default:
 	}
-	s.runTick(ctx, e)
+	s.runTick(ctx, e, &lastSuccess)
 	ticker := time.NewTicker(e.Interval)
 	defer ticker.Stop()
 	for {
@@ -119,7 +123,7 @@ func (s *Scheduler) runLoop(ctx context.Context, e Entry) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runTick(ctx, e)
+			s.runTick(ctx, e, &lastSuccess)
 		}
 	}
 }
@@ -135,7 +139,7 @@ func (s *Scheduler) initialDelay() time.Duration {
 // collector run never crashes the scheduler. The whole run is timed and, when
 // self-obs is enabled, the per-collector scrape.* metrics are emitted — even on
 // the panic-recovery path, which records success=0 plus an errors{panic} count.
-func (s *Scheduler) runTick(ctx context.Context, e Entry) {
+func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time) {
 	started := time.Now()  // monotonic: used for duration only
 	startedWall := s.now() // wall-clock: for the status page's LastStarted
 	var runErr error
@@ -149,11 +153,21 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry) {
 		}
 		duration := time.Since(started)
 		finishedWall := s.now()
+		failed := panicked || runErr != nil
+		if !failed {
+			*lastSuccess = finishedWall
+		}
+		staleness := finishedWall.Sub(*lastSuccess)
+		if staleness < 0 { // guard a backward wall-clock jump (NTP)
+			staleness = 0
+		}
 		if s.selfObs {
 			emitScrapeMetrics(s.emitter, scrapeResult{
 				collector:  e.Collector.Name(),
 				duration:   duration,
+				interval:   e.Interval,
 				finishedAt: finishedWall,
+				staleness:  staleness,
 				err:        runErr,
 				panicked:   panicked,
 			})
