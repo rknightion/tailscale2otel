@@ -12,15 +12,6 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
-// fakeAPI implements the narrow acl api interface for the catalog test.
-type fakeAPI struct {
-	acl *tsclient.RawACL
-}
-
-func (f *fakeAPI) PolicyFileRaw(_ context.Context) (*tsclient.RawACL, error) {
-	return f.acl, nil
-}
-
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard: every
 // metric the collector actually emits must be declared in Catalog() with a
 // matching unit, instrument, and description (docs/metrics.md is generated from

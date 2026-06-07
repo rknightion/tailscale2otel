@@ -1,4 +1,4 @@
-package acl
+package acl_test
 
 import (
 	"context"
@@ -9,10 +9,13 @@ import (
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/collector/acl"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
-// fakeAPI implements the narrow acl api interface for tests.
+// fakeAPI implements the narrow acl api interface for tests. It is the single
+// shared fake for the acl_test package (used by acl_test.go, risk_test.go, and
+// catalog_test.go).
 type fakeAPI struct {
 	acl   *tsclient.RawACL
 	err   error
@@ -28,17 +31,17 @@ func (f *fakeAPI) PolicyFileRaw(_ context.Context) (*tsclient.RawACL, error) {
 }
 
 // SnapshotCollector compile-time check.
-var _ collector.SnapshotCollector = (*Collector)(nil)
+var _ collector.SnapshotCollector = (*acl.Collector)(nil)
 
 func TestNameAndDefaultInterval(t *testing.T) {
-	c := New(&fakeAPI{}, 0, nil)
+	c := acl.New(&fakeAPI{}, 0, nil)
 	if c.Name() != "acl" {
 		t.Fatalf("Name() = %q, want acl", c.Name())
 	}
 	if got := c.DefaultInterval(); got != 600*time.Second {
 		t.Fatalf("DefaultInterval() = %v, want 600s", got)
 	}
-	c2 := New(&fakeAPI{}, 5*time.Minute, nil)
+	c2 := acl.New(&fakeAPI{}, 5*time.Minute, nil)
 	if got := c2.DefaultInterval(); got != 5*time.Minute {
 		t.Fatalf("DefaultInterval() = %v, want 5m", got)
 	}
@@ -68,7 +71,7 @@ func TestLastChangedTracksETag(t *testing.T) {
 	clock := time.Unix(1_000_000, 0).UTC()
 	now := func() time.Time { return clock }
 
-	c := New(api, 0, now)
+	c := acl.New(api, 0, now)
 
 	// First observation: record etag, last_changed = now().
 	rec1 := telemetrytest.New()
@@ -104,7 +107,7 @@ func TestLastChangedTracksETag(t *testing.T) {
 
 func TestDefaultNowWhenNil(t *testing.T) {
 	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: "{}", ETag: "e"}}
-	c := New(api, 0, nil)
+	c := acl.New(api, 0, nil)
 	before := time.Now().Add(-time.Second).Unix()
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -120,7 +123,7 @@ func TestDefaultNowWhenNil(t *testing.T) {
 func TestCollectPropagatesError(t *testing.T) {
 	api := &fakeAPI{err: context.DeadlineExceeded}
 	rec := telemetrytest.New()
-	if err := New(api, 0, time.Now).Collect(context.Background(), rec.Emitter()); err == nil {
+	if err := acl.New(api, 0, time.Now).Collect(context.Background(), rec.Emitter()); err == nil {
 		t.Fatal("Collect: expected error, got nil")
 	}
 }
@@ -168,7 +171,7 @@ func TestRuleCountsFromRealACL(t *testing.T) {
 	}
 
 	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: string(huJSON), ETag: "etag-real"}}
-	c := New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
+	c := acl.New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
 
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -258,7 +261,7 @@ func TestMalformedHuJSONStillEmitsSizeAndLastChanged(t *testing.T) {
 	// Unterminated object: not valid HuJSON, so Standardize must fail.
 	bad := `{"acls": [`
 	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: bad, ETag: "etag-bad"}}
-	c := New(api, 0, func() time.Time { return time.Unix(2_000_000, 0).UTC() })
+	c := acl.New(api, 0, func() time.Time { return time.Unix(2_000_000, 0).UTC() })
 
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {

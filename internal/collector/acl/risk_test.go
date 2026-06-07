@@ -1,4 +1,4 @@
-package acl
+package acl_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
+	"github.com/rknightion/tailscale2otel/internal/collector/acl"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
@@ -14,7 +15,7 @@ import (
 func collectDoc(t *testing.T, hujsonDoc string) *telemetrytest.Recorder {
 	t.Helper()
 	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: hujsonDoc, ETag: "etag-risk"}}
-	c := New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
+	c := acl.New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
