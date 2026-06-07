@@ -141,7 +141,6 @@ branch = "main"
 touchNavigation = true
 loop = false
 effect = "zoom"
-slide_effect = "slide"
 width = "100%"
 height = "auto"
 zoomable = true
