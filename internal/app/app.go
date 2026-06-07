@@ -115,13 +115,13 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	apiStats := NewAPIStats()
 	tsOpts := tsapiOptions(cfg)
 	tsOpts.Logger = withComponent(logger, compTSAPI)
-	var obs func(string, int, int)
+	var obs func(string, int, int, time.Duration)
 	if cfg.SelfObservability.Enabled {
 		obs = apiObserver(emitter)
 	}
 	tsOpts.OnRequest = func(i tsapi.RequestInfo) {
 		if obs != nil {
-			obs(i.Endpoint, i.Status, i.Attempts)
+			obs(i.Endpoint, i.Status, i.Attempts, i.Duration)
 		}
 		apiStats.Record(i)
 	}

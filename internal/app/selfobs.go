@@ -4,21 +4,36 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
-// apiObserver returns a tsapi request-observer that records one
-// tailscale2otel.api.requests increment per request (keyed by endpoint and
-// status code) and, when a request was retried, the retry count on
+// apiDurationBucketsSeconds are the explicit histogram bucket boundaries (in
+// seconds) for tailscale2otel.api.duration. They span a fast direct API call
+// (tens of ms) up to multi-second waits caused by retry backoff and large
+// responses (e.g. the network-flow-log pull). Values above 30s fall in the
+// implicit (30, +Inf] bucket.
+var apiDurationBucketsSeconds = []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
+
+// apiObserver returns a tsapi request-observer that records, per request:
+// tailscale2otel.api.requests (count, keyed by endpoint + status code),
+// tailscale2otel.api.duration (wall-clock latency histogram in seconds, same
+// keys), and — when a request was retried — the retry count on
 // tailscale2otel.api.retries. It is wired into tsapi only when
 // self-observability is enabled. The metric descriptors live in
 // internal/appcatalog (see that package for why).
-func apiObserver(e telemetry.Emitter) func(endpoint string, status, attempts int) {
-	return func(endpoint string, status, attempts int) {
+func apiObserver(e telemetry.Emitter) func(endpoint string, status, attempts int, dur time.Duration) {
+	return func(endpoint string, status, attempts int, dur time.Duration) {
 		e.Counter(appcatalog.DocAPIRequests.Name, appcatalog.DocAPIRequests.Unit, appcatalog.DocAPIRequests.Description, 1,
+			telemetry.Attrs{
+				"endpoint":                  endpoint,
+				"http.response.status_code": status,
+			})
+		e.Histogram(appcatalog.DocAPIDuration.Name, appcatalog.DocAPIDuration.Unit, appcatalog.DocAPIDuration.Description,
+			dur.Seconds(), apiDurationBucketsSeconds,
 			telemetry.Attrs{
 				"endpoint":                  endpoint,
 				"http.response.status_code": status,

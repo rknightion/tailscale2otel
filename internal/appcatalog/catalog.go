@@ -34,6 +34,8 @@ const (
 	MetricAPIRequests = "tailscale2otel.api.requests"
 	// MetricAPIRetries counts Tailscale API retry attempts.
 	MetricAPIRetries = "tailscale2otel.api.retries"
+	// MetricAPIDuration is the API request wall-clock latency histogram name.
+	MetricAPIDuration = "tailscale2otel.api.duration"
 )
 
 // Go runtime self-observability metric names. These expose the exporter's own
@@ -114,6 +116,14 @@ var (
 		Instrument:  metricdoc.Counter,
 		Description: "API retry attempts, by endpoint.",
 		Attributes:  []string{"endpoint"},
+		Group:       GroupSelfObs,
+	}
+	DocAPIDuration = metricdoc.Metric{
+		Name:        MetricAPIDuration,
+		Unit:        "s",
+		Instrument:  metricdoc.Histogram,
+		Description: "Tailscale API request wall-clock latency in seconds, by endpoint and HTTP status code. Covers the full logical request including any retry backoff (not just server time). Use the 429 status-code bucket here plus tailscale2otel.api.retries for rate-limit visibility — the Tailscale API exposes no rate-limit-remaining headers.",
+		Attributes:  []string{"endpoint", "http.response.status_code"},
 		Group:       GroupSelfObs,
 	}
 )
@@ -261,7 +271,7 @@ var (
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocAPIRequests, DocAPIRetries,
+		DocUp, DocAPIRequests, DocAPIRetries, DocAPIDuration,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,
