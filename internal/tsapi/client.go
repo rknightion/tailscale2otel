@@ -117,11 +117,6 @@ func (c *Client) Users(ctx context.Context) ([]tsclient.User, error) {
 	return c.ts.Users().List(ctx, nil, nil)
 }
 
-// Keys lists all auth/API keys visible to the principal.
-func (c *Client) Keys(ctx context.Context) ([]tsclient.Key, error) {
-	return c.ts.Keys().List(ctx, true)
-}
-
 // Webhooks lists configured webhook endpoints.
 func (c *Client) Webhooks(ctx context.Context) ([]tsclient.Webhook, error) {
 	return c.ts.Webhooks().List(ctx)

@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard: every
@@ -21,12 +20,13 @@ import (
 func TestCatalogMatchesEmitted(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
-		// Expires within the 24h warn window => drives key.expiry metric AND
-		// the key.expiring WARN log.
-		reusableKey("k1", now.Add(1*time.Hour)),
-		// A second, distinct key to populate keys.count buckets.
-		{ID: "k2", Description: "oneoff", Expires: now.Add(48 * time.Hour)},
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		// Auth key expiring within the 24h warn window => drives key.expiry,
+		// key.preauthorized AND the key.expiring WARN log.
+		{ID: "k1", Description: "ci runner", Type: "auth", Reusable: true, Preauthorized: true, Expires: now.Add(1 * time.Hour)},
+		// An API token with scopes + expiry => drives key.scopes and a second
+		// keys.count bucket.
+		{ID: "k2", Description: "prod token", Type: "api", Scopes: []string{"all"}, Expires: now.Add(48 * time.Hour)},
 	}}, 0, 24*time.Hour, func() time.Time { return now })
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)

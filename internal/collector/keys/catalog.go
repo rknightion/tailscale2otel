@@ -20,16 +20,16 @@ var (
 		Name:        MetricKeyExpiry,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Unix timestamp an auth/API key expires; one series per key.",
-		Attributes:  []string{attrID, attrType, attrDescription},
+		Description: "Unix timestamp a Tailscale key expires; one series per key.",
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription},
 		Group:       groupKeys,
 	}
 	docKeysCount = metricdoc.Metric{
 		Name:        MetricKeysCount,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "Key count (a **count**), bucketed by type/revoked/invalid.",
-		Attributes:  []string{attrType, attrRevoked, attrInvalid},
+		Description: "Key count (a **count**), bucketed by type/auth_kind/revoked/invalid.",
+		Attributes:  []string{attrType, attrAuthKind, attrRevoked, attrInvalid},
 		Group:       groupKeys,
 	}
 
@@ -37,14 +37,32 @@ var (
 		Name:        EventExpiring,
 		Severity:    "WARN",
 		Description: "Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp).",
-		Attributes:  []string{attrID, attrType, attrDescription, attrExpiresIn},
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrExpiresIn},
+		Group:       groupKeys,
+	}
+
+	docKeyScopes = metricdoc.Metric{
+		Name:        MetricKeyScopes,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of OAuth scopes granted to a credential (scope-sprawl signal); one series per OAuth-client/API credential. Gated by `cardinality.per_entity.key`.",
+		Attributes:  []string{attrID, attrType, attrDescription},
+		Group:       groupKeys,
+	}
+
+	docKeyPreauthorized = metricdoc.Metric{
+		Name:        MetricKeyPreauthorized,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Whether an auth key is preauthorized (1) or not (0); one series per auth key. Gated by `cardinality.per_entity.key`.",
+		Attributes:  []string{attrID, attrType, attrDescription},
 		Group:       groupKeys,
 	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docKeyExpiry, docKeysCount}
+	return []metricdoc.Metric{docKeyExpiry, docKeysCount, docKeyScopes, docKeyPreauthorized}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

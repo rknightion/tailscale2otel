@@ -7,20 +7,19 @@ import (
 	"testing"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // fakeLister returns a canned slice of keys (or an error).
 type fakeLister struct {
-	keys  []tsclient.Key
+	keys  []tsapi.Key
 	err   error
 	calls int
 }
 
-func (f *fakeLister) Keys(context.Context) ([]tsclient.Key, error) {
+func (f *fakeLister) KeysRich(context.Context) ([]tsapi.Key, error) {
 	f.calls++
 	return f.keys, f.err
 }
@@ -53,11 +52,9 @@ func findLog(t *testing.T, recs []telemetrytest.LogRecord, eventName string) tel
 	return telemetrytest.LogRecord{}
 }
 
-// reusableKey builds a key with the reusable capability set.
-func reusableKey(id string, expires time.Time) tsclient.Key {
-	k := tsclient.Key{ID: id, Description: "ci runner", Expires: expires}
-	k.Capabilities.Devices.Create.Reusable = true
-	return k
+// reusableKey builds a reusable machine auth key.
+func reusableKey(id string, expires time.Time) tsapi.Key {
+	return tsapi.Key{ID: id, Description: "ci runner", Type: "auth", Reusable: true, Expires: expires}
 }
 
 func TestName(t *testing.T) {
@@ -82,7 +79,7 @@ func TestCollect_PerEntityFalse(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	soon := now.Add(30 * time.Minute) // within the 1h expiryWarn window
 	rec := telemetrytest.New()
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
 		reusableKey("k1", soon),
 	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -103,9 +100,9 @@ func TestCollect_ExpiryGauge(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	exp := now.Add(48 * time.Hour)
 	rec := telemetrytest.New()
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
 		reusableKey("k1", exp),
-		{ID: "k2", Description: "no expiry"}, // zero Expires -> skipped
+		{ID: "k2", Description: "no expiry", Type: "auth"}, // zero Expires -> skipped
 	}}, 0, time.Hour, func() time.Time { return now })
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -136,10 +133,10 @@ func TestCollect_ExpiryGauge(t *testing.T) {
 func TestCollect_CountGauge(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
 		reusableKey("k1", now.Add(48*time.Hour)),
 		reusableKey("k2", now.Add(72*time.Hour)),
-		{ID: "k3"}, // distinct type (not reusable)
+		{ID: "k3", Type: "auth"}, // distinct type (not reusable) -> auth/onetime
 	}}, 0, time.Hour, func() time.Time { return now })
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -174,7 +171,7 @@ func TestCollect_WarnsOnExpiringKey(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()
 	// Key expires in 1h; warn window 24h => should warn.
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
 		reusableKey("k1", now.Add(time.Hour)),
 	}}, 0, 24*time.Hour, func() time.Time { return now })
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -211,7 +208,7 @@ func TestCollect_NoWarnOutsideWindow(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()
 	// Key expires in 1h; warn window 10m => no warn.
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
 		reusableKey("k1", now.Add(time.Hour)),
 	}}, 0, 10*time.Minute, func() time.Time { return now })
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -228,8 +225,8 @@ func TestCollect_NoWarnOutsideWindow(t *testing.T) {
 func TestCollect_NoWarnForZeroExpiry(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
-		{ID: "k1", Description: "never expires"}, // zero Expires
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "k1", Description: "never expires", Type: "auth"}, // zero Expires
 	}}, 0, 24*time.Hour, func() time.Time { return now })
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -245,7 +242,7 @@ func TestCollect_NilNowDefaultsToTimeNow(t *testing.T) {
 	// With nil now and a key already long expired, no panic and no false warn
 	// behavior is asserted here beyond a successful Collect.
 	rec := telemetrytest.New()
-	c := keys.New(&fakeLister{keys: []tsclient.Key{
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
 		reusableKey("k1", time.Now().Add(365*24*time.Hour)),
 	}}, 0, time.Hour, nil)
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -260,4 +257,140 @@ func TestCollect_PropagatesError(t *testing.T) {
 	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
 		t.Fatalf("Collect err = %v, want %v", err, wantErr)
 	}
+}
+
+func TestCollect_ScopesGauge(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "oauth", Type: "client", Description: "tf", Scopes: []string{"all:read", "devices:core"}},
+		{ID: "token", Type: "api", Scopes: []string{"all"}},
+		{ID: "auth", Type: "auth", Reusable: true}, // no scopes -> no scopes point
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.key.scopes")
+	if len(pts) != 2 {
+		t.Fatalf("scopes points = %d, want 2 (auth key has no scopes) (%+v)", len(pts), pts)
+	}
+	oauth := findPoint(t, pts, map[string]string{"tailscale.key.id": "oauth"})
+	if oauth.Value != 2 {
+		t.Errorf("oauth scope count = %v, want 2", oauth.Value)
+	}
+	if oauth.Unit != "1" {
+		t.Errorf("scopes unit = %q, want 1", oauth.Unit)
+	}
+	if oauth.Kind != "gauge" {
+		t.Errorf("scopes kind = %q, want gauge", oauth.Kind)
+	}
+	if oauth.Attrs["tailscale.key.type"] != "client" {
+		t.Errorf("scopes type attr = %q, want client", oauth.Attrs["tailscale.key.type"])
+	}
+	token := findPoint(t, pts, map[string]string{"tailscale.key.id": "token"})
+	if token.Value != 1 {
+		t.Errorf("token scope count = %v, want 1", token.Value)
+	}
+	if token.Attrs["tailscale.key.type"] != "api" {
+		t.Errorf("token type attr = %q, want api", token.Attrs["tailscale.key.type"])
+	}
+}
+
+func TestCollect_ScopesGauge_PerEntityFalse(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "oauth", Type: "client", Scopes: []string{"all:read"}},
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.key.scopes"); len(pts) != 0 {
+		t.Errorf("scopes gauge emitted with WithPerEntity(false): %+v", pts)
+	}
+}
+
+func TestCollect_PreauthorizedGauge(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "pa", Type: "auth", Reusable: true, Preauthorized: true},
+		{ID: "npa", Type: "auth", Reusable: true, Preauthorized: false},
+		{ID: "oauth", Type: "client", Scopes: []string{"all"}}, // not an auth key -> no point
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.key.preauthorized")
+	if len(pts) != 2 {
+		t.Fatalf("preauthorized points = %d, want 2 (auth keys only) (%+v)", len(pts), pts)
+	}
+	if p := findPoint(t, pts, map[string]string{"tailscale.key.id": "pa"}); p.Value != 1 {
+		t.Errorf("pa preauthorized = %v, want 1", p.Value)
+	}
+	if p := findPoint(t, pts, map[string]string{"tailscale.key.id": "npa"}); p.Value != 0 {
+		t.Errorf("npa preauthorized = %v, want 0", p.Value)
+	}
+	if p := findPoint(t, pts, map[string]string{"tailscale.key.id": "pa"}); p.Unit != "1" || p.Kind != "gauge" {
+		t.Errorf("preauthorized unit/kind = %q/%q, want 1/gauge", p.Unit, p.Kind)
+	}
+	if p := findPoint(t, pts, map[string]string{"tailscale.key.id": "pa"}); p.Attrs["tailscale.key.type"] != "auth" {
+		t.Errorf("preauthorized type attr = %q, want auth", p.Attrs["tailscale.key.type"])
+	}
+}
+
+func TestCollect_PreauthorizedGauge_PerEntityFalse(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "pa", Type: "auth", Reusable: true, Preauthorized: true},
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.key.preauthorized"); len(pts) != 0 {
+		t.Errorf("preauthorized gauge emitted with WithPerEntity(false): %+v", pts)
+	}
+}
+
+func TestCollect_TypeAndAuthKind(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "a-eph", Type: "auth", Ephemeral: true, Expires: now.Add(48 * time.Hour)},
+		{ID: "a-reuse", Type: "auth", Reusable: true, Expires: now.Add(48 * time.Hour)},
+		{ID: "a-once", Type: "auth", Expires: now.Add(48 * time.Hour)},
+		{ID: "oauth", Type: "client", Scopes: []string{"all:read"}},
+		{ID: "token", Type: "api", Scopes: []string{"all"}, Expires: now.Add(48 * time.Hour)},
+		{ID: "legacy", Type: "", Reusable: true, Expires: now.Add(48 * time.Hour)},
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// Per-key expiry gauge must report the real keyType + auth_kind.
+	exp := rec.MetricPoints("tailscale.key.expiry")
+	check := func(id, wantType, wantKind string) {
+		p := findPoint(t, exp, map[string]string{"tailscale.key.id": id})
+		if p.Attrs["tailscale.key.type"] != wantType {
+			t.Errorf("%s type = %q, want %q", id, p.Attrs["tailscale.key.type"], wantType)
+		}
+		if p.Attrs["tailscale.key.auth_kind"] != wantKind {
+			t.Errorf("%s auth_kind = %q, want %q", id, p.Attrs["tailscale.key.auth_kind"], wantKind)
+		}
+	}
+	check("a-eph", "auth", "ephemeral")
+	check("a-reuse", "auth", "reusable")
+	check("a-once", "auth", "onetime")
+	check("token", "api", "none")
+	check("legacy", "auth", "reusable") // empty Type falls back to auth
+	// "oauth" has no expiry, so no expiry point — assert via the count instead.
+
+	// Count buckets must use the real keyType, not the old onetime catch-all.
+	counts := rec.MetricPoints("tailscale.keys.count")
+	findPoint(t, counts, map[string]string{"tailscale.key.type": "client", "tailscale.key.auth_kind": "none"})
+	findPoint(t, counts, map[string]string{"tailscale.key.type": "api", "tailscale.key.auth_kind": "none"})
+	findPoint(t, counts, map[string]string{"tailscale.key.type": "auth", "tailscale.key.auth_kind": "ephemeral"})
 }
