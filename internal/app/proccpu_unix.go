@@ -5,9 +5,9 @@ package app
 import "syscall"
 
 // tvToSeconds converts a syscall.Timeval to fractional seconds.
-// Using int64() casts to handle both Linux (int64 Usec) and Darwin (int32 Usec).
+// float64() converts Usec directly on both Linux (int64) and Darwin (int32).
 func tvToSeconds(tv syscall.Timeval) float64 {
-	return float64(tv.Sec) + float64(int64(tv.Usec))/1e6
+	return float64(tv.Sec) + float64(tv.Usec)/1e6
 }
 
 // readProcessCPU returns the cumulative user and system CPU time for the current
