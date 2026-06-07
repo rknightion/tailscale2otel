@@ -14,6 +14,12 @@ import (
 // it carries the action and origin, never per-actor or per-target attributes.
 const MetricAuditEvents = "tailscale.config.audit.events"
 
+// MetricAuditChanges counts a curated, bounded subset of security- and
+// lifecycle-relevant audit changes. Unlike MetricAuditEvents (action+origin),
+// it carries a derived change category, the action, and the actor TYPE (a
+// bounded enum, never actor identity). See classify.go for the curated set.
+const MetricAuditChanges = "tailscale.config.audit.changes"
+
 // auditEventName is the OTEL LogRecord EventName for configuration audit logs.
 const auditEventName = "tailscale.config.audit"
 
@@ -25,10 +31,13 @@ const (
 	attrOld          = "tailscale.audit.old"
 	attrNew          = "tailscale.audit.new"
 	attrDetails      = "tailscale.audit.details"
+	attrChange       = "tailscale.audit.change"
 
-	attrEndUserID      = "enduser.id"
-	attrActorLogin     = "tailscale.actor.login"
-	attrActorDisplay   = "tailscale.actor.display"
+	attrEndUserID    = "enduser.id"
+	attrActorLogin   = "tailscale.actor.login"
+	attrActorDisplay = "tailscale.actor.display"
+	attrActorType    = "tailscale.actor.type"
+
 	attrTargetID       = "tailscale.target.id"
 	attrTargetName     = "tailscale.target.name"
 	attrTargetType     = "tailscale.target.type"
@@ -156,6 +165,7 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		attrEndUserID:      ev.Actor.ID,
 		attrActorLogin:     ev.Actor.LoginName,
 		attrActorDisplay:   ev.Actor.DisplayName,
+		attrActorType:      ev.Actor.Type,
 		attrTargetID:       ev.Target.ID,
 		attrTargetName:     ev.Target.Name,
 		attrTargetType:     ev.Target.Type,
@@ -186,6 +196,14 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		attrAction: ev.Action,
 		attrOrigin: ev.Origin,
 	})
+
+	if cat, ok := classifyChange(ev); ok {
+		e.Counter(docAuditChanges.Name, docAuditChanges.Unit, docAuditChanges.Description, 1, telemetry.Attrs{
+			attrChange:    cat,
+			attrAction:    ev.Action,
+			attrActorType: ev.Actor.Type,
+		})
+	}
 }
 
 // renderRaw turns a polymorphic audit old/new value into a string attribute

@@ -28,13 +28,22 @@ var (
 		Group:       groupNetwork,
 	}
 
+	docAuditChanges = metricdoc.Metric{
+		Name:        MetricAuditChanges,
+		Unit:        semconv.UnitEvents,
+		Instrument:  metricdoc.Counter,
+		Description: "Curated security- and lifecycle-relevant configuration-audit changes, by change category, action, and actor type.",
+		Attributes:  []string{attrChange, attrAction, attrActorType},
+		Group:       groupNetwork,
+	}
+
 	docAuditLog = metricdoc.LogEvent{
 		Name:        auditEventName,
 		Severity:    "INFO",
 		Description: "Per configuration-audit event: actor, target, action, and (when present) the before/after change. Emitted at **WARN** when the event carries an error, otherwise INFO.",
 		Attributes: []string{
 			attrAction, attrOrigin, attrEventGroupID, attrEndUserID,
-			attrActorLogin, attrActorDisplay,
+			attrActorLogin, attrActorDisplay, attrActorType,
 			attrTargetID, attrTargetName, attrTargetType, attrTargetProperty,
 			attrOld, attrNew, attrDetails, attrError,
 		},
@@ -44,7 +53,7 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docAuditEvents}
+	return []metricdoc.Metric{docAuditEvents, docAuditChanges}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

@@ -16,8 +16,8 @@ import (
 // event must be in LogCatalog().
 //
 // This package emits only its own signals (no delegation): driving
-// p.Process(event) emits exactly the counter (tailscale.config.audit.events)
-// and the log event (tailscale.config.audit).
+// p.Process(event) emits the two counters (tailscale.config.audit.events,
+// tailscale.config.audit.changes) and the log event (tailscale.config.audit).
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
 	p := audit.NewProcessor()
@@ -41,6 +41,17 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		},
 		Action:        "CREATE",
 		ActionDetails: "x",
+	}, rec.Emitter())
+
+	// A clearly-curated event so the changes counter is definitely emitted and
+	// its unit/description/instrument are checked against the catalog.
+	p.Process(audit.Event{
+		EventTime: time.Date(2024, 6, 6, 15, 25, 27, 0, time.UTC),
+		Type:      "CONFIG",
+		Origin:    "ADMIN_CONSOLE",
+		Actor:     audit.Actor{ID: "u1", Type: "USER", LoginName: "a@example.com"},
+		Target:    audit.Target{ID: "t1", Type: "TAILNET", Property: "ACL"},
+		Action:    "UPDATE",
 	}, rec.Emitter())
 
 	declared := map[string]metricdoc.Metric{}

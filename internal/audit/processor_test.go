@@ -64,6 +64,7 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 		"enduser.id":                     "u1",
 		"tailscale.actor.login":          "a@example.com",
 		"tailscale.actor.display":        "Lion",
+		"tailscale.actor.type":           "USER",
 		"tailscale.target.id":            "n1",
 		"tailscale.target.name":          "node.ts.net",
 		"tailscale.target.type":          "NODE",

@@ -1,0 +1,105 @@
+package audit_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/rknightion/tailscale2otel/internal/audit"
+	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+)
+
+// evWith builds a minimal audit Event with the given target type/property,
+// action, and actor type — enough to exercise the change classifier.
+func evWith(targetType, property, action, actorType string) audit.Event {
+	return audit.Event{
+		EventTime:    time.Date(2026, 6, 2, 19, 0, 5, 0, time.UTC),
+		Type:         "CONFIG",
+		EventGroupID: "g-" + property + action,
+		Origin:       "ADMIN_CONSOLE",
+		Actor:        audit.Actor{ID: "u1", Type: actorType, LoginName: "a@example.com"},
+		Target:       audit.Target{ID: "n1", Name: "node.ts.net", Type: targetType, Property: property},
+		Action:       action,
+	}
+}
+
+func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
+	cases := []struct {
+		name       string
+		ev         audit.Event
+		wantChange string // "" => must NOT emit the changes counter
+	}{
+		// Property-derived
+		{"acl", evWith("TAILNET", "ACL", "UPDATE", "USER"), "acl"},
+		{"key_expiry flag", evWith("NODE", "KEY_EXPIRY", "DISABLE", "NODE"), "key_expiry"},
+		{"key_expiry time", evWith("NODE", "KEY_EXPIRY_TIME", "UPDATE", "USER"), "key_expiry"},
+		{"exit_node", evWith("NODE", "EXIT_NODE", "UPDATE", "USER"), "exit_node"},
+		{"tailnet_lock", evWith("TAILNET", "TKA", "DISABLE", "USER"), "tailnet_lock"},
+		{"user_role", evWith("USER", "USER_ROLE", "UPDATE", "USER"), "user_role"},
+		{"posture_integration", evWith("TAILNET", "POSTURE_INTEGRATION", "UPDATE", "USER"), "posture_integration"},
+		{"collect_posture_identity", evWith("TAILNET", "COLLECT_POSTURE_IDENTITY", "ENABLE", "USER"), "collect_posture_identity"},
+		{"magic_dns", evWith("TAILNET", "MAGIC_DNS", "ENABLE", "USER"), "magic_dns"},
+		{"dns_config", evWith("TAILNET", "DNS_CONFIG", "UPDATE", "USER"), "dns_config"},
+		{"logstream_endpoint", evWith("TAILNET", "LOGSTREAM_ENDPOINT", "CREATE", "USER"), "logstream_endpoint"},
+		{"node_share", evWith("SHARE", "NODE_SHARE", "CREATE", "USER"), "node_share"},
+		{"tailnet_invite", evWith("INVITE", "TAILNET_INVITE", "CREATE", "USER"), "tailnet_invite"},
+		{"auth_provider", evWith("TAILNET", "AUTH_PROVIDER", "MIGRATE_AUTH_PROVIDER", "USER"), "auth_provider"},
+		{"secret", evWith("NODE", "SECRET", "CREATE", "SECRET_SCANNER"), "secret"},
+		// Type+action-derived (B7 churn + api keys); empty property
+		{"device create", evWith("NODE", "", "CREATE", "USER"), "device"},
+		{"device delete", evWith("NODE", "", "DELETE", "NODE"), "device"},
+		{"device expired", evWith("NODE", "", "EXPIRED", "NODE"), "device"},
+		{"api_key create", evWith("API_KEY", "", "CREATE", "USER"), "api_key"},
+		{"api_key delete", evWith("API_KEY", "", "DELETE", "USER"), "api_key"},
+		{"api_key revoke", evWith("API_KEY", "", "REVOKE", "USER"), "api_key"},
+		// Precedence: NODE with a curated property is the property category, not device
+		{"node key_expiry not device", evWith("NODE", "KEY_EXPIRY", "DELETE", "USER"), "key_expiry"},
+		// Not classified — must NOT emit
+		{"node login noise", evWith("NODE", "", "LOGIN", "NODE"), ""},
+		{"machine_name noise", evWith("NODE", "MACHINE_NAME", "UPDATE", "NODE"), ""},
+		{"posture_identity noise", evWith("NODE", "POSTURE_IDENTITY", "UPDATE", "NODE"), ""},
+		{"acl_tags noise", evWith("NODE", "ACL_TAGS", "UPDATE", "NODE"), ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			audit.NewProcessor().Process(tc.ev, rec.Emitter())
+
+			pts := rec.MetricPoints(audit.MetricAuditChanges)
+			if tc.wantChange == "" {
+				if len(pts) != 0 {
+					t.Fatalf("changes counter emitted %d points, want 0 for unclassified event", len(pts))
+				}
+				return
+			}
+			if len(pts) != 1 {
+				t.Fatalf("changes counter points = %d, want 1", len(pts))
+			}
+			mp := pts[0]
+			if mp.Value != 1 {
+				t.Errorf("value = %v, want 1", mp.Value)
+			}
+			if mp.Unit != "{event}" {
+				t.Errorf("unit = %q, want {event}", mp.Unit)
+			}
+			if mp.Kind != "sum" || !mp.Monotonic {
+				t.Errorf("kind=%q monotonic=%v, want sum/true", mp.Kind, mp.Monotonic)
+			}
+			if got := mp.Attrs["tailscale.audit.change"]; got != tc.wantChange {
+				t.Errorf("change attr = %q, want %q", got, tc.wantChange)
+			}
+			if got := mp.Attrs["tailscale.audit.action"]; got != tc.ev.Action {
+				t.Errorf("action attr = %q, want %q", got, tc.ev.Action)
+			}
+			if got := mp.Attrs["tailscale.actor.type"]; got != tc.ev.Actor.Type {
+				t.Errorf("actor.type attr = %q, want %q", got, tc.ev.Actor.Type)
+			}
+			// PII fence: never high-cardinality identity on the counter.
+			for _, k := range []string{"enduser.id", "tailscale.actor.login", "tailscale.actor.display", "tailscale.target.id", "tailscale.target.name"} {
+				if _, ok := mp.Attrs[k]; ok {
+					t.Errorf("changes counter must not carry %q", k)
+				}
+			}
+		})
+	}
+}
