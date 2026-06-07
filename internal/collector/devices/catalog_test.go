@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard: every
@@ -32,10 +33,15 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			"n-desktop":        {"custom:foo": "baz"},
 			"n-phone":          {},
 		},
+		invites: map[string][]tsapi.DeviceInvite{
+			"3690401478992208": {{Accepted: true, AllowExitNode: true, MultiUse: false}},
+		},
 	}
 	// Wildcard attribute_namespaces so both the numeric and info attribute gauges
 	// (tailscale.device.attribute{,.info}) are emitted and drift-checked too.
-	c := devices.New(api, cache, 0, true, true, devices.WithAttributeNamespaces([]string{"*"}))
+	c := devices.New(api, cache, 0, true, true,
+		devices.WithAttributeNamespaces([]string{"*"}),
+		devices.WithDeviceInvites(true))
 
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -88,6 +94,15 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		if _, ok := declared[name]; !ok {
 			t.Errorf("attribute metric %q not declared in devices.Catalog()", name)
 		}
+	}
+
+	// The device-invites count gauge must be both emitted (collect_device_invites
+	// on) and declared in Catalog().
+	if pts := rec.MetricPoints("tailscale.device_invites.count"); len(pts) == 0 {
+		t.Error("device_invites count not emitted with WithDeviceInvites(true)")
+	}
+	if _, ok := declared["tailscale.device_invites.count"]; !ok {
+		t.Error("tailscale.device_invites.count not declared in devices.Catalog()")
 	}
 
 	logDeclared := map[string]bool{}

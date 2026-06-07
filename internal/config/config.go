@@ -296,6 +296,12 @@ type DevicesCollector struct {
 	Interval       Duration `yaml:"interval"`
 	CollectRoutes  bool     `yaml:"collect_routes"`
 	CollectPosture bool     `yaml:"collect_posture"`
+	// CollectDeviceInvites fetches each device's outstanding share invites
+	// (GET /device/{id}/device-invites — one API call per device, N+1) and emits
+	// the tailscale.device_invites.count aggregate. Requires the
+	// device_invites:read OAuth scope (covered by the broad all:read scope).
+	// Per-device fetch failures are non-fatal. Default true.
+	CollectDeviceInvites bool `yaml:"collect_device_invites"`
 	// PostureLogMode controls the tailscale.device.posture LOG (requires
 	// collect_posture): "changes" (default) logs a device only when its posture
 	// changes since the last scrape — a full baseline dump on the first scrape,

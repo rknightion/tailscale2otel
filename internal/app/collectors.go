@@ -92,6 +92,7 @@ func (a *App) registerCollectors() {
 			devices.WithPerEntity(a.cfg.Cardinality.PerEntity.Device),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
+			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
 			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup)), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {

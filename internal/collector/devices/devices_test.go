@@ -22,6 +22,11 @@ type fakeAPI struct {
 	postureErr  error
 	postureIDs  []string
 	postureFail string // device ID whose posture call should return postureErr
+
+	invites    map[string][]tsapi.DeviceInvite
+	inviteErr  error
+	inviteFail string // device ID whose invites call returns inviteErr
+	inviteIDs  []string
 }
 
 func (f *fakeAPI) DevicesRich(_ context.Context) ([]tsapi.RichDevice, error) {
@@ -35,6 +40,14 @@ func (f *fakeAPI) DevicePostureAttributes(_ context.Context, deviceID string) (m
 		return nil, f.postureErr
 	}
 	return f.posture[deviceID], nil
+}
+
+func (f *fakeAPI) DeviceInvites(_ context.Context, deviceID string) ([]tsapi.DeviceInvite, error) {
+	f.inviteIDs = append(f.inviteIDs, deviceID)
+	if deviceID == f.inviteFail {
+		return nil, f.inviteErr
+	}
+	return f.invites[deviceID], nil
 }
 
 // now anchors the deterministic timestamps used in fixtures.
@@ -1081,5 +1094,106 @@ func TestCollect_AttributeDisabledWithoutAllowList(t *testing.T) {
 	}
 	if postureLogCount(rec) != 1 {
 		t.Errorf("posture logs = %d, want 1 (unaffected)", postureLogCount(rec))
+	}
+}
+
+func TestCollect_DeviceInvitesGroupedCounts(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: sampleDevices(),
+		invites: map[string][]tsapi.DeviceInvite{
+			"3690401478992208": {
+				{Accepted: true, AllowExitNode: false, MultiUse: false},
+				{Accepted: false, AllowExitNode: true, MultiUse: true},
+			},
+			"n-desktop": {
+				{Accepted: false, AllowExitNode: false, MultiUse: false},
+			},
+			// n-phone: no invites (nil)
+		},
+	}
+	c := devices.New(api, cache, 0, false, false, devices.WithDeviceInvites(true))
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device_invites.count")
+	if len(pts) != 3 {
+		t.Fatalf("got %d invite series, want 3", len(pts))
+	}
+
+	accepted, ok := pointByAttr(pts, map[string]string{
+		"tailscale.device_invite.accepted":        "true",
+		"tailscale.device_invite.allow_exit_node": "false",
+		"tailscale.device_invite.multi_use":       "false",
+	})
+	if !ok || accepted.Value != 1 {
+		t.Errorf("accepted-only series = %+v ok=%v, want value 1", accepted, ok)
+	}
+	exitMulti, ok := pointByAttr(pts, map[string]string{
+		"tailscale.device_invite.accepted":        "false",
+		"tailscale.device_invite.allow_exit_node": "true",
+		"tailscale.device_invite.multi_use":       "true",
+	})
+	if !ok || exitMulti.Value != 1 {
+		t.Errorf("pending exit+multi series = %+v ok=%v, want value 1", exitMulti, ok)
+	}
+	plain, ok := pointByAttr(pts, map[string]string{
+		"tailscale.device_invite.accepted":        "false",
+		"tailscale.device_invite.allow_exit_node": "false",
+		"tailscale.device_invite.multi_use":       "false",
+	})
+	if !ok || plain.Value != 1 {
+		t.Errorf("pending plain series = %+v ok=%v, want value 1", plain, ok)
+	}
+
+	if len(api.inviteIDs) != 3 {
+		t.Errorf("inviteIDs = %v, want 3 device probes", api.inviteIDs)
+	}
+}
+
+func TestCollect_DeviceInvitesDisabledByDefault(t *testing.T) {
+	c, _, api := newCollector(t, sampleDevices()) // no WithDeviceInvites
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device_invites.count"); len(pts) != 0 {
+		t.Errorf("got %d invite series, want 0 when gate is off", len(pts))
+	}
+	if len(api.inviteIDs) != 0 {
+		t.Errorf("inviteIDs = %v, want no probes when gate is off", api.inviteIDs)
+	}
+}
+
+func TestCollect_DeviceInvitesErrorIsNonFatal(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices:    sampleDevices(),
+		inviteFail: "3690401478992208",
+		inviteErr:  context.DeadlineExceeded,
+		invites: map[string][]tsapi.DeviceInvite{
+			"n-desktop": {{Accepted: false, AllowExitNode: false, MultiUse: false}},
+		},
+	}
+	c := devices.New(api, cache, 0, false, false, devices.WithDeviceInvites(true))
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() must not fail when one device's invite fetch errors: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.device_invites.count")
+	plain, ok := pointByAttr(pts, map[string]string{
+		"tailscale.device_invite.accepted":        "false",
+		"tailscale.device_invite.allow_exit_node": "false",
+		"tailscale.device_invite.multi_use":       "false",
+	})
+	if !ok || plain.Value != 1 {
+		t.Errorf("healthy-device series = %+v ok=%v, want value 1", plain, ok)
+	}
+	if len(rec.MetricPoints("tailscale.devices.count")) == 0 {
+		t.Error("tailscale.devices.count not emitted; invite failure broke the devices snapshot")
 	}
 }

@@ -105,6 +105,14 @@ var (
 		Attributes:  []string{semconv.OSType, attrAuthorized, attrExternal},
 		Group:       groupDevices,
 	}
+	docDeviceInvites = metricdoc.Metric{
+		Name:        metricDeviceInvites,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Device-share invites (accepted and pending) (a **count**, despite `_ratio`), bucketed by accepted/pending and the exit-node / multi-use exposure flags. **Gated** by `collect_device_invites` (one API call per device).",
+		Attributes:  []string{attrInviteAccepted, attrInviteAllowExitNode, attrInviteMultiUse},
+		Group:       groupDevices,
+	}
 
 	docCacheAge = metricdoc.Metric{
 		Name:        metricCacheAge,
@@ -207,7 +215,7 @@ var (
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
-		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docPostureInfo,
+		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
 		docAttribute, docAttributeInfo,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docCacheAge, docCacheSize,

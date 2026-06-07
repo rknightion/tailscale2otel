@@ -83,6 +83,7 @@ collectors:
     interval: 90s
     collect_routes: true
     collect_posture: true
+    collect_device_invites: true
   flowlogs:
     source: stream
     lag: 200s
@@ -179,9 +180,9 @@ func TestLoadNestedValues(t *testing.T) {
 	if cfg.Collectors.Devices.Interval.D() != 90*time.Second {
 		t.Errorf("Devices.Interval = %v, want 90s", cfg.Collectors.Devices.Interval.D())
 	}
-	if !cfg.Collectors.Devices.CollectRoutes || !cfg.Collectors.Devices.CollectPosture {
-		t.Errorf("Devices.CollectRoutes/Posture = %v/%v, want true/true",
-			cfg.Collectors.Devices.CollectRoutes, cfg.Collectors.Devices.CollectPosture)
+	if !cfg.Collectors.Devices.CollectRoutes || !cfg.Collectors.Devices.CollectPosture || !cfg.Collectors.Devices.CollectDeviceInvites {
+		t.Errorf("Devices.CollectRoutes/Posture/DeviceInvites = %v/%v/%v, want true/true/true",
+			cfg.Collectors.Devices.CollectRoutes, cfg.Collectors.Devices.CollectPosture, cfg.Collectors.Devices.CollectDeviceInvites)
 	}
 	if cfg.Collectors.Flowlogs.Source != "stream" {
 		t.Errorf("Flowlogs.Source = %q, want stream", cfg.Collectors.Flowlogs.Source)

@@ -155,6 +155,9 @@
                                         "type": "string"
                                     }
                                 },
+                                "collect_device_invites": {
+                                    "type": "boolean"
+                                },
                                 "collect_posture": {
                                     "type": "boolean"
                                 },

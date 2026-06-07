@@ -46,6 +46,8 @@ const (
 	metricAttribute        = "tailscale.device.attribute"
 	metricAttributeInfo    = "tailscale.device.attribute.info"
 
+	metricDeviceInvites = "tailscale.device_invites.count"
+
 	metricCacheAge  = "tailscale2otel.enrich.cache_age"
 	metricCacheSize = "tailscale2otel.enrich.cache_size"
 
@@ -65,6 +67,10 @@ const (
 	attrExternal      = "tailscale.external"
 	attrDERPRegion    = "tailscale.derp.region"
 	attrDERPPreferred = "tailscale.derp.preferred"
+
+	attrInviteAccepted      = "tailscale.device_invite.accepted"
+	attrInviteAllowExitNode = "tailscale.device_invite.allow_exit_node"
+	attrInviteMultiUse      = "tailscale.device_invite.multi_use"
 
 	// Posture attribute metric labels (tailscale.device.attribute{,.info}): the
 	// full namespaced posture key, and (info gauge only) its string value.
@@ -116,18 +122,20 @@ const defaultInterval = 60 * time.Second
 type api interface {
 	DevicesRich(ctx context.Context) ([]tsapi.RichDevice, error)
 	DevicePostureAttributes(ctx context.Context, deviceID string) (map[string]any, error)
+	DeviceInvites(ctx context.Context, deviceID string) ([]tsapi.DeviceInvite, error)
 }
 
 // Collector implements collector.SnapshotCollector for the device inventory.
 type Collector struct {
-	api            api
-	cache          *enrich.DeviceCache
-	interval       time.Duration
-	collectRoutes  bool
-	collectPosture bool
-	perEntity      bool
-	derpRollup     bool
-	postureLogMode string // "changes" (default) | "always" | "off"
+	api                  api
+	cache                *enrich.DeviceCache
+	interval             time.Duration
+	collectRoutes        bool
+	collectPosture       bool
+	collectDeviceInvites bool
+	perEntity            bool
+	derpRollup           bool
+	postureLogMode       string // "changes" (default) | "always" | "off"
 
 	// attrNamespaces is the set of posture-attribute namespace prefixes (the part
 	// before ":") promoted to the tailscale.device.attribute{,.info} metrics, and
@@ -160,6 +168,15 @@ func WithPerEntity(enabled bool) Option {
 // is the low-cardinality DERP view that survives when cardinality.per_entity.device is off.
 func WithDerpRegionRollup(enabled bool) Option {
 	return func(c *Collector) { c.derpRollup = enabled }
+}
+
+// WithDeviceInvites controls whether the collector fetches each device's share
+// invites (GET /device/{id}/device-invites, one API call per device — N+1) and
+// emits the tailscale.device_invites.count aggregate. Default false at the
+// collector level; config (collect_device_invites) defaults it on. Requires the
+// device_invites:read OAuth scope. Per-device fetch errors are non-fatal.
+func WithDeviceInvites(enabled bool) Option {
+	return func(c *Collector) { c.collectDeviceInvites = enabled }
 }
 
 // WithPostureLogMode controls how often the per-device posture LOG event fires
@@ -270,6 +287,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	counts := make(map[countKey]int, len(devs))
 	lockErrors := 0
+	inviteCounts := map[deviceInviteKey]int{}
 
 	for i := range devs {
 		d := &devs[i]
@@ -337,6 +355,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			c.emitPosture(ctx, e, d)
 		}
 
+		if c.collectDeviceInvites {
+			c.tallyDeviceInvites(ctx, d, inviteCounts)
+		}
+
 		if d.TailnetLockError != "" {
 			lockErrors++
 			e.LogEvent(telemetry.Event{
@@ -362,11 +384,49 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Gauge(docTailnetLockErrors.Name, docTailnetLockErrors.Unit, docTailnetLockErrors.Description,
 		float64(lockErrors), nil)
 
+	if c.collectDeviceInvites {
+		for k, n := range inviteCounts {
+			e.Gauge(docDeviceInvites.Name, docDeviceInvites.Unit, docDeviceInvites.Description,
+				float64(n), telemetry.Attrs{
+					attrInviteAccepted:      k.accepted,
+					attrInviteAllowExitNode: k.allowExitNode,
+					attrInviteMultiUse:      k.multiUse,
+				})
+		}
+	}
+
 	if c.derpRollup {
 		c.emitDERPRollup(e, devs)
 	}
 
 	return nil
+}
+
+// deviceInviteKey is the bounded label combination for the device-invites count
+// gauge: accepted/pending and the two exposure flags (2x2x2 = 8 series max).
+type deviceInviteKey struct {
+	accepted      bool
+	allowExitNode bool
+	multiUse      bool
+}
+
+// tallyDeviceInvites fetches one device's share invites and folds them into
+// counts. Per-device errors (e.g. a missing device_invites:read scope -> 403,
+// or a transient failure) are NON-FATAL: the device is skipped and collection
+// continues, so device-invite collection can never break the devices snapshot
+// (mirrors emitPosture's error handling).
+func (c *Collector) tallyDeviceInvites(ctx context.Context, d *tsapi.RichDevice, counts map[deviceInviteKey]int) {
+	invs, err := c.api.DeviceInvites(ctx, d.ID)
+	if err != nil {
+		return
+	}
+	for _, inv := range invs {
+		counts[deviceInviteKey{
+			accepted:      inv.Accepted,
+			allowExitNode: inv.AllowExitNode,
+			multiUse:      inv.MultiUse,
+		}]++
+	}
 }
 
 // emitDERPRollup aggregates the per-device DERP latency already fetched into

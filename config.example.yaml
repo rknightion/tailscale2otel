@@ -92,6 +92,7 @@ collectors:
     interval: 60s                     # how often the device snapshot is polled
     collect_routes: false             # also fetch advertised/primary subnet routes per device
     collect_posture: false            # also fetch device posture (MDM/EDR) — enables the posture metrics + log
+    collect_device_invites: true      # also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count
     posture_log_mode: changes         # needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted
     attribute_namespaces:             # needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable
       - intune

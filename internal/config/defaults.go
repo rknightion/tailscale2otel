@@ -69,11 +69,12 @@ func Default() *Config {
 		},
 		Collectors: Collectors{
 			Devices: DevicesCollector{
-				Enabled:        true,
-				Interval:       dur(60 * time.Second),
-				CollectRoutes:  false,
-				CollectPosture: false,
-				PostureLogMode: "changes",
+				Enabled:              true,
+				Interval:             dur(60 * time.Second),
+				CollectRoutes:        false,
+				CollectPosture:       false,
+				CollectDeviceInvites: true,
+				PostureLogMode:       "changes",
 				// Opt-out default: once collect_posture is on, the integration
 				// namespaces plus ip are promoted to attribute metrics. node is
 				// covered by the curated posture gauge; custom is excluded (unbounded).
