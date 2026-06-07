@@ -1,0 +1,14 @@
+title: tailscale2otel Documentation
+description: Polls the Tailscale API and exports OpenTelemetry-native metrics + logs over OTLP, optimized for Grafana Cloud
+tags:
+  - tailscale
+  - opentelemetry
+  - observability
+  - grafana-cloud
+image: assets/social-card.png
+twitter:
+  creator: "@rknightion"
+  site: "@rknightion"
+robots: index,follow
+language: en
+canonical_base: https://m7kni.io/tailscale2otel/

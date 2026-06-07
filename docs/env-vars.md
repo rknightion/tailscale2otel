@@ -1,10 +1,15 @@
+---
+title: Environment Variables
+description: Every TS2OTEL_* environment variable, its default, and what it controls
+---
+
 # Environment-variable reference
 
 Every configuration field is settable from an environment variable, so a container
 deployment needs no mounted config file at all (and the env layer overrides any
 file that *is* present — keep secrets here, never in YAML). See
 [`configuration.md`](configuration.md) for the layering model and the prose
-reference, and [`../config.example.yaml`](../config.example.yaml) for the same
+reference, and [`../config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) for the same
 fields as a commented file.
 
 **Naming.** Take the dotted config key, prefix it with `TS2OTEL_`, uppercase it,
@@ -18,7 +23,7 @@ collectors.flowlogs.interval        ->  TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL
 **Lists** are comma-separated (e.g. `TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES=all:read,log_streaming`).
 A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 
-> This table is **generated** from [`../config.example.yaml`](../config.example.yaml).
+> This table is **generated** from [`../config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml).
 > Do not edit between the markers; run `scripts/regen-generated.sh envref` (or
 > `go test ./internal/config -run TestEnvReferenceDocInSync -update`) to refresh it.
 

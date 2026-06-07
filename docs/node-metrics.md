@@ -1,3 +1,8 @@
+---
+title: Node Metrics
+description: Enable and scrape the optional per-node tailscaled :5252 metrics endpoint
+---
+
 # How to expose `tailscaled` metrics
 
 This is the operator how-to for getting per-node Tailscale metrics **out of `tailscaled`** and
@@ -153,7 +158,7 @@ terminate, **the grant is the access-control boundary** — keep it as narrow as
 
 ## Wiring up the scraper
 
-The scraper lives under [`collectors.node_metrics`](../config.example.yaml) and is **off by
+The scraper lives under [`collectors.node_metrics`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) and is **off by
 default**.
 
 > **Static targets and per-target labels/headers must be set via a config file**, not environment

@@ -1,9 +1,14 @@
+---
+title: Configuration
+description: Full key-by-key configuration reference for tailscale2otel — layered defaults, YAML, and TS2OTEL_* environment variables
+---
+
 # Configuration Reference
 
 This is the exhaustive, per-key reference for `tailscale2otel` configuration. It is the companion to
 two other docs:
 
-- **[`config.example.yaml`](../config.example.yaml)** — a commented starter showing the common knobs.
+- **[`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml)** — a commented starter showing the common knobs.
   The fastest way to get started.
 - **[`docs/metrics.md`](./metrics.md)** — every metric and log signal the exporter emits (and the
   OTLP→Prometheus name normalization you query in Grafana Cloud).
@@ -19,7 +24,7 @@ setting.
 Configuration is loaded in three layers, lowest precedence first:
 
 1. **Built-in defaults** — the exporter runs without a config file; any key you do not set keeps its
-   default (defined in [`internal/config/defaults.go`](../internal/config/defaults.go)).
+   default (defined in [`internal/config/defaults.go`](https://github.com/rknightion/tailscale2otel/blob/main/internal/config/defaults.go)).
 2. **YAML file** (optional) — pass `-config path/to/file.yaml`; the file overrides defaults for any
    key it mentions. A non-existent path passed with `-config` is an error; omitting `-config`
    entirely is not.

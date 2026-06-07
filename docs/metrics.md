@@ -1,3 +1,8 @@
+---
+title: Metrics & Signals
+description: The as-built reference for every OpenTelemetry metric and log signal tailscale2otel emits, including OTLP→Prometheus naming
+---
+
 # Metrics & Logs Reference
 
 This is the as-built reference for every telemetry signal `tailscale2otel` emits: metrics

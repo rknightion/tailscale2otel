@@ -24,3 +24,6 @@ tailscale-api.yaml
 docs/superpowers/
 
 2026-06-07-feature-roadmap.md
+
+# Zensical docs-site build output
+site/
