@@ -265,6 +265,12 @@ config:
       # -- Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info}
       # metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled.
       attribute_namespaces: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]
+      # -- Emit the tailscale.devices.by_tag distribution gauge (one series per ACL tag).
+      # false keeps the other fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry).
+      collect_tag_rollup: true
+      # -- Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest
+      # fold into tailscale.tag="__other__". 0 or negative = unlimited.
+      tag_rollup_limit: 50
     flowlogs:
       # -- Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs).
       enabled: true

@@ -36,10 +36,11 @@ type otelEmitter struct {
 	diag          *slog.Logger
 	collisionSeen sync.Map
 
-	mu       sync.Mutex
-	counters map[string]metric.Float64Counter
-	gauges   map[string]metric.Float64Gauge
-	updowns  map[string]metric.Float64UpDownCounter
+	mu         sync.Mutex
+	counters   map[string]metric.Float64Counter
+	gauges     map[string]metric.Float64Gauge
+	updowns    map[string]metric.Float64UpDownCounter
+	histograms map[string]metric.Float64Histogram
 }
 
 // NewEmitter returns an Emitter that records to the given meter and logger,
@@ -55,14 +56,15 @@ func NewEmitter(meter metric.Meter, logger log.Logger) Emitter {
 // intra-attribute collision guard still runs).
 func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker, reserved map[string]struct{}, diag *slog.Logger) *otelEmitter {
 	return &otelEmitter{
-		meter:    meter,
-		logger:   logger,
-		card:     card,
-		reserved: reserved,
-		diag:     diag,
-		counters: map[string]metric.Float64Counter{},
-		gauges:   map[string]metric.Float64Gauge{},
-		updowns:  map[string]metric.Float64UpDownCounter{},
+		meter:      meter,
+		logger:     logger,
+		card:       card,
+		reserved:   reserved,
+		diag:       diag,
+		counters:   map[string]metric.Float64Counter{},
+		gauges:     map[string]metric.Float64Gauge{},
+		updowns:    map[string]metric.Float64UpDownCounter{},
+		histograms: map[string]metric.Float64Histogram{},
 	}
 }
 
@@ -117,6 +119,26 @@ func (e *otelEmitter) UpDownCounter(name, unit, desc string, value float64, attr
 	e.card.Observe(name, attrs)
 	if u != nil {
 		u.Add(context.Background(), value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
+	}
+}
+
+func (e *otelEmitter) Histogram(name, unit, desc string, value float64, bounds []float64, attrs Attrs) {
+	e.mu.Lock()
+	h, ok := e.histograms[name]
+	if !ok {
+		var err error
+		h, err = e.meter.Float64Histogram(name,
+			metric.WithUnit(unit), metric.WithDescription(desc),
+			metric.WithExplicitBucketBoundaries(bounds...))
+		if err != nil {
+			otel.Handle(err)
+		}
+		e.histograms[name] = h
+	}
+	e.mu.Unlock()
+	e.card.Observe(name, attrs)
+	if h != nil {
+		h.Record(context.Background(), value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
 }
 

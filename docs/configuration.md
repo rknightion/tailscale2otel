@@ -309,6 +309,8 @@ received record. Either way, **metrics are never capped — only logs.**
 | `collectors.devices.collect_device_invites` | `true` | Also fetch outstanding device share invites per device (one **extra API call per device per tick**, N+1) and emit `tailscale.device_invites.count`. Requires the `device_invites:read` OAuth scope (covered by `all:read`). Per-device failures are non-fatal. |
 | `collectors.devices.posture_log_mode` | `changes` | Controls the `tailscale.device.posture` log (requires `collect_posture`). `changes` — full dump on first scrape then deltas only. `always` — every scrape. `off` — suppress the log (the posture gauge metric is still emitted). |
 | `collectors.devices.attribute_namespaces` | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Device posture-attribute namespace prefixes promoted to `tailscale.device.attribute{,.info}` metrics (requires `collect_posture`). `["*"]` promotes every namespace; `[]` disables the attribute metrics. Comma-separated in env: `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES=intune,jamf`. |
+| `collectors.devices.collect_tag_rollup` | `true` | Emit the `tailscale.devices.by_tag` distribution gauge (one series per ACL tag). `false` keeps the other fleet-hygiene aggregates (`untagged`/`ephemeral`/`by_version`/`key_expiry`). |
+| `collectors.devices.tag_rollup_limit` | `50` | Cap on distinct tag series for `tailscale.devices.by_tag`: the busiest N tags by device count keep their own series; the rest fold into a single `tailscale.tag="__other__"` series. `0` or negative = unlimited. |
 
 ### `collectors.flowlogs`
 

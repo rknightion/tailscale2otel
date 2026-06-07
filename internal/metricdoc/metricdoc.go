@@ -21,6 +21,9 @@ const (
 	Gauge Instrument = "gauge"
 	// UpDownCounter is a non-monotonic sum (no _total in Prometheus).
 	UpDownCounter Instrument = "updowncounter"
+	// Histogram is a distribution with explicit buckets (Prometheus: _bucket/
+	// _sum/_count; no _total, and no _ratio even at unit "1").
+	Histogram Instrument = "histogram"
 )
 
 // Metric declares one emitted metric's documentation metadata. Name/Unit/

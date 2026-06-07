@@ -17,6 +17,7 @@ const devicesRichFixture = `{"devices":[
     "hostname":"laptop","os":"linux","user":"alice@example.com","clientVersion":"1.99.0",
     "addresses":["100.64.0.1","fd7a::1"],"tags":["tag:server","tag:prod"],
     "authorized":true,"isExternal":false,"updateAvailable":true,"keyExpiryDisabled":false,
+    "isEphemeral":true,
     "connectedToControl":true,"blocksIncomingConnections":false,"sshEnabled":true,
     "created":"2026-03-24T15:45:46Z","lastSeen":"2026-06-02T21:50:25Z","expires":"2026-09-20T15:45:46Z",
     "advertisedRoutes":["10.0.0.0/24"],"enabledRoutes":["10.0.0.0/24"],
@@ -179,6 +180,27 @@ func TestDevicesRich_DecodesTags(t *testing.T) {
 	}
 	if devs[1].Tags != nil {
 		t.Fatalf("devs[1].Tags = %v, want nil (untagged device omits the field)", devs[1].Tags)
+	}
+}
+
+// TestDevicesRich_DecodesEphemeral verifies the per-device `isEphemeral` flag is
+// decoded. Verified against .capture/devices.json: ephemeral devices carry
+// "isEphemeral":true; non-ephemeral devices OMIT the field (it decodes false).
+func TestDevicesRich_DecodesEphemeral(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(devicesRichFixture))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich: %v", err)
+	}
+	if !devs[0].IsEphemeral {
+		t.Error("devs[0].IsEphemeral = false, want true")
+	}
+	if devs[1].IsEphemeral {
+		t.Error("devs[1].IsEphemeral = true, want false (field omitted)")
 	}
 }
 

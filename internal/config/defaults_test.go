@@ -91,6 +91,12 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Collectors.Devices.PostureLogMode != "changes" {
 		t.Errorf("Devices.PostureLogMode = %q, want default changes", cfg.Collectors.Devices.PostureLogMode)
 	}
+	if !cfg.Collectors.Devices.CollectTagRollup {
+		t.Error("Devices.CollectTagRollup = false, want default true")
+	}
+	if cfg.Collectors.Devices.TagRollupLimit != 50 {
+		t.Errorf("Devices.TagRollupLimit = %d, want default 50", cfg.Collectors.Devices.TagRollupLimit)
+	}
 	// Opt-out populated default: the integration namespaces plus ip are promoted
 	// to attribute metrics out of the box once collect_posture is enabled.
 	wantNS := []string{"intune", "jamf", "kandji", "crowdstrike", "sentinelone", "kolide", "ip"}

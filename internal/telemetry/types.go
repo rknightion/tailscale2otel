@@ -48,6 +48,11 @@ type Emitter interface {
 	Gauge(name, unit, desc string, value float64, attrs Attrs)
 	// UpDownCounter adds (or subtracts) to a non-monotonic counter.
 	UpDownCounter(name, unit, desc string, value float64, attrs Attrs)
+	// Histogram records value into a Float64 histogram with the given explicit
+	// bucket boundaries. The bounds are honored only when the instrument is first
+	// created (instruments are cached by name); pass the same bounds on every call
+	// for a given metric name.
+	Histogram(name, unit, desc string, value float64, bounds []float64, attrs Attrs)
 	// LogEvent emits a single OTEL log record.
 	LogEvent(ev Event)
 }

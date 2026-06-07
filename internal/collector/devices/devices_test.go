@@ -128,6 +128,152 @@ func newCollector(t *testing.T, devs []tsapi.RichDevice) (*devices.Collector, *e
 	return c, cache, api
 }
 
+// hygieneDevices is a dedicated fixture for the fleet-hygiene roll-up tests
+// (kept separate from sampleDevices so existing assertions are untouched).
+//
+//	laptop : tagged {servers,k8s}, v1.98.4, key expires in 48h
+//	desktop: tagged {servers}, v1.96.4, EPHEMERAL, key expiry DISABLED
+//	phone  : EXTERNAL, untagged, no version, zero Expires
+//	srv2   : non-external, UNTAGGED, v1.96.4, key expires in 24h
+func hygieneDevices() []tsapi.RichDevice {
+	return []tsapi.RichDevice{
+		{
+			ID: "h-laptop", Hostname: "laptop", OS: "linux", User: "a", IsExternal: false,
+			Tags: []string{"tag:servers", "tag:k8s"}, ClientVersion: "1.98.4-tabc",
+			KeyExpiryDisabled: false, Expires: now.Add(48 * time.Hour),
+			Addresses: []string{"100.64.0.1"},
+		},
+		{
+			ID: "h-desktop", Hostname: "desktop", OS: "windows", User: "b", IsExternal: false,
+			Tags: []string{"tag:servers"}, ClientVersion: "1.96.4", IsEphemeral: true,
+			KeyExpiryDisabled: true, Expires: now.Add(72 * time.Hour),
+			Addresses: []string{"100.64.0.2"},
+		},
+		{
+			ID: "h-phone", Hostname: "phone", OS: "linux", User: "c", IsExternal: true,
+			ClientVersion: "", KeyExpiryDisabled: false, // Expires left zero
+			Addresses: []string{"100.64.0.3"},
+		},
+		{
+			ID: "h-srv2", Hostname: "srv2", OS: "linux", User: "d", IsExternal: false,
+			ClientVersion: "1.96.4", KeyExpiryDisabled: false, Expires: now.Add(24 * time.Hour),
+			Addresses: []string{"100.64.0.4"},
+		},
+	}
+}
+
+// hygieneCollector builds a devices collector over hygieneDevices with the
+// fixture clock pinned to `now` (so the key-expiry histogram is deterministic),
+// plus any extra options, and returns it with a fresh recorder.
+func hygieneCollector(t *testing.T, opts ...devices.Option) (*devices.Collector, *telemetrytest.Recorder) {
+	t.Helper()
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{devices: hygieneDevices()}
+	all := append([]devices.Option{devices.WithClock(func() time.Time { return now })}, opts...)
+	c := devices.New(api, cache, 0, false, false, all...)
+	return c, telemetrytest.New()
+}
+
+func TestCollect_FleetHygiene(t *testing.T) {
+	c, rec := hygieneCollector(t)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// untagged: srv2 only (non-external, no tags). phone is external → excluded.
+	if pts := rec.MetricPoints("tailscale.devices.untagged"); len(pts) != 1 || pts[0].Value != 1 {
+		t.Errorf("untagged = %+v, want single value 1 (srv2; phone external excluded)", pts)
+	}
+
+	// ephemeral: desktop only.
+	if pts := rec.MetricPoints("tailscale.devices.ephemeral"); len(pts) != 1 || pts[0].Value != 1 {
+		t.Errorf("ephemeral = %+v, want single value 1", pts)
+	}
+
+	// by_version: 1.98.4 (laptop)=1, 1.96.4 (desktop+srv2)=2; phone excluded (empty).
+	vpts := rec.MetricPoints("tailscale.devices.by_version")
+	if len(vpts) != 2 {
+		t.Fatalf("by_version points = %d, want 2", len(vpts))
+	}
+	if p, ok := pointByAttr(vpts, map[string]string{"tailscale.client_version": "1.98.4"}); !ok || p.Value != 1 {
+		t.Errorf("by_version 1.98.4 = %+v ok=%v, want value 1", p, ok)
+	}
+	if p, ok := pointByAttr(vpts, map[string]string{"tailscale.client_version": "1.96.4"}); !ok || p.Value != 2 {
+		t.Errorf("by_version 1.96.4 = %+v ok=%v, want value 2", p, ok)
+	}
+
+	// by_tag (default gate on, default cap 50): servers (laptop+desktop)=2, k8s (laptop)=1.
+	tpts := rec.MetricPoints("tailscale.devices.by_tag")
+	if p, ok := pointByAttr(tpts, map[string]string{"tailscale.tag": "tag:servers"}); !ok || p.Value != 2 {
+		t.Errorf("by_tag tag:servers = %+v ok=%v, want value 2", p, ok)
+	}
+	if p, ok := pointByAttr(tpts, map[string]string{"tailscale.tag": "tag:k8s"}); !ok || p.Value != 1 {
+		t.Errorf("by_tag tag:k8s = %+v ok=%v, want value 1", p, ok)
+	}
+
+	// key_expiry histogram: laptop (~2d) + srv2 (~1d) in (0,7]; desktop excluded
+	// (KeyExpiryDisabled); phone excluded (zero Expires). Count=2, bucket[1]=2.
+	hpts := rec.MetricPoints("tailscale.devices.key_expiry")
+	if len(hpts) != 1 {
+		t.Fatalf("key_expiry points = %d, want 1", len(hpts))
+	}
+	h := hpts[0]
+	if h.Kind != "histogram" || h.Count != 2 {
+		t.Fatalf("key_expiry kind=%q count=%d, want histogram/2", h.Kind, h.Count)
+	}
+	// bounds [0,7,30,90,180,365] => 7 buckets; bucket[1]=(0,7].
+	if h.BucketCounts[1] != 2 {
+		t.Errorf("key_expiry buckets = %v, want [1]=2", h.BucketCounts)
+	}
+}
+
+func TestCollect_KeyExpiryExpiredBucket(t *testing.T) {
+	// Pin the clock well after both expiring keys so they read as already
+	// expired → the (-inf,0] bucket (index 0). Proves negative days + clock.
+	future := now.Add(72*time.Hour + 10*24*time.Hour)
+	c, rec := hygieneCollector(t, devices.WithClock(func() time.Time { return future }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	h := rec.MetricPoints("tailscale.devices.key_expiry")[0]
+	if h.Count != 2 || h.BucketCounts[0] != 2 {
+		t.Errorf("expected 2 expired keys in (-inf,0]; count=%d buckets=%v", h.Count, h.BucketCounts)
+	}
+}
+
+func TestCollect_TagRollupCap(t *testing.T) {
+	// Cap of 1: only the busiest tag (servers=2) keeps its series; k8s (1) folds
+	// into __other__.
+	c, rec := hygieneCollector(t, devices.WithTagRollup(true, 1))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	tpts := rec.MetricPoints("tailscale.devices.by_tag")
+	if len(tpts) != 2 {
+		t.Fatalf("by_tag points = %d, want 2 (servers + __other__)", len(tpts))
+	}
+	if p, ok := pointByAttr(tpts, map[string]string{"tailscale.tag": "tag:servers"}); !ok || p.Value != 2 {
+		t.Errorf("by_tag tag:servers = %+v, want value 2 (kept)", p)
+	}
+	if p, ok := pointByAttr(tpts, map[string]string{"tailscale.tag": "__other__"}); !ok || p.Value != 1 {
+		t.Errorf("by_tag __other__ = %+v, want value 1 (tag:k8s folded)", p)
+	}
+}
+
+func TestCollect_TagRollupDisabled(t *testing.T) {
+	c, rec := hygieneCollector(t, devices.WithTagRollup(false, 50))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.devices.by_tag"); len(pts) != 0 {
+		t.Errorf("by_tag emitted %d points with rollup disabled, want 0", len(pts))
+	}
+	// The other aggregates still emit when tag rollup is off.
+	if pts := rec.MetricPoints("tailscale.devices.ephemeral"); len(pts) != 1 {
+		t.Errorf("ephemeral should still emit when tag rollup off; got %d", len(pts))
+	}
+}
+
 // pointByAttr finds the single metric point whose attrs match all of want.
 func pointByAttr(pts []telemetrytest.MetricPoint, want map[string]string) (telemetrytest.MetricPoint, bool) {
 	for _, p := range pts {

@@ -40,10 +40,11 @@ func (w winFunc) CollectWindow(ctx context.Context, from, to time.Time, e teleme
 
 type noopEmitter struct{}
 
-func (noopEmitter) Counter(string, string, string, float64, telemetry.Attrs)       {}
-func (noopEmitter) Gauge(string, string, string, float64, telemetry.Attrs)         {}
-func (noopEmitter) UpDownCounter(string, string, string, float64, telemetry.Attrs) {}
-func (noopEmitter) LogEvent(telemetry.Event)                                       {}
+func (noopEmitter) Counter(string, string, string, float64, telemetry.Attrs)              {}
+func (noopEmitter) Gauge(string, string, string, float64, telemetry.Attrs)                {}
+func (noopEmitter) UpDownCounter(string, string, string, float64, telemetry.Attrs)        {}
+func (noopEmitter) Histogram(string, string, string, float64, []float64, telemetry.Attrs) {}
+func (noopEmitter) LogEvent(telemetry.Event)                                              {}
 
 func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
 	t.Helper()

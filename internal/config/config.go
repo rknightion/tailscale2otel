@@ -314,6 +314,15 @@ type DevicesCollector struct {
 	// sentinel ["*"] promotes every namespace present; an explicit empty list ([])
 	// disables the attribute metrics.
 	AttributeNamespaces []string `yaml:"attribute_namespaces"`
+	// CollectTagRollup (default true) gates the tailscale.devices.by_tag
+	// distribution gauge (one series per ACL tag). When false, only the other
+	// fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry) emit.
+	CollectTagRollup bool `yaml:"collect_tag_rollup"`
+	// TagRollupLimit caps the number of distinct tag series on
+	// tailscale.devices.by_tag: the busiest TagRollupLimit tags (by device count)
+	// keep their own series; the rest fold into a single tailscale.tag="__other__"
+	// series so totals are preserved. Default 50; 0 or negative = unlimited.
+	TagRollupLimit int `yaml:"tag_rollup_limit"`
 }
 
 // FlowlogsCollector configures the network-flow-logs collector. Source selects

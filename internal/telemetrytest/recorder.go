@@ -26,11 +26,15 @@ import (
 type MetricPoint struct {
 	Name        string
 	Unit        string
-	Kind        string // "sum" or "gauge"
+	Kind        string // "sum", "gauge", or "histogram"
 	Description string
 	Value       float64
 	Monotonic   bool // only meaningful for sums
 	Attrs       map[string]string
+	// Histogram-only fields (set when Kind == "histogram"); Value holds the Sum.
+	Count        uint64
+	Bounds       []float64
+	BucketCounts []uint64
 }
 
 // LogRecord is a single captured log record, flattened for assertions.
@@ -182,6 +186,22 @@ func metricPoints(m metricdata.Metrics) []MetricPoint {
 				Kind:        "gauge",
 				Value:       float64(dp.Value),
 				Attrs:       attrMap(dp.Attributes),
+			})
+		}
+		return out
+	case metricdata.Histogram[float64]:
+		out := make([]MetricPoint, 0, len(d.DataPoints))
+		for _, dp := range d.DataPoints {
+			out = append(out, MetricPoint{
+				Name:         m.Name,
+				Description:  m.Description,
+				Unit:         m.Unit,
+				Kind:         "histogram",
+				Value:        dp.Sum,
+				Count:        dp.Count,
+				Bounds:       dp.Bounds,
+				BucketCounts: dp.BucketCounts,
+				Attrs:        attrMap(dp.Attributes),
 			})
 		}
 		return out

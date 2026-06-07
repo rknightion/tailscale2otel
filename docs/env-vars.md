@@ -75,6 +75,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_DEVICE_INVITES` | `true` | also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count |
 | `TS2OTEL_COLLECTORS__DEVICES__POSTURE_LOG_MODE` | `changes` | needs collect_posture: changes (log only on change) \| always (every scrape) \| off (no log); the posture METRIC is always emitted |
 | `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES` | `[intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]` | needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable _(comma-separated list)_ |
+| `TS2OTEL_COLLECTORS__DEVICES__COLLECT_TAG_ROLLUP` | `true` | emit tailscale.devices.by_tag (one series per ACL tag); false keeps the other fleet-hygiene aggregates |
+| `TS2OTEL_COLLECTORS__DEVICES__TAG_ROLLUP_LIMIT` | `50` | cap distinct tag series on by_tag; busiest N kept, rest fold into tag="__other__" (0/negative = unlimited) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__ENABLED` | `true` | network flow logs -> traffic counters + per-connection logs |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__SOURCE` | `poll` | poll (this exporter PULLS) \| stream (Tailscale PUSHES to the streaming receiver) \| both (discouraged: double-counts) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL` | `60s` | poll only — how often a window is polled |

@@ -46,6 +46,12 @@ const (
 	metricAttribute        = "tailscale.device.attribute"
 	metricAttributeInfo    = "tailscale.device.attribute.info"
 
+	metricDevicesUntagged  = "tailscale.devices.untagged"
+	metricDevicesEphemeral = "tailscale.devices.ephemeral"
+	metricDevicesByVersion = "tailscale.devices.by_version"
+	metricDevicesByTag     = "tailscale.devices.by_tag"
+	metricDevicesKeyExpiry = "tailscale.devices.key_expiry"
+
 	metricDeviceInvites = "tailscale.device_invites.count"
 
 	metricCacheAge  = "tailscale2otel.enrich.cache_age"
@@ -71,6 +77,10 @@ const (
 	attrInviteAccepted      = "tailscale.device_invite.accepted"
 	attrInviteAllowExitNode = "tailscale.device_invite.allow_exit_node"
 	attrInviteMultiUse      = "tailscale.device_invite.multi_use"
+
+	// Fleet-hygiene roll-up labels.
+	attrClientVersion = "tailscale.client_version"
+	attrTag           = "tailscale.tag"
 
 	// Posture attribute metric labels (tailscale.device.attribute{,.info}): the
 	// full namespaced posture key, and (info gauge only) its string value.
@@ -117,6 +127,15 @@ var postureKeyToLabel = map[string]string{
 
 const defaultInterval = 60 * time.Second
 
+// tagOther is the sentinel tailscale.tag value the by_tag rollup folds
+// over-the-cap tags into, so per-tag totals are preserved.
+const tagOther = "__other__"
+
+// keyExpiryBucketsDays are the explicit histogram bucket boundaries (in days)
+// for tailscale.devices.key_expiry. The first bucket (-inf, 0] captures keys
+// that have already expired; the rest bracket "expiring soon" windows.
+var keyExpiryBucketsDays = []float64{0, 7, 30, 90, 180, 365}
+
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
 type api interface {
@@ -148,6 +167,15 @@ type Collector struct {
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
 	// device absent from the map is first-seen and counts as changed.
 	lastPosture map[string]string
+
+	// collectTagRollup gates the tailscale.devices.by_tag distribution gauge;
+	// tagRollupLimit caps its distinct tag series (<=0 = unlimited, overflow folds
+	// into tagOther). Set by WithTagRollup; default on/50.
+	collectTagRollup bool
+	tagRollupLimit   int
+
+	// now returns the current time; injectable for tests (key-expiry histogram).
+	now func() time.Time
 }
 
 // Option configures optional Collector behavior.
@@ -177,6 +205,28 @@ func WithDerpRegionRollup(enabled bool) Option {
 // device_invites:read OAuth scope. Per-device fetch errors are non-fatal.
 func WithDeviceInvites(enabled bool) Option {
 	return func(c *Collector) { c.collectDeviceInvites = enabled }
+}
+
+// WithTagRollup controls the tailscale.devices.by_tag distribution gauge.
+// enabled gates it (collect_tag_rollup, default on); limit caps the distinct tag
+// series (tag_rollup_limit, default 50): the busiest `limit` tags keep their own
+// series and the rest fold into a single tailscale.tag="__other__" series so
+// totals are preserved. A limit <= 0 means unlimited (no cap).
+func WithTagRollup(enabled bool, limit int) Option {
+	return func(c *Collector) {
+		c.collectTagRollup = enabled
+		c.tagRollupLimit = limit
+	}
+}
+
+// WithClock overrides the time source used for the key-expiry histogram
+// (default time.Now). Intended for tests.
+func WithClock(now func() time.Time) Option {
+	return func(c *Collector) {
+		if now != nil {
+			c.now = now
+		}
+	}
 }
 
 // WithPostureLogMode controls how often the per-device posture LOG event fires
@@ -239,15 +289,18 @@ func WithAttributeNamespaces(ns []string) Option {
 // WithPerEntity) tune cardinality; per-entity gauges are emitted by default.
 func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool, opts ...Option) *Collector {
 	c := &Collector{
-		api:            api,
-		cache:          cache,
-		interval:       interval,
-		collectRoutes:  collectRoutes,
-		collectPosture: collectPosture,
-		perEntity:      true,
-		derpRollup:     true,
-		postureLogMode: postureLogChanges,
-		lastPosture:    make(map[string]string),
+		api:              api,
+		cache:            cache,
+		interval:         interval,
+		collectRoutes:    collectRoutes,
+		collectPosture:   collectPosture,
+		perEntity:        true,
+		derpRollup:       true,
+		postureLogMode:   postureLogChanges,
+		lastPosture:      make(map[string]string),
+		collectTagRollup: true,
+		tagRollupLimit:   50,
+		now:              time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -288,6 +341,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	counts := make(map[countKey]int, len(devs))
 	lockErrors := 0
 	inviteCounts := map[deviceInviteKey]int{}
+
+	// Fleet-hygiene roll-up accumulators (aggregate, low-cardinality).
+	untagged := 0
+	ephemeral := 0
+	byVersion := make(map[string]int)
+	byTag := make(map[string]int)
+	nowT := c.now()
 
 	for i := range devs {
 		d := &devs[i]
@@ -370,6 +430,30 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 
 		counts[countKey{os: d.OS, authorized: d.Authorized, external: d.IsExternal}]++
+
+		// Fleet-hygiene roll-ups (aggregate, always computed; low-cardinality).
+		if d.IsEphemeral {
+			ephemeral++
+		}
+		if len(d.Tags) == 0 {
+			// External (shared-in) devices can't be tagged by this tailnet, so
+			// they aren't a tagging-hygiene signal — exclude them from untagged.
+			if !d.IsExternal {
+				untagged++
+			}
+		} else if c.collectTagRollup {
+			for _, tag := range d.Tags {
+				byTag[tag]++
+			}
+		}
+		if d.ClientVersion != "" {
+			byVersion[NormalizeVersion(d.ClientVersion)]++
+		}
+		if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
+			days := d.Expires.Sub(nowT).Hours() / 24
+			e.Histogram(docDevicesKeyExpiry.Name, docDevicesKeyExpiry.Unit, docDevicesKeyExpiry.Description,
+				days, keyExpiryBucketsDays, nil)
+		}
 	}
 
 	for k, n := range counts {
@@ -383,6 +467,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	e.Gauge(docTailnetLockErrors.Name, docTailnetLockErrors.Unit, docTailnetLockErrors.Description,
 		float64(lockErrors), nil)
+
+	// Fleet-hygiene aggregate gauges (always emitted; low cardinality).
+	e.Gauge(docDevicesUntagged.Name, docDevicesUntagged.Unit, docDevicesUntagged.Description,
+		float64(untagged), nil)
+	e.Gauge(docDevicesEphemeral.Name, docDevicesEphemeral.Unit, docDevicesEphemeral.Description,
+		float64(ephemeral), nil)
+	for ver, n := range byVersion {
+		e.Gauge(docDevicesByVersion.Name, docDevicesByVersion.Unit, docDevicesByVersion.Description,
+			float64(n), telemetry.Attrs{attrClientVersion: ver})
+	}
+	c.emitTagRollup(e, byTag)
 
 	if c.collectDeviceInvites {
 		for k, n := range inviteCounts {
@@ -400,6 +495,53 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	return nil
+}
+
+// emitTagRollup emits tailscale.devices.by_tag, one series per ACL tag. When
+// collectTagRollup is off it emits nothing. When tagRollupLimit > 0 and there are
+// more distinct tags than the limit, only the busiest tagRollupLimit tags (by
+// device count; ties broken by tag name for determinism) keep their own series
+// and the remainder fold into a single tailscale.tag="__other__" series so the
+// total is preserved.
+func (c *Collector) emitTagRollup(e telemetry.Emitter, byTag map[string]int) {
+	if !c.collectTagRollup || len(byTag) == 0 {
+		return
+	}
+	emit := func(tag string, n int) {
+		e.Gauge(docDevicesByTag.Name, docDevicesByTag.Unit, docDevicesByTag.Description,
+			float64(n), telemetry.Attrs{attrTag: tag})
+	}
+	if c.tagRollupLimit <= 0 || len(byTag) <= c.tagRollupLimit {
+		for tag, n := range byTag {
+			emit(tag, n)
+		}
+		return
+	}
+	type tagCount struct {
+		tag string
+		n   int
+	}
+	tags := make([]tagCount, 0, len(byTag))
+	for tag, n := range byTag {
+		tags = append(tags, tagCount{tag, n})
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].n != tags[j].n {
+			return tags[i].n > tags[j].n // busiest first
+		}
+		return tags[i].tag < tags[j].tag // stable tie-break
+	})
+	other := 0
+	for i, tc := range tags {
+		if i < c.tagRollupLimit {
+			emit(tc.tag, tc.n)
+		} else {
+			other += tc.n
+		}
+	}
+	if other > 0 {
+		emit(tagOther, other)
+	}
 }
 
 // deviceInviteKey is the bounded label combination for the device-invites count

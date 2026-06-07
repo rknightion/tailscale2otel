@@ -23,6 +23,8 @@ func TestPromName(t *testing.T) {
 		{"counter annotation unit dropped", metricdoc.Metric{Name: "tailscale.network.packets", Unit: "{packet}", Instrument: metricdoc.Counter}, "tailscale_network_packets_total"},
 		{"gauge annotation unit dropped, no total", metricdoc.Metric{Name: "tailscale.device.routes.advertised", Unit: "{route}", Instrument: metricdoc.Gauge}, "tailscale_device_routes_advertised"},
 		{"counter unit 1 -> no ratio, just total", metricdoc.Metric{Name: "tailscale2otel.api.requests", Unit: "1", Instrument: metricdoc.Counter}, "tailscale2otel_api_requests_total"},
+		{"histogram + d -> days, no total/ratio", metricdoc.Metric{Name: "tailscale.devices.key_expiry", Unit: "d", Instrument: metricdoc.Histogram}, "tailscale_devices_key_expiry_days"},
+		{"histogram unit 1 -> no ratio, no total", metricdoc.Metric{Name: "x.y", Unit: "1", Instrument: metricdoc.Histogram}, "x_y"},
 	}
 	for _, c := range cases {
 		if got := c.m.PromName(); got != c.want {

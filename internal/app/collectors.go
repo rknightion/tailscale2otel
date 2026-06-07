@@ -93,7 +93,8 @@ func (a *App) registerCollectors() {
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
-			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup)), c.Devices.Interval.D())
+			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup),
+			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit)), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
 		a.registry.Register(users.New(a.client, c.Users.Interval.D(),

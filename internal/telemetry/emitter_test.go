@@ -2,6 +2,7 @@ package telemetry_test
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -54,6 +55,36 @@ func attrString(t *testing.T, set attribute.Set, key string) string {
 		t.Fatalf("attribute %q not present", key)
 	}
 	return v.AsString()
+}
+
+func TestEmitter_HistogramRecordsBuckets(t *testing.T) {
+	e, reader := newTestEmitter(t)
+
+	bounds := []float64{0, 7, 30}
+	e.Histogram("test.dist", "d", "desc", -3, bounds, nil) // (-inf,0]
+	e.Histogram("test.dist", "d", "desc", 5, bounds, nil)  // (0,7]
+	e.Histogram("test.dist", "d", "desc", 50, bounds, nil) // (30,+inf]
+
+	m := findMetric(t, collect(t, reader), "test.dist")
+	if m.Unit != "d" {
+		t.Fatalf("unit = %q, want %q", m.Unit, "d")
+	}
+	h, ok := m.Data.(metricdata.Histogram[float64])
+	if !ok {
+		t.Fatalf("data type = %T, want Histogram[float64]", m.Data)
+	}
+	if len(h.DataPoints) != 1 {
+		t.Fatalf("data points = %d, want 1", len(h.DataPoints))
+	}
+	dp := h.DataPoints[0]
+	if dp.Count != 3 {
+		t.Errorf("Count = %d, want 3", dp.Count)
+	}
+	// buckets for bounds [0,7,30] = (-inf,0],(0,7],(7,30],(30,+inf]
+	want := []uint64{1, 1, 0, 1}
+	if !reflect.DeepEqual(dp.BucketCounts, want) {
+		t.Errorf("BucketCounts = %v, want %v", dp.BucketCounts, want)
+	}
 }
 
 func TestEmitter_CounterRecordsSum(t *testing.T) {

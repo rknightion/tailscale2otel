@@ -102,6 +102,8 @@ collectors:
       - sentinelone
       - kolide
       - ip
+    collect_tag_rollup: true          # emit tailscale.devices.by_tag (one series per ACL tag); false keeps the other fleet-hygiene aggregates
+    tag_rollup_limit: 50              # cap distinct tag series on by_tag; busiest N kept, rest fold into tag="__other__" (0/negative = unlimited)
   flowlogs:                           # network flow logs -> traffic counters + per-connection logs
     enabled: true
     source: poll                      # poll (this exporter PULLS) | stream (Tailscale PUSHES to the streaming receiver) | both (discouraged: double-counts)

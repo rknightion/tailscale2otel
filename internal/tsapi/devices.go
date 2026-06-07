@@ -29,6 +29,7 @@ type RichDevice struct {
 	ConnectedToControl        bool
 	BlocksIncomingConnections bool
 	SSHEnabled                bool
+	IsEphemeral               bool
 
 	// TailnetLockKey is the device's tailnet-lock public key (present on every
 	// node regardless of whether tailnet lock is enabled); TailnetLockError is
@@ -86,6 +87,7 @@ type richDevice struct {
 	ConnectedToControl        bool `json:"connectedToControl"`
 	BlocksIncomingConnections bool `json:"blocksIncomingConnections"`
 	SSHEnabled                bool `json:"sshEnabled"`
+	IsEphemeral               bool `json:"isEphemeral"`
 
 	TailnetLockKey   string `json:"tailnetLockKey"`
 	TailnetLockError string `json:"tailnetLockError"`
@@ -137,6 +139,7 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 			ConnectedToControl:        d.ConnectedToControl,
 			BlocksIncomingConnections: d.BlocksIncomingConnections,
 			SSHEnabled:                d.SSHEnabled,
+			IsEphemeral:               d.IsEphemeral,
 			TailnetLockKey:            d.TailnetLockKey,
 			TailnetLockError:          d.TailnetLockError,
 			Created:                   d.Created,

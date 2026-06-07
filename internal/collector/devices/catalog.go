@@ -114,6 +114,44 @@ var (
 		Group:       groupDevices,
 	}
 
+	docDevicesUntagged = metricdoc.Metric{
+		Name:        metricDevicesUntagged,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of non-external devices with no ACL tags (a **count**, despite `_ratio`); a tagging-hygiene signal. External (shared-in) devices are excluded — they can't be tagged by this tailnet.",
+		Group:       groupDevices,
+	}
+	docDevicesEphemeral = metricdoc.Metric{
+		Name:        metricDevicesEphemeral,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of ephemeral devices in the tailnet (a **count**, despite `_ratio`).",
+		Group:       groupDevices,
+	}
+	docDevicesByVersion = metricdoc.Metric{
+		Name:        metricDevicesByVersion,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Device count per normalized Tailscale client version (`major.minor.patch`; unparseable→`unknown`); one series per version. Devices with no reported version (external) are excluded.",
+		Attributes:  []string{attrClientVersion},
+		Group:       groupDevices,
+	}
+	docDevicesByTag = metricdoc.Metric{
+		Name:        metricDevicesByTag,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Device count per ACL tag (a device with N tags counts in N series). **Gated** by `collect_tag_rollup`; capped by `tag_rollup_limit` with overflow tags folded into `tailscale.tag=\"__other__\"`.",
+		Attributes:  []string{attrTag},
+		Group:       groupDevices,
+	}
+	docDevicesKeyExpiry = metricdoc.Metric{
+		Name:        metricDevicesKeyExpiry,
+		Unit:        semconv.UnitDays,
+		Instrument:  metricdoc.Histogram,
+		Description: "Distribution of days until each device's node key expires (negative = already expired; the `(-inf,0]` bucket). Excludes devices with key expiry disabled. Buckets (days): 0, 7, 30, 90, 180, 365.",
+		Group:       groupDevices,
+	}
+
 	docCacheAge = metricdoc.Metric{
 		Name:        metricCacheAge,
 		Unit:        semconv.UnitSeconds,
@@ -216,6 +254,7 @@ func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
+		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
 		docAttribute, docAttributeInfo,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docCacheAge, docCacheSize,

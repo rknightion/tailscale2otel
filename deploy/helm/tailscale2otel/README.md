@@ -78,8 +78,10 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.collectors.devices.collect_device_invites | bool | `true` | Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read). Emits tailscale.device_invites.count; per-device fetch failures are non-fatal. |
 | config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
 | config.collectors.devices.collect_routes | bool | `false` | Also collect advertised/enabled subnet routes and per-DERP latency via the rich GET /devices?fields=all endpoint. |
+| config.collectors.devices.collect_tag_rollup | bool | `true` | Emit the tailscale.devices.by_tag distribution gauge (one series per ACL tag). false keeps the other fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry). |
 | config.collectors.devices.enabled | bool | `true` | Enable the devices collector (device.online/last_seen/key_expiry/update_available). |
 | config.collectors.devices.interval | string | `"60s"` | Poll interval. |
+| config.collectors.devices.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
 | config.collectors.dns.interval | string | `"600s"` | Poll interval. |
 | config.collectors.flowlogs.enabled | bool | `true` | Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs). |

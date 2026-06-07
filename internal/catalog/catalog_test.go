@@ -43,6 +43,7 @@ func TestMetrics_NoDuplicateNames(t *testing.T) {
 func TestMetrics_WellFormed(t *testing.T) {
 	valid := map[metricdoc.Instrument]bool{
 		metricdoc.Counter: true, metricdoc.Gauge: true, metricdoc.UpDownCounter: true,
+		metricdoc.Histogram: true,
 	}
 	for _, m := range catalog.Metrics() {
 		if m.Name == "" || m.Unit == "" || m.Description == "" || m.Group == "" {

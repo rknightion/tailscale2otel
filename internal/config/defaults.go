@@ -79,6 +79,8 @@ func Default() *Config {
 				// namespaces plus ip are promoted to attribute metrics. node is
 				// covered by the curated posture gauge; custom is excluded (unbounded).
 				AttributeNamespaces: []string{"intune", "jamf", "kandji", "crowdstrike", "sentinelone", "kolide", "ip"},
+				CollectTagRollup:    true,
+				TagRollupLimit:      50,
 			},
 			Flowlogs: FlowlogsCollector{
 				Enabled:         true,
