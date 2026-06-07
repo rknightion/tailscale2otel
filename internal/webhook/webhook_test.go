@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
@@ -436,6 +438,61 @@ func flipLast(s string) string {
 		repl = '1'
 	}
 	return s[:len(s)-1] + string(repl)
+}
+
+// webhookIngestCall records one call to an OnIngest hook.
+type webhookIngestCall struct {
+	source  string
+	signal  string
+	records int
+	bytes   int
+}
+
+// TestHandleCallsIngestHook verifies that Options.OnIngest is called exactly once
+// after a successful 2-event delivery, with source=IngestSourceWebhook,
+// signal=IngestSignalWebhook, records=2, bytes=len(body).
+func TestHandleCallsIngestHook(t *testing.T) {
+	body := twoEventBody
+	ts := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
+	sig := signBody(testSecret, ts, body)
+
+	var mu sync.Mutex
+	var calls []webhookIngestCall
+
+	rec := telemetrytest.New()
+	s := New(Options{
+		Listen:    "127.0.0.1:0",
+		Path:      "/webhook",
+		Secret:    testSecret,
+		Tolerance: 0,
+		OnIngest: func(source, signal string, records, bytes int) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, webhookIngestCall{source, signal, records, bytes})
+		},
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	resp := doPost(t, s.Handler(), "/webhook", body, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	mu.Lock()
+	got := append([]webhookIngestCall(nil), calls...)
+	mu.Unlock()
+
+	if len(got) != 1 {
+		t.Fatalf("OnIngest called %d times, want 1; calls=%+v", len(got), got)
+	}
+	want := webhookIngestCall{
+		source:  semconv.IngestSourceWebhook,
+		signal:  semconv.IngestSignalWebhook,
+		records: 2,
+		bytes:   len(body),
+	}
+	if got[0] != want {
+		t.Errorf("OnIngest call = %+v, want %+v", got[0], want)
+	}
 }
 
 // Run is exercised lightly to ensure it binds, serves, and shuts down on ctx

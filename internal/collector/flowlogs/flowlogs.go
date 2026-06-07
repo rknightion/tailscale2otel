@@ -65,6 +65,10 @@ type Collector struct {
 	lag          time.Duration
 	seen         *dedup.Set
 	featureCheck FeatureCheck
+	// onIngest, when non-nil, is called once per successful poll window with
+	// ("poll","flow", <records accepted>, 0). The app supplies it (gated on
+	// self-observability); the collector stays agnostic to how it's emitted.
+	onIngest func(source, signal string, records, bytes int)
 }
 
 // New returns a flowlogs Collector that fetches windows via a, converts them
@@ -75,7 +79,7 @@ type Collector struct {
 // disabled the collector stays idle and emits tailscale.feature.enabled=0
 // rather than fetching. A nil featureCheck preserves the always-enabled
 // behavior. featureCheck errors fail open (the collector proceeds as enabled).
-func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureCheck FeatureCheck) *Collector {
+func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureCheck FeatureCheck, onIngest func(source, signal string, records, bytes int)) *Collector {
 	return &Collector{
 		api:          a,
 		proc:         proc,
@@ -83,6 +87,7 @@ func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureChe
 		lag:          lag,
 		seen:         dedup.New(dedupCapacity),
 		featureCheck: featureCheck,
+		onIngest:     onIngest,
 	}
 }
 
@@ -145,7 +150,11 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		return time.Time{}, err
 	}
 
-	c.proc.ProcessAll(c.dedupe(resp), e)
+	deduped := c.dedupe(resp)
+	c.proc.ProcessAll(deduped, e)
+	if c.onIngest != nil {
+		c.onIngest(semconv.IngestSourcePoll, semconv.IngestSignalFlow, len(deduped.Logs), 0)
+	}
 	return to, nil
 }
 

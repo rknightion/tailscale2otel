@@ -48,6 +48,27 @@ const (
 	// AttrDedupSet names the de-duplication set a metric describes
 	// (tailscale2otel.dedup.*): "flow", "audit", "webhook_cross".
 	AttrDedupSet = "dedup.set"
+	// AttrIngestSource names the ingestion path on tailscale2otel.ingest.*:
+	// "poll", "stream", or "webhook".
+	AttrIngestSource = "source"
+	// AttrIngestSignal names the record type on tailscale2otel.ingest.records:
+	// "flow", "audit", or "webhook".
+	AttrIngestSignal = "signal"
+	// AttrMetricGroup names the docs/catalog group a metric belongs to, used on
+	// tailscale2otel.series.by_group (e.g. "Devices", "Network", "Self-observability").
+	AttrMetricGroup = "metric.group"
+)
+
+// Ingestion-path (tailscale2otel.ingest.*) attribute values. A CLOSED set so the
+// source/signal label cardinality stays bounded.
+const (
+	IngestSourcePoll    = "poll"
+	IngestSourceStream  = "stream"
+	IngestSourceWebhook = "webhook"
+
+	IngestSignalFlow    = "flow"
+	IngestSignalAudit   = "audit"
+	IngestSignalWebhook = "webhook"
 )
 
 // network.io.direction values (stable).
@@ -89,6 +110,8 @@ const (
 	UnitPeers         = "{peer}"
 	UnitPorts         = "{port}"
 	UnitRequests      = "{request}"
+	UnitRecords       = "{record}"
+	UnitDataPoints    = "{datapoint}"
 	UnitSeconds       = "s"
 	UnitDays          = "d"
 	UnitDimensionless = "1"

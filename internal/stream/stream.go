@@ -70,6 +70,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -135,6 +136,11 @@ type Options struct {
 	// a huge or zip-bomb POST cannot OOM the receiver. 0 selects a 64 MiB default;
 	// a negative value disables the cap.
 	MaxBodyBytes int64
+	// OnIngest, when non-nil, is called with ("stream", signal, records, bytes)
+	// after a successful parse: once per non-empty signal (records>0, bytes=0) and
+	// once for the decompressed body size (records=0, bytes=len(raw)). Supplied by
+	// the app, gated on self-observability.
+	OnIngest func(source, signal string, records, bytes int)
 }
 
 // Server is the streaming receiver. It is safe to share its Handler across
@@ -152,6 +158,7 @@ type Server struct {
 	auditProc *audit.Processor
 	emitter   telemetry.Emitter
 	logger    *slog.Logger
+	onIngest  func(source, signal string, records, bytes int)
 }
 
 // New returns a Server that converts received records via flowProc and
@@ -184,6 +191,7 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		auditProc:  auditProc,
 		emitter:    e,
 		logger:     logger,
+		onIngest:   opts.OnIngest,
 	}
 }
 
@@ -236,6 +244,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.onIngest != nil && len(raw) > 0 {
+		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
+	}
+
 	var flows, audits, skipped, flowDecodeErr, auditDecodeErr int
 	for _, rec := range records {
 		switch classify(rec.raw) {
@@ -272,10 +284,16 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if flows > 0 {
 		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
 			telemetry.Attrs{attrType: typeFlow})
+		if s.onIngest != nil {
+			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalFlow, flows, 0)
+		}
 	}
 	if audits > 0 {
 		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
 			telemetry.Attrs{attrType: typeAudit})
+		if s.onIngest != nil {
+			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
+		}
 	}
 	if flowDecodeErr > 0 {
 		s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,

@@ -56,3 +56,19 @@ func EmitBuildInfo(e Emitter, goVersion string) {
 	}
 	e.Gauge(docBuildInfo.Name, docBuildInfo.Unit, docBuildInfo.Description, 1, attrs)
 }
+
+// EmitExportStats records the per-interval deltas for the OTLP export-volume
+// counters: tailscale2otel.export.datapoints and .log_records. The caller (the
+// app's export reporter) tracks the cumulative ExportStats and passes the
+// difference since the previous tick; a zero delta emits nothing (avoids
+// creating the series before any export has happened).
+func EmitExportStats(e Emitter, datapointsDelta, logRecordsDelta float64) {
+	if datapointsDelta > 0 {
+		e.Counter(docExportDatapoints.Name, docExportDatapoints.Unit, docExportDatapoints.Description,
+			datapointsDelta, nil)
+	}
+	if logRecordsDelta > 0 {
+		e.Counter(docExportLogRecords.Name, docExportLogRecords.Unit, docExportLogRecords.Description,
+			logRecordsDelta, nil)
+	}
+}

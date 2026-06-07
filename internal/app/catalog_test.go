@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
@@ -57,6 +59,15 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 
 	// update_available: emit with a known-newer latest so the gauge fires.
 	emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v9.9.9", true }, "v0.1.0")
+
+	// ingest.records + ingest.bytes via the app closure (self-obs forced on).
+	cfgOn := &config.Config{}
+	cfgOn.SelfObservability.Enabled = true
+	obs := (&App{cfg: cfgOn, emitter: rec.Emitter()}).ingestObserver()
+	obs(semconv.IngestSourceStream, semconv.IngestSignalFlow, 3, 256)
+
+	// series.by_group.
+	emitSeriesByGroup(rec.Emitter(), map[string]int{"Devices": 2})
 
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range appcatalog.Catalog() {

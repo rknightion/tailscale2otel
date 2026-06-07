@@ -48,22 +48,24 @@ const autoConfigureTimeout = 30 * time.Second
 
 // App is the assembled, runnable service.
 type App struct {
-	cfg         *config.Config
-	version     string    // injected build version, for the status page
-	startTime   time.Time // process start, for uptime on the status page
-	emitter     telemetry.Emitter
-	card        *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
-	shutdown    func(context.Context) error   // flushes telemetry on stop
-	restore     func()                        // restores the prior otel error handler
-	client      *tsapi.Client
-	cache       *enrich.DeviceCache
-	registry    *collector.Registry
-	sched       *collector.Scheduler
-	status      *collector.StatusTracker  // per-collector run outcomes, for the status page
-	runtimeHist *runtimeHistory           // short-term runtime/cardinality trends, for the status page
-	apiStats    *APIStats                 // per-endpoint Tailscale API request stats, for the status page
-	store       collector.CheckpointStore // checkpoint store; read for window-collector state on the status page
-	logger      *slog.Logger
+	cfg          *config.Config
+	version      string    // injected build version, for the status page
+	startTime    time.Time // process start, for uptime on the status page
+	emitter      telemetry.Emitter
+	card         *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
+	metricGroups map[string]string             // metric source-name -> catalog group, for series.by_group rollup
+	exportStats  func() telemetry.ExportStats  // cumulative OTLP export volume; nil when self-obs disabled
+	shutdown     func(context.Context) error   // flushes telemetry on stop
+	restore      func()                        // restores the prior otel error handler
+	client       *tsapi.Client
+	cache        *enrich.DeviceCache
+	registry     *collector.Registry
+	sched        *collector.Scheduler
+	status       *collector.StatusTracker  // per-collector run outcomes, for the status page
+	runtimeHist  *runtimeHistory           // short-term runtime/cardinality trends, for the status page
+	apiStats     *APIStats                 // per-endpoint Tailscale API request stats, for the status page
+	store        collector.CheckpointStore // checkpoint store; read for window-collector state on the status page
+	logger       *slog.Logger
 
 	flowProc     *flowlog.Processor
 	auditProc    *audit.Processor
@@ -143,6 +145,8 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 
 	a := newApp(cfg, version, logger, emitter, provider.Shutdown, client, store, apiStats)
 	a.card = provider.Cardinality()
+	a.metricGroups = metricGroupMap()
+	a.exportStats = provider.ExportStats
 
 	// Continuous profiling is opt-in. startProfiling also applies the runtime
 	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
@@ -266,7 +270,8 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.cfg.SelfObservability.Enabled {
 		go runHeartbeat(ctx, a.emitter, heartbeatInterval)
-		go runCardinalityReporter(ctx, a.emitter, a.card, a.cfg.OTLP.MetricInterval.D())
+		go runCardinalityReporter(ctx, a.emitter, a.card, a.metricGroups, a.cfg.OTLP.MetricInterval.D())
+		go runExportReporter(ctx, a.emitter, a.exportStats, a.cfg.OTLP.MetricInterval.D())
 		go runRuntimeReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), readRuntimeStats)
 		go runDedupReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), map[string]*dedup.Set{
 			"flow":          a.flowDedup,

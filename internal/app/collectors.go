@@ -143,7 +143,7 @@ func (a *App) registerCollectors() {
 		a.registry.Register(a.nodeMetrics, nm.Interval.D())
 	}
 	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
-		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck())
+		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck(), a.ingestObserver())
 		a.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
 	} else if c.Flowlogs.Enabled {
 		// Stream-only (source: stream): the poller isn't registered, so the
@@ -153,7 +153,7 @@ func (a *App) registerCollectors() {
 		a.registry.Register(fp, fp.DefaultInterval())
 	}
 	if c.Auditlogs.Enabled && pollSource(c.Auditlogs.Source) {
-		ac := auditlogs.New(a.client, a.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D())
+		ac := auditlogs.New(a.client, a.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), a.ingestObserver())
 		a.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
 	}
 }
@@ -169,6 +169,7 @@ func (a *App) buildReceivers() {
 			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
 			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
 			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
+			OnIngest:     a.ingestObserver(),
 		}, a.flowProc, a.auditProc, a.emitter, withComponent(a.logger, appcatalog.ComponentStream))
 	}
 	if a.cfg.Webhook.Enabled {
@@ -176,7 +177,9 @@ func (a *App) buildReceivers() {
 		if a.webhookDedup != nil {
 			wopts = append(wopts, webhook.WithDedup(a.webhookDedup))
 		}
-		a.webhookSrv = webhook.New(webhookOptions(a.cfg.Webhook), a.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
+		wh := webhookOptions(a.cfg.Webhook)
+		wh.OnIngest = a.ingestObserver()
+		a.webhookSrv = webhook.New(wh, a.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
 	}
 }
 

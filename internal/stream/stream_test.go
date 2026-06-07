@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/stream"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
@@ -747,4 +749,66 @@ func TestRun_GracefulShutdown(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after context cancel")
 	}
+}
+
+// ingestCall records one call to an OnIngest hook.
+type ingestCall struct {
+	source  string
+	signal  string
+	records int
+	bytes   int
+}
+
+// TestHandleCallsIngestHook verifies that Options.OnIngest receives:
+//   - one call per non-empty signal (records>0, bytes=0): IngestSourceStream/IngestSignalFlow and IngestSourceStream/IngestSignalAudit
+//   - one call for the decompressed body bytes (records=0, bytes=len(raw))
+func TestHandleCallsIngestHook(t *testing.T) {
+	// The body is one flow record + one audit record (NDJSON, uncompressed).
+	// The server sends it uncompressed, so raw == postedBody.
+	body := captureFlowRecord + "\n" + captureAuditRecord + "\n"
+	expectedBytes := len(body)
+
+	var mu sync.Mutex
+	var calls []ingestCall
+
+	opts := stream.Options{
+		Token: testToken,
+		OnIngest: func(source, signal string, records, bytes int) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, ingestCall{source, signal, records, bytes})
+		},
+	}
+	s, _ := newServer(t, opts)
+
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
+	mu.Lock()
+	got := append([]ingestCall(nil), calls...)
+	mu.Unlock()
+
+	// Expect exactly 3 calls: bytes, flow, audit (order may vary).
+	if len(got) != 3 {
+		t.Fatalf("OnIngest called %d times, want 3; calls=%+v", len(got), got)
+	}
+
+	findCall := func(source, signal string, records, bytes int) {
+		t.Helper()
+		for _, c := range got {
+			if c.source == source && c.signal == signal && c.records == records && c.bytes == bytes {
+				return
+			}
+		}
+		t.Errorf("OnIngest: missing call {source=%q signal=%q records=%d bytes=%d}; got=%+v",
+			source, signal, records, bytes, got)
+	}
+
+	// Bytes call: records=0, bytes=decompressed body length.
+	findCall(semconv.IngestSourceStream, "", 0, expectedBytes)
+	// Signal calls: one per non-empty signal.
+	findCall(semconv.IngestSourceStream, semconv.IngestSignalFlow, 1, 0)
+	findCall(semconv.IngestSourceStream, semconv.IngestSignalAudit, 1, 0)
 }

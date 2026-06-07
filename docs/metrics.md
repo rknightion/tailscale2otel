@@ -107,7 +107,11 @@ exporter health.
 | `tailscale2otel.dedup.size` | `1` | gauge | `tailscale2otel_dedup_size_ratio` | `dedup_set` | Keys currently held in a cross-source de-duplication set, by set (a **count**, despite the `_ratio` suffix). |
 | `tailscale2otel.enrich.cache_age` | `s` | gauge | `tailscale2otel_enrich_cache_age_seconds` | — | Age of the device-enrichment cache (since last refresh). |
 | `tailscale2otel.enrich.cache_size` | `1` | gauge | `tailscale2otel_enrich_cache_size_ratio` | — | Number of devices in the enrichment cache (a **count**, despite `_ratio`). |
+| `tailscale2otel.export.datapoints` | `{datapoint}` | counter | `tailscale2otel_export_datapoints_total` | — | Metric data points handed to the OTLP metric exporter (the DPM cost proxy). Counts every point across all instruments per export cycle; includes this self-metric (+1/cycle). |
 | `tailscale2otel.export.failures` | `1` | counter | `tailscale2otel_export_failures_total` | `error_type` | OTLP export failures, by error class. |
+| `tailscale2otel.export.log_records` | `{record}` | counter | `tailscale2otel_export_log_records_total` | — | Log records handed to the OTLP log exporter (the log-volume cost driver; flow/audit logs dominate). Counts every record per export batch. |
+| `tailscale2otel.ingest.records` | `{record}` | counter | `tailscale2otel_ingest_records_total` | `source`, `signal` | Records accepted per ingestion path and signal type. `source`=poll\|stream\|webhook, `signal`=flow\|audit\|webhook. The unified cross-path ingestion-volume view (the per-path receivers also expose domain counters). |
+| `tailscale2otel.ingest.size` | `By` | counter | `tailscale2otel_ingest_size_bytes_total` | `source` | Decompressed request-body bytes received per ingestion path. Emitted for the stream and webhook receivers only (`source`=stream\|webhook); the poll path has no wire body to measure. Note: ingress bytes do not directly drive Grafana Cloud cost — see export.datapoints/export.log_records for that. |
 | `tailscale2otel.runtime.gc.count` | `1` | counter | `tailscale2otel_runtime_gc_count_total` | — | Completed garbage-collection cycles since process start. |
 | `tailscale2otel.runtime.gc.cpu_fraction` | `1` | gauge | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | — | Fraction of total CPU time used by the garbage collector since process start (0..1). |
 | `tailscale2otel.runtime.gc.next_target` | `By` | gauge | `tailscale2otel_runtime_gc_next_target_bytes` | — | Target heap size (bytes) for the next garbage collection. |
@@ -128,6 +132,7 @@ exporter health.
 | `tailscale2otel.scrape.staleness` | `s` | gauge | `tailscale2otel_scrape_staleness_seconds` | `tailscale_collector` | Seconds since this collector's last successful scrape (counts up from process start until the first success); pair with `scrape.success` for freshness alerting. |
 | `tailscale2otel.scrape.success` | `1` | gauge | `tailscale2otel_scrape_success_ratio` | `tailscale_collector` | `1` if the last scrape for that collector succeeded, else `0`. |
 | `tailscale2otel.series.active` | `{series}` | gauge | `tailscale2otel_series_active` | `metric_name` | Exact distinct active time series emitted for `metric.name` during the last export interval; bounded by a per-metric cap (the value pins at the cap when exceeded). A **count**. |
+| `tailscale2otel.series.by_group` | `{series}` | gauge | `tailscale2otel_series_by_group` | `metric_group` | Active time series emitted during the last export interval, summed by the catalog group that owns each metric (a roll-up of tailscale2otel.series.active by `metric.group`). Uncataloged metric names (e.g. node-metrics passthrough) bucket under `other`. A **count**. |
 | `tailscale2otel.series.limit` | `{series}` | gauge | `tailscale2otel_series_limit` | — | Effective per-metric active-series cap (`cardinality.metric_limit`): the point at which excess series collapse into `otel_metric_overflow` (silent per-series loss). Emitted only when a positive limit is configured. A **count**. |
 | `tailscale2otel.series.overflowing` | `1` | gauge | `tailscale2otel_series_overflowing_ratio` | `metric_name` | 1 when `metric.name` reached the per-metric series cap during the last interval (excess series silently dropped into `otel_metric_overflow`), else 0. Always 0 when no positive `cardinality.metric_limit` is configured. |
 | `tailscale2otel.up` | `1` | gauge | `tailscale2otel_up_ratio` | — | Liveness flag: `1` while the service is running and reporting. |
@@ -271,7 +276,7 @@ contact is worth alerting on.
 ### Webhook endpoints (`tailscale.webhook_endpoint*.*`)
 
 Inventory of configured webhook **endpoints** (where Tailscale posts event notifications) — distinct
-from the [stream/webhook receiver](#receivers-stream-webhook-tailscalestream-tailscalewebhook) metrics. Endpoint URL, secret and
+from the [stream/webhook receiver](#receivers--stream--webhook) metrics. Endpoint URL, secret and
 creator are **never emitted**. The per-endpoint subscriptions gauge is gated by
 `cardinality.per_entity.webhook`.
 

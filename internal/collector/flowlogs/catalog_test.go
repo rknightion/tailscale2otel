@@ -72,6 +72,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		newProcessor(),
 		0, 0,
 		func(context.Context) (bool, error) { return true, nil },
+		nil,
 	)
 
 	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)

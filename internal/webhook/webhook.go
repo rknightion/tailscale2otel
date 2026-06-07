@@ -131,15 +131,20 @@ type Options struct {
 	// bounding unauthenticated memory use. 0 selects a 64 MiB default; a negative
 	// value disables the cap.
 	MaxBodyBytes int64
+	// OnIngest, when non-nil, is called once after a successful parse with
+	// (IngestSourceWebhook, IngestSignalWebhook, len(events), len(body)).
+	// Supplied by the app, gated on self-observability.
+	OnIngest func(source, signal string, records, bytes int)
 }
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
 type Server struct {
-	opts   Options
-	e      telemetry.Emitter
-	logger *slog.Logger
-	now    func() time.Time // injectable clock; defaults to time.Now
-	dedup  *dedup.Set       // optional cross-source de-dup set (see WithDedup)
+	opts     Options
+	e        telemetry.Emitter
+	logger   *slog.Logger
+	now      func() time.Time // injectable clock; defaults to time.Now
+	dedup    *dedup.Set       // optional cross-source de-dup set (see WithDedup)
+	onIngest func(source, signal string, records, bytes int)
 
 	// typesMu guards seenTypes, the bounded set of distinct event types already
 	// admitted as a telemetry dimension. handle (and thus emit) runs concurrently
@@ -188,10 +193,11 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 		opts.Path = "/webhook"
 	}
 	s := &Server{
-		opts:   opts,
-		e:      e,
-		logger: logger,
-		now:    time.Now,
+		opts:     opts,
+		e:        e,
+		logger:   logger,
+		now:      time.Now,
+		onIngest: opts.OnIngest,
 	}
 	for _, o := range options {
 		o(s)
@@ -270,6 +276,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &events); err != nil {
 		s.reject(w, "invalid_body", "failed to parse webhook body", err)
 		return
+	}
+
+	if s.onIngest != nil {
+		s.onIngest(semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(events), len(body))
 	}
 
 	for _, ev := range events {

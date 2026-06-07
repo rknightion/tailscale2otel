@@ -94,6 +94,26 @@ const (
 	MetricDedupEvictions = "tailscale2otel.dedup.evictions"
 )
 
+// Ingestion-volume self-observability metric names. Emitted (via an app-built
+// closure) at each ingestion-path boundary so an operator can attribute log/DPM
+// cost to poll vs stream vs webhook and to flow vs audit. Note the per-path
+// receivers also emit domain counters (tailscale.stream.records,
+// tailscale.webhook.events); these tailscale2otel.* counters are the unified,
+// cross-path cost view.
+const (
+	MetricIngestRecords = "tailscale2otel.ingest.records"
+	// MetricIngestBytes is named ".ingest.size" (not ".ingest.bytes") so the "By"
+	// unit's `_bytes` suffix is not doubled under Prometheus normalization
+	// (-> tailscale2otel_ingest_size_bytes_total), the same naming guard as
+	// MetricRuntimeAllocBytes.
+	MetricIngestBytes = "tailscale2otel.ingest.size"
+)
+
+// MetricSeriesByGroup is the per-catalog-group active-series rollup: the sum of
+// tailscale2otel.series.active over every metric in a docs group, keyed by group.
+// A name-keyed view (series.active) summed by the area that owns each metric.
+const MetricSeriesByGroup = "tailscale2otel.series.by_group"
+
 // Descriptors for the app layer's self-observability metrics. Exported so the
 // emit sites in package app can reference them.
 var (
@@ -276,6 +296,41 @@ var (
 	}
 )
 
+// Ingestion-volume descriptors. ingest.records counts records accepted at each
+// ingestion-path boundary (post intra-source overlap de-dup for poll; as-received
+// for stream/webhook). ingest.bytes is the decompressed request-body size and is
+// emitted for the receiver paths only (poll has no wire body to measure).
+var (
+	DocIngestRecords = metricdoc.Metric{
+		Name:        MetricIngestRecords,
+		Unit:        semconv.UnitRecords,
+		Instrument:  metricdoc.Counter,
+		Description: "Records accepted per ingestion path and signal type. `source`=poll|stream|webhook, `signal`=flow|audit|webhook. The unified cross-path ingestion-volume view (the per-path receivers also expose domain counters).",
+		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
+	DocIngestBytes = metricdoc.Metric{
+		Name:        MetricIngestBytes,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Counter,
+		Description: "Decompressed request-body bytes received per ingestion path. Emitted for the stream and webhook receivers only (`source`=stream|webhook); the poll path has no wire body to measure. Note: ingress bytes do not directly drive Grafana Cloud cost — see export.datapoints/export.log_records for that.",
+		Attributes:  []string{semconv.AttrIngestSource},
+		Group:       GroupSelfObs,
+	}
+)
+
+// DocSeriesByGroup is the per-group active-series rollup descriptor. A gauge whose
+// unit "{series}" annotation is dropped under Prometheus normalization, leaving
+// tailscale2otel_series_by_group_ratio (a **count**, despite the suffix).
+var DocSeriesByGroup = metricdoc.Metric{
+	Name:        MetricSeriesByGroup,
+	Unit:        semconv.UnitSeries,
+	Instrument:  metricdoc.Gauge,
+	Description: "Active time series emitted during the last export interval, summed by the catalog group that owns each metric (a roll-up of tailscale2otel.series.active by `metric.group`). Uncataloged metric names (e.g. node-metrics passthrough) bucket under `other`. A **count**.",
+	Attributes:  []string{semconv.AttrMetricGroup},
+	Group:       GroupSelfObs,
+}
+
 // Catalog returns the self-observability metrics the app layer emits, for the
 // docs generator.
 func Catalog() []metricdoc.Metric {
@@ -288,6 +343,8 @@ func Catalog() []metricdoc.Metric {
 		DocComponentErrors,
 		DocAdminAuthRejected,
 		DocDedupSize, DocDedupEvictions,
+		DocIngestRecords, DocIngestBytes,
+		DocSeriesByGroup,
 	}
 }
 

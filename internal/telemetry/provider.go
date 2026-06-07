@@ -73,6 +73,9 @@ type Provider struct {
 	lp      *sdklog.LoggerProvider
 	emitter Emitter
 	card    *CardinalityTracker // nil unless self-observability is enabled
+
+	metricCounter *countingMetricExporter // nil unless self-obs enabled
+	logCounter    *countingLogExporter    // nil unless self-obs enabled
 }
 
 // metricProviderOptions returns the MeterProvider options shared by the production
@@ -111,6 +114,15 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		return nil, fmt.Errorf("log exporter: %w", err)
 	}
 
+	var metricCounter *countingMetricExporter
+	var logCounter *countingLogExporter
+	if opts.SelfObsEnabled {
+		metricCounter = newCountingMetricExporter(metricExp)
+		metricExp = metricCounter
+		logCounter = newCountingLogExporter(logExp)
+		logExp = logCounter
+	}
+
 	interval := opts.MetricInterval
 	if interval <= 0 {
 		interval = 60 * time.Second
@@ -134,7 +146,24 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		lp:      lp,
 		emitter: newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger),
 		card:    card,
+
+		metricCounter: metricCounter,
+		logCounter:    logCounter,
 	}, nil
+}
+
+// ExportStats returns the cumulative count of data points and log records handed
+// to the OTLP exporters since start. Zero when self-observability is disabled
+// (no counting wrappers were installed). Safe to call concurrently.
+func (p *Provider) ExportStats() ExportStats {
+	var s ExportStats
+	if p.metricCounter != nil {
+		s.Datapoints = p.metricCounter.count()
+	}
+	if p.logCounter != nil {
+		s.LogRecords = p.logCounter.count()
+	}
+	return s
 }
 
 // Emitter returns the Emitter collectors should use.

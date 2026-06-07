@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/collector/auditlogs"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -18,8 +19,8 @@ import (
 // proven by passing each into New.
 var (
 	_ collector.WindowCollector = (*auditlogs.Collector)(nil)
-	_                           = auditlogs.New((*fakeAPI)(nil), audit.NewProcessor(), 0, 0)
-	_                           = auditlogs.New((*tsapi.Client)(nil), audit.NewProcessor(), 0, 0)
+	_                           = auditlogs.New((*fakeAPI)(nil), audit.NewProcessor(), 0, 0, nil)
+	_                           = auditlogs.New((*tsapi.Client)(nil), audit.NewProcessor(), 0, 0, nil)
 )
 
 // fakeAPI is a canned ConfigAuditLogs implementation standing in for
@@ -59,7 +60,7 @@ func TestCollectWindow_SuccessEmitsAndReturnsTo(t *testing.T) {
 		}},
 	}}
 	rec := telemetrytest.New()
-	c := auditlogs.New(api, audit.NewProcessor(), 0, 0)
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
 
 	hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
 	if err != nil {
@@ -96,7 +97,7 @@ func TestCollectWindow_ErrorPropagatesZeroTime(t *testing.T) {
 	wantErr := errors.New("boom")
 	api := &fakeAPI{err: wantErr}
 	rec := telemetrytest.New()
-	c := auditlogs.New(api, audit.NewProcessor(), 0, 0)
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
 
 	hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
 	if !errors.Is(err, wantErr) {
@@ -131,7 +132,7 @@ func TestCollectWindow_BoundaryEventDedupedAcrossWindows(t *testing.T) {
 		Logs:    []audit.Event{boundary},
 	}}
 	rec := telemetrytest.New()
-	c := auditlogs.New(api, audit.NewProcessor(), 0, 0)
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
 
 	// First window [from, to] sees the boundary event.
 	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
@@ -182,7 +183,7 @@ func TestCollectWindow_DistinctEmptyGroupIDNotCollapsed(t *testing.T) {
 		Logs:    []audit.Event{a, b},
 	}}
 	rec := telemetrytest.New()
-	c := auditlogs.New(api, audit.NewProcessor(), 0, 0)
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
 
 	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
 		t.Fatalf("CollectWindow: unexpected error: %v", err)
@@ -202,7 +203,7 @@ func TestCollectWindow_DistinctEmptyGroupIDNotCollapsed(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), 0, 0)
+	c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), 0, 0, nil)
 	if got := c.Name(); got != "auditlogs" {
 		t.Fatalf("Name() = %q, want %q", got, "auditlogs")
 	}
@@ -220,7 +221,7 @@ func TestDefaultInterval(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), tt.interval, 0)
+			c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), tt.interval, 0, nil)
 			if got := c.DefaultInterval(); got != tt.want {
 				t.Fatalf("DefaultInterval() = %v, want %v", got, tt.want)
 			}
@@ -240,10 +241,92 @@ func TestLag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), 0, tt.lag)
+			c := auditlogs.New(&fakeAPI{}, audit.NewProcessor(), 0, tt.lag, nil)
 			if got := c.Lag(); got != tt.want {
 				t.Fatalf("Lag() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCollectWindow_OnIngestHookCalled verifies that after a successful window
+// the onIngest hook is called exactly once with ("poll","audit",N,0) where N is
+// the post-dedup event count. Two events with distinct eventKeys survive dedup.
+func TestCollectWindow_OnIngestHookCalled(t *testing.T) {
+	t0 := from.Add(10 * time.Second)
+	t1 := from.Add(20 * time.Second)
+	// Two events with distinct eventGroupIDs so both survive the overlap dedup set.
+	ev1 := audit.Event{
+		EventTime:    t0,
+		Type:         "CONFIG",
+		EventGroupID: "g-event-1",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com", DisplayName: "Alice"},
+		Target:       audit.Target{ID: "n1", Name: "node-a.ts.net", Type: "NODE"},
+		Action:       "CREATE",
+	}
+	ev2 := audit.Event{
+		EventTime:    t1,
+		Type:         "CONFIG",
+		EventGroupID: "g-event-2",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com", DisplayName: "Alice"},
+		Target:       audit.Target{ID: "n2", Name: "node-b.ts.net", Type: "NODE"},
+		Action:       "DELETE",
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{
+		Version: "v1",
+		Tailnet: "example.com",
+		Logs:    []audit.Event{ev1, ev2},
+	}}
+
+	type call struct {
+		source  string
+		signal  string
+		records int
+		bytes   int
+	}
+	var got []call
+	hook := func(source, signal string, records, bytes int) {
+		got = append(got, call{source, signal, records, bytes})
+	}
+
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, hook)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("hook called %d times, want 1", len(got))
+	}
+	want := call{semconv.IngestSourcePoll, semconv.IngestSignalAudit, 2, 0}
+	if got[0] != want {
+		t.Fatalf("hook call = %+v, want %+v", got[0], want)
+	}
+}
+
+// TestCollectWindow_NilOnIngestHookDoesNotPanic verifies that a nil hook does
+// not cause a nil-pointer dereference on a normal window.
+func TestCollectWindow_NilOnIngestHookDoesNotPanic(t *testing.T) {
+	api := &fakeAPI{resp: audit.ConfigurationResponse{
+		Version: "v1",
+		Tailnet: "example.com",
+		Logs: []audit.Event{{
+			EventTime:    from.Add(30 * time.Second),
+			Type:         "CONFIG",
+			EventGroupID: "g1",
+			Origin:       "admin-console",
+			Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com", DisplayName: "Alice"},
+			Target:       audit.Target{ID: "n1", Name: "node.ts.net", Type: "NODE"},
+			Action:       "CREATE",
+		}},
+	}}
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
 	}
 }

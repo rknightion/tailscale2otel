@@ -35,6 +35,20 @@ var (
 		Attributes:  []string{"error.type"},
 		Group:       groupSelfObs,
 	}
+	docExportDatapoints = metricdoc.Metric{
+		Name:        "tailscale2otel.export.datapoints",
+		Unit:        semconv.UnitDataPoints,
+		Instrument:  metricdoc.Counter,
+		Description: "Metric data points handed to the OTLP metric exporter (the DPM cost proxy). Counts every point across all instruments per export cycle; includes this self-metric (+1/cycle).",
+		Group:       groupSelfObs,
+	}
+	docExportLogRecords = metricdoc.Metric{
+		Name:        "tailscale2otel.export.log_records",
+		Unit:        semconv.UnitRecords,
+		Instrument:  metricdoc.Counter,
+		Description: "Log records handed to the OTLP log exporter (the log-volume cost driver; flow/audit logs dominate). Counts every record per export batch.",
+		Group:       groupSelfObs,
+	}
 	docSeriesActive = metricdoc.Metric{
 		Name:        seriesActiveMetric,
 		Unit:        semconv.UnitSeries,
@@ -63,7 +77,7 @@ var (
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docBuildInfo, docExportFailures, docSeriesActive, docSeriesLimit, docSeriesOverflowing}
+	return []metricdoc.Metric{docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docSeriesActive, docSeriesLimit, docSeriesOverflowing}
 }
 
 // LogCatalog returns the log events this package emits (none).

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/dedup"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -42,17 +43,24 @@ type Collector struct {
 	interval time.Duration
 	lag      time.Duration
 	seen     *dedup.Set
+	// onIngest, when non-nil, is called once per successful poll window with
+	// ("poll","audit", <records accepted>, 0). The app supplies it (gated on
+	// self-observability); the collector stays agnostic to how it's emitted.
+	onIngest func(source, signal string, records, bytes int)
 }
 
 // New returns an auditlogs Collector that fetches via a and converts via proc.
 // A non-positive interval defaults to 60s; a non-positive lag defaults to 60s.
-func New(a api, proc *audit.Processor, interval, lag time.Duration) *Collector {
+// onIngest, when non-nil, is called after each successful window with the
+// post-dedup record count; pass nil to disable.
+func New(a api, proc *audit.Processor, interval, lag time.Duration, onIngest func(source, signal string, records, bytes int)) *Collector {
 	return &Collector{
 		api:      a,
 		proc:     proc,
 		interval: interval,
 		lag:      lag,
 		seen:     dedup.New(dedupCapacity),
+		onIngest: onIngest,
 	}
 }
 
@@ -101,6 +109,9 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		resp.Logs = kept
 	}
 	c.proc.ProcessAll(resp, e)
+	if c.onIngest != nil {
+		c.onIngest(semconv.IngestSourcePoll, semconv.IngestSignalAudit, len(resp.Logs), 0)
+	}
 	return to, nil
 }
 

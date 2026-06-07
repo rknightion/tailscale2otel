@@ -69,7 +69,7 @@ func oneTCPResponse() flowlog.NetworkResponse {
 
 func TestCollectWindow_DelegatesAndAdvances(t *testing.T) {
 	a := &fakeAPI{resp: oneTCPResponse()}
-	c := New(a, newProcessor(), 0, 0, nil)
+	c := New(a, newProcessor(), 0, 0, nil, nil)
 	rec := telemetrytest.New()
 
 	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
@@ -100,7 +100,7 @@ func TestCollectWindow_DelegatesAndAdvances(t *testing.T) {
 func TestCollectWindow_APIErrorDoesNotAdvance(t *testing.T) {
 	wantErr := errors.New("boom")
 	a := &fakeAPI{err: wantErr}
-	c := New(a, newProcessor(), 0, 0, nil)
+	c := New(a, newProcessor(), 0, 0, nil, nil)
 	rec := telemetrytest.New()
 
 	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
@@ -121,7 +121,7 @@ func TestCollectWindow_APIErrorDoesNotAdvance(t *testing.T) {
 
 func TestNameLagAndDefaultInterval(t *testing.T) {
 	// Defaults: zero interval -> 60s, zero lag -> 120s.
-	def := New(&fakeAPI{}, newProcessor(), 0, 0, nil)
+	def := New(&fakeAPI{}, newProcessor(), 0, 0, nil, nil)
 	if def.Name() != "flowlogs" {
 		t.Fatalf("Name() = %q, want flowlogs", def.Name())
 	}
@@ -133,7 +133,7 @@ func TestNameLagAndDefaultInterval(t *testing.T) {
 	}
 
 	// Overrides are honored.
-	ovr := New(&fakeAPI{}, newProcessor(), 30*time.Second, 45*time.Second, nil)
+	ovr := New(&fakeAPI{}, newProcessor(), 30*time.Second, 45*time.Second, nil, nil)
 	if got := ovr.DefaultInterval(); got != 30*time.Second {
 		t.Fatalf("DefaultInterval() = %v, want 30s (override)", got)
 	}
@@ -159,7 +159,7 @@ func sumIO(rec *telemetrytest.Recorder) float64 {
 func TestCollectWindow_BoundaryDedup(t *testing.T) {
 	resp := oneTCPResponse()
 	a := &fakeAPI{resp: resp}
-	c := New(a, newProcessor(), 0, 0, nil)
+	c := New(a, newProcessor(), 0, 0, nil, nil)
 	rec := telemetrytest.New()
 
 	w1from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
@@ -207,7 +207,7 @@ func featurePoint(t *testing.T, rec *telemetrytest.Recorder) telemetrytest.Metri
 // (true, nil) the collector emits feature.enabled=1 and processes the window.
 func TestCollectWindow_FeatureCheckEnabled(t *testing.T) {
 	a := &fakeAPI{resp: oneTCPResponse()}
-	c := New(a, newProcessor(), 0, 0, func(context.Context) (bool, error) { return true, nil })
+	c := New(a, newProcessor(), 0, 0, func(context.Context) (bool, error) { return true, nil }, nil)
 	rec := telemetrytest.New()
 
 	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
@@ -241,7 +241,7 @@ func TestCollectWindow_FeatureCheckEnabled(t *testing.T) {
 // returns the window end with no error (idle, not a transient failure).
 func TestCollectWindow_FeatureCheckDisabled(t *testing.T) {
 	a := &fakeAPI{resp: oneTCPResponse()}
-	c := New(a, newProcessor(), 0, 0, func(context.Context) (bool, error) { return false, nil })
+	c := New(a, newProcessor(), 0, 0, func(context.Context) (bool, error) { return false, nil }, nil)
 	rec := telemetrytest.New()
 
 	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
@@ -277,7 +277,7 @@ func TestCollectWindow_FeatureCheckErrorFailsOpen(t *testing.T) {
 	a := &fakeAPI{resp: oneTCPResponse()}
 	c := New(a, newProcessor(), 0, 0, func(context.Context) (bool, error) {
 		return false, errors.New("transient settings error")
-	})
+	}, nil)
 	rec := telemetrytest.New()
 
 	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
@@ -301,6 +301,89 @@ func TestCollectWindow_FeatureCheckErrorFailsOpen(t *testing.T) {
 	}
 }
 
+// TestCollectWindow_OnIngestHookCalled verifies that after a successful window
+// the onIngest hook is called exactly once with ("poll","flow",N,0) where N is
+// the post-dedup record count.
+func TestCollectWindow_OnIngestHookCalled(t *testing.T) {
+	// Three FlowLog entries with distinct connections so none are deduped away.
+	resp := flowlog.NetworkResponse{
+		Logs: []flowlog.FlowLog{
+			{
+				NodeID: "n-alpha",
+				Start:  time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC),
+				End:    time.Date(2026, 6, 2, 12, 1, 0, 0, time.UTC),
+				Logged: time.Date(2026, 6, 2, 12, 1, 5, 0, time.UTC),
+				VirtualTraffic: []flowlog.ConnectionCounts{
+					{Proto: 6, Src: "100.64.0.1:10001", Dst: "100.64.0.2:443", TxPkts: 1, RxPkts: 1},
+				},
+			},
+			{
+				NodeID: "n-beta",
+				Start:  time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC),
+				End:    time.Date(2026, 6, 2, 12, 1, 0, 0, time.UTC),
+				Logged: time.Date(2026, 6, 2, 12, 1, 5, 0, time.UTC),
+				VirtualTraffic: []flowlog.ConnectionCounts{
+					{Proto: 6, Src: "100.64.0.3:10002", Dst: "100.64.0.4:80", TxPkts: 2, RxPkts: 2},
+				},
+			},
+			{
+				NodeID: "n-gamma",
+				Start:  time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC),
+				End:    time.Date(2026, 6, 2, 12, 1, 0, 0, time.UTC),
+				Logged: time.Date(2026, 6, 2, 12, 1, 5, 0, time.UTC),
+				VirtualTraffic: []flowlog.ConnectionCounts{
+					{Proto: 17, Src: "100.64.0.5:10003", Dst: "100.64.0.6:53", TxPkts: 3, RxPkts: 3},
+				},
+			},
+		},
+	}
+
+	type call struct {
+		source  string
+		signal  string
+		records int
+		bytes   int
+	}
+	var got []call
+	hook := func(source, signal string, records, bytes int) {
+		got = append(got, call{source, signal, records, bytes})
+	}
+
+	a := &fakeAPI{resp: resp}
+	c := New(a, newProcessor(), 0, 0, nil, hook)
+	rec := telemetrytest.New()
+
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 2, 11, 59, 0, 0, time.UTC)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() error = %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("hook called %d times, want 1", len(got))
+	}
+	want := call{semconv.IngestSourcePoll, semconv.IngestSignalFlow, 3, 0}
+	if got[0] != want {
+		t.Fatalf("hook call = %+v, want %+v", got[0], want)
+	}
+}
+
+// TestCollectWindow_NilOnIngestHookDoesNotPanic verifies that omitting the hook
+// (nil) does not cause a nil-pointer dereference on a normal window.
+func TestCollectWindow_NilOnIngestHookDoesNotPanic(t *testing.T) {
+	a := &fakeAPI{resp: oneTCPResponse()}
+	c := New(a, newProcessor(), 0, 0, nil, nil)
+	rec := telemetrytest.New()
+
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 2, 11, 59, 0, 0, time.UTC)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() error = %v", err)
+	}
+}
+
 // TestCollectWindow_Forbidden403DisablesFeature verifies that an HTTP 403 /
 // forbidden error from the flow-log fetch is treated as the feature being
 // disabled: feature.enabled=0 is emitted and the window end is returned with no
@@ -315,7 +398,7 @@ func TestCollectWindow_Forbidden403DisablesFeature(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := &fakeAPI{err: tc.err}
-			c := New(a, newProcessor(), 0, 0, nil)
+			c := New(a, newProcessor(), 0, 0, nil, nil)
 			rec := telemetrytest.New()
 
 			from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
