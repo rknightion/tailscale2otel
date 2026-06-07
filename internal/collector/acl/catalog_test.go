@@ -32,10 +32,11 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
 
 	huJSON := `{
-		"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
+		"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"], "srcPosture": ["posture:x"]}],
 		"grants": [{"src": ["*"], "dst": ["*"]}],
 		"ssh": [{"action": "accept", "src": ["*"], "dst": ["*"], "users": ["root"]}],
-		"tagOwners": {"tag:server": ["group:admins"]}
+		"tagOwners": {"tag:server": ["group:admins"]},
+		"autoApprovers": {"routes": {"10.0.0.0/24": ["tag:server"]}, "exitNode": ["tag:server"]}
 	}`
 	fixedNow := time.Unix(1_000_000, 0).UTC()
 	c := acl.New(&fakeAPI{acl: &tsclient.RawACL{HuJSON: huJSON, ETag: "etag-1"}}, 0, func() time.Time { return fixedNow })

@@ -218,6 +218,40 @@ func TestRuleCountsFromRealACL(t *testing.T) {
 	if _, ok := got["randomizeClientPort"]; ok {
 		t.Fatal("unexpected rules point for scalar randomizeClientPort")
 	}
+
+	// --- B1 risk scores from the real fixture ---
+	// grants: src wildcards on grants #2,#8 = 2; dst wildcards on #4,#6,#7,#9,#10 = 5.
+	wild := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.acl.wildcard_rules") {
+		wild[p.Attrs["tailscale.acl.section"]+"/"+p.Attrs["tailscale.acl.position"]] = p.Value
+	}
+	if wild["grants/src"] != 2 || wild["grants/dst"] != 5 {
+		t.Fatalf("grants wildcard src/dst = %v/%v, want 2/5", wild["grants/src"], wild["grants/dst"])
+	}
+	if wild["acls/src"] != 0 || wild["acls/dst"] != 0 {
+		t.Fatalf("acls wildcard src/dst = %v/%v, want 0/0", wild["acls/src"], wild["acls/dst"])
+	}
+
+	unr := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.acl.unrestricted_rules") {
+		unr[p.Attrs["tailscale.acl.section"]] = p.Value
+	}
+	if unr["acls"] != 0 || unr["grants"] != 0 {
+		t.Fatalf("unrestricted acls/grants = %v/%v, want 0/0", unr["acls"], unr["grants"])
+	}
+
+	aa := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.acl.autoapprovers") {
+		aa[p.Attrs["tailscale.acl.autoapprover_kind"]] = p.Value
+	}
+	if aa["routes"] != 7 || aa["exit_node"] != 2 || aa["services"] != 1 {
+		t.Fatalf("autoapprovers routes/exit_node/services = %v/%v/%v, want 7/2/1", aa["routes"], aa["exit_node"], aa["services"])
+	}
+
+	sshPts := rec.MetricPoints("tailscale.acl.ssh_wildcard")
+	if len(sshPts) != 1 || sshPts[0].Value != 0 {
+		t.Fatalf("ssh_wildcard = %v (n=%d), want 0 (n=1)", sshPts, len(sshPts))
+	}
 }
 
 func TestMalformedHuJSONStillEmitsSizeAndLastChanged(t *testing.T) {

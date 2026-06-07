@@ -108,31 +108,39 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Gauge(docACLSize.Name, docACLSize.Unit, docACLSize.Description,
 		float64(len(raw.HuJSON)), nil)
 
-	// Per-section rule counts require parsing the HuJSON policy. If parsing
-	// fails (malformed document) the rule counts are skipped, but size and
-	// last_changed are still emitted above and the collect does not error.
-	c.emitRuleCounts(e, raw.HuJSON)
+	// Per-section counts and risk scores both need the policy parsed. Parse
+	// once. If parsing fails (malformed document) both are skipped, but size
+	// and last_changed are still emitted above and the collect does not error.
+	top, ok := standardizeTop(raw.HuJSON)
+	if !ok {
+		return nil
+	}
+	c.emitRuleCounts(e, top)
+	c.emitRiskScores(e, top)
 
 	return nil
 }
 
-// emitRuleCounts standardizes the HuJSON policy and emits one
-// tailscale.acl.rules gauge per recognized section that is present. A section's
-// value is the element count when it is a JSON array, or the key count when it
-// is a JSON object. Sections that are absent or encoded as a scalar are
-// skipped. Parse failures are silently ignored so the rest of the collect
-// remains intact.
-func (c *Collector) emitRuleCounts(e telemetry.Emitter, hujsonDoc string) {
+// standardizeTop standardizes the HuJSON policy and unmarshals its top level
+// into a section map. It returns ok=false on any HuJSON/JSON parse failure so
+// callers can skip parsed-data signals while still emitting size/last_changed.
+func standardizeTop(hujsonDoc string) (map[string]json.RawMessage, bool) {
 	std, err := hujson.Standardize([]byte(hujsonDoc))
 	if err != nil {
-		return
+		return nil, false
 	}
-
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(std, &top); err != nil {
-		return
+		return nil, false
 	}
+	return top, true
+}
 
+// emitRuleCounts emits one tailscale.acl.rules gauge per recognized section
+// present in the parsed policy. A section's value is the element count when it
+// is a JSON array, or the key count when it is a JSON object. Sections that are
+// absent or encoded as a scalar are skipped.
+func (c *Collector) emitRuleCounts(e telemetry.Emitter, top map[string]json.RawMessage) {
 	for _, section := range recognizedSections {
 		raw, ok := top[section]
 		if !ok {

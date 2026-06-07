@@ -15,6 +15,15 @@ import (
 // documented in prose.
 const groupACL = "ACL"
 
+// Risk metric source names (see risk.go for emission logic).
+const (
+	metricWildcardRules = "tailscale.acl.wildcard_rules"
+	metricUnrestricted  = "tailscale.acl.unrestricted_rules"
+	metricAutoApprovers = "tailscale.acl.autoapprovers"
+	metricSSHWildcard   = "tailscale.acl.ssh_wildcard"
+	metricPostureGated  = "tailscale.acl.posture_gated_rules"
+)
+
 var (
 	docACLLastChanged = metricdoc.Metric{
 		Name:        metricLastChanged,
@@ -38,11 +47,54 @@ var (
 		Attributes:  []string{attrSection},
 		Group:       groupACL,
 	}
+	docACLWildcardRules = metricdoc.Metric{
+		Name:        metricWildcardRules,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of non-deny ACL/grant rules with a wildcard (`*`) source or destination, per section and position (a **count**, despite `_ratio`).",
+		Attributes:  []string{attrSection, attrPosition},
+		Group:       groupACL,
+	}
+	docACLUnrestricted = metricdoc.Metric{
+		Name:        metricUnrestricted,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of non-deny rules matching any source to any destination (wildcard `src` and `dst`), per section (a **count**, despite `_ratio`).",
+		Attributes:  []string{attrSection},
+		Group:       groupACL,
+	}
+	docACLAutoApprovers = metricdoc.Metric{
+		Name:        metricAutoApprovers,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of auto-approver entries by kind (routes, exit_node, services) (a **count**, despite `_ratio`).",
+		Attributes:  []string{attrApproverKind},
+		Group:       groupACL,
+	}
+	docACLSSHWildcard = metricdoc.Metric{
+		Name:        metricSSHWildcard,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of Tailscale SSH rules with a wildcard (`*`) source or destination (a **count**, despite `_ratio`).",
+		Group:       groupACL,
+	}
+	docACLPostureGated = metricdoc.Metric{
+		Name:        metricPostureGated,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of rules gated by a device-posture condition (`srcPosture`), per section (a **count**, despite `_ratio`).",
+		Attributes:  []string{attrSection},
+		Group:       groupACL,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docACLLastChanged, docACLSize, docACLRules}
+	return []metricdoc.Metric{
+		docACLLastChanged, docACLSize, docACLRules,
+		docACLWildcardRules, docACLUnrestricted, docACLAutoApprovers,
+		docACLSSHWildcard, docACLPostureGated,
+	}
 }
 
 // LogCatalog returns the log events this package emits (none).

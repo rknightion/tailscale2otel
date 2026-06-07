@@ -216,9 +216,14 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 <!-- BEGIN GENERATED: metrics groups="Settings,ACL,DNS" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
+| `tailscale.acl.autoapprovers` | `1` | gauge | `tailscale_acl_autoapprovers_ratio` | `tailscale_acl_autoapprover_kind` | Number of auto-approver entries by kind (routes, exit_node, services) (a **count**, despite `_ratio`). |
 | `tailscale.acl.last_changed` | `s` | gauge | `tailscale_acl_last_changed_seconds` | — | Unix timestamp the ACL policy last changed (detected by ETag). |
+| `tailscale.acl.posture_gated_rules` | `1` | gauge | `tailscale_acl_posture_gated_rules_ratio` | `tailscale_acl_section` | Number of rules gated by a device-posture condition (`srcPosture`), per section (a **count**, despite `_ratio`). |
 | `tailscale.acl.rules` | `1` | gauge | `tailscale_acl_rules_ratio` | `tailscale_acl_section` | Number of rules per ACL section (a **count**, despite `_ratio`). |
 | `tailscale.acl.size` | `By` | gauge | `tailscale_acl_size_bytes` | — | Size of the current ACL policy document, in bytes. |
+| `tailscale.acl.ssh_wildcard` | `1` | gauge | `tailscale_acl_ssh_wildcard_ratio` | — | Number of Tailscale SSH rules with a wildcard (`*`) source or destination (a **count**, despite `_ratio`). |
+| `tailscale.acl.unrestricted_rules` | `1` | gauge | `tailscale_acl_unrestricted_rules_ratio` | `tailscale_acl_section` | Number of non-deny rules matching any source to any destination (wildcard `src` and `dst`), per section (a **count**, despite `_ratio`). |
+| `tailscale.acl.wildcard_rules` | `1` | gauge | `tailscale_acl_wildcard_rules_ratio` | `tailscale_acl_section`, `tailscale_acl_position` | Number of non-deny ACL/grant rules with a wildcard (`*`) source or destination, per section and position (a **count**, despite `_ratio`). |
 | `tailscale.dns.magic_dns` | `1` | gauge | `tailscale_dns_magic_dns_ratio` | — | `1` if MagicDNS is enabled, else `0`. |
 | `tailscale.dns.nameservers.count` | `1` | gauge | `tailscale_dns_nameservers_count_ratio` | — | Number of configured nameservers (a **count**). |
 | `tailscale.dns.search_paths.count` | `1` | gauge | `tailscale_dns_search_paths_count_ratio` | — | Number of DNS search paths (a **count**). |
