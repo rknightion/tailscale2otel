@@ -552,6 +552,72 @@ func TestWebhookHandle_EmitsSpan(t *testing.T) {
 	}
 }
 
+// TestHandler_RequestDurationRecorded verifies that a successfully handled
+// webhook POST records exactly one tailscale.webhook.request.duration histogram
+// sample with a non-negative value and no attributes.
+func TestHandler_RequestDurationRecorded(t *testing.T) {
+	s, rec := newTestServer(t)
+
+	ts := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
+	sig := signBody(testSecret, ts, twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	pts := rec.MetricPoints("tailscale.webhook.request.duration")
+	if len(pts) == 0 {
+		t.Fatalf("no metric points for tailscale.webhook.request.duration")
+	}
+	// There must be exactly one histogram point (one request).
+	if len(pts) != 1 {
+		t.Fatalf("tailscale.webhook.request.duration points = %d, want 1", len(pts))
+	}
+	p := pts[0]
+	if p.Kind != "histogram" {
+		t.Errorf("tailscale.webhook.request.duration kind = %q, want histogram", p.Kind)
+	}
+	// Count must be 1 (one observation).
+	if p.Count != 1 {
+		t.Errorf("tailscale.webhook.request.duration count = %d, want 1", p.Count)
+	}
+	// Duration must be non-negative.
+	if p.Value < 0 {
+		t.Errorf("tailscale.webhook.request.duration sum = %v, want >= 0", p.Value)
+	}
+	// No attributes on this metric.
+	if len(p.Attrs) != 0 {
+		t.Errorf("tailscale.webhook.request.duration has unexpected attrs: %v", p.Attrs)
+	}
+}
+
+// TestHandler_InflightNetsToZeroAfterCompletion verifies that
+// tailscale.webhook.inflight nets to 0 after a request completes (the +1 at
+// start is balanced by the -1 in defer). The in-flight gauge is an
+// UpDownCounter so it must show a net-zero value (or no points at all if both
+// additions cancel — but the SDK keeps cumulative state, so we assert Count==0
+// is NOT required; we assert the net Value is 0 after completion).
+func TestHandler_InflightNetsToZeroAfterCompletion(t *testing.T) {
+	s, rec := newTestServer(t)
+
+	ts := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
+	sig := signBody(testSecret, ts, twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	pts := rec.MetricPoints("tailscale.webhook.inflight")
+	// After the request completes, the net value of the UpDownCounter must be 0.
+	var net float64
+	for _, p := range pts {
+		net += p.Value
+	}
+	if net != 0 {
+		t.Errorf("tailscale.webhook.inflight net value = %v, want 0 after request completion", net)
+	}
+}
+
 // TestWebhookHandle_EmitsSpanOnReject verifies that the span is emitted and
 // marked Error when signature verification fails.
 func TestWebhookHandle_EmitsSpanOnReject(t *testing.T) {

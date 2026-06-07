@@ -107,7 +107,17 @@ const (
 	// typed decode failed (a malformed flow/audit record inside an otherwise
 	// valid request). Carries the "type" attribute ("flow" or "audit").
 	MetricDecodeErrors = "tailscale.stream.decode_errors"
+	// MetricInflight tracks in-flight HTTP requests currently being processed
+	// by the HEC receiver (UpDownCounter: +1 on entry, -1 on return).
+	MetricInflight = "tailscale.stream.inflight"
+	// MetricRequestDuration is the wall-clock duration of HEC receiver HTTP
+	// request handling in seconds (Histogram).
+	MetricRequestDuration = "tailscale.stream.request.duration"
 )
+
+// requestDurationBucketsSeconds are the explicit histogram bucket boundaries
+// for tailscale.stream.request.duration (in seconds).
+var requestDurationBucketsSeconds = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 
 // Attribute keys and values for the receiver's own counters.
 const (
@@ -244,6 +254,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tr.Start(ctx, "stream.receive", trace.WithSpanKind(trace.SpanKindServer))
 	defer span.End()
 	r = r.WithContext(ctx)
+
+	// In-flight counter: +1 now, -1 when the handler returns (balanced via defer).
+	s.emitter.UpDownCounter(docStreamInflight.Name, docStreamInflight.Unit, docStreamInflight.Description, +1, nil)
+	defer s.emitter.UpDownCounter(docStreamInflight.Name, docStreamInflight.Unit, docStreamInflight.Description, -1, nil)
+
+	// Request duration histogram: record wall-clock time of the whole handler.
+	start := time.Now()
+	defer func() {
+		s.emitter.Histogram(docStreamRequestDuration.Name, docStreamRequestDuration.Unit,
+			docStreamRequestDuration.Description, time.Since(start).Seconds(),
+			requestDurationBucketsSeconds, nil)
+	}()
 
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)

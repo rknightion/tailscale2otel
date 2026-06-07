@@ -92,6 +92,26 @@ const MetricAdminAuthRejected = "tailscale2otel.admin.auth.rejected"
 const (
 	MetricDedupSize      = "tailscale2otel.dedup.size"
 	MetricDedupEvictions = "tailscale2otel.dedup.evictions"
+	// MetricDedupHits counts duplicate keys suppressed by a de-duplication set
+	// (the proof the set is doing work; size+evictions alone can't show hits).
+	MetricDedupHits = "tailscale2otel.dedup.hits"
+)
+
+// Process self-observability metric names. OTel-standard process.* names (NOT the
+// tailscale2otel.* namespace) so generic OTel/host dashboards light up without
+// bespoke knowledge of our runtime.* metrics. Sourced from the Go stdlib only
+// (uptime from the start time; cpu.time from syscall.Getrusage on unix).
+const (
+	MetricProcessUptime  = "process.uptime"
+	MetricProcessCPUTime = "process.cpu.time"
+)
+
+// Config-health self-observability metric names. Surface config.Warnings()/
+// Validate() at runtime (today warnings are log-only at startup) so misconfig is
+// visible/alertable rather than buried in boot logs.
+const (
+	MetricConfigWarnings = "tailscale2otel.config.warnings"
+	MetricConfigValid    = "tailscale2otel.config.valid"
 )
 
 // Ingestion-volume self-observability metric names. Emitted (via an app-built
@@ -294,6 +314,55 @@ var (
 		Attributes:  []string{semconv.AttrDedupSet},
 		Group:       GroupSelfObs,
 	}
+	DocDedupHits = metricdoc.Metric{
+		Name:        MetricDedupHits,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Counter,
+		Description: "Duplicate keys suppressed by a de-duplication set, by set (a hit is a record dropped because its key was already seen — proves the set is actually de-duplicating; a **count**, despite the `_total` suffix).",
+		Attributes:  []string{semconv.AttrDedupSet},
+		Group:       GroupSelfObs,
+	}
+)
+
+// Process metric descriptors. process.uptime is a point-in-time gauge; process.cpu.time
+// is a monotonic counter (emitted as per-interval deltas off syscall.Getrusage), split
+// by cpu.mode=user|system. Standard OTel names so generic dashboards work out of the box.
+var (
+	DocProcessUptime = metricdoc.Metric{
+		Name:        MetricProcessUptime,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Seconds since the process started (wall-clock uptime).",
+		Group:       GroupSelfObs,
+	}
+	DocProcessCPUTime = metricdoc.Metric{
+		Name:        MetricProcessCPUTime,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Counter,
+		Description: "Cumulative process CPU time in seconds, by mode (`cpu.mode`=user|system), read from getrusage(RUSAGE_SELF). Emitted on unix platforms only.",
+		Attributes:  []string{semconv.AttrCPUMode},
+		Group:       GroupSelfObs,
+	}
+)
+
+// Config-health descriptors. Both are point-in-time gauges re-evaluated each export
+// interval. config.warnings is a count (the `_ratio` suffix is a Prom-normalization
+// quirk for unit-`1` gauges); config.valid is a 1/0 flag.
+var (
+	DocConfigWarnings = metricdoc.Metric{
+		Name:        MetricConfigWarnings,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of active configuration advisories from config.Warnings() (a **count**, despite the `_ratio` suffix). Non-zero means startup logged WARN-level advisories worth reviewing.",
+		Group:       GroupSelfObs,
+	}
+	DocConfigValid = metricdoc.Metric{
+		Name:        MetricConfigValid,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` when the running configuration passes Validate(), else `0` (a **flag**, despite the `_ratio` suffix). Normally `1` at runtime since invalid config fails startup; exposed as an alertable invariant.",
+		Group:       GroupSelfObs,
+	}
 )
 
 // Ingestion-volume descriptors. ingest.records counts records accepted at each
@@ -342,7 +411,9 @@ func Catalog() []metricdoc.Metric {
 		DocRuntimeGCCount, DocRuntimeGCPauseTime, DocRuntimeAllocBytes,
 		DocComponentErrors,
 		DocAdminAuthRejected,
-		DocDedupSize, DocDedupEvictions,
+		DocDedupSize, DocDedupEvictions, DocDedupHits,
+		DocProcessUptime, DocProcessCPUTime,
+		DocConfigWarnings, DocConfigValid,
 		DocIngestRecords, DocIngestBytes,
 		DocSeriesByGroup,
 	}

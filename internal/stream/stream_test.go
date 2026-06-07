@@ -815,6 +815,41 @@ func TestHandleCallsIngestHook(t *testing.T) {
 	findCall(semconv.IngestSourceStream, semconv.IngestSignalAudit, 1, 0)
 }
 
+// TestHandler_InflightAndDuration asserts that a successful POST:
+//   - records at least one tailscale.stream.request.duration histogram sample;
+//   - leaves tailscale.stream.inflight at 0 (the +1 on entry and -1 on return
+//     cancel out after the handler returns).
+func TestHandler_InflightAndDuration(t *testing.T) {
+	s, rec := newServer(t, stream.Options{})
+
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil,
+		strings.NewReader(realHECStreamBody))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.Code)
+	}
+
+	// duration histogram must have at least one sample.
+	durPts := rec.MetricPoints("tailscale.stream.request.duration")
+	if len(durPts) == 0 {
+		t.Fatalf("tailscale.stream.request.duration: no points recorded")
+	}
+	if durPts[0].Kind != "histogram" {
+		t.Fatalf("tailscale.stream.request.duration: Kind = %q, want histogram", durPts[0].Kind)
+	}
+	if durPts[0].Count < 1 {
+		t.Fatalf("tailscale.stream.request.duration: Count = %d, want >= 1", durPts[0].Count)
+	}
+
+	// inflight must be 0 after the handler returns (+1 entry, -1 exit).
+	inflightPts := rec.MetricPoints("tailscale.stream.inflight")
+	if len(inflightPts) == 0 {
+		t.Fatalf("tailscale.stream.inflight: no points recorded")
+	}
+	if inflightPts[0].Value != 0 {
+		t.Fatalf("tailscale.stream.inflight: Value = %v, want 0 (balanced +1/-1)", inflightPts[0].Value)
+	}
+}
+
 // spanNames extracts the Name() of each ended ReadOnlySpan for readable assertions.
 func spanNames(spans []sdktrace.ReadOnlySpan) []string {
 	out := make([]string, 0, len(spans))

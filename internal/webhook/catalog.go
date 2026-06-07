@@ -40,6 +40,22 @@ var (
 		Attributes:  []string{attrReason},
 		Group:       groupReceivers,
 	}
+	docWebhookInflight = metricdoc.Metric{
+		Name:        "tailscale.webhook.inflight",
+		Unit:        semconv.UnitRequests,
+		Instrument:  metricdoc.UpDownCounter,
+		Description: "In-flight HTTP requests currently being processed by the webhook receiver.",
+		Attributes:  nil,
+		Group:       groupReceivers,
+	}
+	docWebhookRequestDuration = metricdoc.Metric{
+		Name:        "tailscale.webhook.request.duration",
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Wall-clock duration of webhook receiver HTTP request handling, in seconds.",
+		Attributes:  nil,
+		Group:       groupReceivers,
+	}
 
 	docWebhookLog = metricdoc.LogEvent{
 		Name:        eventNameDoc,
@@ -52,7 +68,7 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docWebhookEvents, docWebhookRejected}
+	return []metricdoc.Metric{docWebhookEvents, docWebhookRejected, docWebhookInflight, docWebhookRequestDuration}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

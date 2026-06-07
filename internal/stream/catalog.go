@@ -36,11 +36,31 @@ var (
 		Attributes:  []string{attrType},
 		Group:       groupReceivers,
 	}
+	docStreamInflight = metricdoc.Metric{
+		Name:        MetricInflight,
+		Unit:        "{request}",
+		Instrument:  metricdoc.UpDownCounter,
+		Description: "In-flight HTTP requests currently being processed by the HEC receiver.",
+		Group:       groupReceivers,
+	}
+	docStreamRequestDuration = metricdoc.Metric{
+		Name:        MetricRequestDuration,
+		Unit:        "s",
+		Instrument:  metricdoc.Histogram,
+		Description: "Wall-clock duration of HEC receiver HTTP request handling, in seconds.",
+		Group:       groupReceivers,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docStreamRecords, docStreamRejected, docStreamDecodeErrors}
+	return []metricdoc.Metric{
+		docStreamRecords,
+		docStreamRejected,
+		docStreamDecodeErrors,
+		docStreamInflight,
+		docStreamRequestDuration,
+	}
 }
 
 // LogCatalog returns the log events this package emits (none; flow/audit log

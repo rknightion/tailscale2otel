@@ -5,6 +5,8 @@ package collector
 import (
 	"context"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
 // RunTick is a test shim that calls the unexported runTick method so external
@@ -12,4 +14,9 @@ import (
 // going through the goroutine scheduler.
 func (s *Scheduler) RunTick(ctx context.Context, e Entry, lastSuccess *time.Time) {
 	s.runTick(ctx, e, lastSuccess)
+}
+
+// EmitCheckpointStats exposes emitCheckpointStats for package-external tests.
+func EmitCheckpointStats(e telemetry.Emitter, path string) {
+	emitCheckpointStats(e, path)
 }

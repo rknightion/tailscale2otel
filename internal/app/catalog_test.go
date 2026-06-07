@@ -51,11 +51,21 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// admin.auth.rejected: emit one so its descriptor is validated too.
 	emitAdminAuthRejected(rec.Emitter(), reasonBadCredentials)
 
-	// dedup.size + dedup.evictions: a cap-1 set with one eviction emits both.
+	// dedup.size + dedup.evictions + dedup.hits: a cap-1 set with one eviction and
+	// one duplicate add emits all three.
 	dset := dedup.New(1)
 	dset.Add("a")
 	dset.Add("b") // evicts "a" => evictions 1
-	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": dset}, map[string]uint64{})
+	dset.Add("b") // duplicate => hits 1
+	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": dset}, map[string]uint64{}, map[string]uint64{})
+
+	// process.uptime + process.cpu.time: a stub readCPU forces the counter to fire.
+	var lastUser, lastSys float64
+	emitProcess(rec.Emitter(), time.Now().Add(-time.Minute),
+		func() (float64, float64, bool) { return 1.5, 0.5, true }, &lastUser, &lastSys)
+
+	// config.warnings + config.valid: an empty config emits both gauges.
+	emitConfigHealth(rec.Emitter(), &config.Config{})
 
 	// update_available: emit with a known-newer latest so the gauge fires.
 	emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v9.9.9", true }, "v0.1.0")

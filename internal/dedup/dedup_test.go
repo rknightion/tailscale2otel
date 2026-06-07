@@ -172,3 +172,70 @@ func TestAdd_ConcurrentNoRaceBounded(t *testing.T) {
 		t.Fatalf("Len() = %d, want <= %d", got, capacity)
 	}
 }
+
+func TestHits_CountsEachDuplicateAdd(t *testing.T) {
+	s := dedup.New(16)
+	if got := s.Hits(); got != 0 {
+		t.Fatalf("Hits() = %d before any add, want 0", got)
+	}
+	// First Add is a miss; Hits must remain 0.
+	s.Add("a")
+	if got := s.Hits(); got != 0 {
+		t.Fatalf("Hits() = %d after one miss, want 0", got)
+	}
+	// Second Add of the same key is a hit.
+	s.Add("a")
+	if got := s.Hits(); got != 1 {
+		t.Fatalf("Hits() = %d after one duplicate add, want 1", got)
+	}
+	// A third duplicate increments again.
+	s.Add("a")
+	if got := s.Hits(); got != 2 {
+		t.Fatalf("Hits() = %d after two duplicate adds, want 2", got)
+	}
+	// A fresh key is another miss; Hits must stay at 2.
+	s.Add("b")
+	if got := s.Hits(); got != 2 {
+		t.Fatalf("Hits() = %d after a fresh-key add, want 2 (unchanged)", got)
+	}
+}
+
+func TestHits_PureMissSequenceLeavesZero(t *testing.T) {
+	s := dedup.New(1024)
+	for i := 0; i < 100; i++ {
+		s.Add(fmt.Sprintf("k%d", i))
+	}
+	if got := s.Hits(); got != 0 {
+		t.Fatalf("Hits() = %d after 100 unique adds, want 0", got)
+	}
+}
+
+func TestHits_ConcurrentNoRace(t *testing.T) {
+	const capacity = 256
+	s := dedup.New(capacity)
+
+	// Pre-populate a set of keys that will be hit concurrently.
+	const sharedKeys = 16
+	for i := 0; i < sharedKeys; i++ {
+		s.Add(fmt.Sprintf("shared-%d", i))
+	}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < sharedKeys; i++ {
+				// Each goroutine re-adds every shared key (all hits).
+				s.Add(fmt.Sprintf("shared-%d", i))
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	// 8 goroutines × 16 shared keys = 128 hits; Hits() must be exactly 128.
+	const wantHits = 8 * sharedKeys
+	if got := s.Hits(); got != wantHits {
+		t.Fatalf("Hits() = %d after concurrent duplicate adds, want %d", got, wantHits)
+	}
+}

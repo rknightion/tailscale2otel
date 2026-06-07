@@ -60,6 +60,15 @@ const (
 	// AttrMetricGroup names the docs/catalog group a metric belongs to, used on
 	// tailscale2otel.series.by_group (e.g. "Devices", "Network", "Self-observability").
 	AttrMetricGroup = "metric.group"
+	// AttrCPUMode classifies process CPU time on the OTel-standard process.cpu.time
+	// metric: "user" or "system". A CLOSED set so cardinality stays bounded.
+	AttrCPUMode = "cpu.mode"
+)
+
+// process.cpu.time (AttrCPUMode) values — the CLOSED set of CPU modes.
+const (
+	CPUModeUser   = "user"
+	CPUModeSystem = "system"
 )
 
 // Ingestion-path (tailscale2otel.ingest.*) attribute values. A CLOSED set so the

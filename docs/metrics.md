@@ -96,14 +96,21 @@ exporter health.
 <!-- BEGIN GENERATED: metrics groups="Self-observability" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
+| `process.cpu.time` | `s` | counter | `process_cpu_time_seconds_total` | `cpu_mode` | Cumulative process CPU time in seconds, by mode (`cpu.mode`=user\|system), read from getrusage(RUSAGE_SELF). Emitted on unix platforms only. |
+| `process.uptime` | `s` | gauge | `process_uptime_seconds` | — | Seconds since the process started (wall-clock uptime). |
 | `tailscale2otel.admin.auth.rejected` | `1` | counter | `tailscale2otel_admin_auth_rejected_total` | `reason` | Admin HTTP requests rejected by the auth gate (status page + pprof), by reason. |
 | `tailscale2otel.api.duration` | `s` | histogram | `tailscale2otel_api_duration_seconds` | `endpoint`, `http_response_status_code` | Tailscale API request wall-clock latency in seconds, by endpoint and HTTP status code. Covers the full logical request including any retry backoff (not just server time). Use the 429 status-code bucket here plus tailscale2otel.api.retries for rate-limit visibility — the Tailscale API exposes no rate-limit-remaining headers. When tracing is enabled, datapoints carry trace exemplars linking to the API request span. |
 | `tailscale2otel.api.requests` | `1` | counter | `tailscale2otel_api_requests_total` | `endpoint`, `http_response_status_code` | Tailscale API requests, by endpoint and HTTP status code. |
 | `tailscale2otel.api.retries` | `1` | counter | `tailscale2otel_api_retries_total` | `endpoint` | API retry attempts, by endpoint. |
 | `tailscale2otel.build_info` | `1` | gauge | `tailscale2otel_build_info_ratio` | `go_version` | Constant `1` build-info gauge; the Go runtime version is carried as the `go.version` label (the service version is promoted from the resource as `service_version`). |
+| `tailscale2otel.checkpoint.disk.size` | `By` | gauge | `tailscale2otel_checkpoint_disk_size_bytes` | — | On-disk size of the checkpoint file in bytes. |
+| `tailscale2otel.checkpoint.persist.age` | `s` | gauge | `tailscale2otel_checkpoint_persist_age_seconds` | — | Seconds since the checkpoint file was last successfully written (file mtime). |
 | `tailscale2otel.checkpoint.persist.errors` | `1` | counter | `tailscale2otel_checkpoint_persist_errors_total` | `tailscale_collector` | Count of checkpoint-persistence failures, by collector (the window succeeded but its high-water mark could not be saved). |
 | `tailscale2otel.component.errors` | `1` | counter | `tailscale2otel_component_errors_total` | `component` | Failures of non-collector subsystems (receivers, admin server, streaming auto-configure), by component. |
+| `tailscale2otel.config.valid` | `1` | gauge | `tailscale2otel_config_valid_ratio` | — | `1` when the running configuration passes Validate(), else `0` (a **flag**, despite the `_ratio` suffix). Normally `1` at runtime since invalid config fails startup; exposed as an alertable invariant. |
+| `tailscale2otel.config.warnings` | `1` | gauge | `tailscale2otel_config_warnings_ratio` | — | Number of active configuration advisories from config.Warnings() (a **count**, despite the `_ratio` suffix). Non-zero means startup logged WARN-level advisories worth reviewing. |
 | `tailscale2otel.dedup.evictions` | `1` | counter | `tailscale2otel_dedup_evictions_total` | `dedup_set` | Keys evicted from a de-duplication set because it was at capacity, by set (sustained growth means the set is undersized). |
+| `tailscale2otel.dedup.hits` | `1` | counter | `tailscale2otel_dedup_hits_total` | `dedup_set` | Duplicate keys suppressed by a de-duplication set, by set (a hit is a record dropped because its key was already seen — proves the set is actually de-duplicating; a **count**, despite the `_total` suffix). |
 | `tailscale2otel.dedup.size` | `1` | gauge | `tailscale2otel_dedup_size_ratio` | `dedup_set` | Keys currently held in a cross-source de-duplication set, by set (a **count**, despite the `_ratio` suffix). |
 | `tailscale2otel.enrich.cache_age` | `s` | gauge | `tailscale2otel_enrich_cache_age_seconds` | — | Age of the device-enrichment cache (since last refresh). |
 | `tailscale2otel.enrich.cache_size` | `1` | gauge | `tailscale2otel_enrich_cache_size_ratio` | — | Number of devices in the enrichment cache (a **count**, despite `_ratio`). |
@@ -376,10 +383,14 @@ Health/throughput counters for the optional HEC log-stream receiver and the webh
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
 | `tailscale.stream.decode_errors` | `{record}` | counter | `tailscale_stream_decode_errors_total` | `type` | Records that classified as a known type but failed to decode, by stream type (`flow`/`audit`). |
+| `tailscale.stream.inflight` | `{request}` | updowncounter | `tailscale_stream_inflight` | — | In-flight HTTP requests currently being processed by the HEC receiver. |
 | `tailscale.stream.records` | `{record}` | counter | `tailscale_stream_records_total` | `type` | Records accepted by the HEC stream receiver, by stream type (`flow`/`audit`). |
 | `tailscale.stream.rejected` | `{rejection}` | counter | `tailscale_stream_rejected_total` | `reason` | Records rejected by the stream receiver, by reason (`auth`/`unparsable`/`too_large`). |
+| `tailscale.stream.request.duration` | `s` | histogram | `tailscale_stream_request_duration_seconds` | — | Wall-clock duration of HEC receiver HTTP request handling, in seconds. |
 | `tailscale.webhook.events` | `{event}` | counter | `tailscale_webhook_events_total` | `tailscale_webhook_type` | Webhook events accepted, by Tailscale event type. |
+| `tailscale.webhook.inflight` | `{request}` | updowncounter | `tailscale_webhook_inflight` | — | In-flight HTTP requests currently being processed by the webhook receiver. |
 | `tailscale.webhook.rejected` | `1` | counter | `tailscale_webhook_rejected_total` | `reason` | Webhook deliveries rejected (e.g. bad HMAC), by reason. |
+| `tailscale.webhook.request.duration` | `s` | histogram | `tailscale_webhook_request_duration_seconds` | — | Wall-clock duration of webhook receiver HTTP request handling, in seconds. |
 <!-- END GENERATED -->
 
 ### Node metrics scraper (`tailscale.node.*` + forwarded series)

@@ -43,6 +43,13 @@ const (
 	// store (e.g. a disk error). The window itself succeeded; only the durable
 	// checkpoint write failed, so the next tick re-polls the same window.
 	MetricCheckpointPersistErrors = "tailscale2otel.checkpoint.persist.errors"
+	// MetricCheckpointDiskSize is a gauge of the on-disk size of the checkpoint
+	// file in bytes. It is emitted by RunCheckpointReporter.
+	MetricCheckpointDiskSize = "tailscale2otel.checkpoint.disk.size"
+	// MetricCheckpointPersistAge is a gauge of the seconds since the checkpoint
+	// file was last successfully written (file mtime). It is emitted by
+	// RunCheckpointReporter.
+	MetricCheckpointPersistAge = "tailscale2otel.checkpoint.persist.age"
 )
 
 // error.type values for MetricScrapeErrors.

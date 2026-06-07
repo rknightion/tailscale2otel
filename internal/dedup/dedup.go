@@ -20,6 +20,7 @@ type Set struct {
 	order     []string // insertion order, used to evict the oldest key first
 	head      int      // index into order of the oldest live key
 	evictions uint64   // cumulative count of keys evicted for capacity
+	hits      uint64   // cumulative count of duplicate-key adds (key already present)
 }
 
 // New returns a Set that remembers at most capacity keys. A capacity of zero or
@@ -44,6 +45,7 @@ func (s *Set) Add(key string) bool {
 	defer s.mu.Unlock()
 
 	if _, ok := s.seen[key]; ok {
+		s.hits++
 		return false
 	}
 
@@ -75,6 +77,16 @@ func (s *Set) Evictions() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.evictions
+}
+
+// Hits reports the cumulative number of Add calls that found the key already
+// present (i.e. calls that returned false). A high or fast-growing value means
+// the workload sends many duplicate keys, which is the normal case when the set
+// is working correctly.
+func (s *Set) Hits() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hits
 }
 
 // evictLocked drops oldest keys until the set is within capacity. The caller

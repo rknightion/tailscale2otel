@@ -74,12 +74,26 @@ var (
 		Attributes:  []string{semconv.AttrCollector},
 		Group:       groupSelfObs,
 	}
+	docCheckpointDiskSize = metricdoc.Metric{
+		Name:        MetricCheckpointDiskSize,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Gauge,
+		Description: "On-disk size of the checkpoint file in bytes.",
+		Group:       groupSelfObs,
+	}
+	docCheckpointPersistAge = metricdoc.Metric{
+		Name:        MetricCheckpointPersistAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Seconds since the checkpoint file was last successfully written (file mtime).",
+		Group:       groupSelfObs,
+	}
 )
 
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docCheckpointPersistErrors}
+	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docCheckpointPersistErrors, docCheckpointDiskSize, docCheckpointPersistAge}
 }
 
 // LogCatalog returns the log events this package emits (none).

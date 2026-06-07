@@ -47,6 +47,10 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
+// requestDurationBucketsSeconds are the explicit histogram bucket boundaries
+// for tailscale.webhook.request.duration (in seconds).
+var requestDurationBucketsSeconds = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+
 // receiverPropagator extracts W3C TraceContext from incoming request headers.
 // Tailscale's sender won't send a traceparent header, so extraction yields an
 // empty parent and the span becomes a root — that's correct.
@@ -267,6 +271,16 @@ func (s *Server) Run(ctx context.Context) error {
 // handle is the core request handler: it accepts only POST, verifies the
 // signature, parses the event array, and emits telemetry.
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	// Record in-flight count and request duration unconditionally, balanced even
+	// on panic or early return. +1 immediately, -1 in defer (balanced pair).
+	start := time.Now()
+	s.e.UpDownCounter(docWebhookInflight.Name, docWebhookInflight.Unit, docWebhookInflight.Description, 1, nil)
+	defer func() {
+		s.e.UpDownCounter(docWebhookInflight.Name, docWebhookInflight.Unit, docWebhookInflight.Description, -1, nil)
+		s.e.Histogram(docWebhookRequestDuration.Name, docWebhookRequestDuration.Unit, docWebhookRequestDuration.Description,
+			time.Since(start).Seconds(), requestDurationBucketsSeconds, nil)
+	}()
+
 	// Start a server span for this request. W3C trace-context is extracted from
 	// headers; Tailscale's sender won't send a traceparent, so the span becomes a
 	// root — that's correct. The span ends via defer regardless of exit path.

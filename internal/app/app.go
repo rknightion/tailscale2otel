@@ -280,11 +280,16 @@ func (a *App) Run(ctx context.Context) error {
 		go runCardinalityReporter(ctx, a.emitter, a.card, a.metricGroups, a.cfg.OTLP.MetricInterval.D())
 		go runExportReporter(ctx, a.emitter, a.exportStats, a.cfg.OTLP.MetricInterval.D())
 		go runRuntimeReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), readRuntimeStats)
+		go runProcessReporter(ctx, a.emitter, a.startTime, a.cfg.OTLP.MetricInterval.D(), readProcessCPU)
+		go runConfigHealthReporter(ctx, a.cfg, a.emitter, a.cfg.OTLP.MetricInterval.D())
 		go runDedupReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), map[string]*dedup.Set{
 			"flow":          a.flowDedup,
 			"audit":         a.auditDedup,
 			"webhook_cross": a.webhookDedup,
 		})
+		if a.cfg.Checkpoint.Store == "file" {
+			go collector.RunCheckpointReporter(ctx, a.emitter, a.cfg.Checkpoint.FilePath, a.cfg.OTLP.MetricInterval.D())
+		}
 	}
 
 	// Short-term runtime/cardinality history for the admin status page's
