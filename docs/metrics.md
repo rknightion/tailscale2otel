@@ -123,6 +123,8 @@ exporter health.
 | `tailscale2otel.scrape.staleness` | `s` | gauge | `tailscale2otel_scrape_staleness_seconds` | `tailscale_collector` | Seconds since this collector's last successful scrape (counts up from process start until the first success); pair with `scrape.success` for freshness alerting. |
 | `tailscale2otel.scrape.success` | `1` | gauge | `tailscale2otel_scrape_success_ratio` | `tailscale_collector` | `1` if the last scrape for that collector succeeded, else `0`. |
 | `tailscale2otel.series.active` | `{series}` | gauge | `tailscale2otel_series_active` | `metric_name` | Exact distinct active time series emitted for `metric.name` during the last export interval; bounded by a per-metric cap (the value pins at the cap when exceeded). A **count**. |
+| `tailscale2otel.series.limit` | `{series}` | gauge | `tailscale2otel_series_limit` | — | Effective per-metric active-series cap (`cardinality.metric_limit`): the point at which excess series collapse into `otel_metric_overflow` (silent per-series loss). Emitted only when a positive limit is configured. A **count**. |
+| `tailscale2otel.series.overflowing` | `1` | gauge | `tailscale2otel_series_overflowing_ratio` | `metric_name` | 1 when `metric.name` reached the per-metric series cap during the last interval (excess series silently dropped into `otel_metric_overflow`), else 0. Always 0 when no positive `cardinality.metric_limit` is configured. |
 | `tailscale2otel.up` | `1` | gauge | `tailscale2otel_up_ratio` | — | Liveness flag: `1` while the service is running and reporting. |
 <!-- END GENERATED -->
 

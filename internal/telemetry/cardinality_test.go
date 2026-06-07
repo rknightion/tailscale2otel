@@ -268,3 +268,87 @@ func TestCardinalityTracker_SnapshotNilSafe(t *testing.T) {
 		t.Fatalf("nil tracker Snapshot = %+v, want nil", s)
 	}
 }
+
+// seriesPointsByName indexes points of an arbitrary self-metric by metric.name.
+func seriesPointsByName(t *testing.T, rec *telemetrytest.Recorder, metric string) map[string]float64 {
+	t.Helper()
+	out := map[string]float64{}
+	for _, p := range rec.MetricPoints(metric) {
+		out[p.Attrs[semconv.AttrMetricName]] = p.Value
+	}
+	return out
+}
+
+// TestCardinalityTracker_EmitsLimitAndOverflowing asserts that, with a positive
+// configured limit, Report emits a single global series.limit equal to the limit
+// and a per-metric series.overflowing that is 1 for capped metrics and 0 otherwise.
+func TestCardinalityTracker_EmitsLimitAndOverflowing(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTrackerWithCap(3)
+
+	// "hot" exceeds the cap of 3 -> capped; "cool" stays under.
+	for s := 0; s < 5; s++ {
+		tr.Observe("tailscale.hot", telemetry.Attrs{"n": s})
+	}
+	tr.Observe("tailscale.cool", telemetry.Attrs{"n": 0})
+	tr.Report(rec.Emitter())
+
+	// series.limit: exactly one global point = 3.
+	limitPts := rec.MetricPoints("tailscale2otel.series.limit")
+	if len(limitPts) != 1 {
+		t.Fatalf("series.limit points = %d, want 1: %+v", len(limitPts), limitPts)
+	}
+	if limitPts[0].Value != 3 {
+		t.Fatalf("series.limit = %v, want 3", limitPts[0].Value)
+	}
+	if name := limitPts[0].Attrs[semconv.AttrMetricName]; name != "" {
+		t.Fatalf("series.limit carried metric.name=%q, want none (global)", name)
+	}
+
+	// series.overflowing: hot=1, cool=0.
+	over := seriesPointsByName(t, rec, "tailscale2otel.series.overflowing")
+	if over["tailscale.hot"] != 1 {
+		t.Errorf("overflowing{hot} = %v, want 1", over["tailscale.hot"])
+	}
+	if over["tailscale.cool"] != 0 {
+		t.Errorf("overflowing{cool} = %v, want 0", over["tailscale.cool"])
+	}
+}
+
+// TestCardinalityTracker_UnlimitedSuppressesLimitAndOverflowing asserts that with
+// no positive limit configured (the "unlimited OTLP limit" case), Report emits no
+// series.limit and overflowing stays 0 — the tracker's memory-guard cap must NOT
+// be reported as a real overflow.
+func TestCardinalityTracker_UnlimitedSuppressesLimitAndOverflowing(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTrackerWithCap(0) // unlimited; falls back to memory guard internally
+
+	tr.Observe("tailscale.metric", telemetry.Attrs{"n": 0})
+	tr.Report(rec.Emitter())
+
+	if n := len(rec.MetricPoints("tailscale2otel.series.limit")); n != 0 {
+		t.Fatalf("series.limit points = %d, want 0 (no positive limit configured)", n)
+	}
+	over := seriesPointsByName(t, rec, "tailscale2otel.series.overflowing")
+	if over["tailscale.metric"] != 0 {
+		t.Fatalf("overflowing = %v, want 0 in unlimited mode", over["tailscale.metric"])
+	}
+}
+
+// TestCardinalityTracker_SelfExclusionWholeFamily asserts the tracker never
+// tracks ANY of its own tailscale2otel.series.* self-metrics — guarding the
+// Report->Gauge->Observe recursion break for series.limit and series.overflowing
+// as well as series.active.
+func TestCardinalityTracker_SelfExclusionWholeFamily(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTracker()
+
+	tr.Observe("tailscale2otel.series.active", telemetry.Attrs{semconv.AttrMetricName: "x"})
+	tr.Observe("tailscale2otel.series.limit", telemetry.Attrs{})
+	tr.Observe("tailscale2otel.series.overflowing", telemetry.Attrs{semconv.AttrMetricName: "x"})
+	tr.Report(rec.Emitter())
+
+	if s := tr.Snapshot(); len(s) != 0 {
+		t.Fatalf("self-observed series.* family produced %+v, want no tracked series", s)
+	}
+}

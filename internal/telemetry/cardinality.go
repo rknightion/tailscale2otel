@@ -3,15 +3,22 @@ package telemetry
 import (
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 )
 
-// seriesActiveMetric is the self-observability metric name for the per-source-
-// metric active-time-series count. It is excluded from tracking so the tracker
-// never measures itself (and Report->Gauge->Observe cannot recurse).
-const seriesActiveMetric = "tailscale2otel.series.active"
+// Self-cardinality metric names. The tracker never measures any metric in the
+// tailscale2otel.series.* family — both to avoid measuring itself and to break
+// the Report -> Gauge -> Observe recursion (Report emits these from inside the
+// emit hot path that calls Observe).
+const (
+	seriesSelfPrefix     = "tailscale2otel.series."
+	seriesActiveMetric   = seriesSelfPrefix + "active"
+	seriesLimitMetric    = seriesSelfPrefix + "limit"
+	seriesOverflowMetric = seriesSelfPrefix + "overflowing"
+)
 
 // defaultSeriesCap bounds the distinct fingerprints tracked per source metric.
 // Once a metric reaches the cap the reported value pins at the cap (a visible
@@ -46,10 +53,11 @@ type SeriesCount struct {
 //
 // All methods are safe for concurrent use and are no-ops on a nil receiver.
 type CardinalityTracker struct {
-	mu        sync.Mutex
-	sets      map[string]*seriesSet
-	seriesCap int           // per-source-metric distinct-series cap (pins the reported count)
-	last      []SeriesCount // counts from the most recent Report; nil before the first
+	mu              sync.Mutex
+	sets            map[string]*seriesSet
+	seriesCap       int           // per-source-metric distinct-series cap (pins the reported count)
+	configuredLimit int           // raw cardinality.metric_limit (<=0 means "unlimited"; suppresses series.limit/overflowing)
+	last            []SeriesCount // counts from the most recent Report; nil before the first
 }
 
 // NewCardinalityTracker returns an empty tracker using the package default
@@ -65,10 +73,11 @@ func NewCardinalityTracker() *CardinalityTracker {
 // seriesCap (the "unlimited OTLP limit" case) falls back to defaultSeriesCap as a
 // memory guard so the tracker never grows unboundedly.
 func NewCardinalityTrackerWithCap(seriesCap int) *CardinalityTracker {
+	configured := seriesCap
 	if seriesCap <= 0 {
 		seriesCap = defaultSeriesCap
 	}
-	return &CardinalityTracker{sets: map[string]*seriesSet{}, seriesCap: seriesCap}
+	return &CardinalityTracker{sets: map[string]*seriesSet{}, seriesCap: seriesCap, configuredLimit: configured}
 }
 
 // Observe records one emitted data point for the source metric name with the
@@ -77,7 +86,7 @@ func NewCardinalityTrackerWithCap(seriesCap int) *CardinalityTracker {
 // recursion). Once a metric reaches the tracker's per-metric cap, further
 // distinct combinations are dropped (the metric is marked capped).
 func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
-	if t == nil || name == seriesActiveMetric {
+	if t == nil || strings.HasPrefix(name, seriesSelfPrefix) {
 		return
 	}
 	fp := fingerprint(attrs)
@@ -107,6 +116,7 @@ func (t *CardinalityTracker) Report(e Emitter) {
 	}
 
 	t.mu.Lock()
+	limit := t.configuredLimit
 	last := make([]SeriesCount, 0, len(t.sets))
 	for name, s := range t.sets {
 		last = append(last, SeriesCount{Metric: name, Count: len(s.fps), Capped: s.capped})
@@ -125,9 +135,22 @@ func (t *CardinalityTracker) Report(e Emitter) {
 	t.last = last
 	t.mu.Unlock()
 
+	// A configured limit <=0 means the SDK is unlimited (no real otel_metric_overflow):
+	// suppress series.limit and force overflowing to 0 even if the memory-guard cap was hit.
+	limited := limit > 0
+
 	for _, en := range last {
 		e.Gauge(docSeriesActive.Name, docSeriesActive.Unit, docSeriesActive.Description,
 			float64(en.Count), Attrs{semconv.AttrMetricName: en.Metric})
+		overflowing := 0.0
+		if limited && en.Capped {
+			overflowing = 1
+		}
+		e.Gauge(docSeriesOverflowing.Name, docSeriesOverflowing.Unit, docSeriesOverflowing.Description,
+			overflowing, Attrs{semconv.AttrMetricName: en.Metric})
+	}
+	if limited {
+		e.Gauge(docSeriesLimit.Name, docSeriesLimit.Unit, docSeriesLimit.Description, float64(limit), nil)
 	}
 }
 

@@ -43,12 +43,27 @@ var (
 		Attributes:  []string{semconv.AttrMetricName},
 		Group:       groupSelfObs,
 	}
+	docSeriesLimit = metricdoc.Metric{
+		Name:        seriesLimitMetric,
+		Unit:        semconv.UnitSeries,
+		Instrument:  metricdoc.Gauge,
+		Description: "Effective per-metric active-series cap (`cardinality.metric_limit`): the point at which excess series collapse into `otel_metric_overflow` (silent per-series loss). Emitted only when a positive limit is configured. A **count**.",
+		Group:       groupSelfObs,
+	}
+	docSeriesOverflowing = metricdoc.Metric{
+		Name:        seriesOverflowMetric,
+		Unit:        "1",
+		Instrument:  metricdoc.Gauge,
+		Description: "1 when `metric.name` reached the per-metric series cap during the last interval (excess series silently dropped into `otel_metric_overflow`), else 0. Always 0 when no positive `cardinality.metric_limit` is configured.",
+		Attributes:  []string{semconv.AttrMetricName},
+		Group:       groupSelfObs,
+	}
 )
 
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docBuildInfo, docExportFailures, docSeriesActive}
+	return []metricdoc.Metric{docBuildInfo, docExportFailures, docSeriesActive, docSeriesLimit, docSeriesOverflowing}
 }
 
 // LogCatalog returns the log events this package emits (none).
