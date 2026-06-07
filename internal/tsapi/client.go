@@ -132,23 +132,3 @@ func (c *Client) Contacts(ctx context.Context) (*tsclient.Contacts, error) {
 func (c *Client) PolicyFileRaw(ctx context.Context) (*tsclient.RawACL, error) {
 	return c.ts.PolicyFile().Raw(ctx)
 }
-
-// DNSNameservers returns the configured global nameservers.
-func (c *Client) DNSNameservers(ctx context.Context) ([]string, error) {
-	return c.ts.DNS().Nameservers(ctx)
-}
-
-// DNSSearchPaths returns the configured DNS search paths.
-func (c *Client) DNSSearchPaths(ctx context.Context) ([]string, error) {
-	return c.ts.DNS().SearchPaths(ctx)
-}
-
-// DNSPreferences returns the MagicDNS preferences.
-func (c *Client) DNSPreferences(ctx context.Context) (*tsclient.DNSPreferences, error) {
-	return c.ts.DNS().Preferences(ctx)
-}
-
-// DNSSplitDNS returns the split-DNS configuration.
-func (c *Client) DNSSplitDNS(ctx context.Context) (tsclient.SplitDNSResponse, error) {
-	return c.ts.DNS().SplitDNS(ctx)
-}

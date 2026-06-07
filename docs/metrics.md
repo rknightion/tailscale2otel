@@ -237,6 +237,9 @@ User roll-ups and per-user gauges. Per-user "id dims" = `enduser_id`, `tailscale
 | `tailscale.acl.wildcard_rules` | `1` | gauge | `tailscale_acl_wildcard_rules_ratio` | `tailscale_acl_section`, `tailscale_acl_position` | Number of non-deny ACL/grant rules with a wildcard (`*`) source or destination, per section and position (a **count**, despite `_ratio`). |
 | `tailscale.dns.magic_dns` | `1` | gauge | `tailscale_dns_magic_dns_ratio` | — | `1` if MagicDNS is enabled, else `0`. |
 | `tailscale.dns.nameservers.count` | `1` | gauge | `tailscale_dns_nameservers_count_ratio` | — | Number of configured nameservers (a **count**). |
+| `tailscale.dns.override_local` | `1` | gauge | `tailscale_dns_override_local_ratio` | — | `1` if Tailscale DNS resolvers override the local OS DNS configuration (`preferences.overrideLocalDNS`), else `0`. |
+| `tailscale.dns.resolver` | `1` | gauge | `tailscale_dns_resolver_ratio` | `tailscale_dns_resolver_address`, `tailscale_dns_resolver_kind`, `tailscale_dns_resolver_domain`, `tailscale_dns_resolver_use_with_exit_node` | Info gauge (always `1`) for each configured DNS resolver, labeled by `address`, `kind` (`global`\|`split`), split-DNS `domain` (empty for global), and `use_with_exit_node`. |
+| `tailscale.dns.resolvers.use_with_exit_node` | `1` | gauge | `tailscale_dns_resolvers_use_with_exit_node_ratio` | — | Number of DNS resolvers (global + split-DNS) set to remain in use under an exit node (`useWithExitNode`, Tailscale v1.88.1+; a **count**). |
 | `tailscale.dns.search_paths.count` | `1` | gauge | `tailscale_dns_search_paths_count_ratio` | — | Number of DNS search paths (a **count**). |
 | `tailscale.dns.split_zones.count` | `1` | gauge | `tailscale_dns_split_zones_count_ratio` | — | Number of split-DNS zones configured (a **count**). |
 | `tailscale.setting.devices_key_duration` | `d` | gauge | `tailscale_setting_devices_key_duration_days` | — | Configured device key expiry duration, in days. |

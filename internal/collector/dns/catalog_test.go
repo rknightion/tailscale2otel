@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
-
 	"github.com/rknightion/tailscale2otel/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard: every
@@ -18,14 +17,15 @@ import (
 // event must be in LogCatalog().
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
-	c := dns.New(&fakeCatalogAPI{
-		nameservers: []string{"1.1.1.1", "8.8.8.8"},
-		searchPaths: []string{"example.com"},
-		splitDNS: tsclient.SplitDNSResponse{
-			"corp.example.com": {"10.0.0.1"},
+	c := dns.New(&fakeCatalogAPI{cfg: &tsapi.DNSConfig{
+		Nameservers: []tsapi.DNSResolver{{Address: "1.1.1.1", UseWithExitNode: true}},
+		SplitDNS: map[string][]tsapi.DNSResolver{
+			"corp.example.com": {{Address: "10.0.0.1"}},
 		},
-		prefs: &tsclient.DNSPreferences{MagicDNS: true},
-	}, 0)
+		SearchPaths:      []string{"example.com"},
+		OverrideLocalDNS: true,
+		MagicDNS:         true,
+	}}, 0)
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -72,21 +72,9 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 
 // fakeCatalogAPI implements the narrow dns api interface for the catalog test.
 type fakeCatalogAPI struct {
-	nameservers []string
-	searchPaths []string
-	splitDNS    tsclient.SplitDNSResponse
-	prefs       *tsclient.DNSPreferences
+	cfg *tsapi.DNSConfig
 }
 
-func (f *fakeCatalogAPI) DNSNameservers(_ context.Context) ([]string, error) {
-	return f.nameservers, nil
-}
-func (f *fakeCatalogAPI) DNSSearchPaths(_ context.Context) ([]string, error) {
-	return f.searchPaths, nil
-}
-func (f *fakeCatalogAPI) DNSSplitDNS(_ context.Context) (tsclient.SplitDNSResponse, error) {
-	return f.splitDNS, nil
-}
-func (f *fakeCatalogAPI) DNSPreferences(_ context.Context) (*tsclient.DNSPreferences, error) {
-	return f.prefs, nil
+func (f *fakeCatalogAPI) DNSConfiguration(_ context.Context) (*tsapi.DNSConfig, error) {
+	return f.cfg, nil
 }

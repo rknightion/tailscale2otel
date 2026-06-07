@@ -42,11 +42,36 @@ var (
 		Description: "`1` if MagicDNS is enabled, else `0`.",
 		Group:       groupDNS,
 	}
+	docOverrideLocal = metricdoc.Metric{
+		Name:        metricOverrideLocal,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if Tailscale DNS resolvers override the local OS DNS configuration (`preferences.overrideLocalDNS`), else `0`.",
+		Group:       groupDNS,
+	}
+	docUseWithExitNode = metricdoc.Metric{
+		Name:        metricUseWithExitNode,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of DNS resolvers (global + split-DNS) set to remain in use under an exit node (`useWithExitNode`, Tailscale v1.88.1+; a **count**).",
+		Group:       groupDNS,
+	}
+	docResolver = metricdoc.Metric{
+		Name:        metricResolver,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Info gauge (always `1`) for each configured DNS resolver, labeled by `address`, `kind` (`global`|`split`), split-DNS `domain` (empty for global), and `use_with_exit_node`.",
+		Attributes:  []string{attrAddress, attrKind, attrDomain, attrUseWithExitNode},
+		Group:       groupDNS,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docNameserversCount, docSearchPathsCount, docSplitZonesCount, docMagicDNS}
+	return []metricdoc.Metric{
+		docNameserversCount, docSearchPathsCount, docSplitZonesCount, docMagicDNS,
+		docOverrideLocal, docUseWithExitNode, docResolver,
+	}
 }
 
 // LogCatalog returns the log events this package emits (none).
