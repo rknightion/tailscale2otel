@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/grafana/pyroscope-go"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/audit"
@@ -52,6 +53,7 @@ type App struct {
 	version      string    // injected build version, for the status page
 	startTime    time.Time // process start, for uptime on the status page
 	emitter      telemetry.Emitter
+	tracer       trace.Tracer                  // no-op when tracing.enabled=false; threads into scheduler+receivers
 	card         *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
 	metricGroups map[string]string             // metric source-name -> catalog group, for series.by_group rollup
 	exportStats  func() telemetry.ExportStats  // cumulative OTLP export volume; nil when self-obs disabled
@@ -115,6 +117,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		return nil, err
 	}
 	emitter := provider.Emitter()
+	tracer := provider.Tracer()
 
 	// One combined request hook: APIStats always records (the status page's API
 	// panel must work even with self-obs off), and apiObserver additionally emits
@@ -122,13 +125,14 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	apiStats := NewAPIStats()
 	tsOpts := tsapiOptions(cfg)
 	tsOpts.Logger = withComponent(logger, compTSAPI)
-	var obs func(string, int, int, time.Duration)
+	tsOpts.Tracer = tracer
+	var obs func(context.Context, string, int, int, time.Duration)
 	if cfg.SelfObservability.Enabled {
 		obs = apiObserver(emitter)
 	}
-	tsOpts.OnRequest = func(i tsapi.RequestInfo) {
+	tsOpts.OnRequest = func(ctx context.Context, i tsapi.RequestInfo) {
 		if obs != nil {
-			obs(i.Endpoint, i.Status, i.Attempts, i.Duration)
+			obs(ctx, i.Endpoint, i.Status, i.Attempts, i.Duration)
 		}
 		apiStats.Record(i)
 	}
@@ -143,7 +147,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		return nil, err
 	}
 
-	a := newApp(cfg, version, logger, emitter, provider.Shutdown, client, store, apiStats)
+	a := newApp(cfg, version, logger, emitter, tracer, provider.Shutdown, client, store, apiStats)
 	a.card = provider.Cardinality()
 	a.metricGroups = metricGroupMap()
 	a.exportStats = provider.ExportStats
@@ -168,6 +172,7 @@ func newApp(
 	version string,
 	logger *slog.Logger,
 	emitter telemetry.Emitter,
+	tracer trace.Tracer,
 	shutdown func(context.Context) error,
 	client *tsapi.Client,
 	store collector.CheckpointStore,
@@ -181,6 +186,7 @@ func newApp(
 		version:     version,
 		startTime:   time.Now(),
 		emitter:     emitter,
+		tracer:      tracer,
 		shutdown:    shutdown,
 		client:      client,
 		cache:       enrich.NewDeviceCache(),
@@ -194,7 +200,8 @@ func newApp(
 	a.sched = collector.NewScheduler(emitter, store,
 		collector.WithLogger(withComponent(logger, compCollector)),
 		collector.WithSelfObs(cfg.SelfObservability.Enabled),
-		collector.WithStatusTracker(a.status))
+		collector.WithStatusTracker(a.status),
+		collector.WithTracer(a.tracer))
 	if cfg.SelfObservability.Enabled {
 		a.restore = telemetry.InstallExportErrorHandler(emitter, withComponent(logger, compTelemetry))
 		telemetry.EmitBuildInfo(emitter, runtime.Version())

@@ -666,6 +666,53 @@ func TestVersionChecksWarning(t *testing.T) {
 	}
 }
 
+// TestValidate_TracingSampler pins the validation of the tracing.sampler enum and
+// tracing.sampler_arg range checks.
+func TestValidate_TracingSampler(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tracing.Enabled = true
+	cfg.Tracing.Sampler = "bogus"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid tracing.sampler")
+	}
+	cfg.Tracing.Sampler = "traceidratio"
+	cfg.Tracing.SamplerArg = 1.5
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for tracing.sampler_arg out of [0,1]")
+	}
+	cfg.Tracing.SamplerArg = 0.5
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid tracing config rejected: %v", err)
+	}
+}
+
+// TestWarnings_TracingZeroRatio pins the advisory that fires when tracing is
+// enabled with a ratio sampler set to 0 (no spans will be recorded).
+func TestWarnings_TracingZeroRatio(t *testing.T) {
+	c := config.Default()
+	// Default (disabled tracing) should produce no tracing advisory.
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "tracing") {
+			t.Fatalf("default config should not warn about tracing; got %q", w)
+		}
+	}
+	// Enabled with parentbased_traceidratio + arg=0 should warn.
+	c.Tracing.Enabled = true
+	c.Tracing.Sampler = "parentbased_traceidratio"
+	c.Tracing.SamplerArg = 0
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "no spans will be recorded") {
+		t.Errorf("zero ratio should warn about no spans; got %q", w)
+	}
+	// Non-zero ratio: no warning.
+	c.Tracing.SamplerArg = 0.5
+	for _, warn := range c.Warnings() {
+		if strings.Contains(warn, "no spans will be recorded") {
+			t.Errorf("non-zero ratio should not warn about no spans; got %q", warn)
+		}
+	}
+}
+
 // TestWarnings_FlowMetricsModeBoth pins the advisory that both-mode emits the raw
 // AND rollup families, so summing them in PromQL double-counts. The default
 // (rollup) and all-mode do not warn.

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
@@ -27,8 +29,8 @@ func TestApiObserver_RecordsRequestsAndRetries(t *testing.T) {
 	rec := telemetrytest.New()
 	obs := apiObserver(rec.Emitter())
 
-	obs("devices", 200, 1, 50*time.Millisecond)          // first-try success: no retries
-	obs("logging/network", 200, 3, 300*time.Millisecond) // succeeded after 2 retries
+	obs(context.Background(), "devices", 200, 1, 50*time.Millisecond)          // first-try success: no retries
+	obs(context.Background(), "logging/network", 200, 3, 300*time.Millisecond) // succeeded after 2 retries
 
 	reqs := rec.MetricPoints(appcatalog.MetricAPIRequests)
 	if len(reqs) != 2 {
@@ -91,7 +93,8 @@ func hasCollector(a *App, name string) bool {
 // stub client pointed at baseURL, using the supplied (already-validated) config.
 func baseTestApp(t *testing.T, cfg *config.Config, baseURL string, rec *telemetrytest.Recorder) *App {
 	t.Helper()
-	return newApp(cfg, "vtest", nil, rec.Emitter(), func(context.Context) error { return nil },
+	return newApp(cfg, "vtest", nil, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"),
+		func(context.Context) error { return nil },
 		newTestClient(t, baseURL), collector.NewMemoryStore(), NewAPIStats())
 }
 
@@ -629,7 +632,7 @@ func TestApp_RunGracefulShutdown(t *testing.T) {
 	var shutdownCalled bool
 	shutdown := func(context.Context) error { shutdownCalled = true; return nil }
 
-	a := newApp(cfg, "v9.9.9", nil, rec.Emitter(), shutdown,
+	a := newApp(cfg, "v9.9.9", nil, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"), shutdown,
 		newTestClient(t, ts.URL), collector.NewMemoryStore(), NewAPIStats())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)

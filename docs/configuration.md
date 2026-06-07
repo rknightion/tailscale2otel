@@ -106,6 +106,7 @@ ignored.
 - [`self_observability` — the exporter's own telemetry](#self_observability-the-exporters-own-telemetry)
 - [`admin` — admin HTTP server (probes + status page)](#admin-admin-http-server-probes-status-page)
 - [`profiling` — pprof & Pyroscope](#profiling-pprof-pyroscope)
+- [`tracing` — OTEL traces pillar](#tracing-otel-traces-pillar)
 
 ---
 
@@ -568,3 +569,40 @@ silently emits nothing, never errors). Disable both for air-gapped deployments.
 > **Advisories:**
 > - `version_checks.devices.enabled=true` with `collectors.devices.enabled=false` triggers a **WARN** —
 >   the per-device version-skew metrics need the devices collector to run.
+
+---
+
+## `tracing` — OTEL traces pillar
+
+Optional OTEL traces pillar. **Off by default.** When enabled, the exporter emits spans for its own
+internal work — reusing `otlp.*` for the endpoint/protocol/headers/TLS (no separate trace endpoint).
+When `tracing.enabled` is true, the metric exemplar filter also flips to trace-based, so the
+`tailscale2otel.api.duration` latency histogram carries trace exemplars that link directly to the
+corresponding API request span.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `tracing.enabled` | `false` | Emit spans. When true, also enables trace-based exemplars on `tailscale2otel.api.duration`. Set via `TS2OTEL_TRACING__ENABLED`. |
+| `tracing.sampler` | `parentbased_always_on` | Head sampler. One of `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_traceidratio`. Mirrors `OTEL_TRACES_SAMPLER` semantics. Set via `TS2OTEL_TRACING__SAMPLER`. |
+| `tracing.sampler_arg` | `1.0` | Sample ratio in `[0,1]` for the `*traceidratio` samplers; ignored by the others. Set via `TS2OTEL_TRACING__SAMPLER_ARG`. |
+
+> **Advisories:**
+> - `tracing.enabled=true` with `sampler_arg=0` and a `*traceidratio` sampler triggers a **WARN** —
+>   no spans will be recorded at ratio 0.
+
+### Span names and key attributes
+
+When `tracing.enabled` is true the following spans are emitted:
+
+| Span name | Emitted by | Key attributes |
+|---|---|---|
+| `scrape <collector>` | Scheduler (one per scrape cycle) | `tailscale.collector` (collector name); span status `Error` on failure |
+| `tailscale.api <endpoint>` | Tailscale API transport (one per logical request) | `url.full` (full path incl. tailnet/device ID — useful for "which device's request was slow/failed"), `http.request.method`, `http.response.status_code`, `http.request.resend_count`, `server.address`; retry events carry `attempt`/`status`/`sleep_ms` |
+| `stream.receive` | HEC stream receiver (one per HTTP request) | `tailscale.stream.flows`, `tailscale.stream.audits`, `tailscale.stream.skipped`, `http.request.body.size`; span status `Error` on auth/parse failure |
+| `webhook.receive` | Webhook receiver (one per HTTP request) | `tailscale.webhook.events`, `http.request.body.size`; span status `Error` on auth/parse failure |
+
+**PII note:** Spans are unaggregated (like logs), so useful identifiers such as the tailnet name and device ID
+appear on `url.full` by design — they help operators answer "which device's request failed or was slow?"
+Tier-1 secrets (auth headers/tokens, OAuth/webhook/logstream credentials) and large response/request
+bodies are never attached. Per-record source/destination IPs are not put on receiver spans; they flow to
+the flow/audit log records instead.

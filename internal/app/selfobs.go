@@ -25,14 +25,14 @@ var apiDurationBucketsSeconds = []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5
 // tailscale2otel.api.retries. It is wired into tsapi only when
 // self-observability is enabled. The metric descriptors live in
 // internal/appcatalog (see that package for why).
-func apiObserver(e telemetry.Emitter) func(endpoint string, status, attempts int, dur time.Duration) {
-	return func(endpoint string, status, attempts int, dur time.Duration) {
+func apiObserver(e telemetry.Emitter) func(ctx context.Context, endpoint string, status, attempts int, dur time.Duration) {
+	return func(ctx context.Context, endpoint string, status, attempts int, dur time.Duration) {
 		e.Counter(appcatalog.DocAPIRequests.Name, appcatalog.DocAPIRequests.Unit, appcatalog.DocAPIRequests.Description, 1,
 			telemetry.Attrs{
 				"endpoint":                  endpoint,
 				"http.response.status_code": status,
 			})
-		e.Histogram(appcatalog.DocAPIDuration.Name, appcatalog.DocAPIDuration.Unit, appcatalog.DocAPIDuration.Description,
+		e.HistogramCtx(ctx, appcatalog.DocAPIDuration.Name, appcatalog.DocAPIDuration.Unit, appcatalog.DocAPIDuration.Description,
 			dur.Seconds(), apiDurationBucketsSeconds,
 			telemetry.Attrs{
 				"endpoint":                  endpoint,

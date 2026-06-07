@@ -46,7 +46,7 @@ func TestIsCleanShutdownErr(t *testing.T) {
 func TestAPIObserverDuration(t *testing.T) {
 	rec := telemetrytest.New()
 	// 150ms request to /devices that returned 200 after 1 attempt.
-	apiObserver(rec.Emitter())("/devices", 200, 1, 150*time.Millisecond)
+	apiObserver(rec.Emitter())(context.Background(), "/devices", 200, 1, 150*time.Millisecond)
 
 	pts := rec.MetricPoints("tailscale2otel.api.duration")
 	if len(pts) != 1 {

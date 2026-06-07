@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
@@ -514,5 +517,59 @@ func TestRun_GracefulShutdown(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after ctx cancellation")
+	}
+}
+
+// webhookSpanNames extracts the Name() of each ended ReadOnlySpan for readable assertions.
+func webhookSpanNames(spans []sdktrace.ReadOnlySpan) []string {
+	out := make([]string, 0, len(spans))
+	for _, s := range spans {
+		out = append(out, s.Name())
+	}
+	return out
+}
+
+// TestWebhookHandle_EmitsSpan verifies that a configured tracer yields one
+// server span named "webhook.receive" per request, regardless of outcome.
+// An unsigned body is rejected — that's fine, the span still emits.
+func TestWebhookHandle_EmitsSpan(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	rec := telemetrytest.New()
+	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithTracer(tp.Tracer("test")))
+
+	// POST with no signature — body will be accepted (Secret == ""), parsed as
+	// an empty event array, and the span recorded on the success path.
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader("[]"))
+	rw := httptest.NewRecorder()
+	s.handle(rw, req)
+
+	spans := sr.Ended()
+	if len(spans) == 0 || spans[len(spans)-1].Name() != "webhook.receive" {
+		t.Fatalf("got %v, want a span named webhook.receive", webhookSpanNames(spans))
+	}
+}
+
+// TestWebhookHandle_EmitsSpanOnReject verifies that the span is emitted and
+// marked Error when signature verification fails.
+func TestWebhookHandle_EmitsSpanOnReject(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	rec := telemetrytest.New()
+	s := New(Options{Path: "/webhook", Secret: testSecret}, rec.Emitter(), discard(), WithTracer(tp.Tracer("test")))
+
+	// No signature header — will be rejected (missing_signature).
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, "")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+
+	spans := sr.Ended()
+	if len(spans) == 0 || spans[len(spans)-1].Name() != "webhook.receive" {
+		t.Fatalf("got %v, want a span named webhook.receive", webhookSpanNames(spans))
 	}
 }

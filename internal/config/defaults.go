@@ -182,6 +182,11 @@ func Default() *Config {
 		SelfObservability: SelfObservabilityConfig{
 			Enabled: true,
 		},
+		Tracing: TracingConfig{
+			Enabled:    false,
+			Sampler:    "parentbased_always_on",
+			SamplerArg: 1.0,
+		},
 		Admin: AdminConfig{
 			Enabled:     false,
 			Listen:      ":9090",

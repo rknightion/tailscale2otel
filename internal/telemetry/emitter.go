@@ -123,6 +123,10 @@ func (e *otelEmitter) UpDownCounter(name, unit, desc string, value float64, attr
 }
 
 func (e *otelEmitter) Histogram(name, unit, desc string, value float64, bounds []float64, attrs Attrs) {
+	e.HistogramCtx(context.Background(), name, unit, desc, value, bounds, attrs)
+}
+
+func (e *otelEmitter) HistogramCtx(ctx context.Context, name, unit, desc string, value float64, bounds []float64, attrs Attrs) {
 	e.mu.Lock()
 	h, ok := e.histograms[name]
 	if !ok {
@@ -138,7 +142,7 @@ func (e *otelEmitter) Histogram(name, unit, desc string, value float64, bounds [
 	e.mu.Unlock()
 	e.card.Observe(name, attrs)
 	if h != nil {
-		h.Record(context.Background(), value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
+		h.Record(ctx, value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
 }
 

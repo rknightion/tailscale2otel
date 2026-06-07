@@ -173,6 +173,9 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROFILING__PYROSCOPE__UPLOAD_RATE` | `60s` | how often profiles are flushed |
 | `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `0` | runtime.SetMutexProfileFraction (0 = disabled) |
 | `TS2OTEL_PROFILING__BLOCK_PROFILE_RATE` | `0` | runtime.SetBlockProfileRate (0 = disabled) |
+| `TS2OTEL_TRACING__ENABLED` | `false` | emit spans. TS2OTEL_TRACING__ENABLED |
+| `TS2OTEL_TRACING__SAMPLER` | `parentbased_always_on` | head sampler: always_on\|always_off\|traceidratio\|parentbased_always_on\|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER |
+| `TS2OTEL_TRACING__SAMPLER_ARG` | `1.0` | sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). TS2OTEL_TRACING__SAMPLER_ARG |
 | `TS2OTEL_VERSION_CHECKS__SELF__ENABLED` | `true` | emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release) |
 | `TS2OTEL_VERSION_CHECKS__DEVICES__ENABLED` | `true` | emit per-device tailscale.device.version_skew + fleet rollups (device client version vs latest Tailscale stable). Needs the devices collector. |
 | `TS2OTEL_VERSION_CHECKS__DEVICES__OUTDATED_MINOR_THRESHOLD` | `3` | a device this many minor releases behind counts toward tailscale.devices.outdated |

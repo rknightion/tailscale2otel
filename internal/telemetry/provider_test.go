@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -86,4 +87,63 @@ func TestProvider_HTTPConstructs(t *testing.T) {
 		t.Fatal("Emitter() returned nil")
 	}
 	_ = p.Shutdown(context.Background())
+}
+
+func TestProvider_TracerNoopWhenDisabled(t *testing.T) {
+	p, err := telemetry.NewProvider(context.Background(), telemetry.Options{
+		ServiceName: "t", Protocol: "stdout", StdoutWriter: io.Discard,
+		TracingEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	_, span := p.Tracer().Start(context.Background(), "probe")
+	if span.SpanContext().IsValid() {
+		t.Error("disabled tracing must yield a no-op tracer (invalid span context)")
+	}
+	span.End()
+}
+
+func TestProvider_TracerRecordsWhenEnabled(t *testing.T) {
+	p, err := telemetry.NewProvider(context.Background(), telemetry.Options{
+		ServiceName: "t", Protocol: "stdout", StdoutWriter: io.Discard,
+		TracingEnabled: true, TraceSampler: "always_on",
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	_, span := p.Tracer().Start(context.Background(), "probe")
+	if !span.SpanContext().IsSampled() {
+		t.Error("enabled tracing with always_on must produce a sampled span")
+	}
+	span.End()
+}
+
+// TestProvider_ShutdownFlushesSpans is the trace analog of
+// TestProvider_StdoutFlushesMetricOnShutdown: the batch span processor must
+// flush ended spans to the stdout exporter on Shutdown, not only on its timer.
+func TestProvider_ShutdownFlushesSpans(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := context.Background()
+	p, err := telemetry.NewProvider(ctx, telemetry.Options{
+		ServiceName:    "tailscale2otel",
+		ServiceVersion: "test",
+		Protocol:       "stdout",
+		StdoutWriter:   &buf,
+		TracingEnabled: true,
+		TraceSampler:   "always_on",
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	_, span := p.Tracer().Start(ctx, "tailscale.test.span")
+	span.End()
+	if err := p.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if !strings.Contains(buf.String(), "tailscale.test.span") {
+		t.Fatalf("stdout output missing span name; got:\n%s", buf.String())
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const defaultBaseURL = "https://api.tailscale.com"
@@ -38,12 +39,16 @@ type Options struct {
 	MaxDelay    time.Duration
 
 	// OnRequest, when non-nil, is invoked once after each logical API request
-	// completes with a RequestInfo: a low-cardinality endpoint label (e.g.
-	// "devices", "logging/network"), the final HTTP status (0 on transport
-	// error), the total attempt count (1 if the first try succeeded), the
-	// request's wall-clock duration and any transport error text. For
-	// self-observability.
-	OnRequest func(RequestInfo)
+	// completes with the span-carrying context (for trace-exemplar linkage) and a
+	// RequestInfo: a low-cardinality endpoint label (e.g. "devices",
+	// "logging/network"), the final HTTP status (0 on transport error), the total
+	// attempt count (1 if the first try succeeded), the request's wall-clock
+	// duration and any transport error text. For self-observability.
+	OnRequest func(context.Context, RequestInfo)
+
+	// Tracer records one child span per logical API request when tracing is
+	// enabled. Nil (or a no-op tracer) disables span emission.
+	Tracer trace.Tracer
 
 	// Logger, when non-nil, receives status-aware transport logs (429 retries at
 	// INFO, 5xx retries at DEBUG, auth failures at ERROR). Nil disables transport

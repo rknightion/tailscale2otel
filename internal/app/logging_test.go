@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
@@ -34,7 +36,8 @@ func appWithLog(t *testing.T, buf *bytes.Buffer) *App {
 	cfg.SelfObservability.Enabled = true
 	log := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	rec := telemetrytest.New()
-	return newApp(cfg, "vtest", log, rec.Emitter(), func(context.Context) error { return nil },
+	return newApp(cfg, "vtest", log, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"),
+		func(context.Context) error { return nil },
 		newTestClient(t, "http://example.invalid"), collector.NewMemoryStore(), NewAPIStats())
 }
 

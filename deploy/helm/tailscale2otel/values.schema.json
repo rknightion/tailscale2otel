@@ -565,6 +565,20 @@
                         }
                     }
                 },
+                "tracing": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "sampler": {
+                            "type": "string"
+                        },
+                        "sampler_arg": {
+                            "type": "number"
+                        }
+                    }
+                },
                 "version_checks": {
                     "type": "object",
                     "properties": {

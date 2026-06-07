@@ -244,6 +244,17 @@ profiling:
   mutex_profile_fraction: 0           # runtime.SetMutexProfileFraction (0 = disabled)
   block_profile_rate: 0               # runtime.SetBlockProfileRate (0 = disabled)
 
+# ── OTEL traces (third signal pillar, OFF by default) ───────────────────────────
+# Emits spans for the exporter's own work: one root span per collector scrape
+# cycle, a child span per Tailscale API request (with retry/auth span events), and
+# one span per HEC-stream / webhook receiver request. Reuses otlp.* for the
+# endpoint/protocol/headers/TLS. When enabled, trace exemplars are also attached
+# to tailscale2otel.api.duration.
+tracing:
+  enabled: false                       # emit spans. TS2OTEL_TRACING__ENABLED
+  sampler: parentbased_always_on       # head sampler: always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER
+  sampler_arg: 1.0                     # sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). TS2OTEL_TRACING__SAMPLER_ARG
+
 # ── Version checks (OPTIONAL: outbound "is a newer release available?" checks) ──
 # Both sub-checks make external HTTPS calls and are fail-open (a failed/blocked fetch
 # silently emits nothing). Disable both for air-gapped deployments.

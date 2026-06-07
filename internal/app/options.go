@@ -37,6 +37,9 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		MetricInterval:   cfg.OTLP.MetricInterval.D(),
 		SelfObsEnabled:   cfg.SelfObservability.Enabled,
 		CardinalityLimit: cfg.Cardinality.MetricLimit,
+		TracingEnabled:   cfg.Tracing.Enabled,
+		TraceSampler:     cfg.Tracing.Sampler,
+		TraceSamplerArg:  cfg.Tracing.SamplerArg,
 	}
 }
 

@@ -8,8 +8,18 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
+
+// noopSchedulerTracer is the shared fallback for a nil Scheduler.tracer, so span
+// creation in runTick never allocates a fresh no-op provider on every tick.
+var noopSchedulerTracer = tracenoop.NewTracerProvider().Tracer("")
 
 // Scheduler runs each registered collector on its own goroutine and ticker,
 // isolating failures so one collector cannot stop the others.
@@ -23,6 +33,7 @@ type Scheduler struct {
 	logger        *slog.Logger
 	selfObs       bool
 	status        *StatusTracker // optional; records per-collector run outcomes for the status page
+	tracer        trace.Tracer   // optional; emits one root span per scrape cycle
 }
 
 // SchedulerOption configures a Scheduler.
@@ -54,6 +65,11 @@ func WithSelfObs(enabled bool) SchedulerOption { return func(s *Scheduler) { s.s
 // every tick regardless of WithSelfObs, so the status page works even when
 // scrape metrics are suppressed.
 func WithStatusTracker(t *StatusTracker) SchedulerOption { return func(s *Scheduler) { s.status = t } }
+
+// WithTracer sets the tracer used to emit one root span per scrape cycle. A nil
+// tracer (the default) disables span emission via a package-level no-op tracer,
+// so callers and the tick path never need a nil check.
+func WithTracer(tr trace.Tracer) SchedulerOption { return func(s *Scheduler) { s.tracer = tr } }
 
 // NewScheduler returns a Scheduler that drives collectors with the given
 // emitter and checkpoint store.
@@ -142,6 +158,19 @@ func (s *Scheduler) initialDelay() time.Duration {
 func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time) {
 	started := time.Now()  // monotonic: used for duration only
 	startedWall := s.now() // wall-clock: for the status page's LastStarted
+
+	// Start a root span for this scrape cycle. API child spans (added in Phase 3)
+	// nest under this automatically because the span-bearing ctx is threaded down
+	// through Collect / runWindow → tsapi. When tracing is disabled, tr resolves
+	// to the package-level no-op tracer — zero allocation cost per tick.
+	tr := s.tracer
+	if tr == nil {
+		tr = noopSchedulerTracer
+	}
+	ctx, span := tr.Start(ctx, "scrape "+e.Collector.Name(),
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(attribute.String(semconv.AttrCollector, e.Collector.Name())))
+
 	var runErr error
 	panicked := false
 	var panicVal any
@@ -151,6 +180,17 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 			panicVal = r
 			s.logger.Error("collector panicked", "collector", e.Collector.Name(), "panic", r)
 		}
+		// Finalize the scrape span before emitting metrics so the span is ended
+		// (and therefore visible to any span processor) prior to the scrape metrics.
+		switch {
+		case panicked:
+			span.SetStatus(codes.Error, fmt.Sprintf("panic: %v", panicVal))
+		case runErr != nil:
+			span.RecordError(runErr)
+			span.SetStatus(codes.Error, runErr.Error())
+		}
+		span.End()
+
 		duration := time.Since(started)
 		finishedWall := s.now()
 		failed := panicked || runErr != nil

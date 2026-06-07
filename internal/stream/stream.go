@@ -67,12 +67,33 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
+
+// receiverPropagator extracts W3C TraceContext from incoming request headers.
+// Tailscale's sender won't send a traceparent header, so extraction yields an
+// empty parent and the span becomes a root — that's correct.
+var receiverPropagator = propagation.TraceContext{}
+
+// noopStreamTracer is a package-level cached noop tracer used when no tracer is
+// configured, avoiding per-request allocations.
+var noopStreamTracer = tracenoop.NewTracerProvider().Tracer("")
+
+// Option configures a Server at construction time.
+type Option func(*Server)
+
+// WithTracer sets the tracer for one span per received request. A nil tracer
+// disables span emission (the server falls back to the noop tracer).
+func WithTracer(tr trace.Tracer) Option { return func(s *Server) { s.tracer = tr } }
 
 // Exported metric names emitted by the receiver.
 const (
@@ -159,11 +180,13 @@ type Server struct {
 	emitter   telemetry.Emitter
 	logger    *slog.Logger
 	onIngest  func(source, signal string, records, bytes int)
+	tracer    trace.Tracer
 }
 
 // New returns a Server that converts received records via flowProc and
 // auditProc and records to e. A nil logger is replaced with a discarding one.
-func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, e telemetry.Emitter, logger *slog.Logger) *Server {
+// Optional Options (e.g. WithTracer) are applied after construction.
+func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, e telemetry.Emitter, logger *slog.Logger, options ...Option) *Server {
 	path := opts.Path
 	if path == "" {
 		path = defaultPath
@@ -179,7 +202,7 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 	if maxBody == 0 {
 		maxBody = defaultMaxBodyBytes
 	}
-	return &Server{
+	s := &Server{
 		path:       path,
 		token:      opts.Token,
 		decompress: decompress,
@@ -193,6 +216,10 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		logger:     logger,
 		onIngest:   opts.OnIngest,
 	}
+	for _, o := range options {
+		o(s)
+	}
+	return s
 }
 
 // Handler returns the HTTP handler implementing the HEC-style POST endpoint. It
@@ -206,13 +233,27 @@ func (s *Server) Handler() http.Handler {
 // handle implements the receiver's request lifecycle: method/auth checks, body
 // decompression, parsing, routing, and the Splunk-HEC ack response.
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	// Start a server span for this request. W3C trace-context is extracted from
+	// headers; Tailscale's sender won't send a traceparent, so the span becomes a
+	// root — that's correct. The span ends via defer regardless of exit path.
+	tr := s.tracer
+	if tr == nil {
+		tr = noopStreamTracer
+	}
+	ctx := receiverPropagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	ctx, span := tr.Start(ctx, "stream.receive", trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
+		span.SetStatus(codes.Error, "method not allowed")
 		s.writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	if !s.authorized(r) {
+		span.SetStatus(codes.Error, "unauthorized")
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonAuth})
 		s.writeError(w, http.StatusUnauthorized, "invalid or missing token")
@@ -222,12 +263,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	raw, err := s.readBody(r)
 	if err != nil {
 		if errors.Is(err, errBodyTooLarge) {
+			span.SetStatus(codes.Error, "body too large")
 			s.logger.Warn("stream: request body exceeds max size", "limit_bytes", s.maxBody)
 			s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 				telemetry.Attrs{attrReason: reasonTooLarge})
 			s.writeError(w, http.StatusRequestEntityTooLarge, "body too large")
 			return
 		}
+		span.SetStatus(codes.Error, "could not read body")
 		s.logger.Warn("stream: reading/decompressing body failed", "error", err)
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonUnparsable})
@@ -237,6 +280,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	records, err := extractRecords(raw)
 	if err != nil {
+		span.SetStatus(codes.Error, "could not parse body")
 		s.logger.Warn("stream: parsing body failed", "error", err)
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonUnparsable})
@@ -305,6 +349,16 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if skipped > 0 {
 		s.logger.Debug("stream: skipped unrecognized records", "count", skipped)
+	}
+
+	// Record aggregate counts and body size on the span before the success ack.
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.Int("tailscale.stream.flows", flows),
+			attribute.Int("tailscale.stream.audits", audits),
+			attribute.Int("tailscale.stream.skipped", skipped),
+			attribute.Int("http.request.body.size", len(raw)), // bounded decompressed bytes
+		)
 	}
 
 	s.writeAck(w)

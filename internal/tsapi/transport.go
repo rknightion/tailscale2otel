@@ -11,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/oauth2"
 )
 
@@ -57,12 +61,17 @@ type retryTransport struct {
 	attemptTimeout time.Duration
 
 	// onRequest, when non-nil, is called exactly once after the final attempt
-	// of each logical request with a RequestInfo describing the outcome.
-	onRequest func(RequestInfo)
+	// of each logical request with the span-carrying context (for trace-exemplar
+	// linkage) and a RequestInfo describing the outcome.
+	onRequest func(context.Context, RequestInfo)
 
 	// logger, when non-nil, records status-aware retry/outcome events: 429
 	// backoff at INFO, 5xx/transport backoff at DEBUG, an auth failure at ERROR.
 	logger *slog.Logger
+
+	// tracer, when non-nil, emits one child span per logical request. A nil
+	// tracer is replaced with a no-op at span-start so RoundTrip needs no guard.
+	tracer trace.Tracer
 }
 
 // cancelOnCloseBody ties a per-attempt context's cancel to the lifetime of the
@@ -127,18 +136,34 @@ func (t *retryTransport) logFinal(req *http.Request, resp *http.Response, err er
 	}
 }
 
+// noopAPITracer is the shared fallback for a nil retryTransport.tracer, so the
+// nil-tracer path allocates no tracer per RoundTrip.
+var noopAPITracer = tracenoop.NewTracerProvider().Tracer("")
+
+// startSpan starts a child span for one logical API request. If t.tracer is nil,
+// a no-op tracer is used so RoundTrip never needs a nil-guard.
+func (t *retryTransport) startSpan(ctx context.Context, req *http.Request) (context.Context, trace.Span) {
+	tr := t.tracer
+	if tr == nil {
+		tr = noopAPITracer
+	}
+	return tr.Start(ctx, "tailscale.api "+endpointLabel(req.URL.Path),
+		trace.WithSpanKind(trace.SpanKindClient))
+}
+
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
+	spanCtx, span := t.startSpan(req.Context(), req)
 	var (
 		resp  *http.Response
 		err   error
 		delay = t.baseDelay
 	)
 	for attempt := 1; ; attempt++ {
-		actx := req.Context()
+		actx := spanCtx
 		var cancel context.CancelFunc
 		if t.attemptTimeout > 0 {
-			actx, cancel = context.WithTimeout(req.Context(), t.attemptTimeout)
+			actx, cancel = context.WithTimeout(spanCtx, t.attemptTimeout)
 		}
 		attemptReq := req.Clone(actx)
 		// Clone shares the original Body reader, which the previous attempt would
@@ -150,7 +175,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				if cancel != nil {
 					cancel()
 				}
-				t.observe(req, nil, gbErr, attempt, start)
+				t.observe(spanCtx, req, nil, gbErr, attempt, start, span)
 				return nil, gbErr
 			}
 			attemptReq.Body = body
@@ -166,7 +191,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 					cancel()
 				}
 			}
-			t.observe(req, resp, err, attempt, start)
+			t.observe(spanCtx, req, resp, err, attempt, start, span)
 			return resp, err
 		}
 		jittered, next := computeBackoff(delay, t.maxDelay, t.rndFloat())
@@ -181,24 +206,32 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if cancel != nil {
 			cancel() // attempt is done; body drained — release the per-attempt ctx
 		}
+		if span.IsRecording() {
+			ev := []attribute.KeyValue{
+				attribute.Int("attempt", attempt),
+				attribute.Int64("sleep_ms", sleep.Milliseconds()),
+			}
+			if resp != nil {
+				ev = append(ev, attribute.Int("http.response.status_code", resp.StatusCode))
+			}
+			span.AddEvent("retry", trace.WithAttributes(ev...))
+		}
 		t.logRetry(req, resp, err, attempt, sleep)
 		select {
-		case <-req.Context().Done():
-			t.observe(req, nil, req.Context().Err(), attempt, start)
-			return nil, req.Context().Err()
+		case <-spanCtx.Done():
+			t.observe(spanCtx, req, nil, spanCtx.Err(), attempt, start, span)
+			return nil, spanCtx.Err()
 		case <-time.After(sleep):
 		}
 		delay = next
 	}
 }
 
-// observe reports a completed logical request to the configured hook, if any.
-// start is the monotonic time the logical request began (captured in RoundTrip),
-// used to compute the wall-clock duration across all retries and backoff.
-func (t *retryTransport) observe(req *http.Request, resp *http.Response, err error, attempts int, start time.Time) {
-	if t.onRequest == nil {
-		return
-	}
+// observe finalizes the span for a completed logical request (sets attributes,
+// status, and ends it), then calls the onRequest hook with the span-carrying
+// context so exemplars can link to the ended span. The span's SpanContext
+// remains in spanCtx after End(), so the hook's ctx carries the trace/span IDs.
+func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, resp *http.Response, err error, attempts int, start time.Time, span trace.Span) {
 	status := 0
 	if err == nil && resp != nil {
 		status = resp.StatusCode
@@ -207,13 +240,40 @@ func (t *retryTransport) observe(req *http.Request, resp *http.Response, err err
 	if err != nil {
 		errStr = err.Error()
 	}
-	t.onRequest(RequestInfo{
-		Endpoint: endpointLabel(req.URL.Path),
-		Status:   status,
-		Attempts: attempts,
-		Duration: time.Since(start),
-		Err:      errStr,
-	})
+	if span.IsRecording() {
+		// §0.2 tier-2 useful identifiers: the full path carries the tailnet name +
+		// device id, so an operator can see WHICH device's request was slow/failed
+		// (the endpointLabel span name elides it). Tailscale puts no secret in the
+		// URL (auth is a Bearer header), so url.full is safe. NOT the response body
+		// (multi-MB on the flow-log pull; already decoded into metrics+logs).
+		span.SetAttributes(
+			attribute.String("tailscale.endpoint", endpointLabel(req.URL.Path)),
+			attribute.String("url.full", req.URL.String()),
+			attribute.String("http.request.method", req.Method),
+			attribute.String("server.address", req.URL.Host),
+			attribute.Int("http.request.resend_count", attempts-1),
+		)
+		if status != 0 {
+			span.SetAttributes(attribute.Int("http.response.status_code", status))
+		}
+		switch {
+		case err != nil:
+			span.RecordError(err)
+			span.SetStatus(codes.Error, errStr)
+		case status >= 400:
+			span.SetStatus(codes.Error, http.StatusText(status))
+		}
+	}
+	span.End()
+	if t.onRequest != nil {
+		t.onRequest(spanCtx, RequestInfo{
+			Endpoint: endpointLabel(req.URL.Path),
+			Status:   status,
+			Attempts: attempts,
+			Duration: time.Since(start),
+			Err:      errStr,
+		})
+	}
 }
 
 // endpointLabel derives a stable, low-cardinality label from an API request

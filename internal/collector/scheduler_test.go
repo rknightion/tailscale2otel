@@ -8,6 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
@@ -44,7 +49,9 @@ func (noopEmitter) Counter(string, string, string, float64, telemetry.Attrs)    
 func (noopEmitter) Gauge(string, string, string, float64, telemetry.Attrs)                {}
 func (noopEmitter) UpDownCounter(string, string, string, float64, telemetry.Attrs)        {}
 func (noopEmitter) Histogram(string, string, string, float64, []float64, telemetry.Attrs) {}
-func (noopEmitter) LogEvent(telemetry.Event)                                              {}
+func (noopEmitter) HistogramCtx(context.Context, string, string, string, float64, []float64, telemetry.Attrs) {
+}
+func (noopEmitter) LogEvent(telemetry.Event) {}
 
 func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
 	t.Helper()
@@ -188,4 +195,98 @@ func TestScheduler_WindowDoesNotAdvanceCheckpointOnError(t *testing.T) {
 	if _, ok := store.Get("win"); ok {
 		t.Fatal("checkpoint advanced despite collector error")
 	}
+}
+
+// --- span test helpers ---
+
+// fakeOK returns a SnapshotCollector that always succeeds, identified by name.
+func fakeOK(name string) collector.SnapshotCollector {
+	return snapFunc{name: name, def: time.Minute, fn: func(context.Context, telemetry.Emitter) error {
+		return nil
+	}}
+}
+
+// fakeErr returns a SnapshotCollector that always returns the given error.
+func fakeErr(name string, err error) collector.SnapshotCollector {
+	return snapFunc{name: name, def: time.Minute, fn: func(context.Context, telemetry.Emitter) error {
+		return err
+	}}
+}
+
+// spanNames extracts the Name() of each ended ReadOnlySpan for readable assertions.
+func spanNames(spans []sdktrace.ReadOnlySpan) []string {
+	names := make([]string, len(spans))
+	for i, s := range spans {
+		names[i] = s.Name()
+	}
+	return names
+}
+
+// TestRunTick_EmitsScrapeSpan verifies that a single runTick call emits exactly
+// one root span named "scrape <collector>", and that a failing collector's span
+// carries Error status.
+func TestRunTick_EmitsScrapeSpan(t *testing.T) {
+	t.Run("ok collector emits Unset-status span", func(t *testing.T) {
+		sr := tracetest.NewSpanRecorder()
+		tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+		t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+		s := collector.NewScheduler(noopEmitter{}, collector.NewMemoryStore(),
+			collector.WithTracer(tp.Tracer("test")),
+			collector.WithStaggerWindow(0),
+			collector.WithSelfObs(false), // suppress metric emission; only span matters here
+		)
+		last := time.Now()
+		s.RunTick(context.Background(),
+			collector.Entry{Collector: fakeOK("dev"), Interval: time.Minute},
+			&last)
+
+		spans := sr.Ended()
+		if len(spans) != 1 {
+			t.Fatalf("got %d spans %v, want exactly 1", len(spans), spanNames(spans))
+		}
+		if got := spans[0].Name(); got != "scrape dev" {
+			t.Errorf("span name = %q, want %q", got, "scrape dev")
+		}
+		// A successful run must not set Error status.
+		if code := spans[0].Status().Code; code != codes.Unset {
+			t.Errorf("ok run span status code = %v, want Unset", code)
+		}
+		// Confirm the span kind is Internal.
+		if spans[0].SpanKind() != trace.SpanKindInternal {
+			t.Errorf("span kind = %v, want Internal", spans[0].SpanKind())
+		}
+	})
+
+	t.Run("failing collector marks span Error", func(t *testing.T) {
+		sr := tracetest.NewSpanRecorder()
+		tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+		t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+		boom := errors.New("api unavailable")
+		s := collector.NewScheduler(noopEmitter{}, collector.NewMemoryStore(),
+			collector.WithTracer(tp.Tracer("test")),
+			collector.WithStaggerWindow(0),
+			collector.WithSelfObs(false),
+		)
+		last := time.Now()
+		s.RunTick(context.Background(),
+			collector.Entry{Collector: fakeErr("keys", boom), Interval: time.Minute},
+			&last)
+
+		spans := sr.Ended()
+		if len(spans) != 1 {
+			t.Fatalf("got %d spans %v, want exactly 1", len(spans), spanNames(spans))
+		}
+		if got := spans[0].Name(); got != "scrape keys" {
+			t.Errorf("span name = %q, want %q", got, "scrape keys")
+		}
+		// A failing collector must set Error status on the span.
+		if code := spans[0].Status().Code; code != codes.Error {
+			t.Errorf("span status code = %v, want Error", code)
+		}
+		if desc := spans[0].Status().Description; !strings.Contains(desc, "api unavailable") {
+			t.Errorf("span status description = %q, want it to contain %q", desc, "api unavailable")
+		}
+	})
 }

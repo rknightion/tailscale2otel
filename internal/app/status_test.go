@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
@@ -32,6 +34,7 @@ func TestBuildStatus_WindowCheckpointStuck(t *testing.T) {
 		t.Fatalf("seed checkpoint: %v", err)
 	}
 	a := newApp(config.Default(), "vtest", nil, telemetrytest.New().Emitter(),
+		tracenoop.NewTracerProvider().Tracer("test"),
 		func(context.Context) error { return nil }, newTestClient(t, "http://127.0.0.1:0"),
 		store, NewAPIStats())
 	a.registry.RegisterWindow(stubWindowCollector{name: "flowlogs", lag: time.Minute}, time.Minute, 0, 0)

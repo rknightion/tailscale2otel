@@ -130,6 +130,11 @@ func (c *Config) Warnings() []string {
 		w = append(w, "version_checks.devices.enabled=true but collectors.devices is disabled: per-device version-skew metrics need the devices collector and will not be emitted")
 	}
 
+	if c.Tracing.Enabled && c.Tracing.SamplerArg == 0 &&
+		(c.Tracing.Sampler == "traceidratio" || c.Tracing.Sampler == "parentbased_traceidratio") {
+		w = append(w, "tracing.enabled is true but tracing.sampler_arg is 0 with a ratio sampler — no spans will be recorded")
+	}
+
 	for _, name := range c.unknownEnv {
 		w = append(w, fmt.Sprintf("environment variable %s does not match any configuration key "+
 			"and was ignored — check the name for typos (keys use the %s prefix with %q as the "+
@@ -302,6 +307,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Profiling.Pyroscope.Enabled && c.Profiling.Pyroscope.ServerAddress == "" {
 		return fmt.Errorf("profiling.pyroscope.enabled requires profiling.pyroscope.server_address")
+	}
+
+	if !oneOf(c.Tracing.Sampler, "always_on", "always_off", "traceidratio",
+		"parentbased_always_on", "parentbased_traceidratio") {
+		return fmt.Errorf("tracing.sampler %q invalid: must be one of always_on, always_off, traceidratio, parentbased_always_on, parentbased_traceidratio", c.Tracing.Sampler)
+	}
+	if c.Tracing.SamplerArg < 0 || c.Tracing.SamplerArg > 1 {
+		return fmt.Errorf("tracing.sampler_arg %v invalid: must be in [0,1]", c.Tracing.SamplerArg)
 	}
 
 	if c.VersionChecks.Self.Enabled || c.VersionChecks.Devices.Enabled {

@@ -10,6 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 )
 
@@ -52,7 +56,7 @@ func TestRetryTransport_ObserverSeesFinalStatusAndAttempts(t *testing.T) {
 		max:       3,
 		baseDelay: time.Millisecond,
 		maxDelay:  2 * time.Millisecond,
-		onRequest: func(i RequestInfo) {
+		onRequest: func(_ context.Context, i RequestInfo) {
 			calls++
 			got = i
 		},
@@ -97,7 +101,7 @@ func TestRetryTransport_ObserverFirstTry(t *testing.T) {
 		max:       3,
 		baseDelay: time.Millisecond,
 		maxDelay:  2 * time.Millisecond,
-		onRequest: func(i RequestInfo) {
+		onRequest: func(_ context.Context, i RequestInfo) {
 			got = i
 		},
 	}
@@ -134,7 +138,7 @@ func TestRetryTransport_ObserverTransportError(t *testing.T) {
 		max:       2,
 		baseDelay: time.Millisecond,
 		maxDelay:  2 * time.Millisecond,
-		onRequest: func(i RequestInfo) {
+		onRequest: func(_ context.Context, i RequestInfo) {
 			got = i
 		},
 	}
@@ -495,6 +499,71 @@ func TestTransportLogging(t *testing.T) {
 			t.Fatalf("RoundTrip: %v", err)
 		}
 	})
+}
+
+// roundTripFunc is a simple http.RoundTripper backed by a function.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRoundTrip_EmitsAPISpan(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	var gotSampled bool
+	rt := &retryTransport{
+		base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: http.NoBody, Header: http.Header{}}, nil
+		}),
+		max:    1,
+		tracer: tp.Tracer("test"),
+		onRequest: func(ctx context.Context, _ RequestInfo) {
+			gotSampled = trace.SpanContextFromContext(ctx).IsSampled()
+		},
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	if spans[0].Name() != "tailscale.api devices" {
+		t.Errorf("span name = %q, want %q", spans[0].Name(), "tailscale.api devices")
+	}
+	if !gotSampled {
+		t.Error("onRequest ctx must carry the sampled API span (for exemplars)")
+	}
+
+	// Guard the attribute keys/values against accidental renames.
+	attrs := spanAttrMap(spans[0].Attributes())
+	if got := attrs[attribute.Key("http.request.method")].AsString(); got != "GET" {
+		t.Errorf("http.request.method = %q, want GET", got)
+	}
+	if got := attrs[attribute.Key("http.response.status_code")].AsInt64(); got != 200 {
+		t.Errorf("http.response.status_code = %d, want 200", got)
+	}
+	if got := attrs[attribute.Key("http.request.resend_count")].AsInt64(); got != 0 {
+		t.Errorf("http.request.resend_count = %d, want 0", got)
+	}
+	if got := attrs[attribute.Key("url.full")].AsString(); !strings.Contains(got, "/devices") {
+		t.Errorf("url.full = %q, want it to contain /devices", got)
+	}
+}
+
+// spanAttrMap indexes a span's attributes by key for value lookups.
+func spanAttrMap(kvs []attribute.KeyValue) map[attribute.Key]attribute.Value {
+	m := make(map[attribute.Key]attribute.Value, len(kvs))
+	for _, kv := range kvs {
+		m[kv.Key] = kv.Value
+	}
+	return m
 }
 
 func TestEndpointLabel(t *testing.T) {

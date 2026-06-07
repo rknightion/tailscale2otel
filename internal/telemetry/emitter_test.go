@@ -12,6 +12,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
@@ -226,5 +227,39 @@ func TestEmitter_LogEventSetsBodySeverityAndEventName(t *testing.T) {
 	}
 	if attrs["network.transport"] != "tcp" {
 		t.Fatalf("network.transport attr = %q, want tcp", attrs["network.transport"])
+	}
+}
+
+func TestHistogramCtxAttachesExemplar(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	// Default MeterProvider uses the trace-based exemplar filter, so a recording
+	// under a sampled span context will attach an exemplar.
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+	e := telemetry.NewEmitter(mp.Meter("test"), noop.NewLoggerProvider().Logger("test"))
+
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0x02},
+		SpanID:     trace.SpanID{0x02},
+		TraceFlags: trace.FlagsSampled,
+	}))
+	e.HistogramCtx(ctx, "h.exemplar", "s", "desc", 0.5, []float64{1}, telemetry.Attrs{"k": "v"})
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	exemplars := 0
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if h, ok := m.Data.(metricdata.Histogram[float64]); ok {
+				for _, dp := range h.DataPoints {
+					exemplars += len(dp.Exemplars)
+				}
+			}
+		}
+	}
+	if exemplars != 1 {
+		t.Errorf("got %d exemplar(s); want 1 via HistogramCtx", exemplars)
 	}
 }

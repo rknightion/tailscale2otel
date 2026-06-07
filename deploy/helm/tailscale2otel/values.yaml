@@ -484,6 +484,16 @@ config:
     # -- runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull.
     block_profile_rate: 0
 
+  # -- OTEL traces pillar (spans for the exporter's own work). OFF by default;
+  # reuses otlp.* for the endpoint/protocol/headers/TLS.
+  tracing:
+    # -- Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration.
+    enabled: false
+    # -- Head sampler (always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio).
+    sampler: parentbased_always_on
+    # -- Sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise).
+    sampler_arg: 1.0
+
   version_checks:
     self:
       # -- Emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release). Makes an outbound HTTPS call; fail-open. Disable for air-gapped deployments.

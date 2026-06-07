@@ -51,6 +51,7 @@ type Config struct {
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
 	Admin             AdminConfig             `yaml:"admin"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
+	Tracing           TracingConfig           `yaml:"tracing"`
 	VersionChecks     VersionChecksConfig     `yaml:"version_checks"`
 
 	// unknownEnv records TS2OTEL_* environment variables that did not map to any
@@ -529,6 +530,14 @@ type WebhookConfig struct {
 	// with the audit processor so a change reported by BOTH a webhook and the
 	// audit logs is counted once. Off by default.
 	DedupAuditEvents bool `yaml:"dedup_audit_events"`
+}
+
+// TracingConfig configures the OTEL traces pillar. Off by default; reuses otlp.*
+// for the endpoint/protocol/headers/TLS.
+type TracingConfig struct {
+	Enabled    bool    `yaml:"enabled"`
+	Sampler    string  `yaml:"sampler"`     // always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio
+	SamplerArg float64 `yaml:"sampler_arg"` // ratio in [0,1] for the *traceidratio samplers
 }
 
 // SelfObservabilityConfig toggles emitting the collector's own telemetry.

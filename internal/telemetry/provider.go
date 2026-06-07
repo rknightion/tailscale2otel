@@ -24,6 +24,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/exemplar"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -58,6 +61,21 @@ type Options struct {
 	// tailscale2otel.series.active cardinality tracker (nil/disabled otherwise).
 	SelfObsEnabled bool
 
+	// TracingEnabled turns on the OTEL TracerProvider (and flips the metric
+	// exemplar filter to trace-based). When false, Tracer() returns a no-op
+	// tracer and exemplars stay disabled (zero reservoir cost).
+	TracingEnabled bool
+
+	// TraceSampler selects the head sampler when tracing is enabled. One of
+	// always_on, always_off, traceidratio, parentbased_always_on,
+	// parentbased_traceidratio (validated by the config layer). Empty defaults to
+	// parentbased_always_on.
+	TraceSampler string
+
+	// TraceSamplerArg is the ratio in [0,1] for the *traceidratio samplers;
+	// ignored by the others.
+	TraceSamplerArg float64
+
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
 
@@ -71,6 +89,8 @@ type Options struct {
 type Provider struct {
 	mp      *sdkmetric.MeterProvider
 	lp      *sdklog.LoggerProvider
+	tp      *sdktrace.TracerProvider // nil unless TracingEnabled
+	tracer  trace.Tracer             // always non-nil (no-op when tp is nil)
 	emitter Emitter
 	card    *CardinalityTracker // nil unless self-observability is enabled
 
@@ -83,19 +103,23 @@ type Provider struct {
 // in production, a ManualReader in tests). Centralizing them here lets the
 // cardinality-limit and exemplar-filter behavior be asserted against an in-memory
 // reader without duplicating the wiring.
-func metricProviderOptions(res *resource.Resource, cardinalityLimit int) []sdkmetric.Option {
+func metricProviderOptions(res *resource.Resource, cardinalityLimit int, tracingEnabled bool) []sdkmetric.Option {
+	// With a TracerProvider present, use the trace-based exemplar filter so the
+	// api.duration histogram (and other ctx-aware records) link to sampled spans.
+	// Without tracing, keep exemplars OFF: the trace-based filter would allocate a
+	// reservoir per series that can never be populated (no spans) yet is still
+	// walked and serialized on every export — pure dead-weight alloc/CPU.
+	exemplarFilter := exemplar.AlwaysOffFilter
+	if tracingEnabled {
+		exemplarFilter = exemplar.TraceBasedFilter
+	}
 	return []sdkmetric.Option{
 		sdkmetric.WithResource(res),
 		// Hard per-instrument cardinality limit (0/neg = unlimited). Raises the SDK
 		// default of 2000 to whatever the app configures (default 10000); beyond it
 		// the SDK emits otel_metric_overflow.
 		sdkmetric.WithCardinalityLimit(cardinalityLimit),
-		// We configure no TracerProvider (metrics + logs only), so the SDK's default
-		// trace-based exemplar filter would allocate a reservoir per series that can
-		// never be populated yet is still walked and serialized on every export.
-		// Disable exemplars outright to drop that dead-weight alloc/CPU and shrink the
-		// OTLP payload. Revisit if tracing is ever added.
-		sdkmetric.WithExemplarFilter(exemplar.AlwaysOffFilter),
+		sdkmetric.WithExemplarFilter(exemplarFilter),
 	}
 }
 
@@ -128,13 +152,30 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		interval = 60 * time.Second
 	}
 	mp := sdkmetric.NewMeterProvider(append(
-		metricProviderOptions(res, opts.CardinalityLimit),
+		metricProviderOptions(res, opts.CardinalityLimit, opts.TracingEnabled),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(interval))),
 	)...)
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithResource(res),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
 	)
+
+	var tp *sdktrace.TracerProvider
+	if opts.TracingEnabled {
+		traceExp, err := newTraceExporter(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("trace exporter: %w", err)
+		}
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithResource(res),
+			sdktrace.WithBatcher(traceExp),
+			sdktrace.WithSampler(buildSampler(opts.TraceSampler, opts.TraceSamplerArg)),
+		)
+	}
+	tracer := tracenoop.NewTracerProvider().Tracer(scopeName)
+	if tp != nil {
+		tracer = tp.Tracer(scopeName)
+	}
 
 	var card *CardinalityTracker
 	if opts.SelfObsEnabled {
@@ -144,6 +185,8 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	return &Provider{
 		mp:      mp,
 		lp:      lp,
+		tp:      tp,
+		tracer:  tracer,
 		emitter: newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger),
 		card:    card,
 
@@ -174,9 +217,18 @@ func (p *Provider) Emitter() Emitter { return p.emitter }
 // interval and may call Report safely even when this is nil.
 func (p *Provider) Cardinality() *CardinalityTracker { return p.card }
 
-// Shutdown flushes and stops the metric and log pipelines.
+// Tracer returns the tracer collectors-adjacent infrastructure (scheduler,
+// tsapi transport, receivers) records spans with. When tracing is disabled it is
+// a no-op tracer, so callers never need to nil-check.
+func (p *Provider) Tracer() trace.Tracer { return p.tracer }
+
+// Shutdown flushes and stops the metric, log, and trace pipelines.
 func (p *Provider) Shutdown(ctx context.Context) error {
-	return errors.Join(p.mp.Shutdown(ctx), p.lp.Shutdown(ctx))
+	errs := []error{p.mp.Shutdown(ctx), p.lp.Shutdown(ctx)}
+	if p.tp != nil {
+		errs = append(errs, p.tp.Shutdown(ctx))
+	}
+	return errors.Join(errs...)
 }
 
 func buildResource(ctx context.Context, opts Options) (*resource.Resource, error) {

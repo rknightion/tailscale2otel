@@ -144,7 +144,7 @@ var (
 		Name:        MetricAPIDuration,
 		Unit:        "s",
 		Instrument:  metricdoc.Histogram,
-		Description: "Tailscale API request wall-clock latency in seconds, by endpoint and HTTP status code. Covers the full logical request including any retry backoff (not just server time). Use the 429 status-code bucket here plus tailscale2otel.api.retries for rate-limit visibility — the Tailscale API exposes no rate-limit-remaining headers.",
+		Description: "Tailscale API request wall-clock latency in seconds, by endpoint and HTTP status code. Covers the full logical request including any retry backoff (not just server time). Use the 429 status-code bucket here plus tailscale2otel.api.retries for rate-limit visibility — the Tailscale API exposes no rate-limit-remaining headers. When tracing is enabled, datapoints carry trace exemplars linking to the API request span.",
 		Attributes:  []string{"endpoint", "http.response.status_code"},
 		Group:       GroupSelfObs,
 	}

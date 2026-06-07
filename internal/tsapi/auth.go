@@ -28,6 +28,7 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 			attemptTimeout: timeout,
 			onRequest:      opts.OnRequest,
 			logger:         opts.Logger,
+			tracer:         opts.Tracer,
 		}
 	}
 

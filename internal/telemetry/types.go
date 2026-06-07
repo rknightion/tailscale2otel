@@ -3,7 +3,10 @@
 // OpenTelemetry Go SDK; collectors depend only on the Emitter interface.
 package telemetry
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Attrs is a set of attributes attached to a metric data point or log record.
 // Supported value types: string, bool, int, int64, float64, []string.
@@ -51,8 +54,12 @@ type Emitter interface {
 	// Histogram records value into a Float64 histogram with the given explicit
 	// bucket boundaries. The bounds are honored only when the instrument is first
 	// created (instruments are cached by name); pass the same bounds on every call
-	// for a given metric name.
+	// for a given metric name. Equivalent to HistogramCtx with context.Background().
 	Histogram(name, unit, desc string, value float64, bounds []float64, attrs Attrs)
+	// HistogramCtx records like Histogram but uses ctx as the recording context,
+	// so the metric SDK can attach a trace exemplar when ctx carries a sampled
+	// span. Histogram is exactly HistogramCtx with context.Background().
+	HistogramCtx(ctx context.Context, name, unit, desc string, value float64, bounds []float64, attrs Attrs)
 	// LogEvent emits a single OTEL log record.
 	LogEvent(ev Event)
 }

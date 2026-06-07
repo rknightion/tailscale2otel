@@ -166,6 +166,10 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.tailscale.http.retry.max_delay | string | `"10s"` | Ceiling on the per-retry backoff delay. |
 | config.tailscale.http.timeout | string | `"30s"` | Per-request HTTP timeout for Tailscale API calls. |
 | config.tailscale.tailnet | string | `""` | Tailnet name, or "-" for the auth principal's default tailnet. Override with TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
+| config.tracing | object | `{"enabled":false,"sampler":"parentbased_always_on","sampler_arg":1}` | OTEL traces pillar (spans for the exporter's own work). OFF by default; reuses otlp.* for the endpoint/protocol/headers/TLS. |
+| config.tracing.enabled | bool | `false` | Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration. |
+| config.tracing.sampler | string | `"parentbased_always_on"` | Head sampler (always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio). |
+| config.tracing.sampler_arg | float | `1` | Sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). |
 | config.version_checks.cache_ttl | string | `"1h"` | How long a fetched "latest version" is cached before re-fetching (minimum 5m). |
 | config.version_checks.devices.enabled | bool | `true` | Emit per-device tailscale.device.version_skew + fleet roll-ups (device client version vs latest Tailscale stable). Makes an outbound HTTPS call; fail-open. Needs the devices collector. |
 | config.version_checks.devices.outdated_minor_threshold | int | `3` | A device this many minor releases behind the latest Tailscale stable counts toward tailscale.devices.outdated. |

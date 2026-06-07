@@ -170,13 +170,15 @@ func (a *App) buildReceivers() {
 			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
 			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
 			OnIngest:     a.ingestObserver(),
-		}, a.flowProc, a.auditProc, a.emitter, withComponent(a.logger, appcatalog.ComponentStream))
+		}, a.flowProc, a.auditProc, a.emitter, withComponent(a.logger, appcatalog.ComponentStream),
+			stream.WithTracer(a.tracer))
 	}
 	if a.cfg.Webhook.Enabled {
 		var wopts []webhook.Option
 		if a.webhookDedup != nil {
 			wopts = append(wopts, webhook.WithDedup(a.webhookDedup))
 		}
+		wopts = append(wopts, webhook.WithTracer(a.tracer))
 		wh := webhookOptions(a.cfg.Webhook)
 		wh.OnIngest = a.ingestObserver()
 		a.webhookSrv = webhook.New(wh, a.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
@@ -811,4 +813,67 @@ func TestHandleCallsIngestHook(t *testing.T) {
 	// Signal calls: one per non-empty signal.
 	findCall(semconv.IngestSourceStream, semconv.IngestSignalFlow, 1, 0)
 	findCall(semconv.IngestSourceStream, semconv.IngestSignalAudit, 1, 0)
+}
+
+// spanNames extracts the Name() of each ended ReadOnlySpan for readable assertions.
+func spanNames(spans []sdktrace.ReadOnlySpan) []string {
+	out := make([]string, 0, len(spans))
+	for _, s := range spans {
+		out = append(out, s.Name())
+	}
+	return out
+}
+
+// TestStreamHandle_EmitsSpan verifies that a configured tracer yields one
+// server span named "stream.receive" per request, regardless of outcome.
+func TestStreamHandle_EmitsSpan(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	rec := telemetrytest.New()
+	cache := enrich.NewDeviceCache()
+	flowProc := flowlog.NewProcessor(cache, flowlog.Options{})
+	auditProc := audit.NewProcessor()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := stream.New(stream.Options{}, flowProc, auditProc, rec.Emitter(), logger, stream.WithTracer(tp.Tracer("test")))
+
+	// A bare "{}"+empty envelope body: parse will fail (no records), resulting in a
+	// 400. The span must still be emitted — the defer fires regardless of exit path.
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event",
+		http.Header{}, strings.NewReader("{}"))
+	_ = resp // status is not the subject of this test
+
+	spans := sr.Ended()
+	if len(spans) != 1 || spans[0].Name() != "stream.receive" {
+		t.Fatalf("got %v, want one span named stream.receive", spanNames(spans))
+	}
+}
+
+// TestStreamHandle_EmitsSpanOnAuthReject verifies that the span is emitted and
+// marked Error even when the request is rejected for bad auth.
+func TestStreamHandle_EmitsSpanOnAuthReject(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	rec := telemetrytest.New()
+	cache := enrich.NewDeviceCache()
+	flowProc := flowlog.NewProcessor(cache, flowlog.Options{})
+	auditProc := audit.NewProcessor()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := stream.New(stream.Options{Token: "secret"}, flowProc, auditProc, rec.Emitter(), logger, stream.WithTracer(tp.Tracer("test")))
+
+	// POST with no auth header — should be rejected.
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event",
+		http.Header{}, strings.NewReader(hecFlowBody))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
+	}
+
+	spans := sr.Ended()
+	if len(spans) != 1 || spans[0].Name() != "stream.receive" {
+		t.Fatalf("got %v, want one span named stream.receive", spanNames(spans))
+	}
 }

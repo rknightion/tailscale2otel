@@ -36,10 +36,25 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
+
+// receiverPropagator extracts W3C TraceContext from incoming request headers.
+// Tailscale's sender won't send a traceparent header, so extraction yields an
+// empty parent and the span becomes a root — that's correct.
+var receiverPropagator = propagation.TraceContext{}
+
+// noopWebhookTracer is a package-level cached noop tracer used when no tracer
+// is configured, avoiding per-request allocations.
+var noopWebhookTracer = tracenoop.NewTracerProvider().Tracer("")
 
 const (
 	// signatureHeader is the request header carrying the signed timestamp and
@@ -145,6 +160,7 @@ type Server struct {
 	now      func() time.Time // injectable clock; defaults to time.Now
 	dedup    *dedup.Set       // optional cross-source de-dup set (see WithDedup)
 	onIngest func(source, signal string, records, bytes int)
+	tracer   trace.Tracer
 
 	// typesMu guards seenTypes, the bounded set of distinct event types already
 	// admitted as a telemetry dimension. handle (and thus emit) runs concurrently
@@ -165,6 +181,10 @@ type Option func(*Server)
 func WithDedup(set *dedup.Set) Option {
 	return func(s *Server) { s.dedup = set }
 }
+
+// WithTracer sets the tracer for one span per received webhook request. A nil
+// tracer disables span emission (the server falls back to the noop tracer).
+func WithTracer(tr trace.Tracer) Option { return func(s *Server) { s.tracer = tr } }
 
 // event mirrors a single Tailscale webhook event. Field names and types match
 // Tailscale's documented payload and official example consumer.
@@ -247,8 +267,21 @@ func (s *Server) Run(ctx context.Context) error {
 // handle is the core request handler: it accepts only POST, verifies the
 // signature, parses the event array, and emits telemetry.
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	// Start a server span for this request. W3C trace-context is extracted from
+	// headers; Tailscale's sender won't send a traceparent, so the span becomes a
+	// root — that's correct. The span ends via defer regardless of exit path.
+	tr := s.tracer
+	if tr == nil {
+		tr = noopWebhookTracer
+	}
+	ctx := receiverPropagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	ctx, span := tr.Start(ctx, "webhook.receive", trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
+	r = r.WithContext(ctx)
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
+		span.SetStatus(codes.Error, "method not allowed")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -258,15 +291,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
+			span.SetStatus(codes.Error, "request body exceeds max size")
 			s.rejectStatus(w, http.StatusRequestEntityTooLarge, "too_large", "request body exceeds max size", err)
 			return
 		}
+		span.SetStatus(codes.Error, "failed to read request body")
 		s.reject(w, "read_error", "failed to read request body", err)
 		return
 	}
 
 	if s.opts.Secret != "" {
 		if reason, err := s.verify(r.Header.Get(signatureHeader), body); err != nil {
+			span.SetStatus(codes.Error, reason)
 			s.reject(w, reason, "signature verification failed", err)
 			return
 		}
@@ -274,6 +310,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	var events []event
 	if err := json.Unmarshal(body, &events); err != nil {
+		span.SetStatus(codes.Error, "failed to parse webhook body")
 		s.reject(w, "invalid_body", "failed to parse webhook body", err)
 		return
 	}
@@ -284,6 +321,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	for _, ev := range events {
 		s.emit(ev)
+	}
+
+	// Record aggregate counts and body size on the span before the success response.
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.Int("tailscale.webhook.events", len(events)),
+			attribute.Int("http.request.body.size", len(body)),
+		)
 	}
 
 	w.WriteHeader(http.StatusOK)

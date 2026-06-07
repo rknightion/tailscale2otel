@@ -133,6 +133,48 @@ func TestOTLPHTTPURL(t *testing.T) {
 	}
 }
 
+// TestMeterProviderEnablesExemplarsWhenTracing is the mirror of
+// TestMeterProviderDisablesExemplars: with tracing on, metricProviderOptions
+// must use the trace-based exemplar filter so a measurement recorded under a
+// SAMPLED span context attaches exactly one exemplar.
+func TestMeterProviderEnablesExemplarsWhenTracing(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(append(
+		metricProviderOptions(resource.Empty(), 10000, true),
+		sdkmetric.WithReader(reader),
+	)...)
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	ctr, err := mp.Meter("test").Int64Counter("t.exemplar.probe")
+	if err != nil {
+		t.Fatalf("Int64Counter: %v", err)
+	}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0x01},
+		SpanID:     trace.SpanID{0x01},
+		TraceFlags: trace.FlagsSampled,
+	}))
+	ctr.Add(ctx, 1, metric.WithAttributes(attribute.String("k", "v")))
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	exemplars := 0
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if sum, ok := m.Data.(metricdata.Sum[int64]); ok {
+				for _, dp := range sum.DataPoints {
+					exemplars += len(dp.Exemplars)
+				}
+			}
+		}
+	}
+	if exemplars != 1 {
+		t.Errorf("got %d exemplar(s); want 1 (trace-based filter must capture sampled-context measurements)", exemplars)
+	}
+}
+
 // TestMeterProviderDisablesExemplars guards that metrics run with exemplars OFF.
 // The app configures no TracerProvider, so the SDK's default trace-based exemplar
 // filter would allocate a reservoir per series that can never be populated (there
@@ -143,7 +185,7 @@ func TestOTLPHTTPURL(t *testing.T) {
 func TestMeterProviderDisablesExemplars(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(append(
-		metricProviderOptions(resource.Empty(), 10000),
+		metricProviderOptions(resource.Empty(), 10000, false),
 		sdkmetric.WithReader(reader),
 	)...)
 	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
