@@ -45,6 +45,10 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		// accumulator on the OTLP export interval.
 		FlowMetricsMode: cfg.Cardinality.Flow.MetricsMode,
 		RollupTopN:      cfg.Cardinality.Flow.RollupTopN,
+		// cardinality.flow.exit_node_attribution (default true) emits the bounded
+		// tailscale.exit_node.io/packets counters attributing exit traffic to the
+		// relaying node; independent of FlowMetricsMode.
+		ExitNodeAttribution: cfg.Cardinality.Flow.ExitNodeAttribution,
 	}
 }
 
@@ -94,6 +98,8 @@ func (a *App) registerCollectors() {
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
 			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup),
 			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit),
+			devices.WithConnectivity(c.Devices.CollectConnectivity),
+			devices.WithSubnetRouteRollup(a.cfg.Cardinality.SubnetRouteRollup),
 		}
 		if a.tsRelease != nil {
 			devOpts = append(devOpts, devices.WithUpstreamLatest(

@@ -31,11 +31,14 @@ const (
 	// and transport (e.g. tcp/443 -> "https"). Port-inferred, not DPI-confirmed.
 	AttrDstService = "tailscale.dst.service"
 	AttrNodeID     = "tailscale.node.id"
-	AttrUser       = "tailscale.user"
-	AttrTags       = "tailscale.tags"
-	AttrTailnet    = "tailscale.tailnet"
-	AttrCollector  = "tailscale.collector"
-	AttrFeature    = "tailscale.feature"
+	// AttrExitNode is the short hostname (or nodeId fallback) of the exit node
+	// that relayed a flow's exit traffic; carried on tailscale.exit_node.io/packets.
+	AttrExitNode  = "tailscale.exit_node"
+	AttrUser      = "tailscale.user"
+	AttrTags      = "tailscale.tags"
+	AttrTailnet   = "tailscale.tailnet"
+	AttrCollector = "tailscale.collector"
+	AttrFeature   = "tailscale.feature"
 )
 
 // Self-observability attribute keys.

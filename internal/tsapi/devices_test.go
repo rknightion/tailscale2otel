@@ -229,6 +229,51 @@ func TestDevicePostureAttributes_DecodesMap(t *testing.T) {
 	}
 }
 
+func TestDevicesRich_ClientConnectivity(t *testing.T) {
+	const body = `{"devices":[{
+		"id":"1","nodeId":"n1","hostname":"host-a",
+		"advertisedRoutes":["0.0.0.0/0","::/0","10.0.50.0/24"],
+		"enabledRoutes":["0.0.0.0/0","::/0"],
+		"clientConnectivity":{
+			"endpoints":["18.192.206.183:39211","[2a05:d014::1]:39211"],
+			"mappingVariesByDestIP":true,
+			"latency":{"Frankfurt":{"preferred":true,"latencyMs":1.0}},
+			"clientSupports":{"hairPinning":null,"ipv6":true,"pcp":false,"pmp":false,"udp":true,"upnp":false}
+		}
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich: %v", err)
+	}
+	if len(devs) != 1 {
+		t.Fatalf("got %d devices, want 1", len(devs))
+	}
+	d := devs[0]
+	if !d.HardNAT {
+		t.Errorf("HardNAT = false, want true")
+	}
+	if len(d.Endpoints) != 2 {
+		t.Errorf("Endpoints = %v, want 2", d.Endpoints)
+	}
+	if d.ClientSupports.UDP == nil || !*d.ClientSupports.UDP {
+		t.Errorf("UDP = %v, want *true", d.ClientSupports.UDP)
+	}
+	if d.ClientSupports.IPv6 == nil || !*d.ClientSupports.IPv6 {
+		t.Errorf("IPv6 = %v, want *true", d.ClientSupports.IPv6)
+	}
+	if d.ClientSupports.PCP == nil || *d.ClientSupports.PCP {
+		t.Errorf("PCP = %v, want *false", d.ClientSupports.PCP)
+	}
+	if d.DERPLatency["Frankfurt"].LatencyMs != 1.0 {
+		t.Errorf("DERP latency lost: %+v", d.DERPLatency)
+	}
+}
+
 func TestDevicePostureAttributes_Empty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"attributes":{}}`))

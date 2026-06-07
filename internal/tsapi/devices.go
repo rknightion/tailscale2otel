@@ -48,6 +48,19 @@ type RichDevice struct {
 
 	// DERPLatency is keyed by DERP region name, e.g. "Frankfurt".
 	DERPLatency map[string]DERPRegion
+
+	// HardNAT is clientConnectivity.mappingVariesByDestIP: true when the host's
+	// NAT mappings vary by destination IP (hard/symmetric NAT), which inhibits
+	// direct connections. This is connection *eligibility*, not the live path.
+	HardNAT bool
+
+	// Endpoints is clientConnectivity.endpoints: the device's magicsock UDP
+	// IP:port candidates. Only the COUNT is exported as a metric — the list is
+	// never a label (unbounded).
+	Endpoints []string
+
+	// ClientSupports is clientConnectivity.clientSupports (capability tri-states).
+	ClientSupports ClientSupports
 }
 
 // DistroInfo describes the operating-system distribution reported by a device.
@@ -61,6 +74,18 @@ type DistroInfo struct {
 type DERPRegion struct {
 	Preferred bool
 	LatencyMs float64
+}
+
+// ClientSupports reports per-device direct-connectivity capabilities from
+// clientConnectivity.clientSupports. Each field is a tri-state: nil = the API
+// did not report it (or reported null, as hairPinning always does — it is no
+// longer tracked and is therefore omitted from this struct entirely).
+type ClientSupports struct {
+	IPv6 *bool
+	PCP  *bool
+	PMP  *bool
+	UDP  *bool
+	UPnP *bool
 }
 
 // richDevicesResponse is the wire shape of the rich devices endpoint.
@@ -110,6 +135,15 @@ type richDevice struct {
 			Preferred bool    `json:"preferred"`
 			LatencyMs float64 `json:"latencyMs"`
 		} `json:"latency"`
+		MappingVariesByDestIP bool     `json:"mappingVariesByDestIP"`
+		Endpoints             []string `json:"endpoints"`
+		ClientSupports        struct {
+			IPv6 *bool `json:"ipv6"`
+			PCP  *bool `json:"pcp"`
+			PMP  *bool `json:"pmp"`
+			UDP  *bool `json:"udp"`
+			UPnP *bool `json:"upnp"`
+		} `json:"clientSupports"`
 	} `json:"clientConnectivity"`
 }
 
@@ -152,6 +186,15 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 				Version:  d.Distro.Version,
 				CodeName: d.Distro.CodeName,
 			},
+		}
+		rd.HardNAT = d.ClientConnectivity.MappingVariesByDestIP
+		rd.Endpoints = d.ClientConnectivity.Endpoints
+		rd.ClientSupports = ClientSupports{
+			IPv6: d.ClientConnectivity.ClientSupports.IPv6,
+			PCP:  d.ClientConnectivity.ClientSupports.PCP,
+			PMP:  d.ClientConnectivity.ClientSupports.PMP,
+			UDP:  d.ClientConnectivity.ClientSupports.UDP,
+			UPnP: d.ClientConnectivity.ClientSupports.UPnP,
 		}
 		if len(d.ClientConnectivity.Latency) > 0 {
 			rd.DERPLatency = make(map[string]DERPRegion, len(d.ClientConnectivity.Latency))

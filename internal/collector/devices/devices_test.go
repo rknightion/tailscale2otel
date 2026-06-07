@@ -82,6 +82,11 @@ func sampleDevices() []tsapi.RichDevice {
 				"Frankfurt": {Preferred: true, LatencyMs: 12.5},
 				"Amsterdam": {Preferred: false, LatencyMs: 8.0},
 			},
+			// Connectivity (B3): populated so the catalog drift guard exercises the
+			// connectivity gauges + client_supports fleet rollup, not just hard_nat=0.
+			HardNAT:        false,
+			Endpoints:      []string{"203.0.113.5:41641", "[2001:db8::1]:41641"},
+			ClientSupports: tsapi.ClientSupports{UDP: ptr(true), IPv6: ptr(true), UPnP: ptr(false)},
 		},
 		{
 			// Offline (not connected), key expiry disabled, update available,
@@ -1436,4 +1441,130 @@ func TestCollect_DeviceInvitesErrorIsNonFatal(t *testing.T) {
 	if len(rec.MetricPoints("tailscale.devices.count")) == 0 {
 		t.Error("tailscale.devices.count not emitted; invite failure broke the devices snapshot")
 	}
+}
+
+// --- B3 connectivity + B4 routing analytics ---
+
+// ptr returns a pointer to v (for ClientSupports tri-state fields).
+func ptr[T any](v T) *T { return &v }
+
+// collectWith builds a devices collector with per-entity, connectivity and
+// subnet-route rollup all ON, runs Collect over devs, and returns the recorder.
+func collectWith(t *testing.T, devs []tsapi.RichDevice) *telemetrytest.Recorder {
+	t.Helper()
+	return collectWithOpts(t, devs, true, true, true)
+}
+
+// collectWithOpts builds a devices collector threading the connectivity,
+// per-entity and subnet-route-rollup gates, runs Collect, and returns the
+// recorder.
+func collectWithOpts(t *testing.T, devs []tsapi.RichDevice, connectivity, perEntity, subnetRollup bool) *telemetrytest.Recorder {
+	t.Helper()
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{devices: devs}
+	c := devices.New(api, cache, 0, false, false,
+		devices.WithClock(func() time.Time { return now }),
+		devices.WithConnectivity(connectivity),
+		devices.WithPerEntity(perEntity),
+		devices.WithSubnetRouteRollup(subnetRollup),
+	)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	return rec
+}
+
+// assertGauge asserts a single recorded gauge point for name whose attrs match
+// want (string values; bools rendered as "true"/"false") has the given value.
+func assertGauge(t *testing.T, rec *telemetrytest.Recorder, name string, want map[string]string, value float64) {
+	t.Helper()
+	p, ok := pointByAttr(rec.MetricPoints(name), want)
+	if !ok {
+		t.Errorf("%s: no point with attrs %v; points=%+v", name, want, rec.MetricPoints(name))
+		return
+	}
+	if p.Value != value {
+		t.Errorf("%s%v = %v, want %v", name, want, p.Value, value)
+	}
+}
+
+// assertNoGauge asserts there is no recorded gauge point for name matching want.
+func assertNoGauge(t *testing.T, rec *telemetrytest.Recorder, name string, want map[string]string) {
+	t.Helper()
+	if p, ok := pointByAttr(rec.MetricPoints(name), want); ok {
+		t.Errorf("%s%v present = %+v, want absent", name, want, p)
+	}
+}
+
+func TestCollect_Connectivity(t *testing.T) {
+	devs := []tsapi.RichDevice{
+		{ID: "1", Hostname: "a", HardNAT: true, Endpoints: []string{"x:1", "y:2"},
+			ClientSupports: tsapi.ClientSupports{UDP: ptr(true), IPv6: ptr(false), PCP: ptr(false), PMP: ptr(false), UPnP: ptr(true)}},
+		{ID: "2", Hostname: "b", HardNAT: false, Endpoints: []string{"z:3"},
+			ClientSupports: tsapi.ClientSupports{UDP: ptr(true), IPv6: ptr(true)}},
+	}
+	rec := collectWith(t, devs)
+
+	// Per-device: device 1 hard NAT, device 2 direct-capable.
+	assertGauge(t, rec, "tailscale.device.connectivity.hard_nat", map[string]string{semconv.HostName: "a", semconv.HostID: "1"}, 1)
+	assertGauge(t, rec, "tailscale.device.connectivity.hard_nat", map[string]string{semconv.HostName: "b", semconv.HostID: "2"}, 0)
+	assertGauge(t, rec, "tailscale.device.connectivity.endpoints", map[string]string{semconv.HostName: "a", semconv.HostID: "1"}, 2)
+	assertGauge(t, rec, "tailscale.device.connectivity.direct_capable", map[string]string{semconv.HostName: "b", semconv.HostID: "2"}, 1) // udp && !hardnat
+	assertGauge(t, rec, "tailscale.device.connectivity.direct_capable", map[string]string{semconv.HostName: "a", semconv.HostID: "1"}, 0) // hard nat
+
+	// Fleet rollups.
+	assertGauge(t, rec, "tailscale.devices.hard_nat", nil, 1)
+	assertGauge(t, rec, "tailscale.devices.direct_capable", nil, 1)
+	assertGauge(t, rec, "tailscale.devices.client_supports", map[string]string{"tailscale.connectivity.capability": "udp"}, 2)
+	assertGauge(t, rec, "tailscale.devices.client_supports", map[string]string{"tailscale.connectivity.capability": "ipv6"}, 1)
+	assertGauge(t, rec, "tailscale.devices.client_supports", map[string]string{"tailscale.connectivity.capability": "upnp"}, 1)
+}
+
+func TestCollect_Routing(t *testing.T) {
+	devs := []tsapi.RichDevice{
+		{ID: "1", Hostname: "exit1", AdvertisedRoutes: []string{"0.0.0.0/0", "::/0", "10.0.0.0/24"}, EnabledRoutes: []string{"0.0.0.0/0", "::/0", "10.0.0.0/24"}},
+		{ID: "2", Hostname: "exit2", AdvertisedRoutes: []string{"0.0.0.0/0", "::/0"}, EnabledRoutes: []string{}},
+		{ID: "3", Hostname: "sub", AdvertisedRoutes: []string{"10.0.0.0/24", "192.168.9.0/24"}, EnabledRoutes: []string{"10.0.0.0/24"}},
+	}
+	rec := collectWith(t, devs)
+
+	// 2 devices advertise exit; only exit1's default route is enabled.
+	assertGauge(t, rec, "tailscale.exit_nodes.count", map[string]string{"tailscale.exit_node.state": "advertised"}, 2)
+	assertGauge(t, rec, "tailscale.exit_nodes.count", map[string]string{"tailscale.exit_node.state": "enabled"}, 1)
+
+	// Subnet CIDRs (exit defaults excluded): 10.0.0.0/24, 192.168.9.0/24 advertised.
+	assertGauge(t, rec, "tailscale.subnet_routes.advertised", nil, 2)
+	assertGauge(t, rec, "tailscale.subnet_routes.enabled", nil, 1)    // only 10.0.0.0/24 enabled
+	assertGauge(t, rec, "tailscale.subnet_routes.unapproved", nil, 1) // 192.168.9.0/24 advertised, enabled nowhere
+
+	// Redundancy: 10.0.0.0/24 advertised by exit1 + sub = 2 routers.
+	assertGauge(t, rec, "tailscale.subnet_routes.routers", map[string]string{"tailscale.route.cidr": "10.0.0.0/24"}, 2)
+	assertGauge(t, rec, "tailscale.subnet_routes.routers", map[string]string{"tailscale.route.cidr": "192.168.9.0/24"}, 1)
+
+	// Per-device exit info: exit1 enabled, exit2 not; sub gets none.
+	assertGauge(t, rec, "tailscale.device.exit_node", map[string]string{semconv.HostName: "exit1", semconv.HostID: "1", "tailscale.exit_node.enabled": "true"}, 1)
+	assertGauge(t, rec, "tailscale.device.exit_node", map[string]string{semconv.HostName: "exit2", semconv.HostID: "2", "tailscale.exit_node.enabled": "false"}, 1)
+	assertNoGauge(t, rec, "tailscale.device.exit_node", map[string]string{semconv.HostName: "sub", semconv.HostID: "3"})
+}
+
+func TestCollect_ConnectivityGatedOff(t *testing.T) {
+	devs := []tsapi.RichDevice{{ID: "1", Hostname: "a", HardNAT: true}}
+	rec := collectWithOpts(t, devs, false /*connectivity*/, true /*perEntity*/, true /*subnetRollup*/)
+	assertNoGauge(t, rec, "tailscale.device.connectivity.hard_nat", map[string]string{semconv.HostName: "a", semconv.HostID: "1"})
+	assertNoGauge(t, rec, "tailscale.devices.hard_nat", nil)
+}
+
+func TestCollect_PerEntityOffKeepsFleet(t *testing.T) {
+	devs := []tsapi.RichDevice{{ID: "1", Hostname: "a", HardNAT: true, ClientSupports: tsapi.ClientSupports{UDP: ptr(true)}}}
+	rec := collectWithOpts(t, devs, true, false /*perEntity*/, true)
+	assertNoGauge(t, rec, "tailscale.device.connectivity.hard_nat", map[string]string{semconv.HostName: "a", semconv.HostID: "1"}) // per-device dropped
+	assertGauge(t, rec, "tailscale.devices.hard_nat", nil, 1)                                                                      // fleet kept
+}
+
+func TestCollect_SubnetRouteRollupOff(t *testing.T) {
+	devs := []tsapi.RichDevice{{ID: "1", Hostname: "a", AdvertisedRoutes: []string{"10.0.0.0/24"}}}
+	rec := collectWithOpts(t, devs, true, true, false /*subnetRollup*/)
+	assertNoGauge(t, rec, "tailscale.subnet_routes.routers", map[string]string{"tailscale.route.cidr": "10.0.0.0/24"})
+	assertGauge(t, rec, "tailscale.subnet_routes.advertised", nil, 1) // fleet count still emitted
 }

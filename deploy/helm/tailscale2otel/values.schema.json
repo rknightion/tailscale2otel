@@ -48,6 +48,9 @@
                                 "destination_service": {
                                     "type": "boolean"
                                 },
+                                "exit_node_attribution": {
+                                    "type": "boolean"
+                                },
                                 "metrics_mode": {
                                     "type": "string"
                                 },
@@ -84,6 +87,9 @@
                                     "type": "boolean"
                                 }
                             }
+                        },
+                        "subnet_route_rollup": {
+                            "type": "boolean"
                         }
                     }
                 },
@@ -154,6 +160,9 @@
                                     "items": {
                                         "type": "string"
                                     }
+                                },
+                                "collect_connectivity": {
+                                    "type": "boolean"
                                 },
                                 "collect_device_invites": {
                                     "type": "boolean"

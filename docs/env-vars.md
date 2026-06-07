@@ -61,6 +61,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__MAX_ENTRIES` | `50000` | PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry) |
 | `TS2OTEL_CARDINALITY__METRIC_LIMIT` | `10000` | hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited) |
 | `TS2OTEL_CARDINALITY__DERP_REGION_ROLLUP` | `true` | emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) |
+| `TS2OTEL_CARDINALITY__SUBNET_ROUTE_ROLLUP` | `true` | emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless |
 | `TS2OTEL_CARDINALITY__FLOW__METRICS_MODE` | `rollup` | rollup (bounded top-N, lowest cardinality) \| all (raw per-connection) \| both (≈2x series; summing double-counts) |
 | `TS2OTEL_CARDINALITY__FLOW__ROLLUP_TOP_N` | `500` | rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500) |
 | `TS2OTEL_CARDINALITY__FLOW__SOURCE_PORT` | `false` | add source.port to flow metrics (raw modes only) |
@@ -68,6 +69,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CARDINALITY__FLOW__DESTINATION_SERVICE` | `false` | add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics |
 | `TS2OTEL_CARDINALITY__FLOW__NODE_DIMS` | `true` | include src/dst device names on flow metrics |
 | `TS2OTEL_CARDINALITY__FLOW__COLLAPSE_EXTERNAL` | `true` | bucket unresolved IPs as external/unknown (keeps cardinality bounded) |
+| `TS2OTEL_CARDINALITY__FLOW__EXIT_NODE_ATTRIBUTION` | `true` | emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__DEVICE` | `true` | per-device gauges (online/last_seen/key_expiry/derp/routes) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__USER` | `true` | per-user gauges (devices/connected/last_seen) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__KEY` | `true` | per-key expiry gauge (the expiry WARN log fires regardless) |
@@ -76,6 +78,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__DEVICES__ENABLED` | `true` | device inventory — REQUIRED for flow/audit IP->name enrichment (disabling it degrades names to unknown/external) |
 | `TS2OTEL_COLLECTORS__DEVICES__INTERVAL` | `60s` | how often the device snapshot is polled |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_ROUTES` | `false` | also fetch advertised/primary subnet routes per device |
+| `TS2OTEL_COLLECTORS__DEVICES__COLLECT_CONNECTIVITY` | `true` | emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls) |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_POSTURE` | `false` | also fetch device posture (MDM/EDR) — enables the posture metrics + log |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_DEVICE_INVITES` | `true` | also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count |
 | `TS2OTEL_COLLECTORS__DEVICES__POSTURE_LOG_MODE` | `changes` | needs collect_posture: changes (log only on change) \| always (every scrape) \| off (no log); the posture METRIC is always emitted |

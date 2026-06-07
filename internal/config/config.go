@@ -236,6 +236,10 @@ type CardinalityConfig struct {
 	// DerpRegionRollup (default true) gates the tailnet-wide per-DERP-region
 	// rollup gauges (tailscale.derp.region.*) emitted by the devices collector.
 	DerpRegionRollup bool `yaml:"derp_region_rollup"`
+	// SubnetRouteRollup (default true) gates the per-CIDR
+	// tailscale.subnet_routes.routers redundancy gauge (one series per subnet
+	// CIDR). The fleet exit/subnet count aggregates are emitted regardless.
+	SubnetRouteRollup bool `yaml:"subnet_route_rollup"`
 	// Flow shapes the flow-metric families and their attributes.
 	Flow FlowCardinality `yaml:"flow"`
 	// PerEntity gates the per-entity gauges of the inventory collectors.
@@ -273,6 +277,10 @@ type FlowCardinality struct {
 	NodeDims bool `yaml:"node_dims"`
 	// CollapseExternal (default true) buckets unresolved IPs as external/unknown.
 	CollapseExternal bool `yaml:"collapse_external"`
+	// ExitNodeAttribution (default true) emits the bounded
+	// tailscale.exit_node.io/packets counters attributing exit traffic to the
+	// relaying node. Bounded by exit-node count; independent of MetricsMode.
+	ExitNodeAttribution bool `yaml:"exit_node_attribution"`
 }
 
 // PerEntityCardinality gates the per-entity gauges of the inventory collectors.
@@ -340,6 +348,10 @@ type DevicesCollector struct {
 	// sentinel ["*"] promotes every namespace present; an explicit empty list ([])
 	// disables the attribute metrics.
 	AttributeNamespaces []string `yaml:"attribute_namespaces"`
+	// CollectConnectivity (default true) gates the B3 connectivity signals
+	// (hard_nat/endpoints/direct_capable/udp/ipv6 + fleet rollups). No extra API
+	// calls — read from the rich device payload already fetched.
+	CollectConnectivity bool `yaml:"collect_connectivity"`
 	// CollectTagRollup (default true) gates the tailscale.devices.by_tag
 	// distribution gauge (one series per ACL tag). When false, only the other
 	// fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry) emit.

@@ -273,6 +273,123 @@ var (
 	}
 )
 
+// connIdentityAttrs is the per-device identity label set for the connectivity
+// gauges (host.name/host.id only — these are boolean/count signals that don't
+// need the os/user/tags fan-out the inventory gauges carry).
+var connIdentityAttrs = []string{semconv.HostName, semconv.HostID}
+
+var (
+	docConnHardNAT = metricdoc.Metric{
+		Name:        metricConnHardNAT,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the device is behind a hard/symmetric NAT (`clientConnectivity.mappingVariesByDestIP`), which inhibits direct connections. **Eligibility, not the live path** (live direct-vs-relay needs node-local APIs). Gated by `collect_connectivity` + `cardinality.per_entity.device`.",
+		Attributes:  connIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docConnEndpoints = metricdoc.Metric{
+		Name:        metricConnEndpoints,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of magicsock UDP endpoint candidates the device advertises (`clientConnectivity.endpoints` length; a **count**, despite `_ratio`). The endpoint addresses themselves are never emitted. Gated by `collect_connectivity` + `cardinality.per_entity.device`.",
+		Attributes:  connIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docConnDirectCapable = metricdoc.Metric{
+		Name:        metricConnDirectCapable,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the device looks able to make direct (non-DERP) connections: UDP supported **and** not behind a hard NAT (`clientSupports.udp && !mappingVariesByDestIP`). **Eligibility heuristic, not the live path.** Emitted only when UDP support is reported. Gated by `collect_connectivity` + `cardinality.per_entity.device`.",
+		Attributes:  connIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docConnUDP = metricdoc.Metric{
+		Name:        metricConnUDP,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if UDP traffic is usable on the device's current network (`clientSupports.udp`); `0` forces DERP relaying. Emitted only when reported. Gated by `collect_connectivity` + `cardinality.per_entity.device`.",
+		Attributes:  connIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docConnIPv6 = metricdoc.Metric{
+		Name:        metricConnIPv6,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the device OS supports IPv6 (`clientSupports.ipv6`), regardless of IPv6 internet availability. Emitted only when reported. Gated by `collect_connectivity` + `cardinality.per_entity.device`.",
+		Attributes:  connIdentityAttrs,
+		Group:       groupDevices,
+	}
+
+	docDevicesHardNAT = metricdoc.Metric{
+		Name:        metricDevicesHardNAT,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices behind a hard/symmetric NAT (a **count**, despite `_ratio`). Fleet-wide, no labels. Gated by `collect_connectivity`.",
+		Group:       groupDevices,
+	}
+	docDevicesDirectCapable = metricdoc.Metric{
+		Name:        metricDevicesDirectCapable,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices that look direct-capable (`udp && !hard_nat`), counted only among devices reporting UDP support (a **count**, despite `_ratio`). Fleet-wide, no labels. Gated by `collect_connectivity`.",
+		Group:       groupDevices,
+	}
+	docDevicesClientSupports = metricdoc.Metric{
+		Name:        metricDevicesClientSupports,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices reporting each direct-connectivity capability as supported (a **count**, despite `_ratio`); one series per capability (`udp`/`ipv6`/`pcp`/`pmp`/`upnp`). `hairPinning` is excluded (no longer tracked by Tailscale). Gated by `collect_connectivity`.",
+		Attributes:  []string{attrConnCapability},
+		Group:       groupDevices,
+	}
+
+	docExitNodesCount = metricdoc.Metric{
+		Name:        metricExitNodesCount,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of exit nodes in the tailnet (a **count**, despite `_ratio`); `tailscale.exit_node.state=advertised` counts devices advertising a default route (`0.0.0.0/0` or `::/0`), `=enabled` counts those whose default route is approved/enabled.",
+		Attributes:  []string{attrExitNodeState},
+		Group:       groupDevices,
+	}
+	docSubnetRoutesAdv = metricdoc.Metric{
+		Name:        metricSubnetRoutesAdv,
+		Unit:        semconv.UnitRoutes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of distinct **subnet** CIDRs advertised by at least one device (exit-node default routes excluded).",
+		Group:       groupDevices,
+	}
+	docSubnetRoutesEnabled = metricdoc.Metric{
+		Name:        metricSubnetRoutesEnabled,
+		Unit:        semconv.UnitRoutes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of distinct subnet CIDRs approved/enabled on at least one device (exit-node default routes excluded).",
+		Group:       groupDevices,
+	}
+	docSubnetRoutesUnapproved = metricdoc.Metric{
+		Name:        metricSubnetRoutesUnapprvd,
+		Unit:        semconv.UnitRoutes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of distinct subnet CIDRs advertised by some device but enabled on none — pending approval (exit-node default routes excluded).",
+		Group:       groupDevices,
+	}
+	docSubnetRoutesRouters = metricdoc.Metric{
+		Name:        metricSubnetRoutesRouters,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices advertising each subnet CIDR — route redundancy (a **count**, despite `_ratio`); one series per CIDR. **Gated** by `cardinality.subnet_route_rollup`. Exit-node default routes excluded.",
+		Attributes:  []string{attrRouteCIDR},
+		Group:       groupDevices,
+	}
+	docDeviceExitNode = metricdoc.Metric{
+		Name:        metricDeviceExitNode,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Info gauge (constant `1`) emitted once per device that advertises an exit route; `tailscale.exit_node.enabled` is `true` when the device's default route is approved. Gated by `cardinality.per_entity.device`.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrExitNodeEnabled},
+		Group:       groupDevices,
+	}
+)
+
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
@@ -282,6 +399,10 @@ func Catalog() []metricdoc.Metric {
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
 		docAttribute, docAttributeInfo,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
+		docConnHardNAT, docConnEndpoints, docConnDirectCapable, docConnUDP, docConnIPv6,
+		docDevicesHardNAT, docDevicesDirectCapable, docDevicesClientSupports,
+		docExitNodesCount, docSubnetRoutesAdv, docSubnetRoutesEnabled, docSubnetRoutesUnapproved,
+		docSubnetRoutesRouters, docDeviceExitNode,
 		docCacheAge, docCacheSize,
 	}
 }

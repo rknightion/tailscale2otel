@@ -90,6 +90,12 @@ type Options struct {
 	// rollup/both mode; the remainder folds into an __other__ series. A value <= 0
 	// selects a default.
 	RollupTopN int
+	// ExitNodeAttribution emits the bounded tailscale.exit_node.io/packets
+	// counters that attribute exit traffic to the reporting (exit) node. Default
+	// on at the config layer. Independent of FlowMetricsMode — the cardinality is
+	// intrinsically bounded by exit-node count, so it is emitted directly (not via
+	// the rollup accumulator) in every mode.
+	ExitNodeAttribution bool
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
@@ -110,6 +116,8 @@ type Processor struct {
 	// rollup is non-nil in "rollup"/"both" mode; it accumulates per-connection
 	// contributions and is drained by FlushRollup on the export interval.
 	rollup *rollupAccumulator
+	// exitNode enables per-exit-node IO/packets attribution (Options.ExitNodeAttribution).
+	exitNode bool
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -135,6 +143,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		rdns:         opts.RDNS,
 		dedup:        opts.Dedup,
 		maxLogs:      opts.MaxLogRecordsPerWindow,
+		exitNode:     opts.ExitNodeAttribution,
 	}
 	if flowMode == flowModeRollup || flowMode == flowModeBoth {
 		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims)
@@ -341,6 +350,20 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		semconv.AttrTrafficType:  trafficType,
 	})
 
+	// Per-exit-node IO attribution (bounded by exit-node count; all metric modes).
+	if p.exitNode && trafficType == semconv.TrafficExit {
+		node := p.exitNodeLabel(flow.NodeID)
+		ioAttrs := telemetry.Attrs{semconv.AttrExitNode: node}
+		e.Counter(docExitNodeIO.Name, docExitNodeIO.Unit, docExitNodeIO.Description,
+			float64(cc.TxBytes), dirAttrs(ioAttrs, semconv.DirectionTransmit))
+		e.Counter(docExitNodeIO.Name, docExitNodeIO.Unit, docExitNodeIO.Description,
+			float64(cc.RxBytes), dirAttrs(ioAttrs, semconv.DirectionReceive))
+		e.Counter(docExitNodePackets.Name, docExitNodePackets.Unit, docExitNodePackets.Description,
+			float64(cc.TxPkts), dirAttrs(ioAttrs, semconv.DirectionTransmit))
+		e.Counter(docExitNodePackets.Name, docExitNodePackets.Unit, docExitNodePackets.Description,
+			float64(cc.RxPkts), dirAttrs(ioAttrs, semconv.DirectionReceive))
+	}
+
 	if p.logMode == logPerConnection && budget.allow() {
 		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, e)
 	}
@@ -409,6 +432,21 @@ func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txP
 		Timestamp: logTimestamp(flow),
 		Attrs:     attrs,
 	})
+}
+
+// exitNodeLabel resolves the reporting node's hostname for the exit-node
+// attribution metric, falling back to the raw nodeId on a nil/miss cache or an
+// empty hostname, and to "unknown" only when there is no nodeId.
+func (p *Processor) exitNodeLabel(nodeID string) string {
+	if p.cache != nil {
+		if meta, ok := p.cache.LookupNode(nodeID); ok && meta.Hostname != "" {
+			return meta.Hostname
+		}
+	}
+	if nodeID != "" {
+		return nodeID
+	}
+	return "unknown"
 }
 
 // addNodeHostname adds tailscale.node.hostname to attrs when the cache has a

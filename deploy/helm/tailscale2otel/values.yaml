@@ -215,6 +215,9 @@ config:
     metric_limit: 10000
     # -- Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector.
     derp_region_rollup: true
+    # -- Emit the per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR);
+    # the fleet exit/subnet count aggregates emit regardless.
+    subnet_route_rollup: true
     flow:
       # -- Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N
       # *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so
@@ -234,6 +237,9 @@ config:
       # -- Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and,
       # when node_dims is true, the src/dst node labels on flow METRICS.
       collapse_external: true
+      # -- Emit the bounded tailscale.exit_node.io/packets counters attributing exit traffic to the
+      # relaying node (bounded by exit-node count); independent of metrics_mode.
+      exit_node_attribution: true
     per_entity:
       # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
       # aggregate tailscale.devices.count rollup.
@@ -256,6 +262,10 @@ config:
       # -- Also collect advertised/enabled subnet routes and per-DERP latency via the rich
       # GET /devices?fields=all endpoint.
       collect_routes: false
+      # -- Emit per-device NAT/connectivity health (tailscale.device.connectivity.*) plus the fleet
+      # connectivity rollups (tailscale.devices.hard_nat/direct_capable/client_supports) from the rich
+      # device payload (no extra API call). Per-device gauges additionally gated by per_entity.device.
+      collect_connectivity: true
       # -- Emit per-device posture attributes as log records (gated; requires posture identity on).
       collect_posture: false
       # -- Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API

@@ -67,6 +67,7 @@ enrichment:
 cardinality:
   metric_limit: 10000                 # hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited)
   derp_region_rollup: true            # emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*)
+  subnet_route_rollup: true           # emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless
   flow:                               # shapes flow METRICS only — flow LOGS always carry full detail
     metrics_mode: rollup              # rollup (bounded top-N, lowest cardinality) | all (raw per-connection) | both (≈2x series; summing double-counts)
     rollup_top_n: 500                 # rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500)
@@ -75,6 +76,7 @@ cardinality:
     destination_service: false        # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics
     node_dims: true                   # include src/dst device names on flow metrics
     collapse_external: true           # bucket unresolved IPs as external/unknown (keeps cardinality bounded)
+    exit_node_attribution: true       # emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count)
   per_entity:                         # emit one gauge series per entity (true) or only the aggregate *.count (false)
     device: true                      # per-device gauges (online/last_seen/key_expiry/derp/routes)
     user: true                        # per-user gauges (devices/connected/last_seen)
@@ -91,6 +93,7 @@ collectors:
     enabled: true
     interval: 60s                     # how often the device snapshot is polled
     collect_routes: false             # also fetch advertised/primary subnet routes per device
+    collect_connectivity: true        # emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls)
     collect_posture: false            # also fetch device posture (MDM/EDR) — enables the posture metrics + log
     collect_device_invites: true      # also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count
     posture_log_mode: changes         # needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted

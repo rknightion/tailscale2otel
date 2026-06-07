@@ -230,6 +230,7 @@ effect no matter whether logs arrive by poll or by stream.
 |-----|---------|-------------|
 | `cardinality.metric_limit` | `10000` | Hard per-instrument series cap. Beyond this the OTLP SDK collapses extra series into `otel_metric_overflow` (silent loss of detail). Size it above your busiest flow-metric cardinality. `0` or negative = unlimited. |
 | `cardinality.derp_region_rollup` | `true` | Emit tailnet-wide per-DERP-region rollup gauges (`tailscale.derp.region.*`) from the devices collector. |
+| `cardinality.subnet_route_rollup` | `true` | Emit the per-CIDR `tailscale.subnet_routes.routers` redundancy gauge (one series per subnet CIDR) from the devices collector. The fleet exit/subnet count aggregates emit regardless. |
 
 ### `cardinality.flow` — flow metric shaping
 
@@ -244,6 +245,7 @@ These knobs affect flow **metrics** only. Flow **logs** always carry full detail
 | `cardinality.flow.destination_service` | `false` | Add `tailscale.dst.service` (the IANA name for the destination port+transport, e.g. `tcp/443`→`https`) to flow **metrics** — a bounded, low-cardinality stand-in for the destination port. |
 | `cardinality.flow.node_dims` | `true` | Include `tailscale.src.node`/`tailscale.dst.node` device names on flow metrics. |
 | `cardinality.flow.collapse_external` | `true` | Bucket unresolved/off-tailnet IPs as `external`/`unknown` instead of the raw address. Off = one series per distinct external IP. |
+| `cardinality.flow.exit_node_attribution` | `true` | Emit the bounded `tailscale.exit_node.io`/`tailscale.exit_node.packets` counters attributing exit traffic to the relaying node (bounded by exit-node count). Independent of `metrics_mode`. |
 
 ### `cardinality.per_entity` — per-entity gauge gates
 
@@ -311,6 +313,7 @@ received record. Either way, **metrics are never capped — only logs.**
 | `collectors.devices.enabled` | `true` | Emit device gauges + counts and **populate the enrichment cache**. |
 | `collectors.devices.interval` | `60s` | Poll cadence. |
 | `collectors.devices.collect_routes` | `false` | Also emit per-device subnet-route gauges. Read from the inline device data — **no extra API call**. |
+| `collectors.devices.collect_connectivity` | `true` | Emit per-device NAT/connectivity health (`tailscale.device.connectivity.*`: hard_nat, endpoints, direct_capable, udp, ipv6) plus the fleet connectivity rollups (`tailscale.devices.hard_nat`/`direct_capable`/`client_supports`). Read from the inline device data — **no extra API call**. Per-device gauges additionally gated by `cardinality.per_entity.device`. |
 | `collectors.devices.collect_posture` | `false` | Also fetch device posture attributes (one **extra API call per device per tick**) and emit posture log events. |
 | `collectors.devices.collect_device_invites` | `true` | Also fetch outstanding device share invites per device (one **extra API call per device per tick**, N+1) and emit `tailscale.device_invites.count`. Requires the `device_invites:read` OAuth scope (covered by `all:read`). Per-device failures are non-fatal. |
 | `collectors.devices.posture_log_mode` | `changes` | Controls the `tailscale.device.posture` log (requires `collect_posture`). `changes` — full dump on first scrape then deltas only. `always` — every scrape. `off` — suppress the log (the posture gauge metric is still emitted). |

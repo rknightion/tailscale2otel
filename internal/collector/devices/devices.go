@@ -70,6 +70,23 @@ const (
 	metricDerpRegionPreferred  = "tailscale.derp.region.preferred"
 
 	eventTailnetLockError = "tailscale.device.tailnet_lock_error"
+
+	metricConnHardNAT       = "tailscale.device.connectivity.hard_nat"
+	metricConnEndpoints     = "tailscale.device.connectivity.endpoints"
+	metricConnDirectCapable = "tailscale.device.connectivity.direct_capable"
+	metricConnUDP           = "tailscale.device.connectivity.udp"
+	metricConnIPv6          = "tailscale.device.connectivity.ipv6"
+
+	metricDevicesHardNAT        = "tailscale.devices.hard_nat"
+	metricDevicesDirectCapable  = "tailscale.devices.direct_capable"
+	metricDevicesClientSupports = "tailscale.devices.client_supports"
+
+	metricExitNodesCount       = "tailscale.exit_nodes.count"
+	metricSubnetRoutesAdv      = "tailscale.subnet_routes.advertised"
+	metricSubnetRoutesEnabled  = "tailscale.subnet_routes.enabled"
+	metricSubnetRoutesUnapprvd = "tailscale.subnet_routes.unapproved"
+	metricSubnetRoutesRouters  = "tailscale.subnet_routes.routers"
+	metricDeviceExitNode       = "tailscale.device.exit_node"
 )
 
 // Attribute keys specific to this collector.
@@ -91,6 +108,18 @@ const (
 	// full namespaced posture key, and (info gauge only) its string value.
 	attrAttribute      = "attribute"
 	attrAttributeValue = "value"
+
+	// B3/B4 connectivity + routing labels.
+	attrConnCapability  = "tailscale.connectivity.capability"
+	attrExitNodeState   = "tailscale.exit_node.state"
+	attrExitNodeEnabled = "tailscale.exit_node.enabled"
+	attrRouteCIDR       = "tailscale.route.cidr"
+)
+
+// Exit-node state label values for tailscale.exit_nodes.count.
+const (
+	exitStateAdvertised = "advertised"
+	exitStateEnabled    = "enabled"
 )
 
 // Curated posture label keys carried by the posture info gauge. Each maps a
@@ -159,6 +188,8 @@ type Collector struct {
 	collectDeviceInvites bool
 	perEntity            bool
 	derpRollup           bool
+	collectConnectivity  bool
+	subnetRouteRollup    bool
 	postureLogMode       string // "changes" (default) | "always" | "off"
 
 	// attrNamespaces is the set of posture-attribute namespace prefixes (the part
@@ -207,6 +238,21 @@ func WithPerEntity(enabled bool) Option {
 // is the low-cardinality DERP view that survives when cardinality.per_entity.device is off.
 func WithDerpRegionRollup(enabled bool) Option {
 	return func(c *Collector) { c.derpRollup = enabled }
+}
+
+// WithConnectivity gates the B3 connectivity signals (per-device hard_nat /
+// endpoints / direct_capable / udp / ipv6 gauges and the fleet connectivity
+// rollups). Read from the already-fetched devices payload — no extra API calls.
+// Default true. Per-device gauges are additionally gated by per_entity.device.
+func WithConnectivity(enabled bool) Option {
+	return func(c *Collector) { c.collectConnectivity = enabled }
+}
+
+// WithSubnetRouteRollup gates the per-CIDR tailscale.subnet_routes.routers
+// redundancy gauge (cardinality.subnet_route_rollup, default true). The fleet
+// exit/subnet count aggregates are emitted regardless.
+func WithSubnetRouteRollup(enabled bool) Option {
+	return func(c *Collector) { c.subnetRouteRollup = enabled }
 }
 
 // WithDeviceInvites controls whether the collector fetches each device's share
@@ -311,18 +357,20 @@ func WithAttributeNamespaces(ns []string) Option {
 // WithPerEntity) tune cardinality; per-entity gauges are emitted by default.
 func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool, opts ...Option) *Collector {
 	c := &Collector{
-		api:              api,
-		cache:            cache,
-		interval:         interval,
-		collectRoutes:    collectRoutes,
-		collectPosture:   collectPosture,
-		perEntity:        true,
-		derpRollup:       true,
-		postureLogMode:   postureLogChanges,
-		lastPosture:      make(map[string]string),
-		collectTagRollup: true,
-		tagRollupLimit:   50,
-		now:              time.Now,
+		api:                 api,
+		cache:               cache,
+		interval:            interval,
+		collectRoutes:       collectRoutes,
+		collectPosture:      collectPosture,
+		perEntity:           true,
+		derpRollup:          true,
+		collectConnectivity: true,
+		subnetRouteRollup:   true,
+		postureLogMode:      postureLogChanges,
+		lastPosture:         make(map[string]string),
+		collectTagRollup:    true,
+		tagRollupLimit:      50,
+		now:                 time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -384,6 +432,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	outdated := 0
 
+	// B3 fleet connectivity + B4 routing accumulators.
+	hardNATCount := 0
+	directCapableCount := 0
+	capSupports := map[string]int{} // capability -> count of devices supporting
+	exitAdvertised := 0
+	exitEnabled := 0
+	subnetAdvertised := map[string]struct{}{}
+	subnetEnabled := map[string]struct{}{}
+	routersByCIDR := map[string]int{}
+
 	for i := range devs {
 		d := &devs[i]
 
@@ -443,6 +501,25 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					float64(len(d.AdvertisedRoutes)), routeAttrs)
 				e.Gauge(docRoutesEnabled.Name, docRoutesEnabled.Unit, docRoutesEnabled.Description,
 					float64(len(d.EnabledRoutes)), routeAttrs)
+			}
+
+			if c.collectConnectivity {
+				connAttrs := telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID}
+				e.Gauge(docConnHardNAT.Name, docConnHardNAT.Unit, docConnHardNAT.Description,
+					boolToFloat(d.HardNAT), connAttrs)
+				e.Gauge(docConnEndpoints.Name, docConnEndpoints.Unit, docConnEndpoints.Description,
+					float64(len(d.Endpoints)), connAttrs)
+				if d.ClientSupports.UDP != nil {
+					udp := boolPtrTrue(d.ClientSupports.UDP)
+					e.Gauge(docConnUDP.Name, docConnUDP.Unit, docConnUDP.Description,
+						boolToFloat(udp), connAttrs)
+					e.Gauge(docConnDirectCapable.Name, docConnDirectCapable.Unit, docConnDirectCapable.Description,
+						boolToFloat(udp && !d.HardNAT), connAttrs)
+				}
+				if d.ClientSupports.IPv6 != nil {
+					e.Gauge(docConnIPv6.Name, docConnIPv6.Unit, docConnIPv6.Description,
+						boolToFloat(boolPtrTrue(d.ClientSupports.IPv6)), connAttrs)
+				}
 			}
 		}
 
@@ -511,6 +588,64 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			}
 		}
 
+		if c.collectConnectivity {
+			if d.HardNAT {
+				hardNATCount++
+			}
+			if boolPtrTrue(d.ClientSupports.UDP) && !d.HardNAT {
+				directCapableCount++
+			}
+			for capName, p := range map[string]*bool{
+				"udp": d.ClientSupports.UDP, "ipv6": d.ClientSupports.IPv6,
+				"pcp": d.ClientSupports.PCP, "pmp": d.ClientSupports.PMP, "upnp": d.ClientSupports.UPnP,
+			} {
+				if boolPtrTrue(p) {
+					capSupports[capName]++
+				}
+			}
+		}
+
+		// Routing analytics (B4) — derived from the inline route slices.
+		advertisesExit := false
+		enabledExit := false
+		// seenCIDR de-dupes a device's own advertised routes so a device that
+		// lists the same subnet twice contributes only one router to that CIDR's
+		// redundancy count (AdvertisedRoutes is a raw []string with no uniqueness
+		// guarantee).
+		seenCIDR := map[string]struct{}{}
+		for _, r := range d.AdvertisedRoutes {
+			if isExitRoute(r) {
+				advertisesExit = true
+			} else {
+				subnetAdvertised[r] = struct{}{}
+				if _, dup := seenCIDR[r]; !dup {
+					seenCIDR[r] = struct{}{}
+					routersByCIDR[r]++
+				}
+			}
+		}
+		for _, r := range d.EnabledRoutes {
+			if isExitRoute(r) {
+				enabledExit = true
+			} else {
+				subnetEnabled[r] = struct{}{}
+			}
+		}
+		if advertisesExit {
+			exitAdvertised++
+			if enabledExit {
+				exitEnabled++
+			}
+			if c.perEntity {
+				e.Gauge(docDeviceExitNode.Name, docDeviceExitNode.Unit, docDeviceExitNode.Description,
+					1, telemetry.Attrs{
+						semconv.HostName:    d.Hostname,
+						semconv.HostID:      d.ID,
+						attrExitNodeEnabled: enabledExit,
+					})
+			}
+		}
+
 		if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
 			days := d.Expires.Sub(nowT).Hours() / 24
 			e.Histogram(docDevicesKeyExpiry.Name, docDevicesKeyExpiry.Unit, docDevicesKeyExpiry.Description,
@@ -557,6 +692,41 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					attrInviteAllowExitNode: k.allowExitNode,
 					attrInviteMultiUse:      k.multiUse,
 				})
+		}
+	}
+
+	if c.collectConnectivity {
+		e.Gauge(docDevicesHardNAT.Name, docDevicesHardNAT.Unit, docDevicesHardNAT.Description,
+			float64(hardNATCount), nil)
+		e.Gauge(docDevicesDirectCapable.Name, docDevicesDirectCapable.Unit, docDevicesDirectCapable.Description,
+			float64(directCapableCount), nil)
+		for capName, n := range capSupports {
+			e.Gauge(docDevicesClientSupports.Name, docDevicesClientSupports.Unit, docDevicesClientSupports.Description,
+				float64(n), telemetry.Attrs{attrConnCapability: capName})
+		}
+	}
+
+	// B4 fleet exit/subnet aggregates (always emitted; low cardinality).
+	e.Gauge(docExitNodesCount.Name, docExitNodesCount.Unit, docExitNodesCount.Description,
+		float64(exitAdvertised), telemetry.Attrs{attrExitNodeState: exitStateAdvertised})
+	e.Gauge(docExitNodesCount.Name, docExitNodesCount.Unit, docExitNodesCount.Description,
+		float64(exitEnabled), telemetry.Attrs{attrExitNodeState: exitStateEnabled})
+	e.Gauge(docSubnetRoutesAdv.Name, docSubnetRoutesAdv.Unit, docSubnetRoutesAdv.Description,
+		float64(len(subnetAdvertised)), nil)
+	e.Gauge(docSubnetRoutesEnabled.Name, docSubnetRoutesEnabled.Unit, docSubnetRoutesEnabled.Description,
+		float64(len(subnetEnabled)), nil)
+	unapproved := 0
+	for cidr := range subnetAdvertised {
+		if _, ok := subnetEnabled[cidr]; !ok {
+			unapproved++
+		}
+	}
+	e.Gauge(docSubnetRoutesUnapproved.Name, docSubnetRoutesUnapproved.Unit, docSubnetRoutesUnapproved.Description,
+		float64(unapproved), nil)
+	if c.subnetRouteRollup {
+		for cidr, n := range routersByCIDR {
+			e.Gauge(docSubnetRoutesRouters.Name, docSubnetRoutesRouters.Unit, docSubnetRoutesRouters.Description,
+				float64(n), telemetry.Attrs{attrRouteCIDR: cidr})
 		}
 	}
 
@@ -829,3 +999,11 @@ func boolToFloat(b bool) float64 {
 	}
 	return 0
 }
+
+// isExitRoute reports whether a CIDR is an exit-node default route.
+func isExitRoute(cidr string) bool {
+	return cidr == "0.0.0.0/0" || cidr == "::/0"
+}
+
+// boolPtrTrue reports whether p is non-nil and true.
+func boolPtrTrue(p *bool) bool { return p != nil && *p }

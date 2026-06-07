@@ -31,6 +31,14 @@ const (
 	MetricUniqueDstPorts = "tailscale.network.unique.dst_ports"
 )
 
+// Exit-node IO attribution metric names, emitted per exit-traffic connection
+// when Options.ExitNodeAttribution is enabled. Cardinality is bounded by the
+// number of exit nodes in the tailnet.
+const (
+	MetricExitNodeIO      = "tailscale.exit_node.io"
+	MetricExitNodePackets = "tailscale.exit_node.packets"
+)
+
 var (
 	docIO = metricdoc.Metric{
 		Name:        MetricIO,
@@ -111,6 +119,23 @@ var (
 		Group:       groupNetwork,
 	}
 
+	docExitNodeIO = metricdoc.Metric{
+		Name:        MetricExitNodeIO,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Counter,
+		Description: "Bytes relayed through each exit node, by direction. Attributed to the reporting node of `traffic_type=exit` flow records (`tailscale.exit_node` = its hostname, or nodeId on a cache miss). Bounded by exit-node count. **Gated** by `cardinality.flow.exit_node_attribution` (default on); independent of the rollup/raw metric mode.",
+		Attributes:  []string{semconv.AttrExitNode, semconv.NetworkIODirection},
+		Group:       groupNetwork,
+	}
+	docExitNodePackets = metricdoc.Metric{
+		Name:        MetricExitNodePackets,
+		Unit:        semconv.UnitPackets,
+		Instrument:  metricdoc.Counter,
+		Description: "Packets relayed through each exit node, with the same dimensions as tailscale.exit_node.io.",
+		Attributes:  []string{semconv.AttrExitNode, semconv.NetworkIODirection},
+		Group:       groupNetwork,
+	}
+
 	docFlowLog = metricdoc.LogEvent{
 		Name:        eventNameFlow,
 		Severity:    "INFO",
@@ -131,6 +156,7 @@ func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docIO, docPackets, docFlows, docLogsDropped,
 		docIORollup, docPacketsRollup, docUniqueDstPeers, docUniqueDstPorts,
+		docExitNodeIO, docExitNodePackets,
 	}
 }
 

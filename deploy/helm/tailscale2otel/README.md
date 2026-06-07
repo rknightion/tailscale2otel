@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.5.3](https://img.shields.io/badge/Version-0.5.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.5.4](https://img.shields.io/badge/Version-0.5.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -52,6 +52,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.cardinality.flow.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when node_dims is true, the src/dst node labels on flow METRICS. |
 | config.cardinality.flow.destination_port | bool | `false` | Add destination.port to flow METRICS (independent of source_port). |
 | config.cardinality.flow.destination_service | bool | `false` | Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS. |
+| config.cardinality.flow.exit_node_attribution | bool | `true` | Emit the bounded tailscale.exit_node.io/packets counters attributing exit traffic to the relaying node (bounded by exit-node count); independent of metrics_mode. |
 | config.cardinality.flow.metrics_mode | string | `"rollup"` | Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts). |
 | config.cardinality.flow.node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
 | config.cardinality.flow.rollup_top_n | int | `500` | Rollup only: busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500). |
@@ -62,6 +63,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.cardinality.per_entity.service | bool | `true` | Emit the per-service ports/hosts gauges; false emits only tailscale.services.count. |
 | config.cardinality.per_entity.user | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |
 | config.cardinality.per_entity.webhook | bool | `true` | Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count. |
+| config.cardinality.subnet_route_rollup | bool | `true` | Emit the per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); the fleet exit/subnet count aggregates emit regardless. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
 | config.checkpoint.store | string | `"file"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
@@ -75,6 +77,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.collectors.contacts.enabled | bool | `true` | Enable the contacts collector (account/support/security contact verification; no emails emitted). |
 | config.collectors.contacts.interval | string | `"600s"` | Poll interval. |
 | config.collectors.devices.attribute_namespaces | list | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info} metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled. |
+| config.collectors.devices.collect_connectivity | bool | `true` | Emit per-device NAT/connectivity health (tailscale.device.connectivity.*) plus the fleet connectivity rollups (tailscale.devices.hard_nat/direct_capable/client_supports) from the rich device payload (no extra API call). Per-device gauges additionally gated by per_entity.device. |
 | config.collectors.devices.collect_device_invites | bool | `true` | Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read). Emits tailscale.device_invites.count; per-device fetch failures are non-fatal. |
 | config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
 | config.collectors.devices.collect_routes | bool | `false` | Also collect advertised/enabled subnet routes and per-DERP latency via the rich GET /devices?fields=all endpoint. |
