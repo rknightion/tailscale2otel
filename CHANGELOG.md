@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.0](https://github.com/rknightion/tailscale2otel/compare/v0.2.0...v0.3.0) (2026-06-07)
+
+
+### Features
+
+* **acl:** policy risk-scoring gauges (wildcard/unrestricted/autoapprover/ssh/posture) ([de8100c](https://github.com/rknightion/tailscale2otel/commit/de8100cebbc89ea7c1024254f786b88a4704c29b))
+* **audit:** curated security/lifecycle change counter + device churn ([98bcc48](https://github.com/rknightion/tailscale2otel/commit/98bcc4819be966e1699a07ffadb3792c4430f3f9))
+* **collector:** per-collector scrape staleness + budget-headroom gauges ([f43fdd8](https://github.com/rknightion/tailscale2otel/commit/f43fdd84315130a28abc99a0fc1d9f637f920f2b))
+* **devices,flowlogs:** connectivity quality + exit-node/subnet-router analytics (B3+B4) ([f58b73b](https://github.com/rknightion/tailscale2otel/commit/f58b73bc3ace0c3a45ad998a7475f1093cd8dfe5))
+* **devices:** fleet hygiene roll-ups (untagged/ephemeral/version/tag distributions + key-expiry histogram) ([da158e3](https://github.com/rknightion/tailscale2otel/commit/da158e3a53eef66e1465997a23cc5eec0f292c12))
+* **devices:** inventory outstanding device-share invites ([5bdfa85](https://github.com/rknightion/tailscale2otel/commit/5bdfa855b831af724d431b1dc048df52a62dbb03))
+* **dns:** unified DNS configuration with override-local + per-resolver exit-node visibility ([b51b5dc](https://github.com/rknightion/tailscale2otel/commit/b51b5dcd62105d878763eb0d534f3a58b09a4ec3))
+* **keys:** inventory OAuth clients & API tokens via the unified key model ([4a8a3f7](https://github.com/rknightion/tailscale2otel/commit/4a8a3f70a81e20f719d2fc7fbf7c2e196f7c0529))
+* **selfobs:** API request latency histogram (api.duration) ([756b042](https://github.com/rknightion/tailscale2otel/commit/756b042b5d5ea879f2f4f2845c84b694b6990260))
+* **selfobs:** ingestion volume + OTLP export-cost self-observability (C8) ([d517fa0](https://github.com/rknightion/tailscale2otel/commit/d517fa0d7dbc93b8014ad1eb020e78b3b2ddb539))
+* **selfobs:** receiver in-flight/duration, dedup hits, checkpoint/process/config health (C6/C7/C9) ([e09ffcc](https://github.com/rknightion/tailscale2otel/commit/e09ffccd1c40dfc6f647dc1f30db5f112409712b))
+* **telemetry:** cardinality headroom — series.limit + series.overflowing self-obs gauges ([be7be05](https://github.com/rknightion/tailscale2otel/commit/be7be052c1274eb4da990f4790c141db66d1e111))
+* **telemetry:** OTEL traces pillar — scrape/API/receiver spans + exemplars ([e8b78ee](https://github.com/rknightion/tailscale2otel/commit/e8b78eebd5dc01bef5ce5a765be57b5f888294df))
+* **version:** self update-available + device version-skew via shared release fetcher ([02a47d1](https://github.com/rknightion/tailscale2otel/commit/02a47d1fff96959a7f734cfa514e7bb5df1e2bfb))
+
+
+### Bug Fixes
+
+* **docs:** remove glightbox slide_effect option (rejected by zensical 0.0.44) ([5083835](https://github.com/rknightion/tailscale2otel/commit/50838350c1486e6b895ef2f880ea18a27ebba99c))
+* **keys:** correct stale docs and keys-by-type dashboard aggregation ([b9420c9](https://github.com/rknightion/tailscale2otel/commit/b9420c971522eaf55f00318b721b80815e364dc3))
+* **selfobs:** drop unnecessary int64 conversion in tvToSeconds (unconvert) ([012307f](https://github.com/rknightion/tailscale2otel/commit/012307fc72330320f32188ec2764a6ff41c22090))
+
 ## 0.2.0 (2026-06-06)
 
 
