@@ -21,6 +21,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
+	"github.com/rknightion/tailscale2otel/internal/release"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
@@ -53,6 +54,10 @@ const (
 	metricDevicesKeyExpiry = "tailscale.devices.key_expiry"
 
 	metricDeviceInvites = "tailscale.device_invites.count"
+
+	metricDeviceVersionSkew  = "tailscale.device.version_skew"
+	metricFleetLatestVersion = "tailscale.fleet.latest_version"
+	metricDevicesOutdated    = "tailscale.devices.outdated"
 
 	metricCacheAge  = "tailscale2otel.enrich.cache_age"
 	metricCacheSize = "tailscale2otel.enrich.cache_size"
@@ -176,6 +181,12 @@ type Collector struct {
 
 	// now returns the current time; injectable for tests (key-expiry histogram).
 	now func() time.Time
+
+	// upstreamLatest returns the latest upstream Tailscale stable version and
+	// whether it is known yet; nil disables all version-skew metrics (B6).
+	// outdatedThreshold is the minor-skew >= which a device counts as outdated.
+	upstreamLatest    func() (string, bool)
+	outdatedThreshold int
 }
 
 // Option configures optional Collector behavior.
@@ -226,6 +237,17 @@ func WithClock(now func() time.Time) Option {
 		if now != nil {
 			c.now = now
 		}
+	}
+}
+
+// WithUpstreamLatest supplies the latest upstream Tailscale stable version
+// (typically backed by a release.Fetcher) and the minor-skew threshold at which
+// a device counts toward tailscale.devices.outdated. When the provider is nil
+// the per-device/fleet version-skew metrics (B6) are not emitted at all.
+func WithUpstreamLatest(latest func() (string, bool), outdatedThreshold int) Option {
+	return func(c *Collector) {
+		c.upstreamLatest = latest
+		c.outdatedThreshold = outdatedThreshold
 	}
 }
 
@@ -349,6 +371,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	byTag := make(map[string]int)
 	nowT := c.now()
 
+	// B6 version-skew: resolve the latest upstream stable once per tick.
+	var latestVer release.Version
+	haveLatest := false
+	var latestNorm string
+	if c.upstreamLatest != nil {
+		if raw, ok := c.upstreamLatest(); ok {
+			if v, vok := release.Parse(raw); vok {
+				latestVer, haveLatest, latestNorm = v, true, release.Normalize(raw)
+			}
+		}
+	}
+	outdated := 0
+
 	for i := range devs {
 		d := &devs[i]
 
@@ -449,6 +484,33 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		if d.ClientVersion != "" {
 			byVersion[NormalizeVersion(d.ClientVersion)]++
 		}
+
+		// B6 version-skew per-device (gated by perEntity; outdated count always).
+		if haveLatest {
+			if dv, ok := release.Parse(d.ClientVersion); ok {
+				skew := release.MinorsBehind(dv, latestVer)
+				if c.perEntity {
+					skewAttrs := telemetry.Attrs{
+						semconv.HostName: d.Hostname,
+						semconv.HostID:   d.ID,
+						semconv.OSType:   d.OS,
+						semconv.AttrUser: d.User,
+					}
+					if d.Distro.Version != "" {
+						skewAttrs[semconv.OSVersion] = d.Distro.Version
+					}
+					if len(d.Tags) > 0 {
+						skewAttrs[semconv.AttrTags] = strings.Join(d.Tags, ",")
+					}
+					e.Gauge(docDeviceVersionSkew.Name, docDeviceVersionSkew.Unit, docDeviceVersionSkew.Description,
+						float64(skew), skewAttrs)
+				}
+				if skew >= c.outdatedThreshold {
+					outdated++
+				}
+			}
+		}
+
 		if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
 			days := d.Expires.Sub(nowT).Hours() / 24
 			e.Histogram(docDevicesKeyExpiry.Name, docDevicesKeyExpiry.Unit, docDevicesKeyExpiry.Description,
@@ -478,6 +540,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			float64(n), telemetry.Attrs{attrClientVersion: ver})
 	}
 	c.emitTagRollup(e, byTag)
+
+	// B6 fleet-level version-skew gauges (emitted when upstream latest is known).
+	if haveLatest {
+		e.Gauge(docFleetLatestVersion.Name, docFleetLatestVersion.Unit, docFleetLatestVersion.Description,
+			1, telemetry.Attrs{attrClientVersion: latestNorm})
+		e.Gauge(docDevicesOutdated.Name, docDevicesOutdated.Unit, docDevicesOutdated.Description,
+			float64(outdated), nil)
+	}
 
 	if c.collectDeviceInvites {
 		for k, n := range inviteCounts {

@@ -36,6 +36,8 @@ const (
 	MetricAPIRetries = "tailscale2otel.api.retries"
 	// MetricAPIDuration is the API request wall-clock latency histogram name.
 	MetricAPIDuration = "tailscale2otel.api.duration"
+	// MetricUpdateAvailable is the self update-available flag name (C4).
+	MetricUpdateAvailable = "tailscale2otel.update_available"
 )
 
 // Go runtime self-observability metric names. These expose the exporter's own
@@ -124,6 +126,13 @@ var (
 		Instrument:  metricdoc.Histogram,
 		Description: "Tailscale API request wall-clock latency in seconds, by endpoint and HTTP status code. Covers the full logical request including any retry backoff (not just server time). Use the 429 status-code bucket here plus tailscale2otel.api.retries for rate-limit visibility — the Tailscale API exposes no rate-limit-remaining headers.",
 		Attributes:  []string{"endpoint", "http.response.status_code"},
+		Group:       GroupSelfObs,
+	}
+	DocUpdateAvailable = metricdoc.Metric{
+		Name:        MetricUpdateAvailable,
+		Unit:        "1",
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` when a newer tailscale2otel release is available on GitHub than the running build, else `0` (a **flag**, despite the `_ratio` Prometheus suffix). Emitted only when `version_checks.self` is enabled and both the running and latest versions parse — dev builds (version `dev`) never emit. Fail-open: a blocked/failed GitHub fetch emits nothing.",
 		Group:       GroupSelfObs,
 	}
 )
@@ -271,7 +280,7 @@ var (
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocAPIRequests, DocAPIRetries, DocAPIDuration,
+		DocUp, DocUpdateAvailable, DocAPIRequests, DocAPIRetries, DocAPIDuration,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,

@@ -3,6 +3,7 @@ package config_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/config"
 )
@@ -614,6 +615,54 @@ func TestValidateAcceptsZeroRollupTopN(t *testing.T) {
 	// 0 is valid and selects the in-code default at construction time.
 	if err := loadErr(t, "cardinality:\n  flow:\n    rollup_top_n: 0\n"); err != nil {
 		t.Errorf("cardinality.flow.rollup_top_n: 0 should be valid (selects default): %v", err)
+	}
+}
+
+func TestVersionChecksDefaults(t *testing.T) {
+	c := config.Default()
+	if !c.VersionChecks.Self.Enabled {
+		t.Error("version_checks.self.enabled should default true")
+	}
+	if !c.VersionChecks.Devices.Enabled {
+		t.Error("version_checks.devices.enabled should default true")
+	}
+	if c.VersionChecks.Devices.OutdatedMinorThreshold != 3 {
+		t.Errorf("outdated_minor_threshold default = %d want 3", c.VersionChecks.Devices.OutdatedMinorThreshold)
+	}
+	if c.VersionChecks.CacheTTL.D() != time.Hour {
+		t.Errorf("cache_ttl default = %s want 1h", c.VersionChecks.CacheTTL.D())
+	}
+	if c.VersionChecks.Timeout.D() != 10*time.Second {
+		t.Errorf("timeout default = %s want 10s", c.VersionChecks.Timeout.D())
+	}
+}
+
+func TestVersionChecksValidate(t *testing.T) {
+	c := config.Default()
+	c.VersionChecks.CacheTTL = config.Duration(time.Minute) // below 5m floor
+	if err := c.Validate(); err == nil {
+		t.Error("cache_ttl below floor: want error")
+	}
+
+	c = config.Default()
+	c.VersionChecks.Devices.OutdatedMinorThreshold = 0
+	if err := c.Validate(); err == nil {
+		t.Error("outdated_minor_threshold < 1: want error")
+	}
+
+	c = config.Default()
+	c.VersionChecks.Timeout = config.Duration(0)
+	if err := c.Validate(); err == nil {
+		t.Error("timeout <= 0: want error")
+	}
+}
+
+func TestVersionChecksWarning(t *testing.T) {
+	c := config.Default()
+	c.Collectors.Devices.Enabled = false // devices check on but collector off
+	got := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(got, "version_checks.devices") {
+		t.Errorf("expected devices-check-without-collector warning, got: %s", got)
 	}
 }
 

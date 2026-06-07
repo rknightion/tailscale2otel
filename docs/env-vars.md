@@ -168,6 +168,11 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROFILING__PYROSCOPE__UPLOAD_RATE` | `60s` | how often profiles are flushed |
 | `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `0` | runtime.SetMutexProfileFraction (0 = disabled) |
 | `TS2OTEL_PROFILING__BLOCK_PROFILE_RATE` | `0` | runtime.SetBlockProfileRate (0 = disabled) |
+| `TS2OTEL_VERSION_CHECKS__SELF__ENABLED` | `true` | emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release) |
+| `TS2OTEL_VERSION_CHECKS__DEVICES__ENABLED` | `true` | emit per-device tailscale.device.version_skew + fleet rollups (device client version vs latest Tailscale stable). Needs the devices collector. |
+| `TS2OTEL_VERSION_CHECKS__DEVICES__OUTDATED_MINOR_THRESHOLD` | `3` | a device this many minor releases behind counts toward tailscale.devices.outdated |
+| `TS2OTEL_VERSION_CHECKS__CACHE_TTL` | `1h` | how long a fetched "latest version" is cached before re-fetching (minimum 5m) |
+| `TS2OTEL_VERSION_CHECKS__TIMEOUT` | `10s` | per-request timeout for the external version fetch |
 
 **File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `otlp.headers`, `collectors.node_metrics.targets`, `profiling.pyroscope.tags`.
 

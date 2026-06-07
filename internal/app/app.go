@@ -23,6 +23,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/rdns"
+	"github.com/rknightion/tailscale2otel/internal/release"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/stream"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
@@ -75,6 +76,9 @@ type App struct {
 	adminSrv     *http.Server
 	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
 	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
+
+	selfRelease *release.Fetcher // nil unless version_checks.self.enabled
+	tsRelease   *release.Fetcher // nil unless version_checks.devices.enabled
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -90,6 +94,7 @@ const (
 	compCheckpoint  = "checkpoint"
 	compProfiling   = "profiling"
 	compNodeMetrics = "nodemetrics"
+	compRelease     = "release"
 )
 
 // withComponent returns a logger that tags every record with its subsystem name.
@@ -220,6 +225,23 @@ func newApp(
 		auditOpts = append(auditOpts, audit.WithCrossDedup(a.webhookDedup))
 	}
 	a.auditProc = audit.NewProcessor(auditOpts...)
+
+	// Version-check fetchers: constructed before registerCollectors so that
+	// a.tsRelease is available when the devices collector is registered.
+	vc := cfg.VersionChecks
+	ua := "tailscale2otel/" + version
+	releaseLogger := withComponent(logger, compRelease)
+	if vc.Self.Enabled {
+		a.selfRelease = release.NewFetcher("self", release.GitHubLatestURL, ua,
+			release.ParseGitHubLatest, newReleaseHTTPClient(vc.Timeout.D()),
+			vc.CacheTTL.D(), releaseLogger)
+	}
+	if vc.Devices.Enabled {
+		a.tsRelease = release.NewFetcher("tailscale", release.TailscalePkgsURL, ua,
+			release.ParseTailscalePkgs, newReleaseHTTPClient(vc.Timeout.D()),
+			vc.CacheTTL.D(), releaseLogger)
+	}
+
 	a.registerCollectors()
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
@@ -257,6 +279,17 @@ func (a *App) Run(ctx context.Context) error {
 	// sparklines. Introspection-only (no OTLP), so it runs regardless of
 	// self-observability — the status page is useful even with self-obs off.
 	go runSampler(ctx, a.runtimeHist, samplerInterval, readRuntimeStats, a.cardinalityTotal)
+
+	// Version-check loops: gated on their own feature flags (independent of
+	// self_observability.enabled — an operator can want update alerts with
+	// broad self-obs off).
+	if a.selfRelease != nil {
+		go a.selfRelease.Run(ctx)
+		go runUpdateCheck(ctx, a.emitter, a.selfRelease.Latest, a.version, a.cfg.OTLP.MetricInterval.D())
+	}
+	if a.tsRelease != nil {
+		go a.tsRelease.Run(ctx)
+	}
 
 	// Bounded flow-metric rollups (the default output): drain the accumulator on
 	// the export interval. Independent of self-observability — it must run whenever
@@ -332,6 +365,12 @@ func (a *App) autoConfigureStreaming(ctx context.Context) {
 		}
 		a.logger.Info("streaming auto_configure registered sink", "log_type", logType, "url", sink.URL)
 	}
+}
+
+// newReleaseHTTPClient builds the http.Client used by the external release
+// fetchers (plain, no Tailscale auth — these are public endpoints).
+func newReleaseHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
 }
 
 // checkpointStore builds the configured checkpoint store. For store: file it

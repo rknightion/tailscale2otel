@@ -152,6 +152,30 @@ var (
 		Group:       groupDevices,
 	}
 
+	docDeviceVersionSkew = metricdoc.Metric{
+		Name:        metricDeviceVersionSkew,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Minor releases this device's Tailscale client is behind the latest stable (`latest.minor − device.minor`, same major, clamped ≥0; patch-only drift is 0 — see `tailscale.device.update_available` for that). Per-device, gated by `cardinality.per_entity.device`. Emitted only when `version_checks.devices` is enabled, the upstream latest is known, and the device version parses.",
+		Attributes:  deviceIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docFleetLatestVersion = metricdoc.Metric{
+		Name:        metricFleetLatestVersion,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Always `1`; an info gauge whose `tailscale.client_version` label carries the latest Tailscale stable client version (`major.minor.patch`) as fetched from pkgs.tailscale.com. Emitted only when `version_checks.devices` is enabled and the upstream fetch has succeeded.",
+		Attributes:  []string{attrClientVersion},
+		Group:       groupDevices,
+	}
+	docDevicesOutdated = metricdoc.Metric{
+		Name:        metricDevicesOutdated,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices at least `version_checks.devices.outdated_minor_threshold` minor releases behind the latest Tailscale stable (a **count**, despite `_ratio`). Fleet-wide, no labels. Emitted only when `version_checks.devices` is enabled and the upstream latest is known.",
+		Group:       groupDevices,
+	}
+
 	docCacheAge = metricdoc.Metric{
 		Name:        metricCacheAge,
 		Unit:        semconv.UnitSeconds,
@@ -255,6 +279,7 @@ func Catalog() []metricdoc.Metric {
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
 		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
+		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
 		docAttribute, docAttributeInfo,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docCacheAge, docCacheSize,

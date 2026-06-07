@@ -87,14 +87,20 @@ func (a *App) registerCollectors() {
 	c := &a.cfg.Collectors
 
 	if c.Devices.Enabled {
-		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
-			c.Devices.CollectRoutes, c.Devices.CollectPosture,
+		devOpts := []devices.Option{
 			devices.WithPerEntity(a.cfg.Cardinality.PerEntity.Device),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
 			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup),
-			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit)), c.Devices.Interval.D())
+			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit),
+		}
+		if a.tsRelease != nil {
+			devOpts = append(devOpts, devices.WithUpstreamLatest(
+				a.tsRelease.Latest, a.cfg.VersionChecks.Devices.OutdatedMinorThreshold))
+		}
+		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
+			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled {
 		a.registry.Register(users.New(a.client, c.Users.Interval.D(),

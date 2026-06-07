@@ -51,6 +51,7 @@ type Config struct {
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
 	Admin             AdminConfig             `yaml:"admin"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
+	VersionChecks     VersionChecksConfig     `yaml:"version_checks"`
 
 	// unknownEnv records TS2OTEL_* environment variables that did not map to any
 	// known config key (a likely typo — they were ignored). Unexported, populated
@@ -110,6 +111,30 @@ type ProfilingPyroscope struct {
 	TenantID          string            `yaml:"tenant_id"`
 	UploadRate        Duration          `yaml:"upload_rate"`
 	Tags              map[string]string `yaml:"tags"`
+}
+
+// VersionChecksConfig configures the optional outbound "is a newer release
+// available?" checks. Both sub-checks make external HTTPS calls and are
+// fail-open (a failed/blocked fetch silently emits nothing). cache_ttl bounds
+// how often the upstream endpoints are hit.
+type VersionChecksConfig struct {
+	Self     VersionCheckSelf    `yaml:"self"`
+	Devices  VersionCheckDevices `yaml:"devices"`
+	CacheTTL Duration            `yaml:"cache_ttl"`
+	Timeout  Duration            `yaml:"timeout"`
+}
+
+// VersionCheckSelf gates the self update-available gauge (tailscale2otel.update_available),
+// comparing the running build to the latest tailscale2otel GitHub release.
+type VersionCheckSelf struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// VersionCheckDevices gates the per-device/fleet Tailscale-client version-skew
+// metrics, comparing each device's client version to the latest Tailscale stable.
+type VersionCheckDevices struct {
+	Enabled                bool `yaml:"enabled"`
+	OutdatedMinorThreshold int  `yaml:"outdated_minor_threshold"`
 }
 
 // TailscaleConfig holds Tailscale API connection settings.

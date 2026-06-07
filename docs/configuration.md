@@ -543,3 +543,23 @@ Tailscale data. The pprof handlers mount on the admin server.
 > - `pyroscope.enabled` errors at startup without `pyroscope.server_address`.
 > - A `grafana.net` `server_address` with an empty `basic_auth_password` triggers a **WARN** —
 >   Grafana Cloud Profiles requires the Basic-auth credentials.
+
+---
+
+## `version_checks` — outbound "is a newer release available?" checks
+
+Optional outbound checks that compare the running build / device client versions against the latest
+releases. Both sub-checks make external HTTPS calls and are **fail-open** (a failed or blocked fetch
+silently emits nothing, never errors). Disable both for air-gapped deployments.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `version_checks.self.enabled` | `true` | Emit `tailscale2otel.update_available` (0/1 flag) comparing the running build to the latest tailscale2otel GitHub release. Independent of `self_observability.enabled`. |
+| `version_checks.devices.enabled` | `true` | Emit per-device `tailscale.device.version_skew` (minor releases behind latest Tailscale stable), `tailscale.fleet.latest_version` (info gauge), and `tailscale.devices.outdated` (fleet count). Requires the `devices` collector; a WARN fires if the collector is disabled. |
+| `version_checks.devices.outdated_minor_threshold` | `3` | A device at least this many minor releases behind the latest Tailscale stable counts toward `tailscale.devices.outdated`. Must be ≥ 1. |
+| `version_checks.cache_ttl` | `1h` | How long a fetched "latest version" is cached before re-fetching. Must be ≥ 5m (validated). |
+| `version_checks.timeout` | `10s` | Per-request timeout for the external version fetch. Must be > 0. |
+
+> **Advisories:**
+> - `version_checks.devices.enabled=true` with `collectors.devices.enabled=false` triggers a **WARN** —
+>   the per-device version-skew metrics need the devices collector to run.

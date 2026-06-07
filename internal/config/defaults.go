@@ -192,5 +192,11 @@ func Default() *Config {
 				UploadRate: dur(60 * time.Second),
 			},
 		},
+		VersionChecks: VersionChecksConfig{
+			Self:     VersionCheckSelf{Enabled: true},
+			Devices:  VersionCheckDevices{Enabled: true, OutdatedMinorThreshold: 3},
+			CacheTTL: dur(time.Hour),
+			Timeout:  dur(10 * time.Second),
+		},
 	}
 }

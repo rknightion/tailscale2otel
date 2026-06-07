@@ -243,3 +243,15 @@ profiling:
     tags: {}                          # extra static labels merged onto every profile, e.g. { env: prod }
   mutex_profile_fraction: 0           # runtime.SetMutexProfileFraction (0 = disabled)
   block_profile_rate: 0               # runtime.SetBlockProfileRate (0 = disabled)
+
+# ── Version checks (OPTIONAL: outbound "is a newer release available?" checks) ──
+# Both sub-checks make external HTTPS calls and are fail-open (a failed/blocked fetch
+# silently emits nothing). Disable both for air-gapped deployments.
+version_checks:
+  self:
+    enabled: true                     # emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release)
+  devices:
+    enabled: true                     # emit per-device tailscale.device.version_skew + fleet rollups (device client version vs latest Tailscale stable). Needs the devices collector.
+    outdated_minor_threshold: 3       # a device this many minor releases behind counts toward tailscale.devices.outdated
+  cache_ttl: 1h                       # how long a fetched "latest version" is cached before re-fetching (minimum 5m)
+  timeout: 10s                        # per-request timeout for the external version fetch

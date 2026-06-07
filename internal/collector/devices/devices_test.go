@@ -1314,6 +1314,100 @@ func TestCollect_DeviceInvitesDisabledByDefault(t *testing.T) {
 	}
 }
 
+// --- B6: per-device + fleet version-skew ---
+
+func TestDeviceVersionSkew(t *testing.T) {
+	rec := telemetrytest.New()
+	fake := &fakeAPI{devices: []tsapi.RichDevice{
+		{ID: "n1", Hostname: "h1", ClientVersion: "1.95.0"},      // 3 behind -> outdated@3
+		{ID: "n2", Hostname: "h2", ClientVersion: "1.98.4-tabc"}, // current -> skew 0
+		{ID: "n3", Hostname: "h3", ClientVersion: "1.98.2"},      // patch-only -> skew 0
+		{ID: "n4", Hostname: "h4", ClientVersion: ""},            // no version -> skipped
+	}}
+	cache := enrich.NewDeviceCache()
+	c := devices.New(fake, cache, time.Minute, false, false,
+		devices.WithUpstreamLatest(func() (string, bool) { return "1.98.4", true }, 3))
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Per-device version_skew: n1=3, n2=0, n3=0; n4 skipped (no version).
+	skew := rec.MetricPoints("tailscale.device.version_skew")
+	got := map[string]float64{}
+	for _, p := range skew {
+		got[p.Attrs[semconv.HostID]] = p.Value
+	}
+	if got["n1"] != 3 {
+		t.Errorf("n1 version_skew = %v, want 3", got["n1"])
+	}
+	if got["n2"] != 0 {
+		t.Errorf("n2 version_skew = %v, want 0", got["n2"])
+	}
+	if got["n3"] != 0 {
+		t.Errorf("n3 version_skew = %v, want 0", got["n3"])
+	}
+	if _, ok := got["n4"]; ok {
+		t.Error("n4 (no version) should emit no skew point")
+	}
+
+	// fleet outdated: only n1 is >= 3 minors behind.
+	outdated := rec.MetricPoints("tailscale.devices.outdated")
+	if len(outdated) != 1 || outdated[0].Value != 1 {
+		t.Errorf("devices.outdated = %+v, want 1 point value 1", outdated)
+	}
+
+	// fleet latest_version: value 1, label tailscale.client_version="1.98.4".
+	latest := rec.MetricPoints("tailscale.fleet.latest_version")
+	if len(latest) != 1 || latest[0].Value != 1 {
+		t.Errorf("fleet.latest_version = %+v, want 1 point value 1", latest)
+	}
+	if latest[0].Attrs["tailscale.client_version"] != "1.98.4" {
+		t.Errorf("fleet.latest_version tailscale.client_version = %q, want 1.98.4", latest[0].Attrs["tailscale.client_version"])
+	}
+}
+
+func TestDeviceVersionSkewDisabled(t *testing.T) {
+	rec := telemetrytest.New()
+	fake := &fakeAPI{devices: []tsapi.RichDevice{{ID: "n1", ClientVersion: "1.95.0"}}}
+	cache := enrich.NewDeviceCache()
+	// No WithUpstreamLatest option -> B6 entirely off.
+	c := devices.New(fake, cache, time.Minute, false, false)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"tailscale.device.version_skew", "tailscale.devices.outdated", "tailscale.fleet.latest_version"} {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Errorf("%s emitted while disabled: %+v", name, pts)
+		}
+	}
+}
+
+func TestDeviceVersionSkewPerEntityGate(t *testing.T) {
+	// With perEntity=false, version_skew per-device gauge must NOT emit,
+	// but devices.outdated and fleet.latest_version MUST still emit.
+	rec := telemetrytest.New()
+	fake := &fakeAPI{devices: []tsapi.RichDevice{
+		{ID: "n1", Hostname: "h1", ClientVersion: "1.95.0"}, // 3 behind
+	}}
+	cache := enrich.NewDeviceCache()
+	c := devices.New(fake, cache, time.Minute, false, false,
+		devices.WithPerEntity(false),
+		devices.WithUpstreamLatest(func() (string, bool) { return "1.98.4", true }, 3))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.version_skew"); len(pts) != 0 {
+		t.Errorf("version_skew emitted with perEntity=false: %+v", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.devices.outdated"); len(pts) != 1 || pts[0].Value != 1 {
+		t.Errorf("devices.outdated = %+v, want 1 point value 1 (not gated by perEntity)", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.fleet.latest_version"); len(pts) != 1 {
+		t.Errorf("fleet.latest_version = %+v, want 1 point (not gated by perEntity)", pts)
+	}
+}
+
 func TestCollect_DeviceInvitesErrorIsNonFatal(t *testing.T) {
 	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
 	api := &fakeAPI{

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // oneOf reports whether v equals one of the allowed values.
@@ -123,6 +124,10 @@ func (c *Config) Warnings() []string {
 			"series per external IP (bounded only by cardinality.metric_limit). To keep the names on flow "+
 			"LOGS only, set cardinality.flow_node_dims=false; otherwise size cardinality.metric_limit for "+
 			"the added cardinality.")
+	}
+
+	if c.VersionChecks.Devices.Enabled && !c.Collectors.Devices.Enabled {
+		w = append(w, "version_checks.devices.enabled=true but collectors.devices is disabled: per-device version-skew metrics need the devices collector and will not be emitted")
 	}
 
 	for _, name := range c.unknownEnv {
@@ -297,6 +302,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Profiling.Pyroscope.Enabled && c.Profiling.Pyroscope.ServerAddress == "" {
 		return fmt.Errorf("profiling.pyroscope.enabled requires profiling.pyroscope.server_address")
+	}
+
+	if c.VersionChecks.Self.Enabled || c.VersionChecks.Devices.Enabled {
+		if c.VersionChecks.CacheTTL.D() < 5*time.Minute {
+			return fmt.Errorf("version_checks.cache_ttl must be >= 5m to avoid hammering the upstream release endpoints")
+		}
+		if c.VersionChecks.Timeout.D() <= 0 {
+			return fmt.Errorf("version_checks.timeout must be > 0")
+		}
+	}
+	if c.VersionChecks.Devices.Enabled && c.VersionChecks.Devices.OutdatedMinorThreshold < 1 {
+		return fmt.Errorf("version_checks.devices.outdated_minor_threshold must be >= 1")
 	}
 
 	return nil

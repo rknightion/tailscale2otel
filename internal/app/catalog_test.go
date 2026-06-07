@@ -55,6 +55,9 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	dset.Add("b") // evicts "a" => evictions 1
 	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": dset}, map[string]uint64{})
 
+	// update_available: emit with a known-newer latest so the gauge fires.
+	emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v9.9.9", true }, "v0.1.0")
+
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range appcatalog.Catalog() {
 		declared[m.Name] = m

@@ -565,6 +565,36 @@
                         }
                     }
                 },
+                "version_checks": {
+                    "type": "object",
+                    "properties": {
+                        "cache_ttl": {
+                            "type": "string"
+                        },
+                        "devices": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "outdated_minor_threshold": {
+                                    "type": "integer"
+                                }
+                            }
+                        },
+                        "self": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                }
+                            }
+                        },
+                        "timeout": {
+                            "type": "string"
+                        }
+                    }
+                },
                 "webhook": {
                     "type": "object",
                     "properties": {

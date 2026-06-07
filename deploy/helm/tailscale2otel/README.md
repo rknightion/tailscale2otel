@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.5.2](https://img.shields.io/badge/Version-0.5.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.5.3](https://img.shields.io/badge/Version-0.5.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -166,6 +166,11 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.tailscale.http.retry.max_delay | string | `"10s"` | Ceiling on the per-retry backoff delay. |
 | config.tailscale.http.timeout | string | `"30s"` | Per-request HTTP timeout for Tailscale API calls. |
 | config.tailscale.tailnet | string | `""` | Tailnet name, or "-" for the auth principal's default tailnet. Override with TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
+| config.version_checks.cache_ttl | string | `"1h"` | How long a fetched "latest version" is cached before re-fetching (minimum 5m). |
+| config.version_checks.devices.enabled | bool | `true` | Emit per-device tailscale.device.version_skew + fleet roll-ups (device client version vs latest Tailscale stable). Makes an outbound HTTPS call; fail-open. Needs the devices collector. |
+| config.version_checks.devices.outdated_minor_threshold | int | `3` | A device this many minor releases behind the latest Tailscale stable counts toward tailscale.devices.outdated. |
+| config.version_checks.self.enabled | bool | `true` | Emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release). Makes an outbound HTTPS call; fail-open. Disable for air-gapped deployments. |
+| config.version_checks.timeout | string | `"10s"` | Per-request timeout for the external version fetch. |
 | config.webhook.dedup_audit_events | bool | `false` | Best-effort: drop a webhook event already counted via the audit logs (off by default). |
 | config.webhook.enabled | bool | `false` | Enable the webhook receiver. |
 | config.webhook.listen | string | `":8089"` | Address the receiver binds (host:port). |

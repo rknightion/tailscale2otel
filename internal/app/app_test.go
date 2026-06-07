@@ -114,6 +114,64 @@ func TestNewApp_ReverseDNSGating(t *testing.T) {
 	a.rdnsCache.Close()
 }
 
+// TestNewApp_ReleaseFetcherGating verifies selfRelease/tsRelease are populated
+// only when their respective version_checks sub-flags are enabled. No network
+// call is made — the fetchers only fetch when .Run/.Refresh is called.
+func TestNewApp_ReleaseFetcherGating(t *testing.T) {
+	base := func() *config.Config {
+		cfg := config.Default()
+		cfg.Tailscale.Tailnet = "example.com"
+		return cfg
+	}
+
+	t.Run("both enabled by default", func(t *testing.T) {
+		a := baseTestApp(t, base(), "http://127.0.0.1:0", telemetrytest.New())
+		if a.selfRelease == nil {
+			t.Error("selfRelease should be non-nil when version_checks.self.enabled=true")
+		}
+		if a.tsRelease == nil {
+			t.Error("tsRelease should be non-nil when version_checks.devices.enabled=true")
+		}
+	})
+
+	t.Run("self disabled", func(t *testing.T) {
+		cfg := base()
+		cfg.VersionChecks.Self.Enabled = false
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if a.selfRelease != nil {
+			t.Error("selfRelease should be nil when version_checks.self.enabled=false")
+		}
+		if a.tsRelease == nil {
+			t.Error("tsRelease should be non-nil when version_checks.devices.enabled=true")
+		}
+	})
+
+	t.Run("devices disabled", func(t *testing.T) {
+		cfg := base()
+		cfg.VersionChecks.Devices.Enabled = false
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if a.selfRelease == nil {
+			t.Error("selfRelease should be non-nil when version_checks.self.enabled=true")
+		}
+		if a.tsRelease != nil {
+			t.Error("tsRelease should be nil when version_checks.devices.enabled=false")
+		}
+	})
+
+	t.Run("both disabled", func(t *testing.T) {
+		cfg := base()
+		cfg.VersionChecks.Self.Enabled = false
+		cfg.VersionChecks.Devices.Enabled = false
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+		if a.selfRelease != nil {
+			t.Error("selfRelease should be nil when version_checks.self.enabled=false")
+		}
+		if a.tsRelease != nil {
+			t.Error("tsRelease should be nil when version_checks.devices.enabled=false")
+		}
+	})
+}
+
 // TestRegisterCollectors_NodeMetricsGating verifies the node-metrics scraper is
 // registered only when enabled AND at least one target is configured.
 func TestRegisterCollectors_NodeMetricsGating(t *testing.T) {

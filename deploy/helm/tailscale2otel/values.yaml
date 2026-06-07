@@ -484,6 +484,20 @@ config:
     # -- runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull.
     block_profile_rate: 0
 
+  version_checks:
+    self:
+      # -- Emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release). Makes an outbound HTTPS call; fail-open. Disable for air-gapped deployments.
+      enabled: true
+    devices:
+      # -- Emit per-device tailscale.device.version_skew + fleet roll-ups (device client version vs latest Tailscale stable). Makes an outbound HTTPS call; fail-open. Needs the devices collector.
+      enabled: true
+      # -- A device this many minor releases behind the latest Tailscale stable counts toward tailscale.devices.outdated.
+      outdated_minor_threshold: 3
+    # -- How long a fetched "latest version" is cached before re-fetching (minimum 5m).
+    cache_ttl: 1h
+    # -- Per-request timeout for the external version fetch.
+    timeout: 10s
+
 # --- Checkpoint persistence ---
 persistence:
   # -- Persist checkpoints (window cursors) across restarts. When false, an emptyDir is used
