@@ -1,0 +1,4 @@
+{"users":[
+  {"id":"1","name":"alice","displayName":"Alice","email":"alice@example.org","profilePicUrl":"https://example.org/alice.png","createdAt":"2026-01-01T00:00:00Z"},
+  {"id":"2","name":"bob","displayName":"Bob","email":"bob@example.org","profilePicUrl":"","createdAt":"2026-02-01T00:00:00Z"}
+]}

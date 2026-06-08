@@ -1,0 +1,7 @@
+{"nodes":[
+  {"id":"1","name":"laptop.example.ts.net","givenName":"laptop","ipAddresses":["100.64.0.1","fd7a:115c:a1e0::1"],
+   "user":{"id":"1","name":"alice","email":"alice@example.org","displayName":"Alice"},
+   "lastSeen":"2026-06-08T10:00:00Z","expiry":"2026-09-08T10:00:00Z","createdAt":"2026-01-01T00:00:00Z",
+   "registerMethod":"REGISTER_METHOD_AUTH_KEY","online":true,
+   "approvedRoutes":["10.0.0.0/24"],"availableRoutes":["10.0.0.0/24","0.0.0.0/0","::/0"],"subnetRoutes":["10.0.0.0/24"],"tags":["tag:server"]}
+]}

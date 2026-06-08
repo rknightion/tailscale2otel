@@ -115,6 +115,40 @@ ignored.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `log_level` | `info` | Logging verbosity. One of `debug`, `info`, `warn`, `error`. |
+| `provider` | `tailscale` | Control-plane backend. One of `tailscale` (default, fully back-compatible) or `headscale`. |
+
+---
+
+## `headscale` — Headscale control-plane connection
+
+Used only when `provider: headscale`. Auth is a Bearer API key; keep it in an environment variable
+(`TS2OTEL_HEADSCALE__API_KEY`), not in the YAML file.
+
+Under `provider: headscale` only the `devices`, `users`, `keys`, `acl`, and `nodemetrics` collectors
+run. The Tailscale-only collectors (`flowlogs`, `auditlogs`, `services`, `webhooks`, `contacts`,
+`posture_integrations`, `log_stream`, `settings`, `dns`) auto-disable; enabling them explicitly triggers
+a startup warning.
+
+**Reduced device signal set.** Headscale's API exposes fewer device fields than Tailscale, so under
+`provider: headscale` the `devices` collector emits a *subset* of its usual signals — online status,
+advertised/enabled routes (exit-node and subnet-router derivations still work), key expiry, last-seen,
+and tag/user counts. Tailscale-only signals have **no data** because the source fields are absent:
+per-DERP-region latency, posture and posture attributes, tailnet-lock, update-available, OS/version
+distribution, and connectivity quality. Likewise device share-invites and user-invites are unavailable.
+
+**Headscale server metrics.** Headscale also exposes its own Prometheus endpoint (the *control-plane
+server*, default `:9090`) — distinct from per-node `tailscaled` `:5252`. Scrape it by adding it as a
+static `node_metrics` target (see the `node_metrics` section); there is no dedicated knob for it.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `headscale.url` | `""` | Headscale control-plane base URL, e.g. `https://headscale.example.org`. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__URL`. |
+| `headscale.api_key` | `""` | Bearer API key for the Headscale server. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__API_KEY`. |
+| `headscale.http.timeout` | `30s` | Per-request timeout for Headscale API calls. |
+| `headscale.http.retry.max_attempts` | `0` | Accepted for config parity with `tailscale.http`, but **not applied** by the minimal v1 Headscale client (which honors only `timeout`). |
+| `headscale.http.retry.base_delay` | `0s` | Accepted for parity; not applied in v1 (see above). |
+| `headscale.http.retry.max_delay` | `0s` | Accepted for parity; not applied in v1 (see above). |
+| `headscale.http.rate_limit` | `0` | Accepted for parity; not applied in v1 (see above). |
 
 ---
 

@@ -23,6 +23,8 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/internal/provider"
 	"github.com/rknightion/tailscale2otel/internal/rdns"
 	"github.com/rknightion/tailscale2otel/internal/release"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
@@ -59,7 +61,8 @@ type App struct {
 	exportStats  func() telemetry.ExportStats  // cumulative OTLP export volume; nil when self-obs disabled
 	shutdown     func(context.Context) error   // flushes telemetry on stop
 	restore      func()                        // restores the prior otel error handler
-	client       *tsapi.Client
+	provider     *provider.Provider            // control-plane backend (tailscale|headscale) + capability set
+	client       *tsapi.Client                 // concrete Tailscale client; nil under provider: headscale
 	cache        *enrich.DeviceCache
 	registry     *collector.Registry
 	sched        *collector.Scheduler
@@ -112,17 +115,61 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 	topts := telemetryOptions(cfg, version)
 	topts.Logger = withComponent(logger, compTelemetry) // surfaces Emitter label-collision diagnostics
-	provider, err := telemetry.NewProvider(ctx, topts)
+	tprov, err := telemetry.NewProvider(ctx, topts)
 	if err != nil {
 		return nil, err
 	}
-	emitter := provider.Emitter()
-	tracer := provider.Tracer()
+	emitter := tprov.Emitter()
+	tracer := tprov.Tracer()
 
 	// One combined request hook: APIStats always records (the status page's API
 	// panel must work even with self-obs off), and apiObserver additionally emits
-	// OTLP only when self-observability is enabled.
+	// OTLP only when self-observability is enabled. (Tailscale path only — the
+	// Headscale client is uninstrumented in v1.)
 	apiStats := NewAPIStats()
+	cp, err := buildProvider(cfg, logger, tracer, emitter, apiStats)
+	if err != nil {
+		_ = tprov.Shutdown(ctx)
+		return nil, err
+	}
+	store, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
+	if err != nil {
+		_ = tprov.Shutdown(ctx)
+		return nil, err
+	}
+
+	a := newApp(cfg, version, logger, emitter, tracer, tprov.Shutdown, cp, store, apiStats)
+	a.card = tprov.Cardinality()
+	a.metricGroups = metricGroupMap()
+	a.exportStats = tprov.ExportStats
+
+	// Continuous profiling is opt-in. startProfiling also applies the runtime
+	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
+	// to reach Pyroscope is non-fatal: the exporter's core job is unaffected.
+	profLogger := withComponent(logger, compProfiling)
+	prof, err := startProfiling(cfg, version, profLogger)
+	if err != nil {
+		profLogger.Error("pyroscope profiler failed to start", "error", err)
+	}
+	a.profiler = prof
+	return a, nil
+}
+
+// buildProvider constructs the control-plane provider selected by cfg.Provider.
+// Tailscale (the default) builds the instrumented tsapi client; Headscale builds
+// the minimal hsapi client. The returned Provider's capability set gates which
+// collectors register (see registerCollectors).
+func buildProvider(
+	cfg *config.Config,
+	logger *slog.Logger,
+	tracer trace.Tracer,
+	emitter telemetry.Emitter,
+	apiStats *APIStats,
+) (*provider.Provider, error) {
+	if cfg.Provider == "headscale" {
+		hsClient := hsapi.NewClient(hsapiOptions(cfg))
+		return provider.Headscale(hsapi.NewProvider(hsClient)), nil
+	}
 	tsOpts := tsapiOptions(cfg)
 	tsOpts.Logger = withComponent(logger, compTSAPI)
 	tsOpts.Tracer = tracer
@@ -138,35 +185,14 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 	client, err := tsapi.NewClient(tsOpts)
 	if err != nil {
-		_ = provider.Shutdown(ctx)
 		return nil, err
 	}
-	store, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
-	if err != nil {
-		_ = provider.Shutdown(ctx)
-		return nil, err
-	}
-
-	a := newApp(cfg, version, logger, emitter, tracer, provider.Shutdown, client, store, apiStats)
-	a.card = provider.Cardinality()
-	a.metricGroups = metricGroupMap()
-	a.exportStats = provider.ExportStats
-
-	// Continuous profiling is opt-in. startProfiling also applies the runtime
-	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
-	// to reach Pyroscope is non-fatal: the exporter's core job is unaffected.
-	profLogger := withComponent(logger, compProfiling)
-	prof, err := startProfiling(cfg, version, profLogger)
-	if err != nil {
-		profLogger.Error("pyroscope profiler failed to start", "error", err)
-	}
-	a.profiler = prof
-	return a, nil
+	return provider.Tailscale(client), nil
 }
 
 // newApp assembles an App from already-constructed dependencies. It is the seam
-// the integration test drives with an in-memory emitter and a stub Tailscale
-// client.
+// the integration test drives with an in-memory emitter and a stub provider
+// (provider.Tailscale wrapping a stub Tailscale client).
 func newApp(
 	cfg *config.Config,
 	version string,
@@ -174,7 +200,7 @@ func newApp(
 	emitter telemetry.Emitter,
 	tracer trace.Tracer,
 	shutdown func(context.Context) error,
-	client *tsapi.Client,
+	cp *provider.Provider,
 	store collector.CheckpointStore,
 	apiStats *APIStats,
 ) *App {
@@ -188,7 +214,7 @@ func newApp(
 		emitter:     emitter,
 		tracer:      tracer,
 		shutdown:    shutdown,
-		client:      client,
+		provider:    cp,
 		cache:       enrich.NewDeviceCache(),
 		registry:    collector.NewRegistry(),
 		status:      collector.NewStatusTracker(),
@@ -196,6 +222,12 @@ func newApp(
 		apiStats:    apiStats,
 		store:       store,
 		logger:      logger,
+	}
+	// Retain the concrete Tailscale client for the Tailscale-only paths
+	// (flowFeatureCheck, autoConfigureStreaming). It is nil under provider:
+	// headscale, where those paths are gated off by the capability set.
+	if tc, ok := cp.Client.(*tsapi.Client); ok {
+		a.client = tc
 	}
 	a.sched = collector.NewScheduler(emitter, store,
 		collector.WithLogger(withComponent(logger, compCollector)),
@@ -319,10 +351,11 @@ func (a *App) Run(ctx context.Context) error {
 		go func() {
 			a.recordReceiverStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
-		if a.cfg.Streaming.AutoConfigure {
+		if a.cfg.Streaming.AutoConfigure && a.provider.Kind == provider.KindTailscale && a.client != nil {
 			// Off the hot path: registering the sink makes a network call to
 			// Tailscale, which must not block the scheduler/other receivers from
 			// starting. Bounded so a hung endpoint can't linger past shutdown.
+			// Tailscale-only: Headscale has no log-stream API.
 			go func() {
 				cctx, cancel := context.WithTimeout(ctx, autoConfigureTimeout)
 				defer cancel()

@@ -9,6 +9,10 @@ package statusdata
 // Status is the full admin status snapshot.
 type Status struct {
 	Service ServiceInfo `json:"service"`
+	// Provider is the control-plane backend: "tailscale" or "headscale".
+	Provider string `json:"provider"`
+	// Capabilities lists the collector/feature names supported by the active provider.
+	Capabilities []string `json:"capabilities,omitempty"`
 	// Health is the at-a-glance verdict: "healthy", "degraded" or "starting".
 	// HealthReasons explains a non-healthy verdict (empty when healthy).
 	Health        string            `json:"health"`

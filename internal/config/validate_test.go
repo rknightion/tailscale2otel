@@ -713,6 +713,44 @@ func TestWarnings_TracingZeroRatio(t *testing.T) {
 	}
 }
 
+func TestValidateHeadscaleRequiresURLAndKey(t *testing.T) {
+	c := config.Default()
+	c.Provider = "headscale"
+	c.Headscale = config.HeadscaleConfig{} // missing url + api_key
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error: headscale requires url + api_key")
+	}
+	c.Headscale.URL = "https://hs.example.org"
+	c.Headscale.APIKey = "k"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid headscale config should pass: %v", err)
+	}
+}
+
+func TestValidateRejectsUnknownProvider(t *testing.T) {
+	c := config.Default()
+	c.Provider = "wireguard"
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+}
+
+func TestWarnsOnUnsupportedCollectorUnderHeadscale(t *testing.T) {
+	c := config.Default()
+	c.Provider = "headscale"
+	c.Headscale = config.HeadscaleConfig{URL: "https://h", APIKey: "k"}
+	c.Collectors.Flowlogs.Enabled = true // unsupported on headscale
+	found := false
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "flowlogs") && strings.Contains(w, "headscale") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning about flowlogs unsupported under headscale; got %v", c.Warnings())
+	}
+}
+
 // TestWarnings_FlowMetricsModeBoth pins the advisory that both-mode emits the raw
 // AND rollup families, so summing them in PromQL double-counts. The default
 // (rollup) and all-mode do not warn.

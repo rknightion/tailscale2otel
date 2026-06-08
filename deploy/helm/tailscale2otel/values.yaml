@@ -98,6 +98,8 @@ secret:
   # personal API key expires in <=90 days and is tied to the user that created it (stops working
   # when that user is removed). The exporter logs a WARN when method=apikey.
   TS2OTEL_TAILSCALE__AUTH__APIKEY: ""
+  # -- Headscale Bearer API key. Used ONLY when config.provider=headscale.
+  TS2OTEL_HEADSCALE__API_KEY: ""
   # -- Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth).
   TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ""
   # -- Grafana Cloud OTLP token (the password for OTLP basic auth).
@@ -130,6 +132,27 @@ secret:
 config:
   # -- Log verbosity: debug | info | warn | error.
   log_level: info
+
+  # -- Control-plane backend: tailscale (default) | headscale. Under headscale only the
+  # devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable.
+  provider: tailscale
+
+  # Headscale control-plane connection. Used only when provider: headscale. The api_key is a
+  # Bearer token — set it via the secret TS2OTEL_HEADSCALE__API_KEY (above), not here.
+  headscale:
+    # -- Headscale control-plane base URL, e.g. https://headscale.example.org.
+    url: ""
+    # -- Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value.
+    api_key: ""
+    http:
+      # -- Per-request timeout for Headscale API calls (the only http knob applied in v1).
+      timeout: 30s
+      # retry/rate_limit are accepted for parity with tailscale.http but not applied by the v1 client.
+      retry:
+        max_attempts: 0
+        base_delay: 0s
+        max_delay: 0s
+      rate_limit: 0
 
   tailscale:
     # -- Tailnet name, or "-" for the auth principal's default tailnet.

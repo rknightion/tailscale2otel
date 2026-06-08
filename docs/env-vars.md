@@ -32,6 +32,14 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | Environment variable | Default | Description |
 | --- | --- | --- |
 | `TS2OTEL_LOG_LEVEL` | `info` | exporter's own log verbosity: debug \| info \| warn \| error |
+| `TS2OTEL_PROVIDER` | `tailscale` | control-plane backend: tailscale (default) \| headscale |
+| `TS2OTEL_HEADSCALE__URL` | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL) |
+| `TS2OTEL_HEADSCALE__API_KEY` | `""` | Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY) |
+| `TS2OTEL_HEADSCALE__HTTP__TIMEOUT` | `30s` | per-request timeout (the ONLY http knob applied in v1) |
+| `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_ATTEMPTS` | `0` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
+| `TS2OTEL_HEADSCALE__HTTP__RETRY__BASE_DELAY` | `0s` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
+| `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_DELAY` | `0s` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
+| `TS2OTEL_HEADSCALE__HTTP__RATE_LIMIT` | `0` | HTTP client used for all Headscale API calls |
 | `TS2OTEL_TAILSCALE__TAILNET` | `-` | "-" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. "example.com" |
 | `TS2OTEL_TAILSCALE__AUTH__METHOD` | `oauth` | oauth (recommended) \| apikey |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID` | `""` | OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID) |

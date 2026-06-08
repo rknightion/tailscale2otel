@@ -11,6 +11,10 @@ func dur(d time.Duration) Duration { return Duration(d) }
 func Default() *Config {
 	return &Config{
 		LogLevel: "info",
+		Provider: "tailscale",
+		Headscale: HeadscaleConfig{
+			HTTP: TailscaleHTTPConfig{Timeout: dur(30 * time.Second)},
+		},
 		Tailscale: TailscaleConfig{
 			Tailnet: "-", // the authenticated principal's default tailnet (works out of the box for single-tailnet OAuth)
 			Auth: TailscaleAuth{

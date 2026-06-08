@@ -135,6 +135,27 @@ func (c *Config) Warnings() []string {
 		w = append(w, "tracing.enabled is true but tracing.sampler_arg is 0 with a ratio sampler — no spans will be recorded")
 	}
 
+	if c.Provider == "headscale" {
+		// Features with no Headscale API; warn if the operator explicitly enabled them.
+		type col struct {
+			name    string
+			enabled bool
+		}
+		unsupported := []col{
+			{"flowlogs", c.Collectors.Flowlogs.Enabled}, {"auditlogs", c.Collectors.Auditlogs.Enabled},
+			{"settings", c.Collectors.Settings.Enabled}, {"dns", c.Collectors.Dns.Enabled},
+			{"contacts", c.Collectors.Contacts.Enabled}, {"webhooks", c.Collectors.Webhooks.Enabled},
+			{"posture_integrations", c.Collectors.PostureIntegrations.Enabled},
+			{"log_stream", c.Collectors.LogStream.Enabled}, {"services", c.Collectors.Services.Enabled},
+		}
+		for _, u := range unsupported {
+			if u.enabled {
+				w = append(w, fmt.Sprintf("collector %s is enabled but provider=headscale does not "+
+					"support it; it will not run. Set collectors.%s.enabled=false to silence this.", u.name, u.name))
+			}
+		}
+	}
+
 	for _, name := range c.unknownEnv {
 		w = append(w, fmt.Sprintf("environment variable %s does not match any configuration key "+
 			"and was ignored — check the name for typos (keys use the %s prefix with %q as the "+
@@ -171,11 +192,29 @@ func pollsSource(s string) bool {
 // Validate reports the first configuration error it finds, or nil if the
 // Config is valid.
 func (c *Config) Validate() error {
+	provider := c.Provider
+	if provider == "" {
+		provider = "tailscale"
+	}
+	if !oneOf(provider, "tailscale", "headscale") {
+		return fmt.Errorf("provider: must be \"tailscale\" or \"headscale\", got %q", provider)
+	}
+	if provider == "headscale" {
+		if strings.TrimSpace(c.Headscale.URL) == "" {
+			return fmt.Errorf("headscale.url: required when provider=headscale")
+		}
+		if c.Headscale.APIKey == "" {
+			return fmt.Errorf("headscale.api_key: required when provider=headscale (set TS2OTEL_HEADSCALE__API_KEY)")
+		}
+	}
+
 	if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
 		return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
 	}
-	if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {
-		return fmt.Errorf("tailscale.auth.method %q invalid: must be one of oauth, apikey", c.Tailscale.Auth.Method)
+	if provider == "tailscale" {
+		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {
+			return fmt.Errorf("tailscale.auth.method %q invalid: must be one of oauth, apikey", c.Tailscale.Auth.Method)
+		}
 	}
 	if !oneOf(c.Checkpoint.Store, "memory", "file") {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)

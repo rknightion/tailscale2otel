@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.5.4](https://img.shields.io/badge/Version-0.5.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.6.0](https://img.shields.io/badge/Version-0.6.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -125,6 +125,13 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.enrichment.reverse_dns.negative_ttl | string | `"5m"` | How long a failed lookup is remembered (suppresses retries). |
 | config.enrichment.reverse_dns.server | string | `""` | Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver. |
 | config.enrichment.reverse_dns.timeout | string | `"2s"` | Per-lookup timeout. |
+| config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
+| config.headscale.http.rate_limit | int | `0` |  |
+| config.headscale.http.retry.base_delay | string | `"0s"` |  |
+| config.headscale.http.retry.max_attempts | int | `0` |  |
+| config.headscale.http.retry.max_delay | string | `"0s"` |  |
+| config.headscale.http.timeout | string | `"30s"` | Per-request timeout for Headscale API calls (the only http knob applied in v1). |
+| config.headscale.url | string | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
 | config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
 | config.otlp.grafana_cloud.instance_id | string | `""` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret). |
@@ -146,6 +153,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.profiling.pyroscope.tags | object | `{}` | Extra static labels merged onto every profile, e.g. { env: prod }. |
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
 | config.profiling.pyroscope.upload_rate | string | `"15s"` | How often profiles are flushed to the server. |
+| config.provider | string | `"tailscale"` | Control-plane backend: tailscale (default) | headscale. Under headscale only the devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable. |
 | config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |
 | config.self_observability.instance_id | string | `""` | service.instance.id resource attribute; empty falls back to the pod/host name. Override with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API). |
 | config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
@@ -204,8 +212,9 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | podSecurityContext | object | `{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. |
 | replicaCount | int | `1` | Replica count. Keep at 1 — this is a singleton poller (no leader election); scaling up would double-emit every metric and log. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. The defaults suit a few-hundred-device tailnet; raise limits if you enable high-volume flow-log streaming or many node-metrics targets. |
-| secret | object | `{"TS2OTEL_ADMIN__AUTH__TOKEN":"","TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID":"","TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER":"","TS2OTEL_STREAMING__TOKEN":"","TS2OTEL_TAILSCALE__AUTH__APIKEY":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET":"","TS2OTEL_TAILSCALE__TAILNET":"","TS2OTEL_WEBHOOK__SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at runtime — secrets never appear in the ConfigMap. |
+| secret | object | `{"TS2OTEL_ADMIN__AUTH__TOKEN":"","TS2OTEL_HEADSCALE__API_KEY":"","TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID":"","TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER":"","TS2OTEL_STREAMING__TOKEN":"","TS2OTEL_TAILSCALE__AUTH__APIKEY":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET":"","TS2OTEL_TAILSCALE__TAILNET":"","TS2OTEL_WEBHOOK__SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at runtime — secrets never appear in the ConfigMap. |
 | secret.TS2OTEL_ADMIN__AUTH__TOKEN | string | `""` | Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable config.profiling.pprof. /healthz and /readyz are never gated. |
+| secret.TS2OTEL_HEADSCALE__API_KEY | string | `""` | Headscale Bearer API key. Used ONLY when config.provider=headscale. |
 | secret.TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID | string | `""` | Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth). |
 | secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN | string | `""` | Grafana Cloud OTLP token (the password for OTLP basic auth). |
 | secret.TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD | string | `""` | Pyroscope basic-auth password (Grafana Cloud: an access policy token with profiles:write). |

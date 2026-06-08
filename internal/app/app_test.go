@@ -18,6 +18,8 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/internal/provider"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -95,7 +97,42 @@ func baseTestApp(t *testing.T, cfg *config.Config, baseURL string, rec *telemetr
 	t.Helper()
 	return newApp(cfg, "vtest", nil, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"),
 		func(context.Context) error { return nil },
-		newTestClient(t, baseURL), collector.NewMemoryStore(), NewAPIStats())
+		provider.Tailscale(newTestClient(t, baseURL)), collector.NewMemoryStore(), NewAPIStats())
+}
+
+// headscaleTestApp builds an App via the newApp seam backed by a Headscale
+// provider (no network is touched during registration).
+func headscaleTestApp(t *testing.T, cfg *config.Config) *App {
+	t.Helper()
+	hp := provider.Headscale(hsapi.NewProvider(hsapi.NewClient(hsapi.Options{URL: "http://127.0.0.1:0", APIKey: "k"})))
+	return newApp(cfg, "vtest", nil, telemetrytest.New().Emitter(), tracenoop.NewTracerProvider().Tracer("test"),
+		func(context.Context) error { return nil }, hp, collector.NewMemoryStore(), NewAPIStats())
+}
+
+// TestRegisterCollectors_HeadscaleGating verifies that under provider=headscale
+// only the supported collectors register (devices/users/keys/acl/nodemetrics),
+// and the Tailscale-only collectors auto-disable via the capability set even
+// when enabled in config.
+func TestRegisterCollectors_HeadscaleGating(t *testing.T) {
+	cfg := config.Default()
+	cfg.Provider = "headscale"
+	cfg.Headscale = config.HeadscaleConfig{URL: "http://127.0.0.1:0", APIKey: "k"}
+	// Default() leaves devices + the Tailscale-only collectors enabled.
+	cfg.Collectors.Devices.Enabled = true
+	cfg.Collectors.Settings.Enabled = true // unsupported under headscale
+	cfg.Collectors.Flowlogs.Enabled = true // unsupported under headscale
+
+	a := headscaleTestApp(t, cfg)
+	a.registerCollectors()
+
+	if !hasCollector(a, "devices") {
+		t.Error("devices should register under provider=headscale")
+	}
+	for _, name := range []string{"settings", "flowlogs"} {
+		if hasCollector(a, name) {
+			t.Errorf("%s must NOT register under provider=headscale (unsupported)", name)
+		}
+	}
 }
 
 // TestNewApp_ReverseDNSGating verifies the async reverse-DNS cache is constructed
@@ -633,7 +670,7 @@ func TestApp_RunGracefulShutdown(t *testing.T) {
 	shutdown := func(context.Context) error { shutdownCalled = true; return nil }
 
 	a := newApp(cfg, "v9.9.9", nil, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"), shutdown,
-		newTestClient(t, ts.URL), collector.NewMemoryStore(), NewAPIStats())
+		provider.Tailscale(newTestClient(t, ts.URL)), collector.NewMemoryStore(), NewAPIStats())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()

@@ -8,6 +8,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -23,9 +24,14 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		headers["Authorization"] = "Basic " +
 			base64.StdEncoding.EncodeToString([]byte(gc.InstanceID+":"+gc.Token.Reveal()))
 	}
+	prov := cfg.Provider
+	if prov == "" {
+		prov = "tailscale"
+	}
 	return telemetry.Options{
 		ServiceName:      serviceName,
 		ServiceVersion:   version,
+		Provider:         prov,
 		InstanceID:       instanceID(cfg),
 		Protocol:         cfg.OTLP.Protocol,
 		Endpoint:         cfg.OTLP.Endpoint,
@@ -53,6 +59,16 @@ func instanceID(cfg *config.Config) string {
 	}
 	host, _ := os.Hostname()
 	return host
+}
+
+// hsapiOptions maps the Headscale config into hsapi.Options. Auth is the Bearer
+// API key; the minimal client uses only the request timeout (no retry in v1).
+func hsapiOptions(cfg *config.Config) hsapi.Options {
+	return hsapi.Options{
+		URL:     cfg.Headscale.URL,
+		APIKey:  cfg.Headscale.APIKey.Reveal(),
+		Timeout: cfg.Headscale.HTTP.Timeout.D(),
+	}
 }
 
 // tsapiOptions maps the Tailscale config into tsapi.Options, selecting the

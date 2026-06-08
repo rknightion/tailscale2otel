@@ -76,6 +76,10 @@ type Options struct {
 	// ignored by the others.
 	TraceSamplerArg float64
 
+	// Provider is the control-plane backend (tailscale|headscale); emitted as the
+	// tailscale2otel.provider resource attribute when non-empty.
+	Provider string
+
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
 
@@ -254,6 +258,9 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	}
 	if opts.InstanceID != "" {
 		attrs = append(attrs, attribute.String("service.instance.id", opts.InstanceID))
+	}
+	if opts.Provider != "" {
+		attrs = append(attrs, attribute.String("tailscale2otel.provider", opts.Provider))
 	}
 	// The schemaless WithAttributes block carries the service.* identity; the core
 	// detectors add host/os/process attributes so multiple instances are

@@ -131,6 +131,7 @@
       <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="sub">since {{.Service.StartedAt}}</div></div>
       <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s</div></div>
       <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
+      {{if .Provider}}<div class="card"><div class="k">Control plane</div><div class="v"><code>{{.Provider}}</code></div>{{if .Capabilities}}<div class="sub">{{range $i,$c := .Capabilities}}{{if $i}}, {{end}}{{$c}}{{end}}</div>{{end}}</div>{{end}}
       <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
       <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div><svg class="spark card" id="goroutinesSpark"></svg></div>
       <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div><svg class="spark card" id="heapSpark"></svg></div>

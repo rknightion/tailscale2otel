@@ -18,6 +18,30 @@
 
 log_level: info                       # exporter's own log verbosity: debug | info | warn | error
 
+provider: tailscale                   # control-plane backend: tailscale (default) | headscale
+
+# ── Headscale connection (only used when provider: headscale) ───────────────────
+# Under provider: headscale only the devices/users/keys/acl/nodemetrics collectors
+# run; the Tailscale-only collectors (flowlogs, auditlogs, services, webhooks,
+# contacts, posture_integrations, log_stream, settings, dns) auto-disable.
+headscale:
+  url: ""                             # Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)
+  api_key: ""                         # Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY)
+  http:                               # HTTP client used for all Headscale API calls
+    timeout: 30s                      # per-request timeout (the ONLY http knob applied in v1)
+    retry:                            # accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client
+      max_attempts: 0
+      base_delay: 0s
+      max_delay: 0s
+    rate_limit: 0
+# Tip: to scrape Headscale's own SERVER metrics (the control plane, default :9090 —
+# NOT a per-node tailscaled :5252 endpoint), add it as a static node_metrics target:
+#   node_metrics:
+#     enabled: true
+#     targets:
+#       - url: http://headscale:9090/metrics
+#         instance: headscale-server
+
 # ── Tailscale API connection ────────────────────────────────────────────────────
 tailscale:
   tailnet: "-"                        # "-" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. "example.com"

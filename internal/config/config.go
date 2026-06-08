@@ -40,7 +40,9 @@ const (
 // Config is the root configuration document.
 type Config struct {
 	LogLevel          string                  `yaml:"log_level"`
+	Provider          string                  `yaml:"provider"` // "tailscale" (default) | "headscale"
 	Tailscale         TailscaleConfig         `yaml:"tailscale"`
+	Headscale         HeadscaleConfig         `yaml:"headscale"`
 	OTLP              OTLPConfig              `yaml:"otlp"`
 	Enrichment        EnrichmentConfig        `yaml:"enrichment"`
 	Cardinality       CardinalityConfig       `yaml:"cardinality"`
@@ -136,6 +138,14 @@ type VersionCheckSelf struct {
 type VersionCheckDevices struct {
 	Enabled                bool `yaml:"enabled"`
 	OutdatedMinorThreshold int  `yaml:"outdated_minor_threshold"`
+}
+
+// HeadscaleConfig holds Headscale control-plane connection settings (used when
+// provider: headscale). Auth is a Bearer API key; keep it in env (TS2OTEL_*).
+type HeadscaleConfig struct {
+	URL    string              `yaml:"url"`
+	APIKey Secret              `yaml:"api_key"`
+	HTTP   TailscaleHTTPConfig `yaml:"http"` // reuse the same timeout/retry/rate_limit shape
 }
 
 // TailscaleConfig holds Tailscale API connection settings.

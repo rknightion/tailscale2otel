@@ -369,6 +369,42 @@
                         }
                     }
                 },
+                "headscale": {
+                    "type": "object",
+                    "properties": {
+                        "api_key": {
+                            "type": "string"
+                        },
+                        "http": {
+                            "type": "object",
+                            "properties": {
+                                "rate_limit": {
+                                    "type": "integer"
+                                },
+                                "retry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "base_delay": {
+                                            "type": "string"
+                                        },
+                                        "max_attempts": {
+                                            "type": "integer"
+                                        },
+                                        "max_delay": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "url": {
+                            "type": "string"
+                        }
+                    }
+                },
                 "log_level": {
                     "type": "string"
                 },
@@ -461,6 +497,9 @@
                             }
                         }
                     }
+                },
+                "provider": {
+                    "type": "string"
                 },
                 "self_observability": {
                     "type": "object",
@@ -756,6 +795,9 @@
             "type": "object",
             "properties": {
                 "TS2OTEL_ADMIN__AUTH__TOKEN": {
+                    "type": "string"
+                },
+                "TS2OTEL_HEADSCALE__API_KEY": {
                     "type": "string"
                 },
                 "TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID": {

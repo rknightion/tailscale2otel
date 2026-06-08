@@ -19,6 +19,24 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// TestBuildResourceIncludesProvider asserts that when Options.Provider is set,
+// buildResource emits a tailscale2otel.provider resource attribute with that value.
+func TestBuildResourceIncludesProvider(t *testing.T) {
+	res, err := buildResource(context.Background(), Options{ServiceName: "tailscale2otel", Provider: "headscale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, kv := range res.Attributes() {
+		if string(kv.Key) == "tailscale2otel.provider" && kv.Value.AsString() == "headscale" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("resource missing tailscale2otel.provider=headscale")
+	}
+}
+
 // TestTLSConfigPinsMinVersionTLS12 guards the OTLP exporter client TLS config
 // against the semgrep missing-ssl-minversion finding: when CA/cert/key files
 // configure a *tls.Config, it must floor the negotiated version at TLS 1.2 so a

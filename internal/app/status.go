@@ -39,6 +39,8 @@ func (a *App) buildStatus() statusdata.Status {
 	}
 
 	s := statusdata.Status{
+		Provider:     string(a.provider.Kind),
+		Capabilities: a.provider.Capabilities(),
 		Service: statusdata.ServiceInfo{
 			Name:      serviceName,
 			Version:   a.version,

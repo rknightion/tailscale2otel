@@ -10,6 +10,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/provider"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
@@ -35,7 +36,7 @@ func TestBuildStatus_WindowCheckpointStuck(t *testing.T) {
 	}
 	a := newApp(config.Default(), "vtest", nil, telemetrytest.New().Emitter(),
 		tracenoop.NewTracerProvider().Tracer("test"),
-		func(context.Context) error { return nil }, newTestClient(t, "http://127.0.0.1:0"),
+		func(context.Context) error { return nil }, provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")),
 		store, NewAPIStats())
 	a.registry.RegisterWindow(stubWindowCollector{name: "flowlogs", lag: time.Minute}, time.Minute, 0, 0)
 

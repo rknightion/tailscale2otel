@@ -90,7 +90,7 @@ func pollSource(s string) bool {
 func (a *App) registerCollectors() {
 	c := &a.cfg.Collectors
 
-	if c.Devices.Enabled {
+	if c.Devices.Enabled && a.provider.Supports("devices") {
 		devOpts := []devices.Option{
 			devices.WithPerEntity(a.cfg.Cardinality.PerEntity.Device),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
@@ -105,60 +105,62 @@ func (a *App) registerCollectors() {
 			devOpts = append(devOpts, devices.WithUpstreamLatest(
 				a.tsRelease.Latest, a.cfg.VersionChecks.Devices.OutdatedMinorThreshold))
 		}
-		a.registry.Register(devices.New(a.client, a.cache, c.Devices.Interval.D(),
+		a.registry.Register(devices.New(a.provider.Client, a.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())
 	}
-	if c.Users.Enabled {
-		a.registry.Register(users.New(a.client, c.Users.Interval.D(),
+	if c.Users.Enabled && a.provider.Supports("users") {
+		a.registry.Register(users.New(a.provider.Client, c.Users.Interval.D(),
 			users.WithPerEntity(a.cfg.Cardinality.PerEntity.User)), c.Users.Interval.D())
 	}
-	if c.Keys.Enabled {
-		a.registry.Register(keys.New(a.client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
+	if c.Keys.Enabled && a.provider.Supports("keys") {
+		a.registry.Register(keys.New(a.provider.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
 			keys.WithPerEntity(a.cfg.Cardinality.PerEntity.Key)), c.Keys.Interval.D())
 	}
-	if c.Settings.Enabled {
+	if c.Settings.Enabled && a.provider.Supports("settings") {
 		a.registry.Register(settings.New(a.client, c.Settings.Interval.D()), c.Settings.Interval.D())
 	}
-	if c.Acl.Enabled {
-		a.registry.Register(acl.New(a.client, c.Acl.Interval.D(), nil), c.Acl.Interval.D())
+	if c.Acl.Enabled && a.provider.Supports("acl") {
+		a.registry.Register(acl.New(a.provider.Client, c.Acl.Interval.D(), nil), c.Acl.Interval.D())
 	}
-	if c.Dns.Enabled {
+	if c.Dns.Enabled && a.provider.Supports("dns") {
 		a.registry.Register(dns.New(a.client, c.Dns.Interval.D()), c.Dns.Interval.D())
 	}
-	if c.Contacts.Enabled {
+	if c.Contacts.Enabled && a.provider.Supports("contacts") {
 		a.registry.Register(contacts.New(a.client, c.Contacts.Interval.D()), c.Contacts.Interval.D())
 	}
-	if c.Webhooks.Enabled {
+	if c.Webhooks.Enabled && a.provider.Supports("webhooks") {
 		a.registry.Register(webhooks.New(a.client, c.Webhooks.Interval.D(),
 			webhooks.WithPerEntity(a.cfg.Cardinality.PerEntity.Webhook)), c.Webhooks.Interval.D())
 	}
-	if c.PostureIntegrations.Enabled {
+	if c.PostureIntegrations.Enabled && a.provider.Supports("posture_integrations") {
 		a.registry.Register(postureintegrations.New(a.client, c.PostureIntegrations.Interval.D()), c.PostureIntegrations.Interval.D())
 	}
-	if c.LogStream.Enabled {
+	if c.LogStream.Enabled && a.provider.Supports("log_stream") {
 		a.registry.Register(logstream.New(a.client, c.LogStream.Interval.D()), c.LogStream.Interval.D())
 	}
-	if c.Services.Enabled {
+	if c.Services.Enabled && a.provider.Supports("services") {
 		a.registry.Register(services.New(a.client, c.Services.Interval.D(),
 			services.WithPerEntity(a.cfg.Cardinality.PerEntity.Service),
 			services.WithCollectHosts(c.Services.CollectHosts)), c.Services.Interval.D())
 	}
-	if nm := c.NodeMetrics; nm.Enabled && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
+	if nm := c.NodeMetrics; nm.Enabled && a.provider.Supports("nodemetrics") && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.
-		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.client, withComponent(a.logger, compNodeMetrics)))
+		// Discovery uses the provider client's DevicesRich, so it works for both
+		// backends (Headscale nodes also run tailscaled on :5252).
+		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.provider.Client, withComponent(a.logger, compNodeMetrics)))
 		a.registry.Register(a.nodeMetrics, nm.Interval.D())
 	}
-	if c.Flowlogs.Enabled && pollSource(c.Flowlogs.Source) {
+	if c.Flowlogs.Enabled && a.provider.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
 		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck(), a.ingestObserver())
 		a.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
-	} else if c.Flowlogs.Enabled {
+	} else if c.Flowlogs.Enabled && a.provider.Supports("flowlogs") {
 		// Stream-only (source: stream): the poller isn't registered, so the
 		// tailscale.feature.enabled health gauge it normally emits would be missing.
 		// Register a lightweight probe that reports it independently of ingestion.
 		fp := flowlogs.NewFeatureProbe(a.flowFeatureCheck(), c.Flowlogs.Interval.D())
 		a.registry.Register(fp, fp.DefaultInterval())
 	}
-	if c.Auditlogs.Enabled && pollSource(c.Auditlogs.Source) {
+	if c.Auditlogs.Enabled && a.provider.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(a.client, a.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), a.ingestObserver())
 		a.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
 	}

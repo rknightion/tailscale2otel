@@ -14,6 +14,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/provider"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
@@ -38,7 +39,7 @@ func appWithLog(t *testing.T, buf *bytes.Buffer) *App {
 	rec := telemetrytest.New()
 	return newApp(cfg, "vtest", log, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"),
 		func(context.Context) error { return nil },
-		newTestClient(t, "http://example.invalid"), collector.NewMemoryStore(), NewAPIStats())
+		provider.Tailscale(newTestClient(t, "http://example.invalid")), collector.NewMemoryStore(), NewAPIStats())
 }
 
 // TestRecordReceiverStop_CleanShutdownSilent verifies a normal stop signal
