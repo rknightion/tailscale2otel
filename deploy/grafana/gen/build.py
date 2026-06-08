@@ -41,6 +41,7 @@ PROM_DS_TEXT = "grafanacloud-prom"
 PROM_DS_VALUE = "grafanacloud-prom"
 LOKI_DS_TEXT = "grafanacloud-logs"
 LOKI_DS_VALUE = "grafanacloud-logs"
+TEMPO_DS_TEXT = TEMPO_DS_VALUE = "grafanacloud-traces"
 
 RI = "$__rate_interval"
 WIN_FAST = "10m"   # last_over_time window for frequently-scraped series (devices, nodes, scrape, runtime)
@@ -71,6 +72,17 @@ def sv(expr):
     return "max without (service_version) (%s)" % expr
 
 
+PII = "tailscale2otel_pii_filter_category_ratio"  # PII filter self-obs gauge
+
+
+def tn_join(expr):
+    """Promote tailscale_tailnet onto a per-series expr via the target_info join, then
+    filter by $tailnet. Use for fleet/self-obs panels that should respect the $tailnet var.
+    For single-tailnet deployments $tailnet=All -> .* -> no-op."""
+    return ('(%s) * on (job, instance) group_left(tailscale_tailnet) '
+            'target_info{tailscale_tailnet=~"$tailnet"}') % expr
+
+
 # ---------------------------------------------------------------------------
 # low-level builders
 # ---------------------------------------------------------------------------
@@ -89,6 +101,14 @@ def loki_t(expr, refid="A", instant=False, maxlines=200, legend=""):
                       "datasource": {"name": "${ds_loki}"},
                       "spec": {"expr": expr, "queryType": ("instant" if instant else "range"),
                                "maxLines": maxlines, "legendFormat": legend}}}}
+
+
+def tempo_t(query, refid="A", query_type="traceql", table_type="traces"):
+    """Tempo query. query_type 'traceql' (trace list/table) or 'traceqlSearch';
+    for TraceQL-metrics timeseries set query like '{...} | rate() by (...)'."""
+    return {"kind": "DataQuery", "version": "v0", "group": "",
+            "datasource": {"name": "${ds_tempo}"},
+            "spec": {"query": query, "queryType": query_type, "tableType": table_type, "refId": refid}}
 
 
 def thr(steps, mode="absolute"):
@@ -205,16 +225,36 @@ def place(panel_specs):
     return {"kind": "GridLayout", "spec": {"items": items}}
 
 
-def cond_present(var):
-    return {"kind": "ConditionalRenderingGroup", "spec": {"visibility": "show", "condition": "and",
-            "items": [{"kind": "ConditionalRenderingVariable",
-                       "spec": {"variable": var, "operator": "matches", "value": ".+"}}]}}
+def hq(q, metric, by="", win=RI):
+    """histogram_quantile over <metric>_bucket. `by` = extra group labels (besides le)."""
+    grp = ("le, " + by) if by else "le"
+    return "histogram_quantile(%s, sum by (%s) (rate(%s_bucket[%s])))" % (q, grp, metric, win)
 
 
-def row(title, panel_specs, present=None, collapse=False):
+def cond_item(var, op="matches", value=".+"):
+    return {"kind": "ConditionalRenderingVariable",
+            "spec": {"variable": var, "operator": op, "value": value}}
+
+
+def cond_group(items, condition="and"):
+    return {"kind": "ConditionalRenderingGroup",
+            "spec": {"visibility": "show", "condition": condition, "items": items}}
+
+
+def cond_present(var):  # back-compat: show when presence var is non-empty
+    return cond_group([cond_item(var)])
+
+
+def row(title, panel_specs, present=None, hide_when=None, collapse=False):
     spec = {"title": title, "collapse": collapse, "layout": place(panel_specs)}
+    items = []
     if present:
-        spec["conditionalRendering"] = cond_present(present)
+        items.append(cond_item(present))
+    for hv in (hide_when or []):
+        # show UNLESS the redaction var is non-empty (==0 observed) -> hide-only-on-explicit-redaction
+        items.append(cond_item(hv, op="notMatches"))
+    if items:
+        spec["conditionalRendering"] = cond_group(items)
     return {"kind": "RowsLayoutRow", "spec": spec}
 
 
@@ -262,6 +302,20 @@ def presence_var(name, metric):
         "regex": "", "skipUrlSync": True, "sort": "disabled"}}
 
 
+def pii_var(name, expr):
+    """Hidden var: non-empty (matches .+) ONLY when <expr> returns series, i.e. when the
+    redaction condition holds. Used with row(hide_when=[...]) -> notMatches so panels hide
+    only on explicit redaction and stay visible when the pii_filter gauge is absent."""
+    return {"kind": "QueryVariable", "spec": {
+        "name": name, "label": name, "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": "query_result(%s)" % expr, "refId": name}},
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}}
+
+
 def custom_var(name, label, csv, current_text, current_value, multi=False, allval=False):
     opts = [{"selected": (v == current_value), "text": t, "value": v} for (t, v) in csv]
     return {"kind": "CustomVariable", "spec": {
@@ -281,6 +335,7 @@ def build_variables():
     v = [
         ds_var("ds_prometheus", "Prometheus", "prometheus", PROM_DS_TEXT, PROM_DS_VALUE),
         ds_var("ds_loki", "Loki", "loki", LOKI_DS_TEXT, LOKI_DS_VALUE),
+        ds_var("ds_tempo", "Tempo", "tempo", TEMPO_DS_TEXT, TEMPO_DS_VALUE),
         custom_var("topn", "Top N", [("5", "5"), ("10", "10"), ("15", "15"), ("20", "20"), ("30", "30")], "10", "10"),
         query_var("os_type", "OS", "label_values(tailscale_device_online_ratio, os_type)"),
         query_var("host_name", "Host", "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)"),
@@ -289,6 +344,9 @@ def build_variables():
         query_var("net_transport", "Transport", "label_values(tailscale_network_flows_total, network_transport)"),
         query_var("traffic_type", "Traffic type", "label_values(tailscale_network_flows_total, tailscale_traffic_type)"),
         query_var("collector", "Collector", "label_values(tailscale2otel_scrape_success_ratio, tailscale_collector)"),
+        query_var("tailnet", "Tailnet", "label_values(target_info, tailscale_tailnet)"),
+        query_var("provider", "Provider", "label_values(target_info, tailscale2otel_provider)"),
+        query_var("posture_attr", "Posture attr", "label_values(tailscale_device_attribute_ratio, attribute)"),
         custom_var("log_event", "Log event",
                    [("All", ".+"), ("audit", "tailscale.config.audit"), ("flow", "tailscale.network.flow"),
                     ("posture", "tailscale.device.posture"), ("key expiring", "tailscale.key.expiring"),
@@ -321,9 +379,62 @@ def build_variables():
         ("has_services", "tailscale_services_count_ratio"),
         ("has_tailnet_lock", "tailscale_tailnet_lock_errors_ratio"),
         ("has_derp_rollup", "tailscale_derp_region_devices_ratio"),
+        ("has_connectivity", "tailscale_device_connectivity_hard_nat_ratio"),
+        ("has_exit", "tailscale_device_exit_node_ratio"),
+        ("has_subnet", "tailscale_subnet_routes_advertised"),
+        ("has_exit_io", "tailscale_exit_node_io_bytes_total"),
+        ("has_acl_risk", "tailscale_acl_unrestricted_rules_ratio"),
+        ("has_audit_changes", "tailscale_config_audit_changes_total"),
+        ("has_invites_dev", "tailscale_device_invites_count_ratio"),
+        ("has_key_scopes", "tailscale_key_scopes_ratio"),
+        ("has_dns_resolver", "tailscale_dns_resolver_ratio"),
+        ("has_version_skew", "tailscale_device_version_skew_ratio"),
+        ("has_selfobs", "tailscale2otel_series_active"),
+        ("has_api_hist", "tailscale2otel_api_duration_seconds_count"),
+        ("has_export_hist", "tailscale2otel_export_duration_seconds_count"),
+        ("has_recv_dur", "tailscale_stream_request_duration_seconds_count"),
+        ("has_ingest", "tailscale2otel_ingest_records_total"),
+        ("has_staleness", "tailscale2otel_scrape_staleness_seconds"),
+        ("has_pii", "tailscale2otel_pii_filter_category_ratio"),
+        ("has_key_expiry_hist", "tailscale_devices_key_expiry_days_count"),
+        # Phase 1H additions
+        ("has_rdns", "tailscale_rdns_cache_entries_ratio"),
+        ("has_device_attr", "tailscale_device_attribute_ratio"),
+        ("has_svc", "tailscale_service_ports"),
+        ("has_posture_int", "tailscale_posture_integration_matched_ratio"),
+        ("has_dropped", "tailscaled_outbound_dropped_packets_total"),
     ]
     for (name, metric) in presence:
         v.append(presence_var(name, metric))
+    # has_multitailnet gates on >1 distinct tailnet (not a metric existing), so it is a
+    # custom query_result var rather than a presence_var.
+    v.append({"kind": "QueryVariable", "spec": {
+        "name": "has_multitailnet", "label": "has_multitailnet", "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": "query_result(count(count by (tailscale_tailnet) (target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
+                           "refId": "has_multitailnet"}},
+        # FIX-4: exclude "" and "-" (single-tailnet placeholder) so stale/placeholder target_info
+        # series don't false-positive has_multitailnet on single-tailnet deployments.
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}})
+    pii_defs = [
+        ("pii_host", PII + '{category="hostnames"} == 0'),
+        ("pii_node", PII + '{category="node_ids"} == 0'),
+        ("pii_perdevice",
+         '(%s{category="hostnames"} == 0) and ignoring(category) (%s{category="node_ids"} == 0)' % (PII, PII)),
+        ("pii_emails", PII + '{category="emails"} == 0'),
+        ("pii_usernames", PII + '{category="user_display_names"} == 0'),
+        ("pii_actor",
+         '(%s{category="emails"} == 0) and ignoring(category) (%s{category="user_display_names"} == 0)' % (PII, PII)),
+        ("pii_int_ips", PII + '{category="internal_ips"} == 0'),
+        ("pii_ext_ips", PII + '{category="external_ips"} == 0'),
+        ("pii_ts_ips", PII + '{category="tailscale_ips"} == 0'),
+        ("pii_topology", PII + '{category="network_topology"} == 0'),
+    ]
+    for (name, expr) in pii_defs:
+        v.append(pii_var(name, expr))
     return v
 
 
