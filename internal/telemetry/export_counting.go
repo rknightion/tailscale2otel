@@ -3,11 +3,25 @@ package telemetry
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
+
+// exportObserver records one completed OTLP export: its signal ("metrics" |
+// "logs"), outcome ("success" | "failure"), and wall-clock duration in seconds.
+// Wired late (in NewProvider, after the Emitter exists) via setObserver, so it
+// is nil until then and every call site is nil-guarded.
+type exportObserver func(signal, outcome string, seconds float64)
+
+func exportOutcome(err error) string {
+	if err != nil {
+		return "failure"
+	}
+	return "success"
+}
 
 // ExportStats is the cumulative count of data points and log records handed to
 // the OTLP exporters since process start. Zero-valued when self-observability is
@@ -22,15 +36,23 @@ type ExportStats struct {
 type countingMetricExporter struct {
 	sdkmetric.Exporter
 	datapoints atomic.Int64
+	obs        atomic.Pointer[exportObserver]
 }
 
 func newCountingMetricExporter(inner sdkmetric.Exporter) *countingMetricExporter {
 	return &countingMetricExporter{Exporter: inner}
 }
 
+func (c *countingMetricExporter) setObserver(o exportObserver) { c.obs.Store(&o) }
+
 func (c *countingMetricExporter) Export(ctx context.Context, rm *metricdata.ResourceMetrics) error {
 	c.datapoints.Add(countDataPoints(rm))
-	return c.Exporter.Export(ctx, rm)
+	start := time.Now()
+	err := c.Exporter.Export(ctx, rm)
+	if o := c.obs.Load(); o != nil {
+		(*o)("metrics", exportOutcome(err), time.Since(start).Seconds())
+	}
+	return err
 }
 
 func (c *countingMetricExporter) count() int64 { return c.datapoints.Load() }
@@ -39,15 +61,23 @@ func (c *countingMetricExporter) count() int64 { return c.datapoints.Load() }
 type countingLogExporter struct {
 	sdklog.Exporter
 	records atomic.Int64
+	obs     atomic.Pointer[exportObserver]
 }
 
 func newCountingLogExporter(inner sdklog.Exporter) *countingLogExporter {
 	return &countingLogExporter{Exporter: inner}
 }
 
+func (c *countingLogExporter) setObserver(o exportObserver) { c.obs.Store(&o) }
+
 func (c *countingLogExporter) Export(ctx context.Context, recs []sdklog.Record) error {
 	c.records.Add(int64(len(recs)))
-	return c.Exporter.Export(ctx, recs)
+	start := time.Now()
+	err := c.Exporter.Export(ctx, recs)
+	if o := c.obs.Load(); o != nil {
+		(*o)("logs", exportOutcome(err), time.Since(start).Seconds())
+	}
+	return err
 }
 
 func (c *countingLogExporter) count() int64 { return c.records.Load() }

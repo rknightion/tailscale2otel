@@ -30,6 +30,10 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	tr.Observe("tailscale.example", telemetry.Attrs{"a": "x"})
 	tr.Report(rec.Emitter())
 
+	// Exercise the export.duration histogram so docExportDuration is covered by
+	// the declaration<->emission drift guard.
+	telemetry.EmitExportDuration(rec.Emitter(), "metrics", "success", 0.01)
+
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range telemetry.Catalog() {
 		declared[m.Name] = m

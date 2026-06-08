@@ -6,7 +6,15 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/otel"
+
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 )
+
+// exportDurationBucketsSeconds are the explicit histogram bucket boundaries for
+// tailscale2otel.export.duration. Tuned for OTLP-to-backend round trips (a few
+// ms to seconds). Bounds bind on first instrument creation, so this slice must
+// be passed verbatim on every record (it is — only EmitExportDuration records it).
+var exportDurationBucketsSeconds = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 
 // InstallExportErrorHandler sets the global OpenTelemetry error handler so that
 // every otel.Handle(err) increments the "tailscale2otel.export.failures"
@@ -55,6 +63,20 @@ func EmitBuildInfo(e Emitter, goVersion string) {
 		attrs["go.version"] = goVersion
 	}
 	e.Gauge(docBuildInfo.Name, docBuildInfo.Unit, docBuildInfo.Description, 1, attrs)
+}
+
+// EmitExportDuration records one OTLP export's wall-clock duration into the
+// tailscale2otel.export.duration histogram, labeled by signal ("metrics" |
+// "logs") and outcome ("success" | "failure"). Called from the export decorators'
+// observer (wired in NewProvider) once per export cycle per signal. Uses the
+// context-free Histogram: exports run on the reader/processor goroutine with no
+// span context, so there are no exemplars to capture.
+func EmitExportDuration(e Emitter, signal, outcome string, seconds float64) {
+	e.Histogram(docExportDuration.Name, docExportDuration.Unit, docExportDuration.Description,
+		seconds, exportDurationBucketsSeconds, Attrs{
+			semconv.AttrExportSignal:  signal,
+			semconv.AttrExportOutcome: outcome,
+		})
 }
 
 // EmitExportStats records the per-interval deltas for the OTLP export-volume

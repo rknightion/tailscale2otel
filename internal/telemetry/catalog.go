@@ -49,6 +49,14 @@ var (
 		Description: "Log records handed to the OTLP log exporter (the log-volume cost driver; flow/audit logs dominate). Counts every record per export batch.",
 		Group:       groupSelfObs,
 	}
+	docExportDuration = metricdoc.Metric{
+		Name:        "tailscale2otel.export.duration",
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Wall-clock duration of each OTLP `Export()` call to the backend, by signal and outcome. `signal`=metrics|logs, `outcome`=success|failure. One observation per export cycle per signal; use it for export-latency p50/p99 and to tell a slow backend from a failing one.",
+		Attributes:  []string{semconv.AttrExportSignal, semconv.AttrExportOutcome},
+		Group:       groupSelfObs,
+	}
 	docSeriesActive = metricdoc.Metric{
 		Name:        seriesActiveMetric,
 		Unit:        semconv.UnitSeries,
@@ -77,7 +85,7 @@ var (
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docSeriesActive, docSeriesLimit, docSeriesOverflowing}
+	return []metricdoc.Metric{docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docExportDuration, docSeriesActive, docSeriesLimit, docSeriesOverflowing}
 }
 
 // LogCatalog returns the log events this package emits (none).

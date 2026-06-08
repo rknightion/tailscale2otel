@@ -57,6 +57,15 @@ const (
 	// AttrIngestSignal names the record type on tailscale2otel.ingest.records:
 	// "flow", "audit", or "webhook".
 	AttrIngestSignal = "signal"
+	// AttrExportSignal labels tailscale2otel.export.duration by OTLP signal type
+	// ("metrics" | "logs"). A separate constant from AttrIngestSignal — kept
+	// subsystem-scoped (like AttrIngestSource/AttrIngestSignal) so the export and
+	// ingest call sites read self-evidently and can diverge later; the shared
+	// "signal" wire key is intentional (both are the OTEL "signal" dimension).
+	AttrExportSignal = "signal"
+	// AttrExportOutcome labels tailscale2otel.export.duration by call result
+	// ("success" | "failure").
+	AttrExportOutcome = "outcome"
 	// AttrMetricGroup names the docs/catalog group a metric belongs to, used on
 	// tailscale2otel.series.by_group (e.g. "Devices", "Network", "Self-observability").
 	AttrMetricGroup = "metric.group"

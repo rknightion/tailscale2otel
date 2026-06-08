@@ -145,3 +145,29 @@ func TestEmitBuildInfo_SkipsEmptyGoVersion(t *testing.T) {
 		t.Fatalf("go.version should be absent for empty value, attrs=%v", points[0].Attrs)
 	}
 }
+
+func TestEmitExportDuration(t *testing.T) {
+	rec := telemetrytest.New()
+	telemetry.EmitExportDuration(rec.Emitter(), "metrics", "success", 0.042)
+
+	pts := rec.MetricPoints("tailscale2otel.export.duration")
+	if len(pts) != 1 {
+		t.Fatalf("got %d points, want 1", len(pts))
+	}
+	p := pts[0]
+	if p.Kind != "histogram" {
+		t.Errorf("kind = %q, want histogram", p.Kind)
+	}
+	if p.Unit != "s" {
+		t.Errorf("unit = %q, want s", p.Unit)
+	}
+	if got := p.Attrs["signal"]; got != "metrics" {
+		t.Errorf("signal = %q, want metrics", got)
+	}
+	if got := p.Attrs["outcome"]; got != "success" {
+		t.Errorf("outcome = %q, want success", got)
+	}
+	if p.Count != 1 {
+		t.Errorf("count = %d, want 1", p.Count)
+	}
+}

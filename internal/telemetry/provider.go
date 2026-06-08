@@ -182,12 +182,28 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		card = NewCardinalityTrackerWithCap(opts.CardinalityLimit)
 	}
 
+	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger)
+
+	if opts.SelfObsEnabled {
+		// Late-bind the duration observer now that the Emitter exists (the
+		// decorators were constructed before it). Each decorator already knows its
+		// own signal; EmitExportDuration records the histogram on the next cycle.
+		// Caveat: the observation a given Export() produces is exported on the
+		// following cycle, so the final flush during Shutdown is observed but its
+		// data point typically never ships (acceptable — one lost point at exit).
+		obs := func(signal, outcome string, seconds float64) {
+			EmitExportDuration(emitter, signal, outcome, seconds)
+		}
+		metricCounter.setObserver(obs)
+		logCounter.setObserver(obs)
+	}
+
 	return &Provider{
 		mp:      mp,
 		lp:      lp,
 		tp:      tp,
 		tracer:  tracer,
-		emitter: newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger),
+		emitter: emitter,
 		card:    card,
 
 		metricCounter: metricCounter,
