@@ -50,7 +50,13 @@ Every rule is the canonical Grafana 3-node pipeline — **A** (datasource query)
 **B** (reduce, `last`) → **C** (threshold), `condition: C` — so it round-trips
 cleanly through the Grafana UI/API. Datasource UIDs are the portable Grafana Cloud
 defaults (`grafanacloud-prom` / `grafanacloud-logs`); swap them for a self-hosted
-stack. All rules carry `service: tailscale2otel` plus a `severity` label.
+stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`domain`**
+label (`security` / `infra` / `observability`); rules not worthy of automatic
+investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
+"true"` so IRM routing / auto-investigation stays focused. The generated set currently
+has **59 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
+`-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
+`gen/build_rules.py` is the source of truth.
 
 **Default-disabled by design.** Only a high-signal *starter set* ships enabled
 (`isPaused: false`); the rest are `isPaused: true` — enable them in the UI when you
@@ -63,8 +69,8 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 | Rule | Severity | Default | Fires when |
 |---|---|---|---|
 | `CollectorScrapeStale` | warning | ✅ on | a collector hasn't completed a scrape in >1h (wedged; success gauge can stay stale at 1) |
-| `MetricCardinalityCapped` | warning | ✅ on | a metric pinned at the 10k series cap → silent per-series loss |
-| `SeriesBudgetHigh` | warning | ⏸ off | busiest metric > 8000 series (approaching the cap) |
+| `MetricCardinalityCapped` | warning | ✅ on | `series_overflowing_ratio` > 0 → a metric is collapsing excess series (silent per-series loss) |
+| `SeriesBudgetHigh` | warning | ✅ on | a metric's active-series / `series_limit` headroom ratio > 0.8 (approaching its cap) |
 | `TailscaleAPIAuthFailing` | critical | ✅ on | API returns 401/403 → credentials broken, all polling fails |
 | `TailscaleAPIRateLimited` | warning | ⏸ off | API returns 429 (throttled) |
 | `TailscaleAPIServerErrors` | warning | ⏸ off | API 5xx rate > 0.05/s |

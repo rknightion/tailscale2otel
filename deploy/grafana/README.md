@@ -19,10 +19,13 @@ not the JSON. Only the Python standard library is required.
 | **Overview** | At-a-glance tailnet + exporter health: device counts, key expiry, ACL age, flow-logging state, scrape/export errors, active-series (cardinality), throughput, audit/flow activity, and a features/settings matrix. |
 | **Fleet & Devices** | Inventory (online/offline/updates/users, OS breakdown), trends, device health tables (updates, key expiry, last-seen), DERP latency, subnet routes¹, device posture¹. |
 | **Network & Flows** | Flow summary, then **ROLLUP** (bounded top-N) and **RAW** (full-cardinality) throughput/talkers sections — each shown only when that flow-metric mode is present — plus unique-peer/port counts and the `__other__` rollup share. |
-| **Events & Logs** | Audit/webhook event rates, stream-ingestion health¹, a Loki log explorer (switchable by `event_name` + free-text filter), and dedicated flow- and posture-log streams. |
-| **Policy & Config** | ACL (last-changed/size/rules), DNS (MagicDNS/nameservers/search/zones), settings & features, users (by role/status/type + per-user¹), and API keys (by type + expiry). |
-| **Node Metrics**¹ | Per-node scraper health and the forwarded `tailscaled_*` series (in/out bytes & packets, routes, health messages, DERP region, peer-relay endpoints). |
-| **Exporter Diagnostics** | Liveness/build, per-collector scrape duration/success/errors, API requests by status/endpoint, cardinality & dedup, enrichment cache, and the Go runtime (heap/GC/goroutines). |
+| **Events & Logs** | Audit/webhook event rates, stream-ingestion health¹, receiver health (in-flight/latency/rejected)¹, ingestion volume¹, dedup effectiveness, a Loki log explorer (switchable by `event_name` + free-text filter), and dedicated flow- and posture-log streams. |
+| **Security & Audit** | ACL-hygiene risk (wildcard/unrestricted/auto-approver/SSH/posture-gated), config-change & device-churn rates, device-share invites, MDM posture attributes¹, posture-integration sync/match¹, key & access expiry, tailnet-lock¹, and audit metric-vs-log correlation. PII-gated actor/host rows hide on explicit redaction. |
+| **Policy & Config** | ACL (last-changed/size/rules + inventory), DNS (MagicDNS/nameservers/search/zones + resolvers¹/override), settings & features, users (by role/status/type + per-user¹), API keys (type/auth-kind/scopes¹/preauthorized + expiry), VIP services¹, and external-tailnets/webhook settings. |
+| **Node Metrics**¹ | Per-node scraper health and the forwarded `tailscaled_*` series (in/out bytes & packets, dropped packets, routes, health messages, DERP region, peer-relay endpoints). |
+| **Exporter Diagnostics** | Liveness/build, config health & process CPU/uptime, per-collector scrape duration/success/errors/staleness, API & export latency (p50/p95/p99) with exemplars, rDNS cache¹, PII-filter status¹, cardinality & dedup, enrichment cache, the Go runtime (heap/GC/goroutines), and **traces** (scrape→API waterfall, TraceQL-metrics API/cadence/stream batch)¹. |
+| **Cardinality & Cost** | Per-metric series vs cap, overflow table, series-by-group cost driver, per-metric headroom, flow-cardinality drivers, dedup sets, and an ingest-vs-export DPM/LPM cost view. |
+| **Tailnets**¹ | MSP scorecard (one row per tailnet: online devices, scrape staleness, API errors) — appears only on multi-tailnet deployments. |
 
 ¹ Conditionally rendered — appears only when that feature's data is present.
 

@@ -41,6 +41,7 @@ PROM_DS_TEXT = "grafanacloud-prom"
 PROM_DS_VALUE = "grafanacloud-prom"
 LOKI_DS_TEXT = "grafanacloud-logs"
 LOKI_DS_VALUE = "grafanacloud-logs"
+TEMPO_DS_TEXT = TEMPO_DS_VALUE = "grafanacloud-traces"
 
 RI = "$__rate_interval"
 WIN_FAST = "10m"   # last_over_time window for frequently-scraped series (devices, nodes, scrape, runtime)
@@ -71,6 +72,21 @@ def sv(expr):
     return "max without (service_version) (%s)" % expr
 
 
+PII = "tailscale2otel_pii_filter_category_ratio"  # PII filter self-obs gauge
+
+
+def tn_join(expr):
+    """Promote tailscale_tailnet onto a per-series expr via the target_info join, then
+    filter by $tailnet. Use for fleet/self-obs panels that should respect the $tailnet var.
+    For single-tailnet deployments $tailnet=All -> .* -> no-op."""
+    # target_info has >1 series per (job,instance) on Grafana Cloud (one carries
+    # tailscale_tailnet, the other omits it), which makes group_left 422 with a
+    # "duplicate series" error. Restrict to the labelled series so the RHS is unique.
+    return ('(%s) * on (job, instance) group_left(tailscale_tailnet) '
+            'target_info{service_name="tailscale2otel", tailscale_tailnet!="", '
+            'tailscale_tailnet=~"$tailnet"}') % expr
+
+
 # ---------------------------------------------------------------------------
 # low-level builders
 # ---------------------------------------------------------------------------
@@ -89,6 +105,16 @@ def loki_t(expr, refid="A", instant=False, maxlines=200, legend=""):
                       "datasource": {"name": "${ds_loki}"},
                       "spec": {"expr": expr, "queryType": ("instant" if instant else "range"),
                                "maxLines": maxlines, "legendFormat": legend}}}}
+
+
+def tempo_t(query, refid="A", query_type="traceql", table_type="traces"):
+    """Tempo query (PanelQuery-wrapped, same shape as prom_t/loki_t so panel() can
+    consume it). query_type 'traceql' (trace list/table) or 'traceqlSearch'; for
+    TraceQL-metrics timeseries set query like '{...} | rate() by (...)'."""
+    return {"kind": "PanelQuery", "spec": {"refId": refid, "hidden": False,
+            "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                      "datasource": {"name": "${ds_tempo}"},
+                      "spec": {"query": query, "queryType": query_type, "tableType": table_type}}}}
 
 
 def thr(steps, mode="absolute"):
@@ -205,16 +231,36 @@ def place(panel_specs):
     return {"kind": "GridLayout", "spec": {"items": items}}
 
 
-def cond_present(var):
-    return {"kind": "ConditionalRenderingGroup", "spec": {"visibility": "show", "condition": "and",
-            "items": [{"kind": "ConditionalRenderingVariable",
-                       "spec": {"variable": var, "operator": "matches", "value": ".+"}}]}}
+def hq(q, metric, by="", win=RI):
+    """histogram_quantile over <metric>_bucket. `by` = extra group labels (besides le)."""
+    grp = ("le, " + by) if by else "le"
+    return "histogram_quantile(%s, sum by (%s) (rate(%s_bucket[%s])))" % (q, grp, metric, win)
 
 
-def row(title, panel_specs, present=None, collapse=False):
+def cond_item(var, op="matches", value=".+"):
+    return {"kind": "ConditionalRenderingVariable",
+            "spec": {"variable": var, "operator": op, "value": value}}
+
+
+def cond_group(items, condition="and"):
+    return {"kind": "ConditionalRenderingGroup",
+            "spec": {"visibility": "show", "condition": condition, "items": items}}
+
+
+def cond_present(var):  # back-compat: show when presence var is non-empty
+    return cond_group([cond_item(var)])
+
+
+def row(title, panel_specs, present=None, hide_when=None, collapse=False):
     spec = {"title": title, "collapse": collapse, "layout": place(panel_specs)}
+    items = []
     if present:
-        spec["conditionalRendering"] = cond_present(present)
+        items.append(cond_item(present))
+    for hv in (hide_when or []):
+        # show UNLESS the redaction var is non-empty (==0 observed) -> hide-only-on-explicit-redaction
+        items.append(cond_item(hv, op="notMatches"))
+    if items:
+        spec["conditionalRendering"] = cond_group(items)
     return {"kind": "RowsLayoutRow", "spec": spec}
 
 
@@ -262,6 +308,20 @@ def presence_var(name, metric):
         "regex": "", "skipUrlSync": True, "sort": "disabled"}}
 
 
+def pii_var(name, expr):
+    """Hidden var: non-empty (matches .+) ONLY when <expr> returns series, i.e. when the
+    redaction condition holds. Used with row(hide_when=[...]) -> notMatches so panels hide
+    only on explicit redaction and stay visible when the pii_filter gauge is absent."""
+    return {"kind": "QueryVariable", "spec": {
+        "name": name, "label": name, "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": "query_result(%s)" % expr, "refId": name}},
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}}
+
+
 def custom_var(name, label, csv, current_text, current_value, multi=False, allval=False):
     opts = [{"selected": (v == current_value), "text": t, "value": v} for (t, v) in csv]
     return {"kind": "CustomVariable", "spec": {
@@ -281,6 +341,7 @@ def build_variables():
     v = [
         ds_var("ds_prometheus", "Prometheus", "prometheus", PROM_DS_TEXT, PROM_DS_VALUE),
         ds_var("ds_loki", "Loki", "loki", LOKI_DS_TEXT, LOKI_DS_VALUE),
+        ds_var("ds_tempo", "Tempo", "tempo", TEMPO_DS_TEXT, TEMPO_DS_VALUE),
         custom_var("topn", "Top N", [("5", "5"), ("10", "10"), ("15", "15"), ("20", "20"), ("30", "30")], "10", "10"),
         query_var("os_type", "OS", "label_values(tailscale_device_online_ratio, os_type)"),
         query_var("host_name", "Host", "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)"),
@@ -289,6 +350,9 @@ def build_variables():
         query_var("net_transport", "Transport", "label_values(tailscale_network_flows_total, network_transport)"),
         query_var("traffic_type", "Traffic type", "label_values(tailscale_network_flows_total, tailscale_traffic_type)"),
         query_var("collector", "Collector", "label_values(tailscale2otel_scrape_success_ratio, tailscale_collector)"),
+        query_var("tailnet", "Tailnet", "label_values(target_info, tailscale_tailnet)"),
+        query_var("provider", "Provider", "label_values(target_info, tailscale2otel_provider)"),
+        query_var("posture_attr", "Posture attr", "label_values(tailscale_device_attribute_ratio, attribute)"),
         custom_var("log_event", "Log event",
                    [("All", ".+"), ("audit", "tailscale.config.audit"), ("flow", "tailscale.network.flow"),
                     ("posture", "tailscale.device.posture"), ("key expiring", "tailscale.key.expiring"),
@@ -321,9 +385,62 @@ def build_variables():
         ("has_services", "tailscale_services_count_ratio"),
         ("has_tailnet_lock", "tailscale_tailnet_lock_errors_ratio"),
         ("has_derp_rollup", "tailscale_derp_region_devices_ratio"),
+        ("has_connectivity", "tailscale_device_connectivity_hard_nat_ratio"),
+        ("has_exit", "tailscale_device_exit_node_ratio"),
+        ("has_subnet", "tailscale_subnet_routes_advertised"),
+        ("has_exit_io", "tailscale_exit_node_io_bytes_total"),
+        ("has_acl_risk", "tailscale_acl_unrestricted_rules_ratio"),
+        ("has_audit_changes", "tailscale_config_audit_changes_total"),
+        ("has_invites_dev", "tailscale_device_invites_count_ratio"),
+        ("has_key_scopes", "tailscale_key_scopes_ratio"),
+        ("has_dns_resolver", "tailscale_dns_resolver_ratio"),
+        ("has_version_skew", "tailscale_device_version_skew_ratio"),
+        ("has_selfobs", "tailscale2otel_series_active"),
+        ("has_api_hist", "tailscale2otel_api_duration_seconds_count"),
+        ("has_export_hist", "tailscale2otel_export_duration_seconds_count"),
+        ("has_recv_dur", "tailscale_stream_request_duration_seconds_count"),
+        ("has_ingest", "tailscale2otel_ingest_records_total"),
+        ("has_staleness", "tailscale2otel_scrape_staleness_seconds"),
+        ("has_pii", "tailscale2otel_pii_filter_category_ratio"),
+        ("has_key_expiry_hist", "tailscale_devices_key_expiry_days_count"),
+        # Phase 1H additions
+        ("has_rdns", "tailscale_rdns_cache_entries_ratio"),
+        ("has_device_attr", "tailscale_device_attribute_ratio"),
+        ("has_svc", "tailscale_service_ports"),
+        ("has_posture_int", "tailscale_posture_integration_matched_ratio"),
+        ("has_dropped", "tailscaled_outbound_dropped_packets_total"),
     ]
     for (name, metric) in presence:
         v.append(presence_var(name, metric))
+    # has_multitailnet gates on >1 distinct tailnet (not a metric existing), so it is a
+    # custom query_result var rather than a presence_var.
+    v.append({"kind": "QueryVariable", "spec": {
+        "name": "has_multitailnet", "label": "has_multitailnet", "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": "query_result(count(count by (tailscale_tailnet) (target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
+                           "refId": "has_multitailnet"}},
+        # FIX-4: exclude "" and "-" (single-tailnet placeholder) so stale/placeholder target_info
+        # series don't false-positive has_multitailnet on single-tailnet deployments.
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}})
+    pii_defs = [
+        ("pii_host", PII + '{category="hostnames"} == 0'),
+        ("pii_node", PII + '{category="node_ids"} == 0'),
+        ("pii_perdevice",
+         '(%s{category="hostnames"} == 0) and ignoring(category) (%s{category="node_ids"} == 0)' % (PII, PII)),
+        ("pii_emails", PII + '{category="emails"} == 0'),
+        ("pii_usernames", PII + '{category="user_display_names"} == 0'),
+        ("pii_actor",
+         '(%s{category="emails"} == 0) and ignoring(category) (%s{category="user_display_names"} == 0)' % (PII, PII)),
+        ("pii_int_ips", PII + '{category="internal_ips"} == 0'),
+        ("pii_ext_ips", PII + '{category="external_ips"} == 0'),
+        ("pii_ts_ips", PII + '{category="tailscale_ips"} == 0'),
+        ("pii_topology", PII + '{category="network_topology"} == 0'),
+    ]
+    for (name, expr) in pii_defs:
+        v.append(pii_var(name, expr))
     return v
 
 
@@ -408,8 +525,120 @@ def tab_overview():
                unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=0, points="always"),
                options=ts_opts(placement="right")), 12, 6),
     ]
+    # Step 1: Multi-tailnet / MSP summary row (gated — only visible when >1 tailnet detected)
+    msp = [
+        (panel("Tailnets observed", "stat",
+               [prom_t('count(count by (tailscale_tailnet) '
+                       '(target_info{service_name="tailscale2otel", tailscale_tailnet!="", tailscale_tailnet!="-"})) or vector(1)')],
+               unit="short", options=stat_opts(color="value"),
+               desc="Number of distinct tailnets observed by this exporter instance."), 3, 5),
+        (panel("Tailnets", "table",
+               [prom_t('count by (tailscale_tailnet) (target_info{tailscale_tailnet=~"$tailnet"})',
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=["Time", "__name__", "job", "instance", "service_instance_id",
+                            "service_name", "service_namespace"],
+                   rename={"tailscale_tailnet": "Tailnet", "Value": "Series"})],
+               desc="Per-tailnet series count from target_info."), 9, 5),
+        (panel("Providers", "table",
+               [prom_t('count by (tailscale2otel_provider) (target_info{tailscale2otel_provider=~"$provider"})',
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=["Time", "__name__", "job", "instance", "service_instance_id",
+                            "service_name", "service_namespace"],
+                   rename={"tailscale2otel_provider": "Provider", "Value": "Series"})],
+               desc="Control-plane provider (tailscale, headscale) for each instance."), 6, 5),
+        (panel("Devices per tailnet", "bargauge",
+               [prom_t('sum by (tailscale_tailnet) (last_over_time(tailscale_device_online_ratio[%s])) or vector(0)' % WIN_FAST,
+                       legend="{{tailscale_tailnet}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Device count per tailnet (online devices visible to the exporter)."), 6, 5),
+    ]
+    # Step 2: Golden signals "Service health" row (gated — only when self-obs metrics present)
+    golden = [
+        (panel("API p95 latency", "stat",
+               [prom_t(hq("0.95", "tailscale2otel_api_duration_seconds"), instant=True)],
+               unit="s", thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
+               options=stat_opts(color="background"),
+               desc="95th-percentile Tailscale API request latency."), 3, 5),
+        (panel("Export p99 latency", "stat",
+               [prom_t(hq("0.99", "tailscale2otel_export_duration_seconds"), instant=True)],
+               unit="s", thresholds=thr([(None, "green"), (2, "yellow"), (10, "red")]),
+               options=stat_opts(color="background"),
+               desc="99th-percentile OTLP export duration."), 3, 5),
+        (panel("Scrape budget (max)", "stat",
+               [prom_t("max(tailscale2otel_scrape_budget_ratio) or vector(0)", instant=True)],
+               unit="percentunit",
+               thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Worst-case fraction of scrape budget consumed across all collectors."), 3, 5),
+        (panel("Series headroom", "stat",
+               [prom_t("max(tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit or vector(0)",
+                       instant=True)],
+               unit="percentunit",
+               thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of the per-metric series limit consumed (0 = plenty of headroom)."), 3, 5),
+        (panel("Export cost (DPM + log rec/s)", "timeseries",
+               [prom_t("rate(tailscale2otel_export_datapoints_total[%s])" % RI, legend="datapoints/s"),
+                prom_t("rate(tailscale2otel_export_log_records_total[%s])" % RI, legend="logs/s")],
+               unit="cps", custom=ts_custom(fill=15), options=ts_opts(),
+               desc="Telemetry export volume — datapoints/s and log records/s going to the OTLP backend."), 12, 5),
+    ]
+    # Step 3: Security scorecard row (gated — only when ACL risk metrics present)
+    scorecard = [
+        (panel("Unrestricted ACL rules", "stat",
+               [prom_t("sum(%(e)s) or vector(0)" % {"e": sv(lot("tailscale_acl_unrestricted_rules_ratio", WIN_SLOW))},
+                       instant=True)],
+               unit="short",
+               thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Total ACL rules that grant unrestricted access (wildcard src/dst). Any non-zero value warrants review."), 4, 5),
+        (panel("Auto-approved exit nodes", "stat",
+               [prom_t('sum(%(e)s) or vector(0)' % {
+                   "e": sv(lot('tailscale_acl_autoapprovers_ratio{tailscale_acl_autoapprover_kind="exit_node"}', WIN_SLOW))},
+                       instant=True)],
+               unit="short",
+               thresholds=thr([(None, "green"), (1, "yellow"), (3, "red")]),
+               options=stat_opts(color="background"),
+               desc="ACL auto-approver entries for exit-node routes. Review whether automatic exit-node approval is intended."), 4, 5),
+        (panel("Unapproved subnet routes", "stat",
+               [prom_t("max(%(e)s) or vector(0)" % {"e": sv(lot("tailscale_subnet_routes_unapproved", WIN_SLOW))},
+                       instant=True)],
+               unit="short",
+               thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Subnet routes advertised but not yet approved by an admin."), 4, 5),
+        (panel("Untagged devices", "stat",
+               [prom_t("max(%(e)s) or vector(0)" % {"e": sv(lot("tailscale_devices_untagged_ratio"))},
+                       instant=True)],
+               unit="short",
+               thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
+               options=stat_opts(color="background"),
+               desc="Devices not associated with any ACL tag — harder to audit and apply granular policies to."), 4, 5),
+        (panel("Pending exit-node shares", "stat",
+               [prom_t('sum(%(e)s) or vector(0)' % {
+                   "e": sv(lot('tailscale_device_invites_count_ratio{tailscale_device_invite_accepted="false",tailscale_device_invite_allow_exit_node="true"}', WIN_SLOW))},
+                       instant=True)],
+               unit="short",
+               thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Pending device share invitations that grant exit-node access."), 4, 5),
+        (panel("SSH wildcard enabled", "stat",
+               [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_acl_ssh_wildcard_ratio", WIN_SLOW)},
+                       instant=True)],
+               unit="short",
+               mappings=BOOL_MAP,
+               thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Whether the tailnet ACL contains a wildcard SSH rule."), 4, 5),
+    ]
+    # Step 4: Wire all rows into the return list (keep existing 4 rows + add 3 new)
     return [row("Tailnet health", health), row("Exporter health", exporter),
-            row("Activity", activity), row("Capabilities", capabilities)]
+            row("Activity", activity), row("Capabilities", capabilities),
+            row("MSP / multi-tailnet summary", msp, present="has_multitailnet"),
+            row("Service health (golden signals)", golden, present="has_selfobs"),
+            row("Security scorecard", scorecard, present="has_acl_risk")]
 
 
 def tab_fleet():
@@ -417,6 +646,11 @@ def tab_fleet():
     # label too, so untagged devices still appear under "All".
     df = "{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}"
     on = lot("tailscale_device_online_ratio" + df)
+
+    # Shared infra label exclusion list for instant-vector tables
+    _infra = ["Time", "__name__", "job", "instance", "host_id",
+              "service_instance_id", "service_name", "service_namespace", "service_version"]
+
     inv = [
         (panel("Online", "stat", [prom_t("count(%s == 1) or vector(0)" % on)],
                unit="short", thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background")), 3, 5),
@@ -425,7 +659,9 @@ def tab_fleet():
         (panel("Updates available", "stat",
                [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_update_available_ratio" + df))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="value")), 3, 5),
-        (panel("Distinct users", "stat", [prom_t("count(count by (tailscale_user) (%s))" % on)],
+        # A. Fix: count actually-connected users (tailscale_user_connected_ratio == 1) not a device-derived proxy
+        (panel("Distinct users", "stat",
+               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_user_connected_ratio", WIN_SLOW))],
                unit="short", options=stat_opts()), 3, 5),
         (panel("Devices by OS", "bargauge",
                [prom_t("sum by (os_type) (max by (os_type, tailscale_authorized, tailscale_external) (%s))" % lot("tailscale_devices_count_ratio", WIN_SLOW), legend="{{os_type}}")],
@@ -445,6 +681,173 @@ def tab_fleet():
                [prom_t("sum by (os_type) (tailscale_devices_count_ratio)", legend="{{os_type}}")],
                unit="short", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right")), 12, 7),
     ]
+
+    # B. Fleet hygiene row (no PII gate — counts/enums only)
+    hygiene = [
+        (panel("Untagged", "stat",
+               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_untagged_ratio", WIN_SLOW)))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
+               options=stat_opts(color="background"),
+               desc="Devices not associated with any ACL tag."), 4, 5),
+        (panel("Ephemeral", "stat",
+               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_ephemeral_ratio", WIN_SLOW)))],
+               unit="short", options=stat_opts(color="value"),
+               desc="Ephemeral devices currently registered."), 4, 5),
+        (panel("Outdated (≥N behind)", "stat",
+               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_outdated_ratio", WIN_SLOW)))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Devices running a client version that is at least one minor release behind the fleet latest."), 4, 5),
+        (panel("Latest stable", "table",
+               [prom_t(sv(lot("tailscale_fleet_latest_version_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_infra + ["Value"],
+                   rename={"tailscale_client_version": "Version"})],
+               desc="The latest stable Tailscale client version seen in this fleet."), 12, 5),
+        (panel("Clients by version", "barchart",
+               [prom_t("sum by (tailscale_client_version) (max by (tailscale_client_version) (%s))"
+                       % lot("tailscale_devices_by_version_ratio", WIN_SLOW),
+                       instant=True, fmt="table")],
+               options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Fleet distribution by Tailscale client version."), 12, 7),
+        (panel("Fleet tags (rollup)", "barchart",
+               [prom_t("sum by (tailscale_tag) (max by (tailscale_tag) (%s))"
+                       % lot("tailscale_devices_by_tag_ratio", WIN_SLOW),
+                       instant=True, fmt="table")],
+               options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Device count per ACL tag across the fleet."), 12, 7),
+    ]
+
+    # C. Key-expiry distribution row (gate present="has_key_expiry_hist")
+    keylife = [
+        (panel("Keys already expired", "stat",
+               [prom_t('sum(%s) or vector(0)' % lot('tailscale_devices_key_expiry_days_bucket{le="0"}'))],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Devices whose node key has already expired (le=0 bucket)."), 6, 5),
+        (panel("Median days-to-expiry", "timeseries",
+               [prom_t(hq("0.5", "tailscale_devices_key_expiry_days"), legend="p50")],
+               unit="d", custom=ts_custom(fill=10), options=ts_opts(),
+               desc="Median days until device key expiry across the fleet."), 18, 5),
+        (panel("Devices by days-to-expiry bucket", "barchart",
+               [prom_t("sum by (le) (tailscale_devices_key_expiry_days_bucket)",
+                       instant=True, fmt="table")],
+               options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Histogram of devices bucketed by days until key expiry."), 24, 7),
+    ]
+
+    # D. Connectivity aggregate row (gate present="has_connectivity", no PII)
+    connectivity = [
+        # FIX-1: ratio numerator has extra labels so must use / on() group_left() to join
+        (panel("Direct-capable %", "stat",
+               [prom_t("%s / on() group_left() sum(%s)"
+                       % (lot("tailscale_devices_direct_capable_ratio"), lot("tailscale_devices_count_ratio")))],
+               unit="percentunit",
+               thresholds=thr([(None, "red"), (0.5, "yellow"), (0.8, "green")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of devices capable of direct (non-relay) connections."), 6, 5),
+        (panel("Hard-NAT %", "stat",
+               [prom_t("%s / on() group_left() sum(%s)"
+                       % (lot("tailscale_devices_hard_nat_ratio"), lot("tailscale_devices_count_ratio")))],
+               unit="percentunit",
+               thresholds=thr([(None, "green"), (0.2, "yellow"), (0.5, "red")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of devices behind hard NAT (require relay for inbound connections)."), 6, 5),
+        (panel("Client capability support", "barchart",
+               [prom_t("sum by (tailscale_connectivity_capability) (max by (tailscale_connectivity_capability) (%s))"
+                       % lot("tailscale_devices_client_supports_ratio", WIN_SLOW),
+                       instant=True, fmt="table")],
+               options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Number of devices supporting each connectivity capability."), 12, 5),
+        (panel("NAT → relay pressure", "timeseries",
+               [prom_t("sum(%(lot_hnat)s) / on() group_left() sum(%(lot_cnt)s)"
+                       % {"lot_hnat": lot("tailscale_devices_hard_nat_ratio", WIN_FAST),
+                          "lot_cnt": lot("tailscale_devices_count_ratio", WIN_FAST)},
+                       legend="hard-NAT %"),
+                prom_t("sum(tailscaled_peer_relay_endpoints)", legend="relay endpoints")],
+               unit="short", custom=ts_custom(fill=10), options=ts_opts(),
+               desc="Correlation between hard-NAT fraction and relay endpoint count over time."), 24, 7),
+    ]
+
+    # D (per-device part). Hard-NAT device table — separate row so PII gate only hides this table
+    needsrelay = [
+        (panel("Needs relay (hard-NAT)", "table",
+               [prom_t("%s == 1" % sv(lot('tailscale_device_connectivity_hard_nat_ratio{host_name=~"$host_name"}')),
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_infra + ["Value"],
+                   rename={"host_name": "Host"})],
+               desc="Devices behind hard NAT that require relay for inbound peer connections."), 24, 8),
+    ]
+
+    # E. Exit/subnet aggregate stats (present="has_exit", no PII)
+    exitsubnet = [
+        (panel("Exit nodes advertised", "stat",
+               [prom_t('sum(%s) or vector(0)'
+                       % sv(lot('tailscale_exit_nodes_count_ratio{tailscale_exit_node_state="advertised"}', WIN_SLOW)))],
+               unit="short", options=stat_opts(color="value"),
+               desc="Exit nodes currently in the 'advertised' state."), 6, 5),
+        (panel("Exit nodes enabled", "stat",
+               [prom_t('sum(%s) or vector(0)'
+                       % sv(lot('tailscale_exit_nodes_count_ratio{tailscale_exit_node_state="enabled"}', WIN_SLOW)))],
+               unit="short", options=stat_opts(color="value"),
+               desc="Exit nodes currently in the 'enabled' state."), 6, 5),
+        (panel("Unapproved subnet routes", "stat",
+               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_subnet_routes_unapproved", WIN_SLOW)))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Subnet routes advertised but not yet approved by an admin."), 6, 5),
+    ]
+
+    # E (per-device exit table). Separate row for PII gate
+    exitinv = [
+        (panel("Exit-node inventory", "table",
+               [prom_t("%s == 1" % sv(lot('tailscale_device_exit_node_ratio{host_name=~"$host_name"}')),
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_infra + ["Value"],
+                   rename={"host_name": "Host",
+                           "tailscale_exit_node_enabled": "Enabled"})],
+               desc="Devices currently advertising or acting as exit nodes."), 24, 8),
+    ]
+
+    # E (subnet redundancy). Separate row for topology PII gate
+    subnetredund = [
+        (panel("Subnet-route redundancy by CIDR", "barchart",
+               [prom_t("max by (tailscale_route_cidr) (%s)"
+                       % lot("tailscale_subnet_routes_routers_ratio", WIN_SLOW),
+                       instant=True, fmt="table")],
+               options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Number of routers advertising each subnet CIDR (redundancy indicator)."), 24, 7),
+    ]
+
+    # F. Version staleness — per-device table (hide on pii_perdevice)
+    versiontable = [
+        (panel("Most-behind devices (top-N)", "table",
+               [prom_t("topk($topn, %s)" % sv(lot('tailscale_device_version_skew_ratio{host_name=~"$host_name"}')),
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_infra,
+                   rename={"host_name": "Host", "Value": "Minors behind"})],
+               desc="Devices furthest behind the fleet's latest version (top-N by minor version gap)."), 24, 8),
+    ]
+
+    # F (exporter update stat) — non-PII, sits in hygiene-adjacent position; present="has_version_skew"
+    exporterver = [
+        (panel("Exporter update available", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale2otel_update_available_ratio", WIN_SLOW))],
+               mappings=BOOL_MAP,
+               thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Whether a newer version of the tailscale2otel exporter is available."), 6, 5),
+    ]
+
+    # G. Existing per-device tables (add hide_when=["pii_perdevice"])
     tables = [
         (panel("Updates available", "table",
                [prom_t("%s == 1" % sv(lot("tailscale_device_update_available_ratio" + df)), instant=True, fmt="table")],
@@ -500,10 +903,32 @@ def tab_fleet():
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])]), 8, 8),
     ]
-    return [row("Inventory", inv), row("Trends", overtime), row("Device health", tables),
-            row("Connectivity / DERP", derp, present="has_derp"),
-            row("Subnet routes", routes, present="has_routes"),
-            row("Device posture", posture, present="has_posture")]
+
+    # Wire all rows: aggregates first, then per-device (PII-gated)
+    return [
+        row("Inventory", inv),
+        row("Trends", overtime),
+        row("Fleet hygiene", hygiene),
+        row("Key-expiry distribution", keylife, present="has_key_expiry_hist"),
+        row("Connectivity", connectivity, present="has_connectivity"),
+        row("Needs relay (hard-NAT devices)", needsrelay,
+            present="has_connectivity", hide_when=["pii_perdevice"]),
+        row("Exit nodes", exitsubnet, present="has_exit"),
+        row("Exit-node inventory", exitinv,
+            present="has_exit", hide_when=["pii_perdevice"]),
+        row("Subnet redundancy", subnetredund,
+            present="has_subnet", hide_when=["pii_topology"]),
+        row("Version staleness (top-N)", versiontable,
+            present="has_version_skew", hide_when=["pii_perdevice"]),
+        row("Exporter version", exporterver, present="has_version_skew"),
+        row("Device health", tables, hide_when=["pii_perdevice"]),
+        row("Connectivity / DERP", derp,
+            present="has_derp", hide_when=["pii_perdevice"]),
+        row("Subnet routes", routes,
+            present="has_routes", hide_when=["pii_perdevice"]),
+        row("Device posture", posture,
+            present="has_posture", hide_when=["pii_perdevice"]),
+    ]
 
 
 def tab_network():
@@ -529,7 +954,39 @@ def tab_network():
                [prom_t("sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total%s[%s]))" % (tf, RI), legend="{{tailscale_traffic_type}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 6, 5),
     ]
-    rollup = [
+    # Exit-node IO — uses tailscale_exit_node label (node identity); gate with pii_node.
+    exitio = [
+        (panel("Exit-node throughput", "timeseries",
+               [prom_t("sum by (tailscale_exit_node, network_io_direction) (rate(tailscale_exit_node_io_bytes_total[%s]))" % RI,
+                       legend="{{tailscale_exit_node}} {{network_io_direction}}")],
+               unit="Bps", custom=ts_custom(stack="normal"), options=ts_opts()), 12, 8),
+        (panel("Exit-node packets/s", "timeseries",
+               [prom_t("sum by (tailscale_exit_node, network_io_direction) (rate(tailscale_exit_node_packets_total[%s]))" % RI,
+                       legend="{{tailscale_exit_node}} {{network_io_direction}}")],
+               unit="pps", options=ts_opts()), 12, 8),
+    ]
+    # Flow-log cross-signal bandwidth (Loki metric queries) — aggregate, gate pii_topology for safety.
+    fl_bw = [
+        (panel("Observed tailnet bandwidth (flow logs)", "timeseries",
+               [loki_t("sum(rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [%s]))" % RI,
+                        refid="A", legend="tx"),
+                loki_t("sum(rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_rx_bytes [%s]))" % RI,
+                        refid="B", legend="rx")],
+               unit="Bps", novalue="0", options=ts_opts()), 24, 8),
+    ]
+    # Top node-pair talkers from flow logs — node identity; gate pii_node.
+    fl_pairs = [
+        (panel("Top node-pair talkers (flow logs)", "table",
+               [loki_t("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [%s])))" % RI,
+                        refid="A", instant=True)],
+               unit="Bps",
+               transformations=[organize(exclude=["Time"],
+                                         rename={"tailscale_src_node": "Source",
+                                                 "tailscale_dst_node": "Destination",
+                                                 "Value": "tx bytes/s"})]), 24, 8),
+    ]
+    # Rollup aggregate panels — no identity labels; no PII gate.
+    rollup_agg = [
         (panel("Throughput by direction", "timeseries",
                [prom_t("sum by (network_io_direction) (rate(tailscale_network_io_rollup_bytes_total%s[%s]))" % (tf, RI), legend="{{network_io_direction}}")],
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts()), 8, 7),
@@ -539,6 +996,14 @@ def tab_network():
         (panel("Throughput by traffic type", "timeseries",
                [prom_t("sum by (tailscale_traffic_type) (rate(tailscale_network_io_rollup_bytes_total%s[%s]))" % (tf, RI), legend="{{tailscale_traffic_type}}")],
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts()), 8, 7),
+        (panel("__other__ rollup share", "stat",
+               [prom_t("(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_dst_node=\"__other__\"}[%s])) or vector(0)) / "
+                       "clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total[%s])), 1)" % (RI, RI), instant=True)],
+               unit="percentunit", thresholds=thr([(None, "green"), (0.5, "yellow"), (0.8, "red")]),
+               options=stat_opts(color="background"), desc="Fraction of rollup bytes folded into the bounded __other__ bucket."), 8, 6),
+    ]
+    # Rollup top-talker barcharts — tailscale_src_node/dst_node/dst_service = node identity; gate pii_node.
+    rollup_talkers = [
         (panel("Top $topn source nodes", "barchart",
                [prom_t("topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_src_node}}", instant=True, fmt="table")],
                unit="Bps", options=barchart_opts(),
@@ -551,25 +1016,24 @@ def tab_network():
                [prom_t("topk($topn, sum by (tailscale_dst_service) (rate(tailscale_network_io_rollup_bytes_total%s[%s])))" % (tsf, RI), legend="{{tailscale_dst_service}}", instant=True, fmt="table")],
                unit="Bps", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])]), 8, 8),
-        (panel("__other__ rollup share", "stat",
-               [prom_t("(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_dst_node=\"__other__\"}[%s])) or vector(0)) / "
-                       "clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total[%s])), 1)" % (RI, RI), instant=True)],
-               unit="percentunit", thresholds=thr([(None, "green"), (0.5, "yellow"), (0.8, "red")]),
-               options=stat_opts(color="background"), desc="Fraction of rollup bytes folded into the bounded __other__ bucket."), 8, 6),
+    ]
+    # Rollup topology tables — tailscale_src_node + port/peer topology; gate pii_topology.
+    rollup_topo = [
         (panel("Unique dst peers per src", "table",
                [prom_t(sv(lot("tailscale_network_unique_dst_peers")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_src_node": "Source node", "Value": "Unique peers"})],
-               desc="Distinct destination peers per source node (last flush)."), 8, 6),
+               desc="Distinct destination peers per source node (last flush)."), 12, 6),
         (panel("Unique dst ports per src", "table",
                [prom_t(sv(lot("tailscale_network_unique_dst_ports")), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_src_node": "Source node", "Value": "Unique ports"})],
-               desc="Distinct destination ports per source node (last flush)."), 8, 6),
+               desc="Distinct destination ports per source node (last flush)."), 12, 6),
     ]
-    raw = [
+    # Raw aggregate panels — no identity labels; no PII gate.
+    raw_agg = [
         (panel("Throughput by direction (raw)", "timeseries",
                [prom_t("sum by (network_io_direction) (rate(tailscale_network_io_bytes_total%s[%s]))" % (tf, RI), legend="{{network_io_direction}}")],
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts()), 8, 7),
@@ -579,6 +1043,9 @@ def tab_network():
         (panel("Throughput by transport (raw)", "timeseries",
                [prom_t("sum by (network_transport) (rate(tailscale_network_io_bytes_total%s[%s]))" % (tf, RI), legend="{{network_transport}}")],
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts()), 8, 7),
+    ]
+    # Raw top-talker barcharts — node identity; gate pii_node.
+    raw_talkers = [
         (panel("Top $topn source nodes (raw)", "barchart",
                [prom_t("topk($topn, sum by (tailscale_src_node) (rate(tailscale_network_io_bytes_total%s[%s])))" % (tf, RI), legend="{{tailscale_src_node}}", instant=True, fmt="table")],
                unit="Bps", options=barchart_opts(),
@@ -592,9 +1059,17 @@ def tab_network():
                unit="Bps", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])]), 8, 8),
     ]
-    return [row("Flow summary", summary, present="has_flows"),
-            row("Throughput & talkers — ROLLUP (bounded top-N)", rollup, present="has_rollup_flow"),
-            row("Throughput & talkers — RAW (full detail)", raw, present="has_raw_flow")]
+    return [
+        row("Flow summary", summary, present="has_flows"),
+        row("Exit-node I/O", exitio, present="has_exit_io", hide_when=["pii_node"]),
+        row("Observed tailnet bandwidth (flow logs)", fl_bw, present="has_flows", hide_when=["pii_topology"]),
+        row("Throughput & talkers — ROLLUP (bounded top-N)", rollup_agg, present="has_rollup_flow"),
+        row("Top talkers — ROLLUP", rollup_talkers, present="has_rollup_flow", hide_when=["pii_node"]),
+        row("Peer & port topology — ROLLUP", rollup_topo, present="has_rollup_flow", hide_when=["pii_topology"]),
+        row("Throughput & talkers — RAW (full detail)", raw_agg, present="has_raw_flow"),
+        row("Top talkers — RAW", raw_talkers, present="has_raw_flow", hide_when=["pii_node"]),
+        row("Top node-pair talkers (flow logs)", fl_pairs, present="has_flows", hide_when=["pii_node"]),
+    ]
 
 
 def tab_events():
@@ -682,13 +1157,53 @@ def tab_events():
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.logstream.error` |~ `$log_filter`", maxlines=100)],
                options=logs_opts(), desc="Per-stream delivery errors; the error text is the log body."), 16, 7),
     ]
+    receiver = [
+        (panel("Receiver in-flight", "timeseries",
+               [prom_t("tailscale_stream_inflight", legend="stream"),
+                prom_t("tailscale_webhook_inflight", legend="webhook")],
+               unit="short", custom=ts_custom(), options=ts_opts()), 8, 7),
+        (panel("Receiver latency p50/p95/p99 (stream)", "timeseries",
+               [prom_t(hq("0.5", "tailscale_stream_request_duration_seconds"), legend="p50"),
+                prom_t(hq("0.95", "tailscale_stream_request_duration_seconds"), legend="p95"),
+                prom_t(hq("0.99", "tailscale_stream_request_duration_seconds"), legend="p99")],
+               unit="s", custom=ts_custom(), options=ts_opts()), 8, 7),
+        (panel("Receiver rejected/s", "timeseries",
+               [prom_t("sum by (reason) (rate(tailscale_stream_rejected_total[%s]))" % RI, legend="stream {{reason}}"),
+                prom_t("sum by (reason) (rate(tailscale_webhook_rejected_total[%s]))" % RI, legend="webhook {{reason}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0"), 8, 7),
+    ]
+    ingestvol = [
+        (panel("Ingest records/s by source+signal", "timeseries",
+               [prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI, legend="{{source}}/{{signal}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts()), 12, 7),
+        (panel("Ingest wire bytes/s by source", "timeseries",
+               [prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI, legend="{{source}}")],
+               unit="Bps", custom=ts_custom(), options=ts_opts()), 12, 7),
+    ]
+    dedup = [
+        (panel("Dedup hits/s", "stat",
+               [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_hits_total[%s]))" % RI, legend="{{dedup_set}}")],
+               unit="cps", options=stat_opts(color="value")), 6, 7),
+        (panel("Dedup set fill", "timeseries",
+               [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="{{dedup_set}}")],
+               unit="short", custom=ts_custom(), options=ts_opts()), 9, 7),
+        (panel("Dedup evictions/s", "timeseries",
+               [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[%s]))" % RI, legend="{{dedup_set}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts()), 9, 7),
+    ]
     return [row("Audit & event rates", rates), row("Stream ingestion", ingest, present="has_stream"),
             row("Log streaming delivery (SIEM)", streamhealth, present="has_logstream"),
-            row("Webhooks", webhook, present="has_webhook"), row("Log explorer", logstream),
+            row("Webhooks", webhook, present="has_webhook"),
+            row("Receiver health", receiver, present="has_recv_dur"),
+            row("Ingestion volume", ingestvol, present="has_ingest"),
+            row("Dedup effectiveness", dedup, present="has_selfobs"),
+            row("Log explorer", logstream),
             row("Flow logs", flowlogs, present="has_flows"), row("Posture logs", posturelogs, present="has_posture")]
 
 
 def tab_policy():
+    _infra_tbl = ["Time", "__name__", "job", "instance",
+                  "service_instance_id", "service_name", "service_namespace"]
     acl = [
         (panel("ACL last changed", "stat", [prom_t("time() - max(%s)" % lot("tailscale_acl_last_changed_seconds", WIN_SLOW))],
                unit="s", options=stat_opts(graph="none")), 6, 5),
@@ -697,6 +1212,14 @@ def tab_policy():
         (panel("ACL rules by section", "bargauge",
                [prom_t("max by (tailscale_acl_section) (%s)" % lot("tailscale_acl_rules_ratio", WIN_SLOW), legend="{{tailscale_acl_section}}")],
                unit="short", options=bargauge_opts()), 12, 5),
+        # Task 1H.9 — ACL inventory counts (risk stats live on Security/WU7)
+        (panel("Auto-approvers (inventory)", "bargauge",
+               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)" % sv(lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW)),
+                       legend="{{tailscale_acl_autoapprover_kind}}")],
+               unit="short", options=bargauge_opts()), 12, 5),
+        (panel("Posture-gated rules (inventory)", "bargauge",
+               [prom_t("sum by (tailscale_acl_section) (%s)" % sv(lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW)))],
+               unit="short", options=bargauge_opts()), 12, 5),
     ]
     dns = [
         (panel("MagicDNS", "stat", [prom_t("max(%s)" % lot("tailscale_dns_magic_dns_ratio", WIN_SLOW))],
@@ -704,6 +1227,31 @@ def tab_policy():
         (panel("Nameservers", "stat", [prom_t("max(%s)" % lot("tailscale_dns_nameservers_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
         (panel("Search paths", "stat", [prom_t("max(%s)" % lot("tailscale_dns_search_paths_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
         (panel("Split-DNS zones", "stat", [prom_t("max(%s)" % lot("tailscale_dns_split_zones_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
+        # Task 1.6 Step 1 — A3 DNS additions (stats; ungated)
+        (panel("Override local DNS", "stat",
+               [prom_t("max(%s)" % lot("tailscale_dns_override_local_ratio", WIN_SLOW))],
+               mappings=BOOL_MAP, thresholds=thr([(None, "red"), (1, "green")]),
+               options=stat_opts(color="background")), 6, 5),
+        (panel("Exit-node resolvers", "stat",
+               [prom_t("max(%s)" % lot("tailscale_dns_resolvers_use_with_exit_node_ratio", WIN_SLOW))],
+               unit="short", options=stat_opts()), 6, 5),
+        # Task 1.6 Step 1 — Search domains barchart (no resolver-presence gate needed)
+        (panel("Search domains", "barchart",
+               [prom_t("count by (tailscale_dns_search_path_domain) (%s)" % lot("tailscale_dns_search_path_ratio", WIN_SLOW),
+                       legend="{{tailscale_dns_search_path_domain}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])]), 12, 6),
+    ]
+    # Task 1.6 Step 1 — Resolvers table gated by has_dns_resolver
+    dns_resolvers = [
+        (panel("Resolvers", "table",
+               [prom_t("%s" % sv(lot("tailscale_dns_resolver_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_infra_tbl + ["Value"],
+                   rename={"tailscale_dns_resolver_address": "Address",
+                           "tailscale_dns_resolver_kind": "Kind",
+                           "tailscale_dns_resolver_use_with_exit_node": "ExitNode"})],
+               desc="DNS resolver configuration. FIX-3: no domain label on live wire."), 24, 6),
     ]
     settings = [
         (panel("Tailnet settings", "table", [prom_t(sv(lot("tailscale_setting_enabled_ratio", WIN_SLOW)), instant=True, fmt="table")],
@@ -718,6 +1266,17 @@ def tab_policy():
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_feature": "Feature", "Value": "Enabled"})],
                desc="Per-feature enabled (1) / disabled (0)."), 12, 7),
+        # Task 1H.8 — External-tailnets role
+        (panel("External-tailnets role", "stat",
+               [prom_t("max by (tailscale_setting_role) (%s)" % lot("tailscale_setting_users_external_tailnets_role_ratio", WIN_SLOW),
+                       legend="{{tailscale_setting_role}}")],
+               unit="short", options=stat_opts(),
+               desc="Role granted to users joining from external tailnets. "
+                    "Values: none / member / admin. Live: role=none."), 6, 5),
+        # Task 1H.8 — Webhook endpoints
+        (panel("Webhook endpoints", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_webhook_endpoints_count_ratio", WIN_SLOW))],
+               unit="short", options=stat_opts(), novalue="0"), 6, 5),
     ]
     users = [
         (panel("Users by role", "barchart",
@@ -754,9 +1313,10 @@ def tab_policy():
                unit="short", options=bargauge_opts()), 24, 5),
     ]
     keys = [
+        # Task 1.6 Step 2 — updated Keys by type (aggregate to type+auth_kind)
         (panel("Keys by type", "bargauge",
-               [prom_t("sum by (tailscale_key_type, tailscale_key_revoked, tailscale_key_invalid) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
-                       legend="{{tailscale_key_type}} revoked={{tailscale_key_revoked}} invalid={{tailscale_key_invalid}}")],
+               [prom_t("sum by (tailscale_key_type, tailscale_key_auth_kind) (%s)" % sv(lot("tailscale_keys_count_ratio", WIN_SLOW)),
+                       legend="{{tailscale_key_type}} / {{tailscale_key_auth_kind}}")],
                unit="short", options=bargauge_opts()), 10, 7),
         (panel("Key expiry (time until)", "table",
                [prom_t("%s - time()" % sv(lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True, fmt="table")],
@@ -765,6 +1325,33 @@ def tab_policy():
                                                    rename={"tailscale_key_id": "Key ID", "tailscale_key_type": "Type",
                                                            "tailscale_key_description": "Description", "Value": "Expires in"})],
                desc="Time until each API/auth key expires."), 14, 7),
+        # Task 1.6 Step 2 — Preauthorized auth keys
+        (panel("Preauthorized auth keys", "stat",
+               [prom_t("sum(%s == 1) or vector(0)" % sv(lot("tailscale_key_preauthorized_ratio", WIN_SLOW)))],
+               unit="short", options=stat_opts(), novalue="0"), 10, 7),
+    ]
+    # Task 1.6 Step 2 — Credential scopes top-N (gated on the key-scopes metric)
+    credscopes = [
+        (panel("Credential scopes (top-N)", "table",
+               [prom_t("topk($topn, %s)" % sv(lot("tailscale_key_scopes_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_infra_tbl + ["tailscale_key_id"],
+                   rename={"tailscale_key_description": "Description",
+                           "tailscale_key_type": "Type",
+                           "Value": "Scopes"})],
+               desc="Top-N keys by scope count. Excludes raw key ID."), 24, 7),
+    ]
+    # Task 1H.3 — Key scope inventory (Loki)
+    keyscopes = [
+        (panel("Key scope inventory (logs)", "table",
+               [loki_t(
+                   'sum by (tailscale_key_scope_values) (count_over_time({service_name="tailscale2otel"} | event_name=`tailscale.key.scopes`[$__range]))',
+                   instant=True)],
+               transformations=[organize(
+                   exclude=["Time"],
+                   rename={"tailscale_key_scope_values": "Scopes", "Value": "Keys"})],
+               novalue="0",
+               desc="Credential scope values observed in key.scopes log events."), 24, 7),
     ]
     services_vip = [
         (panel("Services (VIP)", "stat",
@@ -785,11 +1372,36 @@ def tab_policy():
                                                                "Value": "Hosts"})],
                desc="Backing-host count per Service, bucketed by approval + configured state. "
                     "Gated by collect_hosts + cardinality.per_entity.service."), 24, 7),
+        # Task 1H.8 — VIP service health (merged hosts + port-rules)
+        (panel("VIP service health", "table",
+               [prom_t(sv(lot("tailscale_service_hosts_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
+                prom_t("max by (tailscale_service_name) (%s)" % lot("tailscale_service_ports", WIN_SLOW),
+                       instant=True, fmt="table", refid="B")],
+               transformations=[merge(),
+                                organize(
+                                    exclude=_infra_tbl,
+                                    rename={"tailscale_service_name": "Service",
+                                            "tailscale_service_approval": "Approval",
+                                            "tailscale_service_configured": "Configured",
+                                            "Value #A": "Hosts",
+                                            "Value #B": "Port rules"})],
+               desc="Merged view: hosts + port-rule count per VIP service. "
+                    "Services with 1 host have no HA. Requires collect_hosts + per_entity.service."), 24, 7),
     ]
-    return [row("Access control (ACL)", acl), row("DNS", dns), row("Settings & features", settings),
+    return [row("Access control (ACL)", acl),
+            row("DNS", dns),
+            row("DNS resolvers", dns_resolvers, present="has_dns_resolver"),
+            row("Settings & features", settings),
             row("Services / VIP", services_vip, present="has_services"),
-            row("Users", users), row("Per-user detail", users_pe, present="has_users_pe"),
-            row("User invites", invites, present="has_invites"), row("API keys", keys)]
+            row("Users", users),
+            # Task 1H.4 — PII gate: users_pe shows tailscale_user_login
+            row("Per-user detail", users_pe, present="has_users_pe", hide_when=["pii_usernames"]),
+            row("User invites", invites, present="has_invites"),
+            row("API keys", keys),
+            row("Credential scopes", credscopes, present="has_key_scopes"),
+            # Task 1H.3 — key scope inventory (Loki); no personal PII, no present gate
+            row("Key scope inventory", keyscopes),
+            ]
 
 
 def tab_nodemetrics():
@@ -821,6 +1433,11 @@ def tab_nodemetrics():
         (panel("Outbound packets/s", "timeseries",
                [prom_t("sum by (tailscale_node) (rate(tailscaled_outbound_packets_total[%s]))" % RI, legend="{{tailscale_node}}")],
                unit="pps", custom=ts_custom(), options=ts_opts()), 12, 7),
+        (panel("Outbound dropped packets/s by node", "timeseries",
+               [prom_t("sum by (tailscale_node, reason) (rate(tailscaled_outbound_dropped_packets_total[%s]))" % RI,
+                       legend="{{tailscale_node}} {{reason}}")],
+               unit="pps", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Outbound packets dropped by tailscaled per node — a connectivity-degradation signal."), 24, 7),
     ]
     routing = [
         (panel("Advertised routes", "table", [prom_t(sv(lot("tailscaled_advertised_routes", "15m")), instant=True, fmt="table")],
@@ -889,6 +1506,50 @@ def tab_nodemetrics():
             row("Connection paths (DERP vs direct)", paths, present="has_path"),
             row("DERP regions (tailnet rollup)", derprollup, present="has_derp_rollup"),
             row("Routing & health", routing)]
+
+
+def tab_tailnets():
+    """MSP / multi-tailnet scorecard tab — gated by has_multitailnet (hidden on single-tailnet)."""
+    _ti = 'target_info{service_name="tailscale2otel", tailscale_tailnet!="", tailscale_tailnet!="-"}'
+
+    scorecard = [
+        (panel("Tailnets observed", "stat",
+               [prom_t('count(count by (tailscale_tailnet) '
+                       '(target_info{service_name="tailscale2otel", tailscale_tailnet!="", tailscale_tailnet!="-"}))')],
+               unit="short", options=stat_opts(color="value"),
+               desc="Number of distinct tailnets observed by this exporter instance (excluding placeholder '-')."), 6, 5),
+        (panel("Tailnet scorecard", "table",
+               [prom_t('sum by (tailscale_tailnet) ((tailscale_device_online_ratio == 1)'
+                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % _ti,
+                       instant=True, fmt="table"),
+                prom_t('max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds'
+                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % _ti,
+                       instant=True, fmt="table"),
+                prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5.."}[%s])'
+                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % (RI, _ti),
+                       instant=True, fmt="table")],
+               transformations=[
+                   merge(),
+                   organize(
+                       exclude=["Time", "__name__", "job", "instance",
+                                "service_instance_id", "service_name", "service_namespace"],
+                       rename={"tailscale_tailnet": "Tailnet",
+                               "Value #A": "Online devices",
+                               "Value #B": "Max staleness (s)",
+                               "Value #C": "API errors/s"})],
+               overrides=[{"matcher": {"id": "byName", "options": "Max staleness (s)"},
+                           "properties": [{"id": "unit", "value": "s"}]}],
+               desc="Per-tailnet health scorecard: online device count, worst scrape staleness, and API error rate."), 24, 8),
+    ]
+    trends = [
+        (panel("Per-tailnet online devices over time", "timeseries",
+               [prom_t('sum by (tailscale_tailnet) ((tailscale_device_online_ratio == 1)'
+                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % _ti,
+                       legend="{{tailscale_tailnet}}")],
+               unit="short", custom=ts_custom(fill=10), options=ts_opts(placement="right"),
+               desc="Count of online devices per tailnet over time."), 24, 7),
+    ]
+    return [row("MSP scorecard", scorecard), row("Per-tailnet trends", trends)]
 
 
 def tab_diagnostics():
@@ -1006,10 +1667,134 @@ def tab_diagnostics():
                [prom_t("sum by (reason) (rate(tailscale2otel_admin_auth_rejected_total[%s]))" % RI, legend="{{reason}}")],
                unit="cps", custom=ts_custom(), options=ts_opts()), 6, 6),
     ]
-    return [row("Liveness & build", live), row("Collectors", collectors), row("API & export", api),
+    # --- WU9: app-health (config validity, uptime, CPU, checkpoint) — supersedes C9 stubs.
+    apphealth = [
+        (panel("Config valid", "stat", [prom_t("max(tailscale2otel_config_valid_ratio)")],
+               mappings=BOOL_MAP, thresholds=thr([(None, "red"), (1, "green")]),
+               options=stat_opts(color="background")), 4, 5),
+        (panel("Config warnings", "stat", [prom_t("max(tailscale2otel_config_warnings_ratio) or vector(0)")],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="value")), 4, 5),
+        (panel("Uptime", "stat", [prom_t("max(process_uptime_seconds)")],
+               unit="s", options=stat_opts()), 4, 5),
+        (panel("Checkpoint disk", "stat", [prom_t("max(tailscale2otel_checkpoint_disk_size_bytes) or vector(0)")],
+               unit="bytes", novalue="0", options=stat_opts()), 4, 5),
+        (panel("Process CPU (user/system)", "timeseries",
+               [prom_t("sum by (cpu_mode) (rate(process_cpu_time_seconds_total[%s]))" % RI, legend="{{cpu_mode}}")],
+               unit="percentunit", custom=ts_custom(), options=ts_opts(),
+               desc="CPU seconds/s by mode (~cores)."), 12, 6),
+        (panel("Checkpoint persist age", "timeseries",
+               [prom_t("max(tailscale2otel_checkpoint_persist_age_seconds) or vector(0)", legend="persist age")],
+               unit="s", novalue="0", custom=ts_custom(), options=ts_opts(),
+               desc="Absent when the checkpoint store is not file-backed (in-memory)."), 12, 6),
+    ]
+    # --- WU9 A: API latency histograms (present="has_api_hist").
+    _apilat_p = panel("API latency p50/p95/p99 by endpoint", "timeseries",
+                      [prom_t(hq("0.5", "tailscale2otel_api_duration_seconds", by="endpoint"), legend="p50 {{endpoint}}"),
+                       prom_t(hq("0.95", "tailscale2otel_api_duration_seconds", by="endpoint"), legend="p95 {{endpoint}}", refid="B"),
+                       prom_t(hq("0.99", "tailscale2otel_api_duration_seconds", by="endpoint"), legend="p99 {{endpoint}}", refid="C")],
+                      unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
+                      desc="Per-endpoint API latency quantiles (exemplars enabled).")
+    for _q in ELEMENTS[_apilat_p]["spec"]["data"]["spec"]["queries"]:
+        _q["spec"]["query"]["spec"]["exemplar"] = True  # Prometheus query-level exemplar fetch
+    apilat = [
+        (_apilat_p, 12, 7),
+        (panel("API 429 / retries", "timeseries",
+               [prom_t('sum(rate(tailscale2otel_api_requests_total{http_response_status_code="429"}[%s]))' % RI, legend="429/s"),
+                prom_t("sum(rate(tailscale2otel_api_retries_total[%s]))" % RI, legend="retries/s", refid="B")],
+               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts()), 12, 7),
+    ]
+    # --- WU9 B: export latency histograms (present="has_export_hist").
+    exportlat = [
+        (panel("Export latency p50/p95/p99 by signal", "timeseries",
+               [prom_t(hq("0.5", "tailscale2otel_export_duration_seconds", by="signal"), legend="p50 {{signal}}"),
+                prom_t(hq("0.95", "tailscale2otel_export_duration_seconds", by="signal"), legend="p95 {{signal}}", refid="B"),
+                prom_t(hq("0.99", "tailscale2otel_export_duration_seconds", by="signal"), legend="p99 {{signal}}", refid="C")],
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right")), 12, 7),
+        (panel("Export outcome rate", "timeseries",
+               [prom_t("sum by (outcome) (rate(tailscale2otel_export_duration_seconds_count[%s]))" % RI, legend="{{outcome}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts()), 12, 7),
+    ]
+    # --- WU9 C: scrape freshness (present="has_staleness").
+    freshness = [
+        (panel("Scrape staleness", "timeseries",
+               [prom_t('max by (tailscale_collector) (tailscale2otel_scrape_staleness_seconds{tailscale_collector=~"$collector"})',
+                       legend="{{tailscale_collector}}")],
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right")), 12, 7),
+        (panel("Scrape budget headroom", "bargauge",
+               [prom_t('max by (tailscale_collector) (tailscale2otel_scrape_budget_ratio{tailscale_collector=~"$collector"})',
+                       legend="{{tailscale_collector}}")],
+               unit="percentunit", thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               options=bargauge_opts()), 12, 7),
+    ]
+    # --- WU9 E: rDNS resolver (present="has_rdns").
+    rdns = [
+        (panel("rDNS cache fill", "stat",
+               [prom_t("%s / clamp_min(%s, 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
+                                                  lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
+               unit="percentunit", options=stat_opts()), 6, 6),
+        (panel("rDNS lookup hit-rate", "timeseries",
+               [prom_t('rate(tailscale_rdns_cache_lookups_total{result="hit"}[%s]) / clamp_min(rate(tailscale_rdns_cache_lookups_total[%s]), 1)' % (RI, RI),
+                       legend="hit-rate")],
+               unit="percentunit", custom=ts_custom(), options=ts_opts()), 9, 6),
+        (panel("rDNS upstream queries/s", "timeseries",
+               [prom_t("sum by (result) (rate(tailscale_rdns_queries_total[%s]))" % RI, legend="query {{result}}"),
+                prom_t("rate(tailscale_rdns_cache_evictions_total[%s])" % RI, legend="evictions/s", refid="B")],
+               unit="cps", custom=ts_custom(), options=ts_opts()), 9, 6),
+    ]
+    # --- WU9 F: PII filter status metadata (present="has_pii"; NOT PII-gated — this is metadata about pii).
+    pii_status = [
+        (panel("PII filter status", "table",
+               [prom_t("%s" % sv(lot("tailscale2otel_pii_filter_category_ratio", WIN_FAST)), instant=True, fmt="table")],
+               mappings=vmap({"0": {"text": "REDACTED", "color": "red", "index": 0},
+                              "1": {"text": "emitted", "color": "green", "index": 1}}),
+               transformations=[organize(exclude=TBL_NOISE,
+                                         rename={"category": "Category", "Value": "State"})],
+               desc="Compliance view: every category should read 'emitted' (==1) unless redacted."), 12, 7),
+    ]
+    # --- WU9 G: per-tailnet API errors (present="has_multitailnet"; empty on single-tailnet).
+    pertailnet = [
+        (panel("Per-tailnet API errors", "timeseries",
+               [prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5.."}[%s]) '
+                       '* on(job,instance) group_left(tailscale_tailnet) '
+                       'target_info{service_name="tailscale2otel", tailscale_tailnet!=""})' % RI,
+                       legend="{{tailscale_tailnet}}")],
+               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(placement="right")), 24, 7),
+    ]
+    # --- WU9 I: traces & spans (tracing opt-in; rely on panel empty-state, no present gate).
+    _trace_desc = "Trace panels are empty if tracing.enabled=false."
+    traces = [
+        (panel("Scrape → API trace waterfall", "traces",
+               [tempo_t('{ resource.service.name = "tailscale2otel" && name =~ "scrape.+" }')],
+               desc=_trace_desc), 24, 9),
+    ]
+    traces2 = [
+        (panel("API p95 by endpoint (traces)", "timeseries",
+               [tempo_t('{span.tailscale.endpoint != "" && resource.service.name = "tailscale2otel"} '
+                   '| quantile_over_time(duration, 0.95) by (span.tailscale.endpoint)')],
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right"), desc=_trace_desc), 12, 7),
+        (panel("Scrape cadence by collector (traces)", "timeseries",
+               [tempo_t('{name =~ "scrape.+" && resource.service.name = "tailscale2otel"} | rate() by (name)')],
+               custom=ts_custom(), options=ts_opts(placement="right"), desc=_trace_desc), 12, 7),
+        (panel("stream.receive batch size (traces)", "timeseries",
+               [tempo_t('{name = "stream.receive" && resource.service.name = "tailscale2otel"} '
+                   '| avg_over_time(span.tailscale.stream.flows) by (resource.service.instance.id)'),
+                tempo_t('{name = "stream.receive" && resource.service.name = "tailscale2otel"} '
+                   '| avg_over_time(span.http.request.body.size) by (resource.service.instance.id)', refid="B")],
+               custom=ts_custom(), options=ts_opts(placement="right"), desc=_trace_desc), 24, 7),
+    ]
+    return [row("Liveness & build", live), row("App health", apphealth, present="has_selfobs"),
+            row("Collectors", collectors), row("API & export", api),
             row("API retries & export failures", api_cond, present="has_api_retry"),
+            row("API latency", apilat, present="has_api_hist"),
+            row("Export latency", exportlat, present="has_export_hist"),
+            row("Scrape freshness", freshness, present="has_staleness"),
             row("Cardinality & dedup", cardinality), row("Enrichment cache", enrich),
-            row("Go runtime", runtime), row("Reliability", reliability, present="has_scrape_err")]
+            row("rDNS resolver", rdns, present="has_rdns"),
+            row("PII filter status", pii_status, present="has_pii"),
+            row("Per-tailnet API errors", pertailnet, present="has_multitailnet"),
+            row("Go runtime", runtime), row("Reliability", reliability, present="has_scrape_err"),
+            row("Traces & spans", traces), row("Traces & spans (metrics)", traces2)]
 
 
 def tab_cardinality():
@@ -1083,13 +1868,77 @@ def tab_cardinality():
                unit="cps", custom=ts_custom(), options=ts_opts(),
                desc="Sustained evictions mean a dedup set is undersized."), 12, 6),
     ]
-    return [row("Cardinality cap & overflow", overflow), row("Series budget", budget),
-            row("Flow cardinality drivers", flow), row("Cross-source dedup", dedup)]
+
+    # C5: additional headroom panels added to the overflow row (Task 1.8 Step 1)
+    overflow += [
+        (panel("Series limit", "stat",
+               [prom_t("max(tailscale2otel_series_limit) or vector(0)", instant=True)],
+               unit="short", options=stat_opts(),
+               desc="Configured per-metric series limit (cardinality.metric_limit). 0 means unlimited."), 6, 5),
+        (panel("Overflowing now", "stat",
+               [prom_t("sum(tailscale2otel_series_overflowing_ratio) or vector(0)", instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Number of metric families currently overflowing their series cap. >0 means detail loss."), 6, 5),
+        (panel("Per-metric headroom (top-N)", "table",
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit)",
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace"],
+                   rename={"metric_name": "Metric", "Value": "Headroom (frac)"})],
+               desc="Per-metric active-series count divided by the series limit — headroom as a fraction. "
+                    "1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series."), 12, 5),
+    ]
+
+    # New row: active series by group + overflowing metrics table (Task 1.8 Step 2 + 1H.3)
+    bygroup = [
+        (panel("Active series by group", "barchart",
+               [prom_t("sum by (metric_group) (last_over_time(tailscale2otel_series_by_group[%s]))" % WIN_FAST,
+                       legend="{{metric_group}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Active series aggregated by metric_group — the primary cost-driver view. "
+                    "18 groups live; each group maps to a logical collector domain."), 24, 8),
+        (panel("Metrics overflowing now", "table",
+               [prom_t("max by (metric_name) (last_over_time(tailscale2otel_series_overflowing_ratio[%s])) == 1" % WIN_FAST,
+                       instant=True, fmt="table")],
+               novalue="No metrics overflowing.",
+               transformations=[organize(
+                   exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace", "Value"],
+                   rename={"metric_name": "Metric"})],
+               desc="Metric families where overflowing_ratio == 1 (capped). 147+ series tracked; "
+                    "0 overflowing is the normal live state — that is correct."), 24, 6),
+    ]
+
+    # New row: ingest vs export cost (Task 1.8 Step 3 + 1H.3)
+    cost = [
+        (panel("Ingest vs export cost (per minute)", "timeseries",
+               [prom_t("rate(tailscale2otel_export_datapoints_total[%s])*60" % RI, legend="DPM (datapoints/min)"),
+                prom_t("rate(tailscale2otel_export_log_records_total[%s])*60" % RI, legend="LPM (log rec/min)"),
+                prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI,
+                       legend="{{source}}/{{signal}} ingest rec/s")],
+               unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. "
+                    "Rising DPM driven by a single source → check that group in 'Active series by group'."), 24, 8),
+    ]
+
+    return [
+        row("Cardinality cap & overflow", overflow),
+        row("Active series by group", bygroup),
+        row("Series budget", budget),
+        row("Ingest vs export cost", cost, present="has_selfobs"),
+        row("Flow cardinality drivers", flow),
+        row("Cross-source dedup", dedup),
+    ]
 
 
 def tab_security():
     AUD = "{service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit`"
     POS = lot("tailscale_device_posture_ratio", WIN_FAST)  # posture is emitted every scrape
+
+    # -----------------------------------------------------------------------
+    # Task 1.5 Step 4: PII-split audit row into aggregate (no gate) + actor row (pii_actor)
+    # -----------------------------------------------------------------------
     audit = [
         (panel("Audit actions over time", "timeseries",
                [loki_t("sum by (tailscale_audit_action) (count_over_time(%s [$__auto]))" % AUD,
@@ -1105,6 +1954,15 @@ def tab_security():
                [loki_t("sum(count_over_time(%s | severity_text=`WARN` [$__range]))" % AUD, instant=True)],
                unit="short", novalue="0", thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
                desc="Audit events emitted at WARN (the event carried an error)."), 6, 7),
+        (panel("Audit events by target type", "timeseries",
+               [loki_t("sum by (tailscale_target_type) "
+                       "(count_over_time(%s | tailscale_target_type != `` [$__auto]))" % AUD,
+                       legend="{{tailscale_target_type}}")],
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 24, 7),
+    ]
+    # Actor/identity panels moved here — hidden when pii_actor redaction is active
+    # (actor login and actor emails in log bodies are PII).
+    audit_actors = [
         # Rendered as timeseries, not barchart — this dashboard has no Loki barchart
         # precedent (all barcharts are Prometheus instant+table); the proven Loki
         # aggregation pattern here is the range timeseries (see "Log volume by event").
@@ -1118,15 +1976,176 @@ def tab_security():
                        "(count_over_time(%s | tailscale_target_name != `` [$__auto])))" % AUD,
                        legend="{{tailscale_target_name}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
-        (panel("Audit events by target type", "timeseries",
-               [loki_t("sum by (tailscale_target_type) "
-                       "(count_over_time(%s | tailscale_target_type != `` [$__auto]))" % AUD,
-                       legend="{{tailscale_target_type}}")],
-               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 24, 7),
         (panel("Recent configuration changes", "logs",
                [loki_t("%s |~ `$log_filter`" % AUD, maxlines=200)],
                options=logs_opts(), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
     ]
+
+    # -----------------------------------------------------------------------
+    # Task 1.5 Step 1: NEW aclrisk row — present="has_acl_risk" (no PII)
+    # -----------------------------------------------------------------------
+    aclrisk = [
+        (panel("Wildcard rules", "bargauge",
+               [prom_t("sum by (tailscale_acl_section, tailscale_acl_position) (%s)"
+                       % sv(lot("tailscale_acl_wildcard_rules_ratio", WIN_SLOW)),
+                       legend="{{tailscale_acl_section}}/{{tailscale_acl_position}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Number of ACL rules containing wildcards, by section and position."), 8, 6),
+        (panel("Unrestricted rules (grants)", "stat",
+               [prom_t("sum(%s) or vector(0)"
+                       % sv(lot('tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section="grants"}', WIN_SLOW)),
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Grant rules with no destination restriction."), 4, 6),
+        (panel("Unrestricted rules (acls)", "stat",
+               [prom_t("sum(%s) or vector(0)"
+                       % sv(lot('tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section="acls"}', WIN_SLOW)),
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="ACL rules with no destination restriction."), 4, 6),
+        (panel("SSH wildcard", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_acl_ssh_wildcard_ratio", WIN_SLOW),
+                       instant=True)],
+               unit="short", mappings=BOOL_MAP, thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Whether any SSH rule uses a wildcard source or destination."), 4, 6),
+        (panel("Auto-approvers by kind", "barchart",
+               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)"
+                       % sv(lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW)),
+                       legend="{{tailscale_acl_autoapprover_kind}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Count of auto-approver entries by kind (routes/exit-nodes)."), 12, 6),
+        (panel("Posture-gated rules", "bargauge",
+               [prom_t("sum by (tailscale_acl_section) (%s)"
+                       % sv(lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW)),
+                       legend="{{tailscale_acl_section}}")],
+               unit="short", options=bargauge_opts(),
+               desc="Rules that require a passing device-posture check, by section."), 12, 6),
+    ]
+
+    # -----------------------------------------------------------------------
+    # Task 1.5 Step 2: NEW changes row — present="has_audit_changes"
+    # -----------------------------------------------------------------------
+    changes = [
+        (panel("Security/lifecycle changes/s", "timeseries",
+               [prom_t("sum by (tailscale_audit_change, tailscale_audit_action) "
+                       "(rate(tailscale_config_audit_changes_total[%s]))" % RI,
+                       legend="{{tailscale_audit_change}}/{{tailscale_audit_action}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Rate of audit change events by change kind and action."), 12, 7),
+        (panel("Device churn", "timeseries",
+               [prom_t('sum by (tailscale_audit_action) '
+                       '(rate(tailscale_config_audit_changes_total{tailscale_audit_change="device"}[%s]))' % RI,
+                       legend="{{tailscale_audit_action}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Device add/remove/update rate over time."), 12, 7),
+        (panel("Changes by actor type", "barchart",
+               [prom_t("sum by (tailscale_actor_type) "
+                       "(increase(tailscale_config_audit_changes_total[$__range]))",
+                       legend="{{tailscale_actor_type}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Total change events in the selected range, broken out by actor type (user/api-key/etc)."), 8, 7),
+    ]
+
+    # -----------------------------------------------------------------------
+    # Task 1.5 Step 3: NEW devinvites row — present="has_invites_dev" (enum labels; no PII)
+    # -----------------------------------------------------------------------
+    devinvites = [
+        (panel("Device shares: pending vs accepted", "timeseries",
+               [prom_t("sum by (tailscale_device_invite_accepted) (%s)"
+                       % lot("tailscale_device_invites_count_ratio"),
+                       legend="accepted={{tailscale_device_invite_accepted}}")],
+               unit="short", custom=ts_custom(), options=ts_opts(),
+               desc="Count of device share invites grouped by accepted status."), 12, 6),
+        (panel("Exit-node-granting shares", "stat",
+               [prom_t("sum(%s) or vector(0)"
+                       % lot('tailscale_device_invites_count_ratio{tailscale_device_invite_allow_exit_node="true"}'),
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Device share invites that also grant exit-node access."), 6, 6),
+        (panel("Multi-use shares", "stat",
+               [prom_t("sum(%s) or vector(0)"
+                       % lot('tailscale_device_invites_count_ratio{tailscale_device_invite_multi_use="true"}'),
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Device share invites that can be reused more than once."), 6, 6),
+    ]
+
+    # -----------------------------------------------------------------------
+    # Task 1H.2: NEW mdmposture row — present="has_device_attr" (aggregate panels, no PII)
+    # Per-device table goes in separate mdmfail row with hide_when=["pii_perdevice"].
+    # -----------------------------------------------------------------------
+    mdmposture = [
+        (panel("Encryption coverage", "stat",
+               [prom_t("avg(%s)"
+                       % lot('tailscale_device_attribute_ratio{attribute="intune:isEncrypted"}', WIN_FAST),
+                       instant=True)],
+               unit="percentunit", min_=0, max_=1,
+               thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
+               options=stat_opts(color="background"),
+               desc="Average encryption coverage across devices (Intune isEncrypted attribute)."), 6, 6),
+        (panel("Compliance distribution", "barchart",
+               [prom_t("count by (value) (%s)"
+                       % lot('tailscale_device_attribute_info_ratio{attribute=~"$posture_attr"}', WIN_FAST),
+                       legend="{{value}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Distribution of attribute values for the selected posture attribute."), 18, 6),
+    ]
+    # Per-device table: hidden when pii_perdevice redaction is active (host_name is PII).
+    mdmfail = [
+        (panel("Devices failing posture attr", "table",
+               [prom_t("%s == 0"
+                       % sv(lot('tailscale_device_attribute_ratio{attribute=~"$posture_attr", host_name=~"$host_name"}', WIN_FAST)),
+                       instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=["Time", "__name__", "job", "instance",
+                             "service_instance_id", "service_name", "service_namespace", "Value"],
+                   rename={"host_name": "Host", "attribute": "Attribute"})],
+               desc="Devices with a failing (0) posture attribute. Hidden when host-name redaction is active."), 24, 8),
+    ]
+
+    # -----------------------------------------------------------------------
+    # Task 1H.6: NEW auditcorr row — present="has_audit_changes", hide_when=["pii_actor"]
+    # -----------------------------------------------------------------------
+    auditcorr = [
+        (panel("Audit: metric vs log", "timeseries",
+               [prom_t("sum by (tailscale_audit_change, tailscale_audit_action) "
+                       "(rate(tailscale_config_audit_changes_total[%s]))" % RI,
+                       legend="metric {{tailscale_audit_change}}/{{tailscale_audit_action}}"),
+                loki_t("sum(rate(%s [%s]))" % (AUD, RI),
+                       legend="log events")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               novalue="0",
+               desc="Metric change counters vs Loki log event rate — divergence indicates missing ingestion path."), 24, 8),
+    ]
+    # Action breakdown has no actor context — can be ungated; placed in separate row.
+    auditbreakdown = [
+        (panel("Audit action breakdown (logs)", "timeseries",
+               [loki_t("sum by (tailscale_audit_action, tailscale_target_type) "
+                       "(count_over_time(%s [$__auto]))" % AUD,
+                       legend="{{tailscale_audit_action}}/{{tailscale_target_type}}")],
+               unit="cps", novalue="0", custom=ts_custom(stack="normal"), options=ts_opts(placement="right"),
+               desc="Audit log action/target-type breakdown — no actor identity, safe to show when PII redaction is active."), 24, 7),
+    ]
+    # Per-device posture snapshot log — hide when pii_perdevice (host_name in log body).
+    posturelog = [
+        (panel("Device posture snapshot", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.posture` |~ `$log_filter`",
+                       maxlines=200)],
+               options=logs_opts(),
+               desc="Per-device posture log stream (host identity in body — hidden when host-name redaction is active)."), 24, 10),
+    ]
+
+    # -----------------------------------------------------------------------
+    # Existing posture panels (unchanged)
+    # -----------------------------------------------------------------------
     posture = [
         # The {label=...} selector MUST be INSIDE last_over_time(...) — appending a
         # matcher to a function result (lot(x){...}) is a PromQL parse error.
@@ -1176,6 +2195,10 @@ def tab_security():
                        % (lot("tailscale_key_expiry_seconds", WIN_SLOW), lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True)],
                unit="short", options=stat_opts()), 6, 5),
     ]
+
+    # -----------------------------------------------------------------------
+    # Task 1H.7/1H.8: posture_integ with added "Posture match rate" stat
+    # -----------------------------------------------------------------------
     posture_integ = [
         (panel("Integrations configured", "stat",
                [prom_t("max(%s) or vector(0)" % lot("tailscale_posture_integrations_count_ratio", WIN_SLOW), instant=True)],
@@ -1192,6 +2215,16 @@ def tab_security():
                unit="s", thresholds=thr([(None, "green"), (3600, "yellow"), (86400, "red")]),
                options=stat_opts(color="background"),
                desc="Time since the least-recently-synced integration last synced (alert on staleness)."), 6, 5),
+        # Task 1H.8: match rate = matched / possible-match (clamped to avoid div-by-zero)
+        (panel("Posture match rate", "stat",
+               [prom_t("%s / clamp_min(%s, 1)"
+                       % (sv(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW)),
+                          sv(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW))),
+                       instant=True)],
+               unit="percentunit",
+               thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
+               options=stat_opts(color="background"),
+               desc="Fraction of possible-match devices that were actually matched by the integration."), 6, 5),
         (panel("Integration sync detail", "table",
                [prom_t(sv(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
                 prom_t(sv(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW)), instant=True, fmt="table", refid="B"),
@@ -1208,6 +2241,10 @@ def tab_security():
                            "properties": [{"id": "unit", "value": "s"}]}],
                desc="Per integration: matched / possible-match / provider-host counts and sync age."), 24, 7),
     ]
+
+    # -----------------------------------------------------------------------
+    # tlock: add hide_when=["pii_perdevice"] — tailnet-lock logs expose per-device host identity
+    # -----------------------------------------------------------------------
     tlock = [
         (panel("Tailnet-lock errors", "stat",
                [prom_t("max(%s) or vector(0)" % lot("tailscale_tailnet_lock_errors_ratio", WIN_FAST), instant=True)],
@@ -1218,11 +2255,36 @@ def tab_security():
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.tailnet_lock_error` |~ `$log_filter`", maxlines=100)],
                options=logs_opts(), desc="Per-device tailnet-lock error events; the error text is the log body."), 18, 6),
     ]
-    return [row("Configuration audit", audit, present="has_audit"),
-            row("Posture integrations (MDM/EDR sync)", posture_integ, present="has_posture_integration"),
-            row("Security posture", posture, present="has_posture"),
-            row("Tailnet lock", tlock, present="has_tailnet_lock"),
-            row("Key & access expiry risk", expiry)]
+
+    # -----------------------------------------------------------------------
+    # Task 1H.8: contact stat — "Contact needs verification" (single global stat, no gate)
+    # -----------------------------------------------------------------------
+    contact = [
+        (panel("Contact needs verification", "stat",
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_contact_needs_verification_ratio", WIN_SLOW),
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               desc="Whether any tailnet contact address requires re-verification (admin/security/billing)."), 6, 5),
+    ]
+
+    return [
+        row("ACL risk indicators", aclrisk, present="has_acl_risk"),
+        row("Audit changes", changes, present="has_audit_changes"),
+        row("Device share invites", devinvites, present="has_invites_dev"),
+        row("Configuration audit", audit, present="has_audit"),
+        row("Configuration audit — actors", audit_actors, present="has_audit", hide_when=["pii_actor"]),
+        row("Audit correlation", auditcorr, present="has_audit_changes", hide_when=["pii_actor"]),
+        row("Audit action breakdown", auditbreakdown, present="has_audit"),
+        row("Posture integrations (MDM/EDR sync)", posture_integ, present="has_posture_integration"),
+        row("MDM device posture", mdmposture, present="has_device_attr"),
+        row("Devices failing posture", mdmfail, present="has_device_attr", hide_when=["pii_perdevice"]),
+        row("Security posture", posture, present="has_posture"),
+        row("Device posture log", posturelog, present="has_posture", hide_when=["pii_perdevice"]),
+        row("Tailnet lock", tlock, present="has_tailnet_lock", hide_when=["pii_perdevice"]),
+        row("Contact verification", contact),
+        row("Key & access expiry risk", expiry),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1243,6 +2305,7 @@ def build(uid, title, flat, only=None, folder=None):
         ("Security & Audit", tab_security, None),
         ("Policy & Config", tab_policy, None),
         ("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
+        ("Tailnets", tab_tailnets, "has_multitailnet"),
         ("Exporter Diagnostics", tab_diagnostics, None),
         ("Cardinality & Cost", tab_cardinality, None),
     ]
