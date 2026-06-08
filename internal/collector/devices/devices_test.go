@@ -1319,6 +1319,131 @@ func TestCollect_DeviceInvitesDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestCollect_DeviceInvitesLogEvents(t *testing.T) {
+	// J-A2: per-invite log event carries invitee email, acceptedBy login, and
+	// the sharing device's hostname (host.name) and nodeId (host.id).
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: sampleDevices(),
+		invites: map[string][]tsapi.DeviceInvite{
+			// laptop: two invites with identifying info.
+			"3690401478992208": {
+				// Accepted invite: email + acceptedByLogin present.
+				{Accepted: true, AllowExitNode: false, MultiUse: false,
+					Email: "alice@external.example", AcceptedByLogin: "alice@external.example"},
+				// Pending invite: email set, acceptedByLogin empty.
+				{Accepted: false, AllowExitNode: true, MultiUse: true,
+					Email: "bob@external.example", AcceptedByLogin: ""},
+			},
+			// desktop: one invite with neither email nor acceptedByLogin —
+			// anonymous link share, not yet accepted: must NOT emit a log event.
+			"n-desktop": {
+				{Accepted: false, AllowExitNode: false, MultiUse: false,
+					Email: "", AcceptedByLogin: ""},
+			},
+			// n-phone: no invites — no log events.
+		},
+	}
+	c := devices.New(api, cache, 0, false, false, devices.WithDeviceInvites(true))
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	// Should have exactly 2 invite log events: laptop×2 (both have email).
+	// The anonymous desktop invite is skipped.
+	inviteLogs := func() []telemetrytest.LogRecord {
+		var out []telemetrytest.LogRecord
+		for _, lr := range rec.LogRecords() {
+			if lr.EventName == "tailscale.device_invite" {
+				out = append(out, lr)
+			}
+		}
+		return out
+	}()
+	if len(inviteLogs) != 2 {
+		t.Fatalf("invite log events = %d, want 2; all logs: %+v", len(inviteLogs), rec.LogRecords())
+	}
+
+	// Find each log event by the tailscale.user attribute.
+	var accepted, pending *telemetrytest.LogRecord
+	for i := range inviteLogs {
+		lr := &inviteLogs[i]
+		switch lr.Attrs["tailscale.user"] {
+		case "alice@external.example":
+			accepted = lr
+		case "bob@external.example":
+			pending = lr
+		}
+	}
+	if accepted == nil {
+		t.Fatalf("no invite log event with tailscale.user=alice@external.example; logs=%+v", inviteLogs)
+	}
+	if pending == nil {
+		t.Fatalf("no invite log event with tailscale.user=bob@external.example; logs=%+v", inviteLogs)
+	}
+
+	// Check accepted invite attributes.
+	if got := accepted.Attrs["host.name"]; got != "laptop" {
+		t.Errorf("accepted host.name = %q, want laptop", got)
+	}
+	if got := accepted.Attrs["host.id"]; got != "3690401478992208" {
+		t.Errorf("accepted host.id = %q, want 3690401478992208 (device id)", got)
+	}
+	if got := accepted.Attrs["tailscale.actor.login"]; got != "alice@external.example" {
+		t.Errorf("accepted tailscale.actor.login = %q, want alice@external.example", got)
+	}
+	if accepted.SeverityText != "INFO" {
+		t.Errorf("accepted severity = %q, want INFO", accepted.SeverityText)
+	}
+
+	// Check pending invite attributes.
+	if got := pending.Attrs["host.name"]; got != "laptop" {
+		t.Errorf("pending host.name = %q, want laptop", got)
+	}
+	if got := pending.Attrs["host.id"]; got != "3690401478992208" {
+		t.Errorf("pending host.id = %q, want 3690401478992208 (device id)", got)
+	}
+	if got := pending.Attrs["tailscale.actor.login"]; got != "" {
+		t.Errorf("pending tailscale.actor.login = %q, want empty (not yet accepted)", got)
+	}
+
+	// Existing count gauge must still be emitted unchanged.
+	if pts := rec.MetricPoints("tailscale.device_invites.count"); len(pts) == 0 {
+		t.Error("tailscale.device_invites.count gauge was not emitted")
+	}
+}
+
+func TestCollect_DeviceInvitesLogEvents_AnonymousLinkSkipped(t *testing.T) {
+	// An invite with no email and no acceptedByLogin (anonymous link, not yet
+	// accepted) must NOT emit a log event — there is no PII worth recording.
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices: sampleDevices(),
+		invites: map[string][]tsapi.DeviceInvite{
+			"3690401478992208": {
+				{Accepted: false, AllowExitNode: false, MultiUse: false,
+					Email: "", AcceptedByLogin: ""},
+			},
+		},
+	}
+	c := devices.New(api, cache, 0, false, false, devices.WithDeviceInvites(true))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device_invite" {
+			t.Errorf("got unexpected invite log event for anonymous link: %+v", lr)
+		}
+	}
+	// Count gauge still emitted.
+	if pts := rec.MetricPoints("tailscale.device_invites.count"); len(pts) == 0 {
+		t.Error("tailscale.device_invites.count gauge was not emitted")
+	}
+}
+
 // --- B6: per-device + fleet version-skew ---
 
 func TestDeviceVersionSkew(t *testing.T) {
@@ -1567,4 +1692,99 @@ func TestCollect_SubnetRouteRollupOff(t *testing.T) {
 	rec := collectWithOpts(t, devs, true, true, false /*subnetRollup*/)
 	assertNoGauge(t, rec, "tailscale.subnet_routes.routers", map[string]string{"tailscale.route.cidr": "10.0.0.0/24"})
 	assertGauge(t, rec, "tailscale.subnet_routes.advertised", nil, 1) // fleet count still emitted
+}
+
+// --- J-B5: per-device node-key-expiry log event ---
+
+func TestCollect_DeviceKeyExpiring_LogEmitted(t *testing.T) {
+	// A device whose key expires within the warn threshold (14d) must emit
+	// tailscale.device.key_expiring WARN with host.name, host.id (d.ID), and
+	// tailscale.device.key_expires_in_days; the histogram must still emit.
+	devs := []tsapi.RichDevice{
+		{
+			// Within threshold: expires in 5 days.
+			ID: "dev-warn", Hostname: "warn-host",
+			KeyExpiryDisabled: false,
+			Expires:           now.Add(5 * 24 * time.Hour),
+		},
+		{
+			// Beyond threshold: expires in 30 days → no log.
+			ID: "dev-ok", Hostname: "ok-host",
+			KeyExpiryDisabled: false,
+			Expires:           now.Add(30 * 24 * time.Hour),
+		},
+		{
+			// Key expiry disabled → no log, no histogram.
+			ID: "dev-disabled", Hostname: "disabled-host",
+			KeyExpiryDisabled: true,
+			Expires:           now.Add(3 * 24 * time.Hour),
+		},
+		{
+			// Zero Expires → no log, no histogram.
+			ID: "dev-zero", Hostname: "zero-host",
+			KeyExpiryDisabled: false,
+		},
+	}
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{devices: devs}
+	c := devices.New(api, cache, 0, false, false, devices.WithClock(func() time.Time { return now }))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	// Filter only key_expiring log events.
+	var keyExpiringLogs []telemetrytest.LogRecord
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device.key_expiring" {
+			keyExpiringLogs = append(keyExpiringLogs, lr)
+		}
+	}
+
+	// Exactly one log event: only dev-warn is within threshold.
+	if len(keyExpiringLogs) != 1 {
+		t.Fatalf("key_expiring log events = %d, want 1; all logs: %+v", len(keyExpiringLogs), rec.LogRecords())
+	}
+
+	lr := keyExpiringLogs[0]
+	if lr.SeverityText != "WARN" {
+		t.Errorf("severity = %q, want WARN", lr.SeverityText)
+	}
+	if got := lr.Attrs["host.name"]; got != "warn-host" {
+		t.Errorf("host.name = %q, want warn-host", got)
+	}
+	// host.id must be the device ID (d.ID), consistent with per-device metrics.
+	if got := lr.Attrs["host.id"]; got != "dev-warn" {
+		t.Errorf("host.id = %q, want dev-warn (device ID)", got)
+	}
+	if got := lr.Attrs["tailscale.device.key_expires_in_days"]; got == "" {
+		t.Error("tailscale.device.key_expires_in_days attr missing")
+	}
+
+	// The histogram must still have 2 observations: dev-warn (5d) + dev-ok (30d).
+	hpts := rec.MetricPoints("tailscale.devices.key_expiry")
+	if len(hpts) != 1 || hpts[0].Count != 2 {
+		t.Errorf("key_expiry histogram count = %d, want 2", hpts[0].Count)
+	}
+}
+
+func TestCollect_DeviceKeyExpiring_NoLogWhenDisabledOrFarFuture(t *testing.T) {
+	// Ensures disabled/zero/far-future devices never emit the key_expiring log.
+	devs := []tsapi.RichDevice{
+		{ID: "d1", Hostname: "h1", KeyExpiryDisabled: true, Expires: now.Add(5 * 24 * time.Hour)},
+		{ID: "d2", Hostname: "h2", KeyExpiryDisabled: false, Expires: now.Add(60 * 24 * time.Hour)},
+		{ID: "d3", Hostname: "h3", KeyExpiryDisabled: false}, // zero Expires
+	}
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{devices: devs}
+	c := devices.New(api, cache, 0, false, false, devices.WithClock(func() time.Time { return now }))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device.key_expiring" {
+			t.Errorf("unexpected key_expiring log for %+v", lr)
+		}
+	}
 }

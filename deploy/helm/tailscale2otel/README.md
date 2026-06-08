@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.7.0](https://img.shields.io/badge/Version-0.7.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.7.1](https://img.shields.io/badge/Version-0.7.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -143,6 +143,19 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.otlp.tls.cert_file | string | `""` | Client certificate for mutual TLS. |
 | config.otlp.tls.insecure | bool | `false` | Skip TLS certificate verification (insecure; for local/testing only). |
 | config.otlp.tls.key_file | string | `""` | Client private key for mutual TLS. |
+| config.pii_filter.emails | bool | `true` | Emit user/actor login names (often emails). |
+| config.pii_filter.endpoint_paths | bool | `true` | Emit Tailscale API endpoint paths (self-obs). |
+| config.pii_filter.external_ips | bool | `true` | Emit public/routable addresses. |
+| config.pii_filter.free_text_details | bool | `true` | Emit audit old/new/details, target names, key descriptions, posture values. |
+| config.pii_filter.hostnames | bool | `true` | Emit device + collector-host hostnames. |
+| config.pii_filter.internal_ips | bool | `true` | Emit RFC1918 / ULA / link-local addresses. |
+| config.pii_filter.network_topology | bool | `true` | Emit route CIDRs, split-DNS domains, and search paths. |
+| config.pii_filter.node_ids | bool | `true` | Emit Tailscale node IDs. |
+| config.pii_filter.service_addrs | bool | `true` | Emit VIP service names. |
+| config.pii_filter.tailnet_name | bool | `true` | Emit the tailnet identifier. |
+| config.pii_filter.tailscale_ips | bool | `true` | Emit Tailscale-range addresses (100.64.0.0/10, fd7a:115c:a1e0::/48). |
+| config.pii_filter.user_display_names | bool | `true` | Emit actor display (human) names. |
+| config.pii_filter.user_ids | bool | `true` | Emit numeric/opaque user IDs (enduser.id). |
 | config.profiling.block_profile_rate | int | `0` | runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull. |
 | config.profiling.mutex_profile_fraction | int | `0` | runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull. |
 | config.profiling.pprof.enabled | bool | `false` | Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. Requires admin.enabled + admin.auth.token. |

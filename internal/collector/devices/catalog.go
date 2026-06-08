@@ -271,6 +271,22 @@ var (
 		Attributes:  []string{semconv.HostName, semconv.HostID},
 		Group:       groupDevices,
 	}
+
+	docDeviceInviteLog = metricdoc.LogEvent{
+		Name:        eventDeviceInvite,
+		Severity:    "INFO",
+		Description: "Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's nodeId.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, semconv.AttrUser, attrActorLogin},
+		Group:       groupDevices,
+	}
+
+	docDeviceKeyExpiryLog = metricdoc.LogEvent{
+		Name:        eventDeviceKeyExpiry,
+		Severity:    "WARN",
+		Description: "Emitted per device when its node key expires within the fixed 14-day warn window (and has not yet expired). Carries the device hostname, device ID (`host.id`), and remaining days (`tailscale.device.key_expires_in_days`). The fleet-wide `tailscale.devices.key_expiry` histogram is always emitted for devices with key expiry enabled; this log adds the per-device actionable signal.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrDeviceKeyExpiresInDays},
+		Group:       groupDevices,
+	}
 )
 
 // connIdentityAttrs is the per-device identity label set for the connectivity
@@ -409,5 +425,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docPosture, docTailnetLockError}
+	return []metricdoc.LogEvent{docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog}
 }

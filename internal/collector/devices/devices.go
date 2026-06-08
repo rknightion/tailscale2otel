@@ -62,7 +62,9 @@ const (
 	metricCacheAge  = "tailscale2otel.enrich.cache_age"
 	metricCacheSize = "tailscale2otel.enrich.cache_size"
 
-	eventPosture = "tailscale.device.posture"
+	eventPosture         = "tailscale.device.posture"
+	eventDeviceInvite    = "tailscale.device_invite"
+	eventDeviceKeyExpiry = "tailscale.device.key_expiring"
 
 	metricTailnetLockErrors    = "tailscale.tailnet_lock.errors"
 	metricDerpRegionLatencyMin = "tailscale.derp.region.latency_min"
@@ -99,6 +101,16 @@ const (
 	attrInviteAccepted      = "tailscale.device_invite.accepted"
 	attrInviteAllowExitNode = "tailscale.device_invite.allow_exit_node"
 	attrInviteMultiUse      = "tailscale.device_invite.multi_use"
+
+	// attrActorLogin is the loginName of the user who accepted a device-share
+	// invite (acceptedBy.loginName on the wire). Uses the shared PII key
+	// "tailscale.actor.login" (CatEmails in the PII registry).
+	attrActorLogin = "tailscale.actor.login"
+
+	// attrDeviceKeyExpiresInDays carries the remaining days until a device's
+	// node key expires on the tailscale.device.key_expiring log event.
+	// Numeric, non-identifying — not added to the PII registry.
+	attrDeviceKeyExpiresInDays = "tailscale.device.key_expires_in_days"
 
 	// Fleet-hygiene roll-up labels.
 	attrClientVersion = "tailscale.client_version"
@@ -169,6 +181,12 @@ const tagOther = "__other__"
 // for tailscale.devices.key_expiry. The first bucket (-inf, 0] captures keys
 // that have already expired; the rest bracket "expiring soon" windows.
 var keyExpiryBucketsDays = []float64{0, 7, 30, 90, 180, 365}
+
+// keyExpiryWarnDays is the fixed look-ahead window (in days) within which a
+// device's node key triggers the per-device tailscale.device.key_expiring WARN
+// log event. Keys expiring further than this threshold in the future are
+// covered by the fleet-wide histogram only.
+const keyExpiryWarnDays = 14
 
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
@@ -528,7 +546,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 
 		if c.collectDeviceInvites {
-			c.tallyDeviceInvites(ctx, d, inviteCounts)
+			c.tallyDeviceInvites(ctx, e, d, inviteCounts)
 		}
 
 		if d.TailnetLockError != "" {
@@ -650,6 +668,22 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			days := d.Expires.Sub(nowT).Hours() / 24
 			e.Histogram(docDevicesKeyExpiry.Name, docDevicesKeyExpiry.Unit, docDevicesKeyExpiry.Description,
 				days, keyExpiryBucketsDays, nil)
+			// Emit a per-device WARN log when the key expires within the warn
+			// window and has not yet expired (days > 0). The histogram already
+			// covers the full distribution (including already-expired keys);
+			// this log is the actionable per-device signal.
+			if days > 0 && days <= keyExpiryWarnDays {
+				e.LogEvent(telemetry.Event{
+					Name:     docDeviceKeyExpiryLog.Name,
+					Severity: telemetry.SeverityWarn,
+					Body:     fmt.Sprintf("device %q node key expires in %.1f day(s)", d.Hostname, days),
+					Attrs: telemetry.Attrs{
+						semconv.HostName:           d.Hostname,
+						semconv.HostID:             d.ID,
+						attrDeviceKeyExpiresInDays: fmt.Sprintf("%.2f", days),
+					},
+				})
+			}
 		}
 	}
 
@@ -792,12 +826,14 @@ type deviceInviteKey struct {
 	multiUse      bool
 }
 
-// tallyDeviceInvites fetches one device's share invites and folds them into
-// counts. Per-device errors (e.g. a missing device_invites:read scope -> 403,
-// or a transient failure) are NON-FATAL: the device is skipped and collection
+// tallyDeviceInvites fetches one device's share invites, folds them into
+// counts for the aggregate gauge, and emits a per-invite log event carrying
+// the invitee email, the acceptedBy login, and the sharing device identity.
+// Per-device errors (e.g. a missing device_invites:read scope -> 403, or a
+// transient failure) are NON-FATAL: the device is skipped and collection
 // continues, so device-invite collection can never break the devices snapshot
 // (mirrors emitPosture's error handling).
-func (c *Collector) tallyDeviceInvites(ctx context.Context, d *tsapi.RichDevice, counts map[deviceInviteKey]int) {
+func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, counts map[deviceInviteKey]int) {
 	invs, err := c.api.DeviceInvites(ctx, d.ID)
 	if err != nil {
 		return
@@ -808,6 +844,30 @@ func (c *Collector) tallyDeviceInvites(ctx context.Context, d *tsapi.RichDevice,
 			allowExitNode: inv.AllowExitNode,
 			multiUse:      inv.MultiUse,
 		}]++
+
+		// Emit a per-invite log event so "N pending shares" becomes observable
+		// as "who shared which device with whom". Only emit when there is
+		// identifying data — at minimum the invitee email or an acceptedBy login
+		// must be present (a share link with no email and not yet accepted has
+		// neither, so there is nothing useful to record).
+		if inv.Email == "" && inv.AcceptedByLogin == "" {
+			continue
+		}
+		body := fmt.Sprintf("device %q has a share invite", d.Hostname)
+		if inv.Accepted {
+			body = fmt.Sprintf("device %q share invite accepted", d.Hostname)
+		}
+		e.LogEvent(telemetry.Event{
+			Name:     docDeviceInviteLog.Name,
+			Severity: telemetry.SeverityInfo,
+			Body:     body,
+			Attrs: telemetry.Attrs{
+				semconv.HostName: d.Hostname,
+				semconv.HostID:   d.ID, // device id, consistent with every other device signal
+				semconv.AttrUser: inv.Email,
+				attrActorLogin:   inv.AcceptedByLogin,
+			},
+		})
 	}
 }
 

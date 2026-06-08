@@ -24,6 +24,7 @@ const (
 	metricOverrideLocal    = "tailscale.dns.override_local"
 	metricUseWithExitNode  = "tailscale.dns.resolvers.use_with_exit_node"
 	metricResolver         = "tailscale.dns.resolver"
+	metricSearchPath       = "tailscale.dns.search_path"
 )
 
 // Attribute keys for the per-resolver info gauge. Package-local (mirrors the
@@ -34,6 +35,11 @@ const (
 	attrKind            = "tailscale.dns.resolver.kind"
 	attrDomain          = "tailscale.dns.resolver.domain"
 	attrUseWithExitNode = "tailscale.dns.resolver.use_with_exit_node"
+
+	// attrSearchPathDomain is the identity attribute for the per-search-path info
+	// gauge. NOTE: this key must be registered in internal/telemetry/pii/registry.go
+	// under CatNetworkTopology and added to identityKeys (the wiring pass handles this).
+	attrSearchPathDomain = "tailscale.dns.search_path.domain"
 
 	resolverKindGlobal = "global"
 	resolverKindSplit  = "split"
@@ -118,6 +124,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	e.Gauge(docUseWithExitNode.Name, docUseWithExitNode.Unit, docUseWithExitNode.Description,
 		float64(exitCount), nil)
+
+	// Per-search-path info gauge: one datapoint per domain, value always 1.
+	for _, sp := range cfg.SearchPaths {
+		e.Gauge(docSearchPath.Name, docSearchPath.Unit, docSearchPath.Description, 1, telemetry.Attrs{
+			attrSearchPathDomain: sp,
+		})
+	}
 
 	return nil
 }

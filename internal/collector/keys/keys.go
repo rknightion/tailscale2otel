@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
@@ -36,6 +37,7 @@ const (
 	attrRevoked     = "tailscale.key.revoked"
 	attrInvalid     = "tailscale.key.invalid"
 	attrExpiresIn   = "tailscale.key.expires_in_seconds"
+	attrScopeValues = "tailscale.key.scope_values"
 )
 
 // keyType values mirror the API's keyType enum (federated is out of scope; see
@@ -188,6 +190,15 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					attrType:        typ,
 					attrDescription: k.Description,
 				})
+			e.LogEvent(telemetry.Event{
+				Name:     docKeyScopesLog.Name,
+				Severity: telemetry.SeverityInfo,
+				Body:     fmt.Sprintf("Tailscale key %q (%s) has %d scope(s): %s", keyLabel(k), typ, len(k.Scopes), strings.Join(k.Scopes, ",")),
+				Attrs: telemetry.Attrs{
+					attrID:          k.ID,
+					attrScopeValues: strings.Join(k.Scopes, ","),
+				},
+			})
 		}
 
 		// Per-key preauthorized flag (auth keys only). Per-key -> gated by

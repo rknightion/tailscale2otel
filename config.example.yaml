@@ -262,6 +262,24 @@ webhook:
   tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
 
+# ── PII / identifier redaction (opt-out, all categories default true) ───────────
+# Set a category to false to drop those identifiers from metrics and logs at
+# runtime. Gauges whose only identity is a redacted category are suppressed.
+pii_filter:
+  emails: true              # user/actor login names (often email addresses)
+  user_display_names: true  # actor display (human) names
+  user_ids: true            # numeric/opaque user IDs (enduser.id)
+  hostnames: true           # device + collector-host hostnames
+  node_ids: true            # Tailscale node IDs
+  tailscale_ips: true       # 100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses
+  internal_ips: true        # RFC1918 / ULA / link-local addresses
+  external_ips: true        # public/routable addresses
+  service_addrs: true       # VIP service names
+  endpoint_paths: true      # Tailscale API endpoint paths (self-obs)
+  network_topology: true    # route CIDRs + split-DNS domains + search paths
+  tailnet_name: true        # tailnet identifier
+  free_text_details: true   # audit old/new/details, target names, key descriptions, posture values
+
 # ── Self-observability (the exporter's own health telemetry) ────────────────────
 self_observability:
   enabled: true                       # emit tailscale2otel.up, api.requests, runtime metrics, etc.

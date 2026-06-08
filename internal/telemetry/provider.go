@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/rknightion/tailscale2otel/internal/semconv"
+	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 )
 
 // scopeName is the instrumentation scope for all emitted telemetry.
@@ -88,6 +89,11 @@ type Options struct {
 	// Resource. Pair it with a distinct InstanceID per tailnet (see ProviderSet)
 	// so each tailnet is its own OTLP target and series don't collide.
 	TailnetName string
+
+	// PIIFilter controls which PII / identifier categories are emitted. A nil map
+	// (or a map where every category is true) is a no-op fast path. Set any
+	// category to false to drop those identifiers at the emit site.
+	PIIFilter pii.Categories
 
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
@@ -195,7 +201,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		card = NewCardinalityTrackerWithCap(opts.CardinalityLimit)
 	}
 
-	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger)
+	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger, opts.PIIFilter)
 
 	if opts.SelfObsEnabled {
 		// Late-bind the duration observer now that the Emitter exists (the
@@ -281,16 +287,26 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	// A narrow process subset is used deliberately — WithProcess() would also
 	// emit process.command_args and process.owner, which can leak deploy paths
 	// and usernames to the backend.
-	res, err := resource.New(ctx,
+	detectors := []resource.Option{
 		resource.WithAttributes(attrs...),
 		resource.WithTelemetrySDK(),
-		resource.WithHost(),
 		resource.WithOS(),
 		resource.WithProcessPID(),
 		resource.WithProcessExecutableName(),
 		resource.WithProcessRuntimeName(),
 		resource.WithProcessRuntimeVersion(),
-	)
+	}
+	// When the Hostnames category is explicitly disabled, omit WithHost() so that
+	// host.name is never included in the Resource (it would otherwise be promoted
+	// to target_info and leak the hostname to the backend).
+	hostnamesOff := false
+	if v, ok := opts.PIIFilter[pii.CatHostnames]; ok && !v {
+		hostnamesOff = true
+	}
+	if !hostnamesOff {
+		detectors = append(detectors, resource.WithHost())
+	}
+	res, err := resource.New(ctx, detectors...)
 	// A partial resource (a detector that couldn't read its source — e.g.
 	// os.Hostname() failing) must NOT abort startup: the exporter's core job is
 	// unaffected, so continue with whatever attributes were resolved. Any other

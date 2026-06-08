@@ -6,10 +6,10 @@ import (
 )
 
 // DeviceInvite is the curated, bounded subset of a device-share invite returned
-// by GET /api/v2/device/{deviceId}/device-invites. Only the booleans used for
-// metrics are decoded; the PII-bearing fields the endpoint also returns (email,
-// inviteUrl, acceptedBy) are deliberately NOT decoded — see the PII fencing
-// rule in the project CLAUDE.md / roadmap §0.2.
+// by GET /api/v2/device/{deviceId}/device-invites. The booleans are used for
+// the count gauge; email and AcceptedByLogin are decoded for the per-invite log
+// event (J-A2). inviteUrl is deliberately NOT decoded — it is a bearer token
+// that must never be emitted to telemetry (PII fencing rule).
 type DeviceInvite struct {
 	// Accepted is true once the share invite has been accepted.
 	Accepted bool
@@ -17,15 +17,30 @@ type DeviceInvite struct {
 	MultiUse bool
 	// AllowExitNode is true if the invited user may use the device as an exit node.
 	AllowExitNode bool
+	// Email is the email address the invite was sent to, or empty if it was
+	// distributed as a link without an email recipient.
+	Email string
+	// AcceptedByLogin is the loginName of the user who accepted the invite, or
+	// empty when the invite is still pending. Populated from acceptedBy.loginName
+	// on the wire; acceptedBy.profilePicUrl is deliberately not decoded.
+	AcceptedByLogin string
 }
 
-// wireDeviceInvite decodes only the bounded booleans used for metrics; the
-// endpoint also returns id/created/tailnetId/deviceId/sharerId/email/
-// inviteUrl/lastEmailSentAt/acceptedBy — all deliberately omitted (PII or unused).
+// wireAcceptedBy captures the nested acceptedBy object on the device-invite
+// wire response. Only loginName is retained; id and profilePicUrl are omitted.
+type wireAcceptedBy struct {
+	LoginName string `json:"loginName"`
+}
+
+// wireDeviceInvite decodes the fields used for metrics and the per-invite log
+// event. inviteUrl is deliberately omitted — it is a bearer token that must
+// never reach telemetry.
 type wireDeviceInvite struct {
-	Accepted      bool `json:"accepted"`
-	MultiUse      bool `json:"multiUse"`
-	AllowExitNode bool `json:"allowExitNode"`
+	Accepted      bool           `json:"accepted"`
+	MultiUse      bool           `json:"multiUse"`
+	AllowExitNode bool           `json:"allowExitNode"`
+	Email         string         `json:"email"`
+	AcceptedBy    wireAcceptedBy `json:"acceptedBy"`
 }
 
 // DeviceInvites lists the share invites for a single device. The endpoint
@@ -42,7 +57,13 @@ func (c *Client) DeviceInvites(ctx context.Context, deviceID string) ([]DeviceIn
 	}
 	out := make([]DeviceInvite, 0, len(wire))
 	for _, w := range wire {
-		out = append(out, DeviceInvite(w))
+		out = append(out, DeviceInvite{
+			Accepted:        w.Accepted,
+			MultiUse:        w.MultiUse,
+			AllowExitNode:   w.AllowExitNode,
+			Email:           w.Email,
+			AcceptedByLogin: w.AcceptedBy.LoginName,
+		})
 	}
 	return out, nil
 }

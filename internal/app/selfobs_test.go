@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
@@ -72,6 +74,68 @@ func TestAPIObserverDuration(t *testing.T) {
 	// → BucketCounts index 3 = (0.1, 0.25].
 	if got := p.BucketCounts[3]; got != 1 {
 		t.Errorf("BucketCounts = %v, want index 3 == 1", p.BucketCounts)
+	}
+}
+
+// TestEmitPIIFilterCategory verifies that emitPIIFilterCategory emits one
+// datapoint per PII category: value 0 for redacted categories, 1 for emitted.
+func TestEmitPIIFilterCategory(t *testing.T) {
+	rec := telemetrytest.New()
+
+	// Build a config where Emails is redacted and everything else is emitted.
+	cfg := config.PIIFilterConfig{
+		Emails:           false,
+		UserDisplayNames: true,
+		UserIDs:          true,
+		Hostnames:        true,
+		NodeIDs:          true,
+		TailscaleIPs:     true,
+		InternalIPs:      true,
+		ExternalIPs:      true,
+		ServiceAddrs:     true,
+		EndpointPaths:    true,
+		NetworkTopology:  true,
+		TailnetName:      true,
+		FreeTextDetails:  true,
+	}
+
+	emitPIIFilterCategory(rec.Emitter(), cfg)
+
+	pts := rec.MetricPoints("tailscale2otel.pii_filter.category")
+	if len(pts) != len(pii.AllCategories) {
+		t.Fatalf("got %d pii_filter.category points, want %d (one per category)", len(pts), len(pii.AllCategories))
+	}
+
+	byCategory := map[string]float64{}
+	for _, p := range pts {
+		if p.Kind != "gauge" {
+			t.Errorf("category=%q kind=%q, want gauge", p.Attrs["category"], p.Kind)
+		}
+		if p.Unit != "1" {
+			t.Errorf("category=%q unit=%q, want 1", p.Attrs["category"], p.Unit)
+		}
+		byCategory[p.Attrs["category"]] = p.Value
+	}
+
+	// emails is false → value 0 (redacted).
+	if v, ok := byCategory[string(pii.CatEmails)]; !ok {
+		t.Errorf("no datapoint for category=%q", pii.CatEmails)
+	} else if v != 0 {
+		t.Errorf("category=%q value=%v, want 0 (redacted)", pii.CatEmails, v)
+	}
+
+	// hostnames is true → value 1 (emitted).
+	if v, ok := byCategory[string(pii.CatHostnames)]; !ok {
+		t.Errorf("no datapoint for category=%q", pii.CatHostnames)
+	} else if v != 1 {
+		t.Errorf("category=%q value=%v, want 1 (emitted)", pii.CatHostnames, v)
+	}
+
+	// Verify all 13 categories are present.
+	for _, cat := range pii.AllCategories {
+		if _, ok := byCategory[string(cat)]; !ok {
+			t.Errorf("missing datapoint for category=%q", cat)
+		}
 	}
 }
 

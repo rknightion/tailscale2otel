@@ -542,6 +542,35 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 
 ---
 
+## `pii_filter` — PII / identifier redaction
+
+Runtime opt-out toggles for each identifier category. All 13 categories default to **`true`**
+(identifiers are emitted as-is). Set a category to `false` to drop those identifiers from metrics
+and logs at collection time. Gauges whose only meaningful identity is a redacted category are
+suppressed entirely. Categories are independent — you can redact external IPs while keeping
+Tailscale IPs, for example.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `pii_filter.emails` | `true` | User/actor login names (frequently email addresses, e.g. `enduser.login`). |
+| `pii_filter.user_display_names` | `true` | Actor display (human) names (e.g. `enduser.name`). |
+| `pii_filter.user_ids` | `true` | Numeric/opaque user IDs (e.g. `enduser.id`). |
+| `pii_filter.hostnames` | `true` | Device and collector-host hostnames. |
+| `pii_filter.node_ids` | `true` | Tailscale node IDs (e.g. the `nodeId` field on a device). |
+| `pii_filter.tailscale_ips` | `true` | Tailscale overlay addresses: `100.64.0.0/10` (IPv4) and `fd7a:115c:a1e0::/48` (IPv6). |
+| `pii_filter.internal_ips` | `true` | RFC 1918 / ULA / link-local addresses (non-Tailscale private ranges). |
+| `pii_filter.external_ips` | `true` | Public/routable (non-private) IP addresses. |
+| `pii_filter.service_addrs` | `true` | VIP service names from the Tailscale Services collector. |
+| `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability spans and metrics. |
+| `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
+| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). |
+| `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. |
+
+> **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
+> category to `false` simply omits that class of identifier from emitted telemetry entirely.
+
+---
+
 ## `admin` — admin HTTP server (probes + status page)
 
 Always-off-by-default HTTP server exposing liveness/readiness probes plus an optional status page.

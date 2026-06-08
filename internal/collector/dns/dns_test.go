@@ -177,3 +177,61 @@ func TestCollectPropagatesError(t *testing.T) {
 		t.Fatalf("Collect: expected error, got nil")
 	}
 }
+
+func TestCollectSearchPathInfoGauge(t *testing.T) {
+	api := &fakeAPI{cfg: &tsapi.DNSConfig{
+		SearchPaths: []string{"corp.example.com", "lab.example.com"},
+	}}
+	rec := telemetrytest.New()
+
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// The count metric must still be present and correct.
+	if got := gaugeValue(t, rec, "tailscale.dns.search_paths.count"); got != 2 {
+		t.Errorf("search_paths.count = %v, want 2", got)
+	}
+
+	// The new per-search-path info gauge must have exactly 2 datapoints.
+	pts := rec.MetricPoints("tailscale.dns.search_path")
+	if len(pts) != 2 {
+		t.Fatalf("search_path points = %d, want 2", len(pts))
+	}
+
+	// Build a map of domain → point for easy lookup.
+	byDomain := make(map[string]telemetrytest.MetricPoint, len(pts))
+	for _, p := range pts {
+		byDomain[p.Attrs[attrSearchPathDomain]] = p
+	}
+
+	for _, domain := range []string{"corp.example.com", "lab.example.com"} {
+		p, ok := byDomain[domain]
+		if !ok {
+			t.Errorf("no search_path point for domain=%q", domain)
+			continue
+		}
+		if p.Kind != "gauge" {
+			t.Errorf("search_path[%s] kind = %q, want gauge", domain, p.Kind)
+		}
+		if p.Unit != "1" {
+			t.Errorf("search_path[%s] unit = %q, want 1", domain, p.Unit)
+		}
+		if p.Value != 1 {
+			t.Errorf("search_path[%s] value = %v, want 1", domain, p.Value)
+		}
+	}
+}
+
+func TestCollectSearchPathEmptyYieldsNoInfoPoints(t *testing.T) {
+	api := &fakeAPI{cfg: &tsapi.DNSConfig{}}
+	rec := telemetrytest.New()
+
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if got := len(rec.MetricPoints("tailscale.dns.search_path")); got != 0 {
+		t.Errorf("search_path points = %d, want 0 (no search paths)", got)
+	}
+}

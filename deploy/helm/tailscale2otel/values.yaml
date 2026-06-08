@@ -484,6 +484,37 @@ config:
     # with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API).
     instance_id: ""
 
+  # PII / identifier redaction. All categories default true (emitted). Set a category to
+  # false to drop those identifiers from metrics and logs at runtime (opt-out). Disabling a
+  # category whose label is a gauge's sole identity suppresses that gauge's datapoints.
+  pii_filter:
+    # -- Emit user/actor login names (often emails).
+    emails: true
+    # -- Emit actor display (human) names.
+    user_display_names: true
+    # -- Emit numeric/opaque user IDs (enduser.id).
+    user_ids: true
+    # -- Emit device + collector-host hostnames.
+    hostnames: true
+    # -- Emit Tailscale node IDs.
+    node_ids: true
+    # -- Emit Tailscale-range addresses (100.64.0.0/10, fd7a:115c:a1e0::/48).
+    tailscale_ips: true
+    # -- Emit RFC1918 / ULA / link-local addresses.
+    internal_ips: true
+    # -- Emit public/routable addresses.
+    external_ips: true
+    # -- Emit VIP service names.
+    service_addrs: true
+    # -- Emit Tailscale API endpoint paths (self-obs).
+    endpoint_paths: true
+    # -- Emit route CIDRs, split-DNS domains, and search paths.
+    network_topology: true
+    # -- Emit the tailnet identifier.
+    tailnet_name: true
+    # -- Emit audit old/new/details, target names, key descriptions, posture values.
+    free_text_details: true
+
   # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
   # The page exposes operational metadata (collector health, cardinality, discovered
   # nodes, redacted config) but NEVER secret values.

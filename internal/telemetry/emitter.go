@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 )
 
 // otelEmitter implements Emitter on top of the OpenTelemetry Go SDK.
@@ -23,6 +24,9 @@ type otelEmitter struct {
 	// tailscale2otel.series.active self-metric. Nil disables tracking; Observe is
 	// nil-safe so the emit path needs no guard.
 	card *CardinalityTracker
+	// redactor applies PII category filtering at every emit site. Never nil (New
+	// with a nil map is a no-op fast path).
+	redactor *pii.Redactor
 
 	// reserved holds Prometheus label names that Grafana Cloud promotes from the
 	// OTEL Resource onto every series (instance/job/service_*). A data-point
@@ -44,23 +48,33 @@ type otelEmitter struct {
 }
 
 // NewEmitter returns an Emitter that records to the given meter and logger,
-// without cardinality self-tracking, a reserved-label set, or collision logging.
+// without cardinality self-tracking, a reserved-label set, collision logging, or
+// PII filtering.
 func NewEmitter(meter metric.Meter, logger log.Logger) Emitter {
-	return newOtelEmitter(meter, logger, nil, nil, nil)
+	return newOtelEmitter(meter, logger, nil, nil, nil, nil)
+}
+
+// NewEmitterWithPII returns an Emitter like NewEmitter but applies the given PII
+// categories at every emit site. A nil categories map is equivalent to all-on
+// (no redaction, fast path).
+func NewEmitterWithPII(meter metric.Meter, logger log.Logger, cats pii.Categories) Emitter {
+	return newOtelEmitter(meter, logger, nil, nil, nil, cats)
 }
 
 // newOtelEmitter returns an *otelEmitter wired to the given meter, logger,
-// (optional) cardinality tracker, reserved promoted-label set, and diagnostic
-// logger. A nil card disables series.active tracking; a nil reserved set and nil
-// diag disable reserved-label dropping and collision logging respectively (the
-// intra-attribute collision guard still runs).
-func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker, reserved map[string]struct{}, diag *slog.Logger) *otelEmitter {
+// (optional) cardinality tracker, reserved promoted-label set, diagnostic logger,
+// and PII categories. A nil card disables series.active tracking; a nil reserved
+// set and nil diag disable reserved-label dropping and collision logging
+// respectively (the intra-attribute collision guard still runs). A nil cats map
+// disables PII filtering (all-on fast path).
+func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker, reserved map[string]struct{}, diag *slog.Logger, cats pii.Categories) *otelEmitter {
 	return &otelEmitter{
 		meter:      meter,
 		logger:     logger,
 		card:       card,
 		reserved:   reserved,
 		diag:       diag,
+		redactor:   pii.New(cats),
 		counters:   map[string]metric.Float64Counter{},
 		gauges:     map[string]metric.Float64Gauge{},
 		updowns:    map[string]metric.Float64UpDownCounter{},
@@ -69,6 +83,7 @@ func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTrac
 }
 
 func (e *otelEmitter) Counter(name, unit, desc string, add float64, attrs Attrs) {
+	attrs = Attrs(e.redactor.Merge(attrs))
 	e.mu.Lock()
 	c, ok := e.counters[name]
 	if !ok {
@@ -87,6 +102,11 @@ func (e *otelEmitter) Counter(name, unit, desc string, add float64, attrs Attrs)
 }
 
 func (e *otelEmitter) Gauge(name, unit, desc string, value float64, attrs Attrs) {
+	filtered, suppress := e.redactor.Identity(attrs)
+	if suppress {
+		return
+	}
+	attrs = Attrs(filtered)
 	e.mu.Lock()
 	g, ok := e.gauges[name]
 	if !ok {
@@ -105,6 +125,11 @@ func (e *otelEmitter) Gauge(name, unit, desc string, value float64, attrs Attrs)
 }
 
 func (e *otelEmitter) UpDownCounter(name, unit, desc string, value float64, attrs Attrs) {
+	filtered, suppress := e.redactor.Identity(attrs)
+	if suppress {
+		return
+	}
+	attrs = Attrs(filtered)
 	e.mu.Lock()
 	u, ok := e.updowns[name]
 	if !ok {
@@ -127,6 +152,7 @@ func (e *otelEmitter) Histogram(name, unit, desc string, value float64, bounds [
 }
 
 func (e *otelEmitter) HistogramCtx(ctx context.Context, name, unit, desc string, value float64, bounds []float64, attrs Attrs) {
+	attrs = Attrs(e.redactor.Merge(attrs))
 	e.mu.Lock()
 	h, ok := e.histograms[name]
 	if !ok {
@@ -147,6 +173,7 @@ func (e *otelEmitter) HistogramCtx(ctx context.Context, name, unit, desc string,
 }
 
 func (e *otelEmitter) LogEvent(ev Event) {
+	ev.Attrs = Attrs(e.redactor.Log(ev.Attrs))
 	var r log.Record
 	if !ev.Timestamp.IsZero() {
 		r.SetTimestamp(ev.Timestamp)

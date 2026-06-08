@@ -24,6 +24,11 @@ const (
 	metricPostureGated  = "tailscale.acl.posture_gated_rules"
 )
 
+// EventRiskyRule is the OTLP log event name emitted once per unrestricted rule
+// (wildcard src AND wildcard dst in a non-deny rule). The event body names the
+// offending src and dst entries so operators can identify the specific rule.
+const EventRiskyRule = "tailscale.acl.risky_rule"
+
 var (
 	docACLLastChanged = metricdoc.Metric{
 		Name:        metricLastChanged,
@@ -86,6 +91,14 @@ var (
 		Attributes:  []string{attrSection},
 		Group:       groupACL,
 	}
+
+	docACLRiskyRule = metricdoc.LogEvent{
+		Name:        EventRiskyRule,
+		Severity:    "WARN",
+		Description: "Emitted once per unrestricted ACL/grant rule (wildcard `src` **and** wildcard `dst` in a non-deny rule). Carries `tailscale.acl.section` and `tailscale.acl.rule` (the offending src/dst entries; a free-text attribute droppable via `pii_filter.free_text_details`). The log body also names the rule for readability.",
+		Attributes:  []string{attrSection, attrRule},
+		Group:       groupACL,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -97,7 +110,7 @@ func Catalog() []metricdoc.Metric {
 	}
 }
 
-// LogCatalog returns the log events this package emits (none).
+// LogCatalog returns the log events this package emits.
 func LogCatalog() []metricdoc.LogEvent {
-	return nil
+	return []metricdoc.LogEvent{docACLRiskyRule}
 }

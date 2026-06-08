@@ -169,6 +169,19 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__SECRET` | `""` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN) |
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | reject signed timestamps older than this (replay window); "0" disables the check |
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | best-effort: drop a webhook event already counted via the audit logs |
+| `TS2OTEL_PII_FILTER__EMAILS` | `true` | user/actor login names (often email addresses) |
+| `TS2OTEL_PII_FILTER__USER_DISPLAY_NAMES` | `true` | actor display (human) names |
+| `TS2OTEL_PII_FILTER__USER_IDS` | `true` | numeric/opaque user IDs (enduser.id) |
+| `TS2OTEL_PII_FILTER__HOSTNAMES` | `true` | device + collector-host hostnames |
+| `TS2OTEL_PII_FILTER__NODE_IDS` | `true` | Tailscale node IDs |
+| `TS2OTEL_PII_FILTER__TAILSCALE_IPS` | `true` | 100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses |
+| `TS2OTEL_PII_FILTER__INTERNAL_IPS` | `true` | RFC1918 / ULA / link-local addresses |
+| `TS2OTEL_PII_FILTER__EXTERNAL_IPS` | `true` | public/routable addresses |
+| `TS2OTEL_PII_FILTER__SERVICE_ADDRS` | `true` | VIP service names |
+| `TS2OTEL_PII_FILTER__ENDPOINT_PATHS` | `true` | Tailscale API endpoint paths (self-obs) |
+| `TS2OTEL_PII_FILTER__NETWORK_TOPOLOGY` | `true` | route CIDRs + split-DNS domains + search paths |
+| `TS2OTEL_PII_FILTER__TAILNET_NAME` | `true` | tailnet identifier |
+| `TS2OTEL_PII_FILTER__FREE_TEXT_DETAILS` | `true` | audit old/new/details, target names, key descriptions, posture values |
 | `TS2OTEL_SELF_OBSERVABILITY__ENABLED` | `true` | emit tailscale2otel.up, api.requests, runtime metrics, etc. |
 | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` | `""` | service.instance.id resource attr; empty => host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME |
 | `TS2OTEL_ADMIN__ENABLED` | `false` | run the admin HTTP server (probes + status page + optional pprof mount) |

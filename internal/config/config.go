@@ -58,6 +58,7 @@ type Config struct {
 	Streaming         StreamingConfig         `yaml:"streaming"`
 	Webhook           WebhookConfig           `yaml:"webhook"`
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
+	PIIFilter         PIIFilterConfig         `yaml:"pii_filter"`
 	Admin             AdminConfig             `yaml:"admin"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 	Tracing           TracingConfig           `yaml:"tracing"`
@@ -606,6 +607,25 @@ type TracingConfig struct {
 	Enabled    bool    `yaml:"enabled"`
 	Sampler    string  `yaml:"sampler"`     // always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio
 	SamplerArg float64 `yaml:"sampler_arg"` // ratio in [0,1] for the *traceidratio samplers
+}
+
+// PIIFilterConfig controls which PII / identifier categories are emitted.
+// All categories default to true (emitted); set a category to false to drop
+// those identifiers from metrics and logs at runtime (opt-out redaction).
+type PIIFilterConfig struct {
+	Emails           bool `yaml:"emails"`
+	UserDisplayNames bool `yaml:"user_display_names"`
+	UserIDs          bool `yaml:"user_ids"`
+	Hostnames        bool `yaml:"hostnames"`
+	NodeIDs          bool `yaml:"node_ids"`
+	TailscaleIPs     bool `yaml:"tailscale_ips"`
+	InternalIPs      bool `yaml:"internal_ips"`
+	ExternalIPs      bool `yaml:"external_ips"`
+	ServiceAddrs     bool `yaml:"service_addrs"`
+	EndpointPaths    bool `yaml:"endpoint_paths"`
+	NetworkTopology  bool `yaml:"network_topology"`
+	TailnetName      bool `yaml:"tailnet_name"`
+	FreeTextDetails  bool `yaml:"free_text_details"`
 }
 
 // SelfObservabilityConfig toggles emitting the collector's own telemetry.

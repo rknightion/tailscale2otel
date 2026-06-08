@@ -2,6 +2,7 @@ package acl
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 const (
 	attrPosition     = "tailscale.acl.position"          // src|dst
 	attrApproverKind = "tailscale.acl.autoapprover_kind" // routes|exit_node|services
+	attrRule         = "tailscale.acl.rule"              // offending src/dst (free-text; redactable)
 )
 
 // ruleEntry is the subset of an ACL/grant rule the risk pass inspects. Grants
@@ -69,6 +71,18 @@ func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section s
 			}
 			if ws && wd {
 				unrestricted++
+				// Emit a per-rule log event naming the offending src/dst so
+				// operators can identify which rule is unrestricted, not just
+				// how many exist.
+				rule := fmt.Sprintf("src=%v dst=%v", srcElems(en), dstElems(en))
+				e.LogEvent(telemetry.Event{
+					Name:     EventRiskyRule,
+					Severity: telemetry.SeverityWarn,
+					Body:     fmt.Sprintf("Unrestricted ACL rule in section %q: %s", section, rule),
+					// rule (src/dst contents) is a redactable free_text_details attr so an
+					// operator can drop it; the body keeps it for human readability.
+					Attrs: telemetry.Attrs{attrSection: section, attrRule: rule},
+				})
 			}
 		}
 		// posture coverage counts all rules regardless of action (a deny rule

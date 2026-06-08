@@ -58,6 +58,14 @@ var (
 		Attributes:  []string{attrID, attrType, attrDescription},
 		Group:       groupKeys,
 	}
+
+	docKeyScopesLog = metricdoc.LogEvent{
+		Name:        MetricKeyScopes,
+		Severity:    "INFO",
+		Description: "Emitted for each OAuth-client/API credential that carries scopes (scope-sprawl audit log). `tailscale.key.scope_values` is a comma-separated list of the granted capability strings. Gated by `cardinality.per_entity.key`.",
+		Attributes:  []string{attrID, attrScopeValues},
+		Group:       groupKeys,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -67,5 +75,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docKeyExpiring}
+	return []metricdoc.LogEvent{docKeyExpiring, docKeyScopesLog}
 }

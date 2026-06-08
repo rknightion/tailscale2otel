@@ -19,7 +19,7 @@ func newReaderEmitter(t *testing.T, reserved map[string]struct{}) (*otelEmitter,
 	t.Helper()
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	return newOtelEmitter(mp.Meter("test"), noop.NewLoggerProvider().Logger("test"), nil, reserved, nil), reader
+	return newOtelEmitter(mp.Meter("test"), noop.NewLoggerProvider().Logger("test"), nil, reserved, nil, nil), reader
 }
 
 func collectAttrs(t *testing.T, reader *sdkmetric.ManualReader, name string) attribute.Set {

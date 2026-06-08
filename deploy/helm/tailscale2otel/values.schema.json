@@ -453,6 +453,50 @@
                         }
                     }
                 },
+                "pii_filter": {
+                    "type": "object",
+                    "properties": {
+                        "emails": {
+                            "type": "boolean"
+                        },
+                        "endpoint_paths": {
+                            "type": "boolean"
+                        },
+                        "external_ips": {
+                            "type": "boolean"
+                        },
+                        "free_text_details": {
+                            "type": "boolean"
+                        },
+                        "hostnames": {
+                            "type": "boolean"
+                        },
+                        "internal_ips": {
+                            "type": "boolean"
+                        },
+                        "network_topology": {
+                            "type": "boolean"
+                        },
+                        "node_ids": {
+                            "type": "boolean"
+                        },
+                        "service_addrs": {
+                            "type": "boolean"
+                        },
+                        "tailnet_name": {
+                            "type": "boolean"
+                        },
+                        "tailscale_ips": {
+                            "type": "boolean"
+                        },
+                        "user_display_names": {
+                            "type": "boolean"
+                        },
+                        "user_ids": {
+                            "type": "boolean"
+                        }
+                    }
+                },
                 "profiling": {
                     "type": "object",
                     "properties": {

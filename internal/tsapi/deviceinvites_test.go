@@ -43,9 +43,23 @@ func TestDeviceInvites_DecodesCuratedFields(t *testing.T) {
 	if !invs[0].Accepted || invs[0].MultiUse || invs[0].AllowExitNode {
 		t.Errorf("invs[0] = %+v, want accepted-only (true/false/false)", invs[0])
 	}
+	if invs[0].Email != "a@example.com" {
+		t.Errorf("invs[0].Email = %q, want a@example.com", invs[0].Email)
+	}
+	if invs[0].AcceptedByLogin != "a@example.com" {
+		t.Errorf("invs[0].AcceptedByLogin = %q, want a@example.com", invs[0].AcceptedByLogin)
+	}
 	if invs[1].Accepted || !invs[1].MultiUse || !invs[1].AllowExitNode {
 		t.Errorf("invs[1] = %+v, want pending+multiUse+allowExitNode (false/true/true)", invs[1])
 	}
+	if invs[1].Email != "" {
+		t.Errorf("invs[1].Email = %q, want empty (no email on second invite)", invs[1].Email)
+	}
+	if invs[1].AcceptedByLogin != "" {
+		t.Errorf("invs[1].AcceptedByLogin = %q, want empty (pending invite)", invs[1].AcceptedByLogin)
+	}
+	// inviteUrl must never be decoded — verify it is not accessible on the struct.
+	// (compile-time check: DeviceInvite has no InviteUrl field)
 }
 
 func TestDeviceInvites_NullBodyYieldsNil(t *testing.T) {

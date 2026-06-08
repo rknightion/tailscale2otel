@@ -64,13 +64,21 @@ var (
 		Attributes:  []string{attrAddress, attrKind, attrDomain, attrUseWithExitNode},
 		Group:       groupDNS,
 	}
+	docSearchPath = metricdoc.Metric{
+		Name:        metricSearchPath,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Info gauge (always `1`) for each configured DNS search path, labeled by `domain`.",
+		Attributes:  []string{attrSearchPathDomain},
+		Group:       groupDNS,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docNameserversCount, docSearchPathsCount, docSplitZonesCount, docMagicDNS,
-		docOverrideLocal, docUseWithExitNode, docResolver,
+		docOverrideLocal, docUseWithExitNode, docResolver, docSearchPath,
 	}
 }
 

@@ -2,6 +2,7 @@ package acl_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,5 +182,106 @@ func TestAutoApproverPresentButEmptyEmitsZeros(t *testing.T) {
 		if v, ok := by[kind]; !ok || v != 0 {
 			t.Fatalf("autoapprovers %s = %v (ok=%v), want 0", kind, v, ok)
 		}
+	}
+}
+
+// TestRiskyRuleLogEvent verifies that a per-risky-rule log event is emitted for
+// each unrestricted rule (wildcard src AND wildcard dst in a non-deny rule), and
+// that count metrics are unaffected. Safe rules must NOT produce a log event.
+func TestRiskyRuleLogEvent(t *testing.T) {
+	doc := `{
+		"acls": [
+			{"action":"accept","src":["*"],"dst":["*:*"]},
+			{"action":"accept","src":["group:eng"],"dst":["tag:prod:22"]}
+		]
+	}`
+	rec := collectDoc(t, doc)
+
+	// Count metrics must still be emitted.
+	unr := gaugeBy(t, rec, "tailscale.acl.unrestricted_rules", "tailscale.acl.section")
+	if unr["acls"] != 1 {
+		t.Fatalf("unrestricted_rules acls = %v, want 1", unr["acls"])
+	}
+	wild := gaugeByPair(t, rec, "tailscale.acl.wildcard_rules", "tailscale.acl.section", "tailscale.acl.position")
+	if wild["acls/src"] != 1 || wild["acls/dst"] != 1 {
+		t.Fatalf("wildcard_rules acls src/dst = %v/%v, want 1/1", wild["acls/src"], wild["acls/dst"])
+	}
+
+	// Exactly one risky_rule log event, for the unrestricted rule only.
+	var riskyLogs []telemetrytest.LogRecord
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == acl.EventRiskyRule {
+			riskyLogs = append(riskyLogs, lr)
+		}
+	}
+	if len(riskyLogs) != 1 {
+		t.Fatalf("risky_rule log events = %d, want 1", len(riskyLogs))
+	}
+	lr := riskyLogs[0]
+
+	// Severity must be WARN.
+	if lr.SeverityText != "WARN" {
+		t.Errorf("risky_rule severity = %q, want WARN", lr.SeverityText)
+	}
+	// Section attribute must be "acls".
+	if lr.Attrs["tailscale.acl.section"] != "acls" {
+		t.Errorf("risky_rule section attr = %q, want acls", lr.Attrs["tailscale.acl.section"])
+	}
+	// Body must contain the offending src and dst content.
+	if lr.Body == "" {
+		t.Error("risky_rule body is empty")
+	}
+	// The src/dst content must also be a redactable free-text attribute so an
+	// operator can drop it via pii_filter.free_text_details.
+	if rule := lr.Attrs["tailscale.acl.rule"]; rule == "" {
+		t.Error("risky_rule tailscale.acl.rule attr is empty")
+	} else if !strings.Contains(rule, "src=") || !strings.Contains(rule, "dst=") {
+		t.Errorf("risky_rule tailscale.acl.rule = %q, want src=/dst= content", rule)
+	}
+}
+
+// TestRiskyRuleLogEventSafeRule verifies no risky_rule log is emitted when no
+// unrestricted rules are present.
+func TestRiskyRuleLogEventSafeRule(t *testing.T) {
+	doc := `{"acls":[{"action":"accept","src":["group:eng"],"dst":["tag:prod:22"]}]}`
+	rec := collectDoc(t, doc)
+
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == acl.EventRiskyRule {
+			t.Fatalf("unexpected risky_rule log for safe rule: %+v", lr)
+		}
+	}
+}
+
+// TestRiskyRuleLogEventDenyExcluded verifies that deny rules with wildcard
+// src+dst do NOT produce a risky_rule log (deny rules are already blocking).
+func TestRiskyRuleLogEventDenyExcluded(t *testing.T) {
+	doc := `{"acls":[{"action":"deny","src":["*"],"dst":["*:*"]}]}`
+	rec := collectDoc(t, doc)
+
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == acl.EventRiskyRule {
+			t.Fatalf("unexpected risky_rule log for deny rule: %+v", lr)
+		}
+	}
+}
+
+// TestRiskyRuleLogEventGrantsSection verifies that grants section unrestricted
+// rules also produce risky_rule log events with the correct section attribute.
+func TestRiskyRuleLogEventGrantsSection(t *testing.T) {
+	doc := `{"grants":[{"src":["*"],"dst":["*"]}]}`
+	rec := collectDoc(t, doc)
+
+	var found bool
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == acl.EventRiskyRule {
+			found = true
+			if lr.Attrs["tailscale.acl.section"] != "grants" {
+				t.Errorf("risky_rule section attr = %q, want grants", lr.Attrs["tailscale.acl.section"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no risky_rule log emitted for unrestricted grants rule")
 	}
 }

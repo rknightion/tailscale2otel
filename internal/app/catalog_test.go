@@ -77,6 +77,9 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// series.by_group.
 	emitSeriesByGroup(rec.Emitter(), map[string]int{"Devices": 2})
 
+	// pii_filter.category: emit with a default config (all categories enabled).
+	emitPIIFilterCategory(rec.Emitter(), config.Default().PIIFilter)
+
 	declared := map[string]metricdoc.Metric{}
 	for _, m := range appcatalog.Catalog() {
 		declared[m.Name] = m

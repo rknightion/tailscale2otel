@@ -27,7 +27,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.7.0
+version: 0.7.1
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "0.1.0"
 home: https://github.com/rknightion/tailscale2otel

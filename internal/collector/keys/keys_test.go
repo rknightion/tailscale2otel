@@ -355,6 +355,68 @@ func TestCollect_PreauthorizedGauge_PerEntityFalse(t *testing.T) {
 	}
 }
 
+func TestCollect_ScopesLog(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+
+	t.Run("emits log with scope values when perEntity enabled and scopes present", func(t *testing.T) {
+		rec := telemetrytest.New()
+		c := keys.New(&fakeLister{keys: []tsapi.Key{
+			{ID: "oauth", Type: "client", Description: "tf-runner", Scopes: []string{"devices:read", "dns:read"}},
+		}}, 0, time.Hour, func() time.Time { return now })
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+
+		r := findLog(t, rec.LogRecords(), "tailscale.key.scopes")
+		if r.SeverityText != "INFO" {
+			t.Errorf("severity = %q, want INFO", r.SeverityText)
+		}
+		if r.Attrs["tailscale.key.id"] != "oauth" {
+			t.Errorf("key.id = %q, want oauth", r.Attrs["tailscale.key.id"])
+		}
+		if got := r.Attrs["tailscale.key.scope_values"]; got != "devices:read,dns:read" {
+			t.Errorf("scope_values = %q, want %q", got, "devices:read,dns:read")
+		}
+
+		// Count gauge must still be emitted.
+		pts := rec.MetricPoints("tailscale.key.scopes")
+		p := findPoint(t, pts, map[string]string{"tailscale.key.id": "oauth"})
+		if p.Value != 2 {
+			t.Errorf("scopes gauge value = %v, want 2", p.Value)
+		}
+	})
+
+	t.Run("no scopes log when len(Scopes)==0", func(t *testing.T) {
+		rec := telemetrytest.New()
+		c := keys.New(&fakeLister{keys: []tsapi.Key{
+			{ID: "auth", Type: "auth", Reusable: true},
+		}}, 0, time.Hour, func() time.Time { return now })
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		for _, r := range rec.LogRecords() {
+			if r.EventName == "tailscale.key.scopes" {
+				t.Fatalf("unexpected tailscale.key.scopes log for key with no scopes: %+v", r)
+			}
+		}
+	})
+
+	t.Run("no scopes log when perEntity disabled", func(t *testing.T) {
+		rec := telemetrytest.New()
+		c := keys.New(&fakeLister{keys: []tsapi.Key{
+			{ID: "oauth", Type: "client", Scopes: []string{"all:read"}},
+		}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		for _, r := range rec.LogRecords() {
+			if r.EventName == "tailscale.key.scopes" {
+				t.Fatalf("unexpected tailscale.key.scopes log with WithPerEntity(false): %+v", r)
+			}
+		}
+	})
+}
+
 func TestCollect_TypeAndAuthKind(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()

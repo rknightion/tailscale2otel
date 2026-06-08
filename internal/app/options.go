@@ -10,6 +10,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
@@ -46,6 +47,29 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		TracingEnabled:   cfg.Tracing.Enabled,
 		TraceSampler:     cfg.Tracing.Sampler,
 		TraceSamplerArg:  cfg.Tracing.SamplerArg,
+		PIIFilter:        piiCategories(cfg.PIIFilter),
+	}
+}
+
+// piiCategories converts config.PIIFilterConfig into the pii.Categories map used
+// by the redactor. Every category is explicitly mapped; the redactor treats an
+// absent key as enabled, but we emit all 13 so the config layer's defaults (all
+// true) are faithfully reflected and future categories can't silently escape.
+func piiCategories(f config.PIIFilterConfig) pii.Categories {
+	return pii.Categories{
+		pii.CatEmails:           f.Emails,
+		pii.CatUserDisplayNames: f.UserDisplayNames,
+		pii.CatUserIDs:          f.UserIDs,
+		pii.CatHostnames:        f.Hostnames,
+		pii.CatNodeIDs:          f.NodeIDs,
+		pii.CatTailscaleIPs:     f.TailscaleIPs,
+		pii.CatInternalIPs:      f.InternalIPs,
+		pii.CatExternalIPs:      f.ExternalIPs,
+		pii.CatServiceAddrs:     f.ServiceAddrs,
+		pii.CatEndpointPaths:    f.EndpointPaths,
+		pii.CatNetworkTopology:  f.NetworkTopology,
+		pii.CatTailnetName:      f.TailnetName,
+		pii.CatFreeTextDetails:  f.FreeTextDetails,
 	}
 }
 

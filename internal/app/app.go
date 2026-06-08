@@ -374,6 +374,7 @@ func (a *App) Run(ctx context.Context) error {
 		go runRuntimeReporter(ctx, a.procEmitter, interval, readRuntimeStats)
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
+		go runPIIFilterReporter(ctx, a.cfg.PIIFilter, a.procEmitter, interval)
 		go runDedupReporter(ctx, a.procEmitter, interval, map[string]*dedup.Set{
 			"flow":          a.flowDedup,
 			"audit":         a.auditDedup,

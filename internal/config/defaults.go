@@ -189,6 +189,11 @@ func Default() *Config {
 		SelfObservability: SelfObservabilityConfig{
 			Enabled: true,
 		},
+		PIIFilter: PIIFilterConfig{
+			Emails: true, UserDisplayNames: true, UserIDs: true, Hostnames: true, NodeIDs: true,
+			TailscaleIPs: true, InternalIPs: true, ExternalIPs: true, ServiceAddrs: true,
+			EndpointPaths: true, NetworkTopology: true, TailnetName: true, FreeTextDetails: true,
+		},
 		Tracing: TracingConfig{
 			Enabled:    false,
 			Sampler:    "parentbased_always_on",

@@ -134,6 +134,9 @@ const (
 // A name-keyed view (series.active) summed by the area that owns each metric.
 const MetricSeriesByGroup = "tailscale2otel.series.by_group"
 
+// MetricPIIFilterCategory is the PII-redaction-state gauge name.
+const MetricPIIFilterCategory = "tailscale2otel.pii_filter.category"
+
 // Descriptors for the app layer's self-observability metrics. Exported so the
 // emit sites in package app can reference them.
 var (
@@ -400,6 +403,18 @@ var DocSeriesByGroup = metricdoc.Metric{
 	Group:       GroupSelfObs,
 }
 
+// DocPIIFilterCategory is the PII-redaction-state gauge descriptor. One datapoint
+// per category; value 1 means the category is emitted, 0 means it is redacted.
+// Emitted only when self_observability.enabled is true.
+var DocPIIFilterCategory = metricdoc.Metric{
+	Name:        MetricPIIFilterCategory,
+	Unit:        "1",
+	Instrument:  metricdoc.Gauge,
+	Description: "PII redaction state per category: `1` = emitted, `0` = redacted (a **flag**, despite the `_ratio` Prometheus suffix). One datapoint per category, emitted each interval so dashboards can conditionally render PII-bearing panels.",
+	Attributes:  []string{"category"},
+	Group:       GroupSelfObs,
+}
+
 // Catalog returns the self-observability metrics the app layer emits, for the
 // docs generator.
 func Catalog() []metricdoc.Metric {
@@ -416,6 +431,7 @@ func Catalog() []metricdoc.Metric {
 		DocConfigWarnings, DocConfigValid,
 		DocIngestRecords, DocIngestBytes,
 		DocSeriesByGroup,
+		DocPIIFilterCategory,
 	}
 }
 
