@@ -676,7 +676,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				e.LogEvent(telemetry.Event{
 					Name:     docDeviceKeyExpiryLog.Name,
 					Severity: telemetry.SeverityWarn,
-					Body:     fmt.Sprintf("device %q node key expires in %.1f day(s)", d.Hostname, days),
+					Body:     "device node key expiring soon",
 					Attrs: telemetry.Attrs{
 						semconv.HostName:           d.Hostname,
 						semconv.HostID:             d.ID,
@@ -853,9 +853,9 @@ func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter,
 		if inv.Email == "" && inv.AcceptedByLogin == "" {
 			continue
 		}
-		body := fmt.Sprintf("device %q has a share invite", d.Hostname)
+		body := "device share invite pending"
 		if inv.Accepted {
-			body = fmt.Sprintf("device %q share invite accepted", d.Hostname)
+			body = "device share invite accepted"
 		}
 		e.LogEvent(telemetry.Event{
 			Name:     docDeviceInviteLog.Name,
@@ -969,7 +969,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 	e.LogEvent(telemetry.Event{
 		Name:     docPosture.Name,
 		Severity: telemetry.SeverityInfo,
-		Body:     fmt.Sprintf("device %q has %d posture attribute(s)", d.Hostname, len(attrs)),
+		Body:     fmt.Sprintf("device has %d posture attribute(s)", len(attrs)),
 		Attrs:    evAttrs,
 	})
 }

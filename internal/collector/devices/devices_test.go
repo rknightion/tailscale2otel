@@ -752,8 +752,15 @@ func TestCollect_PostureEnabled(t *testing.T) {
 	if laptop.Attrs["node:os"] != "linux" {
 		t.Fatalf("posture node:os = %q, want linux", laptop.Attrs["node:os"])
 	}
-	if laptop.Body == "" {
-		t.Fatal("posture event body is empty, want a summary")
+	// Body must include the attribute count but NOT the hostname — the hostname
+	// lives in the host.name attribute (redactable via pii_filter.hostnames).
+	// laptop has 2 posture attrs in this test: custom:foo + node:os.
+	wantBody := "device has 2 posture attribute(s)"
+	if laptop.Body != wantBody {
+		t.Fatalf("posture body = %q, want %q", laptop.Body, wantBody)
+	}
+	if laptop.Attrs[semconv.HostName] != "laptop" {
+		t.Fatalf("posture host.name attr = %q, want laptop (hostname still in attr)", laptop.Attrs[semconv.HostName])
 	}
 }
 
@@ -1397,6 +1404,10 @@ func TestCollect_DeviceInvitesLogEvents(t *testing.T) {
 	if accepted.SeverityText != "INFO" {
 		t.Errorf("accepted severity = %q, want INFO", accepted.SeverityText)
 	}
+	// Body must NOT contain the hostname (PII); the hostname lives in host.name attr.
+	if accepted.Body != "device share invite accepted" {
+		t.Errorf("accepted body = %q, want %q", accepted.Body, "device share invite accepted")
+	}
 
 	// Check pending invite attributes.
 	if got := pending.Attrs["host.name"]; got != "laptop" {
@@ -1407,6 +1418,10 @@ func TestCollect_DeviceInvitesLogEvents(t *testing.T) {
 	}
 	if got := pending.Attrs["tailscale.actor.login"]; got != "" {
 		t.Errorf("pending tailscale.actor.login = %q, want empty (not yet accepted)", got)
+	}
+	// Body must NOT contain the hostname (PII); the hostname lives in host.name attr.
+	if pending.Body != "device share invite pending" {
+		t.Errorf("pending body = %q, want %q", pending.Body, "device share invite pending")
 	}
 
 	// Existing count gauge must still be emitted unchanged.
@@ -1749,6 +1764,10 @@ func TestCollect_DeviceKeyExpiring_LogEmitted(t *testing.T) {
 	lr := keyExpiringLogs[0]
 	if lr.SeverityText != "WARN" {
 		t.Errorf("severity = %q, want WARN", lr.SeverityText)
+	}
+	// Body must NOT contain the hostname (PII); hostname lives in host.name attr.
+	if lr.Body != "device node key expiring soon" {
+		t.Errorf("body = %q, want %q", lr.Body, "device node key expiring soon")
 	}
 	if got := lr.Attrs["host.name"]; got != "warn-host" {
 		t.Errorf("host.name = %q, want warn-host", got)

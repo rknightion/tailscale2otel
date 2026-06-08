@@ -48,11 +48,19 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 	if lr.EventName != "tailscale.config.audit" {
 		t.Fatalf("event.name = %q, want tailscale.config.audit", lr.EventName)
 	}
-	if !strings.Contains(lr.Body, "a@example.com") {
-		t.Fatalf("body %q does not contain login a@example.com", lr.Body)
+	// Body must contain the action and target type (non-PII enums) but NOT
+	// the actor login or target name — those are PII identifiers that live in
+	// attributes (tailscale.actor.login, tailscale.target.name) where they are
+	// subject to pii_filter redaction.
+	wantBody := "CREATE on NODE.ALLOWED_IPS via ADMIN_CONSOLE"
+	if lr.Body != wantBody {
+		t.Fatalf("body = %q, want %q", lr.Body, wantBody)
 	}
-	if !strings.Contains(lr.Body, "CREATE") {
-		t.Fatalf("body %q does not contain action CREATE", lr.Body)
+	if strings.Contains(lr.Body, "a@example.com") {
+		t.Fatalf("body %q must not contain actor login (PII)", lr.Body)
+	}
+	if strings.Contains(lr.Body, "node.ts.net") {
+		t.Fatalf("body %q must not contain target name (PII)", lr.Body)
 	}
 	if lr.SeverityText != "INFO" {
 		t.Fatalf("severity = %q, want INFO", lr.SeverityText)

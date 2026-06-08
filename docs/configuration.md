@@ -569,6 +569,23 @@ Tailscale IPs, for example.
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
 > category to `false` simply omits that class of identifier from emitted telemetry entirely.
 
+> **Limitation — log message bodies are NOT redacted.** The filter applies to metric labels and
+> log record **attributes** only. Log record **bodies** are fixed human-readable strings that do
+> not contain PII identifiers (hostnames, emails, IPs, etc.) by design — they use only non-PII
+> fields such as action type, target type, and counts. However, two signal bodies carry
+> free-text detail that is controlled by `pii_filter.free_text_details`:
+>
+> - **`tailscale.acl.risky_rule`** — when `free_text_details` is **enabled** (`true`), the body
+>   contains the offending ACL rule text (e.g. `src=tag:servers/dst=*:*`); the matching
+>   `tailscale.audit.details` **attribute** is redacted when `free_text_details` is `false`, but
+>   the body is unchanged.
+> - **`tailscale.key.scopes`** — when `free_text_details` is **enabled** (`true`), the body
+>   contains the key description text; the matching attribute is redacted when `false`, but the
+>   body is unchanged.
+>
+> Operators with strict PII posture should also restrict log-body retention at the backend
+> (e.g. via Grafana Cloud log pipeline drop/mask rules) if these bodies present a risk.
+
 ---
 
 ## `admin` — admin HTTP server (probes + status page)

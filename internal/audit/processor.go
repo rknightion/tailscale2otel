@@ -233,8 +233,14 @@ func renderRaw(raw json.RawMessage) (string, bool) {
 	return buf.String(), true
 }
 
-// summary builds the human-readable log body, e.g.
-// "a@example.com CREATE NODE:node.ts.net".
+// summary builds the human-readable log body using only non-PII enum fields, e.g.
+// "CREATE on NODE.ALLOWED_IPS via ADMIN_CONSOLE".
+// PII identifiers (actor login/display, target name/id) are emitted as attributes
+// (tailscale.actor.login, tailscale.target.name, etc.) where they remain queryable
+// and subject to pii_filter redaction — they are intentionally absent from the body.
 func summary(ev Event) string {
-	return fmt.Sprintf("%s %s %s:%s", ev.Actor.LoginName, ev.Action, ev.Target.Type, ev.Target.Name)
+	if ev.Target.Property != "" {
+		return fmt.Sprintf("%s on %s.%s via %s", ev.Action, ev.Target.Type, ev.Target.Property, ev.Origin)
+	}
+	return fmt.Sprintf("%s on %s via %s", ev.Action, ev.Target.Type, ev.Origin)
 }
