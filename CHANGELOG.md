@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/rknightion/tailscale2otel/compare/v0.3.0...v0.4.0) (2026-06-08)
+
+
+### Features
+
+* **app:** multi-tailnet/MSP via per-tailnet OTEL providers ([6648327](https://github.com/rknightion/tailscale2otel/commit/664832749621ce19f25a4dfb0f6fb0dcf54769bb))
+* **pii:** configurable redaction filter + identifier backfill (J+K) ([8ed3ede](https://github.com/rknightion/tailscale2otel/commit/8ed3edea24f691e50a367251256d501e74a882b8))
+* **provider:** add Headscale control-plane provider ([a5e48a4](https://github.com/rknightion/tailscale2otel/commit/a5e48a4a1da86f64f74cfc86070a536eac087acc))
+* **telemetry:** OTLP export-duration self-observability histogram (C2) ([0ff4437](https://github.com/rknightion/tailscale2otel/commit/0ff4437602e80a62ea34224fcad8692c2e93ffa0))
+* **viz:** drain dashboard/alert backlog — panels, PII rendering, multi-tailnet, taxonomy ([096ebec](https://github.com/rknightion/tailscale2otel/commit/096ebec576a03d870f0800a3fd038eb3e0934134))
+
+
+### Refactoring
+
+* **logs:** keep redactable PII identifiers out of log bodies ([dfe001a](https://github.com/rknightion/tailscale2otel/commit/dfe001a216c254ac04938f9dd656bfada36d3be7))
+
 ## [0.3.0](https://github.com/rknightion/tailscale2otel/compare/v0.2.0...v0.3.0) (2026-06-07)
 
 

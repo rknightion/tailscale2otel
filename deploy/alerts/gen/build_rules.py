@@ -394,6 +394,13 @@ def groups():
               "the admin console.",
               domain="security", hygiene=True, paused=False),
         # --- Task 2.3: fleet-hygiene (security) ---
+        # --- WU12b: version skew ---
+        alert("ts2o-device-version-skew-high", "Devices far behind latest version",
+              "max(tailscale_device_version_skew_ratio)",
+              "gt", 3, "1h", "info",
+              "At least one device is >3 minor versions behind the fleet latest",
+              "at least one device is >3 minor versions behind the fleet latest.",
+              domain="security", hygiene=True, paused=True),
         alert("ts2o-devices-outdated", "Many devices outdated",
               "max(tailscale_devices_outdated_ratio)", "gt", 5, "1h", "info",
               "More than 5 devices are running an outdated client",
@@ -505,6 +512,29 @@ def groups():
               "Tailscale is rejecting log entries as spoofed — investigate the source of the spoofed log "
               "traffic to the streaming endpoint.",
               domain="security", paused=True),
+        # --- WU12b: receiver health ---
+        alert("ts2o-receiver-rejections", "Receiver rejecting ingest",
+              'sum(rate({__name__=~"tailscale_(stream|webhook)_rejected_total"}[10m]))',
+              "gt", 0, "10m", "warning",
+              "Stream/webhook receiver is rejecting inbound ingest",
+              "The stream or webhook receiver is rejecting inbound events (spoofed/oversized/decode errors) "
+              "— investigate the sender or HEC/webhook config.",
+              domain="infra", paused=True, nodata="OK"),
+        alert("ts2o-receiver-latency-high", "Receiver request latency high (p99)",
+              "histogram_quantile(0.99, sum by (le) (rate(tailscale_stream_request_duration_seconds_bucket[10m])))",
+              "gt", 5, "10m", "warning",
+              "Stream-receiver p99 request latency is above 5s",
+              "p99 stream-receiver request latency above 5s — receiver backpressure.",
+              domain="observability", paused=True, nodata="OK"),
+        # --- WU12b: posture integration match rate ---
+        alert("ts2o-posture-match-low", "Posture integration match rate low",
+              "min(tailscale_posture_integration_matched_ratio / "
+              "clamp_min(tailscale_posture_integration_possible_matched_ratio, 1))",
+              "lt", 0.8, "1h", "warning",
+              "A posture integration is matching <80% of possible devices",
+              "An MDM/EDR posture integration is matching <80% of possible devices — devices may be "
+              "bypassing posture gates.",
+              domain="security", paused=True, nodata="OK"),
     ]
 
     network = [
@@ -546,6 +576,25 @@ def groups():
               "count(tailscale_subnet_routes_routers_ratio == 1) > 0 — one or more CIDRs are advertised by "
               "exactly one router, so there is no failover if it goes offline. Add a second subnet router.",
               domain="infra", paused=True),
+        # --- WU12b: NAT / dropped-packets / HA ---
+        alert("ts2o-hard-nat-high", "Fleet hard-NAT fraction high",
+              "sum(tailscale_devices_hard_nat_ratio) / sum(tailscale_devices_count_ratio)",
+              "gt", 0.5, "30m", "info",
+              "More than 50% of fleet devices are behind hard NAT",
+              ">50% of devices behind hard NAT — relay pressure / connectivity degradation.",
+              domain="infra", paused=True),
+        alert("ts2o-node-dropped-packets", "tailscaled dropping outbound packets",
+              "sum(rate(tailscaled_outbound_dropped_packets_total[10m]))",
+              "gt", 0, "15m", "info",
+              "Nodes are dropping outbound packets (sustained)",
+              "nodes are dropping outbound packets (sustained) — a connectivity-degradation signal.",
+              domain="infra", paused=True, nodata="OK"),
+        alert("ts2o-vip-service-no-ha", "VIP service has no host redundancy",
+              "count(max by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)",
+              "gt", 0, "30m", "info",
+              "One or more VIP services are backed by a single host (no HA)",
+              "one or more Tailscale (VIP) services are backed by a single host (no HA).",
+              domain="infra", paused=True, nodata="OK"),
         # --- Task 2.5: per-tailnet API errors (F) ---
         alert("ts2o-tailnet-api-errors", "Per-tailnet API errors",
               "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total"
@@ -593,6 +642,24 @@ def groups():
                "(max by (host_id) (tailscale_device_key_expiry_seconds) - time() > 0))",
                "Device node keys expiring within 7 days (and not already expired).",
                domain="security", paused=True),
+        # --- WU12b: new recording rules ---
+        record("ts2o-rec-series-by-group", "tailscale2otel:series_active:by_group",
+               "sum by (metric_group) (tailscale2otel_series_by_group)",
+               "Active series per metric group — the cardinality/cost driver view.",
+               domain="observability", paused=True),
+        record("ts2o-rec-hard-nat-fraction", "tailscale:devices_hard_nat:fraction",
+               "sum(tailscale_devices_hard_nat_ratio) / sum(tailscale_devices_count_ratio)",
+               "Fraction of fleet devices behind hard NAT.",
+               domain="infra", paused=True),
+        record("ts2o-rec-api-error-ratio", "tailscale2otel:api_requests:error_ratio",
+               'sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~"5.."}[5m])) / '
+               "clamp_min(sum(rate(tailscale2otel_api_requests_total[5m])), 1)",
+               "Tailscale API 5xx error ratio (5m).",
+               domain="observability", paused=True),
+        record("ts2o-rec-node-dropped-packets", "tailscale:node_dropped_packets:rate5m",
+               "sum by (tailscale_node) (rate(tailscaled_outbound_dropped_packets_total[5m]))",
+               "Per-node outbound dropped-packet rate (5m).",
+               domain="infra", paused=True),
     ]
 
     return [

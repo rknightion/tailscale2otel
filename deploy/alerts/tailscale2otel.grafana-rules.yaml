@@ -2210,6 +2210,77 @@ groups:
           summary: "A tailnet contact needs verification"
           description: "tailscale_contact_needs_verification_ratio > 0 — a tailnet contact (account/support/security) is unverified, so Tailscale security notifications to it may not be delivered. Verify it in the admin console."
         isPaused: false
+      - uid: "ts2o-device-version-skew-high"
+        title: "Devices far behind latest version"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "max(tailscale_device_version_skew_ratio)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 3
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "At least one device is >3 minor versions behind the fleet latest"
+          description: "at least one device is >3 minor versions behind the fleet latest."
+        isPaused: true
       - uid: "ts2o-devices-outdated"
         title: "Many devices outdated"
         condition: "C"
@@ -3271,6 +3342,218 @@ groups:
           summary: "Log stream {{ $labels.tailscale_logstream_type }} rejecting spoofed entries"
           description: "Tailscale is rejecting log entries as spoofed — investigate the source of the spoofed log traffic to the streaming endpoint."
         isPaused: true
+      - uid: "ts2o-receiver-rejections"
+        title: "Receiver rejecting ingest"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum(rate({__name__=~\"tailscale_(stream|webhook)_rejected_total\"}[10m]))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Stream/webhook receiver is rejecting inbound ingest"
+          description: "The stream or webhook receiver is rejecting inbound events (spoofed/oversized/decode errors) — investigate the sender or HEC/webhook config."
+        isPaused: true
+      - uid: "ts2o-receiver-latency-high"
+        title: "Receiver request latency high (p99)"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "histogram_quantile(0.99, sum by (le) (rate(tailscale_stream_request_duration_seconds_bucket[10m])))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 5
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Stream-receiver p99 request latency is above 5s"
+          description: "p99 stream-receiver request latency above 5s — receiver backpressure."
+        isPaused: true
+      - uid: "ts2o-posture-match-low"
+        title: "Posture integration match rate low"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "min(tailscale_posture_integration_matched_ratio / clamp_min(tailscale_posture_integration_possible_matched_ratio, 1))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "lt"
+                    params:
+                      - 0.8
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "A posture integration is matching <80% of possible devices"
+          description: "An MDM/EDR posture integration is matching <80% of possible devices — devices may be bypassing posture gates."
+        isPaused: true
   - orgId: 1
     name: "tailscale2otel-network"
     folder: "tailscale2otel"
@@ -3631,6 +3914,219 @@ groups:
           summary: "A subnet/CIDR is served by a single router (no failover)"
           description: "count(tailscale_subnet_routes_routers_ratio == 1) > 0 — one or more CIDRs are advertised by exactly one router, so there is no failover if it goes offline. Add a second subnet router."
         isPaused: true
+      - uid: "ts2o-hard-nat-high"
+        title: "Fleet hard-NAT fraction high"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum(tailscale_devices_hard_nat_ratio) / sum(tailscale_devices_count_ratio)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0.5
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "30m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "More than 50% of fleet devices are behind hard NAT"
+          description: ">50% of devices behind hard NAT — relay pressure / connectivity degradation."
+        isPaused: true
+      - uid: "ts2o-node-dropped-packets"
+        title: "tailscaled dropping outbound packets"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum(rate(tailscaled_outbound_dropped_packets_total[10m]))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Nodes are dropping outbound packets (sustained)"
+          description: "nodes are dropping outbound packets (sustained) — a connectivity-degradation signal."
+        isPaused: true
+      - uid: "ts2o-vip-service-no-ha"
+        title: "VIP service has no host redundancy"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "count(max by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "30m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "One or more VIP services are backed by a single host (no HA)"
+          description: "one or more Tailscale (VIP) services are backed by a single host (no HA)."
+        isPaused: true
       - uid: "ts2o-tailnet-api-errors"
         title: "Per-tailnet API errors"
         condition: "C"
@@ -3902,4 +4398,116 @@ groups:
           domain: "security"
         annotations:
           description: "Device node keys expiring within 7 days (and not already expired)."
+        isPaused: true
+      - uid: "ts2o-rec-series-by-group"
+        title: "tailscale2otel:series_active:by_group"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum by (metric_group) (tailscale2otel_series_by_group)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+        record:
+          metric: "tailscale2otel:series_active:by_group"
+          from: "A"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          description: "Active series per metric group — the cardinality/cost driver view."
+        isPaused: true
+      - uid: "ts2o-rec-hard-nat-fraction"
+        title: "tailscale:devices_hard_nat:fraction"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum(tailscale_devices_hard_nat_ratio) / sum(tailscale_devices_count_ratio)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+        record:
+          metric: "tailscale:devices_hard_nat:fraction"
+          from: "A"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+        annotations:
+          description: "Fraction of fleet devices behind hard NAT."
+        isPaused: true
+      - uid: "ts2o-rec-api-error-ratio"
+        title: "tailscale2otel:api_requests:error_ratio"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(tailscale2otel_api_requests_total[5m])), 1)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+        record:
+          metric: "tailscale2otel:api_requests:error_ratio"
+          from: "A"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          description: "Tailscale API 5xx error ratio (5m)."
+        isPaused: true
+      - uid: "ts2o-rec-node-dropped-packets"
+        title: "tailscale:node_dropped_packets:rate5m"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "sum by (tailscale_node) (rate(tailscaled_outbound_dropped_packets_total[5m]))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+        record:
+          metric: "tailscale:node_dropped_packets:rate5m"
+          from: "A"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+        annotations:
+          description: "Per-node outbound dropped-packet rate (5m)."
         isPaused: true
