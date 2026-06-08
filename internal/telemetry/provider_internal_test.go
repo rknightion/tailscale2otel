@@ -182,8 +182,10 @@ func TestOTLPHTTPURL(t *testing.T) {
 
 // TestMeterProviderEnablesExemplarsWhenTracing is the mirror of
 // TestMeterProviderDisablesExemplars: with tracing on, metricProviderOptions
-// must use the trace-based exemplar filter so a measurement recorded under a
-// SAMPLED span context attaches exactly one exemplar.
+// must use the trace-based exemplar filter so a Float64Histogram recorded under
+// a SAMPLED span context attaches exactly one exemplar. Histograms are the only
+// instrument kind recorded under a real span context in this app (e.g.
+// api.duration via HistogramCtx), so they must keep default exemplar reservoirs.
 func TestMeterProviderEnablesExemplarsWhenTracing(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(append(
@@ -192,16 +194,19 @@ func TestMeterProviderEnablesExemplarsWhenTracing(t *testing.T) {
 	)...)
 	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
 
-	ctr, err := mp.Meter("test").Int64Counter("t.exemplar.probe")
+	hist, err := mp.Meter("test").Float64Histogram(
+		"t.exemplar.histogram",
+		metric.WithExplicitBucketBoundaries(0, 5, 10, 25, 50, 100),
+	)
 	if err != nil {
-		t.Fatalf("Int64Counter: %v", err)
+		t.Fatalf("Float64Histogram: %v", err)
 	}
 	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    trace.TraceID{0x01},
 		SpanID:     trace.SpanID{0x01},
 		TraceFlags: trace.FlagsSampled,
 	}))
-	ctr.Add(ctx, 1, metric.WithAttributes(attribute.String("k", "v")))
+	hist.Record(ctx, 42.0, metric.WithAttributes(attribute.String("k", "v")))
 
 	var rm metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &rm); err != nil {
@@ -210,15 +215,112 @@ func TestMeterProviderEnablesExemplarsWhenTracing(t *testing.T) {
 	exemplars := 0
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
-			if sum, ok := m.Data.(metricdata.Sum[int64]); ok {
-				for _, dp := range sum.DataPoints {
+			if h, ok := m.Data.(metricdata.Histogram[float64]); ok {
+				for _, dp := range h.DataPoints {
 					exemplars += len(dp.Exemplars)
 				}
 			}
 		}
 	}
 	if exemplars != 1 {
-		t.Errorf("got %d exemplar(s); want 1 (trace-based filter must capture sampled-context measurements)", exemplars)
+		t.Errorf("got %d exemplar(s) on histogram; want 1 (histograms must keep trace exemplar reservoirs when tracing is on)", exemplars)
+	}
+}
+
+// TestMeterProviderDropsExemplarsForSyncCountersWhenTracing asserts that when
+// tracing is enabled, synchronous Counter, UpDownCounter, and Gauge instruments
+// produce ZERO exemplars even under a SAMPLED span context. These instruments
+// are always recorded with context.Background() in the app (via Counter/Gauge/
+// UpDownCounter on the Emitter), so their per-series reservoirs can never capture
+// an exemplar — the no-op reservoir eliminates that dead-weight heap allocation.
+// The test also verifies aggregation is unaffected: the recorded values still land
+// in the data points correctly.
+func TestMeterProviderDropsExemplarsForSyncCountersWhenTracing(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(append(
+		metricProviderOptions(resource.Empty(), 10000, true),
+		sdkmetric.WithReader(reader),
+	)...)
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	m := mp.Meter("test")
+
+	ctr, err := m.Int64Counter("t.noop.counter")
+	if err != nil {
+		t.Fatalf("Int64Counter: %v", err)
+	}
+	udctr, err := m.Int64UpDownCounter("t.noop.updowncounter")
+	if err != nil {
+		t.Fatalf("Int64UpDownCounter: %v", err)
+	}
+	gauge, err := m.Float64Gauge("t.noop.gauge")
+	if err != nil {
+		t.Fatalf("Float64Gauge: %v", err)
+	}
+
+	// Record under a fully sampled span context — the exact condition that the
+	// default TraceBasedFilter WOULD capture into an exemplar.
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0x01},
+		SpanID:     trace.SpanID{0x01},
+		TraceFlags: trace.FlagsSampled,
+	}))
+	attrs := metric.WithAttributes(attribute.String("k", "v"))
+	ctr.Add(ctx, 1, attrs)
+	udctr.Add(ctx, 1, attrs)
+	gauge.Record(ctx, 3.14, attrs)
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	type result struct {
+		exemplars int
+		value     float64
+	}
+	results := map[string]result{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, met := range sm.Metrics {
+			switch d := met.Data.(type) {
+			case metricdata.Sum[int64]:
+				for _, dp := range d.DataPoints {
+					r := results[met.Name]
+					r.exemplars += len(dp.Exemplars)
+					r.value += float64(dp.Value)
+					results[met.Name] = r
+				}
+			case metricdata.Gauge[float64]:
+				for _, dp := range d.DataPoints {
+					r := results[met.Name]
+					r.exemplars += len(dp.Exemplars)
+					r.value = dp.Value
+					results[met.Name] = r
+				}
+			}
+		}
+	}
+
+	checks := []struct {
+		name      string
+		wantValue float64
+	}{
+		{"t.noop.counter", 1},
+		{"t.noop.updowncounter", 1},
+		{"t.noop.gauge", 3.14},
+	}
+	for _, c := range checks {
+		r, ok := results[c.name]
+		if !ok {
+			t.Errorf("metric %q not found in collected output", c.name)
+			continue
+		}
+		if r.exemplars != 0 {
+			t.Errorf("metric %q: got %d exemplar(s); want 0 (no-op reservoir must suppress exemplars for sync counters/gauges when tracing is on)", c.name, r.exemplars)
+		}
+		if r.value != c.wantValue {
+			t.Errorf("metric %q: value = %v, want %v (aggregation must be unaffected by exemplar suppression)", c.name, r.value, c.wantValue)
+		}
 	}
 }
 

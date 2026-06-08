@@ -33,6 +33,35 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 )
 
+// noopReservoir is an exemplar.Reservoir that never stores anything.
+// It is used to suppress per-series reservoir allocations for synchronous
+// Counter, UpDownCounter, and Gauge instruments when tracing is enabled.
+// Those instruments are always recorded with context.Background() in this
+// app, so their default FixedSizeReservoir (sized to GOMAXPROCS) would be
+// allocated per unique time series and never populated — pure dead-weight heap.
+type noopReservoir struct{}
+
+func (noopReservoir) Offer(_ context.Context, _ time.Time, _ exemplar.Value, _ []attribute.KeyValue) {
+}
+func (noopReservoir) Collect(_ *[]exemplar.Exemplar) {}
+
+// noopReservoirSingleton is the single instance reused across all series.
+// Because noopReservoir holds no state, sharing it is safe.
+var noopReservoirSingleton noopReservoir
+
+// noopReservoirProvider returns the no-op singleton for any attribute set,
+// so there is zero per-series allocation.
+func noopReservoirProvider(_ attribute.Set) exemplar.Reservoir {
+	return noopReservoirSingleton
+}
+
+// noopExemplarSelector returns noopReservoirProvider for any aggregation.
+// It is used as the ExemplarReservoirProviderSelector on the per-kind views
+// that suppress exemplars for synchronous non-histogram instruments.
+func noopExemplarSelector(_ sdkmetric.Aggregation) exemplar.ReservoirProvider {
+	return noopReservoirProvider
+}
+
 // scopeName is the instrumentation scope for all emitted telemetry.
 const scopeName = "github.com/rknightion/tailscale2otel"
 
@@ -122,6 +151,21 @@ type Provider struct {
 // in production, a ManualReader in tests). Centralizing them here lets the
 // cardinality-limit and exemplar-filter behavior be asserted against an in-memory
 // reader without duplicating the wiring.
+//
+// Exemplar strategy:
+//   - tracingEnabled=false: AlwaysOffFilter — no reservoirs allocated anywhere.
+//   - tracingEnabled=true: TraceBasedFilter globally, BUT three per-instrument-kind
+//     Views override the reservoir provider for synchronous Counter, UpDownCounter,
+//     and Gauge to a no-op singleton. Those instruments are always recorded with
+//     context.Background() in this app (via the Emitter's Counter/Gauge/
+//     UpDownCounter methods), so their default FixedSizeReservoir (sized to
+//     GOMAXPROCS) would be allocated per unique time series and can never be
+//     populated — pure dead-weight heap at high cardinality (thousands of
+//     flow-metric series). Only Float64Histogram (e.g. api.duration, recorded via
+//     HistogramCtx with a real span context) keeps the default reservoir so trace
+//     exemplar linking still works for that instrument. Observable (async)
+//     instruments are already dropped by the SDK under TraceBasedFilter, so no
+//     views are needed for them.
 func metricProviderOptions(res *resource.Resource, cardinalityLimit int, tracingEnabled bool) []sdkmetric.Option {
 	// With a TracerProvider present, use the trace-based exemplar filter so the
 	// api.duration histogram (and other ctx-aware records) link to sampled spans.
@@ -132,7 +176,7 @@ func metricProviderOptions(res *resource.Resource, cardinalityLimit int, tracing
 	if tracingEnabled {
 		exemplarFilter = exemplar.TraceBasedFilter
 	}
-	return []sdkmetric.Option{
+	opts := []sdkmetric.Option{
 		sdkmetric.WithResource(res),
 		// Hard per-instrument cardinality limit (0/neg = unlimited). Raises the SDK
 		// default of 2000 to whatever the app configures (default 10000); beyond it
@@ -140,6 +184,22 @@ func metricProviderOptions(res *resource.Resource, cardinalityLimit int, tracing
 		sdkmetric.WithCardinalityLimit(cardinalityLimit),
 		sdkmetric.WithExemplarFilter(exemplarFilter),
 	}
+	if tracingEnabled {
+		// Suppress exemplar reservoirs for every synchronous non-histogram kind.
+		// A wildcard Name:"*" with an explicit Kind matches all instruments of that
+		// kind. mask.Name must stay empty (no rename) when using wildcards.
+		// Histograms are intentionally omitted — they keep the default aligned-bucket
+		// reservoir so api.duration exemplars link to sampled traces.
+		noopMask := sdkmetric.Stream{ExemplarReservoirProviderSelector: noopExemplarSelector}
+		opts = append(opts,
+			sdkmetric.WithView(
+				sdkmetric.NewView(sdkmetric.Instrument{Name: "*", Kind: sdkmetric.InstrumentKindCounter}, noopMask),
+				sdkmetric.NewView(sdkmetric.Instrument{Name: "*", Kind: sdkmetric.InstrumentKindUpDownCounter}, noopMask),
+				sdkmetric.NewView(sdkmetric.Instrument{Name: "*", Kind: sdkmetric.InstrumentKindGauge}, noopMask),
+			),
+		)
+	}
+	return opts
 }
 
 // NewProvider builds the telemetry pipeline for the given options.
