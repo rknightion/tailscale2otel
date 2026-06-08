@@ -15,9 +15,13 @@ type Status struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 	// Health is the at-a-glance verdict: "healthy", "degraded" or "starting".
 	// HealthReasons explains a non-healthy verdict (empty when healthy).
-	Health        string            `json:"health"`
-	HealthReasons []string          `json:"health_reasons,omitempty"`
-	Telemetry     TelemetryInfo     `json:"telemetry"`
+	Health        string        `json:"health"`
+	HealthReasons []string      `json:"health_reasons,omitempty"`
+	Telemetry     TelemetryInfo `json:"telemetry"`
+	// Tailnets is the per-tailnet breakdown (one entry per observed tailnet;
+	// length 1 in single-tailnet / Headscale mode). The top-level Collectors/
+	// Cache/Devices/API fields carry the COMBINED view across all tailnets.
+	Tailnets      []TailnetStatus   `json:"tailnets"`
 	Collectors    []CollectorStatus `json:"collectors"`
 	Cache         CacheInfo         `json:"device_cache"`
 	RDNS          RDNSInfo          `json:"reverse_dns"`
@@ -33,6 +37,21 @@ type Status struct {
 	LogEvents     []LogRow          `json:"log_events"`
 	Config        ConfigSummary     `json:"config"`
 	GeneratedAt   string            `json:"generated_at"`
+}
+
+// TailnetStatus is one tailnet's section of the status page: its identity, auth
+// method, and that tailnet's device cache, collector health, devices, and API
+// health. (Process-global info — uptime, build, export, runtime — stays in the
+// top-level Status header.)
+type TailnetStatus struct {
+	Name       string            `json:"name"`
+	AuthMethod string            `json:"auth_method"`
+	Cache      CacheInfo         `json:"device_cache"`
+	Collectors []CollectorStatus `json:"collectors"`
+	Devices    []DeviceRow       `json:"devices"`
+	API        APIInfo           `json:"api"`
+	// Failing is the count of this tailnet's collectors whose last run failed.
+	Failing int `json:"failing"`
 }
 
 // APIInfo summarizes Tailscale API request health per endpoint. RateLimit is set

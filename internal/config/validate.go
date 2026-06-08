@@ -215,6 +215,34 @@ func (c *Config) Validate() error {
 		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {
 			return fmt.Errorf("tailscale.auth.method %q invalid: must be one of oauth, apikey", c.Tailscale.Auth.Method)
 		}
+		// Single tailscale: block and a tailnets: list are mutually exclusive.
+		// Default() seeds tailscale.tailnet="-" (the "principal's default tailnet"
+		// sentinel), so only treat an EXPLICIT non-sentinel name as a conflict.
+		if len(c.Tailnets) > 0 && c.Tailscale.Tailnet != "" && c.Tailscale.Tailnet != "-" {
+			return fmt.Errorf("tailscale.tailnet=%q and tailnets: are mutually exclusive — "+
+				"use the single tailscale: block OR the tailnets: list, not both", c.Tailscale.Tailnet)
+		}
+		// Multi-tailnet: every entry needs a name + a valid auth method (creds are
+		// never inherited from the top-level block).
+		seenTailnet := map[string]bool{}
+		for i, t := range c.Tailnets {
+			if strings.TrimSpace(t.Name) == "" {
+				return fmt.Errorf("tailnets[%d].name: required", i)
+			}
+			if seenTailnet[t.Name] {
+				return fmt.Errorf("tailnets[%d].name %q: duplicate tailnet name", i, t.Name)
+			}
+			seenTailnet[t.Name] = true
+			if !oneOf(t.Auth.Method, "oauth", "apikey") {
+				return fmt.Errorf("tailnets[%d].auth.method %q invalid: must be one of oauth, apikey", i, t.Auth.Method)
+			}
+		}
+		// Streaming/webhook receivers feed shared single-tailnet processors and a
+		// single enrichment cache; multi-tailnet routing is a follow-up.
+		if len(c.Tailnets) > 1 && (c.Streaming.Enabled || c.Webhook.Enabled) {
+			return fmt.Errorf("streaming/webhook receivers require single-tailnet mode " +
+				"(use the single tailscale: block, not a multi-entry tailnets: list)")
+		}
 	}
 	if !oneOf(c.Checkpoint.Store, "memory", "file") {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)

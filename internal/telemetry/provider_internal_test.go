@@ -37,6 +37,35 @@ func TestBuildResourceIncludesProvider(t *testing.T) {
 	}
 }
 
+// TestBuildResourceIncludesTailnet asserts the tailscale.tailnet resource
+// attribute is emitted iff Options.TailnetName is set (per-tailnet providers set
+// it; the process provider leaves it empty).
+func TestBuildResourceIncludesTailnet(t *testing.T) {
+	withTN, err := buildResource(context.Background(), Options{ServiceName: "tailscale2otel", TailnetName: "acme.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, kv := range withTN.Attributes() {
+		if string(kv.Key) == "tailscale.tailnet" && kv.Value.AsString() == "acme.example.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("resource missing tailscale.tailnet=acme.example.com")
+	}
+
+	proc, err := buildResource(context.Background(), Options{ServiceName: "tailscale2otel"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range proc.Attributes() {
+		if string(kv.Key) == "tailscale.tailnet" {
+			t.Errorf("process resource should not carry tailscale.tailnet, got %q", kv.Value.AsString())
+		}
+	}
+}
+
 // TestTLSConfigPinsMinVersionTLS12 guards the OTLP exporter client TLS config
 // against the semgrep missing-ssl-minversion finding: when CA/cert/key files
 // configure a *tls.Config, it must floor the negotiated version at TLS 1.2 so a

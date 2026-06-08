@@ -38,7 +38,7 @@ func TestBuildStatus_WindowCheckpointStuck(t *testing.T) {
 		tracenoop.NewTracerProvider().Tracer("test"),
 		func(context.Context) error { return nil }, provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")),
 		store, NewAPIStats())
-	a.registry.RegisterWindow(stubWindowCollector{name: "flowlogs", lag: time.Minute}, time.Minute, 0, 0)
+	a.runtimes[0].registry.RegisterWindow(stubWindowCollector{name: "flowlogs", lag: time.Minute}, time.Minute, 0, 0)
 
 	st := a.buildStatus()
 	var cp *statusdata.CheckpointStatus

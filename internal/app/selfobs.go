@@ -59,7 +59,7 @@ func emitComponentError(e telemetry.Emitter, component string) {
 // enabled, keeping the gate in one place for the call sites in Run/runAdmin.
 func (a *App) componentError(component string) {
 	if a.cfg.SelfObservability.Enabled {
-		emitComponentError(a.emitter, component)
+		emitComponentError(a.procEmitter, component)
 	}
 }
 
@@ -85,7 +85,7 @@ func emitAdminAuthRejected(e telemetry.Emitter, reason string) {
 // middleware call site.
 func (a *App) adminAuthRejected(reason string) {
 	if a.cfg.SelfObservability.Enabled {
-		emitAdminAuthRejected(a.emitter, reason)
+		emitAdminAuthRejected(a.procEmitter, reason)
 	}
 }
 

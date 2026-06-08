@@ -12,11 +12,10 @@ import (
 // the off switch and the receiver/collector packages stay agnostic. records>0
 // emits ingest.records{source,signal}; bytes>0 emits ingest.bytes{source}; a call
 // may carry either or both.
-func (a *App) ingestObserver() func(source, signal string, records, bytes int) {
-	if !a.cfg.SelfObservability.Enabled {
+func ingestObserver(e telemetry.Emitter, selfObs bool) func(source, signal string, records, bytes int) {
+	if !selfObs {
 		return nil
 	}
-	e := a.emitter
 	return func(source, signal string, records, bytes int) {
 		if records > 0 {
 			e.Counter(appcatalog.DocIngestRecords.Name, appcatalog.DocIngestRecords.Unit, appcatalog.DocIngestRecords.Description,

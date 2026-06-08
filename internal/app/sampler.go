@@ -60,13 +60,18 @@ func (h *runtimeHistory) sample(now time.Time, rs runtimeStats, cardTotal int) {
 	h.lastAt = now
 }
 
-// cardinalityTotal sums the active-series counts across all metrics, for the
-// runtime sampler's cardinality trend. It is 0 when self-observability is off
-// (a.card is nil; Snapshot is nil-safe).
+// cardinalityTotal sums the active-series counts across the process provider and
+// every tailnet runtime, for the runtime sampler's cardinality trend. It is 0
+// when self-observability is off (every tracker is nil; Snapshot is nil-safe).
 func (a *App) cardinalityTotal() int {
 	total := 0
-	for _, sc := range a.card.Snapshot() {
+	for _, sc := range a.procCard.Snapshot() {
 		total += sc.Count
+	}
+	for _, rt := range a.runtimes {
+		for _, sc := range rt.card.Snapshot() {
+			total += sc.Count
+		}
 	}
 	return total
 }

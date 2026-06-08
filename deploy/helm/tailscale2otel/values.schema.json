@@ -552,6 +552,9 @@
                         }
                     }
                 },
+                "tailnets": {
+                    "type": "array"
+                },
                 "tailscale": {
                     "type": "object",
                     "properties": {

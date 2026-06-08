@@ -189,3 +189,33 @@ func TestFlowOptions_PortToggles(t *testing.T) {
 		t.Fatal("cardinality.flow.destination_service=true => IncludeDestinationService false, want true")
 	}
 }
+
+func TestTSAPIOptionsForResolvedTailnet(t *testing.T) {
+	rt := config.ResolvedTailnet{
+		Name: "acme.example.com",
+		Auth: config.TailscaleAuth{Method: "apikey", APIKey: "secret-key"},
+		HTTP: config.TailscaleHTTPConfig{RateLimit: 5},
+	}
+	o := tsapiOptionsFor(rt)
+	if o.Tailnet != "acme.example.com" {
+		t.Errorf("Tailnet = %q", o.Tailnet)
+	}
+	if o.APIKey != "secret-key" {
+		t.Errorf("APIKey not mapped")
+	}
+	if o.RateLimit != 5 {
+		t.Errorf("RateLimit = %v, want 5", o.RateLimit)
+	}
+}
+
+func TestInstanceForMultiAndSingle(t *testing.T) {
+	if got := instanceFor("host", "acme", false); got != "host" {
+		t.Errorf("single mode: instanceFor = %q, want host", got)
+	}
+	if got := instanceFor("host", "acme", true); got != "host/acme" {
+		t.Errorf("multi mode: instanceFor = %q, want host/acme", got)
+	}
+	if got := instanceFor("", "acme", true); got != "acme" {
+		t.Errorf("multi mode empty base: instanceFor = %q, want acme", got)
+	}
+}

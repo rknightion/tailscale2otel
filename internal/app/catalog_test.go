@@ -70,10 +70,8 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// update_available: emit with a known-newer latest so the gauge fires.
 	emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v9.9.9", true }, "v0.1.0")
 
-	// ingest.records + ingest.bytes via the app closure (self-obs forced on).
-	cfgOn := &config.Config{}
-	cfgOn.SelfObservability.Enabled = true
-	obs := (&App{cfg: cfgOn, emitter: rec.Emitter()}).ingestObserver()
+	// ingest.records + ingest.bytes via the observer closure (self-obs forced on).
+	obs := ingestObserver(rec.Emitter(), true)
 	obs(semconv.IngestSourceStream, semconv.IngestSignalFlow, 3, 256)
 
 	// series.by_group.

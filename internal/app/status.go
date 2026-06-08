@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/internal/catalog"
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/dedup"
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
@@ -21,13 +22,48 @@ const rfc3339 = time.RFC3339
 // reads go through thread-safe accessors (the status tracker, device cache,
 // dedup sets, cardinality tracker), so it is safe to call concurrently with the
 // running collectors. Secrets are excluded here (see redactedConfigSummary).
+// primary returns the first tailnet runtime — the sole runtime in single-tailnet
+// and Headscale modes, and the streaming/webhook-bound runtime in multi mode.
+func (a *App) primary() *tailnetRuntime { return a.runtimes[0] }
+
+// multiTailnet reports whether more than one tailnet is observed (enables
+// checkpoint-key namespacing and the per-tailnet status sections).
+func (a *App) multiTailnet() bool { return len(a.runtimes) > 1 }
+
+// aggregateCardSnapshot merges the per-tailnet cardinality snapshots into a
+// single list keyed by metric name (summing counts, OR-ing the capped flag), for
+// the combined top-level cardinality section. The process provider's own series
+// are included so process self-obs shows up too.
+func (a *App) aggregateCardSnapshot() []telemetry.SeriesCount {
+	merged := map[string]telemetry.SeriesCount{}
+	add := func(snaps []telemetry.SeriesCount) {
+		for _, sc := range snaps {
+			cur := merged[sc.Metric]
+			cur.Metric = sc.Metric
+			cur.Count += sc.Count
+			cur.Capped = cur.Capped || sc.Capped
+			merged[sc.Metric] = cur
+		}
+	}
+	add(a.procCard.Snapshot())
+	for _, rt := range a.runtimes {
+		add(rt.card.Snapshot())
+	}
+	out := make([]telemetry.SeriesCount, 0, len(merged))
+	for _, sc := range merged {
+		out = append(out, sc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	return out
+}
+
 func (a *App) buildStatus() statusdata.Status {
 	now := time.Now()
 	uptime := now.Sub(a.startTime)
 
 	// Catalog (static) joined with live cardinality (self-obs only). cardByName
 	// maps an OTEL metric name to its active-series count for the last interval.
-	cardSeries := a.card.Snapshot() // nil-safe; nil when self-obs disabled
+	cardSeries := a.aggregateCardSnapshot() // nil-safe; empty when self-obs disabled
 	cardByName := make(map[string]int, len(cardSeries))
 	for _, sc := range cardSeries {
 		cardByName[sc.Metric] = sc.Count
@@ -39,13 +75,13 @@ func (a *App) buildStatus() statusdata.Status {
 	}
 
 	s := statusdata.Status{
-		Provider:     string(a.provider.Kind),
-		Capabilities: a.provider.Capabilities(),
+		Provider:     string(a.primary().cp.Kind),
+		Capabilities: a.primary().cp.Capabilities(),
 		Service: statusdata.ServiceInfo{
 			Name:      serviceName,
 			Version:   a.version,
 			GoVersion: runtime.Version(),
-			Tailnet:   a.cfg.Tailscale.Tailnet,
+			Tailnet:   a.tailnetSummary(),
 			StartedAt: a.startTime.UTC().Format(rfc3339),
 			UptimeSec: int64(uptime.Seconds()),
 			Uptime:    humanDuration(uptime),
@@ -57,6 +93,7 @@ func (a *App) buildStatus() statusdata.Status {
 			Insecure:        a.cfg.OTLP.TLS.Insecure,
 			MetricIntervalS: int64(a.cfg.OTLP.MetricInterval.D().Seconds()),
 		},
+		Tailnets:      a.tailnetStatuses(now),
 		Collectors:    a.collectorStatuses(now),
 		Cache:         a.cacheInfo(),
 		RDNS:          a.rdnsInfo(),
@@ -94,10 +131,29 @@ func (a *App) buildStatus() statusdata.Status {
 	return s
 }
 
+// collectorStatuses returns the combined collector list across every tailnet
+// runtime (single-tailnet: just that one runtime's collectors).
 func (a *App) collectorStatuses(now time.Time) []statusdata.CollectorStatus {
-	runs := a.status.Snapshot()
-	hist := a.status.HistorySnapshot()
-	entries := a.registry.Entries()
+	var out []statusdata.CollectorStatus
+	for _, rt := range a.runtimes {
+		out = append(out, a.runtimeCollectorStatuses(rt, now)...)
+	}
+	return out
+}
+
+// checkpointKeyFor mirrors the scheduler's tailnet checkpoint namespacing so the
+// status page reads the same store keys the scheduler writes.
+func (a *App) checkpointKeyFor(rt *tailnetRuntime, name string) string {
+	if a.multiTailnet() {
+		return rt.name + "/" + name
+	}
+	return name
+}
+
+func (a *App) runtimeCollectorStatuses(rt *tailnetRuntime, now time.Time) []statusdata.CollectorStatus {
+	runs := rt.status.Snapshot()
+	hist := rt.status.HistorySnapshot()
+	entries := rt.registry.Entries()
 	out := make([]statusdata.CollectorStatus, 0, len(entries))
 	for _, e := range entries {
 		name := e.Collector.Name()
@@ -127,7 +183,7 @@ func (a *App) collectorStatuses(now time.Time) []statusdata.CollectorStatus {
 			cs.OutcomeSeries = h.Outcomes
 		}
 		if wc, ok := e.Collector.(collector.WindowCollector); ok && a.store != nil {
-			if hwm, has := a.store.Get(name); has {
+			if hwm, has := a.store.Get(a.checkpointKeyFor(rt, name)); has {
 				lag := now.Sub(hwm)
 				cs.Checkpoint = &statusdata.CheckpointStatus{
 					HighWaterMark: hwm.UTC().Format(rfc3339),
@@ -144,14 +200,70 @@ func (a *App) collectorStatuses(now time.Time) []statusdata.CollectorStatus {
 	return out
 }
 
+// tailnetSummary is the header tailnet label: the single tailnet's name, or a
+// "N tailnets" summary in multi-tailnet mode.
+func (a *App) tailnetSummary() string {
+	if a.multiTailnet() {
+		return fmt.Sprintf("%d tailnets", len(a.runtimes))
+	}
+	return a.cfg.Tailscale.Tailnet
+}
+
+// tailnetStatuses builds the per-tailnet sections of the status page.
+func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
+	out := make([]statusdata.TailnetStatus, 0, len(a.runtimes))
+	for _, rt := range a.runtimes {
+		name := rt.name
+		if name == "" {
+			name = a.cfg.Tailscale.Tailnet
+		}
+		cols := a.runtimeCollectorStatuses(rt, now)
+		failing := 0
+		for _, cs := range cols {
+			if cs.HasRun && !cs.LastSuccess {
+				failing++
+			}
+		}
+		out = append(out, statusdata.TailnetStatus{
+			Name:       name,
+			AuthMethod: a.cfg.Tailscale.Auth.Method,
+			Cache:      runtimeCacheInfo(rt),
+			Collectors: cols,
+			Devices:    runtimeDeviceRows(rt),
+			API:        runtimeAPIInfo(rt),
+			Failing:    failing,
+		})
+	}
+	return out
+}
+
 // checkpointStuckMargin is the number of poll intervals (beyond a window
 // collector's own Lag) a checkpoint may trail "now" before it is flagged stuck.
 const checkpointStuckMargin = 3
 
-// apiInfo builds the API-health section from the per-endpoint request stats. The
-// rate-limit summary is set only once a 429 has been observed.
+// apiInfo builds the combined API-health section across every tailnet runtime.
 func (a *App) apiInfo() statusdata.APIInfo {
-	snaps := a.apiStats.Snapshot()
+	var stats []*APIStats
+	for _, rt := range a.runtimes {
+		stats = append(stats, rt.apiStats)
+	}
+	return apiInfoFrom(stats...)
+}
+
+// runtimeAPIInfo builds one runtime's API-health section.
+func runtimeAPIInfo(rt *tailnetRuntime) statusdata.APIInfo { return apiInfoFrom(rt.apiStats) }
+
+// apiInfoFrom merges the per-endpoint request stats from one or more APIStats
+// into a single section. The rate-limit summary is set only once a 429 has been
+// observed.
+func apiInfoFrom(stats ...*APIStats) statusdata.APIInfo {
+	var snaps []APIEndpointSnapshot
+	for _, st := range stats {
+		if st == nil {
+			continue
+		}
+		snaps = append(snaps, st.Snapshot()...)
+	}
 	info := statusdata.APIInfo{Endpoints: make([]statusdata.APIEndpoint, 0, len(snaps))}
 	var total429 int64
 	var last429 time.Time
@@ -188,10 +300,29 @@ func (a *App) apiInfo() statusdata.APIInfo {
 	return info
 }
 
+// cacheInfo combines the device-cache totals across runtimes (Devices summed;
+// Age is the oldest/largest across runtimes).
 func (a *App) cacheInfo() statusdata.CacheInfo {
-	age := a.cache.Age()
+	var devices int
+	var maxAge time.Duration
+	for _, rt := range a.runtimes {
+		devices += rt.cache.Len()
+		if age := rt.cache.Age(); age > maxAge {
+			maxAge = age
+		}
+	}
 	return statusdata.CacheInfo{
-		Devices: a.cache.Len(),
+		Devices: devices,
+		AgeSec:  int64(maxAge.Seconds()),
+		Age:     humanDuration(maxAge),
+	}
+}
+
+// runtimeCacheInfo builds one runtime's device-cache section.
+func runtimeCacheInfo(rt *tailnetRuntime) statusdata.CacheInfo {
+	age := rt.cache.Age()
+	return statusdata.CacheInfo{
+		Devices: rt.cache.Len(),
 		AgeSec:  int64(age.Seconds()),
 		Age:     humanDuration(age),
 	}
@@ -243,8 +374,19 @@ func (a *App) dedupInfo() []statusdata.DedupInfo {
 	return out
 }
 
+// deviceRows returns the combined device rows across every runtime's cache.
 func (a *App) deviceRows() []statusdata.DeviceRow {
-	devs := a.cache.Snapshot()
+	var out []statusdata.DeviceRow
+	for _, rt := range a.runtimes {
+		out = append(out, runtimeDeviceRows(rt)...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// runtimeDeviceRows returns one runtime's device rows (sorted by name).
+func runtimeDeviceRows(rt *tailnetRuntime) []statusdata.DeviceRow {
+	devs := rt.cache.Snapshot()
 	out := make([]statusdata.DeviceRow, 0, len(devs))
 	for _, d := range devs {
 		addrs := make([]string, 0, len(d.Addrs))
@@ -266,11 +408,21 @@ func (a *App) deviceRows() []statusdata.DeviceRow {
 	return out
 }
 
+// nodeDiscovery reports the first runtime that has a node-metrics collector
+// (node-metrics is process-global in practice; in multi-tailnet it runs per
+// tailnet but the discovery view shows the first active one).
 func (a *App) nodeDiscovery() statusdata.NodeDiscovery {
-	if a.nodeMetrics == nil {
+	var nm *nodemetrics.Collector
+	for _, rt := range a.runtimes {
+		if rt.nodeMetrics != nil {
+			nm = rt.nodeMetrics
+			break
+		}
+	}
+	if nm == nil {
 		return statusdata.NodeDiscovery{}
 	}
-	ds := a.nodeMetrics.Snapshot()
+	ds := nm.Snapshot()
 	nd := statusdata.NodeDiscovery{
 		Enabled: ds.Enabled,
 		LastOK:  ds.LastOK,
@@ -383,11 +535,18 @@ func (a *App) redactedConfigSummary() statusdata.ConfigSummary {
 	return cs
 }
 
+// enabledCollectorNames lists the distinct enabled collector names across all
+// runtimes (deduped — the same collectors run per tailnet).
 func (a *App) enabledCollectorNames() []string {
-	entries := a.registry.Entries()
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Collector.Name())
+	seen := map[string]bool{}
+	var names []string
+	for _, rt := range a.runtimes {
+		for _, e := range rt.registry.Entries() {
+			if n := e.Collector.Name(); !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
 	}
 	return names
 }

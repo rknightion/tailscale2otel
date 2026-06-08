@@ -34,6 +34,10 @@ type Scheduler struct {
 	selfObs       bool
 	status        *StatusTracker // optional; records per-collector run outcomes for the status page
 	tracer        trace.Tracer   // optional; emits one root span per scrape cycle
+	// namespace, when non-empty, prefixes every checkpoint store key with
+	// namespace+"/" so multiple schedulers (one per tailnet) sharing a
+	// CheckpointStore don't collide. Empty keeps the bare collector name.
+	namespace string
 }
 
 // SchedulerOption configures a Scheduler.
@@ -70,6 +74,22 @@ func WithStatusTracker(t *StatusTracker) SchedulerOption { return func(s *Schedu
 // tracer (the default) disables span emission via a package-level no-op tracer,
 // so callers and the tick path never need a nil check.
 func WithTracer(tr trace.Tracer) SchedulerOption { return func(s *Scheduler) { s.tracer = tr } }
+
+// WithCheckpointNamespace prefixes every checkpoint key with ns+"/" so multiple
+// schedulers (one per tailnet) sharing a CheckpointStore don't collide. Empty
+// (the default) keeps the bare collector name for single-tailnet continuity.
+func WithCheckpointNamespace(ns string) SchedulerOption {
+	return func(s *Scheduler) { s.namespace = ns }
+}
+
+// checkpointKey returns the store key for a collector, applying the optional
+// tailnet namespace.
+func (s *Scheduler) checkpointKey(name string) string {
+	if s.namespace == "" {
+		return name
+	}
+	return s.namespace + "/" + name
+}
 
 // NewScheduler returns a Scheduler that drives collectors with the given
 // emitter and checkpoint store.
@@ -241,7 +261,7 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 // checkpoint on success. It returns the collector's error (nil on success or
 // when there is no new window to poll) so the caller can record scrape metrics.
 func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) error {
-	last, hasLast := s.store.Get(c.Name())
+	last, hasLast := s.store.Get(s.checkpointKey(c.Name()))
 	from, to, ok := nextWindow(last, hasLast, s.now(), c.Lag(), e.InitialLookback, e.MaxWindow)
 	if !ok {
 		return nil
@@ -256,7 +276,7 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 	if hwm.IsZero() {
 		hwm = to
 	}
-	if err := s.store.Set(c.Name(), hwm); err != nil {
+	if err := s.store.Set(s.checkpointKey(c.Name()), hwm); err != nil {
 		s.logger.Warn("checkpoint persist failed", "collector", c.Name(), "error", err)
 		if s.selfObs {
 			emitCheckpointPersistError(s.emitter, c.Name())

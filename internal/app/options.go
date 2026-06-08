@@ -74,22 +74,45 @@ func hsapiOptions(cfg *config.Config) hsapi.Options {
 // tsapiOptions maps the Tailscale config into tsapi.Options, selecting the
 // configured authentication method.
 func tsapiOptions(cfg *config.Config) tsapi.Options {
-	o := tsapi.Options{
-		Tailnet:     cfg.Tailscale.Tailnet,
-		Timeout:     cfg.Tailscale.HTTP.Timeout.D(),
-		MaxAttempts: cfg.Tailscale.HTTP.Retry.MaxAttempts,
-		BaseDelay:   cfg.Tailscale.HTTP.Retry.BaseDelay.D(),
-		MaxDelay:    cfg.Tailscale.HTTP.Retry.MaxDelay.D(),
-		RateLimit:   cfg.Tailscale.HTTP.RateLimit,
+	rts := cfg.ResolvedTailnets()
+	if len(rts) == 0 {
+		return tsapi.Options{}
 	}
-	if cfg.Tailscale.Auth.Method == "apikey" {
-		o.APIKey = cfg.Tailscale.Auth.APIKey.Reveal()
+	return tsapiOptionsFor(rts[0])
+}
+
+// tsapiOptionsFor maps one resolved tailnet to tsapi client options.
+func tsapiOptionsFor(rt config.ResolvedTailnet) tsapi.Options {
+	o := tsapi.Options{
+		Tailnet:     rt.Name,
+		Timeout:     rt.HTTP.Timeout.D(),
+		MaxAttempts: rt.HTTP.Retry.MaxAttempts,
+		BaseDelay:   rt.HTTP.Retry.BaseDelay.D(),
+		MaxDelay:    rt.HTTP.Retry.MaxDelay.D(),
+		RateLimit:   rt.HTTP.RateLimit,
+	}
+	if rt.Auth.Method == "apikey" {
+		o.APIKey = rt.Auth.APIKey.Reveal()
 	} else {
-		o.OAuthClientID = cfg.Tailscale.Auth.OAuth.ClientID
-		o.OAuthClientSecret = cfg.Tailscale.Auth.OAuth.ClientSecret.Reveal()
-		o.OAuthScopes = cfg.Tailscale.Auth.OAuth.Scopes
+		o.OAuthClientID = rt.Auth.OAuth.ClientID
+		o.OAuthClientSecret = rt.Auth.OAuth.ClientSecret.Reveal()
+		o.OAuthScopes = rt.Auth.OAuth.Scopes
 	}
 	return o
+}
+
+// instanceFor derives a distinct service.instance.id per tailnet so each tailnet
+// is its own OTLP target (resource attributes other than job/instance/service_*
+// live only in target_info on Grafana Cloud, so a shared instance would collide
+// series). Single-tailnet keeps the bare base instance for output continuity.
+func instanceFor(base, tailnet string, multi bool) string {
+	if !multi {
+		return base
+	}
+	if base == "" {
+		return tailnet
+	}
+	return base + "/" + tailnet
 }
 
 // nodeMetricsOptions maps the node-metrics scraper config into

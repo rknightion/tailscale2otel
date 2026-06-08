@@ -77,8 +77,8 @@ func TestStatusJSON_Shape(t *testing.T) {
 	if got.Service.Name != serviceName || got.Service.Version != "vtest" {
 		t.Errorf("service = %+v, want name=%s version=vtest", got.Service, serviceName)
 	}
-	if len(got.Collectors) != len(a.registry.Entries()) {
-		t.Errorf("collectors = %d, want %d (one per registered collector)", len(got.Collectors), len(a.registry.Entries()))
+	if len(got.Collectors) != len(a.runtimes[0].registry.Entries()) {
+		t.Errorf("collectors = %d, want %d (one per registered collector)", len(got.Collectors), len(a.runtimes[0].registry.Entries()))
 	}
 	if len(got.Metrics) == 0 {
 		t.Errorf("metrics catalog is empty")

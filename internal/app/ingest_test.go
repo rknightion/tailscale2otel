@@ -4,25 +4,20 @@ import (
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
 func TestIngestObserverDisabled(t *testing.T) {
-	a := &App{cfg: &config.Config{}} // SelfObservability.Enabled == false
-	if a.ingestObserver() != nil {
+	if ingestObserver(telemetrytest.New().Emitter(), false) != nil {
 		t.Fatal("ingestObserver should be nil when self-observability is disabled")
 	}
 }
 
 func TestIngestObserverEmits(t *testing.T) {
 	rec := telemetrytest.New()
-	cfg := &config.Config{}
-	cfg.SelfObservability.Enabled = true
-	a := &App{cfg: cfg, emitter: rec.Emitter()}
 
-	obs := a.ingestObserver()
+	obs := ingestObserver(rec.Emitter(), true)
 	if obs == nil {
 		t.Fatal("ingestObserver nil when enabled")
 	}

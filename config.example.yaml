@@ -61,6 +61,27 @@ tailscale:
       max_delay: 10s                  # backoff ceiling
     rate_limit: 0                     # global requests/sec across ALL collectors (0 = unlimited)
 
+# ── Multi-tailnet / MSP (OPTIONAL) ──────────────────────────────────────────────
+# Observe MORE THAN ONE tailnet from a single instance. Mutually exclusive with an
+# explicit tailscale.tailnet above (leave it at "-" when using this list). Each
+# entry is self-contained (its own name + auth + http) — credentials are never
+# inherited from the tailscale: block. Tailnet identity is emitted as the
+# tailscale.tailnet OTEL resource attribute (one target_info per tailnet); query
+# fleet-wide with `sum without(instance)(...)`. FILE-ONLY: this list of structs is
+# NOT settable via TS2OTEL_* env vars. Streaming/webhook receivers require
+# single-tailnet mode (use the tailscale: block instead). Default: empty (single
+# tailnet from the tailscale: block above).
+tailnets: []
+#   - name: acme.example.com
+#     auth:
+#       method: oauth
+#       oauth:
+#         client_id: ""               # secret via env or a mounted secrets file
+#   - name: beta.example.com
+#     auth:
+#       method: apikey
+#       apikey: ""
+
 # ── OTLP export destination ─────────────────────────────────────────────────────
 otlp:
   protocol: http                      # http | grpc | stdout (stdout = print signals to the console for local debug, no backend)

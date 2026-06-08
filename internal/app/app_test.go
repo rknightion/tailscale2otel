@@ -83,7 +83,7 @@ func newTestClient(t *testing.T, baseURL string) *tsapi.Client {
 
 // hasCollector reports whether a collector with the given Name() is registered.
 func hasCollector(a *App, name string) bool {
-	for _, e := range a.registry.Entries() {
+	for _, e := range a.runtimes[0].registry.Entries() {
 		if e.Collector.Name() == name {
 			return true
 		}
@@ -123,7 +123,6 @@ func TestRegisterCollectors_HeadscaleGating(t *testing.T) {
 	cfg.Collectors.Flowlogs.Enabled = true // unsupported under headscale
 
 	a := headscaleTestApp(t, cfg)
-	a.registerCollectors()
 
 	if !hasCollector(a, "devices") {
 		t.Error("devices should register under provider=headscale")
@@ -369,8 +368,8 @@ func TestNewApp_WiresSharedAuditDedup(t *testing.T) {
 		Actor:        audit.Actor{LoginName: "a@example.com"},
 		Target:       audit.Target{Type: "NODE", Name: "n", ID: "t1"},
 	}
-	a.auditProc.Process(ev, rec.Emitter())
-	a.auditProc.Process(ev, rec.Emitter()) // exact duplicate
+	a.runtimes[0].auditProc.Process(ev, rec.Emitter())
+	a.runtimes[0].auditProc.Process(ev, rec.Emitter()) // exact duplicate
 
 	var total float64
 	for _, p := range rec.MetricPoints("tailscale.config.audit.events") {
@@ -408,9 +407,9 @@ func TestNewApp_WiresSharedFlowDedup(t *testing.T) {
 		}
 		return t
 	}
-	a.flowProc.Process(flow, rec.Emitter())
+	a.runtimes[0].flowProc.Process(flow, rec.Emitter())
 	first := sum()
-	a.flowProc.Process(flow, rec.Emitter()) // duplicate window
+	a.runtimes[0].flowProc.Process(flow, rec.Emitter()) // duplicate window
 	if first == 0 {
 		t.Fatal("flow io total = 0 after first process, want >0")
 	}
@@ -467,7 +466,7 @@ func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
 			{Proto: 6, Src: "100.64.0.1:1", Dst: "100.64.0.2:443", TxBytes: 1000, RxBytes: 500},
 		},
 	}
-	a.flowProc.Process(pollFlow, rec.Emitter())
+	a.runtimes[0].flowProc.Process(pollFlow, rec.Emitter())
 	afterPoll := sum()
 	if afterPoll == 0 {
 		t.Fatal("flow io total = 0 after poll, want > 0")
@@ -517,7 +516,7 @@ func TestPollStreamCrossDedup_AuditDeduplicates(t *testing.T) {
 		Target:       audit.Target{ID: "t1", Type: "NODE"},
 		Actor:        audit.Actor{ID: "a1"},
 	}
-	a.auditProc.Process(pollEv, rec.Emitter())
+	a.runtimes[0].auditProc.Process(pollEv, rec.Emitter())
 	if c := count(); c != 1 {
 		t.Fatalf("audit count after poll = %v, want 1", c)
 	}
@@ -557,8 +556,8 @@ func TestPollStreamCrossDedup_AuditDistinctSubChangesBothEmit(t *testing.T) {
 	a1.Target.Property = "MACHINE_NAME"
 	a2 := base
 	a2.Target.Property = "ACL_TAGS"
-	a.auditProc.Process(a1, rec.Emitter())
-	a.auditProc.Process(a2, rec.Emitter())
+	a.runtimes[0].auditProc.Process(a1, rec.Emitter())
+	a.runtimes[0].auditProc.Process(a2, rec.Emitter())
 	if c := count(); c != 2 {
 		t.Fatalf("audit count = %v, want 2 (distinct properties under one eventGroupID must not collapse)", c)
 	}
@@ -585,7 +584,7 @@ func TestNewApp_WiresWebhookAuditCrossDedup(t *testing.T) {
 	}
 
 	// Audit records the NODE/CREATE/n1 change at the matching second.
-	a.auditProc.Process(audit.Event{
+	a.runtimes[0].auditProc.Process(audit.Event{
 		EventTime: time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
 		Action:    "CREATE",
 		Target:    audit.Target{ID: "n1", Type: "NODE"},
@@ -620,7 +619,7 @@ func TestNewApp_WebhookCrossDedupOffByDefault(t *testing.T) {
 		t.Fatal("cross-source dedup set wired without the flag")
 	}
 
-	a.auditProc.Process(audit.Event{
+	a.runtimes[0].auditProc.Process(audit.Event{
 		EventTime: time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
 		Action:    "CREATE",
 		Target:    audit.Target{ID: "n1", Type: "NODE"},

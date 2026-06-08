@@ -139,6 +139,27 @@
     </div>
   </section>
 
+  {{if gt (len .Tailnets) 1}}
+  <section id="tailnets">
+    <h2>Tailnets ({{len .Tailnets}})</h2>
+    <table>
+      <thead><tr><th>Tailnet</th><th>Auth</th><th class="num">Devices</th><th class="num">Collectors</th><th class="num">Failing</th></tr></thead>
+      <tbody>
+      {{range .Tailnets}}
+        <tr>
+          <td><code>{{.Name}}</code></td>
+          <td>{{.AuthMethod}}</td>
+          <td class="num">{{.Cache.Devices}}</td>
+          <td class="num">{{len .Collectors}}</td>
+          <td class="num">{{if gt .Failing 0}}<span class="badge degraded">{{.Failing}}</span>{{else}}—{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="note">Per-tailnet detail is available in <a href="/api/status.json"><code>/api/status.json</code></a> under <code>tailnets[]</code>. The Collectors, Devices and API sections below show the combined view across all tailnets.</p>
+  </section>
+  {{end}}
+
   <section id="collectors">
     <h2>Collectors</h2>
     <table>

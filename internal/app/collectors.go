@@ -22,6 +22,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/rdns"
 	"github.com/rknightion/tailscale2otel/internal/stream"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 	"github.com/rknightion/tailscale2otel/internal/webhook"
 )
 
@@ -68,9 +69,9 @@ func rdnsOptions(cfg *config.Config) rdns.Options {
 // flowFeatureCheck reports whether network flow logging is enabled on the
 // tailnet, so the flowlogs collector can self-disable (emit feature.enabled=0
 // and idle) instead of error-spamming when the feature is off or plan-gated.
-func (a *App) flowFeatureCheck() flowlogs.FeatureCheck {
+func flowFeatureCheck(client *tsapi.Client) flowlogs.FeatureCheck {
 	return func(ctx context.Context) (bool, error) {
-		s, err := a.client.TailnetSettings(ctx)
+		s, err := client.TailnetSettings(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -84,90 +85,102 @@ func pollSource(s string) bool {
 	return s == "" || s == "poll" || s == "both"
 }
 
-// registerCollectors registers the enabled collectors on the registry based on
-// a.cfg. Window collectors (flowlogs/auditlogs) only poll when their source
-// includes "poll"; the shared processors are reused by the stream receiver.
-func (a *App) registerCollectors() {
-	c := &a.cfg.Collectors
+// registerCollectors registers the enabled collectors on the runtime's registry.
+// Each runtime has its own provider/client/emitter/cache (one per tailnet).
+// Window collectors (flowlogs/auditlogs) only poll when their source includes
+// "poll"; the runtime's processors are reused by the stream receiver (single
+// tailnet only). a.client (settings/dns/contacts/etc.) are Tailscale-only APIs
+// gated off for Headscale by the capability set, so rt.client is safe there.
+func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
+	cfg := d.cfg
+	c := &cfg.Collectors
+	cp := rt.cp
+	logger := d.logger
+	ingest := ingestObserver(rt.emitter, cfg.SelfObservability.Enabled)
 
-	if c.Devices.Enabled && a.provider.Supports("devices") {
+	if c.Devices.Enabled && cp.Supports("devices") {
 		devOpts := []devices.Option{
-			devices.WithPerEntity(a.cfg.Cardinality.PerEntity.Device),
+			devices.WithPerEntity(cfg.Cardinality.PerEntity.Device),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
-			devices.WithDerpRegionRollup(a.cfg.Cardinality.DerpRegionRollup),
+			devices.WithDerpRegionRollup(cfg.Cardinality.DerpRegionRollup),
 			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit),
 			devices.WithConnectivity(c.Devices.CollectConnectivity),
-			devices.WithSubnetRouteRollup(a.cfg.Cardinality.SubnetRouteRollup),
+			devices.WithSubnetRouteRollup(cfg.Cardinality.SubnetRouteRollup),
 		}
-		if a.tsRelease != nil {
+		if d.tsRelease != nil {
 			devOpts = append(devOpts, devices.WithUpstreamLatest(
-				a.tsRelease.Latest, a.cfg.VersionChecks.Devices.OutdatedMinorThreshold))
+				d.tsRelease.Latest, cfg.VersionChecks.Devices.OutdatedMinorThreshold))
 		}
-		a.registry.Register(devices.New(a.provider.Client, a.cache, c.Devices.Interval.D(),
+		rt.registry.Register(devices.New(cp.Client, rt.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())
 	}
-	if c.Users.Enabled && a.provider.Supports("users") {
-		a.registry.Register(users.New(a.provider.Client, c.Users.Interval.D(),
-			users.WithPerEntity(a.cfg.Cardinality.PerEntity.User)), c.Users.Interval.D())
+	if c.Users.Enabled && cp.Supports("users") {
+		rt.registry.Register(users.New(cp.Client, c.Users.Interval.D(),
+			users.WithPerEntity(cfg.Cardinality.PerEntity.User)), c.Users.Interval.D())
 	}
-	if c.Keys.Enabled && a.provider.Supports("keys") {
-		a.registry.Register(keys.New(a.provider.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
-			keys.WithPerEntity(a.cfg.Cardinality.PerEntity.Key)), c.Keys.Interval.D())
+	if c.Keys.Enabled && cp.Supports("keys") {
+		rt.registry.Register(keys.New(cp.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
+			keys.WithPerEntity(cfg.Cardinality.PerEntity.Key)), c.Keys.Interval.D())
 	}
-	if c.Settings.Enabled && a.provider.Supports("settings") {
-		a.registry.Register(settings.New(a.client, c.Settings.Interval.D()), c.Settings.Interval.D())
+	if c.Settings.Enabled && cp.Supports("settings") {
+		rt.registry.Register(settings.New(rt.client, c.Settings.Interval.D()), c.Settings.Interval.D())
 	}
-	if c.Acl.Enabled && a.provider.Supports("acl") {
-		a.registry.Register(acl.New(a.provider.Client, c.Acl.Interval.D(), nil), c.Acl.Interval.D())
+	if c.Acl.Enabled && cp.Supports("acl") {
+		rt.registry.Register(acl.New(cp.Client, c.Acl.Interval.D(), nil), c.Acl.Interval.D())
 	}
-	if c.Dns.Enabled && a.provider.Supports("dns") {
-		a.registry.Register(dns.New(a.client, c.Dns.Interval.D()), c.Dns.Interval.D())
+	if c.Dns.Enabled && cp.Supports("dns") {
+		rt.registry.Register(dns.New(rt.client, c.Dns.Interval.D()), c.Dns.Interval.D())
 	}
-	if c.Contacts.Enabled && a.provider.Supports("contacts") {
-		a.registry.Register(contacts.New(a.client, c.Contacts.Interval.D()), c.Contacts.Interval.D())
+	if c.Contacts.Enabled && cp.Supports("contacts") {
+		rt.registry.Register(contacts.New(rt.client, c.Contacts.Interval.D()), c.Contacts.Interval.D())
 	}
-	if c.Webhooks.Enabled && a.provider.Supports("webhooks") {
-		a.registry.Register(webhooks.New(a.client, c.Webhooks.Interval.D(),
-			webhooks.WithPerEntity(a.cfg.Cardinality.PerEntity.Webhook)), c.Webhooks.Interval.D())
+	if c.Webhooks.Enabled && cp.Supports("webhooks") {
+		rt.registry.Register(webhooks.New(rt.client, c.Webhooks.Interval.D(),
+			webhooks.WithPerEntity(cfg.Cardinality.PerEntity.Webhook)), c.Webhooks.Interval.D())
 	}
-	if c.PostureIntegrations.Enabled && a.provider.Supports("posture_integrations") {
-		a.registry.Register(postureintegrations.New(a.client, c.PostureIntegrations.Interval.D()), c.PostureIntegrations.Interval.D())
+	if c.PostureIntegrations.Enabled && cp.Supports("posture_integrations") {
+		rt.registry.Register(postureintegrations.New(rt.client, c.PostureIntegrations.Interval.D()), c.PostureIntegrations.Interval.D())
 	}
-	if c.LogStream.Enabled && a.provider.Supports("log_stream") {
-		a.registry.Register(logstream.New(a.client, c.LogStream.Interval.D()), c.LogStream.Interval.D())
+	if c.LogStream.Enabled && cp.Supports("log_stream") {
+		rt.registry.Register(logstream.New(rt.client, c.LogStream.Interval.D()), c.LogStream.Interval.D())
 	}
-	if c.Services.Enabled && a.provider.Supports("services") {
-		a.registry.Register(services.New(a.client, c.Services.Interval.D(),
-			services.WithPerEntity(a.cfg.Cardinality.PerEntity.Service),
+	if c.Services.Enabled && cp.Supports("services") {
+		rt.registry.Register(services.New(rt.client, c.Services.Interval.D(),
+			services.WithPerEntity(cfg.Cardinality.PerEntity.Service),
 			services.WithCollectHosts(c.Services.CollectHosts)), c.Services.Interval.D())
 	}
-	if nm := c.NodeMetrics; nm.Enabled && a.provider.Supports("nodemetrics") && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
+	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
 		// Keep a typed reference so the status page can surface discovered nodes.
 		// Discovery uses the provider client's DevicesRich, so it works for both
 		// backends (Headscale nodes also run tailscaled on :5252).
-		a.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, a.provider.Client, withComponent(a.logger, compNodeMetrics)))
-		a.registry.Register(a.nodeMetrics, nm.Interval.D())
+		rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, withComponent(logger, compNodeMetrics)))
+		rt.registry.Register(rt.nodeMetrics, nm.Interval.D())
 	}
-	if c.Flowlogs.Enabled && a.provider.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
-		fc := flowlogs.New(a.client, a.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), a.flowFeatureCheck(), a.ingestObserver())
-		a.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
-	} else if c.Flowlogs.Enabled && a.provider.Supports("flowlogs") {
+	if c.Flowlogs.Enabled && cp.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
+		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), ingest)
+		rt.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
+	} else if c.Flowlogs.Enabled && cp.Supports("flowlogs") {
 		// Stream-only (source: stream): the poller isn't registered, so the
 		// tailscale.feature.enabled health gauge it normally emits would be missing.
 		// Register a lightweight probe that reports it independently of ingestion.
-		fp := flowlogs.NewFeatureProbe(a.flowFeatureCheck(), c.Flowlogs.Interval.D())
-		a.registry.Register(fp, fp.DefaultInterval())
+		fp := flowlogs.NewFeatureProbe(flowFeatureCheck(rt.client), c.Flowlogs.Interval.D())
+		rt.registry.Register(fp, fp.DefaultInterval())
 	}
-	if c.Auditlogs.Enabled && a.provider.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
-		ac := auditlogs.New(a.client, a.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), a.ingestObserver())
-		a.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
+	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
+		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), ingest)
+		rt.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
 	}
 }
 
-// buildReceivers constructs the optional HTTP receivers (off by default).
+// buildReceivers constructs the optional HTTP receivers (off by default). The
+// receivers feed the FIRST runtime's processors/emitter: config validation
+// guarantees streaming/webhook are only enabled in single-tailnet mode, so
+// runtimes[0] is the sole tailnet.
 func (a *App) buildReceivers() {
+	rt := a.runtimes[0]
+	ingest := ingestObserver(rt.emitter, a.cfg.SelfObservability.Enabled)
 	if a.cfg.Streaming.Enabled {
 		a.streamSrv = stream.New(stream.Options{
 			Listen:       a.cfg.Streaming.Listen,
@@ -177,8 +190,8 @@ func (a *App) buildReceivers() {
 			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
 			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
 			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
-			OnIngest:     a.ingestObserver(),
-		}, a.flowProc, a.auditProc, a.emitter, withComponent(a.logger, appcatalog.ComponentStream),
+			OnIngest:     ingest,
+		}, rt.flowProc, rt.auditProc, rt.emitter, withComponent(a.logger, appcatalog.ComponentStream),
 			stream.WithTracer(a.tracer))
 	}
 	if a.cfg.Webhook.Enabled {
@@ -188,8 +201,8 @@ func (a *App) buildReceivers() {
 		}
 		wopts = append(wopts, webhook.WithTracer(a.tracer))
 		wh := webhookOptions(a.cfg.Webhook)
-		wh.OnIngest = a.ingestObserver()
-		a.webhookSrv = webhook.New(wh, a.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
+		wh.OnIngest = ingest
+		a.webhookSrv = webhook.New(wh, rt.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
 	}
 }
 

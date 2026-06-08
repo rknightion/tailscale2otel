@@ -55,6 +55,35 @@ func TestRender_Populated(t *testing.T) {
 	}
 }
 
+// TestRender_PerTailnetSection asserts the multi-tailnet section renders one row
+// per tailnet (and is absent for a single tailnet).
+func TestRender_PerTailnetSection(t *testing.T) {
+	multi := statusdata.Status{Tailnets: []statusdata.TailnetStatus{
+		{Name: "acme.example.com", AuthMethod: "oauth", Cache: statusdata.CacheInfo{Devices: 12}},
+		{Name: "beta.example.com", AuthMethod: "apikey", Cache: statusdata.CacheInfo{Devices: 3}, Failing: 1},
+	}}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, multi); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"Tailnets (2)", "acme.example.com", "beta.example.com"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("multi-tailnet page missing %q", want)
+		}
+	}
+
+	// Single tailnet: the section must not appear.
+	single := statusdata.Status{Tailnets: []statusdata.TailnetStatus{{Name: "solo.example.com"}}}
+	buf.Reset()
+	if err := statushtml.Render(&buf, single); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if strings.Contains(buf.String(), `id="tailnets"`) {
+		t.Error("single-tailnet page should not render the Tailnets section")
+	}
+}
+
 // TestRender_CollectorInfoTooltip asserts the per-collector info affordance is
 // present: the server-rendered no-JS fallback carries the purpose + metric
 // names, and the client-side rebuild reads the new JSON fields so the rich

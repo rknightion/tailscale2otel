@@ -16,13 +16,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/audit"
 	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
 	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/enrich"
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/internal/provider"
 	"github.com/rknightion/tailscale2otel/internal/rdns"
@@ -51,32 +47,33 @@ const autoConfigureTimeout = 30 * time.Second
 
 // App is the assembled, runnable service.
 type App struct {
-	cfg          *config.Config
-	version      string    // injected build version, for the status page
-	startTime    time.Time // process start, for uptime on the status page
-	emitter      telemetry.Emitter
-	tracer       trace.Tracer                  // no-op when tracing.enabled=false; threads into scheduler+receivers
-	card         *telemetry.CardinalityTracker // active-series tracker; nil when self-obs disabled
-	metricGroups map[string]string             // metric source-name -> catalog group, for series.by_group rollup
-	exportStats  func() telemetry.ExportStats  // cumulative OTLP export volume; nil when self-obs disabled
-	shutdown     func(context.Context) error   // flushes telemetry on stop
-	restore      func()                        // restores the prior otel error handler
-	provider     *provider.Provider            // control-plane backend (tailscale|headscale) + capability set
-	client       *tsapi.Client                 // concrete Tailscale client; nil under provider: headscale
-	cache        *enrich.DeviceCache
-	registry     *collector.Registry
-	sched        *collector.Scheduler
-	status       *collector.StatusTracker  // per-collector run outcomes, for the status page
-	runtimeHist  *runtimeHistory           // short-term runtime/cardinality trends, for the status page
-	apiStats     *APIStats                 // per-endpoint Tailscale API request stats, for the status page
-	store        collector.CheckpointStore // checkpoint store; read for window-collector state on the status page
-	logger       *slog.Logger
+	cfg       *config.Config
+	version   string       // injected build version, for the status page
+	startTime time.Time    // process start, for uptime on the status page
+	tracer    trace.Tracer // no-op when tracing.enabled=false; threads into scheduler+receivers
 
-	flowProc     *flowlog.Processor
-	auditProc    *audit.Processor
-	flowDedup    *dedup.Set             // flow cross-source set; surfaced on the status page
-	auditDedup   *dedup.Set             // audit cross-source set; surfaced on the status page
-	nodeMetrics  *nodemetrics.Collector // nil unless the node-metrics collector is enabled
+	// runtimes is the per-tailnet collection machinery (one element per tailnet,
+	// always >=1). Each owns its emitter (Resource carries tailscale.tailnet),
+	// provider/client, cache, registry+scheduler, status tracker, API stats, and
+	// poll-path processors.
+	runtimes []*tailnetRuntime
+
+	// Process-level self-observability: the process provider carries process/
+	// global signals (no tailnet dimension). Per-tailnet self-obs lives on each
+	// runtime's emitter/card/exportStats.
+	procEmitter     telemetry.Emitter
+	procCard        *telemetry.CardinalityTracker // process provider's tracker; nil when self-obs off
+	procExportStats func() telemetry.ExportStats  // process provider's export volume; nil when self-obs off
+	metricGroups    map[string]string             // metric source-name -> catalog group, for series.by_group rollup
+
+	shutdown    func(context.Context) error // flushes telemetry on stop
+	restore     func()                      // restores the prior otel error handler
+	runtimeHist *runtimeHistory             // short-term runtime/cardinality trends, for the status page
+	store       collector.CheckpointStore   // checkpoint store; read for window-collector state on the status page
+	logger      *slog.Logger
+
+	flowDedup    *dedup.Set // runtimes[0] flow set, retained for the dedup self-obs reporter
+	auditDedup   *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
 	streamSrv    *stream.Server
 	webhookSrv   *webhook.Server
 	webhookDedup *dedup.Set // shared cross-source set (webhook<->audit); nil unless enabled
@@ -113,35 +110,68 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if logger == nil {
 		logger = slog.Default()
 	}
-	topts := telemetryOptions(cfg, version)
-	topts.Logger = withComponent(logger, compTelemetry) // surfaces Emitter label-collision diagnostics
-	tprov, err := telemetry.NewProvider(ctx, topts)
-	if err != nil {
-		return nil, err
-	}
-	emitter := tprov.Emitter()
-	tracer := tprov.Tracer()
+	resolved := cfg.ResolvedTailnets()
+	multi := len(resolved) > 1
 
-	// One combined request hook: APIStats always records (the status page's API
-	// panel must work even with self-obs off), and apiObserver additionally emits
-	// OTLP only when self-observability is enabled. (Tailscale path only — the
-	// Headscale client is uninstrumented in v1.)
-	apiStats := NewAPIStats()
-	cp, err := buildProvider(cfg, logger, tracer, emitter, apiStats)
+	base := telemetryOptions(cfg, version)
+	base.Logger = withComponent(logger, compTelemetry) // surfaces Emitter label-collision diagnostics
+	perTN := make([]telemetry.PerTailnetOptions, len(resolved))
+	for i, rt := range resolved {
+		perTN[i] = telemetry.PerTailnetOptions{
+			Name:       rt.Name,
+			InstanceID: instanceFor(base.InstanceID, rt.Name, multi),
+		}
+	}
+	ps, err := telemetry.NewProviderSet(ctx, base, perTN)
 	if err != nil {
-		_ = tprov.Shutdown(ctx)
 		return nil, err
 	}
 	store, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
 	if err != nil {
-		_ = tprov.Shutdown(ctx)
+		_ = ps.Shutdown(ctx)
 		return nil, err
 	}
 
-	a := newApp(cfg, version, logger, emitter, tracer, tprov.Shutdown, cp, store, apiStats)
-	a.card = tprov.Cardinality()
+	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, store)
+	a.procCard = ps.Process().Cardinality()
+	a.procExportStats = ps.Process().ExportStats
 	a.metricGroups = metricGroupMap()
-	a.exportStats = tprov.ExportStats
+	a.buildProcessDeps()
+
+	// Build one runtime per tailnet (Tailscale), or a single Headscale runtime.
+	if cfg.Provider == "headscale" {
+		hsClient := hsapi.NewClient(hsapiOptions(cfg))
+		cp := provider.Headscale(hsapi.NewProvider(hsClient))
+		// Headscale has no tailnet fan-out: collect under the process provider's
+		// emitter (no tailscale.tailnet Resource), matching v1 single-Resource output.
+		a.addRuntime("", a.procEmitter, ps.Process().Cardinality(), ps.Process().ExportStats, cp, multi)
+	} else {
+		for _, rt := range resolved {
+			tp := ps.Tailnet(rt.Name)
+			emitter := tp.Emitter()
+			apiStats := NewAPIStats()
+			cp, err := buildTailscaleProvider(rt, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
+			if err != nil {
+				_ = ps.Shutdown(ctx)
+				return nil, err
+			}
+			r := a.addRuntime(rt.Name, emitter, tp.Cardinality(), tp.ExportStats, cp, multi)
+			r.apiStats = apiStats
+		}
+	}
+
+	if cfg.SelfObservability.Enabled {
+		a.restore = telemetry.InstallExportErrorHandler(a.procEmitter, withComponent(logger, compTelemetry))
+		telemetry.EmitBuildInfo(a.procEmitter, runtime.Version())
+	}
+	if len(a.runtimes) > 0 {
+		a.flowDedup = a.runtimes[0].flowDedup
+		a.auditDedup = a.runtimes[0].auditDedup
+	}
+	a.buildReceivers()
+	if cfg.Admin.Enabled {
+		a.adminSrv = a.buildAdminServer()
+	}
 
 	// Continuous profiling is opt-in. startProfiling also applies the runtime
 	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
@@ -155,26 +185,22 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	return a, nil
 }
 
-// buildProvider constructs the control-plane provider selected by cfg.Provider.
-// Tailscale (the default) builds the instrumented tsapi client; Headscale builds
-// the minimal hsapi client. The returned Provider's capability set gates which
-// collectors register (see registerCollectors).
-func buildProvider(
-	cfg *config.Config,
+// buildTailscaleProvider constructs an instrumented Tailscale provider for one
+// resolved tailnet: its own auth + the combined request hook (APIStats always
+// records for the status page; apiObserver emits OTLP only with self-obs on).
+func buildTailscaleProvider(
+	rt config.ResolvedTailnet,
 	logger *slog.Logger,
 	tracer trace.Tracer,
 	emitter telemetry.Emitter,
 	apiStats *APIStats,
+	selfObs bool,
 ) (*provider.Provider, error) {
-	if cfg.Provider == "headscale" {
-		hsClient := hsapi.NewClient(hsapiOptions(cfg))
-		return provider.Headscale(hsapi.NewProvider(hsClient)), nil
-	}
-	tsOpts := tsapiOptions(cfg)
+	tsOpts := tsapiOptionsFor(rt)
 	tsOpts.Logger = withComponent(logger, compTSAPI)
 	tsOpts.Tracer = tracer
 	var obs func(context.Context, string, int, int, time.Duration)
-	if cfg.SelfObservability.Enabled {
+	if selfObs {
 		obs = apiObserver(emitter)
 	}
 	tsOpts.OnRequest = func(ctx context.Context, i tsapi.RequestInfo) {
@@ -190,9 +216,113 @@ func buildProvider(
 	return provider.Tailscale(client), nil
 }
 
-// newApp assembles an App from already-constructed dependencies. It is the seam
-// the integration test drives with an in-memory emitter and a stub provider
-// (provider.Tailscale wrapping a stub Tailscale client).
+// newAppShell builds an App with only its process-level fields set; runtimes are
+// added separately via addRuntime.
+func newAppShell(
+	cfg *config.Config,
+	version string,
+	logger *slog.Logger,
+	procEmitter telemetry.Emitter,
+	tracer trace.Tracer,
+	shutdown func(context.Context) error,
+	store collector.CheckpointStore,
+) *App {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &App{
+		cfg:         cfg,
+		version:     version,
+		startTime:   time.Now(),
+		tracer:      tracer,
+		procEmitter: procEmitter,
+		shutdown:    shutdown,
+		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
+		store:       store,
+		logger:      logger,
+	}
+}
+
+// buildProcessDeps constructs the process-level shared dependencies that some
+// runtimes consume at build time: the version-check fetchers, the shared
+// reverse-DNS cache, and the webhook<->audit cross-dedup set. Must be called
+// before addRuntime (the devices collector wants a.tsRelease; runtimes[0] wants
+// the rdns cache + webhook dedup).
+func (a *App) buildProcessDeps() {
+	cfg := a.cfg
+	if cfg.Enrichment.ReverseDNS.Enabled {
+		ropts := rdnsOptions(cfg)
+		// rdns is shared infra across tailnets; its self-obs rides the process
+		// provider. The status page reads Stats() directly regardless.
+		if cfg.SelfObservability.Enabled {
+			ropts.Emitter = a.procEmitter
+		}
+		a.rdnsCache = rdns.New(ropts)
+	}
+	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents {
+		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook and
+		// the audit logs is counted once (single-tailnet only; webhook requires it).
+		a.webhookDedup = dedup.New(auditDedupCapacity)
+	}
+	vc := cfg.VersionChecks
+	ua := "tailscale2otel/" + a.version
+	releaseLogger := withComponent(a.logger, compRelease)
+	if vc.Self.Enabled {
+		a.selfRelease = release.NewFetcher("self", release.GitHubLatestURL, ua,
+			release.ParseGitHubLatest, newReleaseHTTPClient(vc.Timeout.D()),
+			vc.CacheTTL.D(), releaseLogger)
+	}
+	if vc.Devices.Enabled {
+		a.tsRelease = release.NewFetcher("tailscale", release.TailscalePkgsURL, ua,
+			release.ParseTailscalePkgs, newReleaseHTTPClient(vc.Timeout.D()),
+			vc.CacheTTL.D(), releaseLogger)
+	}
+}
+
+// addRuntime builds and appends a per-tailnet runtime (cache, scheduler,
+// processors, collectors) and returns it. emitter/card/exportStats come from
+// that tailnet's provider; cp carries the capability set + client.
+func (a *App) addRuntime(
+	name string,
+	emitter telemetry.Emitter,
+	card *telemetry.CardinalityTracker,
+	exportStats func() telemetry.ExportStats,
+	cp *provider.Provider,
+	multi bool,
+) *tailnetRuntime {
+	rt := &tailnetRuntime{
+		name:        name,
+		emitter:     emitter,
+		card:        card,
+		exportStats: exportStats,
+		cp:          cp,
+		apiStats:    NewAPIStats(),
+	}
+	// Retain the concrete Tailscale client for the Tailscale-only paths
+	// (flowFeatureCheck, autoConfigureStreaming). It is nil under provider:
+	// headscale, where those paths are gated off by the capability set.
+	if tc, ok := cp.Client.(*tsapi.Client); ok {
+		rt.client = tc
+	}
+	newRuntime(rt, runtimeDeps{
+		cfg:          a.cfg,
+		logger:       a.logger,
+		tracer:       a.tracer,
+		store:        a.store,
+		procEmitter:  a.procEmitter,
+		rdnsCache:    a.rdnsCache,
+		webhookDedup: a.webhookDedup,
+		tsRelease:    a.tsRelease,
+		multi:        multi,
+	})
+	a.runtimes = append(a.runtimes, rt)
+	return rt
+}
+
+// newApp is the single-runtime assembly seam the unit/integration tests drive
+// with an in-memory emitter and a stub provider. The one emitter doubles as both
+// the process and tailnet emitter (so a single Recorder observes everything), and
+// no telemetry.Provider exists, so the cardinality/export-volume hooks are nil.
 func newApp(
 	cfg *config.Config,
 	version string,
@@ -204,88 +334,17 @@ func newApp(
 	store collector.CheckpointStore,
 	apiStats *APIStats,
 ) *App {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	a := &App{
-		cfg:         cfg,
-		version:     version,
-		startTime:   time.Now(),
-		emitter:     emitter,
-		tracer:      tracer,
-		shutdown:    shutdown,
-		provider:    cp,
-		cache:       enrich.NewDeviceCache(),
-		registry:    collector.NewRegistry(),
-		status:      collector.NewStatusTracker(),
-		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
-		apiStats:    apiStats,
-		store:       store,
-		logger:      logger,
-	}
-	// Retain the concrete Tailscale client for the Tailscale-only paths
-	// (flowFeatureCheck, autoConfigureStreaming). It is nil under provider:
-	// headscale, where those paths are gated off by the capability set.
-	if tc, ok := cp.Client.(*tsapi.Client); ok {
-		a.client = tc
-	}
-	a.sched = collector.NewScheduler(emitter, store,
-		collector.WithLogger(withComponent(logger, compCollector)),
-		collector.WithSelfObs(cfg.SelfObservability.Enabled),
-		collector.WithStatusTracker(a.status),
-		collector.WithTracer(a.tracer))
+	a := newAppShell(cfg, version, logger, emitter, tracer, shutdown, store)
+	a.metricGroups = metricGroupMap()
+	a.buildProcessDeps()
+	rt := a.addRuntime("", emitter, nil, nil, cp, false)
+	rt.apiStats = apiStats
 	if cfg.SelfObservability.Enabled {
-		a.restore = telemetry.InstallExportErrorHandler(emitter, withComponent(logger, compTelemetry))
+		a.restore = telemetry.InstallExportErrorHandler(emitter, withComponent(a.logger, compTelemetry))
 		telemetry.EmitBuildInfo(emitter, runtime.Version())
 	}
-	// Shared cross-source de-duplication: the same flow window / audit event can
-	// arrive from both the poll collector and the streaming receiver, which share
-	// one processor each, so a dedup set on the processor suppresses the repeat.
-	// The sets are retained on App so the status page can report their occupancy.
-	a.flowDedup = dedup.New(flowDedupCapacity)
-	fopts := flowOptions(cfg)
-	fopts.Dedup = a.flowDedup
-	// Opt-in reverse-DNS enrichment of external flow addresses. The async cache is
-	// retained on App so Run can drain its background workers on shutdown.
-	if cfg.Enrichment.ReverseDNS.Enabled {
-		ropts := rdnsOptions(cfg)
-		// Emit the cache's self-obs metrics only when self-observability is on; the
-		// admin status page reads Stats() directly regardless.
-		if cfg.SelfObservability.Enabled {
-			ropts.Emitter = emitter
-		}
-		a.rdnsCache = rdns.New(ropts)
-		fopts.RDNS = a.rdnsCache
-	}
-	a.flowProc = flowlog.NewProcessor(a.cache, fopts)
-	a.auditDedup = dedup.New(auditDedupCapacity)
-	auditOpts := []audit.Option{audit.WithDedup(a.auditDedup)}
-	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents {
-		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook
-		// and the audit logs is counted once. Off by default; the same set is
-		// handed to the webhook server in buildReceivers.
-		a.webhookDedup = dedup.New(auditDedupCapacity)
-		auditOpts = append(auditOpts, audit.WithCrossDedup(a.webhookDedup))
-	}
-	a.auditProc = audit.NewProcessor(auditOpts...)
-
-	// Version-check fetchers: constructed before registerCollectors so that
-	// a.tsRelease is available when the devices collector is registered.
-	vc := cfg.VersionChecks
-	ua := "tailscale2otel/" + version
-	releaseLogger := withComponent(logger, compRelease)
-	if vc.Self.Enabled {
-		a.selfRelease = release.NewFetcher("self", release.GitHubLatestURL, ua,
-			release.ParseGitHubLatest, newReleaseHTTPClient(vc.Timeout.D()),
-			vc.CacheTTL.D(), releaseLogger)
-	}
-	if vc.Devices.Enabled {
-		a.tsRelease = release.NewFetcher("tailscale", release.TailscalePkgsURL, ua,
-			release.ParseTailscalePkgs, newReleaseHTTPClient(vc.Timeout.D()),
-			vc.CacheTTL.D(), releaseLogger)
-	}
-
-	a.registerCollectors()
+	a.flowDedup = rt.flowDedup
+	a.auditDedup = rt.auditDedup
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
 		a.adminSrv = a.buildAdminServer()
@@ -307,20 +366,30 @@ func (a *App) Run(ctx context.Context) error {
 		// receivers have wound down, so no further lookups are issued).
 		defer a.rdnsCache.Close()
 	}
+	interval := a.cfg.OTLP.MetricInterval.D()
 	if a.cfg.SelfObservability.Enabled {
-		go runHeartbeat(ctx, a.emitter, heartbeatInterval)
-		go runCardinalityReporter(ctx, a.emitter, a.card, a.metricGroups, a.cfg.OTLP.MetricInterval.D())
-		go runExportReporter(ctx, a.emitter, a.exportStats, a.cfg.OTLP.MetricInterval.D())
-		go runRuntimeReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), readRuntimeStats)
-		go runProcessReporter(ctx, a.emitter, a.startTime, a.cfg.OTLP.MetricInterval.D(), readProcessCPU)
-		go runConfigHealthReporter(ctx, a.cfg, a.emitter, a.cfg.OTLP.MetricInterval.D())
-		go runDedupReporter(ctx, a.emitter, a.cfg.OTLP.MetricInterval.D(), map[string]*dedup.Set{
+		// Process-global self-obs: emitted on the process provider (no tailnet
+		// Resource).
+		go runHeartbeat(ctx, a.procEmitter, heartbeatInterval)
+		go runRuntimeReporter(ctx, a.procEmitter, interval, readRuntimeStats)
+		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
+		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
+		go runDedupReporter(ctx, a.procEmitter, interval, map[string]*dedup.Set{
 			"flow":          a.flowDedup,
 			"audit":         a.auditDedup,
 			"webhook_cross": a.webhookDedup,
 		})
+		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)
+		go runExportReporter(ctx, a.procEmitter, a.procExportStats, interval)
 		if a.cfg.Checkpoint.Store == "file" {
-			go collector.RunCheckpointReporter(ctx, a.emitter, a.cfg.Checkpoint.FilePath, a.cfg.OTLP.MetricInterval.D())
+			go collector.RunCheckpointReporter(ctx, a.procEmitter, a.cfg.Checkpoint.FilePath, interval)
+		}
+		// Per-tailnet self-obs: cardinality + export volume ride each tailnet's
+		// emitter (Resource carries tailscale.tailnet). api.*/scrape.* are already
+		// per-tailnet via each client's request hook and the runtime's scheduler.
+		for _, rt := range a.runtimes {
+			go runCardinalityReporter(ctx, rt.emitter, rt.card, a.metricGroups, interval)
+			go runExportReporter(ctx, rt.emitter, rt.exportStats, interval)
 		}
 	}
 
@@ -334,24 +403,26 @@ func (a *App) Run(ctx context.Context) error {
 	// broad self-obs off).
 	if a.selfRelease != nil {
 		go a.selfRelease.Run(ctx)
-		go runUpdateCheck(ctx, a.emitter, a.selfRelease.Latest, a.version, a.cfg.OTLP.MetricInterval.D())
+		go runUpdateCheck(ctx, a.procEmitter, a.selfRelease.Latest, a.version, interval)
 	}
 	if a.tsRelease != nil {
 		go a.tsRelease.Run(ctx)
 	}
 
-	// Bounded flow-metric rollups (the default output): drain the accumulator on
-	// the export interval. Independent of self-observability — it must run whenever
-	// rollup metrics are the configured output.
+	// Bounded flow-metric rollups (the default output): drain each runtime's
+	// accumulator on the export interval. Independent of self-observability — it
+	// must run whenever rollup metrics are the configured output.
 	if m := a.cfg.Cardinality.Flow.MetricsMode; m == "rollup" || m == "both" {
-		go runRollupFlusher(ctx, a.flowProc, a.emitter, a.cfg.OTLP.MetricInterval.D())
+		for _, rt := range a.runtimes {
+			go runRollupFlusher(ctx, rt.flowProc, rt.emitter, interval)
+		}
 	}
 
 	if a.streamSrv != nil {
 		go func() {
 			a.recordReceiverStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
-		if a.cfg.Streaming.AutoConfigure && a.provider.Kind == provider.KindTailscale && a.client != nil {
+		if a.cfg.Streaming.AutoConfigure && a.runtimes[0].cp.Kind == provider.KindTailscale && a.runtimes[0].client != nil {
 			// Off the hot path: registering the sink makes a network call to
 			// Tailscale, which must not block the scheduler/other receivers from
 			// starting. Bounded so a hung endpoint can't linger past shutdown.
@@ -372,11 +443,18 @@ func (a *App) Run(ctx context.Context) error {
 		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
 	}
 
-	done := make(chan error, 1)
-	go func() { done <- a.sched.Run(ctx, a.registry) }()
+	// One scheduler per tailnet, each driving its own registry. Aggregate their
+	// exit errors (each returns ctx.Err() on clean stop).
+	done := make(chan error, len(a.runtimes))
+	for _, rt := range a.runtimes {
+		go func(rt *tailnetRuntime) { done <- rt.sched.Run(ctx, rt.registry) }(rt)
+	}
 
 	<-ctx.Done()
-	schedErr := <-done
+	var schedErr error
+	for range a.runtimes {
+		schedErr = errors.Join(schedErr, <-done)
+	}
 	// The scheduler returns the operator-controlled context's error on stop
 	// (SIGINT/SIGTERM cancel it, a deadline expires it); collector failures are
 	// isolated and logged, never returned. So any context error here is the
@@ -385,11 +463,13 @@ func (a *App) Run(ctx context.Context) error {
 		schedErr = nil
 	}
 
-	// Drain any buffered flow rollup so the final interval's accumulated counts are
-	// exported before the telemetry pipeline shuts down. The scheduler has stopped
-	// (so no connections are still being processed) and this is a no-op in "all"
-	// mode (nil accumulator).
-	a.flowProc.FlushRollup(a.emitter)
+	// Drain each runtime's buffered flow rollup so the final interval's accumulated
+	// counts are exported before the telemetry pipeline shuts down. The schedulers
+	// have stopped (so no connections are still being processed) and this is a
+	// no-op in "all" mode (nil accumulator).
+	for _, rt := range a.runtimes {
+		rt.flowProc.FlushRollup(rt.emitter)
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -408,7 +488,7 @@ func (a *App) autoConfigureStreaming(ctx context.Context) {
 		Token:           a.cfg.Streaming.Token.Reveal(),
 	}
 	for _, logType := range []string{"network", "configuration"} {
-		if err := a.client.ConfigureLogStream(ctx, logType, sink); err != nil {
+		if err := a.runtimes[0].client.ConfigureLogStream(ctx, logType, sink); err != nil {
 			a.logger.Error("streaming auto_configure failed", "log_type", logType, "error", err)
 			a.componentError(appcatalog.ComponentAutoConfigure)
 			continue

@@ -178,6 +178,32 @@ func TestScheduler_WindowAdvancesCheckpointOnSuccess(t *testing.T) {
 	}
 }
 
+func TestScheduler_NamespacesCheckpointKeys(t *testing.T) {
+	now := time.Unix(2_000_000, 0).UTC()
+	store := collector.NewMemoryStore()
+	mk := func() *collector.Registry {
+		r := collector.NewRegistry()
+		r.RegisterWindow(winFunc{name: "auditlogs", def: time.Millisecond, lag: time.Minute,
+			fn: func(_ context.Context, _, to time.Time, _ telemetry.Emitter) (time.Time, error) {
+				return to, nil
+			}}, time.Millisecond, 5*time.Minute, time.Hour)
+		return r
+	}
+	clock := collector.WithClock(func() time.Time { return now })
+	runScheduler(t, mk(), store, clock, collector.WithCheckpointNamespace("acme"))
+	runScheduler(t, mk(), store, clock, collector.WithCheckpointNamespace("beta"))
+
+	waitFor(t, func() bool {
+		_, a := store.Get("acme/auditlogs")
+		_, b := store.Get("beta/auditlogs")
+		return a && b
+	}, 2*time.Second)
+
+	if _, ok := store.Get("auditlogs"); ok {
+		t.Error("bare key auditlogs should not be set when a namespace is configured")
+	}
+}
+
 func TestScheduler_WindowDoesNotAdvanceCheckpointOnError(t *testing.T) {
 	now := time.Unix(2_000_000, 0).UTC()
 	store := collector.NewMemoryStore()

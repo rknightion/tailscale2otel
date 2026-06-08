@@ -193,6 +193,6 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_VERSION_CHECKS__CACHE_TTL` | `1h` | how long a fetched "latest version" is cached before re-fetching (minimum 5m) |
 | `TS2OTEL_VERSION_CHECKS__TIMEOUT` | `10s` | per-request timeout for the external version fetch |
 
-**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `otlp.headers`, `collectors.node_metrics.targets`, `profiling.pyroscope.tags`.
+**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `collectors.node_metrics.targets`, `profiling.pyroscope.tags`.
 
 <!-- END GENERATED: env-vars -->

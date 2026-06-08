@@ -28,6 +28,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 )
 
 // scopeName is the instrumentation scope for all emitted telemetry.
@@ -79,6 +81,13 @@ type Options struct {
 	// Provider is the control-plane backend (tailscale|headscale); emitted as the
 	// tailscale2otel.provider resource attribute when non-empty.
 	Provider string
+
+	// TailnetName, when non-empty, is emitted as the tailscale.tailnet resource
+	// attribute. The process-level provider leaves it empty; each per-tailnet
+	// provider sets it so all of that tailnet's signals carry the dimension in the
+	// Resource. Pair it with a distinct InstanceID per tailnet (see ProviderSet)
+	// so each tailnet is its own OTLP target and series don't collide.
+	TailnetName string
 
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
@@ -261,6 +270,9 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	}
 	if opts.Provider != "" {
 		attrs = append(attrs, attribute.String("tailscale2otel.provider", opts.Provider))
+	}
+	if opts.TailnetName != "" {
+		attrs = append(attrs, attribute.String(semconv.AttrTailnet, opts.TailnetName))
 	}
 	// The schemaless WithAttributes block carries the service.* identity; the core
 	// detectors add host/os/process attributes so multiple instances are

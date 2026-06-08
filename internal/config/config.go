@@ -39,9 +39,16 @@ const (
 
 // Config is the root configuration document.
 type Config struct {
-	LogLevel          string                  `yaml:"log_level"`
-	Provider          string                  `yaml:"provider"` // "tailscale" (default) | "headscale"
-	Tailscale         TailscaleConfig         `yaml:"tailscale"`
+	LogLevel  string          `yaml:"log_level"`
+	Provider  string          `yaml:"provider"` // "tailscale" (default) | "headscale"
+	Tailscale TailscaleConfig `yaml:"tailscale"`
+	// Tailnets is the optional multi-tailnet list (MSP mode). When non-empty the
+	// instance observes every listed tailnet; it is mutually exclusive with an
+	// explicit single tailscale.tailnet (Validate errors if both name a tailnet).
+	// Each entry is self-contained (its own name + auth + http). FILE-ONLY: like
+	// collectors.node_metrics.targets, a list-of-structs is not settable via flat
+	// TS2OTEL_* env vars — use a config file for multi-tailnet.
+	Tailnets          []TailnetConfig         `yaml:"tailnets"`
 	Headscale         HeadscaleConfig         `yaml:"headscale"`
 	OTLP              OTLPConfig              `yaml:"otlp"`
 	Enrichment        EnrichmentConfig        `yaml:"enrichment"`
@@ -153,6 +160,45 @@ type TailscaleConfig struct {
 	Tailnet string              `yaml:"tailnet"`
 	Auth    TailscaleAuth       `yaml:"auth"`
 	HTTP    TailscaleHTTPConfig `yaml:"http"`
+}
+
+// TailnetConfig is one entry in the multi-tailnet list. It mirrors the
+// connection-bearing fields of TailscaleConfig but names the tailnet explicitly.
+type TailnetConfig struct {
+	Name string              `yaml:"name"`
+	Auth TailscaleAuth       `yaml:"auth"`
+	HTTP TailscaleHTTPConfig `yaml:"http"`
+}
+
+// ResolvedTailnet is the normalized, per-tailnet connection config the app layer
+// iterates. Both single mode (one tailscale: block) and multi mode (a tailnets:
+// list) collapse to a []ResolvedTailnet via ResolvedTailnets.
+type ResolvedTailnet struct {
+	Name string
+	Auth TailscaleAuth
+	HTTP TailscaleHTTPConfig
+}
+
+// ResolvedTailnets normalizes the single tailscale: block OR the tailnets: list
+// into the per-tailnet list the app fans out over. The list wins when present
+// (Validate rejects an explicit single tailnet alongside it). Under provider:
+// headscale the result is empty (Headscale has no tailnet fan-out in v1).
+func (c *Config) ResolvedTailnets() []ResolvedTailnet {
+	if c.Provider == "headscale" {
+		return nil
+	}
+	if len(c.Tailnets) > 0 {
+		out := make([]ResolvedTailnet, len(c.Tailnets))
+		for i, t := range c.Tailnets {
+			out[i] = ResolvedTailnet(t)
+		}
+		return out
+	}
+	return []ResolvedTailnet{{
+		Name: c.Tailscale.Tailnet,
+		Auth: c.Tailscale.Auth,
+		HTTP: c.Tailscale.HTTP,
+	}}
 }
 
 // TailscaleAuth selects and configures the Tailscale authentication method.

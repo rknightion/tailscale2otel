@@ -137,6 +137,15 @@ config:
   # devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable.
   provider: tailscale
 
+  # -- Multi-tailnet / MSP list. Optional; mutually exclusive with an explicit tailscale.tailnet
+  # (leave it "-" when using this). Each entry observes one tailnet and is self-contained (its own
+  # name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is
+  # emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set
+  # per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds
+  # inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode.
+  # Default empty (single tailnet from the tailscale block below).
+  tailnets: []
+
   # Headscale control-plane connection. Used only when provider: headscale. The api_key is a
   # Bearer token — set it via the secret TS2OTEL_HEADSCALE__API_KEY (above), not here.
   headscale:

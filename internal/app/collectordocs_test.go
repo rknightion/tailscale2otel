@@ -42,8 +42,8 @@ func TestCollectorDocs_CoverAllRegistered(t *testing.T) {
 	a2 := baseTestApp(t, cfg2, "http://127.0.0.1:0", telemetrytest.New())
 
 	var entries []collector.Entry
-	entries = append(entries, a.registry.Entries()...)
-	entries = append(entries, a2.registry.Entries()...)
+	entries = append(entries, a.runtimes[0].registry.Entries()...)
+	entries = append(entries, a2.runtimes[0].registry.Entries()...)
 
 	seen := map[string]bool{}
 	for _, e := range entries {
