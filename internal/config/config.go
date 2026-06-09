@@ -17,6 +17,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -69,6 +70,10 @@ type Config struct {
 	// known config key (a likely typo — they were ignored). Unexported, populated
 	// by Load, surfaced via Warnings.
 	unknownEnv []string
+
+	// configFileWarning is a load-time advisory about the config file itself
+	// (currently: loose permissions). Surfaced by Warnings(), like unknownEnv.
+	configFileWarning string
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -680,9 +685,15 @@ func Load(path string) (*Config, error) {
 	validKeys := append([]string(nil), k.Keys()...)
 
 	// 2. Optional YAML file (overrides defaults).
+	var cfgFileWarning string
 	if path != "" {
 		if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
 			return nil, fmt.Errorf("read config %s: %w", path, err)
+		}
+		if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o044 != 0 {
+			cfgFileWarning = fmt.Sprintf("config file %s is readable by group/other (mode %04o); "+
+				"it may contain credentials — restrict it to 0600 (or keep secrets in TS2OTEL_* env vars)",
+				path, info.Mode().Perm())
 		}
 	}
 
@@ -707,6 +718,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.unknownEnv = unknownEnvVars(validKeys)
+	cfg.configFileWarning = cfgFileWarning
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

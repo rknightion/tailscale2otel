@@ -3,6 +3,8 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -313,6 +315,36 @@ func TestLoadNoFileIsValid(t *testing.T) {
 	}
 	if !cfg.Collectors.Devices.Enabled {
 		t.Errorf("Devices.Enabled = false, want default true")
+	}
+}
+
+func TestLoadWarnsOnLooseConfigFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("tailscale:\n  tailnet: example.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !slices.ContainsFunc(cfg.Warnings(), func(w string) bool {
+		return strings.Contains(w, "readable by group/other")
+	}) {
+		t.Errorf("want a permissions warning for 0644 config, got %q", cfg.Warnings())
+	}
+
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if slices.ContainsFunc(cfg.Warnings(), func(w string) bool {
+		return strings.Contains(w, "readable by group/other")
+	}) {
+		t.Errorf("0600 config must not warn, got %q", cfg.Warnings())
 	}
 }
 

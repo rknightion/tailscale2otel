@@ -2,10 +2,13 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestSecretRedactsInFormattingAndLogs is the structural guarantee: a Secret must
@@ -38,6 +41,31 @@ func TestSecretRedactsInFormattingAndLogs(t *testing.T) {
 	slog.New(slog.NewTextHandler(&buf, nil)).Info("config", "secret", s)
 	if strings.Contains(buf.String(), raw) {
 		t.Errorf("slog leaked the secret: %q", buf.String())
+	}
+}
+
+func TestSecretRedactsInJSONAndYAML(t *testing.T) {
+	s := Secret("hunter2")
+	j, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if string(j) != `"REDACTED"` {
+		t.Errorf("json.Marshal(Secret) = %s, want \"REDACTED\"", j)
+	}
+	if bytes.Contains(j, []byte("hunter2")) {
+		t.Errorf("json.Marshal leaked the secret: %s", j)
+	}
+	y, err := yaml.Marshal(s)
+	if err != nil {
+		t.Fatalf("yaml.Marshal: %v", err)
+	}
+	if bytes.Contains(y, []byte("hunter2")) {
+		t.Errorf("yaml.Marshal leaked the secret: %s", y)
+	}
+	// Empty stays empty (matches redact()'s contract).
+	if j, _ := json.Marshal(Secret("")); string(j) != `""` {
+		t.Errorf("json.Marshal(empty Secret) = %s, want \"\"", j)
 	}
 }
 

@@ -207,6 +207,8 @@ collectors:
     timeout: 10s                      # per-scrape HTTP timeout
     max_response_bytes: 4194304       # per-target response cap (4 MiB) — bounds memory
     max_samples: 50000                # per-target sample cap per scrape — bounds cardinality
+    # SECURITY: scraped label values are node-controlled; keep cardinality.metric_limit set
+    # (default 10000) so a compromised node cannot mint unbounded series.
     targets: []                       # static targets (FILE-ONLY — a list of objects can't be set via env). Example:
       # - url: http://100.64.0.10:5252/metrics
       #   instance: relay-1           # identity label; defaults to the URL host:port

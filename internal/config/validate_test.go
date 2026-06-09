@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -815,6 +816,23 @@ func TestPrometheusListenConflict(t *testing.T) {
 	c.Prometheus.Listen = ":2112"
 	if err := c.Validate(); err != nil && strings.Contains(err.Error(), "prometheus.listen") {
 		t.Fatalf("distinct listeners still report a prometheus.listen conflict: %v", err)
+	}
+}
+
+func TestWarnsOnNodeMetricsWithUnlimitedCardinality(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.NodeMetrics.Enabled = true
+	cfg.Cardinality.MetricLimit = 0 // unlimited
+	if !slices.ContainsFunc(cfg.Warnings(), func(w string) bool {
+		return strings.Contains(w, "node_metrics") && strings.Contains(w, "metric_limit")
+	}) {
+		t.Errorf("want node_metrics/metric_limit advisory, got %q", cfg.Warnings())
+	}
+	cfg.Cardinality.MetricLimit = 10000
+	if slices.ContainsFunc(cfg.Warnings(), func(w string) bool {
+		return strings.Contains(w, "node_metrics") && strings.Contains(w, "metric_limit")
+	}) {
+		t.Errorf("limit set: advisory must not fire")
 	}
 }
 

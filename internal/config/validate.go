@@ -169,6 +169,18 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	if c.Collectors.NodeMetrics.Enabled && c.Cardinality.MetricLimit <= 0 {
+		w = append(w, "collectors.node_metrics.enabled=true with cardinality.metric_limit unlimited "+
+			"(<=0): scraped label VALUES are controlled by the scraped nodes, so a compromised or "+
+			"misbehaving node can mint unbounded series (memory + backend cost). Set "+
+			"cardinality.metric_limit (default 10000) so the SDK collapses the excess into "+
+			"otel_metric_overflow.")
+	}
+
+	if c.configFileWarning != "" {
+		w = append(w, c.configFileWarning)
+	}
+
 	for _, name := range c.unknownEnv {
 		w = append(w, fmt.Sprintf("environment variable %s does not match any configuration key "+
 			"and was ignored — check the name for typos (keys use the %s prefix with %q as the "+

@@ -1,6 +1,9 @@
 package config
 
-import "log/slog"
+import (
+	"encoding/json"
+	"log/slog"
+)
 
 // Secret is a string-typed config value that holds a credential (API key, OAuth
 // client secret, token, password). It redacts itself in all formatting and
@@ -30,3 +33,10 @@ func (s Secret) GoString() string { return `config.Secret("` + s.redact() + `")`
 
 // LogValue redacts under slog (the app's structured logger).
 func (s Secret) LogValue() slog.Value { return slog.StringValue(s.redact()) }
+
+// MarshalJSON redacts under encoding/json (which ignores String()): a future
+// debug endpoint or config dump must not become a credential leak.
+func (s Secret) MarshalJSON() ([]byte, error) { return json.Marshal(s.redact()) }
+
+// MarshalYAML redacts under yaml marshaling for the same reason.
+func (s Secret) MarshalYAML() (any, error) { return s.redact(), nil }
