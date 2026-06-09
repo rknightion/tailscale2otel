@@ -1,7 +1,9 @@
 package app
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"log/slog"
 	"maps"
 	"os"
@@ -74,16 +76,29 @@ func piiCategories(f config.PIIFilterConfig) pii.Categories {
 	}
 }
 
-// instanceID resolves the service.instance.id resource attribute: the explicit
-// self_observability.instance_id when set, otherwise the host name. The hostname
-// policy lives here (the app layer) so internal/telemetry stays free of it; a
-// failed os.Hostname() yields "", which buildResource simply omits.
+// instanceID resolves the service.instance.id resource attribute.
+//
+// Priority:
+//  1. Explicit self_observability.instance_id — always honored (operator's choice).
+//  2. pii_filter.hostnames == true  → bare hostname (backward-compatible default).
+//  3. pii_filter.hostnames == false → first 12 hex chars of SHA-256(hostname).
+//     Uniqueness per host is preserved; the name is not disclosed.
+//
+// The hostname policy lives here (the app layer) so internal/telemetry stays
+// free of it; a failed os.Hostname() yields "", which buildResource omits.
 func instanceID(cfg *config.Config) string {
 	if cfg.SelfObservability.InstanceID != "" {
 		return cfg.SelfObservability.InstanceID
 	}
 	host, _ := os.Hostname()
-	return host
+	if cfg.PIIFilter.Hostnames || host == "" {
+		return host // "" (failed lookup) is omitted by buildResource
+	}
+	// Hostnames PII category disabled: return a stable non-reversible identifier
+	// so service.instance.id still uniquely identifies the host without leaking
+	// the hostname to the OTLP backend.
+	sum := sha256.Sum256([]byte(host))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // hsapiOptions maps the Headscale config into hsapi.Options. Auth is the Bearer

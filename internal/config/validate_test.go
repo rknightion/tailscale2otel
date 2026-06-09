@@ -836,6 +836,39 @@ func TestWarnsOnNodeMetricsWithUnlimitedCardinality(t *testing.T) {
 	}
 }
 
+// TestValidateOTLPMetricIntervalMustBePositive pins the hard error that fires
+// when otlp.metric_interval is zero or negative. A zero-duration interval
+// passed to time.NewTicker panics at runtime, so Validate() must catch it.
+func TestValidateOTLPMetricIntervalMustBePositive(t *testing.T) {
+	cases := []struct {
+		name  string
+		value time.Duration
+	}{
+		{"zero", 0},
+		{"negative", -1 * time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.OTLP.MetricInterval = config.Duration(tc.value)
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("metric_interval=%v: expected Validate() error, got nil", tc.value)
+			}
+			if !strings.Contains(err.Error(), "metric_interval") {
+				t.Errorf("error %q should mention metric_interval", err.Error())
+			}
+		})
+	}
+
+	// A positive value must not error.
+	c := config.Default()
+	c.OTLP.MetricInterval = config.Duration(30 * time.Second)
+	if err := c.Validate(); err != nil {
+		t.Errorf("positive metric_interval should be valid: %v", err)
+	}
+}
+
 // TestWarnings_FlowMetricsModeBoth pins the advisory that both-mode emits the raw
 // AND rollup families, so summing them in PromQL double-counts. The default
 // (rollup) and all-mode do not warn.

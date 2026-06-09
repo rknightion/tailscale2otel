@@ -9,6 +9,26 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
+// TestRunHeartbeat_ZeroIntervalClamped verifies that passing interval=0 to
+// runHeartbeat does not panic (time.NewTicker(0) panics; the clamp prevents it)
+// and still produces the initial emit.
+func TestRunHeartbeat_ZeroIntervalClamped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rec := telemetrytest.New()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Must not panic even with a zero interval.
+		go runHeartbeat(ctx, rec.Emitter(), 0)
+
+		synctest.Wait()
+		pts := rec.MetricPoints("tailscale2otel.up")
+		if len(pts) != 1 || pts[0].Value != 1 {
+			t.Fatalf("after start with zero interval: up = %+v, want a single point value 1", pts)
+		}
+	})
+}
+
 func TestRunHeartbeat_EmitsUp(t *testing.T) {
 	// synctest (Go 1.26) gives a fake clock so the ticker is deterministic and
 	// the test runs instantly instead of waiting a real interval.

@@ -33,8 +33,12 @@ func emitUpdateCheck(e telemetry.Emitter, latest func() (string, bool), selfVers
 
 // runUpdateCheck emits the self update-available gauge immediately, then every
 // interval until ctx is canceled. The latest() provider is backed by a
-// release.Fetcher refreshed on its own (longer) TTL.
+// release.Fetcher refreshed on its own (longer) TTL. A non-positive interval
+// falls back to 60s (time.NewTicker(0) panics).
 func runUpdateCheck(ctx context.Context, e telemetry.Emitter, latest func() (string, bool), selfVersion string, interval time.Duration) {
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
 	emitUpdateCheck(e, latest, selfVersion)
 	t := time.NewTicker(interval)
 	defer t.Stop()

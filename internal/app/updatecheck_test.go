@@ -10,6 +10,28 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
+// TestRunUpdateCheck_ZeroIntervalClamped verifies that passing interval=0 to
+// runUpdateCheck does not panic (time.NewTicker(0) panics; the clamp prevents
+// it) and still produces the initial emit.
+func TestRunUpdateCheck_ZeroIntervalClamped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rec := telemetrytest.New()
+		latest := func() (string, bool) { return "v9.9.9", true }
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Must not panic even with a zero interval.
+		go runUpdateCheck(ctx, rec.Emitter(), latest, "v0.1.0", 0)
+
+		synctest.Wait()
+		pts := rec.MetricPoints(appcatalog.MetricUpdateAvailable)
+		if len(pts) != 1 || pts[0].Value != 1 {
+			t.Fatalf("update_available with zero interval = %+v, want one point value 1", pts)
+		}
+	})
+}
+
 func TestRunUpdateCheckEmits(t *testing.T) {
 	// synctest (Go 1.26) gives a fake clock so the immediate emit is observable
 	// deterministically without polling real wall-clock time.

@@ -9,6 +9,57 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/config"
 )
 
+// TestInstanceID_PIIFilter covers the three cases for the hostname-redaction
+// logic in instanceID:
+//  1. Explicit InstanceID always wins regardless of PII filter settings.
+//  2. Hostnames PII category enabled (true) → bare hostname returned unchanged.
+//  3. Hostnames PII category disabled (false) → a stable 12-char lowercase hex
+//     digest is returned instead of the hostname (non-reversible, deterministic).
+func TestInstanceID_PIIFilter(t *testing.T) {
+	host, _ := os.Hostname()
+
+	t.Run("explicit_id_wins", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.SelfObservability.InstanceID = "explicit-id"
+		cfg.PIIFilter.Hostnames = false // even with redaction on, explicit wins
+		if got := instanceID(cfg); got != "explicit-id" {
+			t.Fatalf("explicit InstanceID = %q, want explicit-id", got)
+		}
+	})
+
+	t.Run("hostnames_enabled_returns_hostname", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.SelfObservability.InstanceID = ""
+		cfg.PIIFilter.Hostnames = true
+		if got := instanceID(cfg); got != host {
+			t.Fatalf("hostnames enabled: instanceID = %q, want hostname %q", got, host)
+		}
+	})
+
+	t.Run("hostnames_disabled_returns_hash", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.SelfObservability.InstanceID = ""
+		cfg.PIIFilter.Hostnames = false
+		got := instanceID(cfg)
+		// Must be 12 lowercase hex chars (not the raw hostname).
+		if len(got) != 12 {
+			t.Fatalf("hashed ID length = %d, want 12; got %q", len(got), got)
+		}
+		for _, c := range got {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				t.Fatalf("hashed ID %q contains non-hex char %q", got, c)
+			}
+		}
+		if got == host {
+			t.Fatalf("hashed ID %q must not equal the raw hostname %q", got, host)
+		}
+		// Must be deterministic.
+		if got2 := instanceID(cfg); got2 != got {
+			t.Fatalf("instanceID not deterministic: first=%q second=%q", got, got2)
+		}
+	})
+}
+
 func TestInstanceID_ExplicitOverridesHostname(t *testing.T) {
 	cfg := config.Default()
 	cfg.SelfObservability.InstanceID = "inst-explicit"

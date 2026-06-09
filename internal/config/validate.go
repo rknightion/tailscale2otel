@@ -236,6 +236,9 @@ func (c *Config) Validate() error {
 	if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
 		return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
 	}
+	if c.OTLP.MetricInterval.D() <= 0 {
+		return fmt.Errorf("otlp.metric_interval must be > 0 (got %v); a zero or negative interval panics time.NewTicker at startup", c.OTLP.MetricInterval.D())
+	}
 	if c.Prometheus.Enabled && c.Admin.Enabled && c.Prometheus.Listen == c.Admin.Listen {
 		return fmt.Errorf("prometheus.listen and admin.listen both bind %q: give the Prometheus endpoint its own listener", c.Prometheus.Listen)
 	}
