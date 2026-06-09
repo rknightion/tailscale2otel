@@ -566,7 +566,7 @@ Tailscale IPs, for example.
 | `pii_filter.service_addrs` | `true` | VIP service names from the Tailscale Services collector. |
 | `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability spans and metrics. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
-| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). |
+| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span; in multi-tailnet mode that removes the per-tailnet label (series stay distinct via `service.instance.id`). |
 | `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. |
 
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a

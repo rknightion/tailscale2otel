@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +16,13 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 )
+
+// collisionSeenCap is the maximum number of distinct (metric, dropped-key) pairs
+// tracked in collisionSeen. Once reached, no new entries are inserted and a single
+// saturation warning is logged. Already-stored keys continue to suppress duplicate
+// logs as before. The cap prevents unbounded growth when attacker-controlled labels
+// (e.g. node-metrics scrape labels) produce many distinct collision pairs.
+const collisionSeenCap = 10_000
 
 // otelEmitter implements Emitter on top of the OpenTelemetry Go SDK.
 type otelEmitter struct {
@@ -36,9 +44,13 @@ type otelEmitter struct {
 	reserved map[string]struct{}
 	// diag logs label-collision resolutions (nil = silent). collisionSeen bounds
 	// that logging to once per distinct (metric, dropped-key) so a steady-state
-	// collision does not log on every export.
-	diag          *slog.Logger
-	collisionSeen sync.Map
+	// collision does not log on every export. collisionCount tracks the number of
+	// distinct entries stored; once it reaches collisionSeenCap no new entries are
+	// inserted and a single saturation warning is emitted.
+	diag             *slog.Logger
+	collisionSeen    sync.Map
+	collisionCount   atomic.Int64
+	collisionSatOnce sync.Once
 
 	mu         sync.Mutex
 	counters   map[string]metric.Float64Counter
@@ -292,14 +304,40 @@ func (e *otelEmitter) buildAttrs(metricName string, attrs Attrs) []attribute.Key
 
 // logCollisions warns about each resolved collision at most once per distinct
 // (metric, dropped key), so a steady-state collision does not log every export.
+// New distinct (metric, key) pairs are tracked until collisionSeenCap entries are
+// stored; once the cap is reached a single saturation warning is logged and further
+// new collisions are silently ignored. Already-stored keys continue to suppress
+// duplicate logs. The fast path is: one atomic load (cap check) + one sync.Map
+// LoadOrStore per key; no extra locking is introduced.
 func (e *otelEmitter) logCollisions(metricName string, drops []labelDrop) {
 	if e.diag == nil {
 		return
 	}
 	for _, d := range drops {
-		if _, dup := e.collisionSeen.LoadOrStore(metricName+"\x00"+d.key, struct{}{}); dup {
+		cacheKey := metricName + "\x00" + d.key
+
+		// Fast path: already seen — suppress duplicate.
+		if _, dup := e.collisionSeen.Load(cacheKey); dup {
 			continue
 		}
+
+		// Cap check: once saturated, emit exactly one saturation warning and stop.
+		if e.collisionCount.Load() >= collisionSeenCap {
+			e.collisionSatOnce.Do(func() {
+				e.diag.Warn("label-collision diagnostics saturated; further distinct collisions will not be logged",
+					"cap", collisionSeenCap,
+				)
+			})
+			continue
+		}
+
+		// New entry: try to store. Another goroutine may have raced us to the same
+		// key — LoadOrStore is the atomic gate; only the winner increments the count.
+		if _, dup := e.collisionSeen.LoadOrStore(cacheKey, struct{}{}); dup {
+			continue
+		}
+		e.collisionCount.Add(1)
+
 		reason := "duplicate label after OTLP->Prometheus normalization"
 		if d.winner == "" {
 			reason = "collides with a promoted resource label"

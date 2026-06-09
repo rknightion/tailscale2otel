@@ -12,14 +12,18 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
 )
 
 // TestBuildResourceOmitsTailnetProvider asserts buildResource no longer carries
@@ -400,6 +404,111 @@ func TestMeterProviderDisablesExemplars(t *testing.T) {
 		t.Errorf("got %d metric exemplar(s); want 0 (exemplars must be disabled — no TracerProvider exists to populate them)", exemplars)
 	}
 }
+
+// TestConstLabelAttrsOmitsTailnetWhenPIIFilterDisables covers the PII gate:
+// when CatTailnetName is explicitly false, constLabelAttrs must omit tailscale.tailnet
+// while keeping tailscale2otel.provider. When true or absent, it must be included.
+func TestConstLabelAttrsOmitsTailnetWhenPIIFilterDisables(t *testing.T) {
+	// CatTailnetName=false → tailscale.tailnet must be absent, provider must be present.
+	cats := pii.Categories{pii.CatTailnetName: false}
+	got := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale", PIIFilter: cats})
+	if hasAttr(got, "tailscale.tailnet", "alpha") {
+		t.Error("CatTailnetName=false: tailscale.tailnet must be omitted")
+	}
+	if !hasAttr(got, "tailscale2otel.provider", "tailscale") {
+		t.Error("CatTailnetName=false: tailscale2otel.provider must still be present")
+	}
+
+	// CatTailnetName=true → tailscale.tailnet must be present.
+	cats2 := pii.Categories{pii.CatTailnetName: true}
+	got2 := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale", PIIFilter: cats2})
+	if !hasAttr(got2, "tailscale.tailnet", "alpha") {
+		t.Error("CatTailnetName=true: tailscale.tailnet must be present")
+	}
+
+	// CatTailnetName absent (nil filter) → tailscale.tailnet must be present.
+	got3 := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale"})
+	if !hasAttr(got3, "tailscale.tailnet", "alpha") {
+		t.Error("nil PIIFilter: tailscale.tailnet must be present")
+	}
+}
+
+// TestPIIFilterTailnetNameOmitsFromMetrics asserts that disabling CatTailnetName
+// propagates end-to-end: emitted metric data points carry NO tailscale.tailnet
+// attribute but DO carry tailscale2otel.provider.
+func TestPIIFilterTailnetNameOmitsFromMetrics(t *testing.T) {
+	cats := pii.Categories{pii.CatTailnetName: false}
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	ca := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale", PIIFilter: cats})
+	e := newOtelEmitter(mp.Meter("test"), lognoop.NewLoggerProvider().Logger("test"),
+		nil, nil, nil, nil, ca)
+	e.Gauge("tailscale.devices.count", "1", "devices", 1, Attrs{"k": "v"})
+	set := collectAttrs(t, reader, "tailscale.devices.count")
+	if _, ok := set.Value(attribute.Key("tailscale.tailnet")); ok {
+		t.Errorf("CatTailnetName=false: tailscale.tailnet must be absent from metric data points; set=%v", set)
+	}
+	if v, ok := set.Value(attribute.Key("tailscale2otel.provider")); !ok || v.AsString() != "tailscale" {
+		t.Errorf("CatTailnetName=false: tailscale2otel.provider must be present on metric data points; set=%v", set)
+	}
+}
+
+// TestPIIFilterTailnetNameOmitsFromLogs asserts that disabling CatTailnetName
+// omits tailscale.tailnet from emitted log records but keeps tailscale2otel.provider.
+func TestPIIFilterTailnetNameOmitsFromLogs(t *testing.T) {
+	cats := pii.Categories{pii.CatTailnetName: false}
+	ca := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale", PIIFilter: cats})
+	rec := &sliceLogExporter{}
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(rec)))
+	defer func() { _ = lp.Shutdown(context.Background()) }()
+	e := newOtelEmitter(nil, lp.Logger("test"), nil, nil, nil, nil, ca)
+	e.LogEvent(Event{Name: "x", Body: "hi", Severity: SeverityInfo})
+	if len(rec.records) != 1 {
+		t.Fatalf("got %d log records, want 1", len(rec.records))
+	}
+	found := map[string]string{}
+	rec.records[0].WalkAttributes(func(kv log.KeyValue) bool {
+		found[kv.Key] = kv.Value.AsString()
+		return true
+	})
+	if _, ok := found["tailscale.tailnet"]; ok {
+		t.Error("CatTailnetName=false: tailscale.tailnet must be absent from log records")
+	}
+	if found["tailscale2otel.provider"] != "tailscale" {
+		t.Error("CatTailnetName=false: tailscale2otel.provider must be present in log records")
+	}
+}
+
+// TestPIIFilterTailnetNameOmitsFromSpans asserts that disabling CatTailnetName
+// omits tailscale.tailnet from span attributes but keeps tailscale2otel.provider.
+func TestPIIFilterTailnetNameOmitsFromSpans(t *testing.T) {
+	cats := pii.Categories{pii.CatTailnetName: false}
+	ca := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale", PIIFilter: cats})
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(exp),
+		sdktrace.WithSpanProcessor(constAttrSpanProcessor{attrs: ca}),
+	)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+	_, span := tp.Tracer("test").Start(context.Background(), "op")
+	span.End()
+	spans := exp.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	attrMap := map[string]string{}
+	for _, a := range spans[0].Attributes {
+		attrMap[string(a.Key)] = a.Value.AsString()
+	}
+	if _, ok := attrMap["tailscale.tailnet"]; ok {
+		t.Error("CatTailnetName=false: tailscale.tailnet must be absent from span attributes")
+	}
+	if attrMap["tailscale2otel.provider"] != "tailscale" {
+		t.Error("CatTailnetName=false: tailscale2otel.provider must be present on span attributes")
+	}
+}
+
+// TestConstAttrSpanProcessorStampsSpans is preserved below.
 
 func TestConstAttrSpanProcessorStampsSpans(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()

@@ -1,9 +1,13 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -210,3 +214,70 @@ func (e *sliceLogExporter) Export(_ context.Context, recs []sdklog.Record) error
 }
 func (e *sliceLogExporter) Shutdown(context.Context) error   { return nil }
 func (e *sliceLogExporter) ForceFlush(context.Context) error { return nil }
+
+// TestCollisionSeenCapStopsLoggingAtCap verifies that:
+//   - logCollisions logs normally for distinct (metric, key) pairs up to collisionSeenCap
+//   - exactly one saturation warning is emitted once the cap is reached
+//   - no new collisions are logged after the cap
+//   - collisionSeen holds at most collisionSeenCap entries
+func TestCollisionSeenCapStopsLoggingAtCap(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	e := &otelEmitter{diag: logger}
+
+	// Drive logCollisions past the cap with distinct (metric, key) pairs.
+	// Each call to logCollisions contributes one new distinct key.
+	total := collisionSeenCap + 10
+	for i := 0; i < total; i++ {
+		metricName := fmt.Sprintf("m%d", i)
+		e.logCollisions(metricName, []labelDrop{{key: "k", prom: "k", winner: ""}})
+	}
+
+	// Count how many entries are in collisionSeen.
+	var mapLen int
+	e.collisionSeen.Range(func(_, _ any) bool {
+		mapLen++
+		return true
+	})
+	if mapLen > collisionSeenCap {
+		t.Errorf("collisionSeen has %d entries, want at most %d", mapLen, collisionSeenCap)
+	}
+
+	output := buf.String()
+
+	// Exactly one saturation message must appear.
+	satCount := strings.Count(output, "label-collision diagnostics saturated")
+	if satCount != 1 {
+		t.Errorf("saturation message count = %d, want 1; log output:\n%s", satCount, output)
+	}
+
+	// No collision logs should appear AFTER the saturation message.
+	satIdx := strings.Index(output, "label-collision diagnostics saturated")
+	afterSat := output[satIdx+len("label-collision diagnostics saturated"):]
+	if strings.Contains(afterSat, "dropped colliding metric label") {
+		t.Errorf("collision log appeared after saturation; output after saturation:\n%s", afterSat)
+	}
+}
+
+// TestCollisionSeenCapAlreadyStoredKeysStillSuppressed verifies that entries
+// inserted before the cap was hit continue to suppress duplicate logs (the
+// already-stored fast path must not be broken by the cap).
+func TestCollisionSeenCapAlreadyStoredKeysStillSuppressed(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	e := &otelEmitter{diag: logger}
+
+	// Insert one entry well below cap.
+	e.logCollisions("m", []labelDrop{{key: "k", prom: "k", winner: ""}})
+	first := buf.String()
+	if !strings.Contains(first, "dropped colliding metric label") {
+		t.Fatal("first call must log the collision")
+	}
+
+	// Second call with the same (metric, key) must NOT log again.
+	buf.Reset()
+	e.logCollisions("m", []labelDrop{{key: "k", prom: "k", winner: ""}})
+	if buf.Len() != 0 {
+		t.Errorf("duplicate collision must be suppressed; got: %s", buf.String())
+	}
+}

@@ -412,10 +412,22 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 // tailnet name and control-plane provider, each included only when non-empty.
 // Roadmap item L moved these off the Resource so they are real, joinless labels on
 // every backend (Grafana Cloud, the Prometheus pull endpoint, self-managed Mimir).
+//
+// PII gate: when opts.PIIFilter explicitly disables pii.CatTailnetName (i.e. the
+// category is present in the map and set to false), the tailscale.tailnet attribute
+// is omitted. In multi-tailnet mode this removes the per-tailnet label from all
+// signals for that provider; per-tailnet series still remain distinct via the
+// service.instance.id resource attribute. Category absent from the map, or present
+// and true, behaves as today (attribute emitted). The tailscale2otel.provider
+// attribute is NOT PII and is always included when non-empty.
 func constLabelAttrs(opts Options) []attribute.KeyValue {
 	var out []attribute.KeyValue
 	if opts.TailnetName != "" {
-		out = append(out, attribute.String(semconv.AttrTailnet, opts.TailnetName))
+		// Omit tailscale.tailnet when the operator has explicitly disabled the
+		// tailnet_name PII category (same gate pattern as buildResource/hostnames).
+		if v, ok := opts.PIIFilter[pii.CatTailnetName]; !ok || v {
+			out = append(out, attribute.String(semconv.AttrTailnet, opts.TailnetName))
+		}
 	}
 	if opts.Provider != "" {
 		out = append(out, attribute.String(semconv.AttrProvider, opts.Provider))
