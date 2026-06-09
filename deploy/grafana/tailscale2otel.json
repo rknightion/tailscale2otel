@@ -404,7 +404,7 @@
               "name": "${ds_prometheus}"
             },
             "spec": {
-              "query": "label_values(target_info, tailscale_tailnet)",
+              "query": "label_values({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\"}, tailscale_tailnet)",
               "refId": "tailnet"
             }
           },
@@ -437,7 +437,7 @@
               "name": "${ds_prometheus}"
             },
             "spec": {
-              "query": "label_values(target_info, tailscale2otel_provider)",
+              "query": "label_values({__name__=~\"tailscale.+\", tailscale2otel_provider!=\"\"}, tailscale2otel_provider)",
               "refId": "provider"
             }
           },
@@ -2006,7 +2006,7 @@
               "name": "${ds_prometheus}"
             },
             "spec": {
-              "query": "query_result(count(count by (tailscale_tailnet) (target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
+              "query": "query_result(count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
               "refId": "has_multitailnet"
             }
           },
@@ -3865,7 +3865,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(count by (tailscale_tailnet) (target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) or vector(1)",
+                        "expr": "count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) or vector(1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3912,7 +3912,7 @@
         "spec": {
           "id": 21,
           "title": "Tailnets",
-          "description": "Per-tailnet series count from target_info.",
+          "description": "Active per-tailnet series count (tailscale_tailnet is a real metric label, item L).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -3931,7 +3931,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (tailscale_tailnet) (target_info{tailscale_tailnet=~\"$tailnet\"})",
+                        "expr": "count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet=~\"$tailnet\", tailscale_tailnet!=\"\"})",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3987,7 +3987,7 @@
         "spec": {
           "id": 22,
           "title": "Providers",
-          "description": "Control-plane provider (tailscale, headscale) for each instance.",
+          "description": "Control-plane provider (tailscale, headscale) and its active series count.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -4006,7 +4006,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (tailscale2otel_provider) (target_info{tailscale2otel_provider=~\"$provider\"})",
+                        "expr": "count by (tailscale2otel_provider) ({__name__=~\"tailscale.+\", tailscale2otel_provider=~\"$provider\", tailscale2otel_provider!=\"\"})",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -19365,7 +19365,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(count by (tailscale_tailnet) (target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"}))",
+                        "expr": "count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"}))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -19431,7 +19431,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) ((tailscale_device_online_ratio == 1) * on(job,instance) group_left(tailscale_tailnet) target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})",
+                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"} == 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -19453,7 +19453,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds * on(job,instance) group_left(tailscale_tailnet) target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})",
+                        "expr": "max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -19475,7 +19475,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\"}[$__rate_interval]) * on(job,instance) group_left(tailscale_tailnet) target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})",
+                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"}[$__rate_interval]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -19572,7 +19572,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) ((tailscale_device_online_ratio == 1) * on(job,instance) group_left(tailscale_tailnet) target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})",
+                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"} == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_tailnet}}",
@@ -23370,7 +23370,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\"}[$__rate_interval]) * on(job,instance) group_left(tailscale_tailnet) target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\"})",
+                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_tailnet}}",

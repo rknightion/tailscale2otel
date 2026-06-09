@@ -75,16 +75,12 @@ def sv(expr):
 PII = "tailscale2otel_pii_filter_category_ratio"  # PII filter self-obs gauge
 
 
-def tn_join(expr):
-    """Promote tailscale_tailnet onto a per-series expr via the target_info join, then
-    filter by $tailnet. Use for fleet/self-obs panels that should respect the $tailnet var.
-    For single-tailnet deployments $tailnet=All -> .* -> no-op."""
-    # target_info has >1 series per (job,instance) on Grafana Cloud (one carries
-    # tailscale_tailnet, the other omits it), which makes group_left 422 with a
-    # "duplicate series" error. Restrict to the labelled series so the RHS is unique.
-    return ('(%s) * on (job, instance) group_left(tailscale_tailnet) '
-            'target_info{service_name="tailscale2otel", tailscale_tailnet!="", '
-            'tailscale_tailnet=~"$tailnet"}') % expr
+# Tailnet/provider are now real per-series metric labels (roadmap item L, commit 6cfbb52)
+# — emitted as metric data-point attributes, not OTEL Resource attributes. So panels filter
+# `tailscale_tailnet`/`tailscale2otel_provider` directly with no `target_info` join. The
+# former tn_join() helper (and its group_left target_info dance) is gone; just put the label
+# matcher in the metric selector. For enumerating tailnets where no single metric is
+# guaranteed present, match any per-tailnet series: {__name__=~"tailscale_.+", tailscale_tailnet!=""}.
 
 
 # ---------------------------------------------------------------------------
@@ -350,8 +346,8 @@ def build_variables():
         query_var("net_transport", "Transport", "label_values(tailscale_network_flows_total, network_transport)"),
         query_var("traffic_type", "Traffic type", "label_values(tailscale_network_flows_total, tailscale_traffic_type)"),
         query_var("collector", "Collector", "label_values(tailscale2otel_scrape_success_ratio, tailscale_collector)"),
-        query_var("tailnet", "Tailnet", "label_values(target_info, tailscale_tailnet)"),
-        query_var("provider", "Provider", "label_values(target_info, tailscale2otel_provider)"),
+        query_var("tailnet", "Tailnet", 'label_values({__name__=~"tailscale_.+", tailscale_tailnet!=""}, tailscale_tailnet)'),
+        query_var("provider", "Provider", 'label_values({__name__=~"tailscale.+", tailscale2otel_provider!=""}, tailscale2otel_provider)'),
         query_var("posture_attr", "Posture attr", "label_values(tailscale_device_attribute_ratio, attribute)"),
         custom_var("log_event", "Log event",
                    [("All", ".+"), ("audit", "tailscale.config.audit"), ("flow", "tailscale.network.flow"),
@@ -418,10 +414,11 @@ def build_variables():
         "name": "has_multitailnet", "label": "has_multitailnet", "hide": "hideVariable",
         "query": {"kind": "DataQuery", "version": "v0", "group": "",
                   "datasource": {"name": "${ds_prometheus}"},
-                  "spec": {"query": "query_result(count(count by (tailscale_tailnet) (target_info{service_name=\"tailscale2otel\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
+                  "spec": {"query": "query_result(count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
                            "refId": "has_multitailnet"}},
-        # FIX-4: exclude "" and "-" (single-tailnet placeholder) so stale/placeholder target_info
-        # series don't false-positive has_multitailnet on single-tailnet deployments.
+        # Exclude "" and "-" (single-tailnet placeholder) so placeholder/unnamed-tailnet series
+        # don't false-positive has_multitailnet on single-tailnet deployments. (tailscale_tailnet
+        # is now a real per-series label, item L — counts distinct tailnets across all series.)
         "current": {"text": "", "value": ""}, "options": [], "multi": False,
         "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
         "regex": "", "skipUrlSync": True, "sort": "disabled"}})
@@ -529,25 +526,25 @@ def tab_overview():
     msp = [
         (panel("Tailnets observed", "stat",
                [prom_t('count(count by (tailscale_tailnet) '
-                       '(target_info{service_name="tailscale2otel", tailscale_tailnet!="", tailscale_tailnet!="-"})) or vector(1)')],
+                       '({__name__=~"tailscale_.+", tailscale_tailnet!="", tailscale_tailnet!="-"})) or vector(1)')],
                unit="short", options=stat_opts(color="value"),
                desc="Number of distinct tailnets observed by this exporter instance."), 3, 5),
         (panel("Tailnets", "table",
-               [prom_t('count by (tailscale_tailnet) (target_info{tailscale_tailnet=~"$tailnet"})',
+               [prom_t('count by (tailscale_tailnet) ({__name__=~"tailscale_.+", tailscale_tailnet=~"$tailnet", tailscale_tailnet!=""})',
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=["Time", "__name__", "job", "instance", "service_instance_id",
                             "service_name", "service_namespace"],
                    rename={"tailscale_tailnet": "Tailnet", "Value": "Series"})],
-               desc="Per-tailnet series count from target_info."), 9, 5),
+               desc="Active per-tailnet series count (tailscale_tailnet is a real metric label, item L)."), 9, 5),
         (panel("Providers", "table",
-               [prom_t('count by (tailscale2otel_provider) (target_info{tailscale2otel_provider=~"$provider"})',
+               [prom_t('count by (tailscale2otel_provider) ({__name__=~"tailscale.+", tailscale2otel_provider=~"$provider", tailscale2otel_provider!=""})',
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=["Time", "__name__", "job", "instance", "service_instance_id",
                             "service_name", "service_namespace"],
                    rename={"tailscale2otel_provider": "Provider", "Value": "Series"})],
-               desc="Control-plane provider (tailscale, headscale) for each instance."), 6, 5),
+               desc="Control-plane provider (tailscale, headscale) and its active series count."), 6, 5),
         (panel("Devices per tailnet", "bargauge",
                [prom_t('sum by (tailscale_tailnet) (last_over_time(tailscale_device_online_ratio[%s])) or vector(0)' % WIN_FAST,
                        legend="{{tailscale_tailnet}}")],
@@ -1510,23 +1507,21 @@ def tab_nodemetrics():
 
 def tab_tailnets():
     """MSP / multi-tailnet scorecard tab — gated by has_multitailnet (hidden on single-tailnet)."""
-    _ti = 'target_info{service_name="tailscale2otel", tailscale_tailnet!="", tailscale_tailnet!="-"}'
+    # tailscale_tailnet is a real per-series label now (item L) — filter it directly, no join.
+    _tn = 'tailscale_tailnet!="", tailscale_tailnet!="-"'
 
     scorecard = [
         (panel("Tailnets observed", "stat",
                [prom_t('count(count by (tailscale_tailnet) '
-                       '(target_info{service_name="tailscale2otel", tailscale_tailnet!="", tailscale_tailnet!="-"}))')],
+                       '({__name__=~"tailscale_.+", tailscale_tailnet!="", tailscale_tailnet!="-"}))')],
                unit="short", options=stat_opts(color="value"),
                desc="Number of distinct tailnets observed by this exporter instance (excluding placeholder '-')."), 6, 5),
         (panel("Tailnet scorecard", "table",
-               [prom_t('sum by (tailscale_tailnet) ((tailscale_device_online_ratio == 1)'
-                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % _ti,
+               [prom_t('sum by (tailscale_tailnet) (tailscale_device_online_ratio{%s} == 1)' % _tn,
                        instant=True, fmt="table"),
-                prom_t('max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds'
-                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % _ti,
+                prom_t('max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{%s})' % _tn,
                        instant=True, fmt="table"),
-                prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5.."}[%s])'
-                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % (RI, _ti),
+                prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5..", %s}[%s]))' % (_tn, RI),
                        instant=True, fmt="table")],
                transformations=[
                    merge(),
@@ -1543,8 +1538,7 @@ def tab_tailnets():
     ]
     trends = [
         (panel("Per-tailnet online devices over time", "timeseries",
-               [prom_t('sum by (tailscale_tailnet) ((tailscale_device_online_ratio == 1)'
-                       ' * on(job,instance) group_left(tailscale_tailnet) %s)' % _ti,
+               [prom_t('sum by (tailscale_tailnet) (tailscale_device_online_ratio{%s} == 1)' % _tn,
                        legend="{{tailscale_tailnet}}")],
                unit="short", custom=ts_custom(fill=10), options=ts_opts(placement="right"),
                desc="Count of online devices per tailnet over time."), 24, 7),
@@ -1755,9 +1749,7 @@ def tab_diagnostics():
     # --- WU9 G: per-tailnet API errors (present="has_multitailnet"; empty on single-tailnet).
     pertailnet = [
         (panel("Per-tailnet API errors", "timeseries",
-               [prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5.."}[%s]) '
-                       '* on(job,instance) group_left(tailscale_tailnet) '
-                       'target_info{service_name="tailscale2otel", tailscale_tailnet!=""})' % RI,
+               [prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5..", tailscale_tailnet!=""}[%s]))' % RI,
                        legend="{{tailscale_tailnet}}")],
                unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(placement="right")), 24, 7),
     ]
