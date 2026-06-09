@@ -114,13 +114,30 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	resolved := cfg.ResolvedTailnets()
 	multi := len(resolved) > 1
 
+	// Telemetry labels default to the configured tailnet name. For the single "-"
+	// placeholder (the "use my default tailnet" sentinel), best-effort resolve the
+	// real tailnet name for the LABEL only — buildTailscaleProvider still gets the
+	// unmodified rt, so the API path stays "-" and a failed/stale resolution can
+	// never break polling.
+	labels := make([]string, len(resolved))
+	for i, rt := range resolved {
+		labels[i] = rt.Name
+	}
+	if !multi && cfg.Provider != "headscale" && len(resolved) == 1 && resolved[0].Name == "-" {
+		if rc, rcErr := newResolverClient(resolved[0], logger); rcErr == nil {
+			if name := resolveTailnetName(ctx, rc, time.Now(), withComponent(logger, compTSAPI)); name != "" {
+				labels[0] = name
+			}
+		}
+	}
+
 	base := telemetryOptions(cfg, version)
 	base.Logger = withComponent(logger, compTelemetry) // surfaces Emitter label-collision diagnostics
 	perTN := make([]telemetry.PerTailnetOptions, len(resolved))
-	for i, rt := range resolved {
+	for i := range resolved {
 		perTN[i] = telemetry.PerTailnetOptions{
-			Name:       rt.Name,
-			InstanceID: instanceFor(base.InstanceID, rt.Name, multi),
+			Name:       labels[i],
+			InstanceID: instanceFor(base.InstanceID, labels[i], multi),
 		}
 	}
 	ps, err := telemetry.NewProviderSet(ctx, base, perTN)
@@ -147,8 +164,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		// emitter (no tailscale.tailnet attribute), matching v1 single-Resource output.
 		a.addRuntime("", a.procEmitter, ps.Process().Cardinality(), ps.Process().ExportStats, cp, multi)
 	} else {
-		for _, rt := range resolved {
-			tp := ps.Tailnet(rt.Name)
+		for i, rt := range resolved {
+			label := labels[i]
+			tp := ps.Tailnet(label)
 			emitter := tp.Emitter()
 			apiStats := NewAPIStats()
 			cp, err := buildTailscaleProvider(rt, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
@@ -156,7 +174,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 				_ = ps.Shutdown(ctx)
 				return nil, err
 			}
-			r := a.addRuntime(rt.Name, emitter, tp.Cardinality(), tp.ExportStats, cp, multi)
+			r := a.addRuntime(label, emitter, tp.Cardinality(), tp.ExportStats, cp, multi)
 			r.apiStats = apiStats
 		}
 	}

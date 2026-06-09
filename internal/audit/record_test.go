@@ -59,3 +59,27 @@ func TestDecodeConfigurationResponse(t *testing.T) {
 		t.Fatalf("action = %q, want CREATE", e.Action)
 	}
 }
+
+func TestConfigurationResponseTailnetName(t *testing.T) {
+	// Live API form: the org name comes back under "tailnetId" (the published
+	// OpenAPI's "tailnet" field name is inaccurate — verified against live API).
+	var r audit.ConfigurationResponse
+	if err := json.Unmarshal([]byte(`{"version":"1.1","tailnetId":"m7kni.io","logs":null}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.TailnetName(); got != "m7kni.io" {
+		t.Errorf("tailnetId form: TailnetName()=%q, want m7kni.io", got)
+	}
+	// Spec form: legacy "tailnet" key still honored as a fallback.
+	r = audit.ConfigurationResponse{}
+	_ = json.Unmarshal([]byte(`{"tailnet":"example.com","logs":[]}`), &r)
+	if got := r.TailnetName(); got != "example.com" {
+		t.Errorf("tailnet form: TailnetName()=%q, want example.com", got)
+	}
+	// Neither present -> empty.
+	r = audit.ConfigurationResponse{}
+	_ = json.Unmarshal([]byte(`{"logs":[]}`), &r)
+	if got := r.TailnetName(); got != "" {
+		t.Errorf("empty: TailnetName()=%q, want empty", got)
+	}
+}

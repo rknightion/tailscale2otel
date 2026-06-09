@@ -10,9 +10,24 @@ import (
 
 // ConfigurationResponse is the GET /tailnet/{tailnet}/logging/configuration body.
 type ConfigurationResponse struct {
-	Version string  `json:"version"`
-	Tailnet string  `json:"tailnet"`
-	Logs    []Event `json:"logs"`
+	Version string `json:"version"`
+	// Tailnet is the envelope tailnet name as documented in the published OpenAPI
+	// spec, but the LIVE API actually returns the org name under "tailnetId"
+	// instead (verified 2026-06-09; the vendored tailscale-api.yaml is inaccurate
+	// here). Decode both and prefer the real one via TailnetName.
+	Tailnet   string  `json:"tailnet"`
+	TailnetID string  `json:"tailnetId"`
+	Logs      []Event `json:"logs"`
+}
+
+// TailnetName returns the canonical tailnet identifier from the response envelope
+// (e.g. "m7kni.io"): the live API's "tailnetId", falling back to the spec's
+// "tailnet". Empty if neither is present.
+func (r ConfigurationResponse) TailnetName() string {
+	if r.TailnetID != "" {
+		return r.TailnetID
+	}
+	return r.Tailnet
 }
 
 // Event is one configuration audit event.
