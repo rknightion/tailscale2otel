@@ -27,3 +27,6 @@ docs/superpowers/
 
 # Zensical docs-site build output
 site/
+
+# Codex security-scan findings (local review artifacts)
+tailscale2otel-security-findings/
