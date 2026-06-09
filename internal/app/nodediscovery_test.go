@@ -76,18 +76,18 @@ func TestNodeDiscoverer_TagIncludeExclude(t *testing.T) {
 func TestNodeDiscoverer_IPv6Bracketing(t *testing.T) {
 	cfg := discoveryDefaults()
 	cfg.AddressOrder = "ipv6"
-	devs := []tsapi.RichDevice{{Hostname: "a", Addresses: []string{"100.64.0.1", "fd7a::1"}, ConnectedToControl: true}}
+	devs := []tsapi.RichDevice{{Hostname: "a", Addresses: []string{"100.64.0.1", "fd7a:115c:a1e0::1"}, ConnectedToControl: true}}
 	got := mustDiscover(t, devs, cfg)
-	if len(got) != 1 || got[0].URL != "http://[fd7a::1]:5252/metrics" {
-		t.Fatalf("URL = %+v, want http://[fd7a::1]:5252/metrics (IPv6 bracketed)", got)
+	if len(got) != 1 || got[0].URL != "http://[fd7a:115c:a1e0::1]:5252/metrics" {
+		t.Fatalf("URL = %+v, want http://[fd7a:115c:a1e0::1]:5252/metrics (IPv6 bracketed)", got)
 	}
 }
 
 func TestNodeDiscoverer_AddressFallback(t *testing.T) {
 	cfg := discoveryDefaults() // ipv4 preferred
-	devs := []tsapi.RichDevice{{Hostname: "a", Addresses: []string{"fd7a::1"}, ConnectedToControl: true}}
+	devs := []tsapi.RichDevice{{Hostname: "a", Addresses: []string{"fd7a:115c:a1e0::1"}, ConnectedToControl: true}}
 	got := mustDiscover(t, devs, cfg)
-	if len(got) != 1 || got[0].URL != "http://[fd7a::1]:5252/metrics" {
+	if len(got) != 1 || got[0].URL != "http://[fd7a:115c:a1e0::1]:5252/metrics" {
 		t.Fatalf("URL = %+v, want IPv6 fallback when no IPv4 present", got)
 	}
 }
@@ -228,5 +228,35 @@ func TestNodeDiscoverer_APIErrorPropagates(t *testing.T) {
 	_, err := newNodeDiscoverer(&fakeDevicesAPI{err: want}, discoveryDefaults(), discardLog()).Discover(context.Background())
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
+	}
+}
+
+// A scrape target must be a Tailscale-range address: the API's addresses list is
+// the input, and anything else (metadata endpoints, loopback, RFC1918) must never
+// become a scrape destination even if the control plane is compromised.
+func TestPickAddressRejectsNonTailscaleRanges(t *testing.T) {
+	cases := []struct {
+		name  string
+		addrs []string
+		order string
+		want  string // "" => want ok=false
+	}{
+		{"metadata endpoint skipped", []string{"169.254.169.254"}, "ipv4", ""},
+		{"loopback skipped", []string{"127.0.0.1"}, "ipv4", ""},
+		{"rfc1918 skipped, cgnat chosen", []string{"10.1.2.3", "100.64.1.5"}, "ipv4", "100.64.1.5"},
+		{"non-ts ula skipped", []string{"fd00::1"}, "ipv6", ""},
+		{"ts ula chosen", []string{"fd7a:115c:a1e0::1"}, "ipv6", "fd7a:115c:a1e0::1"},
+	}
+	for _, tc := range cases {
+		got, ok := pickAddress(tc.addrs, tc.order)
+		if tc.want == "" {
+			if ok {
+				t.Errorf("%s: got %s, want no address", tc.name, got)
+			}
+			continue
+		}
+		if !ok || got.String() != tc.want {
+			t.Errorf("%s: got %v ok=%v, want %s", tc.name, got, ok, tc.want)
+		}
 	}
 }

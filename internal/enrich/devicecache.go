@@ -105,7 +105,7 @@ func (c *DeviceCache) ResolveName(addrPort string) string {
 	if found {
 		return m.Hostname
 	}
-	if isTailscaleAddr(addr) {
+	if IsTailscaleAddr(addr) {
 		return "unknown" // a tailnet address we don't (yet) have cached
 	}
 	return "external" // non-Tailscale address (exit-node / subnet-router traffic)
@@ -160,7 +160,10 @@ var (
 	tsULA   = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
 )
 
-// isTailscaleAddr reports whether a falls within Tailscale's address ranges.
-func isTailscaleAddr(a netip.Addr) bool {
+// IsTailscaleAddr reports whether a falls within Tailscale's address ranges
+// (the IPv4 CGNAT block 100.64.0.0/10 and the ULA block fd7a:115c:a1e0::/48).
+// Headscale's defaults match; custom Headscale prefixes outside these ranges
+// are not recognized.
+func IsTailscaleAddr(a netip.Addr) bool {
 	return tsCGNAT.Contains(a) || tsULA.Contains(a)
 }

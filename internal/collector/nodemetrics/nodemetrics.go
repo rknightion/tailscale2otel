@@ -76,6 +76,14 @@ const (
 	// unobserved before its delta baseline is evicted, bounding the prev map
 	// against label churn while tolerating a transient target outage.
 	staleGenerations = 5
+
+	// prevHardCap bounds the delta-baseline map across all targets. Legitimate
+	// fleets sit far below it (a tailscaled node emits a few hundred series); a
+	// label-churning or malicious target hits maxSamples per scrape and would
+	// otherwise hold maxSamples x staleGenerations baselines per target. At the
+	// cap, NEW series stop acquiring baselines (their deltas are suppressed)
+	// while existing series keep updating; pruneStale recovers space.
+	prevHardCap = 250_000
 )
 
 // prevEntry is a tracked counter series' last cumulative value and the scrape
@@ -694,7 +702,9 @@ func (c *Collector) emitDelta(s *sample, attrs telemetry.Attrs, e telemetry.Emit
 
 	c.mu.Lock()
 	pe, seen := c.prev[key]
-	c.prev[key] = prevEntry{value: s.value, gen: c.gen}
+	if seen || len(c.prev) < prevHardCap {
+		c.prev[key] = prevEntry{value: s.value, gen: c.gen}
+	}
 	c.mu.Unlock()
 
 	if !seen {

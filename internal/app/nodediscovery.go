@@ -12,6 +12,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -137,14 +138,20 @@ func (d *nodeDiscoverer) match(dev *tsapi.RichDevice) bool {
 }
 
 // pickAddress chooses a device address, preferring the configured family
-// ("ipv6" else "ipv4") and falling back to the other. It returns ok=false when
-// the device has no parseable Tailscale address.
+// ("ipv6" else "ipv4") and falling back to the other. It skips addresses
+// outside Tailscale's ranges (CGNAT 100.64.0.0/10 or ULA fd7a:115c:a1e0::/48)
+// so that a control-plane compromise or API quirk cannot turn the scraper into
+// an SSRF client against metadata endpoints, loopback admin ports, or RFC1918
+// services. It returns ok=false when the device has no usable Tailscale address.
 func pickAddress(addrs []string, order string) (netip.Addr, bool) {
 	var v4, v6 netip.Addr
 	var hasV4, hasV6 bool
 	for _, s := range addrs {
 		a, err := netip.ParseAddr(s)
-		if err != nil {
+		if err != nil || !enrich.IsTailscaleAddr(a) {
+			// Only Tailscale-range addresses may become scrape targets: a non-CGNAT/
+			// non-ULA value here (control-plane compromise, API quirk) must not turn
+			// the scraper into an SSRF client against metadata/loopback services.
 			continue
 		}
 		if a.Is4() {

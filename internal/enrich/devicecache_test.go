@@ -170,3 +170,25 @@ func TestAgeUsesInjectedClock(t *testing.T) {
 		t.Fatalf("Age() = %v, want 42s", got)
 	}
 }
+
+func TestIsTailscaleAddr(t *testing.T) {
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{"100.64.0.1", true},         // CGNAT low edge
+		{"100.127.255.254", true},    // CGNAT high edge
+		{"100.63.255.255", false},    // just below CGNAT
+		{"100.128.0.0", false},       // just above CGNAT
+		{"fd7a:115c:a1e0::1", true},  // Tailscale ULA
+		{"fd7a:115c:a1e1::1", false}, // adjacent ULA /48
+		{"169.254.169.254", false},   // cloud metadata
+		{"127.0.0.1", false},
+		{"10.0.0.1", false},
+	}
+	for _, tc := range cases {
+		if got := enrich.IsTailscaleAddr(netip.MustParseAddr(tc.addr)); got != tc.want {
+			t.Errorf("IsTailscaleAddr(%s) = %v, want %v", tc.addr, got, tc.want)
+		}
+	}
+}
