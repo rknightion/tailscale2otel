@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/noop"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
@@ -19,7 +21,7 @@ func newReaderEmitter(t *testing.T, reserved map[string]struct{}) (*otelEmitter,
 	t.Helper()
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	return newOtelEmitter(mp.Meter("test"), noop.NewLoggerProvider().Logger("test"), nil, reserved, nil, nil), reader
+	return newOtelEmitter(mp.Meter("test"), noop.NewLoggerProvider().Logger("test"), nil, reserved, nil, nil, nil), reader
 }
 
 func collectAttrs(t *testing.T, reader *sdkmetric.ManualReader, name string) attribute.Set {
@@ -141,3 +143,70 @@ func TestEmitterDropsReservedPromotedLabel(t *testing.T) {
 		t.Fatalf("host.name should survive, got %q ok=%v", v.AsString(), ok)
 	}
 }
+
+func TestBuildAttrsAppendsConstAttrs(t *testing.T) {
+	ca := []attribute.KeyValue{
+		attribute.String("tailscale.tailnet", "alpha"),
+		attribute.String("tailscale2otel.provider", "tailscale"),
+	}
+	e := newOtelEmitter(nil, nil, nil, nil, nil, nil, ca)
+
+	got := e.buildAttrs("m", Attrs{"k": "v"})
+	if !hasAttr(got, "k", "v") || !hasAttr(got, "tailscale.tailnet", "alpha") || !hasAttr(got, "tailscale2otel.provider", "tailscale") {
+		t.Errorf("buildAttrs with attrs missing keys: %v", got)
+	}
+
+	got = e.buildAttrs("m", Attrs{})
+	if !hasAttr(got, "tailscale.tailnet", "alpha") {
+		t.Errorf("buildAttrs with empty attrs dropped const attrs: %v", got)
+	}
+
+	e2 := newOtelEmitter(nil, nil, nil, nil, nil, nil, nil)
+	if got := e2.buildAttrs("m", Attrs{}); got != nil {
+		t.Errorf("buildAttrs nil-const empty-attrs = %v, want nil", got)
+	}
+}
+
+func hasAttr(kvs []attribute.KeyValue, key, val string) bool {
+	for _, kv := range kvs {
+		if string(kv.Key) == key && kv.Value.AsString() == val {
+			return true
+		}
+	}
+	return false
+}
+
+func TestLogEventAppendsConstAttrs(t *testing.T) {
+	rec := &sliceLogExporter{}
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(rec)))
+	defer func() { _ = lp.Shutdown(context.Background()) }()
+
+	ca := []attribute.KeyValue{attribute.String("tailscale.tailnet", "alpha")}
+	e := newOtelEmitter(nil, lp.Logger("test"), nil, nil, nil, nil, ca)
+	e.LogEvent(Event{Name: "x", Body: "hi", Severity: SeverityInfo})
+
+	if len(rec.records) != 1 {
+		t.Fatalf("got %d records, want 1", len(rec.records))
+	}
+	found := false
+	rec.records[0].WalkAttributes(func(kv log.KeyValue) bool {
+		if kv.Key == "tailscale.tailnet" && kv.Value.AsString() == "alpha" {
+			found = true
+		}
+		return true
+	})
+	if !found {
+		t.Error("log record missing tailscale.tailnet const attr")
+	}
+}
+
+// sliceLogExporter is a minimal in-memory log.Exporter for assertions.
+// Not safe for concurrent use — test helper only.
+type sliceLogExporter struct{ records []sdklog.Record }
+
+func (e *sliceLogExporter) Export(_ context.Context, recs []sdklog.Record) error {
+	e.records = append(e.records, recs...)
+	return nil
+}
+func (e *sliceLogExporter) Shutdown(context.Context) error   { return nil }
+func (e *sliceLogExporter) ForceFlush(context.Context) error { return nil }

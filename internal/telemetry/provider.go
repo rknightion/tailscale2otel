@@ -217,6 +217,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build resource: %w", err)
 	}
+	constAttrs := constLabelAttrs(opts)
 	metricExp, err := newMetricExporter(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("metric exporter: %w", err)
@@ -264,11 +265,15 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		if err != nil {
 			return nil, fmt.Errorf("trace exporter: %w", err)
 		}
-		tp = sdktrace.NewTracerProvider(
+		tpOpts := []sdktrace.TracerProviderOption{
 			sdktrace.WithResource(res),
 			sdktrace.WithBatcher(traceExp),
 			sdktrace.WithSampler(buildSampler(opts.TraceSampler, opts.TraceSamplerArg)),
-		)
+		}
+		if len(constAttrs) > 0 {
+			tpOpts = append(tpOpts, sdktrace.WithSpanProcessor(constAttrSpanProcessor{attrs: constAttrs}))
+		}
+		tp = sdktrace.NewTracerProvider(tpOpts...)
 	}
 	tracer := tracenoop.NewTracerProvider().Tracer(scopeName)
 	if tp != nil {
@@ -280,7 +285,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		card = NewCardinalityTrackerWithCap(opts.CardinalityLimit)
 	}
 
-	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger, opts.PIIFilter)
+	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger, opts.PIIFilter, constAttrs)
 
 	if opts.SelfObsEnabled {
 		// Late-bind the duration observer now that the Emitter exists (the
@@ -365,12 +370,6 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	if opts.InstanceID != "" {
 		attrs = append(attrs, attribute.String("service.instance.id", opts.InstanceID))
 	}
-	if opts.Provider != "" {
-		attrs = append(attrs, attribute.String("tailscale2otel.provider", opts.Provider))
-	}
-	if opts.TailnetName != "" {
-		attrs = append(attrs, attribute.String(semconv.AttrTailnet, opts.TailnetName))
-	}
 	// The schemaless WithAttributes block carries the service.* identity; the core
 	// detectors add host/os/process attributes so multiple instances are
 	// distinguishable in Grafana. All detectors share one semconv schema URL, so
@@ -407,6 +406,33 @@ func buildResource(ctx context.Context, opts Options) (*resource.Resource, error
 	}
 	return res, err
 }
+
+// constLabelAttrs returns the provider-scoped attributes stamped onto every signal
+// (metric data point, log record, span) for a provider built from opts: the
+// tailnet name and control-plane provider, each included only when non-empty.
+// Roadmap item L moved these off the Resource so they are real, joinless labels on
+// every backend (Grafana Cloud, the Prometheus pull endpoint, self-managed Mimir).
+func constLabelAttrs(opts Options) []attribute.KeyValue {
+	var out []attribute.KeyValue
+	if opts.TailnetName != "" {
+		out = append(out, attribute.String(semconv.AttrTailnet, opts.TailnetName))
+	}
+	if opts.Provider != "" {
+		out = append(out, attribute.String(semconv.AttrProvider, opts.Provider))
+	}
+	return out
+}
+
+// constAttrSpanProcessor stamps provider-scoped const attrs (tailnet/provider) on
+// every span at start, replacing the Resource attributes item L removed.
+type constAttrSpanProcessor struct{ attrs []attribute.KeyValue }
+
+func (p constAttrSpanProcessor) OnStart(_ context.Context, s sdktrace.ReadWriteSpan) {
+	s.SetAttributes(p.attrs...)
+}
+func (constAttrSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
+func (constAttrSpanProcessor) Shutdown(context.Context) error   { return nil }
+func (constAttrSpanProcessor) ForceFlush(context.Context) error { return nil }
 
 // reservedPromotedLabels returns the Prometheus label names that Grafana Cloud
 // promotes from the OTEL Resource onto every exported series: service.name→job,

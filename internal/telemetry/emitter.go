@@ -45,29 +45,37 @@ type otelEmitter struct {
 	gauges     map[string]metric.Float64Gauge
 	updowns    map[string]metric.Float64UpDownCounter
 	histograms map[string]metric.Float64Histogram
+
+	// constAttrs are provider-scoped attributes (tailscale.tailnet,
+	// tailscale2otel.provider) stamped onto every metric data point and log
+	// record. Built once in NewProvider from Options; nil for emitters that have
+	// no such dimension (e.g. the telemetrytest Recorder). Roadmap item L: these
+	// used to be Resource attributes; they are now signal-scoped on every backend.
+	constAttrs []attribute.KeyValue
 }
 
 // NewEmitter returns an Emitter that records to the given meter and logger,
-// without cardinality self-tracking, a reserved-label set, collision logging, or
-// PII filtering.
+// without cardinality self-tracking, a reserved-label set, collision logging,
+// PII filtering, or provider-scoped constant attributes.
 func NewEmitter(meter metric.Meter, logger log.Logger) Emitter {
-	return newOtelEmitter(meter, logger, nil, nil, nil, nil)
+	return newOtelEmitter(meter, logger, nil, nil, nil, nil, nil)
 }
 
 // NewEmitterWithPII returns an Emitter like NewEmitter but applies the given PII
 // categories at every emit site. A nil categories map is equivalent to all-on
 // (no redaction, fast path).
 func NewEmitterWithPII(meter metric.Meter, logger log.Logger, cats pii.Categories) Emitter {
-	return newOtelEmitter(meter, logger, nil, nil, nil, cats)
+	return newOtelEmitter(meter, logger, nil, nil, nil, cats, nil)
 }
 
 // newOtelEmitter returns an *otelEmitter wired to the given meter, logger,
 // (optional) cardinality tracker, reserved promoted-label set, diagnostic logger,
-// and PII categories. A nil card disables series.active tracking; a nil reserved
-// set and nil diag disable reserved-label dropping and collision logging
-// respectively (the intra-attribute collision guard still runs). A nil cats map
-// disables PII filtering (all-on fast path).
-func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker, reserved map[string]struct{}, diag *slog.Logger, cats pii.Categories) *otelEmitter {
+// PII categories, and provider-scoped constant attributes. A nil card disables
+// series.active tracking; a nil reserved set and nil diag disable reserved-label
+// dropping and collision logging respectively (the intra-attribute collision guard
+// still runs). A nil cats map disables PII filtering (all-on fast path). A nil
+// constAttrs slice means no provider-scoped attributes are stamped.
+func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker, reserved map[string]struct{}, diag *slog.Logger, cats pii.Categories, constAttrs []attribute.KeyValue) *otelEmitter {
 	return &otelEmitter{
 		meter:      meter,
 		logger:     logger,
@@ -75,6 +83,7 @@ func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTrac
 		reserved:   reserved,
 		diag:       diag,
 		redactor:   pii.New(cats),
+		constAttrs: constAttrs,
 		counters:   map[string]metric.Float64Counter{},
 		gauges:     map[string]metric.Float64Gauge{},
 		updowns:    map[string]metric.Float64UpDownCounter{},
@@ -187,7 +196,21 @@ func (e *otelEmitter) LogEvent(ev Event) {
 		r.SetEventName(ev.Name)
 	}
 	r.AddAttributes(toLogKV(ev.Attrs)...)
+	if len(e.constAttrs) > 0 {
+		r.AddAttributes(constAttrsToLogKV(e.constAttrs)...)
+	}
 	e.logger.Emit(context.Background(), r)
+}
+
+// constAttrsToLogKV converts provider-scoped const attrs (string-valued) to log
+// key-values. The const attrs are always attribute.String, so a direct conversion
+// suffices.
+func constAttrsToLogKV(attrs []attribute.KeyValue) []log.KeyValue {
+	kvs := make([]log.KeyValue, 0, len(attrs))
+	for _, a := range attrs {
+		kvs = append(kvs, log.String(string(a.Key), a.Value.AsString()))
+	}
+	return kvs
 }
 
 func toLogSeverity(s Severity) log.Severity {
@@ -229,22 +252,42 @@ func toLogKV(attrs Attrs) []log.KeyValue {
 }
 
 // buildAttrs converts attrs to OTEL metric attributes, first resolving any
-// OTLP→Prometheus label-name collisions so Grafana Cloud cannot reject the sample
-// for a duplicate label. The common, no-collision path is a plain toKV.
+// OTLP->Prometheus label-name collisions so Grafana Cloud cannot reject the sample
+// for a duplicate label, then appending the provider-scoped const attrs (tailnet/
+// provider). The const attrs are appended after the collision guard: no collector
+// emits tailscale.tailnet / tailscale2otel.provider as a data-point attr, and
+// neither is a reserved promoted label, so a plain append is safe.
 func (e *otelEmitter) buildAttrs(metricName string, attrs Attrs) []attribute.KeyValue {
 	if len(attrs) == 0 {
-		return nil
+		if len(e.constAttrs) == 0 {
+			return nil
+		}
+		return append([]attribute.KeyValue(nil), e.constAttrs...)
+	}
+	// When there are no const attrs, the no-collision path can return toKV's slice
+	// directly (no extra append). Otherwise size the slice for kept attrs + const
+	// attrs up front so the hot path allocates exactly once.
+	if len(e.constAttrs) == 0 {
+		keep, drops := resolveLabelCollisions(attrs, e.reserved)
+		if len(drops) == 0 {
+			return toKV(attrs)
+		}
+		e.logCollisions(metricName, drops)
+		kvs := make([]attribute.KeyValue, 0, len(keep))
+		for k := range keep {
+			kvs = append(kvs, kvFor(k, attrs[k]))
+		}
+		return kvs
 	}
 	keep, drops := resolveLabelCollisions(attrs, e.reserved)
-	if len(drops) == 0 {
-		return toKV(attrs)
+	if len(drops) > 0 {
+		e.logCollisions(metricName, drops)
 	}
-	e.logCollisions(metricName, drops)
-	kvs := make([]attribute.KeyValue, 0, len(keep))
+	kvs := make([]attribute.KeyValue, 0, len(keep)+len(e.constAttrs))
 	for k := range keep {
 		kvs = append(kvs, kvFor(k, attrs[k]))
 	}
-	return kvs
+	return append(kvs, e.constAttrs...)
 }
 
 // logCollisions warns about each resolved collision at most once per distinct

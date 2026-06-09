@@ -50,10 +50,14 @@ func TestPrometheusMultiTailnetExposition(t *testing.T) {
 	// Assert the base name appears (do NOT hardcode the unit suffix: the OTEL
 	// Prometheus exporter's unit-"1" handling may differ from Mimir's _ratio rule;
 	// match a prefix instead). Each tailnet's series must be present and carry its
-	// own tailscale_tailnet constant label.
+	// own tailscale_tailnet label — a per-data-point attribute (roadmap item L),
+	// not a resource-promoted constant label, and it must appear exactly once.
 	hasAlpha, hasBeta := false, false
 	for _, line := range strings.Split(body, "\n") {
 		if strings.HasPrefix(line, "tailscale_devices_count") {
+			if strings.Count(line, "tailscale_tailnet=") > 1 {
+				t.Errorf("duplicate tailscale_tailnet label on series: %q", line)
+			}
 			if strings.Contains(line, `tailscale_tailnet="alpha"`) {
 				hasAlpha = true
 			}
@@ -79,7 +83,7 @@ func TestPrometheusMultiTailnetExposition(t *testing.T) {
 	}
 }
 
-func TestPrometheusSingleTailnetConstantLabel(t *testing.T) {
+func TestPrometheusSingleTailnetLabel(t *testing.T) {
 	ctx := context.Background()
 	ps, err := NewProviderSet(ctx, Options{ServiceName: "tailscale2otel", PrometheusEnabled: true, Protocol: "stdout", StdoutWriter: io.Discard},
 		[]PerTailnetOptions{{Name: "solo", InstanceID: "i"}})
@@ -90,6 +94,6 @@ func TestPrometheusSingleTailnetConstantLabel(t *testing.T) {
 	ps.Tailnet("solo").Emitter().Gauge("tailscale.devices.count", "1", "devices", 5, nil)
 	body := scrape(t, ps)
 	if !strings.Contains(body, `tailscale_tailnet="solo"`) {
-		t.Errorf("single-tailnet missing constant label; body:\n%s", body)
+		t.Errorf("single-tailnet missing tailnet label (data-point attr, item L); body:\n%s", body)
 	}
 }

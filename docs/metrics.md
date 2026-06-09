@@ -88,6 +88,14 @@ Labels follow the same dots→underscores rule, so the OTEL attributes `tailscal
 Instrument column: **counter** = monotonic cumulative (rendered as `_total` in Prometheus, use
 `rate()`/`increase()`); **gauge** = point-in-time value.
 
+> **Universal attributes (every metric).** In addition to the per-metric attributes listed below,
+> every metric data point carries `tailscale.tailnet` (`tailscale_tailnet` — the tailnet name;
+> omitted on process-global self-obs series and under Headscale) and `tailscale2otel.provider`
+> (`tailscale2otel_provider` — `tailscale` or `headscale`). These are **real labels on every backend**
+> — Grafana Cloud, the opt-in Prometheus `/metrics` pull endpoint, and self-managed Mimir/Prometheus —
+> so you can filter/group by tailnet with a direct matcher (e.g. `{tailscale_tailnet="example.com"}`),
+> **no `target_info` join required**. Log records and trace spans carry the same two attributes.
+
 ### Self-observability (`tailscale2otel.*`)
 
 Emitted by the service about itself. Use these for health, scrape success, API behavior, and

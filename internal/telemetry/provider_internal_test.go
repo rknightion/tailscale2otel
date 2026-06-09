@@ -12,57 +12,83 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
+	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TestBuildResourceIncludesProvider asserts that when Options.Provider is set,
-// buildResource emits a tailscale2otel.provider resource attribute with that value.
-func TestBuildResourceIncludesProvider(t *testing.T) {
-	res, err := buildResource(context.Background(), Options{ServiceName: "tailscale2otel", Provider: "headscale"})
+// TestBuildResourceOmitsTailnetProvider asserts buildResource no longer carries
+// tailscale.tailnet / tailscale2otel.provider on the Resource. Roadmap item L moved
+// these to signal-scoped attributes (metric data points, log records, spans) so they
+// are real, joinless labels on every backend rather than target_info-only.
+func TestBuildResourceOmitsTailnetProvider(t *testing.T) {
+	res, err := buildResource(context.Background(), Options{ServiceName: "svc", TailnetName: "alpha", Provider: "tailscale"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("buildResource: %v", err)
 	}
-	var found bool
 	for _, kv := range res.Attributes() {
-		if string(kv.Key) == "tailscale2otel.provider" && kv.Value.AsString() == "headscale" {
-			found = true
+		if string(kv.Key) == "tailscale.tailnet" || string(kv.Key) == "tailscale2otel.provider" {
+			t.Errorf("Resource still carries %s (item L moved it to a signal attr)", kv.Key)
 		}
-	}
-	if !found {
-		t.Error("resource missing tailscale2otel.provider=headscale")
 	}
 }
 
-// TestBuildResourceIncludesTailnet asserts the tailscale.tailnet resource
-// attribute is emitted iff Options.TailnetName is set (per-tailnet providers set
-// it; the process provider leaves it empty).
-func TestBuildResourceIncludesTailnet(t *testing.T) {
-	withTN, err := buildResource(context.Background(), Options{ServiceName: "tailscale2otel", TailnetName: "acme.example.com"})
-	if err != nil {
-		t.Fatal(err)
+// TestConstLabelAttrs pins constLabelAttrs: it returns the provider-scoped
+// attributes (tailnet, provider) each only when non-empty, and nil when both empty.
+func TestConstLabelAttrs(t *testing.T) {
+	got := constLabelAttrs(Options{TailnetName: "alpha", Provider: "tailscale"})
+	if !hasAttr(got, "tailscale.tailnet", "alpha") || !hasAttr(got, "tailscale2otel.provider", "tailscale") {
+		t.Errorf("both set: %v", got)
 	}
-	var found bool
-	for _, kv := range withTN.Attributes() {
-		if string(kv.Key) == "tailscale.tailnet" && kv.Value.AsString() == "acme.example.com" {
-			found = true
-		}
+	got = constLabelAttrs(Options{Provider: "tailscale"})
+	if hasAttr(got, "tailscale.tailnet", "") || len(got) != 1 || !hasAttr(got, "tailscale2otel.provider", "tailscale") {
+		t.Errorf("provider-only: %v", got)
 	}
-	if !found {
-		t.Error("resource missing tailscale.tailnet=acme.example.com")
+	if got := constLabelAttrs(Options{}); got != nil {
+		t.Errorf("empty = %v, want nil", got)
+	}
+}
+
+// TestEmitterStampsConstAttrsOnMetricDataPoint asserts the const attrs built from a
+// per-tailnet provider's Options end up on an actually-recorded metric data point
+// (tailnet + provider), while a process provider's metric carries provider only (no
+// tailnet). This drives the real Gauge -> buildAttrs -> SDK path against a
+// ManualReader, not just constLabelAttrs in isolation.
+func TestEmitterStampsConstAttrsOnMetricDataPoint(t *testing.T) {
+	emit := func(opts Options) attribute.Set {
+		t.Helper()
+		reader := sdkmetric.NewManualReader()
+		mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+		e := newOtelEmitter(mp.Meter("test"), lognoop.NewLoggerProvider().Logger("test"),
+			nil, nil, nil, nil, constLabelAttrs(opts))
+		e.Gauge("tailscale.devices.count", "1", "devices", 3, Attrs{"k": "v"})
+		return collectAttrs(t, reader, "tailscale.devices.count")
 	}
 
-	proc, err := buildResource(context.Background(), Options{ServiceName: "tailscale2otel"})
-	if err != nil {
-		t.Fatal(err)
+	// Per-tailnet provider: data point carries the source attr plus tailnet+provider.
+	tn := emit(Options{TailnetName: "alpha", Provider: "tailscale"})
+	if v, ok := tn.Value(attribute.Key("k")); !ok || v.AsString() != "v" {
+		t.Errorf("per-tailnet point missing source attr k=v; set=%v", tn)
 	}
-	for _, kv := range proc.Attributes() {
-		if string(kv.Key) == "tailscale.tailnet" {
-			t.Errorf("process resource should not carry tailscale.tailnet, got %q", kv.Value.AsString())
-		}
+	if v, ok := tn.Value(attribute.Key("tailscale.tailnet")); !ok || v.AsString() != "alpha" {
+		t.Errorf("per-tailnet point missing tailscale.tailnet=alpha; set=%v", tn)
+	}
+	if v, ok := tn.Value(attribute.Key("tailscale2otel.provider")); !ok || v.AsString() != "tailscale" {
+		t.Errorf("per-tailnet point missing tailscale2otel.provider=tailscale; set=%v", tn)
+	}
+
+	// Process provider (no tailnet): provider only, never a tailnet label.
+	proc := emit(Options{Provider: "tailscale"})
+	if v, ok := proc.Value(attribute.Key("tailscale2otel.provider")); !ok || v.AsString() != "tailscale" {
+		t.Errorf("process point missing tailscale2otel.provider=tailscale; set=%v", proc)
+	}
+	if _, ok := proc.Value(attribute.Key("tailscale.tailnet")); ok {
+		t.Errorf("process point must not carry tailscale.tailnet; set=%v", proc)
 	}
 }
 
@@ -372,5 +398,34 @@ func TestMeterProviderDisablesExemplars(t *testing.T) {
 	}
 	if exemplars != 0 {
 		t.Errorf("got %d metric exemplar(s); want 0 (exemplars must be disabled — no TracerProvider exists to populate them)", exemplars)
+	}
+}
+
+func TestConstAttrSpanProcessorStampsSpans(t *testing.T) {
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(exp),
+		sdktrace.WithSpanProcessor(constAttrSpanProcessor{attrs: []attribute.KeyValue{
+			attribute.String("tailscale.tailnet", "alpha"),
+			attribute.String("tailscale2otel.provider", "tailscale"),
+		}}),
+	)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+
+	_, span := tp.Tracer("test").Start(context.Background(), "op")
+	span.End()
+
+	spans := exp.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	want := map[string]string{"tailscale.tailnet": "alpha", "tailscale2otel.provider": "tailscale"}
+	for _, a := range spans[0].Attributes {
+		if v, ok := want[string(a.Key)]; ok && a.Value.AsString() == v {
+			delete(want, string(a.Key))
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("span missing const attrs: %v; got %v", want, spans[0].Attributes)
 	}
 }

@@ -53,7 +53,7 @@ type App struct {
 	tracer    trace.Tracer // no-op when tracing.enabled=false; threads into scheduler+receivers
 
 	// runtimes is the per-tailnet collection machinery (one element per tailnet,
-	// always >=1). Each owns its emitter (Resource carries tailscale.tailnet),
+	// always >=1). Each owns its emitter (stamps tailscale.tailnet on every signal),
 	// provider/client, cache, registry+scheduler, status tracker, API stats, and
 	// poll-path processors.
 	runtimes []*tailnetRuntime
@@ -144,7 +144,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		hsClient := hsapi.NewClient(hsapiOptions(cfg))
 		cp := provider.Headscale(hsapi.NewProvider(hsClient))
 		// Headscale has no tailnet fan-out: collect under the process provider's
-		// emitter (no tailscale.tailnet Resource), matching v1 single-Resource output.
+		// emitter (no tailscale.tailnet attribute), matching v1 single-Resource output.
 		a.addRuntime("", a.procEmitter, ps.Process().Cardinality(), ps.Process().ExportStats, cp, multi)
 	} else {
 		for _, rt := range resolved {
@@ -395,7 +395,7 @@ func (a *App) Run(ctx context.Context) error {
 			go collector.RunCheckpointReporter(ctx, a.procEmitter, a.cfg.Checkpoint.FilePath, interval)
 		}
 		// Per-tailnet self-obs: cardinality + export volume ride each tailnet's
-		// emitter (Resource carries tailscale.tailnet). api.*/scrape.* are already
+		// emitter (stamps tailscale.tailnet on every signal). api.*/scrape.* are already
 		// per-tailnet via each client's request hook and the runtime's scheduler.
 		for _, rt := range a.runtimes {
 			go runCardinalityReporter(ctx, rt.emitter, rt.card, a.metricGroups, interval)

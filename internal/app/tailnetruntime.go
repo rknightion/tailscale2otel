@@ -20,7 +20,7 @@ import (
 )
 
 // tailnetRuntime is the per-tailnet bundle the app fans out over: its own OTEL
-// emitter (Resource carries tailscale.tailnet), cardinality tracker, control-plane
+// emitter (stamps tailscale.tailnet on every signal), cardinality tracker, control-plane
 // provider+client, enrichment cache, registry+scheduler, status tracker, API
 // stats, and poll-path flow/audit processors. Process-level singletons (admin
 // server, checkpoint store, the webhook cross-dedup, runtime history) live on App.

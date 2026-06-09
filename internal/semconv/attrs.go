@@ -37,6 +37,7 @@ const (
 	AttrUser      = "tailscale.user"
 	AttrTags      = "tailscale.tags"
 	AttrTailnet   = "tailscale.tailnet"
+	AttrProvider  = "tailscale2otel.provider"
 	AttrCollector = "tailscale.collector"
 	AttrFeature   = "tailscale.feature"
 )
