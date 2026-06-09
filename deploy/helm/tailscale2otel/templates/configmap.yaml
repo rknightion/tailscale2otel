@@ -1,3 +1,9 @@
+{{- /*
+Multi-tailnet entries carry inline credentials (the tailnets list is file-only,
+not settable via TS2OTEL_* env), so when config.tailnets is non-empty the rendered
+config.yaml moves to a Secret (see secret-config.yaml) instead of this ConfigMap.
+*/}}
+{{- if not .Values.config.tailnets }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,3 +13,4 @@ metadata:
 data:
   config.yaml: |
     {{- include "tailscale2otel.config" . | nindent 4 }}
+{{- end }}

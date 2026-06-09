@@ -17,6 +17,11 @@ endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metri
    --set secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=... etc., or point
    existingSecret at your own.
 {{- end }}
+{{- if .Values.config.tailnets }}
+
+   Multi-tailnet mode: config.yaml (including the inline per-tailnet credentials)
+   is rendered into Secret "{{ include "tailscale2otel.fullname" . }}-config", not a ConfigMap.
+{{- end }}
 
 3. In Grafana Cloud Explore, look for metrics like tailscale.device.online,
    tailscale.network.io, and tailscale2otel.up.

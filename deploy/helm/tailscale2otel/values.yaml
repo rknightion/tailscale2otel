@@ -86,7 +86,9 @@ affinity: {}
 existingSecret: ""
 # -- Inline secret values rendered into a Secret and injected via envFrom. These
 # TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at
-# runtime — secrets never appear in the ConfigMap.
+# runtime — secrets never appear in the ConfigMap. Keys left empty ("") are NOT
+# rendered into the Secret: an empty env var would override — and blank — the same
+# key set under `config:` (env beats file), silently disabling e.g. receiver auth.
 secret:
   # -- Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet.
   TS2OTEL_TAILSCALE__TAILNET: ""
@@ -147,9 +149,9 @@ config:
   # per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds
   # inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode.
   # Default empty (single tailnet from the tailscale block below).
-  # ⚠ SECURITY: credentials in this list render into the ConfigMap (NOT the Secret) because the
-  # list is file-only. For multi-tailnet prefer existingSecret + a mounted config file so
-  # credentials live in a real Secret.
+  # When this list is non-empty the chart renders the whole config.yaml into a dedicated
+  # Secret (<fullname>-config) instead of a ConfigMap, so the inline per-tailnet credentials
+  # never land in a ConfigMap readable by namespace viewers.
   tailnets: []
 
   # Headscale control-plane connection. Used only when provider: headscale. The api_key is a

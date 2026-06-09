@@ -67,8 +67,14 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config
+          {{- if .Values.config.tailnets }}
+          # Multi-tailnet config carries inline credentials — served from a Secret.
+          secret:
+            secretName: {{ include "tailscale2otel.fullname" . }}-config
+          {{- else }}
           configMap:
             name: {{ include "tailscale2otel.fullname" . }}
+          {{- end }}
         - name: checkpoints
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
