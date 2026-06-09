@@ -190,12 +190,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					attrType:        typ,
 					attrDescription: k.Description,
 				})
+			// Body is generic (type + count only) so it is safe without pii_filter.
+			// The key label (description, a free_text_details attr) and the scope
+			// list (attrScopeValues, non-identifier) are preserved in Attrs so
+			// nothing is lost and operators can gate them independently.
 			e.LogEvent(telemetry.Event{
 				Name:     docKeyScopesLog.Name,
 				Severity: telemetry.SeverityInfo,
-				Body:     fmt.Sprintf("Tailscale key %q (%s) has %d scope(s): %s", keyLabel(k), typ, len(k.Scopes), strings.Join(k.Scopes, ",")),
+				Body:     fmt.Sprintf("Tailscale key (%s) has %d scope(s)", typ, len(k.Scopes)),
 				Attrs: telemetry.Attrs{
 					attrID:          k.ID,
+					attrDescription: k.Description,
 					attrScopeValues: strings.Join(k.Scopes, ","),
 				},
 			})

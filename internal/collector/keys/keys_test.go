@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -376,6 +377,21 @@ func TestCollect_ScopesLog(t *testing.T) {
 		}
 		if got := r.Attrs["tailscale.key.scope_values"]; got != "devices:read,dns:read" {
 			t.Errorf("scope_values = %q, want %q", got, "devices:read,dns:read")
+		}
+		// Description must be present as a pii-gatable attr (free_text_details).
+		if got := r.Attrs["tailscale.key.description"]; got != "tf-runner" {
+			t.Errorf("description attr = %q, want tf-runner", got)
+		}
+		// Body must be generic: type + count only, no free-text key label or scope list.
+		wantBody := "Tailscale key (client) has 2 scope(s)"
+		if r.Body != wantBody {
+			t.Errorf("body = %q, want %q", r.Body, wantBody)
+		}
+		// Must NOT embed the key label or raw scope strings in the body.
+		for _, banned := range []string{"tf-runner", "devices:read", "dns:read"} {
+			if strings.Contains(r.Body, banned) {
+				t.Errorf("body %q must not contain %q (must be in attrs only)", r.Body, banned)
+			}
 		}
 
 		// Count gauge must still be emitted.

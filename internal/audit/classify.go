@@ -29,6 +29,57 @@ var deviceChurnActions = map[string]bool{"CREATE": true, "DELETE": true, "EXPIRE
 // apiKeyActions are the API_KEY lifecycle actions worth a curated counter.
 var apiKeyActions = map[string]bool{"CREATE": true, "DELETE": true, "REVOKE": true}
 
+// knownActions is the complete set of action values defined in the Tailscale
+// audit-log API (OpenAPI spec action enum) plus the action values observed in
+// this repo's test fixtures (changes_test.go, processor_test.go) and the
+// classify.go curated sets above. Unknown values fold to "other" to keep the
+// tailscale.config.audit.changes metric's bounded-cardinality guarantee true
+// even when the API introduces a new verb before this file is updated.
+//
+// Sources: Tailscale OpenAPI spec §ConfigurationAuditLog.action enum;
+// internal/audit tests; classify.go deviceChurnActions + apiKeyActions.
+var knownActions = map[string]bool{
+	"LOGIN": true, "LOGOUT": true, "CREATE": true, "UPDATE": true,
+	"DELETE": true, "CANCEL": true, "REVOKE": true, "APPROVE": true,
+	"SUSPEND": true, "RESTORE": true, "ENABLE": true, "DISABLE": true,
+	"ACCEPT": true, "EXPIRED": true, "PUSH_USER": true, "PUSH_GROUP": true,
+	"VERIFY": true, "JOIN_WAITLIST": true, "INVITE": true, "JOIN": true,
+	"LEAVE": true, "RESEND": true, "MIGRATE_AUTH_PROVIDER": true,
+}
+
+// knownActorTypes is the complete set of actor.type values defined in the
+// Tailscale audit-log API (OpenAPI spec actor.type enum) plus the values
+// observed in this repo's test fixtures and the curated classify.go sets.
+// Unknown values fold to "other" for the same bounded-cardinality reason.
+//
+// Sources: Tailscale OpenAPI spec §ConfigurationAuditLog.actor.type enum;
+// internal/audit tests (USER, NODE, SECRET_SCANNER); classify.go.
+var knownActorTypes = map[string]bool{
+	"USER": true, "NODE": true, "AUTOMATED_WORKER": true,
+	"OAUTH_CLIENT": true, "SCIM": true, "MULLVAD": true,
+	"LOGSTREAM": true, "SECRET_SCANNER": true,
+}
+
+// normalizeAction returns the action unchanged when it is a known API value,
+// and "other" for anything unrecognized. This bounds the cardinality of the
+// tailscale.config.audit.changes action label even if the API adds new verbs.
+func normalizeAction(action string) string {
+	if knownActions[action] {
+		return action
+	}
+	return "other"
+}
+
+// normalizeActorType returns the actor type unchanged when it is a known API
+// value, and "other" for anything unrecognized. This bounds the cardinality of
+// the tailscale.config.audit.changes actor-type label.
+func normalizeActorType(actorType string) string {
+	if knownActorTypes[actorType] {
+		return actorType
+	}
+	return "other"
+}
+
 // classifyChange maps an audit Event to a curated, bounded change-category
 // label. It returns ok=false for events outside the curated set (the common
 // case — most audit events are routine and must not inflate the counter).

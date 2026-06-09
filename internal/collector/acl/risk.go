@@ -71,17 +71,17 @@ func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section s
 			}
 			if ws && wd {
 				unrestricted++
-				// Emit a per-rule log event naming the offending src/dst so
-				// operators can identify which rule is unrestricted, not just
-				// how many exist.
+				// Emit a per-rule log event so operators can identify which
+				// rule is unrestricted, not just how many exist.
+				// Body is generic (section only) to keep the log body PII-safe;
+				// the full src/dst content is in attrRule where pii_filter
+				// (free_text_details category) can gate it.
 				rule := fmt.Sprintf("src=%v dst=%v", srcElems(en), dstElems(en))
 				e.LogEvent(telemetry.Event{
 					Name:     EventRiskyRule,
 					Severity: telemetry.SeverityWarn,
-					Body:     fmt.Sprintf("Unrestricted ACL rule in section %q: %s", section, rule),
-					// rule (src/dst contents) is a redactable free_text_details attr so an
-					// operator can drop it; the body keeps it for human readability.
-					Attrs: telemetry.Attrs{attrSection: section, attrRule: rule},
+					Body:     fmt.Sprintf("Unrestricted ACL rule in section %q", section),
+					Attrs:    telemetry.Attrs{attrSection: section, attrRule: rule},
 				})
 			}
 		}

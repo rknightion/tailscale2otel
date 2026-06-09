@@ -103,3 +103,83 @@ func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
 		})
 	}
 }
+
+// TestAuditChangesActionNormalization verifies that:
+//   - Known API action values pass through unchanged to the changes counter.
+//   - Arbitrary / unknown action values are folded to "other" so the metric's
+//     bounded-cardinality guarantee holds even when the API introduces new verbs.
+func TestAuditChangesActionNormalization(t *testing.T) {
+	cases := []struct {
+		rawAction  string
+		wantAction string
+	}{
+		// Known values from the Tailscale OpenAPI spec action enum.
+		{"CREATE", "CREATE"},
+		{"UPDATE", "UPDATE"},
+		{"DELETE", "DELETE"},
+		{"ENABLE", "ENABLE"},
+		{"DISABLE", "DISABLE"},
+		{"REVOKE", "REVOKE"},
+		{"EXPIRED", "EXPIRED"},
+		{"MIGRATE_AUTH_PROVIDER", "MIGRATE_AUTH_PROVIDER"},
+		// Unknown / future values must fold to "other".
+		{"SOME_FUTURE_VERB", "other"},
+		{"", "other"},
+		{"create", "other"}, // case-sensitive
+	}
+	for _, tc := range cases {
+		t.Run(tc.rawAction+"/"+tc.wantAction, func(t *testing.T) {
+			// Use a classified event (ACL property) so the changes counter fires.
+			ev := evWith("TAILNET", "ACL", tc.rawAction, "USER")
+			rec := telemetrytest.New()
+			audit.NewProcessor().Process(ev, rec.Emitter())
+			pts := rec.MetricPoints(audit.MetricAuditChanges)
+			if len(pts) != 1 {
+				t.Fatalf("changes counter points = %d, want 1", len(pts))
+			}
+			if got := pts[0].Attrs["tailscale.audit.action"]; got != tc.wantAction {
+				t.Errorf("action attr = %q, want %q", got, tc.wantAction)
+			}
+		})
+	}
+}
+
+// TestAuditChangesActorTypeNormalization verifies that:
+//   - Known API actor.type values pass through unchanged to the changes counter.
+//   - Arbitrary / unknown actor.type values are folded to "other" so the metric's
+//     bounded-cardinality guarantee holds even when the API introduces new types.
+func TestAuditChangesActorTypeNormalization(t *testing.T) {
+	cases := []struct {
+		rawType  string
+		wantType string
+	}{
+		// Known values from the Tailscale OpenAPI spec actor.type enum.
+		{"USER", "USER"},
+		{"NODE", "NODE"},
+		{"AUTOMATED_WORKER", "AUTOMATED_WORKER"},
+		{"OAUTH_CLIENT", "OAUTH_CLIENT"},
+		{"SCIM", "SCIM"},
+		{"MULLVAD", "MULLVAD"},
+		{"LOGSTREAM", "LOGSTREAM"},
+		{"SECRET_SCANNER", "SECRET_SCANNER"},
+		// Unknown / future types must fold to "other".
+		{"SOME_NEW_TYPE", "other"},
+		{"", "other"},
+		{"user", "other"}, // case-sensitive
+	}
+	for _, tc := range cases {
+		t.Run(tc.rawType+"/"+tc.wantType, func(t *testing.T) {
+			// Use a classified event (ACL property) so the changes counter fires.
+			ev := evWith("TAILNET", "ACL", "UPDATE", tc.rawType)
+			rec := telemetrytest.New()
+			audit.NewProcessor().Process(ev, rec.Emitter())
+			pts := rec.MetricPoints(audit.MetricAuditChanges)
+			if len(pts) != 1 {
+				t.Fatalf("changes counter points = %d, want 1", len(pts))
+			}
+			if got := pts[0].Attrs["tailscale.actor.type"]; got != tc.wantType {
+				t.Errorf("actor.type attr = %q, want %q", got, tc.wantType)
+			}
+		})
+	}
+}

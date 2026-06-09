@@ -200,8 +200,8 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	if cat, ok := classifyChange(ev); ok {
 		e.Counter(docAuditChanges.Name, docAuditChanges.Unit, docAuditChanges.Description, 1, telemetry.Attrs{
 			attrChange:    cat,
-			attrAction:    ev.Action,
-			attrActorType: ev.Actor.Type,
+			attrAction:    normalizeAction(ev.Action),
+			attrActorType: normalizeActorType(ev.Actor.Type),
 		})
 	}
 }

@@ -227,11 +227,17 @@ func TestRiskyRuleLogEvent(t *testing.T) {
 	if lr.Attrs["tailscale.acl.section"] != "acls" {
 		t.Errorf("risky_rule section attr = %q, want acls", lr.Attrs["tailscale.acl.section"])
 	}
-	// Body must contain the offending src and dst content.
-	if lr.Body == "" {
-		t.Error("risky_rule body is empty")
+	// Body is a GENERIC string (no rule text) so it is safe to forward without
+	// pii_filter gating. It must name the section but must NOT contain the raw
+	// src/dst elements.
+	wantBody := `Unrestricted ACL rule in section "acls"`
+	if lr.Body != wantBody {
+		t.Errorf("risky_rule body = %q, want %q", lr.Body, wantBody)
 	}
-	// The src/dst content must also be a redactable free-text attribute so an
+	if strings.Contains(lr.Body, "src=") || strings.Contains(lr.Body, "dst=") {
+		t.Errorf("risky_rule body %q must not contain raw rule text (should be in tailscale.acl.rule attr)", lr.Body)
+	}
+	// The src/dst content must be in the redactable free-text attribute so an
 	// operator can drop it via pii_filter.free_text_details.
 	if rule := lr.Attrs["tailscale.acl.rule"]; rule == "" {
 		t.Error("risky_rule tailscale.acl.rule attr is empty")
