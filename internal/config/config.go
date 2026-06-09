@@ -275,6 +275,12 @@ type ReverseDNSConfig struct {
 	CacheTTL    Duration `yaml:"cache_ttl"`    // positive-result TTL
 	NegativeTTL Duration `yaml:"negative_ttl"` // failed-lookup TTL
 	MaxEntries  int      `yaml:"max_entries"`  // cache size bound
+	// AcknowledgeCardinality silences the startup advisory that fires when
+	// reverse_dns.enabled=true AND cardinality.flow.node_dims=true (the only
+	// combination where PTR names inflate flow-METRIC cardinality). Set to true
+	// once you have sized cardinality.metric_limit for the added per-external-IP
+	// series — it is purely an acknowledgement and does not change emission.
+	AcknowledgeCardinality bool `yaml:"acknowledge_cardinality"`
 }
 
 // CardinalityConfig controls metric/label cardinality trade-offs. The two big

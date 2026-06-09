@@ -241,6 +241,9 @@ config:
       negative_ttl: 5m
       # -- Cache size bound; new external IPs beyond this are not resolved (~150 bytes/entry).
       max_entries: 50000
+      # -- Acknowledge the flow-metric cardinality cost of enabled+node_dims and silence the startup
+      # advisory (config_warnings_ratio). Set true once cardinality.metric_limit is sized for it.
+      acknowledge_cardinality: false
 
   cardinality:
     # -- Hard per-metric series cap (0/negative = unlimited).

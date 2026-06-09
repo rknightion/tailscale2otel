@@ -117,13 +117,19 @@ func (c *Config) Warnings() []string {
 	}
 
 	// Reverse DNS replaces the low-cardinality "external" bucket with per-host PTR
-	// names, which on flow METRICS can be roughly one series per external IP.
-	if c.Enrichment.ReverseDNS.Enabled {
-		w = append(w, "enrichment.reverse_dns.enabled=true: resolved PTR names replace the \"external\" "+
-			"bucket in tailscale.src.node/tailscale.dst.node, so on flow METRICS this can add roughly one "+
-			"series per external IP (bounded only by cardinality.metric_limit). To keep the names on flow "+
-			"LOGS only, set cardinality.flow_node_dims=false; otherwise size cardinality.metric_limit for "+
-			"the added cardinality.")
+	// names. This only inflates flow-METRIC cardinality when node_dims is also on:
+	// with node_dims=false the names stay on flow LOGS only (no metric cardinality
+	// cost), so the advisory must NOT fire there. Operators who have sized
+	// cardinality.metric_limit for the added series can set
+	// enrichment.reverse_dns.acknowledge_cardinality=true to silence it.
+	if c.Enrichment.ReverseDNS.Enabled && c.Cardinality.Flow.NodeDims &&
+		!c.Enrichment.ReverseDNS.AcknowledgeCardinality {
+		w = append(w, "enrichment.reverse_dns.enabled=true with cardinality.flow.node_dims=true: resolved "+
+			"PTR names replace the \"external\" bucket in tailscale.src.node/tailscale.dst.node, so on flow "+
+			"METRICS this can add roughly one series per external IP (bounded only by cardinality.metric_limit). "+
+			"To keep the names on flow LOGS only, set cardinality.flow.node_dims=false; otherwise size "+
+			"cardinality.metric_limit for the added cardinality and set "+
+			"enrichment.reverse_dns.acknowledge_cardinality=true to acknowledge.")
 	}
 
 	if c.VersionChecks.Devices.Enabled && !c.Collectors.Devices.Enabled {

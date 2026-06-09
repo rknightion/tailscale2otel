@@ -107,6 +107,7 @@ enrichment:
     cache_ttl: 24h                    # how long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low)
     negative_ttl: 5m                  # how long a failed lookup is remembered (suppresses retries)
     max_entries: 50000                # PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry)
+    acknowledge_cardinality: false     # set true (once metric_limit is sized) to silence the enabled+node_dims cardinality advisory
 
 # ── Cardinality (metric/label volume trade-offs) ────────────────────────────────
 cardinality:

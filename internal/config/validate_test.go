@@ -577,15 +577,41 @@ func TestValidateReverseDNSDisabledIgnoresBadServer(t *testing.T) {
 	}
 }
 
+// The advisory fires only when reverse_dns.enabled=true AND
+// cardinality.flow.node_dims=true (the sole combination where PTR names inflate
+// flow-METRIC cardinality). With node_dims=false the names land on flow LOGS
+// only, so there must be no warning; and an operator who has sized metric_limit
+// can set acknowledge_cardinality=true to silence it.
 func TestWarnings_ReverseDNSCardinality(t *testing.T) {
 	c := config.Default()
 	if w := c.Warnings(); len(w) != 0 {
 		t.Fatalf("default Warnings = %v, want none", w)
 	}
+
+	// enabled + node_dims=true (default) + not acknowledged => advisory.
 	c.Enrichment.ReverseDNS.Enabled = true
+	if !c.Cardinality.Flow.NodeDims {
+		t.Fatal("precondition: node_dims should default to true")
+	}
 	w := strings.Join(c.Warnings(), "\n")
 	if !strings.Contains(w, "reverse_dns") || !strings.Contains(strings.ToLower(w), "cardinalit") {
 		t.Errorf("reverse_dns warning %q should mention reverse_dns and cardinality", w)
+	}
+
+	// enabled + node_dims=false => names on logs only, no metric cardinality cost => no advisory.
+	c = config.Default()
+	c.Enrichment.ReverseDNS.Enabled = true
+	c.Cardinality.Flow.NodeDims = false
+	if w := strings.Join(c.Warnings(), "\n"); strings.Contains(w, "reverse_dns.enabled=true") {
+		t.Errorf("reverse_dns with node_dims=false must NOT warn; got %q", w)
+	}
+
+	// enabled + node_dims=true + acknowledge_cardinality=true => silenced.
+	c = config.Default()
+	c.Enrichment.ReverseDNS.Enabled = true
+	c.Enrichment.ReverseDNS.AcknowledgeCardinality = true
+	if w := strings.Join(c.Warnings(), "\n"); strings.Contains(w, "reverse_dns.enabled=true") {
+		t.Errorf("acknowledge_cardinality=true must silence the advisory; got %q", w)
 	}
 }
 
