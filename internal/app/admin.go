@@ -113,6 +113,12 @@ func (a *App) buildAdminServer() *http.Server {
 		Addr:              a.cfg.Admin.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// 120s, not the 30s the other listeners use: /debug/pprof/profile?seconds=N
+		// (and /trace) stream their response for N seconds and must complete inside
+		// the write window. Still bounds a slow-read client at two minutes.
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 }
 
