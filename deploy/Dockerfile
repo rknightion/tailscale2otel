@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build ----
-FROM golang:1.26-alpine AS build
+FROM golang:1.26-alpine@sha256:f23e8b227fb4493eabe03bede4d5a32d04092da71962f1fb79b5f7d1e6c2a17f AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 RUN mkdir -p /var/lib/tailscale2otel
 
 # ---- runtime ----
-FROM gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240
 COPY --from=build /out/tailscale2otel /usr/local/bin/tailscale2otel
 # Pre-seeded checkpoint directory (owned by nonroot 65532:65532). Checkpoints
 # persist here across container restarts when no external volume is mounted

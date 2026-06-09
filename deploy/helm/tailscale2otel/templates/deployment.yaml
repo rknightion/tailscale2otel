@@ -17,6 +17,9 @@ spec:
       annotations:
         # Roll the pod when the config or secret changes.
         checksum/config: {{ include "tailscale2otel.config" . | sha256sum }}
+        {{- if not .Values.existingSecret }}
+        checksum/secret: {{ toYaml .Values.secret | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

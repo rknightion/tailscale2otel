@@ -4,7 +4,7 @@
 #
 # For source-based `docker build` (CI docker smoke, local dev), use the
 # multi-stage deploy/Dockerfile instead.
-FROM gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240
 # dockers_v2 multi-platform builds stage each arch's binary under a
 # $TARGETPLATFORM/ subdir of the build context (e.g. linux/arm64/tailscale2otel),
 # so the binary COPY must be platform-qualified. extra_files (config.example.yaml)

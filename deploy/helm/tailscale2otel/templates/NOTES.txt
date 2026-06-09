@@ -9,11 +9,13 @@ endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metri
 2. Credentials:
 {{- if .Values.existingSecret }}
    Using existing Secret "{{ .Values.existingSecret }}" — ensure it exposes
-   TS_OAUTH_CLIENT_ID / TS_OAUTH_CLIENT_SECRET (or TS_API_KEY) and
-   GC_INSTANCE_ID / GC_OTLP_TOKEN.
+   TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID / TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET
+   (or TS2OTEL_TAILSCALE__AUTH__APIKEY) and TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID /
+   TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN.
 {{- else }}
    Rendered into Secret "{{ include "tailscale2otel.fullname" . }}". Set values via
-   --set secret.TS_OAUTH_CLIENT_ID=... etc., or point existingSecret at your own.
+   --set secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=... etc., or point
+   existingSecret at your own.
 {{- end }}
 
 3. In Grafana Cloud Explore, look for metrics like tailscale.device.online,

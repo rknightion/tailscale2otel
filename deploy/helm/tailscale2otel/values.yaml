@@ -147,6 +147,9 @@ config:
   # per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds
   # inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode.
   # Default empty (single tailnet from the tailscale block below).
+  # ⚠ SECURITY: credentials in this list render into the ConfigMap (NOT the Secret) because the
+  # list is file-only. For multi-tailnet prefer existingSecret + a mounted config file so
+  # credentials live in a real Secret.
   tailnets: []
 
   # Headscale control-plane connection. Used only when provider: headscale. The api_key is a

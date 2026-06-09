@@ -26,6 +26,12 @@ services:
     # Hard memory ceiling (matches the Helm chart default). GOMEMLIMIT below sits
     # ~10% under this so the Go GC backs off before the cgroup OOM-kills the process.
     mem_limit: 256m
+    # Image is distroless+nonroot already; these enforce it at the daemon level.
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     environment:
       TS2OTEL_TAILSCALE__TAILNET: ${TS2OTEL_TAILSCALE__TAILNET:-}
       TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID: ${TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID:-}

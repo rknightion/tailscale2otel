@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.7.1](https://img.shields.io/badge/Version-0.7.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.7.2](https://img.shields.io/badge/Version-0.7.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -183,7 +183,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.streaming.tls.cert_file | string | `""` | TLS certificate file; set with key_file to serve the receiver over HTTPS. |
 | config.streaming.tls.key_file | string | `""` | TLS private key file paired with cert_file. |
 | config.streaming.token | string | `""` | Expected as 'Authorization: Splunk <token>'. Set via TS2OTEL_STREAMING__TOKEN (secret). |
-| config.tailnets | list | `[]` | Multi-tailnet / MSP list. Optional; mutually exclusive with an explicit tailscale.tailnet (leave it "-" when using this). Each entry observes one tailnet and is self-contained (its own name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode. Default empty (single tailnet from the tailscale block below). |
+| config.tailnets | list | `[]` | Multi-tailnet / MSP list. Optional; mutually exclusive with an explicit tailscale.tailnet (leave it "-" when using this). Each entry observes one tailnet and is self-contained (its own name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode. Default empty (single tailnet from the tailscale block below). ⚠ SECURITY: credentials in this list render into the ConfigMap (NOT the Secret) because the list is file-only. For multi-tailnet prefer existingSecret + a mounted config file so credentials live in a real Secret. |
 | config.tailscale.auth.apikey | string | `""` | API key, used only when method: apikey. Set via TS2OTEL_TAILSCALE__AUTH__APIKEY (secret). |
 | config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the exporter logs a WARN when apikey is selected. |
 | config.tailscale.auth.oauth.client_id | string | `""` | OAuth client ID. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID (secret). |
