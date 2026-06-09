@@ -58,6 +58,7 @@ services:
     # ports:
     #   - "8088:8088"
     #   - "8089:8089"
+    #   - "2112:2112"   # Prometheus pull endpoint (set prometheus.enabled=true)
 
 # Named volume for checkpoint persistence. Created once by Docker and inherits
 # the /var/lib/tailscale2otel directory ownership from the image (uid 65532).

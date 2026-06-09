@@ -777,6 +777,47 @@ func TestWarnsOnUnsupportedCollectorUnderHeadscale(t *testing.T) {
 	}
 }
 
+func TestPrometheusOpenWildcardWarning(t *testing.T) {
+	c := config.Default()
+	c.Prometheus.Enabled = true
+	c.Prometheus.Listen = ":2112" // wildcard (empty host)
+	c.Prometheus.Auth.Token = ""
+	found := false
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "prometheus.listen") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected open-wildcard prometheus warning, got %v", c.Warnings())
+	}
+	// A token silences it.
+	c.Prometheus.Auth.Token = config.Secret("x")
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "prometheus.listen") {
+			t.Errorf("token set but warning still present: %q", w)
+		}
+	}
+}
+
+func TestPrometheusListenConflict(t *testing.T) {
+	c := config.Default()
+	c.Admin.Enabled = true
+	c.Admin.Listen = ":9090"
+	c.Prometheus.Enabled = true
+	c.Prometheus.Listen = ":9090"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "prometheus.listen") {
+		t.Fatalf("expected admin/prometheus listen-conflict error, got %v", err)
+	}
+	// Distinct listeners: the conflict error must be gone (other unrelated Validate
+	// rules are out of scope here, so assert only that THIS error disappears).
+	c.Prometheus.Listen = ":2112"
+	if err := c.Validate(); err != nil && strings.Contains(err.Error(), "prometheus.listen") {
+		t.Fatalf("distinct listeners still report a prometheus.listen conflict: %v", err)
+	}
+}
+
 // TestWarnings_FlowMetricsModeBoth pins the advisory that both-mode emits the raw
 // AND rollup families, so summing them in PromQL double-counts. The default
 // (rollup) and all-mode do not warn.

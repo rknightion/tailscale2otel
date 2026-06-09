@@ -281,6 +281,16 @@ func TestExampleConfigMatchesDefaults(t *testing.T) {
 	}
 }
 
+func TestPrometheusDefaults(t *testing.T) {
+	c := config.Default()
+	if c.Prometheus.Enabled {
+		t.Errorf("prometheus.enabled default = true, want false")
+	}
+	if c.Prometheus.Listen != ":2112" {
+		t.Errorf("prometheus.listen default = %q, want \":2112\"", c.Prometheus.Listen)
+	}
+}
+
 func TestNodeMetricsDefaults(t *testing.T) {
 	cfg := config.Default()
 	nm := cfg.Collectors.NodeMetrics

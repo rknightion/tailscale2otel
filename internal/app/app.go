@@ -78,6 +78,7 @@ type App struct {
 	webhookSrv   *webhook.Server
 	webhookDedup *dedup.Set // shared cross-source set (webhook<->audit); nil unless enabled
 	adminSrv     *http.Server
+	metricsSrv   *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
 	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
 	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
 
@@ -171,6 +172,11 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
 		a.adminSrv = a.buildAdminServer()
+	}
+	if cfg.Prometheus.Enabled {
+		if g := ps.PromGatherers(); len(g) > 0 {
+			a.metricsSrv = a.buildMetricsServer(g)
+		}
 	}
 
 	// Continuous profiling is opt-in. startProfiling also applies the runtime
@@ -346,6 +352,9 @@ func newApp(
 	a.flowDedup = rt.flowDedup
 	a.auditDedup = rt.auditDedup
 	a.buildReceivers()
+	// Note: a.metricsSrv is intentionally NOT built here — this test seam has no
+	// telemetry.ProviderSet, so there is no prometheus gatherer to serve. The real
+	// Prometheus endpoint is wired only in New(). See New()'s cfg.Prometheus block.
 	if cfg.Admin.Enabled {
 		a.adminSrv = a.buildAdminServer()
 	}
@@ -442,6 +451,9 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if a.adminSrv != nil {
 		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
+	}
+	if a.metricsSrv != nil {
+		go a.runMetrics(ctx) //nolint:gosec // G118 false positive: runMetrics's only context.Background is the bounded graceful-shutdown context
 	}
 
 	// One scheduler per tailnet, each driving its own registry. Aggregate their

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // PerTailnetOptions overrides the per-tailnet pieces of an Options template.
@@ -62,6 +64,25 @@ func (s *ProviderSet) Tailnet(name string) *Provider { return s.tailnet[name] }
 
 // TailnetNames returns the tailnet names in construction order.
 func (s *ProviderSet) TailnetNames() []string { return s.order }
+
+// PromGatherers returns the per-provider Prometheus registries (process first,
+// then each tailnet in construction order) merged as prometheus.Gatherers — the
+// safe way to expose multiple registries with differing target_info label sets at
+// one /metrics endpoint. Empty when the Prometheus reader is disabled.
+func (s *ProviderSet) PromGatherers() prometheus.Gatherers {
+	var gs prometheus.Gatherers
+	if g := s.process.PromGatherer(); g != nil {
+		gs = append(gs, g)
+	}
+	for _, name := range s.order {
+		if p := s.tailnet[name]; p != nil {
+			if g := p.PromGatherer(); g != nil {
+				gs = append(gs, g)
+			}
+		}
+	}
+	return gs
+}
 
 // Shutdown flushes and stops every provider (process + all tailnets).
 func (s *ProviderSet) Shutdown(ctx context.Context) error {

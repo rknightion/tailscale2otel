@@ -77,6 +77,7 @@ const (
 	ComponentWebhook       = "webhook"
 	ComponentAdmin         = "admin"
 	ComponentAutoConfigure = "auto_configure"
+	ComponentMetrics       = "metrics"
 )
 
 // MetricAdminAuthRejected counts admin HTTP requests rejected by the admin auth

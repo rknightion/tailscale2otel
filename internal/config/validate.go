@@ -57,6 +57,13 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	if c.Prometheus.Enabled && c.Prometheus.Auth.Token == "" && isWildcardListen(c.Prometheus.Listen) {
+		w = append(w, "prometheus.enabled with no prometheus.auth.token on "+c.Prometheus.Listen+": "+
+			"the /metrics page exposes every series (incl. device/flow identifiers) to anyone who can "+
+			"reach the port. Set prometheus.auth.token, or bind prometheus.listen to a loopback/tailnet "+
+			"address (e.g. 127.0.0.1:2112).")
+	}
+
 	// The admin status page (/ and /api/status.json) exposes internal state
 	// (collectors, device names, the config shape). When it is served on a
 	// wildcard (all-interfaces) bind with no admin.auth.token, anyone who can
@@ -216,6 +223,9 @@ func (c *Config) Validate() error {
 
 	if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
 		return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
+	}
+	if c.Prometheus.Enabled && c.Admin.Enabled && c.Prometheus.Listen == c.Admin.Listen {
+		return fmt.Errorf("prometheus.listen and admin.listen both bind %q: give the Prometheus endpoint its own listener", c.Prometheus.Listen)
 	}
 	if provider == "tailscale" {
 		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {

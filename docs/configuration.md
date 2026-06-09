@@ -55,6 +55,7 @@ Every config field is settable via an environment variable:
 | `streaming.token` | `TS2OTEL_STREAMING__TOKEN` |
 | `webhook.secret` | `TS2OTEL_WEBHOOK__SECRET` |
 | `admin.auth.token` | `TS2OTEL_ADMIN__AUTH__TOKEN` |
+| `prometheus.auth.token` | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` |
 | `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
 | `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
 
@@ -105,6 +106,7 @@ ignored.
 - [`webhook` — event webhook receiver](#webhook-event-webhook-receiver)
 - [`self_observability` — the exporter's own telemetry](#self_observability-the-exporters-own-telemetry)
 - [`admin` — admin HTTP server (probes + status page)](#admin-admin-http-server-probes-status-page)
+- [`prometheus` — Prometheus pull endpoint](#prometheus-prometheus-pull-endpoint)
 - [`profiling` — pprof & Pyroscope](#profiling-pprof-pyroscope)
 - [`tracing` — OTEL traces pillar](#tracing-otel-traces-pillar)
 
@@ -250,6 +252,7 @@ the hot path never blocks.
 | `enrichment.reverse_dns.cache_ttl` | `1h` | Positive-result cache TTL. |
 | `enrichment.reverse_dns.negative_ttl` | `5m` | Failed-lookup cache TTL. |
 | `enrichment.reverse_dns.max_entries` | `4096` | Cache size bound. |
+| `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
 
 ---
 
@@ -605,6 +608,51 @@ internet.
 > **WARN (advisory):** if `landing_page` is served on a wildcard (all-interfaces) bind with no
 > `admin.auth.token`, a startup warning fires — the page exposes internal state to anyone who can
 > reach the port. Set a token or bind to loopback/tailnet.
+
+---
+
+## `prometheus` — Prometheus pull endpoint
+
+An opt-in, off-by-default `GET /metrics` endpoint on a **dedicated listener** (`prometheus.listen`,
+default `:2112`). When enabled it attaches an additional `metric.Reader` (a per-provider Prometheus
+registry) alongside the OTLP push path, so **both export paths are active at once** — Prometheus
+scraping and OTLP push are independent and complementary; enabling one does not disable the other.
+
+The endpoint is fully separate from the admin server (`admin.listen`) and must bind to a different
+address. It serves only `GET /metrics`; no status page or probes are exposed here.
+
+> **Multi-tailnet:** each tailnet's metrics carry a `tailscale_tailnet="<name>"` **constant label**
+> on every Prometheus series so multi-tailnet series do not collide at a shared `/metrics` endpoint.
+> A `target_info` info metric is also emitted per provider. On **Grafana Cloud** the primary metrics
+> path is OTLP (which uses the `target_info` join for resource attributes); the Prometheus endpoint
+> is an additional pull-compatible path for existing Prometheus-only infrastructure. See roadmap item
+> L for the planned native per-tailnet metric-attribute promotion.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `prometheus.enabled` | `false` | Run the Prometheus pull endpoint on its own dedicated listener. Off by default. |
+| `prometheus.listen` | `:2112` | Listen address for `/metrics`. Must differ from `admin.listen`. For defense-in-depth bind to loopback (`127.0.0.1:2112`) or a tailnet IP rather than a wildcard. |
+| `prometheus.auth.token` | `""` | Optional shared secret gating `/metrics`. Accepted as the HTTP Basic password (any username) **or** `Authorization: Bearer <token>`. Empty = open (unauthenticated). Set via `TS2OTEL_PROMETHEUS__AUTH__TOKEN`. |
+
+> **WARN (advisory):** if `prometheus.enabled` is `true` on a wildcard bind (empty host, e.g.
+> `:2112`) with no `prometheus.auth.token`, a startup warning fires — the endpoint exposes every
+> series (including device hostnames, flow identifiers, and tailnet name) to anyone who can reach
+> the port. Set a token or bind to loopback/tailnet.
+
+> **Validation:** `prometheus.listen` and `admin.listen` must differ when both servers are enabled
+> (the exporter errors at startup if they share the same address).
+
+### Prometheus `scrape_configs` snippet
+
+```yaml
+scrape_configs:
+  - job_name: tailscale2otel
+    static_configs:
+      - targets: ["host:2112"]
+    # If prometheus.auth.token is set:
+    authorization:
+      credentials: "<token>"
+```
 
 ---
 

@@ -60,6 +60,7 @@ type Config struct {
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
 	PIIFilter         PIIFilterConfig         `yaml:"pii_filter"`
 	Admin             AdminConfig             `yaml:"admin"`
+	Prometheus        PrometheusConfig        `yaml:"prometheus"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 	Tracing           TracingConfig           `yaml:"tracing"`
 	VersionChecks     VersionChecksConfig     `yaml:"version_checks"`
@@ -88,6 +89,24 @@ type AdminConfig struct {
 // and /readyz probes are never gated. Keep the token in an env var:
 // TS2OTEL_ADMIN__AUTH__TOKEN.
 type AdminAuth struct {
+	Token Secret `yaml:"token"`
+}
+
+// PrometheusConfig configures the optional Prometheus pull endpoint (GET /metrics)
+// on a DEDICATED listener, independent of the admin server. Off by default. When
+// enabled it runs an additional metric.Reader alongside OTLP push, so both export
+// paths are active at once (backwards-compat for Prometheus scrapers).
+type PrometheusConfig struct {
+	Enabled bool           `yaml:"enabled"`
+	Listen  string         `yaml:"listen"`
+	Auth    PrometheusAuth `yaml:"auth"`
+}
+
+// PrometheusAuth optionally gates /metrics behind a shared secret presented as the
+// HTTP Basic password OR "Authorization: Bearer <token>". Empty = open (bind to a
+// loopback/tailnet address or rely on network controls). Keep the token in an env
+// var: TS2OTEL_PROMETHEUS__AUTH__TOKEN.
+type PrometheusAuth struct {
 	Token Secret `yaml:"token"`
 }
 

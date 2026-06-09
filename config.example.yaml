@@ -296,6 +296,13 @@ admin:
   auth:
     token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind)
 
+# ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
+prometheus:
+  enabled: false                      # run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push
+  listen: ":2112"                     # bind for /metrics (default :2112); keep distinct from admin.listen
+  auth:
+    token: ""                         # gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN
+
 # ── Profiling (OPTIONAL: all off by default, carries no Tailscale data) ─────────
 profiling:
   pprof:

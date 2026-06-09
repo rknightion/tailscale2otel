@@ -115,6 +115,9 @@ secret:
   # status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable
   # config.profiling.pprof. /healthz and /readyz are never gated.
   TS2OTEL_ADMIN__AUTH__TOKEN: ""
+  # -- Token gating the Prometheus /metrics endpoint (HTTP Basic password or "Authorization: Bearer <token>").
+  # Empty = open (a WARN fires when prometheus.enabled on a wildcard bind). Set ONLY when prometheus.enabled.
+  TS2OTEL_PROMETHEUS__AUTH__TOKEN: ""
   # -- Pyroscope basic-auth user (Grafana Cloud: the profiles instance ID). Set ONLY when you
   # enable config.profiling.pyroscope.
   TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER: ""
@@ -517,6 +520,21 @@ config:
     tailnet_name: true
     # -- Emit audit old/new/details, target names, key descriptions, posture values.
     free_text_details: true
+
+  # Prometheus pull endpoint: serves GET /metrics on a dedicated listener, running an
+  # additional metric.Reader alongside OTLP push so both export paths are active at once.
+  # Off by default. Bind to a loopback/tailnet address or set prometheus.auth.token for
+  # defense-in-depth — the endpoint exposes every series (incl. device/flow identifiers).
+  # Token: set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret above).
+  prometheus:
+    # -- Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener.
+    enabled: false
+    # -- Address the Prometheus endpoint binds. Keep distinct from admin.listen.
+    listen: ":2112"
+    auth:
+      # -- Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>").
+      # Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret).
+      token: ""
 
   # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
   # The page exposes operational metadata (collector health, cardinality, discovered

@@ -67,6 +67,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__CACHE_TTL` | `24h` | how long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__NEGATIVE_TTL` | `5m` | how long a failed lookup is remembered (suppresses retries) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__MAX_ENTRIES` | `50000` | PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry) |
+| `TS2OTEL_ENRICHMENT__REVERSE_DNS__ACKNOWLEDGE_CARDINALITY` | `false` | set true (once metric_limit is sized) to silence the enabled+node_dims cardinality advisory |
 | `TS2OTEL_CARDINALITY__METRIC_LIMIT` | `10000` | hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited) |
 | `TS2OTEL_CARDINALITY__DERP_REGION_ROLLUP` | `true` | emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) |
 | `TS2OTEL_CARDINALITY__SUBNET_ROUTE_ROLLUP` | `true` | emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless |
@@ -188,6 +189,9 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ADMIN__LISTEN` | `:9090` | serves /healthz, /readyz, and the status page |
 | `TS2OTEL_ADMIN__LANDING_PAGE` | `true` | serve the human status page at / and machine-readable /api/status.json |
 | `TS2OTEL_ADMIN__AUTH__TOKEN` | `""` | gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind) |
+| `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |
+| `TS2OTEL_PROMETHEUS__LISTEN` | `:2112` | bind for /metrics (default :2112); keep distinct from admin.listen |
+| `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
 | `TS2OTEL_PROFILING__PPROF__ENABLED` | `false` | mount net/http/pprof on the admin server (REQUIRES admin.enabled + admin.auth.token — heap dumps can expose in-memory secrets) |
 | `TS2OTEL_PROFILING__PYROSCOPE__ENABLED` | `false` | run the Pyroscope continuous-profiling push agent |
 | `TS2OTEL_PROFILING__PYROSCOPE__SERVER_ADDRESS` | `""` | REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net |

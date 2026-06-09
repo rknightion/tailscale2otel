@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
@@ -108,6 +110,11 @@ type Options struct {
 	// ignored by the others.
 	TraceSamplerArg float64
 
+	// PrometheusEnabled attaches an additional Prometheus metric.Reader (a
+	// per-Provider registry) alongside the OTLP reader, so the same instruments are
+	// scrapeable at /metrics. The HTTP serving lives in the app layer.
+	PrometheusEnabled bool
+
 	// Provider is the control-plane backend (tailscale|headscale); emitted as the
 	// tailscale2otel.provider resource attribute when non-empty.
 	Provider string
@@ -144,6 +151,8 @@ type Provider struct {
 
 	metricCounter *countingMetricExporter // nil unless self-obs enabled
 	logCounter    *countingLogExporter    // nil unless self-obs enabled
+
+	promReg *prometheus.Registry // nil unless Options.PrometheusEnabled
 }
 
 // metricProviderOptions returns the MeterProvider options shared by the production
@@ -230,10 +239,20 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
-	mp := sdkmetric.NewMeterProvider(append(
+	mpOpts := append(
 		metricProviderOptions(res, opts.CardinalityLimit, opts.TracingEnabled),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(interval))),
-	)...)
+	)
+	var promReg *prometheus.Registry
+	if opts.PrometheusEnabled {
+		promReg = prometheus.NewRegistry()
+		promReader, err := newPrometheusReader(promReg)
+		if err != nil {
+			return nil, fmt.Errorf("prometheus reader: %w", err)
+		}
+		mpOpts = append(mpOpts, sdkmetric.WithReader(promReader))
+	}
+	mp := sdkmetric.NewMeterProvider(mpOpts...)
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithResource(res),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
@@ -287,6 +306,8 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 		metricCounter: metricCounter,
 		logCounter:    logCounter,
+
+		promReg: promReg,
 	}, nil
 }
 
@@ -306,6 +327,16 @@ func (p *Provider) ExportStats() ExportStats {
 
 // Emitter returns the Emitter collectors should use.
 func (p *Provider) Emitter() Emitter { return p.emitter }
+
+// PromGatherer returns this provider's Prometheus registry as a Gatherer, or nil
+// when the Prometheus reader is disabled. Each provider owns its own registry so a
+// single shared registry never sees inconsistent target_info label dimensions.
+func (p *Provider) PromGatherer() prometheus.Gatherer {
+	if p.promReg == nil {
+		return nil
+	}
+	return p.promReg
+}
 
 // Cardinality returns the self-observability cardinality tracker, or nil when
 // self-observability is disabled. The caller drives Report on the export

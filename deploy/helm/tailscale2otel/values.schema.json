@@ -347,6 +347,9 @@
                         "reverse_dns": {
                             "type": "object",
                             "properties": {
+                                "acknowledge_cardinality": {
+                                    "type": "boolean"
+                                },
                                 "cache_ttl": {
                                     "type": "string"
                                 },
@@ -539,6 +542,25 @@
                                     "type": "string"
                                 }
                             }
+                        }
+                    }
+                },
+                "prometheus": {
+                    "type": "object",
+                    "properties": {
+                        "auth": {
+                            "type": "object",
+                            "properties": {
+                                "token": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "listen": {
+                            "type": "string"
                         }
                     }
                 },
@@ -857,6 +879,9 @@
                     "type": "string"
                 },
                 "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER": {
+                    "type": "string"
+                },
+                "TS2OTEL_PROMETHEUS__AUTH__TOKEN": {
                     "type": "string"
                 },
                 "TS2OTEL_STREAMING__TOKEN": {

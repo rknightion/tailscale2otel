@@ -204,6 +204,10 @@ func Default() *Config {
 			Listen:      ":9090",
 			LandingPage: true,
 		},
+		Prometheus: PrometheusConfig{
+			Enabled: false,
+			Listen:  ":2112",
+		},
 		Profiling: ProfilingConfig{
 			Pyroscope: ProfilingPyroscope{
 				UploadRate: dur(60 * time.Second),
