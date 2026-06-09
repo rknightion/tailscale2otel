@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -238,7 +239,7 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 	}
 	errStr := ""
 	if err != nil {
-		errStr = err.Error()
+		errStr = sanitizeTransportError(err)
 	}
 	if span.IsRecording() {
 		// §0.2 tier-2 useful identifiers: the full path carries the tailnet name +
@@ -258,7 +259,7 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 		}
 		switch {
 		case err != nil:
-			span.RecordError(err)
+			span.RecordError(errors.New(errStr))
 			span.SetStatus(codes.Error, errStr)
 		case status >= 400:
 			span.SetStatus(codes.Error, http.StatusText(status))
@@ -274,6 +275,35 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 			Err:      errStr,
 		})
 	}
+}
+
+// sanitizeTransportError renders err for telemetry (span status, admin status
+// page). For OAuth token-endpoint failures it uses only the structured fields:
+// oauth2.RetrieveError.Error() embeds the RAW response body when the endpoint
+// returns a non-RFC-6749 error, and that body must not reach traces or the
+// status page.
+func sanitizeTransportError(err error) string {
+	// Unwrap url.Error wrappers first so errors.As can reach the inner type.
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		inner := sanitizeTransportError(ue.Err)
+		return ue.Op + " " + ue.URL + ": " + inner
+	}
+	var re *oauth2.RetrieveError
+	if !errors.As(err, &re) {
+		return err.Error()
+	}
+	if re.ErrorCode != "" {
+		s := "oauth2: " + re.ErrorCode
+		if re.ErrorDescription != "" {
+			s += ": " + re.ErrorDescription
+		}
+		return s
+	}
+	if re.Response != nil {
+		return "oauth2: cannot fetch token: " + re.Response.Status
+	}
+	return "oauth2: cannot fetch token"
 }
 
 // endpointLabel derives a stable, low-cardinality label from an API request

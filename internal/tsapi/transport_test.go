@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -564,6 +565,33 @@ func spanAttrMap(kvs []attribute.KeyValue) map[attribute.Key]attribute.Value {
 		m[kv.Key] = kv.Value
 	}
 	return m
+}
+
+func TestSanitizeTransportErrorStripsOAuthBody(t *testing.T) {
+	re := &oauth2.RetrieveError{
+		Response: &http.Response{Status: "500 Internal Server Error", StatusCode: 500},
+		Body:     []byte(`{"internal":"SECRET-DETAIL"}`),
+	}
+	wrapped := &url.Error{Op: "Post", URL: "https://api.tailscale.com/api/v2/oauth/token", Err: re}
+	got := sanitizeTransportError(wrapped)
+	if strings.Contains(got, "SECRET-DETAIL") {
+		t.Errorf("sanitized error still contains the response body: %q", got)
+	}
+	if !strings.Contains(got, "oauth2") {
+		t.Errorf("sanitized error lost the oauth2 context: %q", got)
+	}
+
+	// RFC 6749-compliant errors keep their structured code (no body inside).
+	re2 := &oauth2.RetrieveError{ErrorCode: "invalid_client"}
+	if got := sanitizeTransportError(re2); !strings.Contains(got, "invalid_client") {
+		t.Errorf("structured oauth error lost its code: %q", got)
+	}
+
+	// Non-OAuth errors pass through untouched.
+	plain := errors.New("dial tcp: connection refused")
+	if got := sanitizeTransportError(plain); got != plain.Error() {
+		t.Errorf("plain error mangled: %q", got)
+	}
 }
 
 func TestEndpointLabel(t *testing.T) {
