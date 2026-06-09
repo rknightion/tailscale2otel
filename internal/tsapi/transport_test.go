@@ -599,15 +599,43 @@ func TestEndpointLabel(t *testing.T) {
 		path string
 		want string
 	}{
+		// --- existing stable labels (must not change) ---
 		{"/api/v2/tailnet/example.com/devices", "devices"},
 		{"/api/v2/tailnet/example.com/users", "users"},
 		{"/api/v2/tailnet/example.com/keys", "keys"},
 		{"/api/v2/tailnet/example.com/logging/network", "logging/network"},
 		{"/api/v2/tailnet/example.com/logging/configuration", "logging/configuration"},
+		{"/api/v2/tailnet/example.com/logging/network/stream", "logging/network/stream"},
+		{"/api/v2/tailnet/example.com/logging/network/stream/status", "logging/network/stream/status"},
 		{"/api/v2/tailnet/example.com/settings", "settings"},
 		{"/api/v2/tailnet/example.com/user-invites", "user-invites"},
+		{"/api/v2/tailnet/example.com/services", "services"},
+		{"/api/v2/tailnet/example.com/posture/integrations", "posture/integrations"},
+		{"/api/v2/tailnet/example.com/dns/configuration", "dns/configuration"},
+		{"/api/v2/tailnet/example.com/webhooks", "webhooks"},
+		{"/api/v2/tailnet/example.com/contacts", "contacts"},
 		{"/api/v2/oauth/token", "oauth/token"},
 		{"/api/v2/device/dev123/attributes", "device/attributes"},
+		{"/api/v2/device/dev123/device-invites", "device/device-invites"},
+		// --- elide variable service-name segment (scanner finding 18) ---
+		// services/{name}/devices → services/devices
+		{"/api/v2/tailnet/example.com/services/svc:argocd/devices", "services/devices"},
+		// --- elide variable key-id segment ---
+		// keys/{id} → keys
+		{"/api/v2/tailnet/example.com/keys/kfoo123", "keys"},
+		// --- elide variable user-id segment ---
+		// users/{id} → users
+		{"/api/v2/tailnet/example.com/users/u987654", "users"},
+		// --- elide variable webhook endpoint-id segment (non-tailnet path) ---
+		// webhooks/{id} → webhooks
+		{"/api/v2/webhooks/ep-abc123", "webhooks"},
+		// webhooks/{id}/test → webhooks/test
+		{"/api/v2/webhooks/ep-abc123/test", "webhooks/test"},
+		// webhooks/{id}/rotate → webhooks/rotate
+		{"/api/v2/webhooks/ep-abc123/rotate", "webhooks/rotate"},
+		// --- elide variable posture integration-id segment (non-tailnet path) ---
+		// posture/integrations/{id} → posture/integrations
+		{"/api/v2/posture/integrations/integ-456", "posture/integrations"},
 	}
 	for _, c := range cases {
 		if got := endpointLabel(c.path); got != c.want {

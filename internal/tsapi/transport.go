@@ -306,18 +306,59 @@ func sanitizeTransportError(err error) string {
 	return "oauth2: cannot fetch token"
 }
 
+// collectionsWithVarSegment is the set of collection prefixes (already with the
+// tailnet and api/v2 prefixes removed) whose immediately following path segment
+// is variable and must be elided for low-cardinality labeling. Longer prefixes
+// are listed first so the scan short-circuits correctly.
+//
+// Pattern: <collection>/{var} → <collection>
+//
+//	<collection>/{var}/<leaf…> → <collection>/<leaf…>
+var collectionsWithVarSegment = []string{
+	"posture/integrations", // /api/v2/posture/integrations/{id}[/…]
+	"services",             // /api/v2/tailnet/{t}/services/{name}[/…]
+	"keys",                 // /api/v2/tailnet/{t}/keys/{id}
+	"users",                // /api/v2/tailnet/{t}/users/{id} (tsclient Users().Get)
+	"webhooks",             // /api/v2/webhooks/{id}[/…]
+}
+
+// elideVarSegment checks whether s starts with a known collection prefix
+// followed by a variable segment and elides that segment:
+//
+//	services/svc:argocd/devices → services/devices
+//	keys/kfoo123               → keys
+//
+// It returns s unchanged when no prefix matches.
+func elideVarSegment(s string) string {
+	for _, coll := range collectionsWithVarSegment {
+		rest, ok := strings.CutPrefix(s, coll+"/")
+		if !ok {
+			continue
+		}
+		// rest is now "{var}" or "{var}/leaf…"; drop the variable segment.
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			return coll + "/" + rest[i+1:]
+		}
+		return coll
+	}
+	return s
+}
+
 // endpointLabel derives a stable, low-cardinality label from an API request
 // path by stripping the "/api/v2/tailnet/{tailnet}/" prefix, e.g. "devices",
 // "logging/network" or "user-invites". Non-tailnet paths get a short stable
 // label: "oauth/token" or, for per-device endpoints, "device/{leaf}" with the
-// variable device id elided.
+// variable device id elided. Variable per-item segments in named collection
+// paths (services/{name}/…, keys/{id}, users/{id}, webhooks/{id}/…,
+// posture/integrations/{id}) are also elided to keep metric label cardinality
+// bounded.
 func endpointLabel(p string) string {
 	p = strings.Trim(p, "/")
 	p = strings.TrimPrefix(p, "api/v2/")
 	if rest, ok := strings.CutPrefix(p, "tailnet/"); ok {
 		// Drop the tailnet segment.
 		if i := strings.IndexByte(rest, '/'); i >= 0 {
-			return rest[i+1:]
+			return elideVarSegment(rest[i+1:])
 		}
 		return rest
 	}
@@ -328,7 +369,7 @@ func endpointLabel(p string) string {
 		}
 		return "device"
 	}
-	return p
+	return elideVarSegment(p)
 }
 
 // computeBackoff returns the equal-jittered sleep for the current delay and the
