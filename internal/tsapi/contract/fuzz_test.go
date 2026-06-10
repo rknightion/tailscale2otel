@@ -9,11 +9,11 @@ import (
 )
 
 // loadSpec reads and parses the vendored Tailscale OpenAPI spec.
-// The package directory is internal/tsapi/contract, so ../../.. reaches
-// the repo root where tailscale-api.json lives.
+// The package directory is internal/tsapi/contract, so ../../../spec reaches
+// the committed baseline spec/tailscale-api.json.
 func loadSpec(t *testing.T) *oas.Spec {
 	t.Helper()
-	b, err := os.ReadFile("../../../tailscale-api.json")
+	b, err := os.ReadFile("../../../spec/tailscale-api.json")
 	if err != nil {
 		t.Fatalf("read vendored spec: %v", err)
 	}

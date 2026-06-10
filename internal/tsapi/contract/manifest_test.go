@@ -28,7 +28,7 @@ func TestManifest_WellFormed(t *testing.T) {
 // the manifest — otherwise the OpenAPI-drift lane would silently cover nothing
 // for that op.
 func TestManifest_EveryIDExistsInVendoredOAS(t *testing.T) {
-	b, err := os.ReadFile("../../../tailscale-api.json")
+	b, err := os.ReadFile("../../../spec/tailscale-api.json")
 	if err != nil {
 		t.Fatalf("read vendored spec: %v", err)
 	}

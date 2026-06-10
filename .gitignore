@@ -17,9 +17,11 @@ config.smoke.yaml
 .DS_Store
 config.lowlog.yaml
 
-tailscale-api.json
-
-tailscale-api.yaml
+# Local working copies of the Tailscale OpenAPI spec (root only). The committed,
+# tracked baseline the drift CI diffs against is spec/tailscale-api.json — the
+# leading slash here keeps these patterns from also ignoring that vendored copy.
+/tailscale-api.json
+/tailscale-api.yaml
 
 docs/superpowers/
 

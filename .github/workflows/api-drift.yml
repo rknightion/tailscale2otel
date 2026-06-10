@@ -36,7 +36,7 @@ jobs:
         id: drift
         run: |
           set +e
-          go run -C tools/apidrift . -old "$PWD/tailscale-api.json" -new /tmp/live.json -format md > /tmp/drift.md
+          go run -C tools/apidrift . -old "$PWD/spec/tailscale-api.json" -new /tmp/live.json -format md > /tmp/drift.md
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Fail on tool error (any non-zero that is not the drift signal '3')

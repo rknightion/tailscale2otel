@@ -36,7 +36,7 @@ func TestParseSpec_ResolvesRefs(t *testing.T) {
 }
 
 func TestParseSpec_RealVendoredSpec(t *testing.T) {
-	b, err := os.ReadFile("../../tailscale-api.json")
+	b, err := os.ReadFile("../../spec/tailscale-api.json")
 	if err != nil {
 		t.Fatalf("read vendored spec: %v", err)
 	}

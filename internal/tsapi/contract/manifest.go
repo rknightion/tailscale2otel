@@ -2,11 +2,11 @@ package contract
 
 // Manifest is the authoritative list of Tailscale API GET operations that
 // tailscale2otel consumes. Every entry is verified against the vendored OAS
-// (tailscale-api.json at repo root) by TestManifest_EveryIDExistsInVendoredOAS
+// (spec/tailscale-api.json) by TestManifest_EveryIDExistsInVendoredOAS
 // in manifest_test.go.
 //
 // Confirmed operationId → Client method mapping (reconciled against
-// tailscale-api.yaml via grep + URL-builder inspection):
+// the vendored spec via grep + URL-builder inspection):
 //
 //	listTailnetDevices        → DevicesRich          path: /api/v2/tailnet/{t}/devices?fields=all
 //	listConfigurationAuditLogs→ ConfigAuditLogs       path: /api/v2/tailnet/{t}/logging/configuration
@@ -50,7 +50,7 @@ func mustTime(s string) time.Time {
 }
 
 // Manifest is the consumed-surface manifest. Each entry must satisfy:
-//   - ID matches an OAS operationId in tailscale-api.json
+//   - ID matches an OAS operationId in spec/tailscale-api.json
 //   - Method == "GET"
 //   - Invoke != nil
 var Manifest = []Op{
