@@ -32,6 +32,14 @@ linters:
           - bodyclose
           - errcheck
           - gosec
+      # SA5011 false-positives on the idiomatic `if x == nil { t.Fatal(...) }`
+      # guard: t.Fatal terminates the test so the later deref is unreachable, but
+      # staticcheck's package loading in CI does not always recognise t.Fatal as
+      # no-return. The code is correct; suppress the false positive in tests only.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA5011"
 
 formatters:
   enable:
