@@ -1,0 +1,6 @@
+# Custom self-hosted runner labels used by this repo's workflows, declared so
+# actionlint does not flag them as unknown. `tailscale-api` is the dedicated
+# runner (read-only Tailscale OAuth creds in its env) targeted by live-contract.yml.
+self-hosted-runner:
+  labels:
+    - tailscale-api

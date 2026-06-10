@@ -1,0 +1,65 @@
+name: Client-lib tracking
+
+on:
+  schedule:
+    - cron: "31 6 * * 1" # Mondays 06:31 UTC
+  workflow_dispatch:
+
+# No pull-requests:write and the Anthropic key is deliberately NOT provided to this
+# lane: it builds/tests against tailscale-client-go@main — i.e. it executes UNTRUSTED
+# upstream code. Withholding the secret means it never shares an environment with that
+# code (no exfil), and Claude enrichment is skipped here (no automated PR from an
+# attacker-influenced build log). The tracking issue is still filed.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  build-against:
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [main, latest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Bump client lib (ephemeral; not committed)
+        id: bump
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          set +e
+          # Fold go get + tidy into the measured group: a non-resolving @main/@latest ref
+          # must surface as a failure, not silently fall through to a build against the
+          # unchanged pinned version (which would look like a false "no drift").
+          { go get "github.com/tailscale/tailscale-client-go/v2@${REF}" \
+              && go mod tidy \
+              && go build ./... && go vet ./... && go test -race ./...; } > /tmp/cl.log 2>&1
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Build report
+        if: steps.bump.outputs.code != '0'
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          {
+            echo "## tailscale-client-go/v2 @ ${REF} breaks our build/tests"
+            echo
+            echo '```'
+            tail -c 8000 /tmp/cl.log
+            echo '```'
+          } > /tmp/cl.md
+
+      - name: Report + fail
+        if: steps.bump.outputs.code != '0'
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: clientlib-drift
+          title: "tailscale-client-go/v2 ${{ matrix.ref }} breaks our build"
+          report-path: /tmp/cl.md

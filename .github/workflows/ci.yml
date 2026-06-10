@@ -39,10 +39,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Root module + the two CI-only tool modules (each a separate go.mod).
+        # Root module + the three CI-only tool modules (each a separate go.mod).
         # gofmt/goimports are enforced here via the `formatters` block in
         # .golangci.yml, so there is no separate gofmt step.
-        module: [".", "tools/configcheck", "tools/metricscatalog"]
+        module: [".", "tools/configcheck", "tools/metricscatalog", "tools/apidrift"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 

@@ -1,0 +1,58 @@
+name: API drift
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  spec-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: tools/apidrift/go.sum
+
+      - name: Fetch live OAS, normalize to JSON
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://api.tailscale.com/api/v2?outputOpenapiSchema=true" -o /tmp/live.raw
+          if head -c1 /tmp/live.raw | grep -q '{'; then
+            cp /tmp/live.raw /tmp/live.json
+          else
+            yq -o=json '.' /tmp/live.raw > /tmp/live.json # yq is preinstalled on ubuntu-latest
+          fi
+
+      - name: Classify drift on consumed operations
+        id: drift
+        run: |
+          set +e
+          go run -C tools/apidrift . -old "$PWD/tailscale-api.json" -new /tmp/live.json -format md > /tmp/drift.md
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Fail on tool error (any non-zero that is not the drift signal '3')
+        if: steps.drift.outputs.code != '0' && steps.drift.outputs.code != '3'
+        run: |
+          echo "apidrift errored (exit ${{ steps.drift.outputs.code }}) — not treated as a clean run"
+          cat /tmp/drift.md || true
+          exit 1
+
+      - name: Report + fail on drift
+        if: steps.drift.outputs.code == '3'
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: api-drift
+          title: "Tailscale OpenAPI drift on consumed operations"
+          report-path: /tmp/drift.md
+          # Source is the Tailscale-published OpenAPI spec (data, not code execution);
+          # the key is introduced only here, on the post-classification report step.
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

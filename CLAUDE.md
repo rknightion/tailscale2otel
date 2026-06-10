@@ -117,11 +117,17 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 
 ## CI gates (a PR must pass all of these)
 
-`go vet` · `go build` · `go test -race` · `golangci-lint` (root + both tool modules) ·
-`docs/metrics.md` in sync (`metricscatalog -check`) · `govulncheck` · GoReleaser snapshot build ·
-Docker image build. The Helm workflow additionally gates: `helm lint`/`template`, `values.schema.json`
-drift, `helm-docs` drift, and `configcheck` on both `config.example.yaml` and the chart-rendered config.
-Match these locally before claiming work is done.
+`go vet` · `go build` · `go test -race` · `golangci-lint` (root + **three** tool modules:
+`configcheck`, `metricscatalog`, `apidrift`) · `docs/metrics.md` in sync (`metricscatalog -check`) ·
+`govulncheck` · GoReleaser snapshot build · Docker image build. The Helm workflow additionally gates:
+`helm lint`/`template`, `values.schema.json` drift, `helm-docs` drift, and `configcheck` on both
+`config.example.yaml` and the chart-rendered config. Match these locally before claiming work is done.
+
+> **API drift CI** (see README "API drift CI" + `internal/oas`, `internal/tsapi/contract`,
+> `tools/apidrift`): the PR-time **decode-fuzz** and `oas` classifier tests run inside `go test -race ./...`
+> and **do** gate PRs. The three *scheduled* lanes (`api-drift.yml`, `clientlib-main.yml`,
+> `live-contract.yml`) are advisory — on detection they open a deduped tracking issue + fail the
+> scheduled run, but never block PRs. The live lane auths keylessly via GitHub OIDC (no stored token).
 
 ## Config & secrets
 

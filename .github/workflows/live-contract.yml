@@ -1,0 +1,85 @@
+name: Live API contract
+
+on:
+  schedule:
+    - cron: "45 6 * * 1" # Mondays 06:45 UTC
+  workflow_dispatch:
+
+# No id-token/OIDC: there is no published OIDC->Tailscale-API action. Instead we mint
+# a short-lived token from Tailscale's documented OAuth endpoint using a READ-ONLY
+# (all:read) OAuth client whose credentials live in the environment of a DEDICATED
+# self-hosted runner (label `tailscale-api`) — NOT in GitHub secrets, and NOT in the
+# shared m7kni runner pool (whose env any private-repo job could read). This keeps the
+# secret off GitHub and scoped to this one purpose. The minted token is masked and
+# lives only for this run. The job self-skips if the creds are not present.
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  live:
+    # Dedicated runner that holds the read-only TS_OAUTH_CLIENT_ID/SECRET in its env.
+    # NOT the shared pool (which is labelled just self-hosted,linux,x64,docker).
+    runs-on: [self-hosted, tailscale-api]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Mint short-lived read-only API token (OAuth creds from runner env; not in GitHub)
+        id: tsauth
+        # TS_OAUTH_CLIENT_ID / TS_OAUTH_CLIENT_SECRET are read directly from the
+        # self-hosted runner's process environment (configured once on the runner),
+        # NOT from GitHub secrets — referenced as shell vars, not ${{ env.* }}.
+        run: |
+          set -euo pipefail
+          if [ -z "${TS_OAUTH_CLIENT_ID:-}" ] || [ -z "${TS_OAUTH_CLIENT_SECRET:-}" ]; then
+            echo "TS_OAUTH_CLIENT_ID/TS_OAUTH_CLIENT_SECRET not set on the runner — cannot mint a token." >&2
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          token=$(curl -fsSL -u "${TS_OAUTH_CLIENT_ID}:${TS_OAUTH_CLIENT_SECRET}" \
+            -d 'grant_type=client_credentials' \
+            'https://api.tailscale.com/api/v2/oauth/token' | jq -r '.access_token')
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "OAuth token exchange returned no access_token." >&2
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "TS_API_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run live contract
+        id: live
+        if: steps.tsauth.outputs.configured == 'true'
+        env:
+          TS_TAILNET: ${{ vars.TS_TAILNET }}
+        run: |
+          set +e
+          go test -tags live -run TestLiveContract ./internal/tsapi/contract/live/ -v > /tmp/live.log 2>&1
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Build report
+        if: steps.live.outputs.code != '0' && steps.live.outputs.code != ''
+        run: |
+          {
+            echo "## Live Tailscale API contract failures"
+            echo
+            echo '```'
+            tail -c 8000 /tmp/live.log
+            echo '```'
+          } > /tmp/live.md
+
+      - name: Report + fail
+        if: steps.live.outputs.code != '0' && steps.live.outputs.code != ''
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: live-contract
+          title: "Live Tailscale API contract failing"
+          report-path: /tmp/live.md
+          # This lane executes only our own code (read-only API calls), so enrichment is safe.
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

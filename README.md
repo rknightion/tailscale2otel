@@ -285,6 +285,48 @@ The codebase is organized as small, single-purpose packages under `internal/`: `
 `tsapi` (Tailscale client + log doers), `flowlog`/`audit` (record types + shared processors),
 `enrich` (device cache), `config`, and the `stream`/`webhook` receivers.
 
+## API drift CI
+
+Tailscale's API and its OpenAPI spec evolve continuously ("may change or break without notice"),
+which has broken our decoders before. Four lanes guard against it:
+
+| Lane | When | What it checks |
+| --- | --- | --- |
+| **Schema-driven decode fuzz** | every PR (`go test ./...`) | synthesizes payloads from the vendored OpenAPI spec + hand-written wire quirks (numeric `proto`, polymorphic audit `old`/`new`, `date-time`) and runs them through the real `tsapi` decoders |
+| **OpenAPI drift** (`api-drift.yml`) | weekly + on demand | diffs the live spec (`?outputOpenapiSchema=true`) against the vendored copy, scoped to the operations we actually consume, and classifies breaking/info changes |
+| **Client-lib tracking** (`clientlib-main.yml`) | weekly + on demand | builds + tests against `tailscale-client-go/v2@main` and `@latest` (ephemeral; never committed) |
+| **Live contract** (`live-contract.yml`) | weekly + on demand | hits the real API read-only and asserts every consumed GET still decodes |
+
+The consumed surface lives in `internal/tsapi/contract` (manifest + decoder harness); the spec parser
+and drift classifier are in `internal/oas`; `tools/apidrift` is the drift CLI. When a scheduled lane
+detects a problem it opens/updates a deduplicated tracking issue, optionally enriches it with a Claude
+fix (and draft PR), and fails the run. Scheduled lanes are advisory — only the PR-time fuzz lane gates PRs.
+
+### One-time setup
+
+```sh
+gh label create api-drift -c FBCA04
+gh label create clientlib-drift -c FBCA04
+gh label create live-contract -c FBCA04
+```
+
+The live lane stores **no Tailscale key in GitHub**. It runs on a **dedicated self-hosted runner**
+(label `tailscale-api`, distinct from the shared pool) and mints a short-lived token from Tailscale's
+OAuth endpoint (`POST /api/v2/oauth/token`, `grant_type=client_credentials`) using a **read-only
+(`all:read`) OAuth client** whose `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET` live in **that
+runner's environment** — not in GitHub, and not in the shared runner pool (whose env any private-repo
+job could read). One-time setup:
+
+1. Create a read-only (`all:read`) OAuth client in the Tailscale admin console.
+2. Stand up a dedicated runner service carrying its id/secret in the env and the `tailscale-api` label
+   (a scoped, deliberate exception to the runner box's "no secrets on the box" rule — minimal blast
+   radius since the client is read-only).
+3. Set the repo **Variable** `TS_TAILNET` (the tailnet name is not a secret).
+
+The lane self-skips cleanly if the runner env vars are absent. Optionally set the `ANTHROPIC_API_KEY`
+**secret** to enable Claude enrichment on the spec-drift and live lanes (all lanes degrade gracefully
+without it; the client-lib lane never receives the key by design, since it builds untrusted upstream code).
+
 ## License
 
 TBD.
