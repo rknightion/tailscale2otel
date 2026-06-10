@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.5.0](https://github.com/rknightion/tailscale2otel/compare/v0.4.0...v0.5.0) (2026-06-10)
+
+
+### Features
+
+* **app:** auto-resolve tailnet name from the "-" placeholder ([f660faa](https://github.com/rknightion/tailscale2otel/commit/f660faa0292db3f60a5fa3c9055616d163a85599))
+* **ci:** adversarial Tailscale API drift detection suite ([e1e5e20](https://github.com/rknightion/tailscale2otel/commit/e1e5e200d1e7c94e068c63e5a813d4f0c8998573))
+* **metrics:** add opt-in Prometheus /metrics pull endpoint ([e63e4b0](https://github.com/rknightion/tailscale2otel/commit/e63e4b0473485202bbb90019948ca5777c77d63f))
+* **telemetry:** emit tailnet/provider as signal attributes, off the Resource ([6cfbb52](https://github.com/rknightion/tailscale2otel/commit/6cfbb5272f8ac2b11b58444af0453f395dc83cf4))
+
+
+### Bug Fixes
+
+* **app:** hostname-free instance ID under pii_filter; validate and clamp OTLP metric interval ([81accad](https://github.com/rknightion/tailscale2otel/commit/81accad19f77c727d285c1814c70d96addf506d5))
+* **audit:** bound audit-change metric labels; keep identifiers out of ACL/key log bodies ([21cd0f9](https://github.com/rknightion/tailscale2otel/commit/21cd0f9be73292fc51a131e03d3a9df282b4522c))
+* **ci:** vendor OpenAPI spec to committed spec/ baseline (drift lanes need it in CI) ([4f5f665](https://github.com/rknightion/tailscale2otel/commit/4f5f6656437f2523a1cef3d23ef3ddae9bbeee06))
+* **config:** redact Secret under JSON/YAML marshaling + permissions/cardinality advisories ([82d620d](https://github.com/rknightion/tailscale2otel/commit/82d620df25a2f55c9eac59a9c2723a0f463885d9))
+* **grafana:** query tailnet/provider as direct labels, drop target_info joins ([78b80a0](https://github.com/rknightion/tailscale2otel/commit/78b80a0ba9315bbdda2940599aceeb5590ac09cd))
+* **helm:** never render empty secret keys; serve multi-tailnet config from a Secret (chart 0.7.3) ([bffe3f1](https://github.com/rknightion/tailscale2otel/commit/bffe3f170b1cebde2fb1ad919dd7bda47dcd042b))
+* **http:** bound request/response lifetimes on the admin and metrics servers ([f5a3340](https://github.com/rknightion/tailscale2otel/commit/f5a334050718fa2fa2e2cfaa5e5735a16e7584e4))
+* **lint:** suppress SA5011 false-positive on t.Fatal nil-guards in tests ([15a3096](https://github.com/rknightion/tailscale2otel/commit/15a3096daf57e61563a560e9dd79edfd5325f197))
+* **nodemetrics:** restrict discovery to Tailscale address ranges and cap delta baselines ([cc990fb](https://github.com/rknightion/tailscale2otel/commit/cc990fb6ab62f2b70b0a49f245162da6719a5ecf))
+* **telemetry:** respect pii_filter.tailnet_name on universal const attrs; cap collision diagnostics ([79a35a7](https://github.com/rknightion/tailscale2otel/commit/79a35a71becef7a09c4d187fcf9ea06e55e312c3))
+* **tsapi:** elide variable path segments from API endpoint labels ([91ef35a](https://github.com/rknightion/tailscale2otel/commit/91ef35a9a95d6526ee0894e7240753acd38a39fa))
+* **tsapi:** keep OAuth token-endpoint response bodies out of traces and status ([d4276a5](https://github.com/rknightion/tailscale2otel/commit/d4276a5bbbdb169266042d928ac97adb3300f4e0))
+
+
+### Performance
+
+* **telemetry:** drop exemplar reservoirs for synchronous non-histogram instruments ([c31d7ba](https://github.com/rknightion/tailscale2otel/commit/c31d7bae4e4c160bf966a4b27f0898cd1c61d80c))
+
 ## [0.4.0](https://github.com/rknightion/tailscale2otel/compare/v0.3.0...v0.4.0) (2026-06-08)
 
 
