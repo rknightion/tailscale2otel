@@ -93,3 +93,21 @@ jobs:
 
       - name: Validate example + rendered config
         run: /tmp/configcheck config.example.yaml /tmp/rendered-config.yaml
+
+  # Single required status check for this workflow. Branch protection on `main` requires this
+  # (alongside ci.yml's `ci-success`), so helm legs can be added or renamed without re-touching
+  # protection. The pull_request trigger above has no path filter on purpose, so this always reports
+  # on every PR. Fails if any leg failed or was cancelled. Renovate's automerge waits for it to go green.
+  helm-success:
+    name: helm-success
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint-template, configcheck]
+    steps:
+      - name: Fail if any required job did not pass
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "A required job failed or was cancelled: ${{ join(needs.*.result, ', ') }}"
+          exit 1
+      - name: All required jobs passed
+        run: echo "helm-success — ${{ join(needs.*.result, ', ') }}"

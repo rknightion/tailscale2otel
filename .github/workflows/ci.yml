@@ -169,3 +169,20 @@ jobs:
           cache-to: type=gha,mode=max,scope=ci-smoke
           build-args: |
             VERSION=ci-${{ github.sha }}
+
+  # Single required status check for this workflow. Branch protection on `main` requires this
+  # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
+  # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.
+  ci-success:
+    name: ci-success
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [build-test, lint, docs-catalog, govulncheck, goreleaser-snapshot, docker-build]
+    steps:
+      - name: Fail if any required job did not pass
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "A required job failed or was cancelled: ${{ join(needs.*.result, ', ') }}"
+          exit 1
+      - name: All required jobs passed
+        run: echo "ci-success — ${{ join(needs.*.result, ', ') }}"
