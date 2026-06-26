@@ -9,26 +9,67 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: anthropics/claude-code-action@b47fd721da662d48c5680e154ad16a73ed74d2e0 # v1.0.93
+      - name: Triage issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            REPO: ${{ github.repository }}
-            ISSUE NUMBER: ${{ github.event.issue.number }}
-            TITLE: ${{ github.event.issue.title }}
-            BODY: ${{ github.event.issue.body }}
-            AUTHOR: ${{ github.event.issue.user.login }}
+          script: |
+            const issue = context.payload.issue;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issueNumber = issue.number;
+            const title = issue.title || '';
+            const body = issue.body || '';
+            const text = `${title}\n${body}`.toLowerCase();
 
-            Analyze this new issue and:
-            1. Determine if it's a bug report, feature request, or question
-            2. Assess priority (critical, high, medium, low)
-            3. Suggest appropriate labels
-            4. Check if it duplicates existing issues
+            const labelCandidates = new Set();
 
-            Based on your analysis, add the appropriate labels using:
-            `gh issue edit [number] --add-label "label1,label2"`
+            if (/\b(feature|enhancement|request|proposal|support for)\b/.test(text)) {
+              labelCandidates.add('enhancement');
+            } else if (/\b(bug|error|failure|fail|panic|crash|broken|incorrect|regression)\b/.test(text)) {
+              labelCandidates.add('bug');
+            } else {
+              labelCandidates.add('question');
+            }
 
-            If it appears to be a duplicate, post a comment mentioning the original issue.
+            if (/\b(critical|security|vulnerability|data loss|credential|secret|token)\b/.test(text)) {
+              labelCandidates.add('priority: critical');
+            } else if (/\b(high|urgent|blocker|production|prod)\b/.test(text)) {
+              labelCandidates.add('priority: high');
+            } else if (/\b(low|minor|trivial|nice to have)\b/.test(text)) {
+              labelCandidates.add('priority: low');
+            } else {
+              labelCandidates.add('priority: medium');
+            }
 
-          claude_args: |
-            --model sonnet --allowedTools "Bash(gh issue:*),Bash(gh search:*)"
+            const { data: labels } = await github.rest.issues.listLabelsForRepo({
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const availableLabels = new Set(labels.map((label) => label.name));
+            const labelsToAdd = [...labelCandidates].filter((label) => availableLabels.has(label));
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                labels: labelsToAdd,
+              });
+            }
+
+            const duplicateQuery = `${title} repo:${owner}/${repo} type:issue in:title -number:${issueNumber}`;
+            const { data: searchResult } = await github.rest.search.issuesAndPullRequests({
+              q: duplicateQuery,
+              per_page: 1,
+            });
+
+            if (searchResult.items.length > 0) {
+              const duplicate = searchResult.items[0];
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body: `This may duplicate #${duplicate.number}: ${duplicate.html_url}`,
+              });
+            }
