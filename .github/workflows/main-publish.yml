@@ -51,7 +51,7 @@ jobs:
       packages: write # push image + attestations to ghcr.io
       id-token: write # keyless cosign signing (attestations + build cache) via OIDC
     # Pinned to the latest full tag; docker/github-builder also has a moving `v1`.
-    uses: docker/github-builder/.github/workflows/build.yml@70ac3fc303efa83d2b94905e6ab78bb83cbdc2ae # v1.11.0
+    uses: docker/github-builder/.github/workflows/build.yml@5f637c833aa76bc99372a1dc9a6f8bcd8056fb85 # v1.12.0
     with:
       output: image
       push: true
@@ -135,7 +135,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
       # cosign signs by pulling the pushed chart, so it needs ghcr.io creds via the
       # Docker keychain (~/.docker/config.json). `helm registry login` below only
