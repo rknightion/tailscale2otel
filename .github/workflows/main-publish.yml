@@ -132,8 +132,10 @@ jobs:
       id-token: write # keyless cosign signing via OIDC
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
-      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
+      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
 
       # cosign signs by pulling the pushed chart, so it needs ghcr.io creds via the
       # Docker keychain (~/.docker/config.json). `helm registry login` below only
@@ -162,7 +164,7 @@ jobs:
           # with 0").
           snapver="${chartver}-main.g${SHORTSHA}"  # SemVer prerelease, e.g. 0.2.0-main.gabc1234
           echo "${{ secrets.GITHUB_TOKEN }}" \
-            | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+            | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
           # appVersion pins the chart to the snapshot image tag we just pushed.
           helm package "$CHART_DIR" \
             --version "$snapver" \

@@ -12,10 +12,12 @@ on:
 # attacker-influenced build log). The tracking issue is still filed.
 permissions:
   contents: read
-  issues: write
 
 jobs:
   build-against:
+    permissions:
+      contents: read
+      issues: write # report-drift creates/comments on the tracking issue
     strategy:
       fail-fast: false
       matrix:
@@ -23,8 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
@@ -71,8 +75,13 @@ jobs:
   resolve:
     needs: build-against
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # resolve-drift comments on and closes the tracking issue
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
       - name: Resolve tracking issue on clean run
         uses: ./.github/actions/resolve-drift
         with:
