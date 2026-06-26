@@ -63,3 +63,17 @@ jobs:
           lane-label: clientlib-drift
           title: "tailscale-client-go/v2 ${{ matrix.ref }} breaks our build"
           report-path: /tmp/cl.md
+
+  # Separate aggregation job: only close the tracking issue when EVERY matrix leg
+  # (main + latest) is green. Doing it per-leg would let one ref close an issue the
+  # other ref legitimately just (re)opened. `needs` + default `if: success()` runs
+  # this only if all build-against legs succeeded.
+  resolve:
+    needs: build-against
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Resolve tracking issue on clean run
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: clientlib-drift

@@ -56,3 +56,9 @@ jobs:
           # Source is the Tailscale-published OpenAPI spec (data, not code execution);
           # the key is introduced only here, on the post-classification report step.
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Resolve tracking issue on clean run
+        if: steps.drift.outputs.code == '0'
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: api-drift

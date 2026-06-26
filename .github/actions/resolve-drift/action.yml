@@ -1,0 +1,26 @@
+name: resolve-drift
+description: >
+  Close the deduped tracking issue for a drift lane after a clean run. The mirror image
+  of report-drift: lanes upsert an issue on failure, so without this a fixed break leaves
+  the issue open forever. Wire this into a lane's SUCCESS path so the issue self-heals on
+  the next green run. A no-op when no open issue carries the label.
+inputs:
+  lane-label:
+    required: true
+    description: "Issue marker label (api-drift|clientlib-drift|live-contract)"
+runs:
+  using: composite
+  steps:
+    - name: Close tracking issue if open
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+        # Close ALL open issues with this label (normally 0 or 1) so a clean run never
+        # leaves a stale tracking issue behind.
+        for n in $(gh issue list --label "${{ inputs.lane-label }}" --state open --json number -q '.[].number'); do
+          gh issue comment "$n" --body "Lane \`${{ inputs.lane-label }}\` is green again — closing automatically. See ${RUN_URL}."
+          gh issue close "$n" --reason completed
+        done

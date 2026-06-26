@@ -83,3 +83,11 @@ jobs:
           report-path: /tmp/live.md
           # This lane executes only our own code (read-only API calls), so enrichment is safe.
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Resolve tracking issue on clean run
+        # Only when the contract actually ran and passed — never on the creds-absent self-skip
+        # (configured=false leaves live.outputs.code empty), which proves nothing.
+        if: steps.live.outputs.code == '0'
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: live-contract
