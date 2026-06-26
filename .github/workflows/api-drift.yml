@@ -58,8 +58,11 @@ jobs:
           title: "Tailscale OpenAPI drift on consumed operations"
           report-path: /tmp/drift.md
           # Source is the Tailscale-published OpenAPI spec (data, not code execution);
-          # the key is introduced only here, on the post-classification report step.
+          # the credential is introduced only here, on the post-classification report step.
+          # Provide EITHER: ANTHROPIC_API_KEY (pay-per-use) or CLAUDE_CODE_OAUTH_TOKEN
+          # (Claude Pro/Max subscription, via `claude setup-token`).
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       - name: Resolve tracking issue on clean run
         if: steps.drift.outputs.code == '0'
