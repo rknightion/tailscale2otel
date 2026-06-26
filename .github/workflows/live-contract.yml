@@ -84,7 +84,9 @@ jobs:
           title: "Live Tailscale API contract failing"
           report-path: /tmp/live.md
           # This lane executes only our own code (read-only API calls), so enrichment is safe.
+          # Provide EITHER ANTHROPIC_API_KEY (pay-per-use) or CLAUDE_CODE_OAUTH_TOKEN (Max sub).
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       - name: Resolve tracking issue on clean run
         # Only when the contract actually ran and passed — never on the creds-absent self-skip

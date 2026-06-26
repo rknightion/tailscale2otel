@@ -17,7 +17,14 @@ inputs:
       Anthropic API key. Passed explicitly (not via job env) so lanes that execute
       UNTRUSTED upstream code (e.g. clientlib-main, which builds tailscale-client-go@main)
       can withhold it — the secret then never shares an environment with that code, and
-      Claude enrichment is skipped there. Empty ⇒ enrichment skipped.
+      Claude enrichment is skipped there. Empty ⇒ use the OAuth token, or skip if both empty.
+  claude-code-oauth-token:
+    required: false
+    default: ""
+    description: >
+      Claude Pro/Max OAuth token (generate locally with `claude setup-token`). Alternative
+      to anthropic-api-key — runs enrichment against a Claude subscription instead of
+      pay-per-use API credits. Same explicit-passing boundary; withhold on untrusted lanes.
 runs:
   using: composite
   steps:
@@ -25,19 +32,23 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        INPUTS_LANE_LABEL: ${{ inputs.lane-label }}
+        INPUTS_REPORT_PATH: ${{ inputs.report-path }}
+        INPUTS_TITLE: ${{ inputs.title }}
       run: |
         set -euo pipefail
-        existing=$(gh issue list --label "${{ inputs.lane-label }}" --state open --json number -q '.[0].number // empty')
+        existing=$(gh issue list --label "${INPUTS_LANE_LABEL}" --state open --json number -q '.[0].number // empty')
         if [ -n "$existing" ]; then
-          gh issue comment "$existing" --body-file "${{ inputs.report-path }}"
+          gh issue comment "$existing" --body-file "${INPUTS_REPORT_PATH}"
         else
-          gh issue create --label "${{ inputs.lane-label }}" --title "${{ inputs.title }}" --body-file "${{ inputs.report-path }}"
+          gh issue create --label "${INPUTS_LANE_LABEL}" --title "${INPUTS_TITLE}" --body-file "${INPUTS_REPORT_PATH}"
         fi
     - name: Claude enrichment
-      if: ${{ inputs.anthropic-api-key != '' }}
+      if: ${{ inputs.anthropic-api-key != '' || inputs.claude-code-oauth-token != '' }}
       uses: anthropics/claude-code-action@eee73e2ae5399c561de4ff038aa7b36a7aa991a7 # v1.0.143
       with:
         anthropic_api_key: ${{ inputs.anthropic-api-key }}
+        claude_code_oauth_token: ${{ inputs.claude-code-oauth-token }}
         prompt: |
           A scheduled CI lane detected Tailscale API drift.
 
@@ -54,4 +65,6 @@ runs:
              secrets, or files outside internal/tsapi and spec/tailscale-api.json.
     - name: Fail the run
       shell: bash
-      run: 'echo "Drift detected — see issue labelled ${{ inputs.lane-label }}" >&2; exit 1'
+      run: 'echo "Drift detected — see issue labelled ${INPUTS_LANE_LABEL}" >&2; exit 1'
+      env:
+        INPUTS_LANE_LABEL: ${{ inputs.lane-label }}

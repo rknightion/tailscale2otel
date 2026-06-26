@@ -16,11 +16,12 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        INPUTS_LANE_LABEL: ${{ inputs.lane-label }}
       run: |
         set -euo pipefail
         # Close ALL open issues with this label (normally 0 or 1) so a clean run never
         # leaves a stale tracking issue behind.
-        for n in $(gh issue list --label "${{ inputs.lane-label }}" --state open --json number -q '.[].number'); do
-          gh issue comment "$n" --body "Lane \`${{ inputs.lane-label }}\` is green again — closing automatically. See ${RUN_URL}."
+        for n in $(gh issue list --label "${INPUTS_LANE_LABEL}" --state open --json number -q '.[].number'); do
+          gh issue comment "$n" --body "Lane \`${INPUTS_LANE_LABEL}\` is green again — closing automatically. See ${RUN_URL}."
           gh issue close "$n" --reason completed
         done
