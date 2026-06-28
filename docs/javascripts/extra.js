@@ -1,4 +1,5 @@
 /* Custom JavaScript for tailscale2otel documentation */
+/* global gtag, mermaid */ // external globals: Google Analytics (gtag.js) and Mermaid.js, loaded by the docs theme
 
 // Enhanced search functionality
 document.addEventListener('DOMContentLoaded', function() {
