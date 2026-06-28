@@ -1,48 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "vulnerabilityAlerts": {
-    "automerge": true
-  },
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-  "lockFileMaintenance": {
-    "enabled": true,
-    "automerge": true
-  },
-  "automergeType": "pr",
-  "platformAutomerge": true,
-  "internalChecksAsSuccess": true,
   "packageRules": [
     {
-      "description": "Never automerge release-please PRs - manual review required",
-      "matchFileNames": [".release-please-*.json"],
-      "automerge": false
-    },
-    {
-      "description": "Automerge GitHub Actions",
-      "matchManagers": ["github-actions"],
-      "labels": ["dep:gha"],
-      "automerge": true
-    },
-    {
-      "description": "Automerge patch and minor updates for low risk",
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true,
-      "labels": ["dep:low-risk"]
-    },
-    {
-      "description": "Automerge pin updates",
-      "matchUpdateTypes": ["pin"],
-      "automerge": true,
-      "labels": ["dep:low-risk"]
-    },
-    {
-      "description": "Automerge digest updates (Docker, etc)",
-      "matchUpdateTypes": ["digest"],
-      "automerge": true,
-      "labels": ["dep:low-risk"]
-    },
-    {
-      "description": "OpenTelemetry: update core (v1.x) and the 0.x log modules together in ONE PR and never automerge - a core bump without the log modules (or vice-versa) breaks the build. This rule is last so it overrides the broad patch/minor automerge above for these packages.",
+      "description": "OpenTelemetry: update core (v1.x) and the 0.x log modules together in ONE PR and never automerge - a core bump without the log modules (or vice-versa) breaks the build. Repo rules run after the fleet-wide automerge in config.js, so this overrides it for these packages.",
       "matchManagers": ["gomod"],
       "matchPackageNames": ["go.opentelemetry.io/otel{,/**}"],
       "groupName": "OpenTelemetry",
@@ -56,7 +16,7 @@
       "automerge": false
     },
     {
-      "description": "Ignore the self-module reference: the tools/* modules `require github.com/rknightion/tailscale2otel` but `replace ../..` makes Go always build from local code, so the require version is cosmetic. Bumping it on every release (see PR #19) is pure noise. Last rule so enabled:false is never re-enabled by the broad automerge rules above.",
+      "description": "Ignore the self-module reference: the tools/* modules require github.com/rknightion/tailscale2otel but replace ../.. makes Go always build from local code, so the require version is cosmetic.",
       "matchManagers": ["gomod"],
       "matchPackageNames": ["github.com/rknightion/tailscale2otel"],
       "enabled": false
