@@ -18,10 +18,25 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Create the default checkpoint directory so the distroless runtime image has it
 # pre-seeded with the correct ownership (uid/gid 65532 = nonroot).
 RUN mkdir -p /var/lib/tailscale2otel
+# Third-party notices (LICENSE + NOTICE texts of the linked modules) baked into /licenses/
+# in the runtime stage below, so license compliance travels with the image. Pinned go-licenses;
+# see scripts/notices.sh. Network is already required by `go mod download` above (no new
+# constraint), and the module cache populated there lets go-licenses read each LICENSE/NOTICE.
+# alpine ships no bash, so add it for the script (builder stage is discarded — no runtime cost).
+ARG GO_LICENSES_VERSION=v1.6.0
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    apk add --no-cache bash && \
+    go install github.com/google/go-licenses@${GO_LICENSES_VERSION} && \
+    GO_LICENSES=go-licenses OUT=/src/THIRD_PARTY_NOTICES.md bash scripts/notices.sh
 
 # ---- runtime ----
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240
 COPY --from=build /out/tailscale2otel /usr/local/bin/tailscale2otel
+# License compliance travels with the image (OCI /licenses convention): the repo's Apache-2.0
+# text + the generated third-party notices for the linked modules.
+COPY --from=build /src/LICENSE /licenses/LICENSE
+COPY --from=build /src/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 # Pre-seeded checkpoint directory (owned by nonroot 65532:65532). Checkpoints
 # persist here across container restarts when no external volume is mounted
 # (ephemeral — lost on container recreation). Mount a named volume or host

@@ -12,6 +12,13 @@ FROM gcr.io/distroless/static-debian13:nonroot@sha256:963fa6c544fe5ce420f1f54fb8
 ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/tailscale2otel /usr/local/bin/tailscale2otel
 COPY config.example.yaml /etc/tailscale2otel/config.yaml
+# License compliance travels with the image (OCI /licenses convention). LICENSE and the
+# generated THIRD_PARTY_NOTICES.md are supplied as GoReleaser `extra_files` (the notices file
+# is produced by the `before` hook in .goreleaser.yaml); like config.example.yaml they land at
+# the build-context root, so these COPYs are NOT platform-qualified.
+COPY LICENSE /licenses/LICENSE
+COPY THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 USER nonroot:nonroot
 # Streaming (HEC) and webhook receivers, if enabled in config.
 EXPOSE 8088 8089

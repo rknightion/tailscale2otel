@@ -2,6 +2,9 @@
 /bin/
 /dist/
 *.out
+# Third-party notices are a RELEASE ARTIFACT (regenerated on every dependency bump by
+# scripts/notices.sh, baked into the image, attached to the GitHub Release) — never committed.
+/THIRD_PARTY_NOTICES.md
 .smoke.yaml
 /checkpoints.json
 

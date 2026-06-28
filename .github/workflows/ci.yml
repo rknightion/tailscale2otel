@@ -170,6 +170,39 @@ jobs:
           build-args: |
             VERSION=ci-${{ github.sha }}
 
+  # Test coverage -> Codacy. Deliberately NOT in ci-success's `needs`: coverage reporting is
+  # informational, so a Codacy outage — or a fork PR with no secret — must never block merges or
+  # Renovate automerge. Builds a coverage profile over the root module and uploads it via the
+  # pinned official reporter action (no curl|bash, which zizmor flags as a remote-script hazard).
+  coverage:
+    name: coverage (Codacy)
+    runs-on: ubuntu-latest
+    env:
+      # Account-level Codacy token; the reporter action derives provider/owner/repo from the GitHub
+      # context, so no other Codacy env vars are needed.
+      CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          # zizmor: ignore[cache-poisoning] - test-only job, does not publish artifacts
+          cache: true
+
+      - name: go test (coverage profile)
+        run: go test -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage to Codacy
+        if: ${{ env.CODACY_API_TOKEN != '' }}   # skip on fork PRs (secret unavailable)
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        with:
+          api-token: ${{ env.CODACY_API_TOKEN }}
+          coverage-reports: coverage.out
+          force-coverage-parser: go
+
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
   # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.
