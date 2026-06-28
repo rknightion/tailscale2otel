@@ -1,0 +1,28 @@
+# Snyk (https://snyk.io) policy file.
+#
+# Reviewed 2026-06-28: every Snyk Code (SAST) finding in the paths below was
+# assessed and confirmed to be a false positive — none is a real vulnerability.
+# They are excluded from Snyk Code analysis so they stop recurring. None of
+# these files is part of the shipped service binary (cmd/tailscale2otel).
+#
+# 1. *_test.go "Use of Hardcoded Passwords" (go/HardcodedPassword/test):
+#    dummy literals used as bait to prove the secret-redaction logic works.
+#    Snyk tags the rule itself `/test`; they must stay literals for the tests
+#    to be meaningful.
+# 2. CLI build/generator tools "Path Traversal" (go/PT, python/PT): the file
+#    path flows from a trusted developer/CI argument (flag.String / argparse
+#    --out|--raw|--old|--new). Not network-reachable, never runs in the service.
+version: v1.25.0
+exclude:
+  code:
+    # Hardcoded-password test bait (secret-redaction tests).
+    - internal/app/admin_status_test.go
+    - internal/app/profiling_test.go
+    - internal/config/secret_test.go
+    - internal/config/validate_test.go
+    # Local build/generator tools — trusted CLI path arguments.
+    - internal/portservice/gen.go
+    - tools/apidrift/main.go
+    - tools/metricscatalog/main.go
+    - deploy/alerts/gen/build_rules.py
+    - deploy/grafana/gen/build.py
