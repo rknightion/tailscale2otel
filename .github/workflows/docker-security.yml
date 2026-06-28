@@ -11,4 +11,4 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: rknightion/.github/.github/workflows/docker-security.yml@main
+    uses: rknightion/.github/.github/workflows/docker-security.yml@8629ccbdd3dc4eed776ca42e1896ab37f94d88d6 # main
