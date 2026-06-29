@@ -11,12 +11,13 @@ name: Release
 # trigger a SECOND workflow (events raised by GITHUB_TOKEN don't chain, which is
 # the usual release-please footgun). No PAT / GitHub App is required.
 #
-# GoReleaser builds the cross-compiled binaries + the multi-arch GHCR image and
-# UPLOADS the binaries/checksums/SBOMs to the release release-please already
-# created. It does NOT overwrite the release body — GoReleaser preserves an
-# existing release body unless `release.mode: replace` is set, so release-please
-# stays the single owner of the changelog/notes. Snapshot ("edge") images are
-# published separately by main-publish.yml on every push to main.
+# Images + the Helm chart are published by the `publish`/`edge` jobs via the shared
+# rknightion container-publish reusable (native matrix, cosign, provenance, SBOM,
+# Trivy). GoReleaser (`--skip=docker`) now ONLY builds the cross-compiled binaries +
+# checksums + archive SBOMs and uploads them to the release release-please created;
+# it does NOT overwrite the release body, so release-please stays the single owner of
+# the changelog/notes. Snapshot ("edge") :main images + charts come from the `edge`
+# job on every non-release push to main (replaces the old main-publish.yml).
 on:
   push:
     branches: [main]
@@ -51,8 +52,41 @@ jobs:
           # PAT (not GITHUB_TOKEN): bot-authored release PRs need a non-default-token author for CI to run without manual approval
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
+  # Build + push the image + Helm chart for the freshly-created tag via the shared
+  # rknightion container-publish reusable. Same run as the merge that created the release.
+  publish:
+    name: publish (image + helm)
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write        # attach SBOMs + third-party notices to the GitHub Release
+      packages: write
+      id-token: write        # cosign keyless signing + provenance attestation
+      attestations: write
+      security-events: write # Trivy SARIF upload
+    with:
+      release_tag: ${{ needs.release-please.outputs.tag_name }}
+
+  # Edge build on every non-release push to main: publishes the :main multi-arch image
+  # + a main-snapshot Helm chart via the shared reusable (replaces main-publish.yml).
+  # release_created gates this vs publish, so they never both run on one push.
+  edge:
+    name: edge (:main image + helm)
+    needs: release-please
+    if: needs.release-please.outputs.release_created != 'true'
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      security-events: write
+    with:
+      release_tag: ""
+
   goreleaser:
-    name: goreleaser (binaries + multi-arch image)
+    name: goreleaser (binaries only)
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
@@ -106,54 +140,18 @@ jobs:
         with:
           distribution: goreleaser
           version: "v2.16.0"
-          args: release --clean
+          # --skip=docker: images are now published by the publish job above (shared reusable).
+          # docker_signs in .goreleaser.yaml is a no-op with no docker artifacts; can be
+          # removed from .goreleaser.yaml once the migration is confirmed stable.
+          args: release --clean --skip=docker
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Attach the third-party notices + SBOMs (SPDX 2.3 + CycloneDX 1.6, both JSON) to the GitHub
-      # Release. These are release artifacts (regenerated per build), not committed files. The
-      # binary is the SBOM scan target (it embeds the exact linked module set). The job already has
-      # `contents: write`, used by `gh release upload`.
-      - name: Attach SBOMs + third-party notices to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          go build -trimpath -ldflags "-s -w" -o bin/tailscale2otel ./cmd/tailscale2otel
-          bash scripts/sbom.sh
-          gh release upload "$TAG" \
-            THIRD_PARTY_NOTICES.md \
-            dist/sbom/tailscale2otel.spdx.json \
-            dist/sbom/tailscale2otel.cdx.json \
-            --clobber
+      # NB: image SPDX+CycloneDX SBOMs are generated + attached by the shared reusable
+      # (publish job), and THIRD_PARTY_NOTICES.md by publish.yml's notices job — so the old
+      # binary-level SBOM upload here was removed (it clobbered the reusable's same-named
+      # assets in a parallel-job race). GoReleaser still emits per-archive SBOMs via its
+      # `sboms:` stanza, and the binaries bake THIRD_PARTY_NOTICES.md via extra_files.
 
-  helm-chart:
-    name: publish Helm chart (OCI)
-    needs: [release-please, goreleaser]
-    # Publish after the image exists, since the chart defaults its image tag to
-    # the chart appVersion we set below.
-    if: needs.release-please.outputs.release_created == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write # push chart to ghcr.io
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
-          persist-credentials: false
-
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-
-      - name: Package + push chart to ghcr.io (OCI)
-        env:
-          VERSION: ${{ needs.release-please.outputs.version }}
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" \
-            | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          # Keep the chart's own version (Chart.yaml); pin appVersion to this
-          # release so the chart deploys the matching image tag by default.
-          helm package deploy/helm/tailscale2otel \
-            --app-version "$VERSION" \
-            --destination /tmp/helm-pkg
-          helm push /tmp/helm-pkg/tailscale2otel-*.tgz oci://ghcr.io/rknightion/charts
+  # helm-chart job removed: Helm publish is now handled by the `publish` job above
+  # via the shared rknightion container-publish reusable (helm-chart-path input).
