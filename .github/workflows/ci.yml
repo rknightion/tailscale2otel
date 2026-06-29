@@ -178,9 +178,9 @@ jobs:
     name: coverage (Codacy)
     runs-on: ubuntu-latest
     env:
-      # Account-level Codacy token; the reporter action derives provider/owner/repo from the GitHub
-      # context, so no other Codacy env vars are needed.
-      CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
+      # Repo-scoped Codacy coverage token (Repository Settings > Coverage). Preferred over the
+      # account token so this job only carries coverage-upload scope for THIS repo.
+      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -196,10 +196,10 @@ jobs:
         run: go test -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codacy
-        if: ${{ env.CODACY_API_TOKEN != '' }}   # skip on fork PRs (secret unavailable)
+        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}   # skip on fork PRs (secret unavailable)
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
         with:
-          api-token: ${{ env.CODACY_API_TOKEN }}
+          project-token: ${{ env.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.out
           force-coverage-parser: go
 
