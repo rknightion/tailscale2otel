@@ -57,6 +57,25 @@ spec:
           {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if .Values.config.admin.enabled }}
+          # Probes hit the admin server's /healthz and /readyz (never auth-gated).
+          # Only rendered when config.admin.enabled — the server is off by default.
+          ports:
+            - name: admin
+              containerPort: {{ .Values.config.admin.listen | splitList ":" | last | int }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/tailscale2otel
