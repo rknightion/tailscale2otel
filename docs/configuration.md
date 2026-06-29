@@ -198,7 +198,7 @@ OTLP.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `otlp.protocol` | `http` | Transport. One of `grpc`, `http`, or `stdout`. `stdout` prints signals to the console for local debugging (no backend, no network). |
-| `otlp.endpoint` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP endpoint base URL (ignored when `protocol: stdout`). For Grafana Cloud use the `…/otlp` base — the per-signal `/v1/metrics` and `/v1/logs` paths are appended for you. |
+| `otlp.endpoint` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP endpoint (ignored when `protocol: stdout`). For `protocol: http` this is a full base **URL** — for Grafana Cloud use the `…/otlp` base and the per-signal `/v1/metrics` and `/v1/logs` paths are appended for you. For `protocol: grpc` it must instead be a bare **`host:port`** address (no scheme or path, e.g. `otlp-gateway-prod-us-central-0.grafana.net:443`); a URL-shaped value is rejected at startup. |
 | `otlp.metric_interval` | `60s` | How often metrics are pushed. `60s` aligns with the default 1 data-point-per-minute scrape cadence and avoids Grafana Cloud DPM churn. |
 | `otlp.headers` | `{}` | Extra raw headers added to every OTLP request (an alternative to `grafana_cloud`). |
 

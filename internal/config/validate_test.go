@@ -269,10 +269,95 @@ func TestValidateRejectsBadProtocol(t *testing.T) {
 }
 
 func TestValidateAcceptsAllProtocols(t *testing.T) {
-	for _, proto := range []string{"http", "grpc", "stdout"} {
-		if err := loadErr(t, "otlp:\n  protocol: "+proto+"\n"); err != nil {
+	// grpc requires a host:port endpoint (no scheme/path); http keeps the default
+	// URL endpoint; stdout ignores the endpoint.
+	cases := map[string]string{
+		"http":   "otlp:\n  protocol: http\n",
+		"grpc":   "otlp:\n  protocol: grpc\n  endpoint: \"otlp-gateway-prod-us-central-0.grafana.net:443\"\n",
+		"stdout": "otlp:\n  protocol: stdout\n",
+	}
+	for proto, y := range cases {
+		if err := loadErr(t, y); err != nil {
 			t.Errorf("protocol %q should be valid: %v", proto, err)
 		}
+	}
+}
+
+// TestValidateRejectsGRPCURLEndpoint pins that protocol=grpc rejects a URL-shaped
+// endpoint (scheme/path) — the gRPC exporter dials host:port — while accepting a
+// bare host:port. protocol=http (the default) keeps accepting the full URL.
+func TestValidateRejectsGRPCURLEndpoint(t *testing.T) {
+	bad := []string{
+		"otlp:\n  protocol: grpc\n  endpoint: \"https://example.test/otlp\"\n",
+		"otlp:\n  protocol: grpc\n  endpoint: \"example.test:4317/otlp\"\n",
+		"otlp:\n  protocol: grpc\n  endpoint: \"grpc://example.test:4317\"\n",
+	}
+	for _, y := range bad {
+		err := loadErr(t, y)
+		if err == nil {
+			t.Errorf("grpc with URL-shaped endpoint should be rejected: %q", y)
+			continue
+		}
+		if !strings.Contains(err.Error(), "otlp.endpoint") || !strings.Contains(err.Error(), "grpc") {
+			t.Errorf("error %q should mention otlp.endpoint and grpc", err.Error())
+		}
+	}
+	// A host:port grpc endpoint is accepted.
+	if err := loadErr(t, "otlp:\n  protocol: grpc\n  endpoint: \"example.test:4317\"\n"); err != nil {
+		t.Errorf("grpc with host:port endpoint should be valid: %v", err)
+	}
+	// The same URL endpoint is valid for http (unchanged behavior).
+	if err := loadErr(t, "otlp:\n  protocol: http\n  endpoint: \"https://example.test/otlp\"\n"); err != nil {
+		t.Errorf("http with URL endpoint should be valid: %v", err)
+	}
+}
+
+// TestValidateReceiverPaths pins that a configured streaming/webhook path must be
+// a rooted absolute path: the valid defaults pass, an empty path passes (the
+// receiver fills in its own default), and a path without a leading slash (e.g.
+// "tailscale/webhook") is rejected before it can be misregistered with ServeMux.
+func TestValidateReceiverPaths(t *testing.T) {
+	// Defaults (rooted) are valid.
+	if err := loadErr(t, "streaming:\n  path: \"/services/collector/event\"\nwebhook:\n  path: \"/tailscale/webhook\"\n"); err != nil {
+		t.Errorf("default receiver paths should be valid: %v", err)
+	}
+	// Empty paths are valid (receiver substitutes its default).
+	if err := loadErr(t, "streaming:\n  path: \"\"\nwebhook:\n  path: \"\"\n"); err != nil {
+		t.Errorf("empty receiver paths should be valid: %v", err)
+	}
+	// Missing-leading-slash is rejected for each receiver.
+	for _, tc := range []struct{ y, field string }{
+		{"webhook:\n  path: \"tailscale/webhook\"\n", "webhook.path"},
+		{"streaming:\n  path: \"services/collector/event\"\n", "streaming.path"},
+		{"webhook:\n  path: \"/has space\"\n", "webhook.path"},
+	} {
+		err := loadErr(t, tc.y)
+		if err == nil {
+			t.Errorf("path %q should be rejected", tc.y)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("error %q should name %s", err.Error(), tc.field)
+		}
+	}
+}
+
+// TestValidateRequiresTailnet pins that single-tailnet mode needs a tailnet name:
+// the default ("-") and an explicit name are accepted, but an explicit empty
+// tailscale.tailnet is rejected at load time (rather than failing later in
+// tsapi.NewClient).
+func TestValidateRequiresTailnet(t *testing.T) {
+	if err := loadErr(t, "tailscale:\n  tailnet: \"\"\n"); err == nil {
+		t.Fatalf("empty tailscale.tailnet should be rejected")
+	} else if !strings.Contains(err.Error(), "tailscale.tailnet") {
+		t.Errorf("error %q should mention tailscale.tailnet", err.Error())
+	}
+	// Default ("-" from defaults) and an explicit name are fine.
+	if err := loadErr(t, "log_level: info\n"); err != nil {
+		t.Errorf("default tailnet (\"-\") should be valid: %v", err)
+	}
+	if err := loadErr(t, "tailscale:\n  tailnet: \"example.com\"\n"); err != nil {
+		t.Errorf("explicit tailnet should be valid: %v", err)
 	}
 }
 

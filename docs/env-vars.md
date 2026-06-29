@@ -162,7 +162,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__TLS__CERT_FILE` | `""` | HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints) |
 | `TS2OTEL_STREAMING__TLS__KEY_FILE` | `""` | HTTPS key |
 | `TS2OTEL_STREAMING__DECOMPRESS` | `auto` | auto \| gzip \| zstd \| none — request body decompression |
-| `TS2OTEL_STREAMING__AUTO_CONFIGURE` | `false` | on startup, register THIS receiver as the tailnet's log-streaming sink (needs enabled + public_url + the log_streaming OAuth scope) |
+| `TS2OTEL_STREAMING__AUTO_CONFIGURE` | `false` | on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope |
 | `TS2OTEL_STREAMING__MAX_BODY_BYTES` | `0` | cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413) |
 | `TS2OTEL_WEBHOOK__ENABLED` | `false` | run the receiver for real-time Tailscale webhook events |
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | bind address for the webhook receiver |

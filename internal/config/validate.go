@@ -214,6 +214,25 @@ func pollsSource(s string) bool {
 	return s == "" || s == "poll" || s == "both"
 }
 
+// validateReceiverPath checks that a non-empty HTTP receiver path is a rooted
+// absolute path with no whitespace, so it can be registered with
+// http.ServeMux.HandleFunc without panicking or being misparsed as a
+// method/host-scoped pattern. An empty path is accepted (the receiver fills in
+// its own default).
+func validateReceiverPath(field, p string) error {
+	if p == "" {
+		return nil
+	}
+	if !strings.HasPrefix(p, "/") {
+		return fmt.Errorf("%s %q invalid: must be a rooted absolute path beginning with \"/\" "+
+			"(e.g. \"/tailscale/webhook\")", field, p)
+	}
+	if strings.ContainsAny(p, " \t") {
+		return fmt.Errorf("%s %q invalid: must not contain whitespace", field, p)
+	}
+	return nil
+}
+
 // Validate reports the first configuration error it finds, or nil if the
 // Config is valid.
 func (c *Config) Validate() error {
@@ -235,6 +254,18 @@ func (c *Config) Validate() error {
 
 	if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
 		return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
+	}
+	// The gRPC OTLP exporter (otlp*grpc.WithEndpoint) dials a host:port address,
+	// NOT a URL: a scheme or path (e.g. "https://gw.example/otlp", which is the
+	// correct shape for the http protocol) makes the gRPC dialer fail to connect.
+	// Catch the mismatch at load time rather than as an opaque runtime dial error.
+	// (http endpoints are full URLs; stdout ignores the endpoint entirely.)
+	if c.OTLP.Protocol == "grpc" && c.OTLP.Endpoint != "" {
+		if strings.Contains(c.OTLP.Endpoint, "://") || strings.Contains(c.OTLP.Endpoint, "/") {
+			return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=grpc: use a host:port "+
+				"address with no scheme or path (e.g. otlp-gateway-prod-us-central-0.grafana.net:443); "+
+				"a full URL is only valid for protocol=http", c.OTLP.Endpoint)
+		}
 	}
 	if c.OTLP.MetricInterval.D() <= 0 {
 		return fmt.Errorf("otlp.metric_interval must be > 0 (got %v); a zero or negative interval panics time.NewTicker at startup", c.OTLP.MetricInterval.D())
@@ -274,6 +305,15 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("streaming/webhook receivers require single-tailnet mode " +
 				"(use the single tailscale: block, not a multi-entry tailnets: list)")
 		}
+		// Single-tailnet mode needs a tailnet name. The default is the "-" sentinel
+		// (the principal's default tailnet), so an empty value can only come from an
+		// explicit tailscale.tailnet: "" (or TS2OTEL_TAILSCALE__TAILNET=""). Catch it
+		// here with actionable guidance rather than letting tsapi.NewClient fail at
+		// startup with the opaque "Tailnet is required".
+		if len(c.Tailnets) == 0 && strings.TrimSpace(c.Tailscale.Tailnet) == "" {
+			return fmt.Errorf("tailscale.tailnet: required — set your tailnet's name " +
+				"(e.g. \"example.com\") or \"-\" for the auth principal's default tailnet")
+		}
 	}
 	if !oneOf(c.Checkpoint.Store, "memory", "file") {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
@@ -312,6 +352,18 @@ func (c *Config) Validate() error {
 
 	if !oneOf(c.Streaming.Decompress, "auto", "gzip", "zstd", "none") {
 		return fmt.Errorf("streaming.decompress %q invalid: must be one of auto, gzip, zstd, none", c.Streaming.Decompress)
+	}
+
+	// Receiver paths are registered verbatim with http.ServeMux.HandleFunc, which
+	// panics at receiver startup on a malformed pattern. An empty path is fine (the
+	// receiver substitutes its default), but a configured path must be a rooted
+	// absolute path ("/...") — a value like "tailscale/webhook" is parsed by the mux
+	// as a host-scoped pattern and silently never matches. Validate it up front.
+	if err := validateReceiverPath("streaming.path", c.Streaming.Path); err != nil {
+		return err
+	}
+	if err := validateReceiverPath("webhook.path", c.Webhook.Path); err != nil {
+		return err
 	}
 
 	// Auto-configuring the log-streaming sink needs an enabled receiver and the

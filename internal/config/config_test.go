@@ -53,7 +53,7 @@ tailscale:
       max_delay: 20s
 otlp:
   protocol: grpc
-  endpoint: "https://example.test/otlp"
+  endpoint: "example.test:4317"
   grafana_cloud:
     instance_id: "12345"
     token: "glc_token"

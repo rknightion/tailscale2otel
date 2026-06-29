@@ -166,14 +166,14 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.profiling.pyroscope.server_address | string | `""` | Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled. |
 | config.profiling.pyroscope.tags | object | `{}` | Extra static labels merged onto every profile, e.g. { env: prod }. |
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
-| config.profiling.pyroscope.upload_rate | string | `"15s"` | How often profiles are flushed to the server. |
+| config.profiling.pyroscope.upload_rate | string | `"60s"` | How often profiles are flushed to the server. |
 | config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
 | config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
 | config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |
 | config.provider | string | `"tailscale"` | Control-plane backend: tailscale (default) | headscale. Under headscale only the devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable. |
 | config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |
 | config.self_observability.instance_id | string | `""` | service.instance.id resource attribute; empty falls back to the pod/host name. Override with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API). |
-| config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
+| config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). Registers BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either. NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
 | config.streaming.decompress | string | `"auto"` | Body decompression: auto | gzip | zstd | none. |
 | config.streaming.enabled | bool | `false` | Enable the HEC-style streaming receiver. |
 | config.streaming.listen | string | `":8088"` | Address the receiver binds (host:port). |
@@ -194,7 +194,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.tailscale.http.retry.max_attempts | int | `4` | Max attempts per request (incl. the first) before giving up. |
 | config.tailscale.http.retry.max_delay | string | `"10s"` | Ceiling on the per-retry backoff delay. |
 | config.tailscale.http.timeout | string | `"30s"` | Per-request HTTP timeout for Tailscale API calls. |
-| config.tailscale.tailnet | string | `""` | Tailnet name, or "-" for the auth principal's default tailnet. Override with TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
+| config.tailscale.tailnet | string | `"-"` | Tailnet name, or "-" for the auth principal's default tailnet (the default, which works out of the box for single-tailnet OAuth). Override with the TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
 | config.tracing | object | `{"enabled":false,"sampler":"parentbased_always_on","sampler_arg":1}` | OTEL traces pillar (spans for the exporter's own work). OFF by default; reuses otlp.* for the endpoint/protocol/headers/TLS. |
 | config.tracing.enabled | bool | `false` | Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration. |
 | config.tracing.sampler | string | `"parentbased_always_on"` | Head sampler (always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio). |

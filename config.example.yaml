@@ -253,7 +253,7 @@ streaming:
     cert_file: ""                     # HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints)
     key_file: ""                      # HTTPS key
   decompress: auto                    # auto | gzip | zstd | none — request body decompression
-  auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink (needs enabled + public_url + the log_streaming OAuth scope)
+  auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope
   max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413)
 
 # ── Webhook receiver (OPTIONAL: real-time Tailscale events) ─────────────────────

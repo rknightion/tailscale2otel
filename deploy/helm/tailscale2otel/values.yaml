@@ -172,9 +172,10 @@ config:
       rate_limit: 0
 
   tailscale:
-    # -- Tailnet name, or "-" for the auth principal's default tailnet.
-    # Override with TS2OTEL_TAILSCALE__TAILNET env var (set via secret above).
-    tailnet: ""
+    # -- Tailnet name, or "-" for the auth principal's default tailnet (the default,
+    # which works out of the box for single-tailnet OAuth). Override with the
+    # TS2OTEL_TAILSCALE__TAILNET env var (set via secret above).
+    tailnet: "-"
     auth:
       # -- Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped
       # tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the
@@ -468,7 +469,8 @@ config:
     # -- Body decompression: auto | gzip | zstd | none.
     decompress: auto
     # -- PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url).
-    # NEVER enable against a tailnet whose streaming you do not intend to overwrite.
+    # Registers BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing
+    # sink for either. NEVER enable against a tailnet whose streaming you do not intend to overwrite.
     auto_configure: false
     # -- Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed).
     max_body_bytes: 0
@@ -575,7 +577,7 @@ config:
       # -- X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud).
       tenant_id: ""
       # -- How often profiles are flushed to the server.
-      upload_rate: 15s
+      upload_rate: 60s
       # -- Extra static labels merged onto every profile, e.g. { env: prod }.
       tags: {}
     # -- runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull.

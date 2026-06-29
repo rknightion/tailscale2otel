@@ -54,6 +54,20 @@ helm template t deploy/helm/tailscale2otel | less
 
 Bump `Chart.yaml` `version` on any chart change; `appVersion` tracks the app version the chart defaults to.
 
+## No Kubernetes Service (deliberate)
+
+The chart intentionally ships **no `Service`**. tailscale2otel is a singleton poller whose normal
+traffic is **outbound only** (it polls the Tailscale API and pushes OTLP); nothing needs to reach it
+in the default deployment. Every inbound listener — `admin` (probes/status), `prometheus` (`/metrics`),
+`streaming` (HEC receiver), `webhook` — is **opt-in and off by default**, and the streaming/webhook
+receivers fail *open* (unauthenticated) when their token/secret is empty. A default Service that
+exposed those ports would risk publishing an unauthenticated receiver, so the safe default is to expose
+nothing. Liveness/readiness use the admin port directly (no Service needed). Operators who enable a
+listener should expose **only that one** via their own `Service`/`Ingress`/`ServiceMonitor` (and set
+the matching `*.auth.token` / `*.secret`). A future opt-in, per-listener `service.enabled` block could
+be added if demand warrants — but it must default off and never map a receiver port without its
+credential.
+
 ## Admin & profiling endpoints
 
 The binary's admin server (chart `config.admin`) serves `/healthz` + `/readyz` probes, a human status

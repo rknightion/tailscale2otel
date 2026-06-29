@@ -15,13 +15,15 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	// wrap composes the transport stack: the retrying transport (outermost)
-	// around a rate limiter (when configured) around base, so every attempt —
-	// including retries — acquires a token.
+	// wrap builds the retrying transport around base. The rate limiter lives ON
+	// the retryTransport (not as a wrapping base) so its token wait happens on the
+	// parent request context, before the per-attempt HTTP timeout is applied — a
+	// long queue wait must not be charged against that timeout. Every attempt
+	// (including retries) still acquires its own token.
 	wrap := func(base http.RoundTripper) http.RoundTripper {
-		limited := wrapRateLimit(base, opts.RateLimit)
 		return &retryTransport{
-			base:           limited,
+			base:           base,
+			limiter:        newRateWaiter(opts.RateLimit),
 			max:            max(opts.MaxAttempts, 1),
 			baseDelay:      orDuration(opts.BaseDelay, 500*time.Millisecond),
 			maxDelay:       orDuration(opts.MaxDelay, 10*time.Second),

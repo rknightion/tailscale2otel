@@ -61,6 +61,13 @@ type retryTransport struct {
 	// a long Retry-After is honored.
 	attemptTimeout time.Duration
 
+	// limiter, when non-nil, gates each attempt on a rate-limiter token. The wait
+	// is performed on the PARENT request context, BEFORE attemptTimeout is applied,
+	// so time spent queueing for a token does not consume the per-attempt HTTP
+	// timeout (which bounds only connect/headers/body I/O). Nil disables rate
+	// limiting (pass-through).
+	limiter rateWaiter
+
 	// onRequest, when non-nil, is called exactly once after the final attempt
 	// of each logical request with the span-carrying context (for trace-exemplar
 	// linkage) and a RequestInfo describing the outcome.
@@ -161,6 +168,16 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		delay = t.baseDelay
 	)
 	for attempt := 1; ; attempt++ {
+		// Acquire a rate-limiter token before starting the attempt. This waits on
+		// the parent context (spanCtx), NOT the per-attempt timeout context, so a
+		// long queue wait is never misreported as an HTTP attempt timeout. Every
+		// attempt — including retries — acquires its own token (backpressure).
+		if t.limiter != nil {
+			if err := t.limiter.Wait(spanCtx); err != nil {
+				t.observe(spanCtx, req, nil, err, attempt, start, span)
+				return nil, err
+			}
+		}
 		actx := spanCtx
 		var cancel context.CancelFunc
 		if t.attemptTimeout > 0 {

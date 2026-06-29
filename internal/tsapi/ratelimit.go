@@ -100,3 +100,14 @@ func wrapRateLimit(base http.RoundTripper, ratePerSec float64) http.RoundTripper
 	}
 	return &rateLimitTransport{base: base, lim: newLimiter(ratePerSec)}
 }
+
+// newRateWaiter returns a token-bucket rateWaiter at ratePerSec requests per
+// second, or nil when ratePerSec <= 0 (unlimited). The retryTransport waits on
+// this BEFORE applying its per-attempt HTTP timeout, so queueing for a token is
+// not charged against that timeout (which bounds only connect/headers/body I/O).
+func newRateWaiter(ratePerSec float64) rateWaiter {
+	if ratePerSec <= 0 {
+		return nil
+	}
+	return newLimiter(ratePerSec)
+}
