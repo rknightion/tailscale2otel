@@ -85,73 +85,21 @@ jobs:
     with:
       release_tag: ""
 
-  goreleaser:
-    name: goreleaser (binaries only)
+  # Binaries via the shared GoReleaser reusable: cross-compiled binaries + checksums +
+  # archive SBOMs + cosign signatures, uploaded to the release-please release. Images +
+  # THIRD_PARTY_NOTICES are published by the `publish` job (container-publish reusable),
+  # so this skips docker. pre-cmd installs the pinned syft (archive SBOMs) + go-licenses
+  # and regenerates the notices that .goreleaser.yaml bakes into the archives (extra_files).
+  binaries:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    runs-on: ubuntu-latest
     permissions:
-      contents: write # upload release assets to the release-please release
-      packages: write # push images to ghcr.io
-      id-token: write # keyless cosign signing via GitHub OIDC
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          # Build the exact commit release-please tagged.
-          ref: ${{ needs.release-please.outputs.tag_name }}
-          fetch-depth: 0 # full history so the changelog is complete
-          persist-credentials: false
-
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4
-      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
-      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # cosign (keyless image + checksum signing) and syft (SBOMs).
-      # Pinned to the immutable commit for cosign-installer v4.1.2;
-      # installing cosign v3+ (cosign-release below) REQUIRES the v4 installer.
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
-        with:
-          cosign-release: 'v3.0.6'
-
-      # Pinned syft (GoReleaser's archive SBOMs + the release SBOM step below) and go-licenses
-      # (third-party notices). Both land on PATH ($GOPATH/bin); this replaces the unpinned
-      # anchore/sbom-action/download-syft so the SBOM tool version is locked.
-      - name: install pinned syft + go-licenses
-        run: |
-          go install github.com/anchore/syft/cmd/syft@v1.18.1
-          go install github.com/google/go-licenses@v1.6.0
-
-      # Generate the third-party notices BEFORE GoReleaser so the multi-arch image build can bake
-      # them into /licenses/ (deploy/Dockerfile.goreleaser COPYs THIRD_PARTY_NOTICES.md, supplied
-      # via `extra_files` in .goreleaser.yaml). Regenerated per release; never committed.
-      - name: Generate third-party notices
-        run: bash scripts/notices.sh
-
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
-        with:
-          distribution: goreleaser
-          version: "v2.16.0"
-          # --skip=docker: images are now published by the publish job above (shared reusable).
-          # docker_signs in .goreleaser.yaml is a no-op with no docker artifacts; can be
-          # removed from .goreleaser.yaml once the migration is confirmed stable.
-          args: release --clean --skip=docker
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # NB: image SPDX+CycloneDX SBOMs are generated + attached by the shared reusable
-      # (publish job), and THIRD_PARTY_NOTICES.md by publish.yml's notices job — so the old
-      # binary-level SBOM upload here was removed (it clobbered the reusable's same-named
-      # assets in a parallel-job race). GoReleaser still emits per-archive SBOMs via its
-      # `sboms:` stanza, and the binaries bake THIRD_PARTY_NOTICES.md via extra_files.
-
-  # helm-chart job removed: Helm publish is now handled by the `publish` job above
-  # via the shared rknightion container-publish reusable (helm-chart-path input).
+      contents: write # upload release assets
+      id-token: write # keyless cosign signing
+      packages: write
+    uses: rknightion/.github/.github/workflows/binaries.yml@9eaba495bc5f41c780ea4508e52ea1a20330c04f # v1.2.0
+    with:
+      release-tag: ${{ needs.release-please.outputs.tag_name }}
+      install-cosign: true
+      goreleaser-args: "release --clean --skip=docker"
+      pre-cmd: "go install github.com/anchore/syft/cmd/syft@v1.18.1 && go install github.com/google/go-licenses@v1.6.0 && bash scripts/notices.sh"
