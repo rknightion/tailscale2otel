@@ -97,7 +97,7 @@ jobs:
       contents: write # upload release assets
       id-token: write # keyless cosign signing
       packages: write
-    uses: rknightion/.github/.github/workflows/binaries.yml@9eaba495bc5f41c780ea4508e52ea1a20330c04f # v1.2.0
+    uses: rknightion/.github/.github/workflows/binaries.yml@f31690684f4292d1fe8e528618f7c8306fe27d9a # v1.3.1
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true
