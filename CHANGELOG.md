@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/rknightion/tailscale2otel/compare/v0.5.0...v0.6.0) (2026-07-01)
+
+
+### Features
+
+* **helm:** add conditional liveness/readiness probes to deployment ([3210c9b](https://github.com/rknightion/tailscale2otel/commit/3210c9b6e320d01101831907969fce007822e686))
+
+
+### Bug Fixes
+
+* **config:** validate receiver paths, grpc endpoint shape, required tailnet; align Helm defaults ([030b185](https://github.com/rknightion/tailscale2otel/commit/030b185cb08c10a46e97066bae62ce108ea5e07f))
+
 ## [0.5.0](https://github.com/rknightion/tailscale2otel/compare/v0.4.0...v0.5.0) (2026-06-26)
 
 
