@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/grafana/pyroscope-go v1.3.1
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.19.0
 	github.com/knadh/koanf/parsers/yaml v1.1.0
 	github.com/knadh/koanf/providers/env/v2 v2.0.0
 	github.com/knadh/koanf/providers/file v1.2.1
