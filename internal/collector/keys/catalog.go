@@ -63,7 +63,7 @@ var (
 		Name:        MetricKeyScopes,
 		Severity:    "INFO",
 		Description: "Emitted for each OAuth-client/API credential that carries scopes (scope-sprawl audit log). `tailscale.key.scope_values` is a comma-separated list of the granted capability strings. Gated by `cardinality.per_entity.key`.",
-		Attributes:  []string{attrID, attrScopeValues},
+		Attributes:  []string{attrID, attrScopeValues, attrDescription},
 		Group:       groupKeys,
 	}
 )

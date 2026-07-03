@@ -141,4 +141,9 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			t.Errorf("emitted log event %q does not follow the %q pattern declared in webhook.LogCatalog()", lr.EventName, prefix)
 		}
 	}
+
+	// Attribute-drift guard (#126): every emitted metric attribute must be declared.
+	// (Log events use a dynamic tailscale.webhook.<type> EventName pattern, so the
+	// per-name guard covers the metrics here.)
+	telemetrytest.AssertCatalogAttrs(t, rec, webhook.Catalog(), webhook.LogCatalog())
 }

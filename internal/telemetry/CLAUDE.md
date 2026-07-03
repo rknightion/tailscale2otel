@@ -69,7 +69,18 @@ per source metric. `Observe(name, attrs)` is called from the emit hot path for *
 (gated by self-obs — a nil tracker is a no-op); `Report(e)` runs once per OTLP export interval, emits one
 `tailscale2otel.series.active` gauge per source metric (keyed by the `metric.name` attribute), then
 **resets** the sets so each interval measures active-per-interval cardinality (a metric that stops
-emitting drops out rather than lingering at a stale value). Things to preserve when editing:
+emitting drops out of *this tracker's own measurement* rather than lingering at a stale value).
+
+> **Ghost per-entity series (#55).** That drop-out applies only to the self-obs tracker above (keyed
+> by a fixed, low-cardinality `metric.name` set). It does **not** apply to the exported per-entity
+> gauges (`tailscale.device.online`, `tailscale.node.up`, `tailscale.dns.*`, …): under the forced
+> cumulative temporality the SDK's `cumulativeLastValue` keeps every attribute set it has ever seen
+> and re-exports its last value forever (upstream otel-go #3006 — observable gauges behave
+> identically). So when an entity disappears (renamed/removed) its series lingers as a "ghost", and
+> sustained churn can exhaust the per-instrument cardinality limit. v1 documents this for operators
+> (`docs/metrics.md`) rather than implementing per-entity eviction.
+
+Things to preserve when editing:
 
 - **Self-exclusion:** the tracker never measures `series.active` itself — both to avoid skew and to break
   the `Report → Gauge → Observe` recursion. Keep the name-equality guard if you rename the metric.

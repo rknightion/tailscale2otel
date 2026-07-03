@@ -107,4 +107,8 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	if len(rec.MetricPoints("tailscale.stream.rejected")) == 0 && len(recSmall.MetricPoints("tailscale.stream.rejected")) == 0 {
 		t.Errorf("tailscale.stream.rejected was not emitted; the drive recipe is incomplete")
 	}
+
+	// Attribute-drift guard (#126): every emitted attribute must be declared.
+	telemetrytest.AssertCatalogAttrs(t, rec, stream.Catalog(), stream.LogCatalog())
+	telemetrytest.AssertCatalogAttrs(t, recSmall, stream.Catalog(), stream.LogCatalog())
 }

@@ -80,4 +80,8 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	if !sawExpiring {
 		t.Fatalf("test did not drive the %q log event; check the warn window", keys.EventExpiring)
 	}
+
+	// Attribute-drift guard (#126): every emitted metric/log attribute must be
+	// declared in the catalog, so docs/metrics.md can't silently drift.
+	telemetrytest.AssertCatalogAttrs(t, rec, keys.Catalog(), keys.LogCatalog())
 }

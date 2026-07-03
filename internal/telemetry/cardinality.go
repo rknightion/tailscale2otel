@@ -107,9 +107,20 @@ func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
 // Report emits one tailscale2otel.series.active gauge per source metric observed
 // since the previous Report, carrying the EXACT distinct-series count (pinned at
 // defaultSeriesCap when the cap was hit), then resets all sets so the next
-// interval measures active-per-interval cardinality afresh (a source metric that
-// stops emitting drops out rather than lingering at a stale value). It is a
-// no-op on a nil tracker.
+// interval measures active-per-interval cardinality afresh.
+//
+// NOTE (#55): the "resets so a metric that stops emitting drops out" behavior is
+// about THIS tracker's own measurement (series.active/series.overflowing, which
+// are keyed by a fixed low-cardinality metric.name set), NOT about the exported
+// per-entity gauges themselves. Under the project's forced cumulative temporality
+// the SDK's cumulativeLastValue aggregation keeps every attribute set it has ever
+// seen and re-exports its last value forever (upstream otel-go #3006) — switching
+// to observable gauges does not change this. So per-entity gauges like
+// tailscale.device.online / tailscale.node.up / tailscale.dns.* become "ghost"
+// series after an entity disappears (renamed/removed), and under sustained churn
+// can exhaust the per-instrument cardinality limit. This is documented for
+// operators in docs/metrics.md; there is no per-entity eviction in v1.
+// It is a no-op on a nil tracker.
 func (t *CardinalityTracker) Report(e Emitter) {
 	if t == nil {
 		return

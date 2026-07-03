@@ -191,6 +191,24 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > cardinality (ephemeral `source_port` is the biggest driver). `tailscale2otel.series.active` pins at
 > the same cap, so it flags the condition too.
 
+> **Ghost per-entity series under churn.** Metrics are exported with **cumulative** temporality (what
+> Grafana Cloud / Mimir ingest). Once a per-entity gauge — `tailscale.device.online`,
+> `tailscale.node.up`, the per-resolver `tailscale.dns.*`, and similar — has emitted a value for an
+> attribute set, the OTEL-Go SDK re-exports that last value on **every** interval indefinitely: there
+> is no staleness/eviction for synchronous (or observable) instruments under cumulative temporality
+> (upstream [otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)). So when
+> a device is **removed or renamed** (a new attribute set), its old series lingers as a "ghost" at its
+> last value forever. Consequences to be aware of:
+> - Dashboards that count `device.online==1` (or alerts on it) can include devices that no longer
+>   exist — join against a fresh inventory or a recency signal rather than trusting a lone gauge.
+> - Under sustained churn, dead series accumulate and consume the per-instrument cardinality slots
+>   above until they hit `cardinality.metric_limit` and new live series collapse into
+>   `otel_metric_overflow`. Size `metric_limit` for churn, and restart the exporter to clear ghosts
+>   (in-memory state resets on restart).
+>
+> This is an inherent SDK/temporality trade-off, not a per-tick bug; v1 documents it rather than
+> implementing per-entity eviction (see issue #55).
+
 ### Devices (`tailscale.device.*`, `tailscale.devices.count`)
 
 Per-device gauges plus a fleet roll-up. "id dims" below is shorthand for the common device-identity
@@ -461,7 +479,7 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 | `tailscale.device.tailnet_lock_error` | ERROR | `host_name`, `host_id` | Emitted per device when its tailnet-lock error is non-empty (e.g. an unsigned node); the error text is the log body. |
 | `tailscale.device_invite` | INFO | `host_name`, `host_id`, `tailscale_user`, `tailscale_actor_login` | Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's nodeId. |
 | `tailscale.key.expiring` | WARN | `tailscale_key_id`, `tailscale_key_type`, `tailscale_key_auth_kind`, `tailscale_key_description`, `tailscale_key_expires_in_seconds` | Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp). |
-| `tailscale.key.scopes` | INFO | `tailscale_key_id`, `tailscale_key_scope_values` | Emitted for each OAuth-client/API credential that carries scopes (scope-sprawl audit log). `tailscale.key.scope_values` is a comma-separated list of the granted capability strings. Gated by `cardinality.per_entity.key`. |
+| `tailscale.key.scopes` | INFO | `tailscale_key_id`, `tailscale_key_scope_values`, `tailscale_key_description` | Emitted for each OAuth-client/API credential that carries scopes (scope-sprawl audit log). `tailscale.key.scope_values` is a comma-separated list of the granted capability strings. Gated by `cardinality.per_entity.key`. |
 | `tailscale.logstream.error` | ERROR | `tailscale_logstream_type` | Emitted when a log stream's last delivery reported an error; the error text is the log body. |
 | `tailscale.network.flow` | INFO | `source_address`, `source_port`, `destination_address`, `destination_port`, `network_transport`, `network_type`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_dst_service`, `tailscale_node_id`, `tailscale_node_hostname`, `tailscale_connections`, `tailscale_tx_bytes`, `tailscale_rx_bytes`, `tailscale_tx_packets`, `tailscale_rx_packets` | Per-connection (per_connection) or per-record (per_record) network-flow detail: the 5-tuple, transport, traffic type, source/destination node, and tx/rx bytes & packets. |
 | `tailscale.webhook.<type>` | INFO / WARN by type | `tailscale_webhook_type`, `tailscale_tailnet` | Per webhook event; `<type>` is the Tailscale event type. Emitted at **WARN** for attention-worthy types (node key expiry, needs-approval/authorization/signature, deletions), otherwise INFO. The client-misconfig health events `exitNodeIPForwardingNotEnabled`/`subnetIPForwardingNotEnabled` are INFO and surfaced via the `NodeIPForwardingMisconfigured` alert. |

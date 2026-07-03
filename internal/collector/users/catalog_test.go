@@ -60,4 +60,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			t.Errorf("emitted log event %q is not declared in users.LogCatalog()", lr.EventName)
 		}
 	}
+
+	// Attribute-drift guard (#126): every emitted attribute must be declared.
+	telemetrytest.AssertCatalogAttrs(t, rec, users.Catalog(), users.LogCatalog())
 }

@@ -51,4 +51,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			t.Errorf("%s: emitted description %q != catalog description %q", name, p0.Description, d.Description)
 		}
 	}
+
+	// Attribute-drift guard (#126): every emitted attribute must be declared.
+	telemetrytest.AssertCatalogAttrs(t, rec, services.Catalog(), services.LogCatalog())
 }
