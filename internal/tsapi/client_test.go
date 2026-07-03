@@ -91,6 +91,66 @@ func TestDevices_DecodesViaTSClient(t *testing.T) {
 	}
 }
 
+// TestUserAgent_SentOnRawAndTSClientRequests (#66) proves that a configured
+// Options.UserAgent reaches the wire on BOTH request paths this package uses:
+// the raw getJSON/putJSON doer (logs, keys, settings, ...) and the vendored
+// tsclient-backed doer (devices, users, webhooks, contacts, policy file) —
+// without a value, requests go out identifying only as the bare Go HTTP client
+// or tsclient's own "tailscale-client-go" default, which is what #66 reported.
+func TestUserAgent_SentOnRawAndTSClientRequests(t *testing.T) {
+	t.Run("raw doer (getJSON)", func(t *testing.T) {
+		var gotUA string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotUA = r.Header.Get("User-Agent")
+			_, _ = w.Write([]byte(`{"logs":[]}`))
+		}))
+		defer srv.Close()
+
+		c, err := tsapi.NewClient(tsapi.Options{
+			Tailnet:     "example.com",
+			BaseURL:     srv.URL,
+			APIKey:      "testkey",
+			UserAgent:   "tailscale2otel/1.2.3",
+			MaxAttempts: 1,
+		})
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		if _, err := c.NetworkFlowLogs(context.Background(), time.Unix(0, 0), time.Unix(60, 0)); err != nil {
+			t.Fatalf("NetworkFlowLogs: %v", err)
+		}
+		if gotUA != "tailscale2otel/1.2.3" {
+			t.Fatalf("User-Agent = %q, want %q", gotUA, "tailscale2otel/1.2.3")
+		}
+	})
+
+	t.Run("tsclient-backed doer (Devices)", func(t *testing.T) {
+		var gotUA string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotUA = r.Header.Get("User-Agent")
+			_, _ = w.Write([]byte(`{"devices":[]}`))
+		}))
+		defer srv.Close()
+
+		c, err := tsapi.NewClient(tsapi.Options{
+			Tailnet:     "example.com",
+			BaseURL:     srv.URL,
+			APIKey:      "testkey",
+			UserAgent:   "tailscale2otel/1.2.3",
+			MaxAttempts: 1,
+		})
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		if _, err := c.Devices(context.Background()); err != nil {
+			t.Fatalf("Devices: %v", err)
+		}
+		if gotUA != "tailscale2otel/1.2.3" {
+			t.Fatalf("User-Agent = %q, want %q", gotUA, "tailscale2otel/1.2.3")
+		}
+	})
+}
+
 func TestRetriesOn503ThenSucceeds(t *testing.T) {
 	var calls atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

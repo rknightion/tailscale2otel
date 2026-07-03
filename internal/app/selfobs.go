@@ -21,12 +21,14 @@ var apiDurationBucketsSeconds = []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5
 // apiObserver returns a tsapi request-observer that records, per request:
 // tailscale2otel.api.requests (count, keyed by endpoint + status code),
 // tailscale2otel.api.duration (wall-clock latency histogram in seconds, same
-// keys), and — when a request was retried — the retry count on
+// keys), tailscale2otel.api.rate_limit.wait (time blocked on the client-side
+// rate limiter, keyed by endpoint — recorded only when a request actually
+// waited), and — when a request was retried — the retry count on
 // tailscale2otel.api.retries. It is wired into tsapi only when
 // self-observability is enabled. The metric descriptors live in
 // internal/appcatalog (see that package for why).
-func apiObserver(e telemetry.Emitter) func(ctx context.Context, endpoint string, status, attempts int, dur time.Duration) {
-	return func(ctx context.Context, endpoint string, status, attempts int, dur time.Duration) {
+func apiObserver(e telemetry.Emitter) func(ctx context.Context, endpoint string, status, attempts int, dur, wait time.Duration) {
+	return func(ctx context.Context, endpoint string, status, attempts int, dur, wait time.Duration) {
 		e.Counter(appcatalog.DocAPIRequests.Name, appcatalog.DocAPIRequests.Unit, appcatalog.DocAPIRequests.Description, 1,
 			telemetry.Attrs{
 				"endpoint":                  endpoint,
@@ -38,6 +40,14 @@ func apiObserver(e telemetry.Emitter) func(ctx context.Context, endpoint string,
 				"endpoint":                  endpoint,
 				"http.response.status_code": status,
 			})
+		// Only records requests that were actually throttled: a 0-wait request
+		// (the limiter had a token ready) carries no rate-limit signal, so
+		// recording it would just inflate the histogram's zero bucket.
+		if wait > 0 {
+			e.HistogramCtx(ctx, appcatalog.DocAPIRateLimitWait.Name, appcatalog.DocAPIRateLimitWait.Unit,
+				appcatalog.DocAPIRateLimitWait.Description, wait.Seconds(), apiDurationBucketsSeconds,
+				telemetry.Attrs{"endpoint": endpoint})
+		}
 		if attempts > 1 {
 			e.Counter(appcatalog.DocAPIRetries.Name, appcatalog.DocAPIRetries.Unit, appcatalog.DocAPIRetries.Description,
 				float64(attempts-1), telemetry.Attrs{"endpoint": endpoint})
@@ -100,6 +110,10 @@ func (a *App) recordReceiverStop(component string, err error) {
 	}
 	a.logger.With(semconv.AttrComponent, component).Error("receiver stopped", "error", err)
 	a.componentError(component)
+	// Flag the receiver as failed so /readyz reports the service unready: an
+	// enabled receiver that terminated with a non-clean error can no longer
+	// ingest, so the pod should be pulled from rotation (#57).
+	a.readyState.fail(component, err)
 }
 
 // isCleanShutdownErr reports whether err is a normal stop signal (context

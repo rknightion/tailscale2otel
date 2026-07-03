@@ -111,12 +111,15 @@ func TestTsapiOptions_APIKey(t *testing.T) {
 	cfg.Tailscale.Auth.Method = "apikey"
 	cfg.Tailscale.Auth.APIKey = "tskey-api-xxx"
 
-	o := tsapiOptions(cfg)
+	o := tsapiOptions(cfg, "1.2.3")
 	if o.Tailnet != "example.com" || o.APIKey != "tskey-api-xxx" {
 		t.Fatalf("options = %+v", o)
 	}
 	if o.OAuthClientID != "" {
 		t.Fatal("oauth client id should be empty for apikey method")
+	}
+	if o.UserAgent != "tailscale2otel/1.2.3" {
+		t.Fatalf("UserAgent = %q, want tailscale2otel/1.2.3 (#66)", o.UserAgent)
 	}
 }
 
@@ -126,7 +129,7 @@ func TestTsapiOptions_OAuth(t *testing.T) {
 	cfg.Tailscale.Auth.OAuth.ClientID = "cid"
 	cfg.Tailscale.Auth.OAuth.ClientSecret = "csec"
 
-	o := tsapiOptions(cfg)
+	o := tsapiOptions(cfg, "1.2.3")
 	if o.OAuthClientID != "cid" || o.OAuthClientSecret != "csec" {
 		t.Fatalf("options = %+v", o)
 	}
@@ -141,13 +144,13 @@ func TestNodeMetricsOptions_AuthAndTLS(t *testing.T) {
 			URL:             "https://n:5252/metrics",
 			BearerToken:     "tok",
 			BearerTokenFile: "/f",
-			Headers:         map[string]string{"X-Scope-OrgID": "1"},
+			Headers:         map[string]config.Secret{"X-Scope-OrgID": "1"},
 			TLS: &config.NodeMetricsTargetTLS{
 				InsecureSkipVerify: true, CAFile: "/ca", CertFile: "/c", KeyFile: "/k", ServerName: "n",
 			},
 		}},
 	}
-	tg := nodeMetricsOptions(nm, nil, nil).Targets[0]
+	tg := nodeMetricsOptions(nm, nil, nil, nil).Targets[0]
 	if tg.BearerToken != "tok" || tg.BearerTokenFile != "/f" {
 		t.Errorf("bearer = %q/%q", tg.BearerToken, tg.BearerTokenFile)
 	}
@@ -165,7 +168,7 @@ func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
 	nm.Discovery.Enabled = true
 	nm.Discovery.Interval = config.Duration(2 * time.Minute)
 
-	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil)
+	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil)
 	if opts.Discoverer == nil {
 		t.Fatal("Discoverer = nil, want a discoverer when discovery is enabled")
 	}
@@ -174,7 +177,7 @@ func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
 	}
 
 	nm.Discovery.Enabled = false
-	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil); got.Discoverer != nil {
+	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil); got.Discoverer != nil {
 		t.Fatal("Discoverer != nil, want nil when discovery is disabled")
 	}
 }
@@ -247,7 +250,7 @@ func TestTSAPIOptionsForResolvedTailnet(t *testing.T) {
 		Auth: config.TailscaleAuth{Method: "apikey", APIKey: "secret-key"},
 		HTTP: config.TailscaleHTTPConfig{RateLimit: 5},
 	}
-	o := tsapiOptionsFor(rt)
+	o := tsapiOptionsFor(rt, "9.9.9")
 	if o.Tailnet != "acme.example.com" {
 		t.Errorf("Tailnet = %q", o.Tailnet)
 	}
@@ -256,6 +259,9 @@ func TestTSAPIOptionsForResolvedTailnet(t *testing.T) {
 	}
 	if o.RateLimit != 5 {
 		t.Errorf("RateLimit = %v, want 5", o.RateLimit)
+	}
+	if o.UserAgent != "tailscale2otel/9.9.9" {
+		t.Errorf("UserAgent = %q, want tailscale2otel/9.9.9 (#66)", o.UserAgent)
 	}
 }
 

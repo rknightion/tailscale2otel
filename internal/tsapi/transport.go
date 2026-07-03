@@ -38,8 +38,15 @@ type RequestInfo struct {
 	Endpoint string        // low-cardinality label (endpointLabel)
 	Status   int           // final HTTP status, 0 on transport error
 	Attempts int           // total attempts incl. the first
-	Duration time.Duration // wall-clock of the whole logical request (incl. retries/backoff)
-	Err      string        // transport error text, "" when an HTTP response was received
+	Duration time.Duration // wall-clock of the whole logical request (incl. retries/backoff), EXCLUDING WaitDuration (#76)
+	// WaitDuration is the cumulative time this logical request spent blocked on
+	// the client-side rate limiter (Options.RateLimit), summed across every
+	// attempt including retries. Zero when RateLimit is unconfigured or a token
+	// was always immediately available. Kept separate from Duration so
+	// self-observability can distinguish "queued behind our own rate limit"
+	// from genuine API/network latency and retry backoff (#76).
+	WaitDuration time.Duration
+	Err          string // transport error text, "" when an HTTP response was received
 }
 
 // retryTransport retries 429 and 5xx responses (and transport errors) with
@@ -163,19 +170,25 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 	spanCtx, span := t.startSpan(req.Context(), req)
 	var (
-		resp  *http.Response
-		err   error
-		delay = t.baseDelay
+		resp      *http.Response
+		err       error
+		delay     = t.baseDelay
+		waitTotal time.Duration // cumulative rate-limiter wait, all attempts (#76)
 	)
 	for attempt := 1; ; attempt++ {
 		// Acquire a rate-limiter token before starting the attempt. This waits on
 		// the parent context (spanCtx), NOT the per-attempt timeout context, so a
 		// long queue wait is never misreported as an HTTP attempt timeout. Every
-		// attempt — including retries — acquires its own token (backpressure).
+		// attempt — including retries — acquires its own token (backpressure). The
+		// wait is timed and accumulated into waitTotal so it can be reported
+		// separately from (and excluded from) the request's Duration (#76).
 		if t.limiter != nil {
-			if err := t.limiter.Wait(spanCtx); err != nil {
-				t.observe(spanCtx, req, nil, err, attempt, start, span)
-				return nil, err
+			waitStart := time.Now()
+			werr := t.limiter.Wait(spanCtx)
+			waitTotal += time.Since(waitStart)
+			if werr != nil {
+				t.observe(spanCtx, req, nil, werr, attempt, start, waitTotal, span)
+				return nil, werr
 			}
 		}
 		actx := spanCtx
@@ -193,7 +206,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				if cancel != nil {
 					cancel()
 				}
-				t.observe(spanCtx, req, nil, gbErr, attempt, start, span)
+				t.observe(spanCtx, req, nil, gbErr, attempt, start, waitTotal, span)
 				return nil, gbErr
 			}
 			attemptReq.Body = body
@@ -209,7 +222,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 					cancel()
 				}
 			}
-			t.observe(spanCtx, req, resp, err, attempt, start, span)
+			t.observe(spanCtx, req, resp, err, attempt, start, waitTotal, span)
 			return resp, err
 		}
 		jittered, next := computeBackoff(delay, t.maxDelay, t.rndFloat())
@@ -237,7 +250,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.logRetry(req, resp, err, attempt, sleep)
 		select {
 		case <-spanCtx.Done():
-			t.observe(spanCtx, req, nil, spanCtx.Err(), attempt, start, span)
+			t.observe(spanCtx, req, nil, spanCtx.Err(), attempt, start, waitTotal, span)
 			return nil, spanCtx.Err()
 		case <-time.After(sleep):
 		}
@@ -249,7 +262,11 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // status, and ends it), then calls the onRequest hook with the span-carrying
 // context so exemplars can link to the ended span. The span's SpanContext
 // remains in spanCtx after End(), so the hook's ctx carries the trace/span IDs.
-func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, resp *http.Response, err error, attempts int, start time.Time, span trace.Span) {
+// waitTotal is the cumulative rate-limiter wait across all attempts (#76); it
+// is reported separately as RequestInfo.WaitDuration and subtracted out of
+// RequestInfo.Duration so onRequest observers (and the api.duration histogram
+// built from Duration) see genuine API/network + backoff latency only.
+func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, resp *http.Response, err error, attempts int, start time.Time, waitTotal time.Duration, span trace.Span) {
 	status := 0
 	if err == nil && resp != nil {
 		status = resp.StatusCode
@@ -271,6 +288,9 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 			attribute.String("server.address", req.URL.Host),
 			attribute.Int("http.request.resend_count", attempts-1),
 		)
+		if waitTotal > 0 {
+			span.SetAttributes(attribute.Int64("tailscale.rate_limit.wait_ms", waitTotal.Milliseconds()))
+		}
 		if status != 0 {
 			span.SetAttributes(attribute.Int("http.response.status_code", status))
 		}
@@ -284,12 +304,22 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 	}
 	span.End()
 	if t.onRequest != nil {
+		// total includes waitTotal (start predates the first limiter Wait), so
+		// subtracting yields the non-limiter portion of the request's latency.
+		// waitTotal can never exceed total in practice, but clamp defensively
+		// against a future refactor reordering the timers.
+		total := time.Since(start)
+		duration := total - waitTotal
+		if duration < 0 {
+			duration = 0
+		}
 		t.onRequest(spanCtx, RequestInfo{
-			Endpoint: endpointLabel(req.URL.Path),
-			Status:   status,
-			Attempts: attempts,
-			Duration: time.Since(start),
-			Err:      errStr,
+			Endpoint:     endpointLabel(req.URL.Path),
+			Status:       status,
+			Attempts:     attempts,
+			Duration:     duration,
+			WaitDuration: waitTotal,
+			Err:          errStr,
 		})
 	}
 }

@@ -125,6 +125,57 @@ func TestCollectEmitsCountsFlagsAndResolvers(t *testing.T) {
 	}
 }
 
+// TestCollectSplitDNSEmptyResolverListGetsIdentifiablePoint is the regression
+// test for #63: a split-DNS domain with a null/empty resolver list is counted
+// in tailscale.dns.split_zones.count, but the per-resolver loop previously
+// emitted nothing for it, leaving no series to identify which counted domain
+// has no resolvers. It must now get its own point (address="") so it stays
+// identifiable alongside a domain with real resolvers.
+func TestCollectSplitDNSEmptyResolverListGetsIdentifiablePoint(t *testing.T) {
+	api := &fakeAPI{cfg: &tsapi.DNSConfig{
+		SplitDNS: map[string][]tsapi.DNSResolver{
+			"corp.example.com":  {{Address: "192.0.2.53", UseWithExitNode: true}},
+			"empty.example.com": nil, // wire value decoded as a present key with an empty slice
+		},
+	}}
+	rec := telemetrytest.New()
+
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// split_zones.count counts the domain key regardless of its resolver list.
+	if got := gaugeValue(t, rec, "tailscale.dns.split_zones.count"); got != 2 {
+		t.Fatalf("split_zones.count = %v, want 2", got)
+	}
+
+	// The populated domain still emits its normal resolver point.
+	p := resolverPoint(t, rec, "192.0.2.53", "corp.example.com")
+	if p.Value != 1 || p.Attrs[attrKind] != resolverKindSplit {
+		t.Errorf("corp resolver = %+v, want value 1 kind=split", p.Attrs)
+	}
+
+	// The empty-resolver-list domain gets its own identifiable point: address
+	// empty, but a populated split-DNS domain label — a combination that never
+	// occurs for a real resolver (global resolvers always have domain="").
+	empty := resolverPoint(t, rec, "", "empty.example.com")
+	if empty.Value != 1 {
+		t.Errorf("empty.example.com resolver value = %v, want 1", empty.Value)
+	}
+	if empty.Attrs[attrKind] != resolverKindSplit {
+		t.Errorf("empty.example.com resolver kind = %q, want split", empty.Attrs[attrKind])
+	}
+	if empty.Attrs[attrUseWithExitNode] != "false" {
+		t.Errorf("empty.example.com use_with_exit_node = %q, want false", empty.Attrs[attrUseWithExitNode])
+	}
+
+	// Exactly 2 resolver points total: the one real corp resolver plus the one
+	// synthetic point for the empty domain.
+	if got := len(rec.MetricPoints("tailscale.dns.resolver")); got != 2 {
+		t.Fatalf("resolver points = %d, want 2", got)
+	}
+}
+
 func TestCollectMinimalConfig(t *testing.T) {
 	// Matches the real capture: one global resolver, no exit-node, no splitDNS.
 	api := &fakeAPI{cfg: &tsapi.DNSConfig{

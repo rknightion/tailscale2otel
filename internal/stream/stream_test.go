@@ -33,6 +33,7 @@ const (
 	metricRecords      = "tailscale.stream.records"
 	metricRejected     = "tailscale.stream.rejected"
 	metricDecodeErrors = "tailscale.stream.decode_errors"
+	metricSkipped      = "tailscale.stream.skipped"
 
 	attrType   = "type"
 	attrReason = "reason"
@@ -40,8 +41,10 @@ const (
 	typeFlow  = "flow"
 	typeAudit = "audit"
 
-	reasonAuth       = "auth"
-	reasonUnparsable = "unparsable"
+	reasonAuth         = "auth"
+	reasonUnparsable   = "unparsable"
+	reasonUnclassified = "unclassified"
+	reasonUnwrapDrop   = "unwrap_drop"
 )
 
 const testToken = "s3cr3t-token"
@@ -575,6 +578,102 @@ func TestEnvelope_ConcatenatedTruncationIsLogged(t *testing.T) {
 	if !strings.Contains(out, "dropped_bytes=") {
 		t.Fatalf("log output = %q, want a dropped_bytes field", out)
 	}
+}
+
+// TestSkipped_ClassifyUnknownIsCounted is the regression test for #67's first
+// acceptance criterion: a record that unwraps fine (it IS a plain JSON object)
+// but matches neither the flow nor the audit shape must increment
+// tailscale.stream.skipped{reason=unclassified}, not just a Debug log. Mixed
+// with a valid flow record so the request isn't rejected outright.
+func TestSkipped_ClassifyUnknownIsCounted(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	body := `{"foo":"bar"}` + "\n" + captureFlowRecord
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
+	skipped := rec.MetricPoints(metricSkipped)
+	p := findPoint(t, skipped, map[string]string{attrReason: reasonUnclassified})
+	if p.Value != 1 {
+		t.Fatalf("%s{reason=unclassified} = %v, want 1", metricSkipped, p.Value)
+	}
+	for _, sp := range skipped {
+		if sp.Attrs[attrReason] == reasonUnwrapDrop {
+			t.Fatalf("unexpected %s{reason=unwrap_drop} point for a body with no unwrap-stage drop: %+v", metricSkipped, sp)
+		}
+	}
+
+	// The valid flow record alongside it must still have been processed.
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+}
+
+// TestSkipped_UnwrapDropIsCounted is the regression test for #67's second
+// acceptance criterion: a record dropped INSIDE unwrap (a non-object HEC
+// "event" value — here a bare string, not an object) must also increment
+// tailscale.stream.skipped, tagged reason=unwrap_drop, distinct from a
+// classify()-stage kindUnknown. Before the fix this drop was invisible: not
+// counted in the Debug-only "skipped" log, and not a metric at all. Mixed with
+// a valid flow record so the request isn't rejected outright.
+func TestSkipped_UnwrapDropIsCounted(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	// A HEC envelope whose "event" is a bare string (not an object) — dropped
+	// inside unwrap before classify() ever sees it.
+	body := `{"time":1,"event":"not-an-object"}` + "\n" + captureFlowRecord
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
+	skipped := rec.MetricPoints(metricSkipped)
+	p := findPoint(t, skipped, map[string]string{attrReason: reasonUnwrapDrop})
+	if p.Value != 1 {
+		t.Fatalf("%s{reason=unwrap_drop} = %v, want 1", metricSkipped, p.Value)
+	}
+	for _, sp := range skipped {
+		if sp.Attrs[attrReason] == reasonUnclassified {
+			t.Fatalf("unexpected %s{reason=unclassified} point for a body with no classify-stage skip: %+v", metricSkipped, sp)
+		}
+	}
+
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+}
+
+// TestSkipped_BothReasonsInOneRequest drives a single request through both
+// skip paths at once (an unclassified plain object, an unwrap-dropped
+// non-object "event", and a valid flow record) and asserts both
+// tailscale.stream.skipped reasons are counted independently, then runs the
+// catalog attribute-drift guard over the result.
+func TestSkipped_BothReasonsInOneRequest(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	body := `{"time":1,"event":"not-an-object"}` + "\n" + `{"foo":"bar"}` + "\n" + captureFlowRecord
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
+	skipped := rec.MetricPoints(metricSkipped)
+	if got := findPoint(t, skipped, map[string]string{attrReason: reasonUnclassified}).Value; got != 1 {
+		t.Errorf("%s{reason=unclassified} = %v, want 1", metricSkipped, got)
+	}
+	if got := findPoint(t, skipped, map[string]string{attrReason: reasonUnwrapDrop}).Value; got != 1 {
+		t.Errorf("%s{reason=unwrap_drop} = %v, want 1", metricSkipped, got)
+	}
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+
+	telemetrytest.AssertCatalogAttrs(t, rec, stream.Catalog(), stream.LogCatalog())
 }
 
 func TestHandler_HECFlowRecord(t *testing.T) {

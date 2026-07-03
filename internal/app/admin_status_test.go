@@ -104,7 +104,7 @@ func TestStatusPage_RedactsSecrets(t *testing.T) {
 	cfg.Streaming.Token = "SECRETSTREAM"
 	cfg.Webhook.Secret = "SECRETWEBHOOK"
 	cfg.Profiling.Pyroscope.BasicAuthPassword = "SECRETPYRO"
-	cfg.OTLP.Headers = map[string]string{"Authorization": "Basic SECRETHEADER", "X-Scope-OrgID": "tenant-1"}
+	cfg.OTLP.Headers = map[string]config.Secret{"Authorization": "Basic SECRETHEADER", "X-Scope-OrgID": "tenant-1"}
 
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
@@ -140,16 +140,72 @@ func TestStatusPage_RedactsSecrets(t *testing.T) {
 	}
 }
 
-func TestAdminServer_ProbesStillOK(t *testing.T) {
+// TestAdminServer_HealthzUnconditional verifies /healthz on the FULL app
+// server (buildAdminServer, not the probe-only newAdminServer scaffold) is
+// unconditional process liveness: always 200 "ok", regardless of whether
+// collectors have run yet (#57).
+func TestAdminServer_HealthzUnconditional(t *testing.T) {
 	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
-	for _, path := range []string{"/healthz", "/readyz"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-		srv.Handler.ServeHTTP(w, req)
-		if w.Code != http.StatusOK || w.Body.String() != "ok" {
-			t.Fatalf("GET %s = %d %q, want 200 ok", path, w.Code, w.Body.String())
-		}
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Fatalf("GET /healthz = %d %q, want 200 ok", w.Code, w.Body.String())
+	}
+}
+
+// TestAdminServer_ReadyzNotReadyUntilFirstTick verifies a freshly built app
+// (default config: several collectors enabled, none has run yet) reports
+// /readyz as not-ready with a 503 and a reason mentioning the pending
+// collectors (#57 acceptance: non-200 before first successful tick).
+func TestAdminServer_ReadyzNotReadyUntilFirstTick(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("GET /readyz on a fresh app = %d, want 503 (starting)", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "starting") {
+		t.Errorf("GET /readyz body = %q, want it to mention starting", w.Body.String())
+	}
+}
+
+// TestAdminServer_ReadyzReadyWithNoCollectors verifies /readyz reports ready
+// (200 ok) once there is nothing left pending its first run — here achieved
+// by disabling every collector so the health verdict has no "starting" reason.
+func TestAdminServer_ReadyzReadyWithNoCollectors(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Devices.Enabled = false
+	cfg.Collectors.Flowlogs.Enabled = false
+	cfg.Collectors.Auditlogs.Enabled = false
+	cfg.Collectors.Users.Enabled = false
+	cfg.Collectors.Keys.Enabled = false
+	cfg.Collectors.Settings.Enabled = false
+	cfg.Collectors.Acl.Enabled = false
+	cfg.Collectors.Dns.Enabled = false
+	cfg.Collectors.Contacts.Enabled = false
+	cfg.Collectors.Webhooks.Enabled = false
+	cfg.Collectors.PostureIntegrations.Enabled = false
+	cfg.Collectors.LogStream.Enabled = false
+	cfg.Collectors.Services.Enabled = false
+	cfg.Collectors.NodeMetrics.Enabled = false
+
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	if got := len(a.runtimes[0].registry.Entries()); got != 0 {
+		t.Fatalf("registered collectors = %d, want 0 (all disabled)", got)
+	}
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Fatalf("GET /readyz with no collectors registered = %d %q, want 200 ok", w.Code, w.Body.String())
 	}
 }
 

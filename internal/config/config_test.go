@@ -103,6 +103,7 @@ streaming:
 webhook:
   enabled: true
   secret: "wsecret"
+  max_body_bytes: 2097152
 self_observability:
   enabled: false
   instance_id: "inst-42"
@@ -215,6 +216,9 @@ func TestLoadNestedValues(t *testing.T) {
 	}
 	if !cfg.Webhook.Enabled || cfg.Webhook.Secret != "wsecret" {
 		t.Errorf("Webhook = %+v, want enabled with secret wsecret", cfg.Webhook)
+	}
+	if cfg.Webhook.MaxBodyBytes != 2<<20 {
+		t.Errorf("Webhook.MaxBodyBytes = %d, want %d", cfg.Webhook.MaxBodyBytes, 2<<20)
 	}
 	if cfg.SelfObservability.Enabled {
 		t.Errorf("SelfObservability.Enabled = true, want false")

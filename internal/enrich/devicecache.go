@@ -11,6 +11,10 @@ import (
 
 // DeviceMeta is the normalized subset of a Tailscale device used for enrichment.
 type DeviceMeta struct {
+	// ID is the numeric/opaque device ID (tsapi.RichDevice.ID) — distinct from
+	// NodeID, the control-plane node id used in flow logs. Node-metrics
+	// discovery uses ID for the emitted HostID label (#85).
+	ID        string
 	NodeID    string
 	Name      string // MagicDNS FQDN, e.g. "laptop.tail1a2b.ts.net"
 	Hostname  string // short display name, e.g. "laptop"
@@ -20,6 +24,10 @@ type DeviceMeta struct {
 	Tags      []string
 	Addrs     []netip.Addr
 	External  bool // shared in from another tailnet
+	// Online mirrors tsapi.RichDevice.ConnectedToControl. Node-metrics
+	// discovery's online_only filter needs this when sourcing targets from the
+	// cache instead of its own DevicesRich() call (#85).
+	Online bool
 }
 
 // DeviceCache maps Tailscale addresses and node IDs to device metadata.

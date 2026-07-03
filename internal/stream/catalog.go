@@ -50,6 +50,14 @@ var (
 		Description: "Wall-clock duration of HEC receiver HTTP request handling, in seconds.",
 		Group:       groupReceivers,
 	}
+	docStreamSkipped = metricdoc.Metric{
+		Name:        MetricSkipped,
+		Unit:        "{record}",
+		Instrument:  metricdoc.Counter,
+		Description: "Records extracted from an otherwise-valid request body but never routed to a processor, by reason (`unclassified` = matched neither the flow nor audit shape; `unwrap_drop` = a non-object value, e.g. a scalar/null HEC \"event\", was dropped while unwrapping the envelope before classification).",
+		Attributes:  []string{attrReason},
+		Group:       groupReceivers,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -60,6 +68,7 @@ func Catalog() []metricdoc.Metric {
 		docStreamDecodeErrors,
 		docStreamInflight,
 		docStreamRequestDuration,
+		docStreamSkipped,
 	}
 }
 

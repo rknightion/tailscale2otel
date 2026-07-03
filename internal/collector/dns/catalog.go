@@ -60,7 +60,7 @@ var (
 		Name:        metricResolver,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "Info gauge (always `1`) for each configured DNS resolver, labeled by `address`, `kind` (`global`|`split`), split-DNS `domain` (empty for global), and `use_with_exit_node`.",
+		Description: "Info gauge (always `1`) for each configured DNS resolver, labeled by `address`, `kind` (`global`|`split`), split-DNS `domain` (empty for global), and `use_with_exit_node`. A split-DNS domain configured with a null/empty resolver list still emits one point here with `address` empty, so every domain counted in `tailscale.dns.split_zones.count` has an identifiable series.",
 		Attributes:  []string{attrAddress, attrKind, attrDomain, attrUseWithExitNode},
 		Group:       groupDNS,
 	}

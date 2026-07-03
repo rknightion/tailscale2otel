@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"log/slog"
-	"maps"
 	"os"
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
@@ -22,7 +21,9 @@ const serviceName = "tailscale2otel"
 // Grafana Cloud Basic-auth header when grafana_cloud credentials are set.
 func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 	headers := make(map[string]string, len(cfg.OTLP.Headers)+1)
-	maps.Copy(headers, cfg.OTLP.Headers)
+	for k, v := range cfg.OTLP.Headers {
+		headers[k] = v.Reveal() // Secret -> raw string at the point of legitimate use (#73)
+	}
 	if gc := cfg.OTLP.GrafanaCloud; gc.InstanceID != "" {
 		headers["Authorization"] = "Basic " +
 			base64.StdEncoding.EncodeToString([]byte(gc.InstanceID+":"+gc.Token.Reveal()))
@@ -113,19 +114,22 @@ func hsapiOptions(cfg *config.Config) hsapi.Options {
 }
 
 // tsapiOptions maps the Tailscale config into tsapi.Options, selecting the
-// configured authentication method.
-func tsapiOptions(cfg *config.Config) tsapi.Options {
+// configured authentication method. version stamps the outbound User-Agent.
+func tsapiOptions(cfg *config.Config, version string) tsapi.Options {
 	rts := cfg.ResolvedTailnets()
 	if len(rts) == 0 {
 		return tsapi.Options{}
 	}
-	return tsapiOptionsFor(rts[0])
+	return tsapiOptionsFor(rts[0], version)
 }
 
-// tsapiOptionsFor maps one resolved tailnet to tsapi client options.
-func tsapiOptionsFor(rt config.ResolvedTailnet) tsapi.Options {
+// tsapiOptionsFor maps one resolved tailnet to tsapi client options. version
+// stamps the outbound User-Agent ("tailscale2otel/<version>") so Tailscale-side
+// request logs can attribute traffic to this exporter and its build (#66).
+func tsapiOptionsFor(rt config.ResolvedTailnet, version string) tsapi.Options {
 	o := tsapi.Options{
 		Tailnet:     rt.Name,
+		UserAgent:   serviceName + "/" + version,
 		Timeout:     rt.HTTP.Timeout.D(),
 		MaxAttempts: rt.HTTP.Retry.MaxAttempts,
 		BaseDelay:   rt.HTTP.Retry.BaseDelay.D(),
@@ -157,17 +161,28 @@ func instanceFor(base, tailnet string, multi bool) string {
 }
 
 // nodeMetricsOptions maps the node-metrics scraper config into
-// nodemetrics.Options, translating each configured target.
-func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, logger *slog.Logger) nodemetrics.Options {
+// nodemetrics.Options, translating each configured target. When discovery is
+// enabled, cache (the tailnet's shared device cache, populated by the devices
+// collector) is offered to the discoverer so it reuses that inventory instead
+// of issuing its own DevicesRich() poll against the heaviest Tailscale endpoint
+// (#85); a nil/empty cache transparently falls back to the API poll.
+func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache deviceCacheReader, logger *slog.Logger) nodemetrics.Options {
 	targets := make([]nodemetrics.Target, 0, len(nm.Targets))
 	for _, t := range nm.Targets {
+		var headers map[string]string
+		if len(t.Headers) > 0 {
+			headers = make(map[string]string, len(t.Headers))
+			for k, v := range t.Headers {
+				headers[k] = v.Reveal() // Secret -> raw string at the point of legitimate use (#73)
+			}
+		}
 		nt := nodemetrics.Target{
 			URL:             t.URL,
 			Instance:        t.Instance,
 			Labels:          t.Labels,
 			BearerToken:     t.BearerToken.Reveal(),
 			BearerTokenFile: t.BearerTokenFile,
-			Headers:         t.Headers,
+			Headers:         headers,
 		}
 		if t.TLS != nil {
 			nt.TLS = &nodemetrics.TLSClientConfig{
@@ -193,7 +208,11 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, logge
 	// Dynamic discovery: poll the Tailscale device inventory on its own interval
 	// and union the result with the static targets (handled by the collector).
 	if nm.Discovery.Enabled {
-		opts.Discoverer = newNodeDiscoverer(api, nm.Discovery, logger)
+		var dopts []nodeDiscovererOption
+		if cache != nil {
+			dopts = append(dopts, withDeviceCache(cache))
+		}
+		opts.Discoverer = newNodeDiscoverer(api, nm.Discovery, logger, dopts...)
 		opts.DiscoveryInterval = nm.Discovery.Interval.D()
 	}
 	return opts

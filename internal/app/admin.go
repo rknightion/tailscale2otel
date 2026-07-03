@@ -14,16 +14,23 @@ import (
 )
 
 // registerProbes registers the liveness (/healthz) and readiness (/readyz)
-// endpoints. They carry no Tailscale data and are safe to expose to a cluster's
-// health checks.
-func registerProbes(mux *http.ServeMux) {
+// endpoints. They carry no Tailscale data and are safe to expose to a
+// cluster's health checks. /healthz is always the unconditional "process is
+// up" handler. /readyz uses ready when given (the real (*App).readyz, wired
+// by buildAdminServer) so it reflects actual startup/receiver state (#57); a
+// nil ready falls back to the same unconditional handler, which is all
+// newAdminServer's App-less probe scaffold can offer.
+func registerProbes(mux *http.ServeMux, ready http.HandlerFunc) {
 	ok := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok")
 	}
 	mux.HandleFunc("/healthz", ok)
-	mux.HandleFunc("/readyz", ok)
+	if ready == nil {
+		ready = ok
+	}
+	mux.HandleFunc("/readyz", ready)
 }
 
 // registerPprof mounts the standard net/http/pprof endpoints so Grafana Alloy's
@@ -86,7 +93,7 @@ func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 // which layers the status page and pprof onto the same mux.
 func newAdminServer(listen string) *http.Server {
 	mux := http.NewServeMux()
-	registerProbes(mux)
+	registerProbes(mux, nil)
 	return &http.Server{
 		Addr:              listen,
 		Handler:           mux,
@@ -95,12 +102,14 @@ func newAdminServer(listen string) *http.Server {
 }
 
 // buildAdminServer builds the admin HTTP server: always the /healthz + /readyz
-// probes, plus the status landing page (/ and /api/status.json) unless
-// admin.landing_page is disabled, plus /debug/pprof when profiling.pprof is
-// enabled. The "/" handler is a catch-all, so handleIndex 404s unknown paths.
+// probes (/readyz backed by (*App).readyz, so it reflects real startup/
+// receiver state — #57), plus the status landing page (/ and
+// /api/status.json) unless admin.landing_page is disabled, plus /debug/pprof
+// when profiling.pprof is enabled. The "/" handler is a catch-all, so
+// handleIndex 404s unknown paths.
 func (a *App) buildAdminServer() *http.Server {
 	mux := http.NewServeMux()
-	registerProbes(mux)
+	registerProbes(mux, a.readyz)
 	if a.cfg.Admin.LandingPage {
 		mux.HandleFunc("/", a.requireAdminAuth(a.handleIndex))
 		mux.HandleFunc("/api/status.json", a.requireAdminAuth(a.handleStatusJSON))

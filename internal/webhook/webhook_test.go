@@ -195,6 +195,30 @@ func TestHandler_MaxBodyBytesTooLargeRejectedBeforeSignature(t *testing.T) {
 	}
 }
 
+// TestHandler_DefaultMaxBodyBytesIsOneMiB confirms the built-in fallback (when
+// Options.MaxBodyBytes is 0, as it is when webhook.max_body_bytes is left at
+// its config default) is 1 MiB, not the old 64 MiB — real Tailscale webhook
+// payloads are KB-scale, so the cap should match that rather than the
+// streaming receiver's batch-flow-log sizing.
+func TestHandler_DefaultMaxBodyBytesIsOneMiB(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{
+		Path: "/webhook",
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	resp := doPost(t, s.Handler(), "/webhook", strings.Repeat("x", (1<<20)+1), "")
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d for a body one byte over the 1 MiB default", resp.StatusCode, http.StatusRequestEntityTooLarge)
+	}
+	pts := rec.MetricPoints("tailscale.webhook.rejected")
+	if len(pts) != 1 {
+		t.Fatalf("rejected metric points = %d, want 1 (%+v)", len(pts), pts)
+	}
+	if got := pts[0].Attrs["reason"]; got != "too_large" {
+		t.Fatalf("rejected reason = %q, want too_large", got)
+	}
+}
+
 func TestHandler_MaxBodyBytesUnderLimitStillVerifies(t *testing.T) {
 	rec := telemetrytest.New()
 	s := New(Options{

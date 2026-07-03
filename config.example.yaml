@@ -266,6 +266,7 @@ webhook:
   secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN)
   tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
+  max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413)
 
 # ── PII / identifier redaction (opt-out, all categories default true) ───────────
 # Set a category to false to drop those identifiers from metrics and logs at

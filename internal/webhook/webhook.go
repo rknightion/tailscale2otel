@@ -73,8 +73,12 @@ const (
 	// MetricRejected counts rejected webhook requests, keyed by rejection reason.
 	MetricRejected = "tailscale.webhook.rejected"
 
-	// defaultMaxBodyBytes caps webhook request bodies when Options.MaxBodyBytes is 0.
-	defaultMaxBodyBytes = 64 << 20 // 64 MiB
+	// defaultMaxBodyBytes caps webhook request bodies when Options.MaxBodyBytes is
+	// 0. Real Tailscale webhook payloads are KB-scale (a handful of JSON events
+	// per delivery, see https://tailscale.com/kb/1213/webhooks), so 1 MiB gives
+	// generous headroom without buffering pre-auth requests at the 64 MiB size
+	// sized for the streaming receiver's batch flow/audit logs.
+	defaultMaxBodyBytes = 1 << 20 // 1 MiB
 
 	// eventNamePrefix is prepended to the Tailscale event type to form the OTEL
 	// LogRecord EventName, e.g. "tailscale.webhook.nodeCreated".
@@ -147,8 +151,8 @@ type Options struct {
 	// as a replay. Zero disables the check.
 	Tolerance time.Duration
 	// MaxBodyBytes caps the raw request body size before signature verification,
-	// bounding unauthenticated memory use. 0 selects a 64 MiB default; a negative
-	// value disables the cap.
+	// bounding unauthenticated memory use. 0 selects a 1 MiB default (real
+	// Tailscale webhook payloads are KB-scale); a negative value disables the cap.
 	MaxBodyBytes int64
 	// OnIngest, when non-nil, is called once after a successful parse with
 	// (IngestSourceWebhook, IngestSignalWebhook, len(events), len(body)).

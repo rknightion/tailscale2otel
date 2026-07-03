@@ -75,3 +75,88 @@ func TestLimiterWaitNotChargedToAttemptTimeout(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
+
+// TestRequestInfo_WaitDurationReflectsLimiterWaitAndIsExcludedFromDuration
+// (#76) proves that RequestInfo separates the client-side rate-limiter queue
+// wait from the round-trip/backoff latency: WaitDuration reflects the actual
+// time blocked on the limiter, and Duration (what api.duration is built from)
+// does NOT include it — the round trip itself is near-instant here, so a
+// Duration anywhere close to the 40ms limiter wait would mean the wait leaked
+// back into it.
+func TestRequestInfo_WaitDurationReflectsLimiterWaitAndIsExcludedFromDuration(t *testing.T) {
+	var got RequestInfo
+	rt := &retryTransport{
+		base:      &fakeRoundTripper{statuses: []int{http.StatusOK}},
+		limiter:   blockingWaiter{d: 40 * time.Millisecond},
+		max:       1,
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+		onRequest: func(_ context.Context, i RequestInfo) {
+			got = i
+		},
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	if _, err := rt.RoundTrip(req); err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if got.WaitDuration < 35*time.Millisecond {
+		t.Fatalf("WaitDuration = %v, want >= ~40ms (the limiter wait)", got.WaitDuration)
+	}
+	if got.Duration >= 20*time.Millisecond {
+		t.Fatalf("Duration = %v, want well under the 40ms limiter wait (it must be excluded)", got.Duration)
+	}
+}
+
+// TestRequestInfo_WaitDurationAccumulatesAcrossRetries verifies the limiter
+// wait is summed across every attempt of a retried logical request, not just
+// the first.
+func TestRequestInfo_WaitDurationAccumulatesAcrossRetries(t *testing.T) {
+	var got RequestInfo
+	rt := &retryTransport{
+		base:      &fakeRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}},
+		limiter:   blockingWaiter{d: 15 * time.Millisecond},
+		max:       3,
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+		onRequest: func(_ context.Context, i RequestInfo) {
+			got = i
+		},
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	if _, err := rt.RoundTrip(req); err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if got.Attempts != 2 {
+		t.Fatalf("Attempts = %d, want 2", got.Attempts)
+	}
+	// Two attempts, each waiting ~15ms on the limiter -> >= ~30ms total.
+	if got.WaitDuration < 28*time.Millisecond {
+		t.Fatalf("WaitDuration = %v, want >= ~30ms (2 attempts x 15ms)", got.WaitDuration)
+	}
+}
+
+// TestRequestInfo_WaitDurationZeroWithoutLimiter verifies a nil limiter (the
+// unlimited/pass-through configuration) reports a zero WaitDuration rather than
+// leaving it uninitialized-but-wrong.
+func TestRequestInfo_WaitDurationZeroWithoutLimiter(t *testing.T) {
+	var got RequestInfo
+	rt := &retryTransport{
+		base:      &fakeRoundTripper{statuses: []int{http.StatusOK}},
+		max:       1,
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+		onRequest: func(_ context.Context, i RequestInfo) {
+			got = i
+		},
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	if _, err := rt.RoundTrip(req); err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if got.WaitDuration != 0 {
+		t.Fatalf("WaitDuration = %v, want 0 (no limiter configured)", got.WaitDuration)
+	}
+}

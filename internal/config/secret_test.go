@@ -81,13 +81,17 @@ func TestConfigDoesNotLeakSecretsWhenFormatted(t *testing.T) {
 	c.Webhook.Secret = "WEBHOOKSECRET-leak-canary"
 	c.Admin.Auth.Token = "ADMINTOKEN-leak-canary"
 	c.Profiling.Pyroscope.BasicAuthPassword = "PYROPASS-leak-canary"
-	c.Collectors.NodeMetrics.Targets = []NodeMetricsTarget{{BearerToken: "BEARER-leak-canary"}}
+	c.OTLP.Headers = map[string]Secret{"Authorization": "OTLPHEADER-leak-canary"}
+	c.Collectors.NodeMetrics.Targets = []NodeMetricsTarget{{
+		BearerToken: "BEARER-leak-canary",
+		Headers:     map[string]Secret{"X-Scope-OrgID": "NMHEADER-leak-canary"},
+	}}
 
 	dump := fmt.Sprintf("%+v\n%#v", c, c)
 	for _, secret := range []string{
 		"APIKEY-leak-canary", "OAUTHSECRET-leak-canary", "GCLOUDTOKEN-leak-canary",
 		"STREAMTOKEN-leak-canary", "WEBHOOKSECRET-leak-canary", "ADMINTOKEN-leak-canary",
-		"PYROPASS-leak-canary", "BEARER-leak-canary",
+		"PYROPASS-leak-canary", "BEARER-leak-canary", "OTLPHEADER-leak-canary", "NMHEADER-leak-canary",
 	} {
 		if strings.Contains(dump, secret) {
 			t.Errorf("config dump leaked secret %q", secret)
@@ -95,5 +99,12 @@ func TestConfigDoesNotLeakSecretsWhenFormatted(t *testing.T) {
 	}
 	if got := c.Webhook.Secret.Reveal(); got != "WEBHOOKSECRET-leak-canary" {
 		t.Errorf("Reveal() = %q, want the real value preserved", got)
+	}
+	// The header Secrets must still Reveal their real values at the point of use.
+	if got := c.OTLP.Headers["Authorization"].Reveal(); got != "OTLPHEADER-leak-canary" {
+		t.Errorf("OTLP header Reveal() = %q, want the real value preserved", got)
+	}
+	if got := c.Collectors.NodeMetrics.Targets[0].Headers["X-Scope-OrgID"].Reveal(); got != "NMHEADER-leak-canary" {
+		t.Errorf("node-metrics header Reveal() = %q, want the real value preserved", got)
 	}
 }

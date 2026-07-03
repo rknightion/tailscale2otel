@@ -171,6 +171,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__SECRET` | `""` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN) |
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | reject signed timestamps older than this (replay window); "0" disables the check |
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | best-effort: drop a webhook event already counted via the audit logs |
+| `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413) |
 | `TS2OTEL_PII_FILTER__EMAILS` | `true` | user/actor login names (often email addresses) |
 | `TS2OTEL_PII_FILTER__USER_DISPLAY_NAMES` | `true` | actor display (human) names |
 | `TS2OTEL_PII_FILTER__USER_IDS` | `true` | numeric/opaque user IDs (enduser.id) |

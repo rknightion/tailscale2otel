@@ -119,3 +119,52 @@ func TestLoadWarnsOnUnknownEnvVar(t *testing.T) {
 		t.Errorf("Warnings() = %v, want one naming the unknown env var", cfg.Warnings())
 	}
 }
+
+// TestLoadRejectsEnvVarIndexingIntoNodeMetricsTargets: collectors.node_metrics
+// .targets is a []struct, documented as file-only (env.go). An env var that
+// indexes into it (e.g. TS2OTEL_COLLECTORS__NODE_METRICS__TARGETS__0__URL)
+// cannot be expressed as a flat env value — mapstructure would otherwise
+// silently decode it into a slice holding a mostly-empty struct, dropping the
+// URL the operator actually set. Load must reject this outright with an
+// actionable error naming both the offending variable and the file-only key,
+// regardless of whether node_metrics itself is enabled (issue #79).
+func TestLoadRejectsEnvVarIndexingIntoNodeMetricsTargets(t *testing.T) {
+	for _, enabled := range []string{"true", "false"} {
+		t.Run("node_metrics_enabled="+enabled, func(t *testing.T) {
+			t.Setenv("TS2OTEL_COLLECTORS__NODE_METRICS__ENABLED", enabled)
+			t.Setenv("TS2OTEL_COLLECTORS__NODE_METRICS__TARGETS__0__URL", "http://tailscaled:5252/metrics")
+
+			_, err := config.Load("")
+			if err == nil {
+				t.Fatal("Load: want an error, got nil")
+			}
+			if !strings.Contains(err.Error(), "TS2OTEL_COLLECTORS__NODE_METRICS__TARGETS__0__URL") {
+				t.Errorf("error = %q, want it to name the offending env var", err)
+			}
+			if !strings.Contains(err.Error(), "collectors.node_metrics.targets") {
+				t.Errorf("error = %q, want it to name the file-only config key", err)
+			}
+			if strings.Contains(err.Error(), "targets[0].url is required") {
+				t.Errorf("error = %q, must not surface the confusing decode-artifact validate error instead", err)
+			}
+		})
+	}
+}
+
+// TestLoadRejectsEnvVarIndexingIntoTailnets covers the other list-of-structs
+// config key named in issue #79 (tailnets), confirming the rejection is
+// general rather than hardcoded to node_metrics.targets alone.
+func TestLoadRejectsEnvVarIndexingIntoTailnets(t *testing.T) {
+	t.Setenv("TS2OTEL_TAILNETS__0__NAME", "acme.example.com")
+
+	_, err := config.Load("")
+	if err == nil {
+		t.Fatal("Load: want an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "TS2OTEL_TAILNETS__0__NAME") {
+		t.Errorf("error = %q, want it to name the offending env var", err)
+	}
+	if !strings.Contains(err.Error(), "tailnets") {
+		t.Errorf("error = %q, want it to name the file-only config key", err)
+	}
+}

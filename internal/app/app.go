@@ -91,6 +91,11 @@ type App struct {
 
 	selfRelease *release.Fetcher // nil unless version_checks.self.enabled
 	tsRelease   *release.Fetcher // nil unless version_checks.devices.enabled
+
+	// readyState tracks terminal stream/webhook receiver failures so /readyz
+	// reports unready after a receiver fails to bind or stops unexpectedly (#57).
+	// Written by recordReceiverStop, read by the readyz handler.
+	readyState *receiverHealth
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -131,7 +136,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		labels[i] = rt.Name
 	}
 	if !multi && cfg.Provider != "headscale" && len(resolved) == 1 && resolved[0].Name == "-" {
-		if rc, rcErr := newResolverClient(resolved[0], logger); rcErr == nil {
+		if rc, rcErr := newResolverClient(resolved[0], version, logger); rcErr == nil {
 			if name := resolveTailnetName(ctx, rc, time.Now(), withComponent(logger, compTSAPI)); name != "" {
 				labels[0] = name
 			}
@@ -185,7 +190,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			tp := ps.Tailnet(label)
 			emitter := tp.Emitter()
 			apiStats := NewAPIStats()
-			cp, err := buildTailscaleProvider(rt, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
+			cp, err := buildTailscaleProvider(rt, version, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
 			if err != nil {
 				_ = ps.Shutdown(ctx)
 				// Attribute the failure to the offending tailnet so an MSP with many
@@ -242,22 +247,23 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 // records for the status page; apiObserver emits OTLP only with self-obs on).
 func buildTailscaleProvider(
 	rt config.ResolvedTailnet,
+	version string,
 	logger *slog.Logger,
 	tracer trace.Tracer,
 	emitter telemetry.Emitter,
 	apiStats *APIStats,
 	selfObs bool,
 ) (*provider.Provider, error) {
-	tsOpts := tsapiOptionsFor(rt)
+	tsOpts := tsapiOptionsFor(rt, version)
 	tsOpts.Logger = withComponent(logger, compTSAPI)
 	tsOpts.Tracer = tracer
-	var obs func(context.Context, string, int, int, time.Duration)
+	var obs func(context.Context, string, int, int, time.Duration, time.Duration)
 	if selfObs {
 		obs = apiObserver(emitter)
 	}
 	tsOpts.OnRequest = func(ctx context.Context, i tsapi.RequestInfo) {
 		if obs != nil {
-			obs(ctx, i.Endpoint, i.Status, i.Attempts, i.Duration)
+			obs(ctx, i.Endpoint, i.Status, i.Attempts, i.Duration, i.WaitDuration)
 		}
 		apiStats.Record(i)
 	}
@@ -292,6 +298,7 @@ func newAppShell(
 		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
 		store:       store,
 		logger:      logger,
+		readyState:  newReceiverHealth(),
 	}
 }
 

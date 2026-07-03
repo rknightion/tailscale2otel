@@ -40,8 +40,8 @@ func resolveTailnetName(ctx context.Context, c tailnetNameResolver, now time.Tim
 // tsapiOptionsFor) but without the self-obs request hooks, since the telemetry
 // emitter does not exist yet at this point in app.New. It uses rt's API path
 // verbatim (the "-" placeholder) — resolution never alters the API path.
-func newResolverClient(rt config.ResolvedTailnet, logger *slog.Logger) (*tsapi.Client, error) {
-	o := tsapiOptionsFor(rt)
+func newResolverClient(rt config.ResolvedTailnet, version string, logger *slog.Logger) (*tsapi.Client, error) {
+	o := tsapiOptionsFor(rt, version)
 	o.Logger = withComponent(logger, compTSAPI)
 	return tsapi.NewClient(o)
 }

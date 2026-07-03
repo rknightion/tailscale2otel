@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/netip"
 	"strings"
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -18,15 +20,24 @@ import (
 // discardLog is a no-op logger for discoverer tests that don't assert on logs.
 func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-// fakeDevicesAPI satisfies nodeDiscoveryAPI for discoverer tests.
+// fakeDevicesAPI satisfies nodeDiscoveryAPI for discoverer tests. calls counts
+// invocations so cache-path tests (#85) can assert the API poll was skipped.
 type fakeDevicesAPI struct {
-	devs []tsapi.RichDevice
-	err  error
+	devs  []tsapi.RichDevice
+	err   error
+	calls int
 }
 
 func (f *fakeDevicesAPI) DevicesRich(context.Context) ([]tsapi.RichDevice, error) {
+	f.calls++
 	return f.devs, f.err
 }
+
+// fakeDeviceCache satisfies deviceCacheReader for discoverer tests (#85),
+// standing in for *enrich.DeviceCache without needing a real cache/Replace.
+type fakeDeviceCache struct{ devices []enrich.DeviceMeta }
+
+func (f *fakeDeviceCache) Snapshot() []enrich.DeviceMeta { return f.devices }
 
 // discoveryDefaults returns the documented default discovery config (so tests
 // override only the field under test).
@@ -260,6 +271,121 @@ func TestNodeDiscoverer_APIErrorPropagates(t *testing.T) {
 	_, err := newNodeDiscoverer(&fakeDevicesAPI{err: want}, discoveryDefaults(), discardLog()).Discover(context.Background())
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
+	}
+}
+
+// --- #85: reuse the devices collector's cache instead of a separate DevicesRich() poll ---
+
+// TestNodeDiscoverer_UsesSharedCacheWhenPopulated verifies that once a
+// withDeviceCache option is set and the cache holds devices, Discover sources
+// its device view entirely from the cache and never calls the (heaviest,
+// rate-limit-sensitive) DevicesRich() API.
+func TestNodeDiscoverer_UsesSharedCacheWhenPopulated(t *testing.T) {
+	api := &fakeDevicesAPI{devs: []tsapi.RichDevice{{Hostname: "should-not-be-used", Addresses: []string{"100.64.0.9"}, ConnectedToControl: true}}}
+	cache := &fakeDeviceCache{devices: []enrich.DeviceMeta{
+		{ID: "1", NodeID: "n1", Hostname: "cached", Name: "cached.tail1a2b.ts.net",
+			Online: true, Addrs: []netip.Addr{netip.MustParseAddr("100.64.0.1")}},
+	}}
+	d := newNodeDiscoverer(api, discoveryDefaults(), discardLog(), withDeviceCache(cache))
+
+	got, err := d.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if api.calls != 0 {
+		t.Fatalf("DevicesRich called %d times, want 0 (cache path must skip the API poll)", api.calls)
+	}
+	if len(got) != 1 || got[0].URL != "http://100.64.0.1:5252/metrics" {
+		t.Fatalf("targets = %+v, want the cached device only", got)
+	}
+}
+
+// TestNodeDiscoverer_FallsBackToAPIWhenCacheEmpty verifies Discover falls back
+// to the API poll when the cache is configured but currently empty — the
+// state a disabled (or not-yet-ticked) devices collector leaves it in, so
+// node-metrics discovery never silently produces zero targets in that case.
+func TestNodeDiscoverer_FallsBackToAPIWhenCacheEmpty(t *testing.T) {
+	api := &fakeDevicesAPI{devs: []tsapi.RichDevice{{Hostname: "from-api", Addresses: []string{"100.64.0.5"}, ConnectedToControl: true}}}
+	cache := &fakeDeviceCache{} // empty: devices collector disabled or not ticked yet
+	d := newNodeDiscoverer(api, discoveryDefaults(), discardLog(), withDeviceCache(cache))
+
+	got, err := d.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if api.calls != 1 {
+		t.Fatalf("DevicesRich called %d times, want 1 (fallback path)", api.calls)
+	}
+	if len(got) != 1 || got[0].URL != "http://100.64.0.5:5252/metrics" {
+		t.Fatalf("targets = %+v, want the API-sourced device", got)
+	}
+}
+
+// TestNodeDiscoverer_NoCacheConfiguredUsesAPI pins the default/legacy behavior:
+// with no withDeviceCache option at all (e.g. multi-tailnet wiring that hasn't
+// adopted the cache, or the option simply omitted), Discover polls the API
+// exactly as before #85.
+func TestNodeDiscoverer_NoCacheConfiguredUsesAPI(t *testing.T) {
+	api := &fakeDevicesAPI{devs: []tsapi.RichDevice{{Hostname: "a", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true}}}
+	d := newNodeDiscoverer(api, discoveryDefaults(), discardLog())
+
+	got, err := d.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if api.calls != 1 {
+		t.Fatalf("DevicesRich called %d times, want 1 (no cache configured)", api.calls)
+	}
+	if len(got) != 1 {
+		t.Fatalf("targets = %+v, want 1", got)
+	}
+}
+
+// TestNodeDiscoverer_CachePathAppliesSameFiltersAndLabels verifies the
+// cache-sourced path (enrich.DeviceMeta) applies the identical online/tag
+// filters and HostID/tags/instance labeling as the API-sourced path
+// (tsapi.RichDevice) — the #85 acceptance criterion that behavior must be
+// identical regardless of source.
+func TestNodeDiscoverer_CachePathAppliesSameFiltersAndLabels(t *testing.T) {
+	cfg := discoveryDefaults()
+	cfg.IncludeTags = []string{"tag:server"}
+	cache := &fakeDeviceCache{devices: []enrich.DeviceMeta{
+		{ // online, tagged, matches include filter -> kept
+			ID: "id-a", NodeID: "n-a", Name: "a.tail1a2b.ts.net", Hostname: "a",
+			Tags: []string{"tag:server"}, Online: true,
+			Addrs: []netip.Addr{netip.MustParseAddr("100.64.0.1")},
+		},
+		{ // offline -> dropped by online_only (default true)
+			ID: "id-b", NodeID: "n-b", Hostname: "b", Tags: []string{"tag:server"}, Online: false,
+			Addrs: []netip.Addr{netip.MustParseAddr("100.64.0.2")},
+		},
+		{ // online but lacks the include tag -> dropped
+			ID: "id-c", NodeID: "n-c", Hostname: "c", Online: true,
+			Addrs: []netip.Addr{netip.MustParseAddr("100.64.0.3")},
+		},
+		{ // external -> dropped by exclude_external (default true)
+			ID: "id-d", NodeID: "n-d", Hostname: "d", Tags: []string{"tag:server"}, Online: true,
+			External: true, Addrs: []netip.Addr{netip.MustParseAddr("100.64.0.4")},
+		},
+	}}
+	d := newNodeDiscoverer(&fakeDevicesAPI{}, cfg, discardLog(), withDeviceCache(cache))
+
+	got, err := d.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("targets = %+v, want only device a (online+tagged+internal)", got)
+	}
+	tg := got[0]
+	if tg.URL != "http://100.64.0.1:5252/metrics" {
+		t.Fatalf("URL = %q, want a's", tg.URL)
+	}
+	if tg.Labels[semconv.HostID] != "id-a" {
+		t.Fatalf("HostID label = %q, want id-a (from DeviceMeta.ID)", tg.Labels[semconv.HostID])
+	}
+	if tg.Labels[semconv.AttrTags] != "tag:server" {
+		t.Fatalf("tags label = %q, want tag:server", tg.Labels[semconv.AttrTags])
 	}
 }
 

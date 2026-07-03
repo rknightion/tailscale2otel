@@ -35,7 +35,7 @@ func Default() *Config {
 		OTLP: OTLPConfig{
 			Protocol: "http",
 			Endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
-			Headers:  map[string]string{},
+			Headers:  map[string]Secret{},
 			TLS:      TLSConfig{Insecure: false},
 			// 60s aligns the OTLP push cadence with the default collector scrape
 			// interval (1 data-point-per-minute), avoiding Grafana Cloud DPM churn.

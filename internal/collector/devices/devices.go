@@ -737,6 +737,25 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 
+	// #61: prune lastPosture to the current tick's fleet so it does not retain
+	// entries for devices that have left the tailnet (it grows unbounded
+	// otherwise under high device churn). A device absent this tick loses its
+	// remembered posture signature; if it later rejoins, postureLogChanges
+	// treats it as first-seen again (a fresh baseline log) rather than silently
+	// comparing against a stale signature from a device that, from the
+	// collector's perspective, no longer existed in between.
+	if len(c.lastPosture) > 0 {
+		current := make(map[string]struct{}, len(devs))
+		for i := range devs {
+			current[devs[i].ID] = struct{}{}
+		}
+		for id := range c.lastPosture {
+			if _, ok := current[id]; !ok {
+				delete(c.lastPosture, id)
+			}
+		}
+	}
+
 	for k, n := range counts {
 		e.Gauge(docDevicesCount.Name, docDevicesCount.Unit, docDevicesCount.Description,
 			float64(n), telemetry.Attrs{
@@ -1089,7 +1108,10 @@ func postureSignature(attrs map[string]any) string {
 
 // toMetas converts rich API devices to the cache's normalized DeviceMeta form,
 // parsing each address and skipping any that fail to parse. NodeID is set to the
-// control-plane node id (used in flow logs), not the numeric device ID.
+// control-plane node id (used in flow logs); the separate numeric device ID
+// (used e.g. as the node-metrics HostID label, #85) is carried in DeviceMeta.ID.
+// Online mirrors ConnectedToControl, needed by node-metrics discovery's
+// online_only filter when it sources targets from this cache (#85).
 func toMetas(devs []tsapi.RichDevice) []enrich.DeviceMeta {
 	metas := make([]enrich.DeviceMeta, 0, len(devs))
 	for i := range devs {
@@ -1103,6 +1125,7 @@ func toMetas(devs []tsapi.RichDevice) []enrich.DeviceMeta {
 			addrs = append(addrs, a)
 		}
 		metas = append(metas, enrich.DeviceMeta{
+			ID:        d.ID,
 			NodeID:    d.NodeID,
 			Name:      d.Name,
 			Hostname:  d.Hostname,
@@ -1112,6 +1135,7 @@ func toMetas(devs []tsapi.RichDevice) []enrich.DeviceMeta {
 			Tags:      d.Tags,
 			Addrs:     addrs,
 			External:  d.IsExternal,
+			Online:    d.ConnectedToControl,
 		})
 	}
 	return metas

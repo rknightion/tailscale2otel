@@ -25,22 +25,122 @@ type nodeDiscoveryAPI interface {
 
 var _ nodeDiscoveryAPI = (*tsapi.Client)(nil)
 
+// deviceCacheReader is the subset of *enrich.DeviceCache the discoverer needs
+// to source targets from the devices collector's shared cache instead of
+// issuing its own DevicesRich() poll (#85). Narrowed to an interface so it can
+// be faked in tests without a real cache.
+type deviceCacheReader interface {
+	Snapshot() []enrich.DeviceMeta
+}
+
+var _ deviceCacheReader = (*enrich.DeviceCache)(nil)
+
+// nodeDiscovererOption configures a nodeDiscoverer at construction.
+type nodeDiscovererOption func(*nodeDiscoverer)
+
+// withDeviceCache makes the discoverer prefer cache over its own DevicesRich()
+// call when the cache currently holds at least one device (#85). The devices
+// collector populates this same cache (see internal/collector/devices) on its
+// own, typically shorter, interval — reusing it avoids a duplicate full-
+// inventory fetch against the heaviest, most rate-limit-sensitive Tailscale
+// API endpoint. An empty cache (devices collector disabled, or not yet ticked)
+// makes Discover fall back to the API poll on that call, so a slow-starting or
+// disabled devices collector never silently starves node-metrics discovery of
+// targets — see collectDevices.
+func withDeviceCache(cache deviceCacheReader) nodeDiscovererOption {
+	return func(d *nodeDiscoverer) { d.cache = cache }
+}
+
 // nodeDiscoverer turns the Tailscale device inventory into node-metrics scrape
 // targets, applying the configured online/external/tag filters and the
 // metrics-endpoint shape (scheme/port/path). It satisfies nodemetrics.Discoverer.
 type nodeDiscoverer struct {
-	api nodeDiscoveryAPI
-	cfg config.NodeMetricsDiscovery
-	log *slog.Logger
+	api   nodeDiscoveryAPI
+	cache deviceCacheReader // nil unless withDeviceCache is passed (#85)
+	cfg   config.NodeMetricsDiscovery
+	log   *slog.Logger
 }
 
 var _ nodemetrics.Discoverer = (*nodeDiscoverer)(nil)
 
-func newNodeDiscoverer(api nodeDiscoveryAPI, cfg config.NodeMetricsDiscovery, log *slog.Logger) *nodeDiscoverer {
+func newNodeDiscoverer(api nodeDiscoveryAPI, cfg config.NodeMetricsDiscovery, log *slog.Logger, opts ...nodeDiscovererOption) *nodeDiscoverer {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &nodeDiscoverer{api: api, cfg: cfg, log: log}
+	d := &nodeDiscoverer{api: api, cfg: cfg, log: log}
+	for _, o := range opts {
+		o(d)
+	}
+	return d
+}
+
+// discoveryDevice is the minimal per-device view the match/toTarget pipeline
+// needs, populated from either tsapi.RichDevice (API-poll path) or
+// enrich.DeviceMeta (shared-cache path, #85) so the rest of Discover doesn't
+// care which source produced it.
+type discoveryDevice struct {
+	id                 string
+	name               string
+	hostname           string
+	tags               []string
+	addresses          []string
+	connectedToControl bool
+	isExternal         bool
+}
+
+func discoveryDeviceFromRich(d *tsapi.RichDevice) discoveryDevice {
+	return discoveryDevice{
+		id:                 d.ID,
+		name:               d.Name,
+		hostname:           d.Hostname,
+		tags:               d.Tags,
+		addresses:          d.Addresses,
+		connectedToControl: d.ConnectedToControl,
+		isExternal:         d.IsExternal,
+	}
+}
+
+func discoveryDeviceFromMeta(m *enrich.DeviceMeta) discoveryDevice {
+	addrs := make([]string, len(m.Addrs))
+	for i, a := range m.Addrs {
+		addrs[i] = a.String()
+	}
+	return discoveryDevice{
+		id:                 m.ID,
+		name:               m.Name,
+		hostname:           m.Hostname,
+		tags:               m.Tags,
+		addresses:          addrs,
+		connectedToControl: m.Online,
+		isExternal:         m.External,
+	}
+}
+
+// collectDevices returns the current device view for Discover, preferring the
+// shared devices-collector cache over another DevicesRich() poll (#85). It
+// falls back to the API when no cache was configured (withDeviceCache not
+// passed) or the cache is currently empty — a transiently or permanently
+// empty cache (devices collector disabled, or enabled but not yet past its
+// first tick) must never silently starve discovery of targets.
+func (d *nodeDiscoverer) collectDevices(ctx context.Context) ([]discoveryDevice, error) {
+	if d.cache != nil {
+		if snap := d.cache.Snapshot(); len(snap) > 0 {
+			out := make([]discoveryDevice, len(snap))
+			for i := range snap {
+				out[i] = discoveryDeviceFromMeta(&snap[i])
+			}
+			return out, nil
+		}
+	}
+	devs, err := d.api.DevicesRich(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]discoveryDevice, len(devs))
+	for i := range devs {
+		out[i] = discoveryDeviceFromRich(&devs[i])
+	}
+	return out, nil
 }
 
 // Discover lists the tailnet devices and converts the matching ones into scrape
@@ -48,7 +148,7 @@ func newNodeDiscoverer(api nodeDiscoveryAPI, cfg config.NodeMetricsDiscovery, lo
 // is NOT pre-checked: a node the scraper cannot reach simply reports
 // tailscale.node.up=0 at scrape time, so no ACL/grant evaluation is needed.
 func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, error) {
-	devs, err := d.api.DevicesRich(ctx)
+	devs, err := d.collectDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +162,7 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 		if !d.match(dev) {
 			continue
 		}
-		addr, ok := pickAddress(dev.Addresses, d.cfg.AddressOrder)
+		addr, ok := pickAddress(dev.addresses, d.cfg.AddressOrder)
 		if !ok {
 			continue // no usable Tailscale address
 		}
@@ -125,22 +225,22 @@ func (d *nodeDiscoverer) disambiguateInstances(targets []nodemetrics.Target) {
 
 // match reports whether a device passes the online/external/tag filters.
 // ExcludeTags wins over IncludeTags; an empty IncludeTags matches every device.
-func (d *nodeDiscoverer) match(dev *tsapi.RichDevice) bool {
-	if d.cfg.OnlineOnly && !dev.ConnectedToControl {
+func (d *nodeDiscoverer) match(dev *discoveryDevice) bool {
+	if d.cfg.OnlineOnly && !dev.connectedToControl {
 		return false
 	}
-	if d.cfg.ExcludeExternal && dev.IsExternal {
+	if d.cfg.ExcludeExternal && dev.isExternal {
 		return false
 	}
 	for _, ex := range d.cfg.ExcludeTags {
-		if slices.Contains(dev.Tags, ex) {
+		if slices.Contains(dev.tags, ex) {
 			return false
 		}
 	}
 	if len(d.cfg.IncludeTags) > 0 {
 		matched := false
 		for _, in := range d.cfg.IncludeTags {
-			if slices.Contains(dev.Tags, in) {
+			if slices.Contains(dev.tags, in) {
 				matched = true
 				break
 			}
@@ -192,7 +292,7 @@ func pickAddress(addrs []string, order string) (netip.Addr, bool) {
 }
 
 // toTarget builds the scrape Target for one device at the chosen address.
-func (d *nodeDiscoverer) toTarget(dev *tsapi.RichDevice, addr netip.Addr) nodemetrics.Target {
+func (d *nodeDiscoverer) toTarget(dev *discoveryDevice, addr netip.Addr) nodemetrics.Target {
 	u := url.URL{
 		Scheme: d.cfg.Scheme,
 		Host:   net.JoinHostPort(addr.String(), strconv.Itoa(d.cfg.Port)), // JoinHostPort brackets IPv6
@@ -202,21 +302,21 @@ func (d *nodeDiscoverer) toTarget(dev *tsapi.RichDevice, addr netip.Addr) nodeme
 
 	switch d.cfg.InstanceSource {
 	case "name":
-		t.Instance = magicDNSShort(dev.Name)
+		t.Instance = magicDNSShort(dev.name)
 	case "hostname":
-		t.Instance = dev.Hostname
+		t.Instance = dev.hostname
 	default: // "address": leave empty so the collector derives host:port from the URL
 	}
 
-	wantTags := d.cfg.IncludeTagsLabel && len(dev.Tags) > 0
+	wantTags := d.cfg.IncludeTagsLabel && len(dev.tags) > 0
 	if d.cfg.IncludeHostLabels || wantTags {
 		t.Labels = make(map[string]string, 3)
 		if d.cfg.IncludeHostLabels {
-			t.Labels[semconv.HostName] = dev.Hostname
-			t.Labels[semconv.HostID] = dev.ID
+			t.Labels[semconv.HostName] = dev.hostname
+			t.Labels[semconv.HostID] = dev.id
 		}
 		if wantTags {
-			t.Labels[semconv.AttrTags] = strings.Join(dev.Tags, ",")
+			t.Labels[semconv.AttrTags] = strings.Join(dev.tags, ",")
 		}
 	}
 	return t

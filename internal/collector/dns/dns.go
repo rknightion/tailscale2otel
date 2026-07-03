@@ -110,6 +110,24 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		})
 	}
 	for domain, resolvers := range cfg.SplitDNS {
+		if len(resolvers) == 0 {
+			// #63: a split-DNS domain with a null/empty resolver list (a
+			// legitimate Tailscale feature for excluding a subdomain from a
+			// broader override) is still counted in split_zones.count above,
+			// but the loop below never runs for it — leaving no series to
+			// identify which counted domain has no resolvers. Emit a single
+			// point with an empty address so it stays identifiable; the
+			// address="" + a non-empty split domain combination cannot occur
+			// for any real resolver (a global resolver always has domain=""
+			// instead), so this synthetic point is unambiguous.
+			e.Gauge(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
+				attrAddress:         "",
+				attrKind:            resolverKindSplit,
+				attrDomain:          domain,
+				attrUseWithExitNode: boolString(false),
+			})
+			continue
+		}
 		for _, r := range resolvers {
 			if r.UseWithExitNode {
 				exitCount++

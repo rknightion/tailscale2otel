@@ -21,8 +21,9 @@ import (
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
 
-	// api.requests (+ api.retries, since attempts > 1).
-	apiObserver(rec.Emitter())(context.Background(), "/devices", 200, 3, 75*time.Millisecond)
+	// api.requests (+ api.retries, since attempts > 1; + api.rate_limit.wait,
+	// since the wait arg is > 0).
+	apiObserver(rec.Emitter())(context.Background(), "/devices", 200, 3, 75*time.Millisecond, 20*time.Millisecond)
 
 	// up: runHeartbeat emits once immediately, before blocking on its ticker.
 	ctx, cancel := context.WithCancel(context.Background())

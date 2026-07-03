@@ -302,12 +302,15 @@ type RetryConfig struct {
 
 // OTLPConfig configures the OTLP exporter.
 type OTLPConfig struct {
-	Protocol       string             `yaml:"protocol"`
-	Endpoint       string             `yaml:"endpoint"`
-	GrafanaCloud   GrafanaCloudConfig `yaml:"grafana_cloud"`
-	Headers        map[string]string  `yaml:"headers"`
-	TLS            TLSConfig          `yaml:"tls"`
-	MetricInterval Duration           `yaml:"metric_interval"`
+	Protocol     string             `yaml:"protocol"`
+	Endpoint     string             `yaml:"endpoint"`
+	GrafanaCloud GrafanaCloudConfig `yaml:"grafana_cloud"`
+	// Headers values are Secret: an OTLP header commonly carries an
+	// Authorization token (the documented way to auth against a non-Grafana-Cloud
+	// gateway), so the values redact themselves in any config dump/log (#73).
+	Headers        map[string]Secret `yaml:"headers"`
+	TLS            TLSConfig         `yaml:"tls"`
+	MetricInterval Duration          `yaml:"metric_interval"`
 }
 
 // GrafanaCloudConfig holds Grafana Cloud OTLP credentials.
@@ -612,13 +615,16 @@ type NodeMetricsDiscovery struct {
 // the scrape a plain GET. BearerTokenFile (read fresh each scrape) takes
 // precedence over BearerToken.
 type NodeMetricsTarget struct {
-	URL             string                `yaml:"url"`
-	Instance        string                `yaml:"instance"`
-	Labels          map[string]string     `yaml:"labels"`
-	BearerToken     Secret                `yaml:"bearer_token"`
-	BearerTokenFile string                `yaml:"bearer_token_file"`
-	Headers         map[string]string     `yaml:"headers"`
-	TLS             *NodeMetricsTargetTLS `yaml:"tls"`
+	URL             string            `yaml:"url"`
+	Instance        string            `yaml:"instance"`
+	Labels          map[string]string `yaml:"labels"`
+	BearerToken     Secret            `yaml:"bearer_token"`
+	BearerTokenFile string            `yaml:"bearer_token_file"`
+	// Headers values are Secret so a per-target scrape credential passed as a
+	// custom header (e.g. X-Scope-OrgID or an Authorization token) redacts itself
+	// in any config dump/log (#73).
+	Headers map[string]Secret     `yaml:"headers"`
+	TLS     *NodeMetricsTargetTLS `yaml:"tls"`
 }
 
 // NodeMetricsTargetTLS is the optional per-target TLS trust/identity for HTTPS
@@ -679,6 +685,13 @@ type WebhookConfig struct {
 	// with the audit processor so a change reported by BOTH a webhook and the
 	// audit logs is counted once. Off by default.
 	DedupAuditEvents bool `yaml:"dedup_audit_events"`
+	// MaxBodyBytes caps the raw request body read before signature verification
+	// (the HMAC covers the whole body, so some pre-auth buffering is
+	// unavoidable); an over-cap POST is rejected with 413 +
+	// rejected{reason=too_large}, mirroring streaming.max_body_bytes. 0 selects
+	// a 1 MiB default (real Tailscale webhook payloads are KB-scale); a
+	// negative value disables the cap.
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
 }
 
 // TracingConfig configures the OTEL traces pillar. Off by default; reuses otlp.*
@@ -724,6 +737,17 @@ type SelfObservabilityConfig struct {
 // returned. A non-empty path that cannot be read is an error; absence of a path
 // is not (defaults + environment are sufficient to run).
 func Load(path string) (*Config, error) {
+	// 0. Reject any TS2OTEL_* variable that indexes into a list-of-structs
+	//    config key (e.g. TS2OTEL_TAILNETS__0__NAME or
+	//    TS2OTEL_COLLECTORS__NODE_METRICS__TARGETS__0__URL) upfront, before it
+	//    reaches mapstructure — which would otherwise silently decode it into a
+	//    slice holding a mostly-empty struct, dropping the intended value (see
+	//    structSliceEnvKeys and #79). This check is independent of the file/env
+	//    layering below since it only inspects variable names.
+	if hits := structSliceIndexEnvVars(); len(hits) > 0 {
+		return nil, structSliceEnvVarError(hits)
+	}
+
 	k := koanf.New(keyDelim)
 
 	// 1. Built-in defaults (the single source of default values). Loading them

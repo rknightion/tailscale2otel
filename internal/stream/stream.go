@@ -123,6 +123,15 @@ const (
 	// MetricRequestDuration is the wall-clock duration of HEC receiver HTTP
 	// request handling in seconds (Histogram).
 	MetricRequestDuration = "tailscale.stream.request.duration"
+	// MetricSkipped counts records that were extracted from an otherwise-valid
+	// request body but never reached a processor (#67). It carries a
+	// low-cardinality "reason" attribute: "unclassified" (the record didn't
+	// match either the flow or audit shape) or "unwrap_drop" (a non-object
+	// value — e.g. a scalar/null HEC "event" — was encountered while unwrapping
+	// the envelope, before classification could even run). Unlike
+	// MetricRejected (a whole REQUEST rejected outright), this counts
+	// individual records dropped from a request the receiver still 200s.
+	MetricSkipped = "tailscale.stream.skipped"
 )
 
 // requestDurationBucketsSeconds are the explicit histogram bucket boundaries
@@ -140,6 +149,12 @@ const (
 	reasonAuth       = "auth"
 	reasonUnparsable = "unparsable"
 	reasonTooLarge   = "too_large"
+
+	// reasonUnclassified and reasonUnwrapDrop are the "reason" values for
+	// MetricSkipped (#67): the two ways a record extracted from a valid
+	// request body can fail to reach a processor.
+	reasonUnclassified = "unclassified"
+	reasonUnwrapDrop   = "unwrap_drop"
 )
 
 // defaultPath is the Splunk-HEC event endpoint path used when Options.Path is
@@ -332,7 +347,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
 	}
 
-	var flows, audits, skipped, flowDecodeErr, auditDecodeErr int
+	var flows, audits, classifyUnknown, flowDecodeErr, auditDecodeErr int
 	for _, rec := range records {
 		switch classify(rec.raw) {
 		case kindFlow:
@@ -361,9 +376,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			s.auditProc.Process(ev, s.emitter)
 			audits++
 		default:
-			skipped++
+			classifyUnknown++
 		}
 	}
+	// #67: total skipped records, combining both stages a record can be
+	// dropped at — classify()-stage kindUnknown (above) and unwrap-stage drops
+	// (a non-object HEC "event"/nested value, tallied inside extractRecords).
+	// The request still 200s; this is a per-RECORD count, not a request-level
+	// rejection like MetricRejected.
+	skipped := classifyUnknown + outcome.unwrapDropped
 
 	if flows > 0 {
 		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
@@ -387,8 +408,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
 			float64(auditDecodeErr), telemetry.Attrs{attrType: typeAudit})
 	}
+	if classifyUnknown > 0 {
+		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
+			float64(classifyUnknown), telemetry.Attrs{attrReason: reasonUnclassified})
+	}
+	if outcome.unwrapDropped > 0 {
+		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
+			float64(outcome.unwrapDropped), telemetry.Attrs{attrReason: reasonUnwrapDrop})
+	}
 	if skipped > 0 {
-		s.logger.Debug("stream: skipped unrecognized records", "count", skipped)
+		s.logger.Debug("stream: skipped unrecognized records", "count", skipped,
+			"unclassified", classifyUnknown, "unwrap_drop", outcome.unwrapDropped)
 	}
 
 	// Record aggregate counts and body size on the span before the success ack.
@@ -566,6 +596,12 @@ type extractOutcome struct {
 	// remainder is unknowable — those bytes never parsed as JSON — so byte
 	// length is the honest signal surfaced instead.
 	droppedBytes int
+	// unwrapDropped counts values dropped inside unwrap itself (#67): a
+	// non-object value (e.g. a scalar/null HEC "event", or a malformed nested
+	// array) encountered while unwrapping an envelope, before the record ever
+	// reaches classify(). Distinct from a classify()-stage kindUnknown result,
+	// which counts as skipped in the caller (handle) instead.
+	unwrapDropped int
 }
 
 // extractRecords parses a request body into zero or more record objects (each
@@ -628,10 +664,13 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	}
 
 	// Unwrap each top-level value into record objects, propagating each HEC
-	// envelope's time down to the record(s) it carries.
+	// envelope's time down to the record(s) it carries. unwrapDropped tallies
+	// values dropped along the way (#67) — a non-object value encountered while
+	// unwrapping, before classify() ever runs.
 	var out []extractedRecord
+	var unwrapDropped int
 	for _, v := range values {
-		out = append(out, unwrap(v, time.Time{})...)
+		out = append(out, unwrap(v, time.Time{}, &unwrapDropped)...)
 	}
 	if len(out) == 0 {
 		return nil, extractOutcome{}, errors.New("no records after unwrapping")
@@ -639,6 +678,7 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	if outcome.truncated {
 		outcome.salvaged = len(out)
 	}
+	outcome.unwrapDropped = unwrapDropped
 	return out, outcome, nil
 }
 
@@ -658,7 +698,12 @@ type envelope struct {
 // recursion): a Splunk-HEC {"event": <record>} wrapper yields its event tagged
 // with the wrapper's own "time"/"fields.recorded"; a Tailscale {"logs": [...]}
 // wrapper yields its elements; any other object is itself a record.
-func unwrap(v json.RawMessage, inherited time.Time) []extractedRecord {
+//
+// dropped is incremented once per non-object value encountered along the way
+// (a scalar/null HEC "event", a bare scalar at top level, or a malformed
+// nested array) — the #67 unwrap-stage drop count, distinct from a
+// classify()-stage kindUnknown result in the caller.
+func unwrap(v json.RawMessage, inherited time.Time, dropped *int) []extractedRecord {
 	trimmed := bytes.TrimSpace(v)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		// Not a JSON object (e.g. an array or scalar at top level); ignore.
@@ -668,11 +713,12 @@ func unwrap(v json.RawMessage, inherited time.Time) []extractedRecord {
 			if err := json.Unmarshal(trimmed, &arr); err == nil {
 				var out []extractedRecord
 				for _, e := range arr {
-					out = append(out, unwrap(e, inherited)...)
+					out = append(out, unwrap(e, inherited, dropped)...)
 				}
 				return out
 			}
 		}
+		*dropped++
 		return nil
 	}
 
@@ -689,12 +735,12 @@ func unwrap(v json.RawMessage, inherited time.Time) []extractedRecord {
 		if len(env.Logs) > 0 {
 			out := make([]extractedRecord, 0, len(env.Logs))
 			for _, e := range env.Logs {
-				out = append(out, unwrap(e, t)...)
+				out = append(out, unwrap(e, t, dropped)...)
 			}
 			return out
 		}
 		if len(bytes.TrimSpace(env.Event)) > 0 {
-			return unwrap(env.Event, t)
+			return unwrap(env.Event, t, dropped)
 		}
 	}
 	// Plain record object.

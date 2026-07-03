@@ -31,8 +31,8 @@ func TestApiObserver_RecordsRequestsAndRetries(t *testing.T) {
 	rec := telemetrytest.New()
 	obs := apiObserver(rec.Emitter())
 
-	obs(context.Background(), "devices", 200, 1, 50*time.Millisecond)          // first-try success: no retries
-	obs(context.Background(), "logging/network", 200, 3, 300*time.Millisecond) // succeeded after 2 retries
+	obs(context.Background(), "devices", 200, 1, 50*time.Millisecond, 0)          // first-try success: no retries, no rate-limit wait
+	obs(context.Background(), "logging/network", 200, 3, 300*time.Millisecond, 0) // succeeded after 2 retries
 
 	reqs := rec.MetricPoints(appcatalog.MetricAPIRequests)
 	if len(reqs) != 2 {

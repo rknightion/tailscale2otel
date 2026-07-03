@@ -86,12 +86,22 @@ func TestAdminAuth_NoTokenStaysOpen(t *testing.T) {
 
 func TestAdminAuth_ProbesAlwaysOpen(t *testing.T) {
 	// Health probes must never be gated, even when a token is configured.
+	// /healthz is unconditional liveness; /readyz reflects real readiness
+	// (#57), which is "starting" for a freshly built app whose collectors
+	// haven't ticked yet — but crucially neither probe demands credentials.
 	srv := adminAuthApp(t, false)
-	for _, path := range []string{"/healthz", "/readyz"} {
-		w := do(srv, httptest.NewRequest(http.MethodGet, path, nil))
-		if w.Code != http.StatusOK || w.Body.String() != "ok" {
-			t.Errorf("GET %s with a token set = %d %q, want 200 ok (probes are never gated)", path, w.Code, w.Body.String())
-		}
+
+	w := do(srv, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Errorf("GET /healthz with a token set = %d %q, want 200 ok (never gated)", w.Code, w.Body.String())
+	}
+
+	w = do(srv, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code == http.StatusUnauthorized {
+		t.Errorf("GET /readyz with a token set = %d, want NOT 401 (probes are never auth-gated)", w.Code)
+	}
+	if got := w.Header().Get("WWW-Authenticate"); got != "" {
+		t.Errorf("GET /readyz set WWW-Authenticate=%q, want none (never auth-gated)", got)
 	}
 }
 

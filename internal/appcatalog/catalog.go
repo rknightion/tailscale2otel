@@ -36,6 +36,9 @@ const (
 	MetricAPIRetries = "tailscale2otel.api.retries"
 	// MetricAPIDuration is the API request wall-clock latency histogram name.
 	MetricAPIDuration = "tailscale2otel.api.duration"
+	// MetricAPIRateLimitWait is the histogram of time API requests spent blocked
+	// on the client-side rate limiter.
+	MetricAPIRateLimitWait = "tailscale2otel.api.rate_limit.wait"
 	// MetricUpdateAvailable is the self update-available flag name (C4).
 	MetricUpdateAvailable = "tailscale2otel.update_available"
 )
@@ -170,6 +173,14 @@ var (
 		Instrument:  metricdoc.Histogram,
 		Description: "Tailscale API request wall-clock latency in seconds, by endpoint and HTTP status code. Covers the full logical request including any retry backoff (not just server time). Use the 429 status-code bucket here plus tailscale2otel.api.retries for rate-limit visibility — the Tailscale API exposes no rate-limit-remaining headers. When tracing is enabled, datapoints carry trace exemplars linking to the API request span.",
 		Attributes:  []string{"endpoint", "http.response.status_code"},
+		Group:       GroupSelfObs,
+	}
+	DocAPIRateLimitWait = metricdoc.Metric{
+		Name:        MetricAPIRateLimitWait,
+		Unit:        "s",
+		Instrument:  metricdoc.Histogram,
+		Description: "Time in seconds a Tailscale API request spent blocked on the client-side rate limiter (`tailscale.http.rate_limit`) before its first attempt, by endpoint. Recorded separately from and excluded from tailscale2otel.api.duration so latency reflects genuine API/network + backoff time. A rising distribution here means the configured rate limit is throttling the poller — raise `rate_limit` or lengthen collector intervals. Only requests that actually waited are recorded (a 0-wait request is skipped).",
+		Attributes:  []string{"endpoint"},
 		Group:       GroupSelfObs,
 	}
 	DocUpdateAvailable = metricdoc.Metric{
@@ -422,7 +433,7 @@ var DocPIIFilterCategory = metricdoc.Metric{
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocUpdateAvailable, DocAPIRequests, DocAPIRetries, DocAPIDuration,
+		DocUp, DocUpdateAvailable, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,

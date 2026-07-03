@@ -107,12 +107,14 @@ func TestDeviceCache_Snapshot(t *testing.T) {
 	c := enrich.NewDeviceCache()
 	c.Replace([]enrich.DeviceMeta{
 		{
+			ID:       "12345",
 			NodeID:   "n1",
 			Name:     "laptop.tail1a2b.ts.net",
 			Hostname: "laptop",
 			OS:       "linux",
 			User:     "alice@example.com",
 			Tags:     []string{"tag:server"},
+			Online:   true,
 			Addrs: []netip.Addr{
 				netip.MustParseAddr("100.64.0.1"),
 				netip.MustParseAddr("fd7a:115c:a1e0::1"),
@@ -146,6 +148,12 @@ func TestDeviceCache_Snapshot(t *testing.T) {
 	}
 	if n1.Hostname != "laptop" || n1.OS != "linux" || n1.User != "alice@example.com" {
 		t.Fatalf("Snapshot() n1 = %+v, want laptop/linux/alice", n1)
+	}
+	if n1.ID != "12345" {
+		t.Fatalf("Snapshot() n1.ID = %q, want 12345", n1.ID)
+	}
+	if !n1.Online {
+		t.Fatal("Snapshot() n1.Online = false, want true")
 	}
 	if len(n1.Addrs) != 2 {
 		t.Fatalf("Snapshot() n1 has %d addrs, want 2", len(n1.Addrs))

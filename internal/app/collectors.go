@@ -176,7 +176,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// Keep a typed reference so the status page can surface discovered nodes.
 			// Discovery uses the provider client's DevicesRich, so it works for both
 			// backends (Headscale nodes also run tailscaled on :5252).
-			rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, withComponent(logger, compNodeMetrics)))
+			rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, rt.cache, withComponent(logger, compNodeMetrics)))
 			rt.registry.Register(rt.nodeMetrics, nm.Interval.D())
 		}
 	}
@@ -233,9 +233,10 @@ func (a *App) buildReceivers() {
 // unit-tested rather than only exercised end-to-end.
 func webhookOptions(c config.WebhookConfig) webhook.Options {
 	return webhook.Options{
-		Listen:    c.Listen,
-		Path:      c.Path,
-		Secret:    c.Secret.Reveal(),
-		Tolerance: c.Tolerance.D(),
+		Listen:       c.Listen,
+		Path:         c.Path,
+		Secret:       c.Secret.Reveal(),
+		Tolerance:    c.Tolerance.D(),
+		MaxBodyBytes: c.MaxBodyBytes,
 	}
 }

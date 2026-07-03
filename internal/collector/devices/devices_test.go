@@ -1120,6 +1120,57 @@ func TestCollect_PostureLog_DynamicAttrsRoutedThroughClassifiedKey(t *testing.T)
 	}
 }
 
+// TestCollect_LastPostureCache_PrunedWhenDeviceLeavesFleet is the regression
+// test for #61: lastPosture must be pruned to the current tick's fleet each
+// scrape, not retained forever for a device that has left the tailnet. This is
+// asserted via the only externally-observable effect of the (unexported)
+// lastPosture map: postureLogChanges mode diffs a device's posture against its
+// remembered signature to decide whether the change-log fires. If a device
+// leaves the fleet (absent from DevicesRich) and later rejoins with the EXACT
+// SAME posture, a stale unpruned entry would compare equal and stay silent;
+// after pruning, the collector has no memory of it and must treat it as
+// first-seen again (a fresh baseline log).
+func TestCollect_LastPostureCache_PrunedWhenDeviceLeavesFleet(t *testing.T) {
+	laptop := sampleDevices()[0]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	posture := map[string]map[string]any{laptop.ID: richPosture()}
+	api := &fakeAPI{devices: []tsapi.RichDevice{laptop}, posture: posture}
+	c := devices.New(api, cache, 0, false, true)
+
+	// Scrape 1: device present -> baseline (first-seen) posture log.
+	rec1 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec1.Emitter()); err != nil {
+		t.Fatalf("Collect 1: %v", err)
+	}
+	if got := postureLogCount(rec1); got != 1 {
+		t.Fatalf("scrape 1 posture logs = %d, want 1 (baseline)", got)
+	}
+
+	// Scrape 2: device leaves the fleet entirely (e.g. removed from the
+	// tailnet). No posture call is made for it, and its lastPosture entry must
+	// be pruned during this tick.
+	api.devices = nil
+	rec2 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatalf("Collect 2: %v", err)
+	}
+	if got := postureLogCount(rec2); got != 0 {
+		t.Fatalf("scrape 2 posture logs = %d, want 0 (no devices in fleet)", got)
+	}
+
+	// Scrape 3: device rejoins with the SAME (unchanged) posture. If the entry
+	// had survived scrape 2 unpruned, this would stay silent (posture
+	// "unchanged"). Pruning during the absence must make it look first-seen.
+	api.devices = []tsapi.RichDevice{laptop}
+	rec3 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec3.Emitter()); err != nil {
+		t.Fatalf("Collect 3: %v", err)
+	}
+	if got := postureLogCount(rec3); got != 1 {
+		t.Fatalf("scrape 3 posture logs = %d, want 1 (rejoined device treated as first-seen after lastPosture was pruned)", got)
+	}
+}
+
 // postureLogCount counts captured log records whose EventName is the posture
 // event.
 func postureLogCount(rec *telemetrytest.Recorder) int {
@@ -1218,6 +1269,60 @@ func TestCollect_PopulatesCache_Tags(t *testing.T) {
 	want := []string{"tag:servers", "tag:k8s"}
 	if !slices.Equal(m.Tags, want) {
 		t.Fatalf("cached device Tags = %v, want %v", m.Tags, want)
+	}
+}
+
+// TestCollect_PopulatesCache_IDAndOnline is the regression test for issue #85:
+// toMetas must copy a device's numeric ID and ConnectedToControl (online)
+// status into enrich.DeviceMeta, so node-metrics discovery can read them from
+// the shared cache instead of issuing its own DevicesRich() poll.
+func TestCollect_PopulatesCache_IDAndOnline(t *testing.T) {
+	devs := []tsapi.RichDevice{
+		{
+			ID:                 "999888777",
+			NodeID:             "nDdiOnline1",
+			Name:               "online1.tail1a2b.ts.net",
+			Hostname:           "online1",
+			OS:                 "linux",
+			Addresses:          []string{"100.64.0.10"},
+			ConnectedToControl: true,
+		},
+		{
+			ID:                 "999888778",
+			NodeID:             "nDdiOffline1",
+			Name:               "offline1.tail1a2b.ts.net",
+			Hostname:           "offline1",
+			OS:                 "linux",
+			Addresses:          []string{"100.64.0.11"},
+			ConnectedToControl: false,
+		},
+	}
+	c, cache, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	online, ok := cache.LookupNode("nDdiOnline1")
+	if !ok {
+		t.Fatal("LookupNode(nDdiOnline1) not found")
+	}
+	if online.ID != "999888777" {
+		t.Errorf("online.ID = %q, want 999888777", online.ID)
+	}
+	if !online.Online {
+		t.Error("online.Online = false, want true (ConnectedToControl was true)")
+	}
+
+	offline, ok := cache.LookupNode("nDdiOffline1")
+	if !ok {
+		t.Fatal("LookupNode(nDdiOffline1) not found")
+	}
+	if offline.ID != "999888778" {
+		t.Errorf("offline.ID = %q, want 999888778", offline.ID)
+	}
+	if offline.Online {
+		t.Error("offline.Online = true, want false (ConnectedToControl was false)")
 	}
 }
 
