@@ -34,6 +34,36 @@ func TestNameAndDefaultInterval(t *testing.T) {
 	}
 }
 
+func TestCollectEmitsErrorGauge(t *testing.T) {
+	sync := time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC)
+	api := &fakeAPI{ints: []tsapi.PostureIntegration{
+		{ID: "ok", Provider: "intune", Status: tsapi.PostureIntegrationStatus{LastSync: sync}},
+		{ID: "bad", Provider: "jamf", Status: tsapi.PostureIntegrationStatus{LastSync: sync, Error: "auth token expired"}},
+	}}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	byInt := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.posture_integration.error") {
+		byInt[p.Attrs[attrIntegration]] = p.Value
+	}
+	if byInt["ok"] != 0 {
+		t.Errorf("error gauge for ok integration = %v, want 0", byInt["ok"])
+	}
+	if byInt["bad"] != 1 {
+		t.Errorf("error gauge for failing integration = %v, want 1", byInt["bad"])
+	}
+	// The raw error text must never appear on any attribute value.
+	for _, p := range rec.MetricPoints("tailscale.posture_integration.error") {
+		for k, v := range p.Attrs {
+			if v == "auth token expired" {
+				t.Errorf("raw error text leaked into attribute %q", k)
+			}
+		}
+	}
+}
+
 func TestCollectEmitsPerIntegration(t *testing.T) {
 	sync := time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC)
 	api := &fakeAPI{ints: []tsapi.PostureIntegration{{

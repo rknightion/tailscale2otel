@@ -2,6 +2,8 @@ package devices_test
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -812,11 +814,25 @@ func TestCollect_PostureEnabled(t *testing.T) {
 	if laptop.Attrs[semconv.HostName] != "laptop" {
 		t.Fatalf("posture host.name = %q, want laptop", laptop.Attrs[semconv.HostName])
 	}
-	if laptop.Attrs["custom:foo"] != "bar" {
-		t.Fatalf("posture custom:foo = %q, want bar", laptop.Attrs["custom:foo"])
+	// The raw dynamic posture keys must NOT be spread onto the log as
+	// individual top-level attributes (#56: that bypasses PII classification).
+	// Instead they are carried JSON-encoded under the classified
+	// tailscale.device.posture.details key.
+	if _, ok := laptop.Attrs["custom:foo"]; ok {
+		t.Fatalf("posture log carries raw dynamic key %q directly; want it routed through tailscale.device.posture.details", "custom:foo")
 	}
-	if laptop.Attrs["node:os"] != "linux" {
-		t.Fatalf("posture node:os = %q, want linux", laptop.Attrs["node:os"])
+	if _, ok := laptop.Attrs["node:os"]; ok {
+		t.Fatalf("posture log carries raw dynamic key %q directly; want it routed through tailscale.device.posture.details", "node:os")
+	}
+	details, ok := laptop.Attrs["tailscale.device.posture.details"]
+	if !ok {
+		t.Fatal("posture log missing classified attribute tailscale.device.posture.details")
+	}
+	if !strings.Contains(details, `"custom:foo":"bar"`) {
+		t.Errorf("posture details = %q, want it to contain custom:foo=bar", details)
+	}
+	if !strings.Contains(details, `"node:os":"linux"`) {
+		t.Errorf("posture details = %q, want it to contain node:os=linux", details)
 	}
 	// Body must include the attribute count but NOT the hostname — the hostname
 	// lives in the host.name attribute (redactable via pii_filter.hostnames).
@@ -1047,6 +1063,63 @@ func TestCollect_PostureLogMode_UnknownDefaultsToChanges(t *testing.T) {
 	}
 }
 
+// TestCollect_PostureLog_DynamicAttrsRoutedThroughClassifiedKey is the
+// regression test for issue #56: the posture log's dynamic attribute map
+// (arbitrary provider-namespaced keys like "custom:foo", "intune:isEncrypted")
+// must never be spread onto the log record as raw top-level attribute keys,
+// because none of those keys are registered in the PII registry and the
+// redactor's redactKey always falls through to "never redact" for an
+// unclassified key. Instead the full posture map must be carried under a
+// single, PII-registry-classified key (CatFreeTextDetails) so the existing
+// pii_filter.free_text_details toggle actually gates it — consistent with the
+// tailscale.device.attribute.info metric path's classified "value" label.
+func TestCollect_PostureLog_DynamicAttrsRoutedThroughClassifiedKey(t *testing.T) {
+	devs := sampleDevices()[:1]
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	posture := map[string]map[string]any{
+		"3690401478992208": {
+			"node:os":            "linux",
+			"custom:foo":         "bar",
+			"intune:isEncrypted": true,
+		},
+	}
+	api := &fakeAPI{devices: devs, posture: posture}
+	c := devices.New(api, cache, 0, false, true)
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	var postureLog *telemetrytest.LogRecord
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device.posture" {
+			l := lr
+			postureLog = &l
+		}
+	}
+	if postureLog == nil {
+		t.Fatal("posture log not emitted")
+	}
+
+	for _, rawKey := range []string{"custom:foo", "intune:isEncrypted", "node:os"} {
+		if _, ok := postureLog.Attrs[rawKey]; ok {
+			t.Errorf("posture log carries raw dynamic key %q directly as a top-level attribute; it bypasses PII classification and must be routed through a classified key instead", rawKey)
+		}
+	}
+
+	const classifiedKey = "tailscale.device.posture.details"
+	details, ok := postureLog.Attrs[classifiedKey]
+	if !ok {
+		t.Fatalf("posture log missing classified attribute %q carrying the dynamic posture map", classifiedKey)
+	}
+	for _, want := range []string{"custom:foo", "bar", "intune:isEncrypted"} {
+		if !strings.Contains(details, want) {
+			t.Errorf("classified attribute %q = %q, want it to contain %q", classifiedKey, details, want)
+		}
+	}
+}
+
 // postureLogCount counts captured log records whose EventName is the posture
 // event.
 func postureLogCount(rec *telemetrytest.Recorder) int {
@@ -1113,6 +1186,38 @@ func TestCollect_PopulatesCache(t *testing.T) {
 	m, _ := cache.LookupNode("nDdiLaptopCNTRL")
 	if m.OSVersion != "24.04" {
 		t.Fatalf("cached laptop OSVersion = %q, want 24.04", m.OSVersion)
+	}
+}
+
+// TestCollect_PopulatesCache_Tags is the regression test for issue #102:
+// toMetas must copy a device's ACL tags into enrich.DeviceMeta.Tags, so the
+// admin status page's per-device tags column (which reads
+// DeviceCache.Snapshot()[i].Tags) is not always blank.
+func TestCollect_PopulatesCache_Tags(t *testing.T) {
+	devs := []tsapi.RichDevice{
+		{
+			ID:        "tagged-1",
+			NodeID:    "nDdiTagged1",
+			Name:      "tagged1.tail1a2b.ts.net",
+			Hostname:  "tagged1",
+			OS:        "linux",
+			Addresses: []string{"100.64.0.9"},
+			Tags:      []string{"tag:servers", "tag:k8s"},
+		},
+	}
+	c, cache, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	m, ok := cache.LookupNode("nDdiTagged1")
+	if !ok {
+		t.Fatal("LookupNode(nDdiTagged1) not found")
+	}
+	want := []string{"tag:servers", "tag:k8s"}
+	if !slices.Equal(m.Tags, want) {
+		t.Fatalf("cached device Tags = %v, want %v", m.Tags, want)
 	}
 }
 

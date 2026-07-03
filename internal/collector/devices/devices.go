@@ -13,6 +13,7 @@ package devices
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"sort"
@@ -120,6 +121,16 @@ const (
 	// full namespaced posture key, and (info gauge only) its string value.
 	attrAttribute      = "attribute"
 	attrAttributeValue = "value"
+
+	// attrPostureDetails carries the full, arbitrary posture attribute map
+	// (JSON-encoded) on the tailscale.device.posture LOG event. The raw map's
+	// keys are provider-namespaced (e.g. "intune:...", "custom:...") and
+	// unbounded, so they can never individually be registered in the PII
+	// registry; routing them all through this single classified key
+	// (CatFreeTextDetails, same category as tailscale.audit.details and the
+	// device.attribute.info "value" label) lets pii_filter.free_text_details
+	// actually gate them (#56).
+	attrPostureDetails = "tailscale.device.posture.details"
 
 	// B3/B4 connectivity + routing labels.
 	attrConnCapability  = "tailscale.connectivity.capability"
@@ -1007,8 +1018,15 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		semconv.HostName: d.Hostname,
 		semconv.HostID:   d.ID,
 	}
-	for k, v := range attrs {
-		evAttrs[k] = fmt.Sprint(v)
+	// The full posture map is arbitrary and provider-namespaced (never a fixed
+	// key set), so it cannot be spread onto the log record as individual raw
+	// keys without bypassing PII classification (#56). Carry it JSON-encoded
+	// under the single classified attrPostureDetails key instead, so
+	// pii_filter.free_text_details gates it like any other free-text signal.
+	if len(attrs) > 0 {
+		if raw, err := json.Marshal(attrs); err == nil {
+			evAttrs[attrPostureDetails] = string(raw)
+		}
 	}
 	e.LogEvent(telemetry.Event{
 		Name:     docPosture.Name,
@@ -1090,6 +1108,7 @@ func toMetas(devs []tsapi.RichDevice) []enrich.DeviceMeta {
 			OS:        d.OS,
 			OSVersion: d.Distro.Version,
 			User:      d.User,
+			Tags:      d.Tags,
 			Addrs:     addrs,
 			External:  d.IsExternal,
 		})

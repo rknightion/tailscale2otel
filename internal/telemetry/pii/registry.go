@@ -20,6 +20,7 @@ var keyCategory = map[string]Category{
 	"tailscale.audit.old":              CatFreeTextDetails,
 	"tailscale.audit.new":              CatFreeTextDetails,
 	"tailscale.audit.details":          CatFreeTextDetails,
+	"tailscale.device.posture.details": CatFreeTextDetails, // #56: dynamic posture-log attribute map
 	"error":                            CatFreeTextDetails,
 	"tailscale.target.name":            CatFreeTextDetails,
 	"tailscale.key.description":        CatFreeTextDetails,

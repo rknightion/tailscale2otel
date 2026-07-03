@@ -54,7 +54,7 @@ stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`doma
 label (`security` / `infra` / `observability`); rules not worthy of automatic
 investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
 "true"` so IRM routing / auto-investigation stays focused. The generated set currently
-has **59 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
+has **60 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
 `-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
 `gen/build_rules.py` is the source of truth.
 
@@ -101,6 +101,7 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 | Rule | Severity | Default | Fires when |
 |---|---|---|---|
 | `PostureIntegrationSyncStale` | warning | ✅ on | an MDM/EDR posture integration hasn't synced in >24h |
+| `PostureIntegrationSyncFailing` | warning | ✅ on | an MDM/EDR posture integration's `status.error` is set (fires even while `last_sync` stays fresh — see #99) |
 | `LogStreamDeliveryFailing` | warning | ✅ on | SIEM log delivery is failing (`requests_failed` rate > 0) |
 | `LogStreamStalled` | warning | ⏸ off | a configured stream has no delivery activity for >1h |
 | `LogStreamBackpressure` | info | ⏸ off | delivery requests hitting the max body size |

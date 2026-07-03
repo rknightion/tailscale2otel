@@ -22,6 +22,11 @@ type PostureIntegrationStatus struct {
 	MatchedCount         int64
 	PossibleMatchedCount int64
 	ProviderHostCount    int64
+	// Error is the last sync's error message ("" when the last sync succeeded).
+	// Surfaced as a 0/1 gauge only — the raw text is never put on a metric label
+	// (#99). LastSync is the last sync ATTEMPT, not the last SUCCESS, so a failing
+	// integration keeps advancing LastSync; Error is the only failure signal.
+	Error string
 }
 
 type postureIntegrationsResponse struct {
@@ -36,6 +41,7 @@ type postureIntegration struct {
 		MatchedCount         int64     `json:"matchedCount"`
 		PossibleMatchedCount int64     `json:"possibleMatchedCount"`
 		ProviderHostCount    int64     `json:"providerHostCount"`
+		Error                string    `json:"error"`
 	} `json:"status"`
 }
 
@@ -56,6 +62,7 @@ func (c *Client) PostureIntegrations(ctx context.Context) ([]PostureIntegration,
 				MatchedCount:         p.Status.MatchedCount,
 				PossibleMatchedCount: p.Status.PossibleMatchedCount,
 				ProviderHostCount:    p.Status.ProviderHostCount,
+				Error:                p.Status.Error,
 			},
 		})
 	}

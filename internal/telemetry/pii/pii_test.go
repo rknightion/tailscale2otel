@@ -133,6 +133,28 @@ func TestIPKeyFallbackToHostname(t *testing.T) {
 	}
 }
 
+// TestLogDropsPostureDetailsWhenFreeTextOff is the pii-package half of the
+// issue #56 regression: the devices collector's posture log routes its
+// dynamic (arbitrary provider-namespaced) posture attribute map through the
+// classified "tailscale.device.posture.details" key so it is gated by
+// pii_filter.free_text_details, the same category that already covers
+// tailscale.audit.details/old/new and the device.attribute.info "value" label.
+func TestLogDropsPostureDetailsWhenFreeTextOff(t *testing.T) {
+	c := allOn()
+	c[CatFreeTextDetails] = false
+	r := New(c)
+	out := r.Log(map[string]any{
+		"tailscale.device.posture.details": `{"custom:foo":"bar","intune:isEncrypted":true}`,
+		"host.name":                        "h1",
+	})
+	if _, ok := out["tailscale.device.posture.details"]; ok {
+		t.Error("free_text_details off: tailscale.device.posture.details should be dropped from the posture log")
+	}
+	if _, ok := out["host.name"]; !ok {
+		t.Error("host.name (not free-text) should remain")
+	}
+}
+
 func TestUnknownKeyIPValueClassified(t *testing.T) {
 	c := allOn()
 	c[CatExternalIPs] = false

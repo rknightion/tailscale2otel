@@ -48,7 +48,15 @@ var (
 		Name:        metricLastSync,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Unix timestamp of the integration's last successful sync (alert on staleness). Emitted only once a sync has occurred.",
+		Description: "Unix timestamp of the integration's last synchronization ATTEMPT (not necessarily successful — the API's `lastSync` advances on every attempt, so pair staleness with `tailscale.posture_integration.error` to detect a failing sync). Emitted only once a sync has occurred.",
+		Attributes:  commonAttrs,
+		Group:       groupPosture,
+	}
+	docError = metricdoc.Metric{
+		Name:        metricError,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the integration's last sync reported an error, else `0`; one series per provider/integration. The raw error text is deliberately not emitted as a label (unbounded/possibly sensitive). Pair with `last_sync` — `lastSync` advances even on a failed attempt, so this is the only failure signal.",
 		Attributes:  commonAttrs,
 		Group:       groupPosture,
 	}
@@ -56,7 +64,7 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docCount, docMatched, docPossible, docProviderHosts, docLastSync}
+	return []metricdoc.Metric{docCount, docMatched, docPossible, docProviderHosts, docLastSync, docError}
 }
 
 // LogCatalog returns the log events this package emits (none).

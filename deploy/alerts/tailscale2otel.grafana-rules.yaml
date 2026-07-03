@@ -3057,7 +3057,77 @@ groups:
           domain: "security"
         annotations:
           summary: "Posture integration {{ $labels.tailscale_posture_provider }} sync is stale"
-          description: "A device-posture (MDM/EDR) integration has not synced in over 24h ({{ $labels.tailscale_posture_provider }}/{{ $labels.tailscale_posture_integration }}) — posture data from it is stale. Absent until an integration exists."
+          description: "A device-posture (MDM/EDR) integration has not synced in over 24h ({{ $labels.tailscale_posture_provider }}/{{ $labels.tailscale_posture_integration }}) — posture data from it is stale. Absent until an integration exists. NOTE: Tailscale updates last_sync on every sync *attempt*, including failures, so this alert cannot detect a persistently-failing-but-still-retrying integration (bad/revoked credentials) — see ts2o-posture-integration-error for that case (#99)."
+        isPaused: false
+      - uid: "ts2o-posture-integration-error"
+        title: "Posture integration sync failing"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "max by (tailscale_posture_provider, tailscale_posture_integration) (tailscale_posture_integration_error_ratio)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Posture integration {{ $labels.tailscale_posture_provider }} sync is failing"
+          description: "The device-posture (MDM/EDR) integration {{ $labels.tailscale_posture_provider }}/{{ $labels.tailscale_posture_integration }} reported a sync error (e.g. revoked credentials, an expired OAuth grant) on its status.error field. Unlike the staleness alert, this fires even while Tailscale keeps retrying and refreshing last_sync, so it catches a broken-but-retrying integration the staleness alert structurally cannot (#99). Absent until an integration exists AND the collector decodes/emits status.error as this gauge."
         isPaused: false
       - uid: "ts2o-logstream-delivery-failing"
         title: "Log-stream delivery failing"

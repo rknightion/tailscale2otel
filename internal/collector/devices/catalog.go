@@ -194,8 +194,8 @@ var (
 	docPosture = metricdoc.LogEvent{
 		Name:        eventPosture,
 		Severity:    "INFO",
-		Description: "Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API. **Gated** by `collect_posture`; by default emitted only when a device's posture changes (see `posture_log_mode`).",
-		Attributes:  []string{semconv.HostName, semconv.HostID},
+		Description: "Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API (JSON-encoded under `tailscale.device.posture.details`, gated by `pii_filter.free_text_details`). **Gated** by `collect_posture`; by default emitted only when a device's posture changes (see `posture_log_mode`).",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrPostureDetails},
 		Group:       groupDevices,
 	}
 

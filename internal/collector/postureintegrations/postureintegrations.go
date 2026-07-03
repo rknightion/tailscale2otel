@@ -29,6 +29,7 @@ const (
 	metricPossible      = "tailscale.posture_integration.possible_matched"
 	metricProviderHosts = "tailscale.posture_integration.provider_hosts"
 	metricLastSync      = "tailscale.posture_integration.last_sync"
+	metricError         = "tailscale.posture_integration.error"
 )
 
 const (
@@ -83,6 +84,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			float64(in.Status.PossibleMatchedCount), attrs)
 		e.Gauge(docProviderHosts.Name, docProviderHosts.Unit, docProviderHosts.Description,
 			float64(in.Status.ProviderHostCount), attrs)
+		// 0/1 error gauge: LastSync tracks the last sync ATTEMPT (not success), so a
+		// failing integration keeps advancing it — this is the only failure signal.
+		// The raw error text is NOT put on a label (unbounded / potentially sensitive).
+		errVal := 0.0
+		if in.Status.Error != "" {
+			errVal = 1.0
+		}
+		e.Gauge(docError.Name, docError.Unit, docError.Description, errVal, attrs)
 		if !in.Status.LastSync.IsZero() {
 			e.Gauge(docLastSync.Name, docLastSync.Unit, docLastSync.Description,
 				float64(in.Status.LastSync.Unix()), attrs)

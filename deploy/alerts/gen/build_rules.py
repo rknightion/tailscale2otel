@@ -482,7 +482,22 @@ def groups():
               "Posture integration {{ $labels.tailscale_posture_provider }} sync is stale",
               "A device-posture (MDM/EDR) integration has not synced in over 24h "
               "({{ $labels.tailscale_posture_provider }}/{{ $labels.tailscale_posture_integration }}) — "
-              "posture data from it is stale. Absent until an integration exists.",
+              "posture data from it is stale. Absent until an integration exists. NOTE: Tailscale updates "
+              "last_sync on every sync *attempt*, including failures, so this alert cannot detect a "
+              "persistently-failing-but-still-retrying integration (bad/revoked credentials) — see "
+              "ts2o-posture-integration-error for that case (#99).",
+              domain="security", paused=False),
+        alert("ts2o-posture-integration-error", "Posture integration sync failing",
+              "max by (tailscale_posture_provider, tailscale_posture_integration) "
+              "(tailscale_posture_integration_error_ratio)",
+              "gt", 0, "15m", "warning",
+              "Posture integration {{ $labels.tailscale_posture_provider }} sync is failing",
+              "The device-posture (MDM/EDR) integration {{ $labels.tailscale_posture_provider }}/"
+              "{{ $labels.tailscale_posture_integration }} reported a sync error (e.g. revoked credentials, "
+              "an expired OAuth grant) on its status.error field. Unlike the staleness alert, this fires "
+              "even while Tailscale keeps retrying and refreshing last_sync, so it catches a "
+              "broken-but-retrying integration the staleness alert structurally cannot (#99). Absent until "
+              "an integration exists AND the collector decodes/emits status.error as this gauge.",
               domain="security", paused=False),
         alert("ts2o-logstream-delivery-failing", "Log-stream delivery failing",
               "sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[15m]))",
