@@ -96,7 +96,9 @@ ignored.
 ## Contents
 
 - [Top level](#top-level)
+- [`headscale` — Headscale control-plane connection](#headscale-headscale-control-plane-connection)
 - [`tailscale` — API connection & authentication](#tailscale-api-connection-authentication)
+- [`tailnets` — multi-tailnet / MSP mode](#tailnets-multi-tailnet-msp-mode)
 - [`otlp` — the OTLP exporter](#otlp-the-otlp-exporter)
 - [`enrichment` — device-name cache](#enrichment-device-name-cache)
 - [`cardinality` — metric/label cardinality controls](#cardinality-metriclabel-cardinality-controls)
@@ -105,9 +107,11 @@ ignored.
 - [`streaming` — Splunk-HEC log receiver](#streaming-splunk-hec-log-receiver)
 - [`webhook` — event webhook receiver](#webhook-event-webhook-receiver)
 - [`self_observability` — the exporter's own telemetry](#self_observability-the-exporters-own-telemetry)
+- [`pii_filter` — PII / identifier redaction](#pii_filter-pii-identifier-redaction)
 - [`admin` — admin HTTP server (probes + status page)](#admin-admin-http-server-probes-status-page)
 - [`prometheus` — Prometheus pull endpoint](#prometheus-prometheus-pull-endpoint)
 - [`profiling` — pprof & Pyroscope](#profiling-pprof-pyroscope)
+- [`version_checks` — outbound "is a newer release available?" checks](#version_checks-outbound-is-a-newer-release-available-checks)
 - [`tracing` — OTEL traces pillar](#tracing-otel-traces-pillar)
 
 ---
@@ -222,6 +226,50 @@ The HTTP client used for all Tailscale API calls.
 
 ---
 
+## `tailnets` — multi-tailnet / MSP mode
+
+Optional list for observing **more than one tailnet from a single instance** (e.g. an MSP watching
+several customer tailnets). Empty by default — an empty (or absent) `tailnets:` means the ordinary
+single-tailnet `tailscale:` block above is used instead.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `tailnets` | `[]` | List of tailnet entries to fan out over. A non-empty list enables multi-tailnet mode. **File-only** — like `collectors.node_metrics.targets`, a list of structs cannot be set via flat `TS2OTEL_*` env vars; use a YAML config file. |
+| `tailnets[].name` | — (required) | The tailnet's name (e.g. `acme.example.com`). Required, and must be unique within the list — a missing or duplicate name is rejected at startup. |
+| `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey` plus the matching `oauth`/`apikey` sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. |
+| `tailnets[].http` | — | Same shape as [`tailscale.http`](#tailscalehttp). Unlike `auth`, this **is** backfilled field-by-field from the top-level `tailscale.http` block (itself defaulted), which is why `tailscale.http` doubles as the fleet-wide default for the whole list (see the note above). An entry that sets its own `http.*` field overrides the fleet default for that field only. |
+
+> **Mutual exclusion with `tailscale.tailnet`.** `tailnets:` and an explicit `tailscale.tailnet` cannot
+> both be set — a non-empty `tailnets` list alongside a `tailscale.tailnet` that names an actual
+> tailnet is rejected at startup (the default `"-"` sentinel does not count as a conflict, since it's
+> just "no explicit override"). Use one or the other, never both.
+>
+> **No inheritance of `tailscale.*` auth defaults.** Every `tailnets[]` entry needs its own `name` and
+> `auth` — credentials are never inherited from the top-level `tailscale.auth` block (`http` is the one
+> exception; see above). An `oauth` entry that omits `scopes` still gets the least-privilege default
+> used everywhere else in this exporter: `["all:read"]` — never an unscoped token covering every scope
+> the OAuth client holds.
+>
+> **`streaming`/`webhook` are single-tailnet only.** Both receivers feed shared processors and one
+> enrichment cache, so more than one `tailnets[]` entry combined with `streaming.enabled: true` or
+> `webhook.enabled: true` is rejected at startup. Use `source: poll` on `flowlogs`/`auditlogs` in
+> multi-tailnet mode instead (`source: stream` is likewise rejected for the same reason).
+>
+> **Checkpoint namespacing.** Poll checkpoint keys are `<name>` (collector name only) in single-tailnet
+> mode and `<tailnet>/<name>` in multi-tailnet mode. Switching between single- and multi-tailnet mode,
+> or renaming/removing a tailnet, changes the key shape; the exporter migrates a matching legacy key
+> automatically when exactly one unambiguous candidate exists, and otherwise leaves the stale key in
+> the checkpoint file (logged) while the affected collector cold-starts from `initial_lookback`.
+>
+> **Telemetry identity.** Each tailnet gets its own `service.instance.id` (and thus its own
+> `target_info`/Prometheus `instance`) plus the `tailscale.tailnet` resource attribute, so series from
+> different tailnets never collide on the OTLP push path; query fleet-wide with
+> `sum without(instance)(...)`. On the [`prometheus`](#prometheus-prometheus-pull-endpoint) pull
+> endpoint, `tailscale_tailnet` is the label that keeps per-tailnet series distinct at the shared
+> `/metrics` port — see the note in that section.
+
+---
+
 ## `otlp` — the OTLP exporter
 
 The single egress path for metrics and logs. `internal/telemetry` is the only component that touches
@@ -250,10 +298,18 @@ Transport security for `grpc`/`http`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `otlp.tls.insecure` | `false` | Disable transport security (plaintext). Use only for a trusted local Collector. |
+| `otlp.tls.insecure` | `false` | Disable transport security **entirely** (plaintext transport) — this is **not** a certificate-verification skip. It applies after the endpoint scheme, so even an `https://`/gRPC-with-TLS endpoint is downgraded to plaintext when set. Because the exporter's `Authorization: Basic <instanceID:token>` header (built from `otlp.grafana_cloud`/`otlp.headers`) rides on whatever transport this selects, `insecure: true` sends that credential **unencrypted** on the wire. Use only for a trusted local Collector on a private/loopback link — never across an untrusted network. |
 | `otlp.tls.ca_file` | `""` | Path to a CA bundle to trust for the server certificate. |
+| `otlp.tls.insecure_skip_verify` | `false` | Keep TLS on but skip server-certificate verification (self-signed / private-CA OTLP gateways, testing only). Distinct from `insecure` (which disables TLS entirely). A footgun — prefer `ca_file` in production. |
 | `otlp.tls.cert_file` | `""` | Client certificate (for mTLS). |
 | `otlp.tls.key_file` | `""` | Client private key (for mTLS). |
+
+> **`insecure` vs `insecure_skip_verify`.** `otlp.tls.insecure` disables TLS **entirely** (plaintext
+> h2c / `http://`) — it is NOT a certificate-verify skip, and it sends any `Authorization: Basic`
+> Grafana Cloud credential unencrypted. To reach an internal OTLP gateway with a self-signed / private-CA
+> certificate over TLS, either add its CA to `otlp.tls.ca_file` (preferred) or set
+> `otlp.tls.insecure_skip_verify: true` to keep TLS on while skipping verification (testing only —
+> vulnerable to MITM).
 
 ---
 
@@ -281,10 +337,18 @@ the hot path never blocks.
 | `enrichment.reverse_dns.enabled` | `false` | Turn on reverse-DNS enrichment of external flow addresses. |
 | `enrichment.reverse_dns.server` | `""` | Resolver to query as `ip` or `ip:port` (default port 53). Empty = system resolver. |
 | `enrichment.reverse_dns.timeout` | `2s` | Per-lookup timeout. |
-| `enrichment.reverse_dns.cache_ttl` | `1h` | Positive-result cache TTL. |
+| `enrichment.reverse_dns.cache_ttl` | `24h` | Positive-result cache TTL. |
 | `enrichment.reverse_dns.negative_ttl` | `5m` | Failed-lookup cache TTL. |
-| `enrichment.reverse_dns.max_entries` | `4096` | Cache size bound. |
+| `enrichment.reverse_dns.max_entries` | `50000` | Cache size bound. |
 | `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
+
+> **A cache "miss" does not always schedule a resolution.** The `tailscale.rdns.cache.lookups`
+> metric's `miss` result covers every sighting that isn't a cached hit or cached negative — but a
+> background resolution is only actually scheduled when the address isn't already in flight and the
+> cache/worker pool has capacity. A repeat sighting of an address whose resolution is already pending,
+> or one that arrives while the cache/worker pool is at capacity, still counts as a `miss` without
+> issuing a new query. Don't alert on "misses without a matching query" as a resolver-health signal —
+> that gap is expected under normal load, not a fault.
 
 ---
 
@@ -545,7 +609,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.enabled` | `false` | Run the HEC receiver. |
 | `streaming.listen` | `:8088` | Listen address. |
 | `streaming.path` | `/services/collector/event` | HEC event path. |
-| `streaming.token` | `""` | Expected as `Authorization: Splunk <token>`. Set via `TS2OTEL_STREAMING__TOKEN`. |
+| `streaming.token` | `""` | Shared secret for the receiver. Tailscale's log-streaming sender authenticates with **HTTP Basic auth** — `Authorization: Basic base64(<user>:<token>)`, where the password is this token (any username is accepted). The `Authorization: Splunk <token>` scheme is also accepted, as a fallback for other Splunk-HEC-compatible senders, but is not what Tailscale itself sends. Set via `TS2OTEL_STREAMING__TOKEN`. |
 | `streaming.public_url` | `""` | Externally reachable receiver URL. **Required when `auto_configure: true`** (it is the sink URL registered with Tailscale). |
 | `streaming.tls.cert_file` / `.key_file` | `""` | HTTPS is required by Tailscale; a `tailscale cert` works for private tailnet endpoints. |
 | `streaming.decompress` | `auto` | Request-body decompression: `auto` \| `gzip` \| `zstd` \| `none`. |
@@ -609,22 +673,28 @@ Tailscale IPs, for example.
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
 > category to `false` simply omits that class of identifier from emitted telemetry entirely.
 
-> **Limitation — log message bodies are NOT redacted.** The filter applies to metric labels and
-> log record **attributes** only. Log record **bodies** are fixed human-readable strings that do
-> not contain PII identifiers (hostnames, emails, IPs, etc.) by design — they use only non-PII
-> fields such as action type, target type, and counts. However, two signal bodies carry
-> free-text detail that is controlled by `pii_filter.free_text_details`:
+> **Log message bodies never carry free text — the two signals below are no exception.** The filter
+> applies to metric labels and log record **attributes**. Log record **bodies** are always fixed,
+> generic, human-readable strings that never contain free-text identifiers — this holds regardless of
+> `pii_filter.free_text_details`, for every signal, including the two below that some readers might
+> expect to carry more detail:
 >
-> - **`tailscale.acl.risky_rule`** — when `free_text_details` is **enabled** (`true`), the body
->   contains the offending ACL rule text (e.g. `src=tag:servers/dst=*:*`); the matching
->   `tailscale.audit.details` **attribute** is redacted when `free_text_details` is `false`, but
->   the body is unchanged.
-> - **`tailscale.key.scopes`** — when `free_text_details` is **enabled** (`true`), the body
->   contains the key description text; the matching attribute is redacted when `false`, but the
->   body is unchanged.
+> - **`tailscale.acl.risky_rule`** — the body is always the generic
+>   `"Unrestricted ACL rule in section %q"` (just the section name); it never contains the offending
+>   rule text. The rule text lives only in the `tailscale.acl.rule` **attribute**, which — like every
+>   other attribute — is gated by `pii_filter.free_text_details` (redacted when `false`, present when
+>   `true`).
+> - **`tailscale.key.scopes`** — the body is always the generic
+>   `"Tailscale key (%s) has %d scope(s)"` (type + scope count only); it never contains the key
+>   description. The description lives only in the `tailscale.key.description` **attribute**, gated by
+>   `pii_filter.free_text_details` the same way.
 >
-> Operators with strict PII posture should also restrict log-body retention at the backend
-> (e.g. via Grafana Cloud log pipeline drop/mask rules) if these bodies present a risk.
+> (`tailscale.audit.details` is an unrelated attribute belonging to the audit-log processor, not to
+> either of these two signals.)
+>
+> Because both bodies are always PII-safe by design, there is no additional backend-side redaction
+> needed for them; `pii_filter.free_text_details` is what governs whether the corresponding attributes
+> carry the free text.
 
 ---
 

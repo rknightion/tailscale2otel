@@ -121,11 +121,13 @@ labels.
 ## Checkpointing
 
 Window collectors persist their high-water marks via `internal/collector.CheckpointStore`. By
-default this is a file (`checkpoints.json` next to the binary), written atomically on each
-successful tick. On a clean restart the collector resumes from the last saved mark rather than
-re-fetching the full history; on cold start (no checkpoint) it applies the configured
-`initial_lookback` window. In-memory checkpointing is also available (useful for ephemeral
-containers where durability is handled externally).
+default this is a file, written atomically on each successful tick to `checkpoint.file_path`
+(default `/var/lib/tailscale2otel/checkpoints.json` — see
+[configuration.md](configuration.md#checkpoint-poll-high-water-marks) for the authoritative value).
+On a clean restart the collector resumes from the last saved mark rather than re-fetching the full
+history; on cold start (no checkpoint) it applies the configured `initial_lookback` window.
+In-memory checkpointing is also available (useful for ephemeral containers where durability is
+handled externally).
 
 If a window collection fails the high-water mark is **not** advanced, so the same window is
 retried on the next tick.
@@ -166,8 +168,9 @@ In addition, an admin HTTP server (default `:9090`) serves:
   discovered node-metrics targets, and a redacted config view.
 - `/api/status.json` — the same data as JSON, for programmatic access.
 - `/healthz` and `/readyz` — liveness and readiness probes.
-- `/debug/pprof` — optional, requires `profiling.pprof.enabled: true` (which in turn requires
-  `admin.enabled: true`).
+- `/debug/pprof` — optional, requires `profiling.pprof.enabled: true`, which in turn requires
+  **both** `admin.enabled: true` **and** `admin.auth.token` to be set (heap/goroutine dumps can
+  expose in-memory secrets) — see [security.md](security.md#secrets-handling).
 
 The status page is entirely self-contained — no CDN or external assets — so it renders on
 air-gapped tailnets.

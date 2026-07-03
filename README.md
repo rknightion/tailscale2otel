@@ -116,6 +116,16 @@ fields (e.g. `tailscale.auth.oauth.scopes`) accept a comma-separated env value. 
 A `TS2OTEL_*` env var that does not match any known config key is logged at startup as a **WARN** —
 this usually indicates a typo in the variable name.
 
+### Multiple tailnets (MSP mode)
+
+To observe several tailnets from one exporter, use a `tailnets:` list instead of the single
+`tailscale:` block (the two are mutually exclusive). Each entry has its own `name` + `auth`, and
+every signal is labelled with `tailscale.tailnet` so per-tailnet dashboards work. The top-level
+`tailscale.http` block acts as the fleet-wide HTTP default, and OAuth entries default to the
+least-privilege `all:read` scope. `tailnets:` is **file-only** (a list of structs isn't settable via
+flat env vars), and the streaming/webhook receivers remain single-tailnet only. See
+[`docs/configuration.md`](./docs/configuration.md#tailnets) for the full reference.
+
 [`config.example.yaml`](./config.example.yaml) shows the common knobs with comments; for an
 exhaustive, per-key reference of **every** setting, default, and gotcha, see
 **[`docs/configuration.md`](./docs/configuration.md)**.
@@ -198,7 +208,12 @@ if you stream both log types — or disable them — the checkpoint store is unu
 | `settings` | 600s | tailnet feature-toggle gauges |
 | `acl` | 600s | ACL size + "policy changed" signal (by ETag) |
 | `dns` | 600s | nameserver / search-path / split-zone counts, MagicDNS flag |
-| `node_metrics` | 60s | **(opt-in)** scrapes configured `tailscaled` `/metrics` endpoints, forwarding counters as deltas and gauges with an `instance` label + a per-target `tailscale.node.up` |
+| `contacts` | 600s | tailnet contact verification status (account/support/security); the email itself is never emitted |
+| `webhooks` | 600s | configured webhook-endpoint inventory + per-endpoint subscription counts |
+| `posture_integrations` | 600s | device-posture provider (MDM/EDR) integration counts, sync health, and matched-device counts |
+| `log_stream` | 600s | Tailscale's own log-stream (SIEM sink) delivery health — configured/error/last-activity + delivery counters |
+| `services` | 600s | Tailscale Services (VIP services) inventory — counts, ports, and (opt-in) backing hosts |
+| `node_metrics` | 60s | **(opt-in)** scrapes configured `tailscaled` `/metrics` endpoints, forwarding counters as deltas and gauges with a `tailscale_node` label + a per-target `tailscale.node.up` |
 
 Each collector can be disabled or re-tuned in config. `flowlogs`/`auditlogs` take a `source` of
 `poll`, `stream`, or `both` — **pick one method per log type** (`poll` *or* `stream`). `both` (and

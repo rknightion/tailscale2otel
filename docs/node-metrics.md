@@ -193,9 +193,14 @@ scrape is a plain `GET` with no added headers.
   are converted to monotonic deltas across scrapes; gauges are forwarded as gauges.
 - **Per-target `tailscale.node.up`.** A health gauge (→ `tailscale_node_up_ratio`) is emitted per
   target reporting whether the last scrape of that node succeeded.
-- **Node identity = the `instance` label.** Every forwarded series carries an `instance` label
-  (your `instance:` value, or the URL `host:port` if omitted) — identity is a **label, not an OTEL
-  Resource**. See the [reference](./metrics.md#node-metrics-scraper) for how these query in Grafana.
+- **Node identity = the `tailscale_node` label.** Every forwarded series carries a `tailscale.node`
+  attribute (Prometheus-normalized to `tailscale_node`) set to your `instance:` value, or the URL
+  `host:port` if omitted — identity is a **label, not an OTEL Resource**, and deliberately *not*
+  called `instance`: Grafana Cloud's OTLP→Prometheus translation promotes the resource attribute
+  `service.instance.id` to the `instance` label, and that resource value would win, collapsing every
+  node onto a single series. `instance:` in config only names the operator-facing field you set per
+  target — it does not name the resulting attribute key. See the
+  [reference](./metrics.md#node-metrics-scraper) for how these query in Grafana.
 
 ### Scrape and discovery safety limits
 
@@ -276,7 +281,7 @@ Once the scraper is running, confirm each target is healthy in Grafana:
 tailscale_node_up_ratio
 ```
 
-A value of `1` per `instance` means the last scrape of that node succeeded.
+A value of `1` per `tailscale_node` means the last scrape of that node succeeded.
 
 ---
 
