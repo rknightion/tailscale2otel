@@ -55,6 +55,7 @@ type runtimeDeps struct {
 	webhookDedup *dedup.Set        // single-tailnet webhook<->audit cross set; nil otherwise
 	tsRelease    *release.Fetcher  // shared upstream-version fetcher; nil when disabled
 	multi        bool              // true when >1 tailnet (enables checkpoint namespacing)
+	primary      bool              // true for the first runtime; owns process-global static node_metrics targets (#59)
 }
 
 // newRuntime assembles a per-tailnet runtime: emitter/provider/client are already

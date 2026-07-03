@@ -163,12 +163,22 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			services.WithPerEntity(cfg.Cardinality.PerEntity.Service),
 			services.WithCollectHosts(c.Services.CollectHosts)), c.Services.Interval.D())
 	}
-	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") && (len(nm.Targets) > 0 || nm.Discovery.Enabled) {
-		// Keep a typed reference so the status page can surface discovered nodes.
-		// Discovery uses the provider client's DevicesRich, so it works for both
-		// backends (Headscale nodes also run tailscaled on :5252).
-		rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, withComponent(logger, compNodeMetrics)))
-		rt.registry.Register(rt.nodeMetrics, nm.Interval.D())
+	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") {
+		// Static node_metrics targets are process-global (a shared jump host, not a
+		// per-tailnet resource). In multi-tailnet mode register them on the FIRST
+		// runtime only, so N tailnets don't each scrape + re-emit the same target
+		// N times (2x tailscaled load, duplicated/mis-attributed samples) — #59.
+		// Per-tailnet discovery still runs on every runtime.
+		if d.multi && !d.primary {
+			nm.Targets = nil
+		}
+		if len(nm.Targets) > 0 || nm.Discovery.Enabled {
+			// Keep a typed reference so the status page can surface discovered nodes.
+			// Discovery uses the provider client's DevicesRich, so it works for both
+			// backends (Headscale nodes also run tailscaled on :5252).
+			rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, withComponent(logger, compNodeMetrics)))
+			rt.registry.Register(rt.nodeMetrics, nm.Interval.D())
+		}
 	}
 	if c.Flowlogs.Enabled && cp.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
 		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), ingest)

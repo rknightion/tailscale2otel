@@ -5,11 +5,13 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/grafana/pyroscope-go"
@@ -186,7 +188,10 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			cp, err := buildTailscaleProvider(rt, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
 			if err != nil {
 				_ = ps.Shutdown(ctx)
-				return nil, err
+				// Attribute the failure to the offending tailnet so an MSP with many
+				// entries knows which one to fix (e.g. a mis-mounted secret) instead of
+				// a bare "no authentication configured" — #125.
+				return nil, fmt.Errorf("tailnets[%d] %q: %w", i, label, err)
 			}
 			r := a.addRuntime(label, emitter, tp.Cardinality(), tp.ExportStats, cp, multi)
 			r.apiStats = apiStats
@@ -356,6 +361,7 @@ func (a *App) addRuntime(
 		webhookDedup: a.webhookDedup,
 		tsRelease:    a.tsRelease,
 		multi:        multi,
+		primary:      len(a.runtimes) == 0, // the first runtime owns process-global static targets
 	})
 	a.runtimes = append(a.runtimes, rt)
 	return rt
@@ -407,8 +413,10 @@ func (a *App) Run(ctx context.Context) error {
 		defer func() { _ = a.profiler.Stop() }()
 	}
 	if a.rdnsCache != nil {
-		// Drain background reverse-DNS workers on stop (after the scheduler and
-		// receivers have wound down, so no further lookups are issued).
+		// Drain background reverse-DNS workers on stop. This deferred Close runs
+		// after Run's body returns — i.e. after the schedulers stop AND the receiver
+		// goroutines are joined (receiverWG.Wait below) — so no further lookups are
+		// issued once it begins (the rdns cache is also shutdown-safe on its own — #121).
 		defer a.rdnsCache.Close()
 	}
 	interval := a.cfg.OTLP.MetricInterval.D()
@@ -464,8 +472,18 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}
 
+	// receiverWG tracks the stream/webhook receiver goroutines so they are joined
+	// AFTER the schedulers stop but BEFORE the telemetry pipeline is shut down and
+	// the rdns cache is closed. Their Run(ctx) does a graceful HTTP shutdown that
+	// lets in-flight (already-ACKed) requests finish emitting; without joining, a
+	// record ACKed to Tailscale but still being processed at shutdown would be
+	// dropped when a.shutdown() tears down the exporters first (#53, and #121's
+	// "join receivers before closing rdns" criterion).
+	var receiverWG sync.WaitGroup
 	if a.streamSrv != nil {
+		receiverWG.Add(1)
 		go func() {
+			defer receiverWG.Done()
 			a.recordReceiverStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
 		if a.cfg.Streaming.AutoConfigure && a.runtimes[0].cp.Kind == provider.KindTailscale && a.runtimes[0].client != nil {
@@ -481,7 +499,9 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}
 	if a.webhookSrv != nil {
+		receiverWG.Add(1)
 		go func() {
+			defer receiverWG.Done()
 			a.recordReceiverStop(appcatalog.ComponentWebhook, a.webhookSrv.Run(ctx))
 		}()
 	}
@@ -512,10 +532,16 @@ func (a *App) Run(ctx context.Context) error {
 		schedErr = nil
 	}
 
+	// Join the receiver goroutines: their graceful HTTP shutdown (triggered by the
+	// same ctx cancellation) lets already-ACKed, in-flight requests finish emitting
+	// to the processors before we tear anything down. Without this, those records
+	// would be lost when a.shutdown() stops the exporters (#53).
+	receiverWG.Wait()
+
 	// Drain each runtime's buffered flow rollup so the final interval's accumulated
 	// counts are exported before the telemetry pipeline shuts down. The schedulers
-	// have stopped (so no connections are still being processed) and this is a
-	// no-op in "all" mode (nil accumulator).
+	// AND receivers have stopped (so no connections are still being processed) and
+	// this is a no-op in "all" mode (nil accumulator).
 	for _, rt := range a.runtimes {
 		rt.flowProc.FlushRollup(rt.emitter)
 	}
