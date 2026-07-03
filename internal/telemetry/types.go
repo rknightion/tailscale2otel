@@ -42,6 +42,13 @@ type Event struct {
 	Attrs     Attrs
 }
 
+// GaugePoint is one series in a GaugeSnapshot: a value and the attributes that
+// identify its time series.
+type GaugePoint struct {
+	Value float64
+	Attrs Attrs
+}
+
 // Emitter records metrics and log events. Implementations must be safe for
 // concurrent use. Instruments are created lazily and cached by name.
 type Emitter interface {
@@ -49,6 +56,20 @@ type Emitter interface {
 	Counter(name, unit, desc string, add float64, attrs Attrs)
 	// Gauge records the current value of a synchronous Float64 gauge.
 	Gauge(name, unit, desc string, value float64, attrs Attrs)
+	// GaugeSnapshot records the COMPLETE current set of series for an observable
+	// Float64 gauge, atomically replacing any prior snapshot for name (passing an
+	// empty slice clears it). Unlike Gauge — a synchronous instrument whose
+	// cumulative series linger at their last value forever under Grafana Cloud's
+	// forced cumulative temporality (upstream otel-go #3006) — this registers an
+	// OBSERVABLE gauge: a series absent from a later snapshot drops out of the
+	// export on the next collection, because the SDK's precomputed-last-value
+	// aggregation reports only what the callback observes each cycle. Use it for
+	// per-entity gauges whose attribute set churns (devices, nodes, DNS
+	// resolvers) so a removed/renamed entity does not leave a ghost series (and
+	// does not permanently consume a cardinality-limit slot). The caller owns
+	// producing the full current set each interval; a collector that stops
+	// snapshotting leaves the last set in place until it resumes.
+	GaugeSnapshot(name, unit, desc string, points []GaugePoint)
 	// UpDownCounter adds (or subtracts) to a non-monotonic counter.
 	UpDownCounter(name, unit, desc string, value float64, attrs Attrs)
 	// Histogram records value into a Float64 histogram with the given explicit

@@ -51,6 +51,7 @@ type noopEmitter struct{}
 
 func (noopEmitter) Counter(string, string, string, float64, telemetry.Attrs)              {}
 func (noopEmitter) Gauge(string, string, string, float64, telemetry.Attrs)                {}
+func (noopEmitter) GaugeSnapshot(string, string, string, []telemetry.GaugePoint)          {}
 func (noopEmitter) UpDownCounter(string, string, string, float64, telemetry.Attrs)        {}
 func (noopEmitter) Histogram(string, string, string, float64, []float64, telemetry.Attrs) {}
 func (noopEmitter) HistogramCtx(context.Context, string, string, string, float64, []float64, telemetry.Attrs) {

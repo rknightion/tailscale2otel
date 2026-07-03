@@ -53,11 +53,12 @@ type otelEmitter struct {
 	collisionCount   atomic.Int64
 	collisionSatOnce sync.Once
 
-	mu         sync.Mutex
-	counters   map[string]metric.Float64Counter
-	gauges     map[string]metric.Float64Gauge
-	updowns    map[string]metric.Float64UpDownCounter
-	histograms map[string]metric.Float64Histogram
+	mu          sync.Mutex
+	counters    map[string]metric.Float64Counter
+	gauges      map[string]metric.Float64Gauge
+	updowns     map[string]metric.Float64UpDownCounter
+	histograms  map[string]metric.Float64Histogram
+	observables map[string]*observableGauge // GaugeSnapshot instruments, by name
 
 	// constAttrs are provider-scoped attributes (tailscale.tailnet,
 	// tailscale2otel.provider) stamped onto every metric data point and log
@@ -104,17 +105,18 @@ func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTrac
 		r[metricdoc.PromLabelName(string(kv.Key))] = struct{}{}
 	}
 	return &otelEmitter{
-		meter:      meter,
-		logger:     logger,
-		card:       card,
-		reserved:   r,
-		diag:       diag,
-		redactor:   pii.New(cats),
-		constAttrs: constAttrs,
-		counters:   map[string]metric.Float64Counter{},
-		gauges:     map[string]metric.Float64Gauge{},
-		updowns:    map[string]metric.Float64UpDownCounter{},
-		histograms: map[string]metric.Float64Histogram{},
+		meter:       meter,
+		logger:      logger,
+		card:        card,
+		reserved:    r,
+		diag:        diag,
+		redactor:    pii.New(cats),
+		constAttrs:  constAttrs,
+		counters:    map[string]metric.Float64Counter{},
+		gauges:      map[string]metric.Float64Gauge{},
+		updowns:     map[string]metric.Float64UpDownCounter{},
+		histograms:  map[string]metric.Float64Histogram{},
+		observables: map[string]*observableGauge{},
 	}
 }
 
@@ -158,6 +160,69 @@ func (e *otelEmitter) Gauge(name, unit, desc string, value float64, attrs Attrs)
 	if g != nil {
 		g.Record(context.Background(), value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
+}
+
+// observableGauge holds the mutable snapshot behind one GaugeSnapshot
+// instrument. The registered observable callback ranges points under mu;
+// GaugeSnapshot replaces points under mu. Each point's key-values are fully
+// resolved (PII + collision + const attrs) at snapshot time so the callback —
+// which runs on the SDK's collection goroutine — only observes.
+type observableGauge struct {
+	mu     sync.Mutex
+	points []obsPoint
+}
+
+type obsPoint struct {
+	value float64
+	kvs   []attribute.KeyValue
+}
+
+func (e *otelEmitter) GaugeSnapshot(name, unit, desc string, points []GaugePoint) {
+	// Resolve every point through the same PII-identity + collision + const-attr
+	// pipeline the synchronous Gauge path uses, dropping identity-suppressed
+	// points, so the observable path is indistinguishable from Gauge except for
+	// its drop-out semantics. Done outside e.mu / the callback so collection is
+	// never blocked on attribute resolution.
+	resolved := make([]obsPoint, 0, len(points))
+	for _, p := range points {
+		filtered, suppress := e.redactor.Identity(p.Attrs)
+		if suppress {
+			continue
+		}
+		attrs := Attrs(filtered)
+		e.card.Observe(name, attrs)
+		resolved = append(resolved, obsPoint{value: p.Value, kvs: e.buildAttrs(name, attrs)})
+	}
+
+	e.mu.Lock()
+	og, ok := e.observables[name]
+	if !ok {
+		og = &observableGauge{}
+		e.observables[name] = og
+		// Register the observable gauge once. Its callback reports exactly the
+		// current snapshot; under cumulative temporality an observable gauge uses
+		// the SDK's precomputed-last-value aggregation, which reports only the
+		// sets observed this cycle — so a series dropped from a later snapshot
+		// disappears from the export instead of ghosting (#55).
+		_, err := e.meter.Float64ObservableGauge(name,
+			metric.WithUnit(unit), metric.WithDescription(desc),
+			metric.WithFloat64Callback(func(_ context.Context, o metric.Float64Observer) error {
+				og.mu.Lock()
+				defer og.mu.Unlock()
+				for i := range og.points {
+					o.Observe(og.points[i].value, metric.WithAttributes(og.points[i].kvs...))
+				}
+				return nil
+			}))
+		if err != nil {
+			otel.Handle(err)
+		}
+	}
+	e.mu.Unlock()
+
+	og.mu.Lock()
+	og.points = resolved
+	og.mu.Unlock()
 }
 
 func (e *otelEmitter) UpDownCounter(name, unit, desc string, value float64, attrs Attrs) {
