@@ -226,9 +226,16 @@ func (c *Config) ResolvedTailnets() []ResolvedTailnet {
 		base := mergeHTTPDefaults(c.Tailscale.HTTP, Default().Tailscale.HTTP)
 		out := make([]ResolvedTailnet, len(c.Tailnets))
 		for i, t := range c.Tailnets {
+			auth := t.Auth
+			// Least-privilege default (#127): an OAuth entry that omits scopes would
+			// otherwise request an UNSCOPED token (every scope the client holds).
+			// Match the single-tailnet Default() and pin it to all:read.
+			if auth.Method == "oauth" && len(auth.OAuth.Scopes) == 0 {
+				auth.OAuth.Scopes = []string{"all:read"}
+			}
 			out[i] = ResolvedTailnet{
 				Name: t.Name,
-				Auth: t.Auth,
+				Auth: auth,
 				HTTP: mergeHTTPDefaults(t.HTTP, base),
 			}
 		}

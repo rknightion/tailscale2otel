@@ -90,6 +90,30 @@ func TestResolvedTailnetsHTTPFleetPolicy(t *testing.T) {
 	}
 }
 
+// TestResolvedTailnetsDefaultsOAuthScopes pins #127: a tailnets[] OAuth entry with
+// no scopes resolves to the least-privilege all:read default (an unset scope list
+// would otherwise request an unscoped, all-privileges token); an explicit list
+// wins, and a non-oauth entry is untouched.
+func TestResolvedTailnetsDefaultsOAuthScopes(t *testing.T) {
+	c := config.Default()
+	c.Tailnets = []config.TailnetConfig{
+		{Name: "a.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+		{Name: "b.example.com", Auth: config.TailscaleAuth{Method: "oauth",
+			OAuth: config.OAuthConfig{Scopes: []string{"devices:core:read"}}}},
+		{Name: "c.example.com", Auth: config.TailscaleAuth{Method: "apikey", APIKey: "k"}},
+	}
+	got := c.ResolvedTailnets()
+	if len(got[0].Auth.OAuth.Scopes) != 1 || got[0].Auth.OAuth.Scopes[0] != "all:read" {
+		t.Errorf("entry[0] scopes = %v, want [all:read]", got[0].Auth.OAuth.Scopes)
+	}
+	if len(got[1].Auth.OAuth.Scopes) != 1 || got[1].Auth.OAuth.Scopes[0] != "devices:core:read" {
+		t.Errorf("entry[1] explicit scopes overwritten: %v", got[1].Auth.OAuth.Scopes)
+	}
+	if len(got[2].Auth.OAuth.Scopes) != 0 {
+		t.Errorf("apikey entry[2] got oauth scopes: %v", got[2].Auth.OAuth.Scopes)
+	}
+}
+
 func TestValidateRejectsBothSingleAndList(t *testing.T) {
 	c := config.Default()
 	c.Tailscale.Tailnet = "acme.example.com"

@@ -179,6 +179,23 @@ func (c *Config) Warnings() []string {
 					"support it; it will not run. Set collectors.%s.enabled=false to silence this.", u.name, u.name))
 			}
 		}
+		// Streaming/webhook receivers have no Headscale equivalent (Headscale has no
+		// log-stream/webhook API), so an enabled receiver just exposes a listener that
+		// can never receive legitimate data — and, token-less, would accept forged
+		// records (#117). auto_configure is silently skipped at runtime.
+		if c.Streaming.Enabled {
+			w = append(w, "streaming.enabled=true but provider=headscale has no log-stream API: the HEC "+
+				"receiver can never receive legitimate data (and with no streaming.token would accept forged "+
+				"records). Set streaming.enabled=false.")
+		}
+		if c.Streaming.AutoConfigure {
+			w = append(w, "streaming.auto_configure=true but provider=headscale has no log-streaming sink "+
+				"to register; it is silently skipped at runtime. Set streaming.auto_configure=false.")
+		}
+		if c.Webhook.Enabled {
+			w = append(w, "webhook.enabled=true but provider=headscale has no webhook API: the receiver "+
+				"can never receive legitimate events. Set webhook.enabled=false.")
+		}
 	}
 
 	if c.Collectors.NodeMetrics.Enabled && c.Cardinality.MetricLimit <= 0 {
@@ -402,12 +419,6 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("tailnets[%d].auth.method %q invalid: must be one of oauth, apikey", i, t.Auth.Method)
 			}
 		}
-		// Streaming/webhook receivers feed shared single-tailnet processors and a
-		// single enrichment cache; multi-tailnet routing is a follow-up.
-		if len(c.Tailnets) > 1 && (c.Streaming.Enabled || c.Webhook.Enabled) {
-			return fmt.Errorf("streaming/webhook receivers require single-tailnet mode " +
-				"(use the single tailscale: block, not a multi-entry tailnets: list)")
-		}
 		// Single-tailnet mode needs a tailnet name. The default is the "-" sentinel
 		// (the principal's default tailnet), so an empty value can only come from an
 		// explicit tailscale.tailnet: "" (or TS2OTEL_TAILSCALE__TAILNET=""). Catch it
@@ -417,6 +428,15 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("tailscale.tailnet: required — set your tailnet's name " +
 				"(e.g. \"example.com\") or \"-\" for the auth principal's default tailnet")
 		}
+	}
+	// Streaming/webhook receivers feed shared single-tailnet processors and a
+	// single enrichment cache; multi-tailnet routing is a follow-up. Checked for
+	// EVERY provider (not just tailscale — #117) so a headscale config can't slip
+	// a multi-entry list past it either; headscale has no tailnets list so it's a
+	// no-op there, and the unsupported-receiver advisory below covers headscale.
+	if len(c.Tailnets) > 1 && (c.Streaming.Enabled || c.Webhook.Enabled) {
+		return fmt.Errorf("streaming/webhook receivers require single-tailnet mode " +
+			"(use the single tailscale: block, not a multi-entry tailnets: list)")
 	}
 	if !oneOf(c.Checkpoint.Store, "memory", "file") {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)

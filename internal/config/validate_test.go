@@ -1083,6 +1083,29 @@ func TestWarnings_PartialTailnetCredential(t *testing.T) {
 	}
 }
 
+// TestWarnings_HeadscaleReceiversUnsupported pins #117: under provider=headscale,
+// streaming/webhook/auto_configure are unsupported and must be flagged, and the
+// single-tailnet receiver guard is no longer skipped for headscale.
+func TestWarnings_HeadscaleReceiversUnsupported(t *testing.T) {
+	c := config.Default()
+	c.Provider = "headscale"
+	c.Headscale.URL = "https://hs.example.com"
+	c.Headscale.APIKey = "hs-key"
+	c.Streaming.Enabled = true
+	c.Streaming.AutoConfigure = true
+	c.Streaming.PublicURL = "https://public.example.com" // auto_configure needs it to pass Validate
+	c.Webhook.Enabled = true
+	if err := c.Validate(); err != nil {
+		t.Fatalf("headscale + receivers should validate (warn, not error): %v", err)
+	}
+	w := strings.Join(c.Warnings(), "\n")
+	for _, want := range []string{"streaming.enabled", "webhook.enabled", "streaming.auto_configure"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("headscale warnings missing %q; got:\n%s", want, w)
+		}
+	}
+}
+
 // TestValidate_LogLevelEnum pins issue #52-adjacent #106: log_level is documented
 // and framed as a validated enum, so Validate() must reject a value outside
 // debug/info/warn/error (matching the page's stated Convention) rather than

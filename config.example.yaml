@@ -77,6 +77,7 @@ tailnets: []
 #       method: oauth
 #       oauth:
 #         client_id: ""               # secret via env or a mounted secrets file
+#         scopes: [all:read]          # least-privilege; unset requests every scope the client holds
 #   - name: beta.example.com
 #     auth:
 #       method: apikey
