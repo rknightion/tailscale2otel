@@ -16,6 +16,8 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	"github.com/rknightion/tailscale2otel/internal/metricdoc"
 )
 
 // newReaderEmitter builds an *otelEmitter wired to an in-memory ManualReader with
@@ -279,5 +281,169 @@ func TestCollisionSeenCapAlreadyStoredKeysStillSuppressed(t *testing.T) {
 	e.logCollisions("m", []labelDrop{{key: "k", prom: "k", winner: ""}})
 	if buf.Len() != 0 {
 		t.Errorf("duplicate collision must be suppressed; got: %s", buf.String())
+	}
+}
+
+// TestNormalizedEqual pins the allocation-free comparator that buildAttrs's
+// fast path uses to detect label-name collisions without ever materializing a
+// key's normalized (metricdoc.PromLabelName) form. It must agree with
+// metricdoc.PromLabelName's rules exactly: dots/other punctuation fold to
+// '_', a leading digit gets a '_' prefix, and already-normalized strings
+// compare equal to themselves.
+func TestNormalizedEqual(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"host.name", "host.name", true},
+		{"host.name", "host_name", true}, // dot vs underscore fold to the same label
+		{"a.b", "a_b", true},             // both normalize to "a_b"
+		{"a.b", "a-b", true},             // both normalize to "a_b"
+		{"tailscale.node", "tailscale_node", true},
+		{"host.name", "host.id", false},
+		{"1abc", "_1abc", true}, // leading-digit protection matches an already-escaped form
+		{"1abc", "1abd", false},
+		{"", "", true},
+		{"a", "b", false},
+		{"instance", "instance", true},
+	}
+	for _, c := range cases {
+		t.Run(c.a+"|"+c.b, func(t *testing.T) {
+			got := normalizedEqual(c.a, c.b)
+			if got != c.want {
+				t.Errorf("normalizedEqual(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+			}
+			// normalizedEqual must agree with the actual PromLabelName values in
+			// both directions and be symmetric.
+			want := metricdoc.PromLabelName(c.a) == metricdoc.PromLabelName(c.b)
+			if got != want {
+				t.Errorf("normalizedEqual(%q, %q) = %v, disagrees with PromLabelName equality %v", c.a, c.b, got, want)
+			}
+			if rev := normalizedEqual(c.b, c.a); rev != got {
+				t.Errorf("normalizedEqual not symmetric: (%q,%q)=%v but (%q,%q)=%v", c.a, c.b, got, c.b, c.a, rev)
+			}
+		})
+	}
+}
+
+// TestHasLabelCollision pins the no-allocation pre-check buildAttrs uses to
+// decide whether the (allocating) resolveLabelCollisions path is needed at
+// all.
+func TestHasLabelCollision(t *testing.T) {
+	cases := []struct {
+		name     string
+		attrs    Attrs
+		reserved map[string]struct{}
+		want     bool
+	}{
+		{
+			name:  "no collision, no reserved",
+			attrs: Attrs{"host.name": "h", "host.id": "i"},
+			want:  false,
+		},
+		{
+			name:  "empty attrs",
+			attrs: Attrs{},
+			want:  false,
+		},
+		{
+			name:  "duplicate normalized keys",
+			attrs: Attrs{"tailscale.node": "real", "tailscale_node": "spoof"},
+			want:  true,
+		},
+		{
+			name:     "reserved hit",
+			attrs:    Attrs{"instance": "scraped", "host.name": "h"},
+			reserved: map[string]struct{}{"instance": {}},
+			want:     true,
+		},
+		{
+			name:     "reserved present but no attr collides",
+			attrs:    Attrs{"host.name": "h"},
+			reserved: map[string]struct{}{"instance": {}, "job": {}},
+			want:     false,
+		},
+		{
+			name:  "no collision with several keys",
+			attrs: Attrs{"a": 1, "b": 2, "c": 3, "d": 4},
+			want:  false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := hasLabelCollision(c.attrs, c.reserved)
+			if got != c.want {
+				t.Errorf("hasLabelCollision(%v, %v) = %v, want %v", c.attrs, c.reserved, got, c.want)
+			}
+			// Must agree with what resolveLabelCollisions actually finds.
+			_, drops := resolveLabelCollisions(c.attrs, c.reserved)
+			if wantFromSlow := len(drops) > 0; got != wantFromSlow {
+				t.Errorf("hasLabelCollision disagrees with resolveLabelCollisions: got %v, drops=%v", got, drops)
+			}
+		})
+	}
+}
+
+// TestBuildAttrsFastPathIsAllocationFree proves the common no-collision case
+// in buildAttrs takes the cheap branch: it allocates only the one output
+// slice (no intermediate maps), regardless of how many attrs are supplied.
+func TestBuildAttrsFastPathIsAllocationFree(t *testing.T) {
+	e := newOtelEmitter(nil, nil, nil, nil, nil, nil, nil)
+	attrs := Attrs{
+		"host.name":            "device-1",
+		"host.id":              "n123",
+		"os.type":              "linux",
+		"tailscale.tailnet":    "example.ts.net",
+		"tailscale.node.id":    "nabc",
+		"network.io.direction": "tx",
+	}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		got := e.buildAttrs("tailscale.device.online", attrs)
+		if len(got) != len(attrs) {
+			t.Fatalf("buildAttrs returned %d attrs, want %d", len(got), len(attrs))
+		}
+	})
+	// The output slice itself is one allocation; there must be no additional
+	// map allocations (resolveLabelCollisions' chosen/keep maps) in the
+	// no-collision path.
+	if allocs > 1 {
+		t.Errorf("buildAttrs no-collision fast path allocated %.1f times per call, want <= 1", allocs)
+	}
+}
+
+// BenchmarkBuildAttrs_NoCollision quantifies the fast path's allocation win
+// for the common case (#86): a realistic per-device attrs map with no
+// reserved-label collision.
+func BenchmarkBuildAttrs_NoCollision(b *testing.B) {
+	e := newOtelEmitter(nil, nil, nil, nil, nil, nil, nil)
+	attrs := Attrs{
+		"host.name":            "device-1",
+		"host.id":              "n123",
+		"os.type":              "linux",
+		"tailscale.tailnet":    "example.ts.net",
+		"tailscale.node.id":    "nabc",
+		"network.io.direction": "tx",
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = e.buildAttrs("tailscale.device.online", attrs)
+	}
+}
+
+// BenchmarkBuildAttrs_WithCollision covers the (rarer) colliding case so the
+// slow-path cost is visible alongside the fast path above.
+func BenchmarkBuildAttrs_WithCollision(b *testing.B) {
+	e := newOtelEmitter(nil, nil, nil, nil, nil, nil, nil)
+	attrs := Attrs{
+		"tailscale.node": "real-node",
+		"tailscale_node": "scraped-spoof",
+		"host.name":      "device-1",
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = e.buildAttrs("tailscale.node.up", attrs)
 	}
 }

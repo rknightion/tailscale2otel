@@ -30,6 +30,13 @@ Before you begin, you need:
   access-policy token with `metrics:write` and `logs:write` scopes. If you enable the optional
   traces pillar (`tracing.enabled: true`), add `traces:write` to the token as well.
 
+!!! tip "Running Headscale instead of Tailscale?"
+    tailscale2otel also supports a self-hosted [Headscale](https://headscale.net/) control plane —
+    set `provider: headscale` and point it at your server instead of the steps below. A reduced
+    collector set runs automatically (devices, users, keys, ACL, node-metrics); see
+    [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection)
+    for the connection settings and exactly what's affected.
+
 ## Minimal env-only configuration
 
 The config file is entirely optional — `tailscale2otel` runs from built-in defaults plus

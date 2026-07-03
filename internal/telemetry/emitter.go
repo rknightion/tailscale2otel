@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -284,6 +285,11 @@ func toLogKV(attrs Attrs) []log.KeyValue {
 // because their normalized names are added to e.reserved at construction (#91): a
 // data-point attr colliding with one is dropped-and-logged by the guard, so the
 // appended const attr is never a duplicate.
+//
+// #86: the overwhelming common case is that attrs contains no collision at all,
+// so hasLabelCollision (allocation-free) is checked first; only when it reports a
+// real collision/reservation does the function fall back to resolveLabelCollisions,
+// which allocates the two bookkeeping maps needed to actually resolve winners.
 func (e *otelEmitter) buildAttrs(metricName string, attrs Attrs) []attribute.KeyValue {
 	if len(attrs) == 0 {
 		if len(e.constAttrs) == 0 {
@@ -291,20 +297,14 @@ func (e *otelEmitter) buildAttrs(metricName string, attrs Attrs) []attribute.Key
 		}
 		return append([]attribute.KeyValue(nil), e.constAttrs...)
 	}
-	// When there are no const attrs, the no-collision path can return toKV's slice
-	// directly (no extra append). Otherwise size the slice for kept attrs + const
-	// attrs up front so the hot path allocates exactly once.
-	if len(e.constAttrs) == 0 {
-		keep, drops := resolveLabelCollisions(attrs, e.reserved)
-		if len(drops) == 0 {
-			return toKV(attrs)
+	if !hasLabelCollision(attrs, e.reserved) {
+		// Fast path: every attribute survives unchanged. One allocation (the
+		// output slice) regardless of whether const attrs are present.
+		kvs := make([]attribute.KeyValue, 0, len(attrs)+len(e.constAttrs))
+		for k, v := range attrs {
+			kvs = append(kvs, kvFor(k, v))
 		}
-		e.logCollisions(metricName, drops)
-		kvs := make([]attribute.KeyValue, 0, len(keep))
-		for k := range keep {
-			kvs = append(kvs, kvFor(k, attrs[k]))
-		}
-		return kvs
+		return append(kvs, e.constAttrs...)
 	}
 	keep, drops := resolveLabelCollisions(attrs, e.reserved)
 	if len(drops) > 0 {
@@ -374,11 +374,103 @@ type labelDrop struct {
 	winner string // the key kept instead; "" when dropped as a reserved label
 }
 
+// hasLabelCollision reports whether attrs, combined with reserved, contains at
+// least one Prometheus label-name collision: an attribute key whose normalized
+// name is reserved, or two attribute keys that normalize to the same name. It
+// is the allocation-free pre-check buildAttrs uses to skip resolveLabelCollisions
+// (and the two maps it allocates) entirely in the common no-collision case.
+// Both attrs and reserved are small in practice (a handful of entries), so the
+// O(n^2) pairwise scan costs nothing but stays allocation-free — unlike
+// resolveLabelCollisions, which must build the chosen/keep maps because it also
+// needs to report *which* key wins.
+func hasLabelCollision(attrs Attrs, reserved map[string]struct{}) bool {
+	for k := range attrs {
+		for rk := range reserved {
+			if normalizedEqual(k, rk) {
+				return true
+			}
+		}
+	}
+	for k1 := range attrs {
+		for k2 := range attrs {
+			if k1 == k2 {
+				continue
+			}
+			if normalizedEqual(k1, k2) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// promLabelStream yields, one rune at a time and without allocating, the
+// sequence metricdoc.PromLabelName(s) would write. It exists so normalizedEqual
+// can compare two keys' normalized forms without ever materializing either
+// normalized string. It mirrors PromLabelName's rules exactly: letters and
+// underscore pass through; a digit is passed through except at the very start
+// of the string, where it is preceded by a synthetic '_' (two output runes for
+// that one input rune); anything else becomes '_'.
+type promLabelStream struct {
+	s       string
+	i       int  // next byte offset into s
+	queued  rune // a rune already decided but not yet returned
+	hasNext bool
+}
+
+// next returns the next output rune and true, or (0, false) at end of stream.
+func (p *promLabelStream) next() (rune, bool) {
+	if p.hasNext {
+		p.hasNext = false
+		return p.queued, true
+	}
+	if p.i >= len(p.s) {
+		return 0, false
+	}
+	first := p.i == 0
+	r, size := utf8.DecodeRuneInString(p.s[p.i:])
+	p.i += size
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+		return r, true
+	case r >= '0' && r <= '9':
+		if first {
+			p.queued = r
+			p.hasNext = true
+			return '_', true
+		}
+		return r, true
+	default:
+		return '_', true
+	}
+}
+
+// normalizedEqual reports whether metricdoc.PromLabelName(a) ==
+// metricdoc.PromLabelName(b), without allocating either normalized string.
+func normalizedEqual(a, b string) bool {
+	if a == b {
+		return true
+	}
+	sa, sb := promLabelStream{s: a}, promLabelStream{s: b}
+	for {
+		ra, oka := sa.next()
+		rb, okb := sb.next()
+		if oka != okb || ra != rb {
+			return false
+		}
+		if !oka {
+			return true
+		}
+	}
+}
+
 // resolveLabelCollisions returns the set of attribute keys to emit. A key is
 // dropped when its Prometheus-normalized name (a) is a reserved promoted label
 // (resource wins), or (b) collides with another key's — keeping one deterministic
 // winner via preferLabelKey. When nothing collides, keep holds every key and
-// drops is empty (the caller then takes the cheap toKV path).
+// drops is empty. buildAttrs only reaches this function once hasLabelCollision
+// (allocation-free) has already confirmed a real collision/reservation exists —
+// see buildAttrs's fast path for the common case where this is skipped entirely.
 func resolveLabelCollisions(attrs Attrs, reserved map[string]struct{}) (keep map[string]struct{}, drops []labelDrop) {
 	chosen := make(map[string]string, len(attrs)) // prom label name -> winning source key
 	for k := range attrs {
@@ -421,18 +513,6 @@ func preferLabelKey(a, b, pl string) string {
 	default:
 		return b
 	}
-}
-
-// toKV converts an Attrs map to OTEL metric attributes (no collision handling).
-func toKV(attrs Attrs) []attribute.KeyValue {
-	if len(attrs) == 0 {
-		return nil
-	}
-	kvs := make([]attribute.KeyValue, 0, len(attrs))
-	for k, v := range attrs {
-		kvs = append(kvs, kvFor(k, v))
-	}
-	return kvs
 }
 
 // kvFor converts a single Attrs value to an OTEL attribute, mirroring the value

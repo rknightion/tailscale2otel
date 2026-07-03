@@ -11,6 +11,15 @@
 //	go run gen.go -raw FILE     # trim a previously downloaded raw CSV (offline)
 //
 // The IANA registry changes infrequently; there is no CI gate on freshness.
+//
+// #128: this is invoked via portservice.go's `//go:generate go run gen.go`,
+// which `go generate ./...` runs for every contributor (that command's main
+// job, per CLAUDE.md, is installing the repo's git hooks). A network failure
+// on the default (no -raw) path is therefore non-fatal: it warns and leaves
+// the already-committed CSV untouched rather than exiting non-zero, so an
+// offline/tailnet-only/proxied `go generate ./...` still succeeds overall. An
+// explicit `-raw FILE` failing to open remains fatal, since that is a directly
+// requested action with no sensible fallback.
 package main
 
 import (
@@ -28,6 +37,21 @@ import (
 )
 
 const ianaURL = "https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.csv"
+
+// fetchIANACSV downloads the IANA registry CSV, returning an error instead of
+// exiting so the caller can decide whether a failure here is fatal (it is not,
+// for the default `go generate` path — see main and #128).
+func fetchIANACSV() (io.ReadCloser, error) {
+	resp, err := http.Get(ianaURL) //nolint:gosec // fixed, trusted IANA URL
+	if err != nil {
+		return nil, fmt.Errorf("download IANA CSV: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("download IANA CSV: HTTP %d", resp.StatusCode)
+	}
+	return resp.Body, nil
+}
 
 // transports we keep: connection-oriented/datagram protocols that carry ports
 // and appear in Tailscale flow logs.
@@ -52,14 +76,15 @@ func main() {
 		}
 		src = f
 	} else {
-		resp, err := http.Get(ianaURL) //nolint:gosec // fixed, trusted IANA URL
+		resp, err := fetchIANACSV()
 		if err != nil {
-			log.Fatalf("download IANA CSV: %v", err)
+			// Non-fatal (#128): keep the existing *out CSV untouched and exit 0
+			// so a flaky/offline `go generate ./...` doesn't hard-fail just
+			// because this directive's network fetch couldn't reach IANA.
+			log.Printf("WARNING: %v; keeping existing %s unchanged", err, *out)
+			return
 		}
-		if resp.StatusCode != http.StatusOK {
-			log.Fatalf("download IANA CSV: HTTP %d", resp.StatusCode)
-		}
-		src = resp.Body
+		src = resp
 	}
 	defer src.Close()
 

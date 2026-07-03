@@ -44,6 +44,11 @@ single static binary with no external runtime dependencies.
 - **Optional node-metrics scraper** that forwards `tailscaled` per-node Prometheus `/metrics`
   centrally over OTLP, as a drop-in for per-node scraping — including automatic target discovery
   from the devices API.
+- **Headscale support.** Set `provider: headscale` to point tailscale2otel at a self-hosted
+  [Headscale](https://headscale.net/) control plane instead of Tailscale's SaaS API. A reduced
+  collector set runs automatically (devices, users, keys, ACL, node-metrics); see
+  [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection) for
+  exactly what's affected.
 - **OTLP push** over gRPC or HTTP with first-class Grafana Cloud support; `stdout` mode for local
   debugging without a backend.
 - **Admin status page** at `/` (plus `/healthz`, `/readyz`, and `/api/status.json`) showing live

@@ -37,6 +37,11 @@ stream, and key-expiry signals out of the box.
 - **Optional webhook receiver** for real-time Tailscale events (HMAC-verified).
 - **Optional node-metrics scraper** that forwards `tailscaled` per-node Prometheus `/metrics`
   centrally over OTLP (counters as deltas, gauges as gauges), as a drop-in for per-node scraping.
+- **Headscale support.** Set `provider: headscale` to point tailscale2otel at a self-hosted
+  [Headscale](https://headscale.net/) control plane instead of Tailscale's SaaS API. A reduced
+  collector set runs automatically (devices, users, keys, ACL, node-metrics); see
+  [`docs/configuration.md`](./docs/configuration.md#headscale-headscale-control-plane-connection)
+  for exactly what's affected.
 - **OTLP push** (gRPC/HTTP) with first-class Grafana Cloud support; `stdout` mode for local debug.
 - **Admin status page** at `/` (plus `/healthz`/`/readyz` and a `/api/status.json`) showing live
   collector health, active-series cardinality, the metrics/log catalog, discovered nodes, and a
