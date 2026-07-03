@@ -3,6 +3,10 @@ name: tailscale2otel
 description: Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 type: application
 # Chart version — bump on chart changes.
+# 0.7.5: default GOMEMLIMIT to ~90% of resources.limits.memory (computed in the
+# deployment template) when goRuntime.memLimit is left empty, mirroring the
+# docker-compose GOMEMLIMIT backstop so the Helm-deployed pod gets the same
+# soft memory ceiling.
 # 0.7.4: add conditional liveness/readiness probes (/healthz, /readyz on the admin
 # port), rendered only when config.admin.enabled — addresses Snyk IaC SNYK-CC-K8S-41.
 # 0.7.2: security hardening — digest-pin base images, checksum/secret annotation,
@@ -31,7 +35,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.7.4
+version: 0.7.5
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "0.1.0"
 home: https://github.com/rknightion/tailscale2otel

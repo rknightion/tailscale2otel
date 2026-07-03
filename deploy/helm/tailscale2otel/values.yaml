@@ -69,7 +69,10 @@ resources:
 goRuntime:
   # -- GOGC: heap-growth percentage between collections (Go default 100). Empty ("") leaves the Go default.
   gogc: "200"
-  # -- GOMEMLIMIT soft memory cap, e.g. "230MiB" (keep ~10% under resources.limits.memory). Empty ("") leaves it unset.
+  # -- GOMEMLIMIT soft memory cap, e.g. "230MiB". Empty ("") auto-computes ~90% of
+  # resources.limits.memory (mirrors the docker-compose backstop; e.g. 256Mi -> 230MiB),
+  # falling back to unset if that limit is absent or in a unit outside Mi/Gi. Set
+  # explicitly to override the computed value.
   memLimit: ""
 
 # -- Node selector for pod scheduling.

@@ -6,9 +6,11 @@ Shared triage step for the Tailscale API drift lanes. On detection it:
    lane's marker label and comments on it, or creates one. One issue per lane, not
    one per run.
 2. **Enriches with Claude** (only when `ANTHROPIC_API_KEY` is set in the job env) —
-   runs `anthropics/claude-code-action` to explain the break, comment the fix on the
-   issue, and optionally open a **draft** PR when the fix is mechanical. SKIPs cleanly
-   when the key is absent.
+   runs `anthropics/claude-code-action` to explain the break and comment the concrete
+   fix on the issue. SKIPs cleanly when the key is absent. It does NOT open a pull
+   request: the calling workflows grant only `contents: read`, which is enough for the
+   mandatory issue/comment outputs but not for pushing a fix branch — the maintainer
+   applies the commented fix by hand.
 3. **Fails the job** (`exit 1`) so the scheduled run goes red and you get the email.
 
 ## Inputs
@@ -29,5 +31,7 @@ gh label create clientlib-drift -c FBCA04 -d "tailscale-client-go/v2 main/latest
 gh label create live-contract  -c FBCA04 -d "Live Tailscale API contract failing"
 ```
 
-Calling workflows must grant `issues: write` (and `pull-requests: write` for the draft
-PR). Set the optional `ANTHROPIC_API_KEY` repo secret to enable Claude enrichment.
+Calling workflows must grant `issues: write`. `pull-requests: write` is NOT required —
+this action never opens a pull request (see above); the calling workflows use only
+`contents: read` + `issues: write`. Set the optional `ANTHROPIC_API_KEY` repo secret to
+enable Claude enrichment.

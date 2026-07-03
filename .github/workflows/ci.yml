@@ -119,10 +119,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # Cross-compile every target + build archives/checksums. The container
-      # image (dockers_v2) is disabled in snapshot mode, so no docker/qemu/syft
-      # is needed here; the image is smoke-tested by docker-build below and fully
-      # built, pushed, and signed by release.yml.
+      # Cross-compile every target + build archives/checksums. .goreleaser.yaml has
+      # no docker pipeline (the real image build is deploy/Dockerfile via
+      # publish.yml/container-publish.yml), so no docker/qemu/syft is needed here;
+      # the image is smoke-tested by docker-build below and fully built, pushed,
+      # and signed by the `publish` job in release-please.yml.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser

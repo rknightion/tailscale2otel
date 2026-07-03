@@ -5,8 +5,12 @@ consumed by operators or by the release pipelines.
 
 ## Layout
 
-- `Dockerfile` — runtime image (built/smoke-tested in CI as `tailscale2otel:ci`).
-  `Dockerfile.goreleaser` — the variant GoReleaser uses for the published multi-arch image.
+- `Dockerfile` — runtime image (built/smoke-tested in CI as `tailscale2otel:ci`), and the
+  Dockerfile the **published** multi-arch GHCR image is built from (via `publish.yml`'s `image`
+  job → the shared `container-publish.yml` reusable). There is no separate GoReleaser Dockerfile —
+  a `Dockerfile.goreleaser` + `.goreleaser.yaml` `dockers_v2`/`docker_signs` pair existed
+  previously but was dead code (unreachable on every real CI path) and was removed; GoReleaser
+  now only builds cross-compiled binaries (see Release/publish pipelines below).
 - `docker-compose.yaml` — local/single-host run (this is how it's deployed on `node-a`).
 - `helm/tailscale2otel/` — Helm chart (see below).
 - `grafana/tailscale2otel.json` — the **flagship** dashboard: one comprehensive multi-tab
@@ -82,15 +86,25 @@ profiles instance ID and `basic_auth_password` = a `profiles:write` access-polic
 
 - `release-please.yml` (on push to main) — **release-please** maintains a release PR from the
   Conventional Commit history (config: `/release-please-config.json` + `/.release-please-manifest.json`,
-  changelog in `/CHANGELOG.md`). Merging that PR creates the GitHub Release + a `vX.Y.Z` tag and sets
+  changelog in `/CHANGELOG.md`), authored via a PAT (`RELEASE_PLEASE_TOKEN`) so its CI runs
+  unattended. Merging that PR creates the GitHub Release + a `vX.Y.Z` tag and sets
   `release_created=true`, which gates two follow-on jobs in the **same** workflow (so the default
-  `GITHUB_TOKEN` suffices — no PAT/App, no second workflow to trigger): **GoReleaser** builds the
-  binaries + multi-arch image to `ghcr.io`, **cosign** keyless-signs (GitHub OIDC) the image + checksums,
-  generates SBOMs (syft), and **uploads the binaries to the release-please release** (it does not
-  overwrite the notes — release-please owns the changelog); then the Helm chart is pushed as an OCI
-  artifact to `oci://ghcr.io/rknightion/charts`. **There is no manual tagging** — never `git tag`/push a
-  `v*` tag by hand.
-- `main-publish.yml` (on push to main) — the snapshot equivalent: publishes `:main`-ish image + chart.
+  `GITHUB_TOKEN` suffices for those two — no PAT/App, no second workflow to trigger):
+  - **`publish`** calls `publish.yml` (`release_tag` set) → the shared `container-publish.yml`
+    reusable builds + pushes the multi-arch `deploy/Dockerfile` image to `ghcr.io` (native
+    amd64+arm64, cosign keyless signing, provenance, syft SBOM, Trivy) and pushes the Helm chart
+    as an OCI artifact to `oci://ghcr.io/rknightion/charts`; `publish.yml`'s `notices` job also
+    generates + uploads `THIRD_PARTY_NOTICES.md` to the release.
+  - **`binaries`** calls the shared `binaries.yml` reusable, which runs THIS `.goreleaser.yaml`
+    with `--skip=docker` — GoReleaser only builds the cross-compiled archives, `SHA256SUMS`, and
+    per-archive SBOMs, cosign-signs the checksums, and uploads them to the release-please release
+    (it does not overwrite the release notes — release-please owns the changelog). GoReleaser has
+    **no docker pipeline** in this repo (a `dockers_v2`/`docker_signs` pair was removed as dead
+    code — see `.goreleaser.yaml`'s header); the image is built exclusively by `publish`/`edge`.
+  - **`edge`** (when `release_created` is NOT true, i.e. every other push to main) calls the same
+    `publish.yml` with an empty `release_tag`, publishing a `:main`-ish snapshot image + chart.
+    This replaces the old, now-deleted `main-publish.yml`.
+  **There is no manual tagging** — never `git tag`/push a `v*` tag by hand.
 - `cosign-installer` is pinned to `@v4.1.2` (no moving `v4` tag exists) and installs `cosign-release: v3.0.6`.
 
 GoReleaser config is `/.goreleaser.yaml`; CI's `goreleaser-snapshot` job (`ci.yml`) runs

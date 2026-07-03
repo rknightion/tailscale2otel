@@ -60,9 +60,10 @@ runs:
           Your tasks:
           1) Explain the break and which internal/tsapi decoders are affected.
           2) Comment the concrete fix on the open issue labelled "${{ inputs.lane-label }}".
-          3) If the fix is mechanical and confined to internal/tsapi and spec/tailscale-api.json,
-             open a DRAFT pull request. Never mark it ready or merge. Never modify CI workflows,
-             secrets, or files outside internal/tsapi and spec/tailscale-api.json.
+             Do NOT open a pull request — the calling workflows only grant
+             `contents: read`, so pushing a fix branch is not possible here (and is not
+             attempted); the maintainer applies the commented fix by hand. Never modify
+             CI workflows, secrets, or files outside internal/tsapi and spec/tailscale-api.json.
     - name: Fail the run
       shell: bash
       run: 'echo "Drift detected — see issue labelled ${INPUTS_LANE_LABEL}" >&2; exit 1'

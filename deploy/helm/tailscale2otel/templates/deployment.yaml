@@ -44,15 +44,16 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ include "tailscale2otel.secretName" . }}
-          {{- if or .Values.goRuntime.gogc .Values.goRuntime.memLimit }}
+          {{- $gomemlimit := include "tailscale2otel.gomemlimit" . }}
+          {{- if or .Values.goRuntime.gogc $gomemlimit }}
           env:
             {{- if .Values.goRuntime.gogc }}
             - name: GOGC
               value: {{ .Values.goRuntime.gogc | quote }}
             {{- end }}
-            {{- if .Values.goRuntime.memLimit }}
+            {{- if $gomemlimit }}
             - name: GOMEMLIMIT
-              value: {{ .Values.goRuntime.memLimit | quote }}
+              value: {{ $gomemlimit | quote }}
             {{- end }}
           {{- end }}
           securityContext:

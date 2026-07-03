@@ -55,3 +55,28 @@ Secret, which override the corresponding fields in this file at runtime.
 {{- define "tailscale2otel.config" -}}
 {{ .Values.config | toYaml }}
 {{- end -}}
+
+{{/*
+Compute the GOMEMLIMIT env value. An explicit goRuntime.memLimit always wins;
+otherwise default to ~90% of resources.limits.memory (mirrors the docker-compose
+GOMEMLIMIT backstop: mem_limit 256m -> GOMEMLIMIT 230MiB), falling back to unset
+when the memory limit is absent or in a unit we don't compute (only the binary
+Mi/Gi suffixes Kubernetes/this chart's default use are handled).
+*/}}
+{{- define "tailscale2otel.gomemlimit" -}}
+{{- if .Values.goRuntime.memLimit -}}
+{{- .Values.goRuntime.memLimit -}}
+{{- else if .Values.resources.limits.memory -}}
+{{- $mem := .Values.resources.limits.memory | toString -}}
+{{- if regexMatch "^[0-9]+(Mi|Gi)$" $mem -}}
+{{- $num := regexFind "^[0-9]+" $mem | atoi -}}
+{{- $unit := regexFind "(Mi|Gi)$" $mem -}}
+{{- $mib := $num -}}
+{{- if eq $unit "Gi" -}}
+{{- $mib = mul $num 1024 -}}
+{{- end -}}
+{{- $scaled := div (mul $mib 9) 10 -}}
+{{- printf "%dMiB" $scaled -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
