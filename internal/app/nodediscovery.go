@@ -85,25 +85,40 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 // unique) or address. The "address" source uses an empty instance (the collector
 // derives a unique host:port from the URL) and so never collides here.
 func (d *nodeDiscoverer) disambiguateInstances(targets []nodemetrics.Target) {
+	// instance_source: name/address are unique by construction. Only "hostname" can
+	// collide, so scope disambiguation to it. The OLD logic suffixed only labels that
+	// collided WITHIN THE CURRENT batch, so a device's tailscale.node label flapped
+	// between bare and address-suffixed as its colliding sibling went on/offline
+	// between discovery refreshes (resetting the scraper's per-series delta baseline
+	// each flip), and it never disambiguated against static targets (#98). For the
+	// non-unique source we now UNCONDITIONALLY suffix every instance with its node
+	// address: the label becomes a pure function of the device itself — stable across
+	// batches AND distinct from any static/bare instance — instead of batch-relative.
+	if d.cfg.InstanceSource != "hostname" {
+		return
+	}
 	counts := make(map[string]int, len(targets))
 	for i := range targets {
 		if inst := targets[i].Instance; inst != "" {
 			counts[inst]++
 		}
 	}
-	for inst, n := range counts {
-		if n > 1 {
-			d.log.Warn("node-metrics discovery: non-unique instance label; disambiguating by address",
-				"instance", inst, "devices", n, "instance_source", d.cfg.InstanceSource)
-		}
-	}
 	for i := range targets {
 		inst := targets[i].Instance
-		if inst == "" || counts[inst] < 2 {
+		if inst == "" {
 			continue
 		}
 		if u, err := url.Parse(targets[i].URL); err == nil && u.Hostname() != "" {
 			targets[i].Instance = inst + "@" + u.Hostname()
+		}
+	}
+	// Still WARN when the batch actually had duplicate hostnames, so an operator
+	// knows why labels carry the @address suffix and can switch to instance_source: name.
+	for inst, n := range counts {
+		if n > 1 {
+			d.log.Warn("node-metrics discovery: non-unique instance label (hostname source); "+
+				"labels are address-suffixed for uniqueness — prefer instance_source: name (MagicDNS)",
+				"instance", inst, "devices", n, "instance_source", d.cfg.InstanceSource)
 		}
 	}
 }

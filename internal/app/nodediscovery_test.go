@@ -107,9 +107,11 @@ func TestNodeDiscoverer_EmptyAddressSkipped(t *testing.T) {
 func TestNodeDiscoverer_InstanceSource(t *testing.T) {
 	dev := tsapi.RichDevice{Hostname: "myhost", Name: "host1.tail-scale.ts.net", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true}
 	cases := map[string]string{
-		"address":  "",       // empty so the collector derives host:port from the URL
-		"name":     "host1",  // MagicDNS short name: the FQDN's first label (tailnet domain stripped)
-		"hostname": "myhost", // OS hostname verbatim
+		"address": "",      // empty so the collector derives host:port from the URL
+		"name":    "host1", // MagicDNS short name: the FQDN's first label (tailnet domain stripped)
+		// hostname is non-unique, so it is ALWAYS address-suffixed for a stable,
+		// batch-independent label (#98) — not left bare.
+		"hostname": "myhost@100.64.0.1",
 	}
 	for src, want := range cases {
 		cfg := discoveryDefaults()
@@ -194,14 +196,44 @@ func TestNodeDiscoverer_DisambiguatesCollidingInstances(t *testing.T) {
 	}
 	for inst, n := range counts {
 		if n > 1 {
-			t.Fatalf("instance %q appears %d times; collisions must be disambiguated: %+v", inst, n, got)
+			t.Fatalf("instance %q appears %d times; must be unique: %+v", inst, n, got)
 		}
 	}
-	if counts["camden"] != 1 {
-		t.Fatalf("unique hostname should be preserved as-is; got %+v", got)
+	// Every hostname-source instance is address-suffixed (stable, batch-independent
+	// — #98), including the non-colliding "camden"; none is left bare.
+	for _, want := range []string{"localhost@100.64.0.1", "localhost@100.64.0.2", "camden@100.64.0.3"} {
+		if counts[want] != 1 {
+			t.Fatalf("want stable suffixed instance %q; got %+v", want, got)
+		}
 	}
-	if counts["localhost"] != 0 {
-		t.Fatalf("colliding 'localhost' must be disambiguated, not left bare; got %+v", got)
+	if counts["localhost"] != 0 || counts["camden"] != 0 {
+		t.Fatalf("no bare hostname instance should remain (all address-suffixed); got %+v", got)
+	}
+}
+
+// TestNodeDiscoverer_StableAcrossSiblingChurn pins #98: a device's instance label
+// must NOT change when a colliding sibling goes offline between refreshes.
+func TestNodeDiscoverer_StableAcrossSiblingChurn(t *testing.T) {
+	cfg := discoveryDefaults()
+	cfg.InstanceSource = "hostname"
+	dev := tsapi.RichDevice{Hostname: "localhost", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true}
+	sibling := tsapi.RichDevice{Hostname: "localhost", Addresses: []string{"100.64.0.2"}, ConnectedToControl: true}
+
+	withSibling := mustDiscover(t, []tsapi.RichDevice{dev, sibling}, cfg)
+	alone := mustDiscover(t, []tsapi.RichDevice{dev}, cfg)
+
+	find := func(ts []nodemetrics.Target, addr string) string {
+		for _, tg := range ts {
+			if strings.Contains(tg.URL, addr) {
+				return tg.Instance
+			}
+		}
+		return ""
+	}
+	withSib := find(withSibling, "100.64.0.1")
+	without := find(alone, "100.64.0.1")
+	if withSib == "" || withSib != without {
+		t.Fatalf("instance label flapped with sibling churn: with=%q without=%q (must be stable)", withSib, without)
 	}
 }
 
