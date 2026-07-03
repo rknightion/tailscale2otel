@@ -23,6 +23,31 @@ var propertyCategories = map[string]string{
 	"SECRET":                   "secret",
 }
 
+// knownOrigins is the complete set of origin values defined in the Tailscale
+// audit-log API (OpenAPI spec ConfigurationAuditLog.origin enum). Unknown
+// values fold to "other" so the tailscale.config.audit.events metric's
+// bounded-cardinality guarantee holds even when the API introduces a new
+// origin, and — since Process is shared by the polling collector and the
+// streaming receiver — even when a misbehaving/attacking stream source sends
+// an arbitrary wire-chosen origin string (#77).
+//
+// Source: Tailscale OpenAPI spec §ConfigurationAuditLog.origin enum.
+var knownOrigins = map[string]bool{
+	"ADMIN_CONSOLE": true, "CONFIG_API": true, "CONTROL": true,
+	"IDENTITY_PROVIDER": true, "NODE": true, "SUPPORT_REQUEST": true,
+	"STRIPE": true, "SECURITY_NOTIFICATION": true, "LEGAL_NOTIFICATION": true,
+}
+
+// normalizeOrigin returns the origin unchanged when it is a known API value,
+// and "other" for anything unrecognized. This bounds the cardinality of the
+// tailscale.config.audit.events origin label.
+func normalizeOrigin(origin string) string {
+	if knownOrigins[origin] {
+		return origin
+	}
+	return "other"
+}
+
 // deviceChurnActions are the NODE actions that count as device churn (B7).
 var deviceChurnActions = map[string]bool{"CREATE": true, "DELETE": true, "EXPIRED": true}
 

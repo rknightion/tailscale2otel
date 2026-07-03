@@ -1,6 +1,7 @@
 package audit_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -141,6 +142,83 @@ func TestAuditChangesActionNormalization(t *testing.T) {
 				t.Errorf("action attr = %q, want %q", got, tc.wantAction)
 			}
 		})
+	}
+}
+
+// TestAuditEventsActionOriginNormalization is the regression for #77: the
+// events counter (tailscale.config.audit.events) previously carried the raw
+// wire action/origin values, unlike the curated changes counter which already
+// normalizes via normalizeAction. Since Process is shared by both the polling
+// collector and the streaming receiver, an attacker/misbehaving stream source
+// could otherwise mint unbounded cardinality on this counter via crafted
+// action/origin values. Known API values must still pass through unchanged;
+// unknown values must fold to "other".
+func TestAuditEventsActionOriginNormalization(t *testing.T) {
+	cases := []struct {
+		name       string
+		action     string
+		origin     string
+		wantAction string
+		wantOrigin string
+	}{
+		{"known/known", "CREATE", "ADMIN_CONSOLE", "CREATE", "ADMIN_CONSOLE"},
+		{"known action unknown origin", "DELETE", "SOME_FUTURE_ORIGIN", "DELETE", "other"},
+		{"unknown action known origin", "SOME_FUTURE_VERB", "NODE", "other", "NODE"},
+		{"both unknown", "SOME_FUTURE_VERB", "SOME_FUTURE_ORIGIN", "other", "other"},
+		{"empty both", "", "", "other", "other"},
+		{"case-sensitive", "create", "admin_console", "other", "other"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := sampleEvent()
+			ev.Action = tc.action
+			ev.Origin = tc.origin
+			rec := telemetrytest.New()
+			audit.NewProcessor().Process(ev, rec.Emitter())
+
+			pts := rec.MetricPoints(audit.MetricAuditEvents)
+			if len(pts) != 1 {
+				t.Fatalf("events counter points = %d, want 1", len(pts))
+			}
+			if got := pts[0].Attrs["tailscale.audit.action"]; got != tc.wantAction {
+				t.Errorf("action attr = %q, want %q", got, tc.wantAction)
+			}
+			if got := pts[0].Attrs["tailscale.audit.origin"]; got != tc.wantOrigin {
+				t.Errorf("origin attr = %q, want %q", got, tc.wantOrigin)
+			}
+		})
+	}
+}
+
+// TestAuditEventsFloodBoundsCardinality covers a flood of distinct
+// wire-supplied action/origin values (as would arrive via the streaming
+// receiver) and asserts the events counter's action/origin attributes never
+// exceed the bounded admit-set (the known API enum values plus the single
+// "other" overflow bucket).
+func TestAuditEventsFloodBoundsCardinality(t *testing.T) {
+	rec := telemetrytest.New()
+	p := audit.NewProcessor()
+
+	for i := range 2000 {
+		ev := sampleEvent()
+		ev.EventGroupID = fmt.Sprintf("flood-%d", i) // avoid dedup collisions
+		ev.Action = fmt.Sprintf("ATTACKER_ACTION_%d", i)
+		ev.Origin = fmt.Sprintf("ATTACKER_ORIGIN_%d", i)
+		p.Process(ev, rec.Emitter())
+	}
+
+	pts := rec.MetricPoints(audit.MetricAuditEvents)
+	distinctActions := map[string]bool{}
+	distinctOrigins := map[string]bool{}
+	for _, mp := range pts {
+		distinctActions[mp.Attrs["tailscale.audit.action"]] = true
+		distinctOrigins[mp.Attrs["tailscale.audit.origin"]] = true
+	}
+	if len(distinctActions) != 1 || !distinctActions["other"] {
+		t.Fatalf("distinct action values from a 2000-value flood = %v, want only {other}", distinctActions)
+	}
+	if len(distinctOrigins) != 1 || !distinctOrigins["other"] {
+		t.Fatalf("distinct origin values from a 2000-value flood = %v, want only {other}", distinctOrigins)
 	}
 }
 

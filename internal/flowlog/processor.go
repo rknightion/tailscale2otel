@@ -542,11 +542,22 @@ var protoNames = map[int]string{
 	132: "sctp",
 }
 
+// maxIANAProtocol is the highest valid IANA protocol number (a single octet on
+// the wire). Anything outside [0, maxIANAProtocol] cannot be a real protocol
+// number and is folded to "unknown" — see transportName.
+const maxIANAProtocol = 255
+
 // transportName maps an IANA protocol number to its transport name. Zero (the
-// absent/null case) yields "unknown"; numbers without a known name yield their
-// decimal string.
+// absent/null case) yields "unknown"; in-range (0-255) numbers without a known
+// name yield their decimal string, bounding that fallback to at most 256
+// distinct values. proto is an attacker-controlled JSON number on the
+// streaming ingestion path (shared with poll via this same Processor), so any
+// value outside the valid IANA range also folds to "unknown" instead of
+// echoing the raw wire integer verbatim, which would otherwise let a
+// misbehaving/attacking source mint unbounded transport-attribute cardinality
+// (#77).
 func transportName(proto int) string {
-	if proto == 0 {
+	if proto <= 0 || proto > maxIANAProtocol {
 		return "unknown"
 	}
 	if name, ok := protoNames[proto]; ok {

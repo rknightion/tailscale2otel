@@ -192,9 +192,15 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		Attrs:     attrs,
 	})
 
+	// Action/origin are attacker-controlled wire values on the streaming
+	// ingestion path (this Process method is shared with the poller — see
+	// package doc). Normalize both to a fixed, bounded admit-set before using
+	// them as metric attributes so a flood of crafted values cannot mint
+	// unbounded cardinality on this counter (#77); known API values pass
+	// through unchanged.
 	e.Counter(docAuditEvents.Name, docAuditEvents.Unit, docAuditEvents.Description, 1, telemetry.Attrs{
-		attrAction: ev.Action,
-		attrOrigin: ev.Origin,
+		attrAction: normalizeAction(ev.Action),
+		attrOrigin: normalizeOrigin(ev.Origin),
 	})
 
 	if cat, ok := classifyChange(ev); ok {

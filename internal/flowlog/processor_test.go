@@ -111,6 +111,79 @@ func TestProcessNumericProtoTransport(t *testing.T) {
 	}
 }
 
+// TestProcessOutOfRangeProtoClampsTransport is the regression for #77: proto is
+// an attacker-controlled JSON number on the stream ingestion path (shared with
+// poll via the same Processor). Values outside the IANA protocol-number range
+// (0-255) must clamp to "unknown" instead of echoing the raw wire integer,
+// which would otherwise mint unbounded transport cardinality. In-range but
+// unrecognized numbers (e.g. 99, see TestProcessNumericProtoTransport) keep
+// their existing decimal-string behavior — that space is already bounded to
+// at most 256 distinct values.
+func TestProcessOutOfRangeProtoClampsTransport(t *testing.T) {
+	cases := []struct {
+		name  string
+		proto int
+	}{
+		{"large positive", 999999999},
+		{"just above range", 256},
+		{"negative", -1},
+		{"very negative", -999999999},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{})
+			p.Process(flowlog.FlowLog{
+				NodeID: "nLaptop",
+				Start:  time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
+				End:    time.Date(2024, 6, 6, 15, 26, 26, 0, time.UTC),
+				VirtualTraffic: []flowlog.ConnectionCounts{
+					{Proto: tc.proto, Src: "100.64.0.1:443", Dst: "100.64.0.2:51820", TxPkts: 1, TxBytes: 1},
+				},
+			}, rec.Emitter())
+
+			flows := rec.MetricPoints(flowlog.MetricFlows)
+			if len(flows) != 1 {
+				t.Fatalf("MetricFlows points = %d, want 1", len(flows))
+			}
+			if got := flows[0].Attrs[semconv.NetworkTransport]; got != "unknown" {
+				t.Errorf("transport = %q, want unknown for out-of-range proto %d", got, tc.proto)
+			}
+		})
+	}
+}
+
+// TestProcessProtoFloodBoundsTransportCardinality covers a flood of distinct
+// attacker-chosen proto values (as would arrive via the streaming receiver)
+// and asserts the transport attribute never exceeds the bounded set: the
+// well-known IANA names, any in-range (0-255) decimal fallback, and the single
+// "unknown" overflow bucket for out-of-range values.
+func TestProcessProtoFloodBoundsTransportCardinality(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{})
+
+	for i := range 2000 {
+		proto := 1000000 + i // always out of the 0-255 IANA range
+		p.Process(flowlog.FlowLog{
+			NodeID: "nLaptop",
+			Start:  time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC),
+			End:    time.Date(2024, 6, 6, 15, 26, 26, 0, time.UTC),
+			VirtualTraffic: []flowlog.ConnectionCounts{
+				{Proto: proto, Src: "100.64.0.1:443", Dst: "100.64.0.2:51820", TxPkts: 1, TxBytes: 1},
+			},
+		}, rec.Emitter())
+	}
+
+	flows := rec.MetricPoints(flowlog.MetricFlows)
+	distinct := make(map[string]bool)
+	for _, f := range flows {
+		distinct[f.Attrs[semconv.NetworkTransport]] = true
+	}
+	if len(distinct) != 1 || !distinct["unknown"] {
+		t.Fatalf("distinct transports from a 2000-value out-of-range proto flood = %v, want only {unknown}", distinct)
+	}
+}
+
 func TestProcessVirtualTCPMetrics(t *testing.T) {
 	rec := telemetrytest.New()
 	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{NodeDims: true})
