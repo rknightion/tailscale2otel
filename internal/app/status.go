@@ -368,8 +368,18 @@ func (a *App) dedupInfo() []statusdata.DedupInfo {
 		}
 		out = append(out, statusdata.DedupInfo{Name: name, Len: set.Len(), Capacity: set.Cap()})
 	}
-	add("flow", a.flowDedup)
-	add("audit", a.auditDedup)
+	// Report every runtime's flow/audit sets (not just runtimes[0]) so a busy
+	// tailnet's dedup occupancy is visible in multi-tailnet mode; prefix with the
+	// tailnet name when multi to disambiguate (#60).
+	multi := a.multiTailnet()
+	for _, rt := range a.runtimes {
+		prefix := ""
+		if multi {
+			prefix = rt.name + "/"
+		}
+		add(prefix+"flow", rt.flowDedup)
+		add(prefix+"audit", rt.auditDedup)
+	}
 	add("webhook_cross", a.webhookDedup)
 	return out
 }

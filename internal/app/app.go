@@ -428,11 +428,20 @@ func (a *App) Run(ctx context.Context) error {
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
 		go runPIIFilterReporter(ctx, a.cfg.PIIFilter, a.procEmitter, interval)
+		// webhook cross-dedup is a process-global, single-tailnet-only set — report it
+		// on the process emitter. Each tailnet's own flow/audit dedup sets are
+		// reported on THAT runtime's emitter (stamping tailscale.tailnet), so in
+		// multi-tailnet mode every tailnet's dedup.size/evictions are visible, not
+		// just runtimes[0]'s (#60).
 		go runDedupReporter(ctx, a.procEmitter, interval, map[string]*dedup.Set{
-			"flow":          a.flowDedup,
-			"audit":         a.auditDedup,
 			"webhook_cross": a.webhookDedup,
 		})
+		for _, rt := range a.runtimes {
+			go runDedupReporter(ctx, rt.emitter, interval, map[string]*dedup.Set{
+				"flow":  rt.flowDedup,
+				"audit": rt.auditDedup,
+			})
+		}
 		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)
 		go runExportReporter(ctx, a.procEmitter, a.procExportStats, interval)
 		if a.checkpointEffective == "file" {
