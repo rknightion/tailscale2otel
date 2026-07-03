@@ -35,6 +35,32 @@ See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config move
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
 
+### Mounting a TLS cert for the streaming receiver
+
+`readOnlyRootFilesystem: true` means there is no writable path inside the pod to
+place arbitrary files, so `config.streaming.tls.cert_file`/`key_file` need an
+explicit mount. Use `extraVolumes`/`extraVolumeMounts` to wire in a `kubernetes.io/tls`
+Secret (or any other file-backed Secret/ConfigMap) without forking the chart:
+
+```yaml
+config:
+  streaming:
+    enabled: true
+    tls:
+      cert_file: /etc/tailscale2otel/tls/tls.crt
+      key_file: /etc/tailscale2otel/tls/tls.key
+
+extraVolumes:
+  - name: streaming-tls
+    secret:
+      secretName: tailscale2otel-streaming-tls
+
+extraVolumeMounts:
+  - name: streaming-tls
+    mountPath: /etc/tailscale2otel/tls
+    readOnly: true
+```
+
 {{ template "chart.requirementsSection" . }}
 
 {{ template "chart.valuesSection" . }}

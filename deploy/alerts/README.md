@@ -54,7 +54,7 @@ stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`doma
 label (`security` / `infra` / `observability`); rules not worthy of automatic
 investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
 "true"` so IRM routing / auto-investigation stays focused. The generated set currently
-has **60 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
+has **63 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
 `-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
 `gen/build_rules.py` is the source of truth.
 
@@ -68,6 +68,8 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 
 | Rule | Severity | Default | Fires when |
 |---|---|---|---|
+| `ExporterDown` | critical | ✅ on | `tailscale2otel_up_ratio` is `0` **or absent** for 5m (`noDataState: Alerting`, unlike the rest of this group) — the exporter process died or stopped emitting entirely |
+| `CollectorScrapeFailing` | warning | ✅ on | `tailscale2otel_scrape_success_ratio == 0` (per collector) for 15m — the last scrape failed and hasn't recovered |
 | `CollectorScrapeStale` | warning | ✅ on | a collector hasn't completed a scrape in >1h (wedged; success gauge can stay stale at 1) |
 | `MetricCardinalityCapped` | warning | ✅ on | `series_overflowing_ratio` > 0 → a metric is collapsing excess series (silent per-series loss) |
 | `SeriesBudgetHigh` | warning | ✅ on | a metric's active-series / `series_limit` headroom ratio > 0.8 (approaching its cap) |
@@ -89,7 +91,9 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 |---|---|---|---|
 | `TailnetLockErrors` | warning | ✅ on | a device has a tailnet-lock error (e.g. unsigned node) |
 | `AuditConfigChangeWARN` (Loki) | warning | ✅ on | a `tailscale.config.audit` log was emitted at WARN (change carried an error) |
+| `DeviceKeysExpiring7d` | warning | ✅ on | one or more device node keys expire within **7 days** (baseline warning tier below `DeviceKeyExpiringCritical`) |
 | `DeviceKeyExpiringCritical` | critical | ✅ on | a device node key expires within **48h** (critical tier above the 7-day warning) |
+| `AuthKeysExpiring7d` | warning | ✅ on | one or more auth/API keys expire within **7 days** (baseline warning tier below `AuthKeyExpiringCritical`) |
 | `AuthKeyExpiringCritical` | critical | ✅ on | an auth/API key expires within **48h** |
 | `PostureAutoUpdateCoverageLow` | warning | ✅ on | < 80% of devices have client auto-update enabled |
 | `PostureEncryptionCoverageLow` | warning | ⏸ off | < 80% of devices report an encrypted state store |

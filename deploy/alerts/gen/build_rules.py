@@ -185,6 +185,27 @@ def _derp_byte_fraction(win="10m"):
 
 def groups():
     health = [
+        alert("ts2o-exporter-down", "Exporter down",
+              "tailscale2otel_up_ratio",
+              "lt", 1, "5m", "critical",
+              "tailscale2otel exporter is down",
+              "tailscale2otel_up_ratio is 0 for 5m — the exporter is not running or not emitting "
+              "telemetry, so no Tailscale metrics or logs are flowing. noDataState is Alerting (not "
+              "the group default OK) so the series going fully absent — e.g. an OOM-killed pod — also "
+              "fires this, matching the datasource-managed ExporterDown semantics "
+              "(absent(tailscale2otel_up_ratio) or == 0). Check the \"Up state\" / build-info panels "
+              "on the Exporter Health dashboard (uid ts2otel-exporter-health).",
+              domain="observability", paused=False, nodata="Alerting"),
+        alert("ts2o-collector-scrape-failing", "Collector scrape failing",
+              "min by (tailscale_collector) (tailscale2otel_scrape_success_ratio)",
+              "lt", 1, "15m", "warning",
+              "Collector {{ $labels.tailscale_collector }} scrape failing",
+              "tailscale2otel_scrape_success_ratio == 0 for collector {{ $labels.tailscale_collector }} "
+              "for 15m — its last scrape failed and has not recovered, so that collector's series are "
+              "stale. Complements CollectorScrapeStale (timestamp-based). See the \"Scrape success / "
+              "duration / errors by collector\" panels on the Exporter Health dashboard "
+              "(uid ts2otel-exporter-health).",
+              domain="observability", paused=False),
         alert("ts2o-collector-scrape-stale", "Collector scrape stale",
               "max by (tailscale_collector) (time() - tailscale2otel_scrape_last_timestamp_seconds)",
               "gt", 3600, "10m", "warning",
@@ -433,8 +454,19 @@ def groups():
               "drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge "
               "(expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the "
               "ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, "
-              "which only grow and latch).",
-              domain="security", paused=True),
+              "which only grow and latch). Warning tier below ts2o-device-key-expiring-critical (48h).",
+              domain="security", paused=False),
+        alert("ts2o-auth-keys-expiring-7d", "Auth/API keys expiring (<7d)",
+              "count((max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() < 7*86400) and "
+              "(max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() > 0))",
+              "gt", 0, "1h", "warning",
+              "Auth/API keys are expiring within 7 days",
+              "One or more auth/API keys expire within 7 days (and are not already expired) — rotate them "
+              "before automation/devices using them lose access. Computed from the per-key expiry gauge "
+              "(expiry - now within (0, 7d]), so it clears after a key is rotated. Warning tier below "
+              "ts2o-auth-key-expiring-critical (48h) — the Grafana-managed equivalent of the "
+              "datasource-managed AuthKeyExpiringSoon rule.",
+              domain="security", paused=False),
         # --- Task 2.4: security/governance (B1/B2/B7/A1/A2) ---
         alert("ts2o-acl-unrestricted", "Unrestricted ACL rules present",
               "sum(tailscale_acl_unrestricted_rules_ratio)", "gt", 0, "15m", "warning",

@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.7.5](https://img.shields.io/badge/Version-0.7.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.7.6](https://img.shields.io/badge/Version-0.7.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -38,6 +38,32 @@ helm install t deploy/helm/tailscale2otel \
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
+
+### Mounting a TLS cert for the streaming receiver
+
+`readOnlyRootFilesystem: true` means there is no writable path inside the pod to
+place arbitrary files, so `config.streaming.tls.cert_file`/`key_file` need an
+explicit mount. Use `extraVolumes`/`extraVolumeMounts` to wire in a `kubernetes.io/tls`
+Secret (or any other file-backed Secret/ConfigMap) without forking the chart:
+
+```yaml
+config:
+  streaming:
+    enabled: true
+    tls:
+      cert_file: /etc/tailscale2otel/tls/tls.crt
+      key_file: /etc/tailscale2otel/tls/tls.key
+
+extraVolumes:
+  - name: streaming-tls
+    secret:
+      secretName: tailscale2otel-streaming-tls
+
+extraVolumeMounts:
+  - name: streaming-tls
+    mountPath: /etc/tailscale2otel/tls
+    readOnly: true
+```
 
 ## Values
 
@@ -210,6 +236,8 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | config.webhook.path | string | `"/tailscale/webhook"` | HTTP path the receiver serves. |
 | config.webhook.secret | string | `""` | HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs). Set via TS2OTEL_WEBHOOK__SECRET (secret). |
 | existingSecret | string | `""` | Name of a pre-created Secret exposing the TS2OTEL_* env keys. When set, no Secret is rendered. |
+| extraVolumeMounts | list | `[]` | Extra volume mounts appended to the main container's volumeMounts, as-is. Paired with extraVolumes above by name. |
+| extraVolumes | list | `[]` | Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding TLS cert/key material for config.streaming.tls, since readOnlyRootFilesystem leaves no other place to put arbitrary files). Paired with extraVolumeMounts below by volume name. See the chart README for a worked TLS-cert example. |
 | fullnameOverride | string | `""` | Fully override the generated resource names. |
 | goRuntime | object | `{"gogc":"200","memLimit":""}` | Go runtime tuning, injected as container env vars. This is a near-idle poller with a tiny live heap, so the Go default GOGC=100 fires frequent (individually cheap) collections that dominate the CPU profile; raising GOGC cuts that GC share. |
 | goRuntime.gogc | string | `"200"` | GOGC: heap-growth percentage between collections (Go default 100). Empty ("") leaves the Go default. |
@@ -227,7 +255,7 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 | persistence.storageClass | string | `""` | StorageClass for the PVC (empty = cluster default). Only used when enabled. |
 | podAnnotations | object | `{}` | Extra annotations for the pod. |
 | podLabels | object | `{}` | Extra labels for the pod. |
-| podSecurityContext | object | `{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. |
+| podSecurityContext | object | `{"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. fsGroup makes the opt-in PVC persistence path (persistence.enabled=true) reliably writable by the uid-65532 container regardless of the CSI driver's default ownership behavior — a freshly provisioned block PVC is typically root:root on many drivers. The default emptyDir checkpoint volume already works without this (kubelet chmods emptyDir roots 0777, and the image pre-seeds /var/lib/tailscale2otel owned by 65532:65532). |
 | replicaCount | int | `1` | Replica count. Keep at 1 — this is a singleton poller (no leader election); scaling up would double-emit every metric and log. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. The defaults suit a few-hundred-device tailnet; raise limits if you enable high-volume flow-log streaming or many node-metrics targets. |
 | secret | object | `{"TS2OTEL_ADMIN__AUTH__TOKEN":"","TS2OTEL_HEADSCALE__API_KEY":"","TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID":"","TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER":"","TS2OTEL_PROMETHEUS__AUTH__TOKEN":"","TS2OTEL_STREAMING__TOKEN":"","TS2OTEL_TAILSCALE__AUTH__APIKEY":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET":"","TS2OTEL_TAILSCALE__TAILNET":"","TS2OTEL_WEBHOOK__SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at runtime — secrets never appear in the ConfigMap. Keys left empty ("") are NOT rendered into the Secret: an empty env var would override — and blank — the same key set under `config:` (env beats file), silently disabling e.g. receiver auth. |

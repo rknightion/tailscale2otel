@@ -751,6 +751,12 @@
         "existingSecret": {
             "type": "string"
         },
+        "extraVolumeMounts": {
+            "type": "array"
+        },
+        "extraVolumes": {
+            "type": "array"
+        },
         "fullnameOverride": {
             "type": "string"
         },
@@ -817,6 +823,12 @@
         "podSecurityContext": {
             "type": "object",
             "properties": {
+                "fsGroup": {
+                    "type": "integer"
+                },
+                "fsGroupChangePolicy": {
+                    "type": "string"
+                },
                 "runAsNonRoot": {
                     "type": "boolean"
                 },

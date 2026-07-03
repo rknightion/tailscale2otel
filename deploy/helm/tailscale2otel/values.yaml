@@ -35,11 +35,18 @@ podAnnotations: {}
 podLabels: {}
 
 # -- Pod-level security context. Runs as non-root with the RuntimeDefault seccomp
-# profile; the app needs no special privileges.
+# profile; the app needs no special privileges. fsGroup makes the opt-in PVC
+# persistence path (persistence.enabled=true) reliably writable by the uid-65532
+# container regardless of the CSI driver's default ownership behavior — a freshly
+# provisioned block PVC is typically root:root on many drivers. The default
+# emptyDir checkpoint volume already works without this (kubelet chmods emptyDir
+# roots 0777, and the image pre-seeds /var/lib/tailscale2otel owned by 65532:65532).
 podSecurityContext:
   runAsNonRoot: true
   seccompProfile:
     type: RuntimeDefault
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
 # -- Container-level security context. Drops all capabilities and runs with a
 # read-only root filesystem (the app writes only to the optional checkpoint
 # volume). Runs as the distroless `nonroot` uid/gid 65532 (a high, non-system id
@@ -81,6 +88,15 @@ nodeSelector: {}
 tolerations: []
 # -- Affinity rules for pod scheduling.
 affinity: {}
+
+# -- Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding
+# TLS cert/key material for config.streaming.tls, since readOnlyRootFilesystem
+# leaves no other place to put arbitrary files). Paired with extraVolumeMounts
+# below by volume name. See the chart README for a worked TLS-cert example.
+extraVolumes: []
+# -- Extra volume mounts appended to the main container's volumeMounts, as-is.
+# Paired with extraVolumes above by name.
+extraVolumeMounts: []
 
 # --- Secrets ---
 # Provide credentials either inline here (rendered into a Secret) OR reference an

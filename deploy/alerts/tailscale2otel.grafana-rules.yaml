@@ -7,6 +7,147 @@ groups:
     folder: "tailscale2otel"
     interval: "1m"
     rules:
+      - uid: "ts2o-exporter-down"
+        title: "Exporter down"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "tailscale2otel_up_ratio"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "lt"
+                    params:
+                      - 1
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "Alerting"
+        execErrState: "OK"
+        for: "5m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          summary: "tailscale2otel exporter is down"
+          description: "tailscale2otel_up_ratio is 0 for 5m — the exporter is not running or not emitting telemetry, so no Tailscale metrics or logs are flowing. noDataState is Alerting (not the group default OK) so the series going fully absent — e.g. an OOM-killed pod — also fires this, matching the datasource-managed ExporterDown semantics (absent(tailscale2otel_up_ratio) or == 0). Check the \"Up state\" / build-info panels on the Exporter Health dashboard (uid ts2otel-exporter-health)."
+        isPaused: false
+      - uid: "ts2o-collector-scrape-failing"
+        title: "Collector scrape failing"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "min by (tailscale_collector) (tailscale2otel_scrape_success_ratio)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "lt"
+                    params:
+                      - 1
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} scrape failing"
+          description: "tailscale2otel_scrape_success_ratio == 0 for collector {{ $labels.tailscale_collector }} for 15m — its last scrape failed and has not recovered, so that collector's series are stale. Complements CollectorScrapeStale (timestamp-based). See the \"Scrape success / duration / errors by collector\" panels on the Exporter Health dashboard (uid ts2otel-exporter-health)."
+        isPaused: false
       - uid: "ts2o-collector-scrape-stale"
         title: "Collector scrape stale"
         condition: "C"
@@ -2420,8 +2561,78 @@ groups:
           domain: "security"
         annotations:
           summary: "Device node keys are expiring within 7 days"
-          description: "One or more device node keys expire within 7 days (and are not already expired) — they will drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge (expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, which only grow and latch)."
-        isPaused: true
+          description: "One or more device node keys expire within 7 days (and are not already expired) — they will drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge (expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, which only grow and latch). Warning tier below ts2o-device-key-expiring-critical (48h)."
+        isPaused: false
+      - uid: "ts2o-auth-keys-expiring-7d"
+        title: "Auth/API keys expiring (<7d)"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "count((max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() < 7*86400) and (max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() > 0))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Auth/API keys are expiring within 7 days"
+          description: "One or more auth/API keys expire within 7 days (and are not already expired) — rotate them before automation/devices using them lose access. Computed from the per-key expiry gauge (expiry - now within (0, 7d]), so it clears after a key is rotated. Warning tier below ts2o-auth-key-expiring-critical (48h) — the Grafana-managed equivalent of the datasource-managed AuthKeyExpiringSoon rule."
+        isPaused: false
       - uid: "ts2o-acl-unrestricted"
         title: "Unrestricted ACL rules present"
         condition: "C"
