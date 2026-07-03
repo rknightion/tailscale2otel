@@ -58,6 +58,17 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	// With the tailnet distinguisher dropped, per-tailnet Prometheus series become
+	// byte-identical and collapse on the pull path (the handler serves 200 via
+	// first-wins rather than 500 — see #103). Flag the silent per-tailnet data loss.
+	if c.Prometheus.Enabled && !c.PIIFilter.TailnetName && len(c.Tailnets) > 1 {
+		w = append(w, "prometheus.enabled with pii_filter.tailnet_name=false in multi-tailnet mode: "+
+			"the tailscale_tailnet label is the only per-tailnet distinguisher on /metrics, so with it "+
+			"disabled the per-tailnet series are identical and collapse to one on the pull path (the "+
+			"scrape still returns 200, but per-tailnet breakdowns are lost). Keep pii_filter.tailnet_name "+
+			"enabled, or rely on the OTLP push path where each tailnet is a distinct target.")
+	}
+
 	if c.Prometheus.Enabled && c.Prometheus.Auth.Token == "" && isWildcardListen(c.Prometheus.Listen) {
 		w = append(w, "prometheus.enabled with no prometheus.auth.token on "+c.Prometheus.Listen+": "+
 			"the /metrics page exposes every series (incl. device/flow identifiers) to anyone who can "+

@@ -4,15 +4,41 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
+
+// TestInstallExportErrorHandler_IgnoresInstrumentNameError pins #62: an
+// instrument-name validation error (the SDK still returns a usable instrument, so
+// nothing is dropped) must NOT be counted as an OTLP export failure, while a
+// genuine export error still is.
+func TestInstallExportErrorHandler_IgnoresInstrumentNameError(t *testing.T) {
+	rec := telemetrytest.New()
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
+	defer restore()
+
+	otel.Handle(fmt.Errorf("instrument name %q invalid: %w", "foo:bar", sdkmetric.ErrInstrumentName))
+	if points := rec.MetricPoints("tailscale2otel.export.failures"); len(points) != 0 {
+		t.Fatalf("instrument-name error counted as export failure: %d points", len(points))
+	}
+
+	otel.Handle(errors.New("real export boom"))
+	points := rec.MetricPoints("tailscale2otel.export.failures")
+	if len(points) != 1 || points[0].Value != 1 {
+		t.Fatalf("genuine export error not counted: %+v", points)
+	}
+	if got := points[0].Attrs["error.type"]; got != "export" {
+		t.Fatalf("error.type = %q, want export", got)
+	}
+}
 
 func TestInstallExportErrorHandler_CountsHandledErrors(t *testing.T) {
 	rec := telemetrytest.New()

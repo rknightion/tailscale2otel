@@ -17,7 +17,15 @@ import (
 // Separate from the admin server so pull works without the status page/pprof.
 func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", a.requireMetricsAuth(promhttp.HandlerFor(g, promhttp.HandlerOpts{})))
+	// ContinueOnError (not the promhttp default HTTPErrorOnError): when
+	// pii_filter.tailnet_name=false drops the tailscale.tailnet distinguisher, the
+	// per-provider registries can produce byte-identical series (per-tailnet series
+	// in multi mode; process+tailnet self-obs in single mode). The default turns
+	// that Gather collision into a permanent HTTP 500 on every scrape; first-wins
+	// keeps /metrics returning 200 instead of taking the whole pull path down (#103).
+	mux.Handle("/metrics", a.requireMetricsAuth(promhttp.HandlerFor(g, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+	})))
 	return &http.Server{
 		Addr:              a.cfg.Prometheus.Listen,
 		Handler:           mux,

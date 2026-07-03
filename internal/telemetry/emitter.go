@@ -88,11 +88,25 @@ func NewEmitterWithPII(meter metric.Meter, logger log.Logger, cats pii.Categorie
 // still runs). A nil cats map disables PII filtering (all-on fast path). A nil
 // constAttrs slice means no provider-scoped attributes are stamped.
 func newOtelEmitter(meter metric.Meter, logger log.Logger, card *CardinalityTracker, reserved map[string]struct{}, diag *slog.Logger, cats pii.Categories, constAttrs []attribute.KeyValue) *otelEmitter {
+	// The const attrs (tailscale.tailnet / tailscale2otel.provider) are appended
+	// AFTER the collision guard, so a data-point attr whose normalized Prometheus
+	// name equals one of theirs (e.g. a node_metrics passthrough label literally
+	// named "tailscale_tailnet") would slip a duplicate label past the guard and
+	// get the whole sample rejected as otlp_parse_error. Reserve the normalized
+	// names of the const attrs actually present so such a passthrough is
+	// dropped-and-logged instead, the same as job/instance/service_* (#91).
+	r := make(map[string]struct{}, len(reserved)+len(constAttrs))
+	for k := range reserved {
+		r[k] = struct{}{}
+	}
+	for _, kv := range constAttrs {
+		r[metricdoc.PromLabelName(string(kv.Key))] = struct{}{}
+	}
 	return &otelEmitter{
 		meter:      meter,
 		logger:     logger,
 		card:       card,
-		reserved:   reserved,
+		reserved:   r,
 		diag:       diag,
 		redactor:   pii.New(cats),
 		constAttrs: constAttrs,
@@ -266,9 +280,10 @@ func toLogKV(attrs Attrs) []log.KeyValue {
 // buildAttrs converts attrs to OTEL metric attributes, first resolving any
 // OTLP->Prometheus label-name collisions so Grafana Cloud cannot reject the sample
 // for a duplicate label, then appending the provider-scoped const attrs (tailnet/
-// provider). The const attrs are appended after the collision guard: no collector
-// emits tailscale.tailnet / tailscale2otel.provider as a data-point attr, and
-// neither is a reserved promoted label, so a plain append is safe.
+// provider). The const attrs are appended after the collision guard, which is safe
+// because their normalized names are added to e.reserved at construction (#91): a
+// data-point attr colliding with one is dropped-and-logged by the guard, so the
+// appended const attr is never a duplicate.
 func (e *otelEmitter) buildAttrs(metricName string, attrs Attrs) []attribute.KeyValue {
 	if len(attrs) == 0 {
 		if len(e.constAttrs) == 0 {

@@ -31,6 +31,49 @@ func scrape(t *testing.T, ps *ProviderSet) string {
 	return string(body)
 }
 
+// TestPrometheusConstAttrCollisionGuard pins #91: a data-point attribute whose
+// normalized Prometheus name equals a const attr's (tailscale_tailnet /
+// tailscale2otel_provider) must be dropped by the collision guard so the appended
+// const attr is not duplicated into a sample-rejecting collision.
+func TestPrometheusConstAttrCollisionGuard(t *testing.T) {
+	ctx := context.Background()
+	ps, err := NewProviderSet(ctx, Options{ServiceName: "tailscale2otel", Provider: "tailscale",
+		PrometheusEnabled: true, Protocol: "stdout", StdoutWriter: io.Discard},
+		[]PerTailnetOptions{{Name: "solo", InstanceID: "i"}})
+	if err != nil {
+		t.Fatalf("NewProviderSet: %v", err)
+	}
+	defer func() { _ = ps.Shutdown(ctx) }()
+
+	ps.Tailnet("solo").Emitter().Gauge("tailscale.devices.count", "1", "d", 5, Attrs{
+		"tailscale_tailnet":       "evil",
+		"tailscale2otel_provider": "evil",
+	})
+	body := scrape(t, ps)
+	seen := false
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "tailscale_devices_count") {
+			continue
+		}
+		seen = true
+		if n := strings.Count(line, "tailscale_tailnet="); n != 1 {
+			t.Errorf("want exactly one tailscale_tailnet label, got %d: %q", n, line)
+		}
+		if strings.Contains(line, `tailscale_tailnet="evil"`) {
+			t.Errorf("passthrough value beat the const attr: %q", line)
+		}
+		if !strings.Contains(line, `tailscale_tailnet="solo"`) {
+			t.Errorf("const tailscale_tailnet=solo missing: %q", line)
+		}
+		if n := strings.Count(line, "tailscale2otel_provider="); n != 1 {
+			t.Errorf("want exactly one tailscale2otel_provider label, got %d: %q", n, line)
+		}
+	}
+	if !seen {
+		t.Fatalf("no tailscale_devices_count series in body:\n%s", body)
+	}
+}
+
 func TestPrometheusMultiTailnetExposition(t *testing.T) {
 	ctx := context.Background()
 	ps, err := NewProviderSet(ctx, Options{ServiceName: "tailscale2otel", PrometheusEnabled: true, Protocol: "stdout", StdoutWriter: io.Discard},

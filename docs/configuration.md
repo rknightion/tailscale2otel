@@ -578,7 +578,7 @@ Tailscale IPs, for example.
 | `pii_filter.service_addrs` | `true` | VIP service names from the Tailscale Services collector. |
 | `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability spans and metrics. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
-| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span; in multi-tailnet mode that removes the per-tailnet label (series stay distinct via `service.instance.id`). |
+| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical — they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |
 | `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. |
 
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
@@ -633,8 +633,11 @@ scraping and OTLP push are independent and complementary; enabling one does not 
 The endpoint is fully separate from the admin server (`admin.listen`) and must bind to a different
 address. It serves only `GET /metrics`; no status page or probes are exposed here.
 
-> **Multi-tailnet:** each tailnet's metrics carry a `tailscale_tailnet="<name>"` **constant label**
-> on every Prometheus series so multi-tailnet series do not collide at a shared `/metrics` endpoint.
+> **Multi-tailnet:** each tailnet's metrics carry a `tailscale_tailnet="<name>"` data-point label
+> that keeps multi-tailnet series distinct at a shared `/metrics` endpoint. This label is what
+> prevents a collision, so disabling `pii_filter.tailnet_name` removes it and the per-tailnet series
+> collapse (the endpoint uses first-wins and still returns 200 rather than a 500 — see the
+> `pii_filter.tailnet_name` note above).
 > A `target_info` info metric is also emitted per provider. On **Grafana Cloud** the primary metrics
 > path is OTLP (which uses the `target_info` join for resource attributes); the Prometheus endpoint
 > is an additional pull-compatible path for existing Prometheus-only infrastructure. See roadmap item

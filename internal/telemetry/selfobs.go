@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 )
@@ -28,6 +29,17 @@ var exportDurationBucketsSeconds = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25
 func InstallExportErrorHandler(e Emitter, logger *slog.Logger) (restore func()) {
 	prev := otel.GetErrorHandler()
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		// The Emitter routes instrument-creation errors through otel.Handle too
+		// (emitter.go), but the SDK returns a perfectly usable instrument alongside
+		// ErrInstrumentName for a name outside the OTEL charset — nothing is dropped
+		// and no export was attempted. Classify it distinctly and do NOT count it as
+		// an export failure (alerts watch tailscale2otel.export.failures) — #62.
+		if errors.Is(err, sdkmetric.ErrInstrumentName) {
+			if logger != nil {
+				logger.Warn("instrument name rejected by OTEL SDK (metric still records/exports)", "error", err)
+			}
+			return
+		}
 		if logger != nil {
 			logger.Warn("OTLP export failed", "error.type", errorType(err), "error", err)
 		}
