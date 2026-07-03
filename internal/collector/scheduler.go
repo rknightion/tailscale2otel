@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -171,10 +172,28 @@ func (s *Scheduler) initialDelay() time.Duration {
 	return time.Duration(rand.Float64() * float64(s.staggerWindow)) //nolint:gosec // G404: scheduling jitter is not security-sensitive
 }
 
+// isShutdownCancellation reports whether err represents a collector run being
+// interrupted by ctx's own cancellation (e.g. process shutdown) rather than a
+// genuine collection failure. It requires BOTH that ctx itself is done — so an
+// unrelated, request-scoped cancellation/timeout elsewhere is never
+// misclassified — and that err is context.Canceled or context.DeadlineExceeded,
+// the two sentinel errors an interrupted in-flight operation can surface
+// depending on exactly when it observed ctx being done (#93).
+func isShutdownCancellation(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() == nil {
+		return false
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 // runTick executes one collection, recovering from panics so a single bad
 // collector run never crashes the scheduler. The whole run is timed and, when
 // self-obs is enabled, the per-collector scrape.* metrics are emitted — even on
 // the panic-recovery path, which records success=0 plus an errors{panic} count.
+// A run interrupted purely by shutdown cancellation (see isShutdownCancellation)
+// is treated as neither success nor failure: it is skipped entirely from
+// scrape.* metrics, the StatusTracker, and WARN logging, so a routine shutdown
+// never leaves behind a false "collector failed" final sample (#93).
 func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time) {
 	started := time.Now()  // monotonic: used for duration only
 	startedWall := s.now() // wall-clock: for the status page's LastStarted
@@ -210,6 +229,14 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 			span.SetStatus(codes.Error, runErr.Error())
 		}
 		span.End()
+
+		if !panicked && isShutdownCancellation(ctx, runErr) {
+			// Shutdown, not a real failure: skip scrape metrics, status
+			// tracking, and WARN logging entirely (the tracing span above is
+			// still recorded, since that's a per-run trace rather than a
+			// persisted last-sample metric).
+			return
+		}
 
 		duration := time.Since(started)
 		finishedWall := s.now()
@@ -248,7 +275,7 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 		runErr = s.runWindow(ctx, c, e)
 	case SnapshotCollector:
 		runErr = c.Collect(ctx, s.emitter)
-		if runErr != nil {
+		if runErr != nil && !isShutdownCancellation(ctx, runErr) {
 			s.logger.Warn("collector failed", "collector", c.Name(), "error", runErr)
 		}
 	default:
@@ -274,7 +301,9 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 	if err != nil {
 		// Do not advance the checkpoint: the next tick retries the same window
 		// (at-least-once, no gaps).
-		s.logger.Warn("window collector failed", "collector", c.Name(), "error", err)
+		if !isShutdownCancellation(ctx, err) {
+			s.logger.Warn("window collector failed", "collector", c.Name(), "error", err)
+		}
 		return err
 	}
 	if hwm.IsZero() {

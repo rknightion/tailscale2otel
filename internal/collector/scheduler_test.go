@@ -1,8 +1,11 @@
 package collector_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
 // --- test doubles ---
@@ -315,4 +319,169 @@ func TestRunTick_EmitsScrapeSpan(t *testing.T) {
 			t.Errorf("span status description = %q, want it to contain %q", desc, "api unavailable")
 		}
 	})
+}
+
+// --- shutdown-cancellation classification (#93) ---
+//
+// A collector tick that fails purely because the scheduler's own context was
+// canceled (process shutdown) mid-run must NOT be recorded as a scrape
+// failure: no scrape.* metrics, no StatusTracker entry, no "collector
+// failed"/"window collector failed" WARN log. A genuine context.Canceled (or
+// context.DeadlineExceeded) that happens while the scheduler's context is
+// still live is unrelated to shutdown and must still count as a real failure.
+
+// allScrapeMetricNames lists every metric emitScrapeMetrics can produce, used
+// to assert none of them fired for a shutdown-canceled tick.
+var allScrapeMetricNames = []string{
+	collector.MetricScrapeDuration,
+	collector.MetricScrapeSuccess,
+	collector.MetricScrapeErrors,
+	collector.MetricScrapeLastTimestamp,
+	collector.MetricScrapeStaleness,
+	collector.MetricScrapeBudget,
+}
+
+func TestRunTick_ShutdownCancellationOfSnapshotCollectorNotRecordedAsFailure(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	rec := telemetrytest.New()
+	tracker := collector.NewStatusTracker()
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	entry := collector.Entry{
+		Collector: snapFunc{name: "shutdown", def: time.Minute, fn: func(ctx context.Context, _ telemetry.Emitter) error {
+			close(started)
+			<-ctx.Done() // block until the scheduler's own context is canceled mid-tick
+			return fmt.Errorf("collect: %w", ctx.Err())
+		}},
+		Interval: time.Minute,
+	}
+
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0),
+		collector.WithClock(func() time.Time { return now }),
+		collector.WithStatusTracker(tracker),
+		collector.WithLogger(logger))
+
+	last := now
+	done := make(chan struct{})
+	go func() {
+		s.RunTick(ctx, entry, &last)
+		close(done)
+	}()
+	<-started
+	cancel() // simulate shutdown while the collector is mid-run
+	<-done
+
+	for _, name := range allScrapeMetricNames {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Errorf("shutdown-canceled tick emitted %s: %+v, want none", name, pts)
+		}
+	}
+	if run, ok := tracker.Snapshot()["shutdown"]; ok || run.Runs != 0 {
+		t.Errorf("StatusTracker recorded a run for a shutdown-canceled tick: ok=%v run=%+v", ok, run)
+	}
+	if strings.Contains(logBuf.String(), "collector failed") {
+		t.Errorf("WARN log emitted for a shutdown-canceled tick: %s", logBuf.String())
+	}
+}
+
+func TestRunTick_ShutdownCancellationOfWindowCollectorNotRecordedAsFailure(t *testing.T) {
+	now := time.Unix(2_000_000, 0).UTC()
+	rec := telemetrytest.New()
+	tracker := collector.NewStatusTracker()
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	entry := collector.Entry{
+		Collector: winFunc{name: "winshutdown", def: time.Minute, lag: time.Minute,
+			fn: func(ctx context.Context, _, _ time.Time, _ telemetry.Emitter) (time.Time, error) {
+				close(started)
+				<-ctx.Done()
+				return time.Time{}, fmt.Errorf("collect window: %w", ctx.Err())
+			}},
+		Interval:        time.Minute,
+		InitialLookback: 5 * time.Minute,
+		MaxWindow:       time.Hour,
+	}
+
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0),
+		collector.WithClock(func() time.Time { return now }),
+		collector.WithStatusTracker(tracker),
+		collector.WithLogger(logger))
+
+	last := now
+	done := make(chan struct{})
+	go func() {
+		s.RunTick(ctx, entry, &last)
+		close(done)
+	}()
+	<-started
+	cancel()
+	<-done
+
+	for _, name := range allScrapeMetricNames {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Errorf("shutdown-canceled window tick emitted %s: %+v, want none", name, pts)
+		}
+	}
+	if run, ok := tracker.Snapshot()["winshutdown"]; ok || run.Runs != 0 {
+		t.Errorf("StatusTracker recorded a run for a shutdown-canceled window tick: ok=%v run=%+v", ok, run)
+	}
+	if strings.Contains(logBuf.String(), "window collector failed") {
+		t.Errorf("WARN log emitted for a shutdown-canceled window tick: %s", logBuf.String())
+	}
+}
+
+// TestRunTick_NonShutdownCancellationStillCountsAsFailure guards against an
+// overly broad fix: a context.Canceled/DeadlineExceeded error that occurs
+// while the scheduler's own context (ctx passed to RunTick) is still live —
+// i.e. NOT caused by shutdown — must still be recorded as a genuine scrape
+// failure (e.g. a collector's own internal timeout/cancellation).
+func TestRunTick_NonShutdownCancellationStillCountsAsFailure(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	rec := telemetrytest.New()
+	tracker := collector.NewStatusTracker()
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	entry := collector.Entry{
+		Collector: snapFunc{name: "notshutdown", def: time.Minute, fn: func(context.Context, telemetry.Emitter) error {
+			return fmt.Errorf("internal timeout: %w", context.DeadlineExceeded)
+		}},
+		Interval: time.Minute,
+	}
+
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0),
+		collector.WithClock(func() time.Time { return now }),
+		collector.WithStatusTracker(tracker),
+		collector.WithLogger(logger))
+
+	last := now
+	// The scheduler's own context is NOT canceled: this is a live, ongoing run.
+	s.RunTick(context.Background(), entry, &last)
+
+	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "notshutdown")
+	if !ok || success.Value != 0 {
+		t.Fatalf("success = %+v (ok=%v), want gauge value 0 for a genuine (non-shutdown) failure", success, ok)
+	}
+	errPt, ok := findPoint(rec, collector.MetricScrapeErrors, "notshutdown")
+	if !ok {
+		t.Fatalf("%s not emitted for a genuine (non-shutdown) failure", collector.MetricScrapeErrors)
+	}
+	if errPt.Attrs["error.type"] != "timeout" {
+		t.Fatalf("error.type = %q, want \"timeout\"", errPt.Attrs["error.type"])
+	}
+	if run, ok := tracker.Snapshot()["notshutdown"]; !ok || run.Runs != 1 || run.LastSuccess {
+		t.Fatalf("StatusTracker run = %+v (ok=%v), want a recorded failure", run, ok)
+	}
+	if !strings.Contains(logBuf.String(), "collector failed") {
+		t.Errorf("expected a \"collector failed\" WARN log for a genuine (non-shutdown) failure, got: %s", logBuf.String())
+	}
 }
