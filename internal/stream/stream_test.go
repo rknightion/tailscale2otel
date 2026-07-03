@@ -326,27 +326,69 @@ func TestEnvelope_SplunkEventWrapper(t *testing.T) {
 }
 
 // TestEnvelope_NDJSONSalvagesMalformedLine pins the line-by-line salvage path:
-// when one NDJSON line is malformed, the surrounding valid lines must still be
-// parsed and routed. This exercises the split-by-newline fallback (the loop
-// converted to strings.SplitSeq in P2-1).
+// when the decoder cannot cleanly stream ANY value at all (the malformed line
+// comes first), the newline-split fallback still recovers every valid line
+// around it. This exercises the split-by-newline fallback (the loop converted
+// to strings.SplitSeq in P2-1).
+//
+// Note (#96): the fallback is now reached ONLY when the concatenated-JSON
+// decoder salvages an EMPTY prefix — a decode error after at least one clean
+// value takes the new prefix-preservation path instead (see
+// TestEnvelope_ConcatenatedSalvagesValidPrefix), which by design keeps only the
+// records decoded before the corruption point, not ones after it. So the
+// malformed line here is first, not in the middle, to keep exercising this
+// fallback's own "recover everything around a total non-stream" behavior
+// without colliding with the prefix-preservation path.
 func TestEnvelope_NDJSONSalvagesMalformedLine(t *testing.T) {
 	s, rec := newServer(t, stream.Options{Token: testToken})
 
-	// A valid flow, a torn/garbage line, then a valid audit. The decoder cannot
-	// cleanly stream all three, forcing the newline-split salvage path.
-	body := captureFlowRecord + "\n" + `{"oops": broken json` + "\n" + captureAuditRecord + "\n"
+	// A torn/garbage line first (so the decoder salvages zero values and falls
+	// through to the newline-split path), then a valid flow and a valid audit.
+	body := `{"oops": broken json` + "\n" + captureFlowRecord + "\n" + captureAuditRecord + "\n"
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
 	}
-	// Both valid records survived the malformed middle line.
+	// Both valid records survived the malformed first line.
 	recs := rec.MetricPoints(metricRecords)
 	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
 		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
 	}
 	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
 		t.Fatalf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
+	}
+}
+
+// TestEnvelope_ConcatenatedPrefixPreservationTakesPriorityOverLineSplit locks
+// in the #96 priority rule the note above documents: when a valid record DOES
+// decode before a mid-stream corruption, the prefix-preservation path is taken
+// even if the body happens to contain newlines that a naive line-split could
+// have used to recover more — records after the corruption point are dropped,
+// not recovered via a secondary newline scan. This is a deliberate scope
+// decision (see the package doc), not an oversight.
+func TestEnvelope_ConcatenatedPrefixPreservationTakesPriorityOverLineSplit(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	// A valid flow, then a torn/garbage line, then a valid audit: the same
+	// shape TestEnvelope_NDJSONSalvagesMalformedLine used before #96.
+	body := captureFlowRecord + "\n" + `{"oops": broken json` + "\n" + captureAuditRecord + "\n"
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (the decoded prefix is still accepted); body=%q", w.Code, w.Body.String())
+	}
+	recs := rec.MetricPoints(metricRecords)
+	// The flow (decoded before the corruption) survives via prefix preservation.
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1 (prefix salvaged)", metricRecords, fp.Value)
+	}
+	// The audit (after the corruption) is intentionally NOT recovered: no
+	// records{type=audit} point should exist at all.
+	for _, p := range recs {
+		if p.Attrs[attrType] == typeAudit {
+			t.Fatalf("records{type=audit} = %v, want no point (records after the corruption point are dropped, not recovered)", p.Value)
+		}
 	}
 }
 
@@ -464,6 +506,75 @@ func TestStream_AuditEventTimeFromLogsWrapperEnvelope(t *testing.T) {
 	lr := auditLogRecord(t, rec)
 	want := time.Unix(1780500887, 356_000_000).UTC()
 	assertTimeNear(t, lr.Timestamp, want, time.Millisecond)
+}
+
+// concatenatedCorruptedBody is realHECStreamBody (two concatenated, no-separator
+// HEC objects: a flow then an audit) with a THIRD, corrupted HEC object appended
+// directly after it — no separator, matching the real wire format — whose
+// "fields.recorded" value is an unquoted bareword (BROKEN) that is not valid
+// JSON. There is no newline anywhere in this body, so the pre-#96 newline-split
+// fallback could not have recovered anything from it at all.
+const concatenatedCorruptedBody = realHECStreamBody +
+	`{"time":1780500999.0,"event":{"nodeId":"n0003CNTRL","virtualTraffic":[{"proto":6}]},"fields":{"recorded":BROKEN}}`
+
+// TestEnvelope_ConcatenatedSalvagesValidPrefix pins the #96 fix: extractRecords
+// must keep the successfully-decoded prefix of a concatenated (no-separator) HEC
+// batch instead of discarding it when a later record in the same batch is
+// corrupt. Before the fix, any mid-stream decode error nil'd out the whole
+// decoded prefix and fell back to a newline-split path that cannot salvage
+// anything from a no-separator stream, so the entire batch (including the two
+// valid leading records) was rejected as unparsable.
+func TestEnvelope_ConcatenatedSalvagesValidPrefix(t *testing.T) {
+	s, rec := newServer(t, stream.Options{})
+
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(concatenatedCorruptedBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (valid prefix must still be accepted); body=%q", w.Code, w.Body.String())
+	}
+
+	// The flow + audit records decoded before the corrupt trailing object must
+	// still have been routed to their processors.
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1 (valid prefix salvaged)", metricRecords, fp.Value)
+	}
+	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
+		t.Fatalf("%s{type=audit} = %v, want 1 (valid prefix salvaged)", metricRecords, ap.Value)
+	}
+	// A salvaged partial batch is a 200 ack with the valid records processed,
+	// not a rejection: the request must NOT count toward rejected{reason=unparsable}.
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	}
+}
+
+// TestEnvelope_ConcatenatedTruncationIsLogged asserts the other #96 acceptance
+// criterion: salvaged-vs-dropped counts from a truncated batch must be visible.
+// This receiver surfaces them via a WARN log line (no new metric was needed).
+func TestEnvelope_ConcatenatedTruncationIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	rec := telemetrytest.New()
+	cache := enrich.NewDeviceCache()
+	flowProc := flowlog.NewProcessor(cache, flowlog.Options{})
+	auditProc := audit.NewProcessor()
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	s := stream.New(stream.Options{}, flowProc, auditProc, rec.Emitter(), logger)
+
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(concatenatedCorruptedBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") {
+		t.Fatalf("log output = %q, want a WARN entry for the truncated/salvaged batch", out)
+	}
+	if !strings.Contains(out, "salvaged_records=2") {
+		t.Fatalf("log output = %q, want salvaged_records=2 (the flow + audit prefix)", out)
+	}
+	if !strings.Contains(out, "dropped_bytes=") {
+		t.Fatalf("log output = %q, want a dropped_bytes field", out)
+	}
 }
 
 func TestHandler_HECFlowRecord(t *testing.T) {

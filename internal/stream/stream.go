@@ -41,6 +41,16 @@
 //   - a Tailscale batch wrapper {"logs": [<record>, ...]} — each element is
 //     classified (this is also the shape the .capture files use at top level).
 //
+// A genuinely corrupt/truncated body (e.g. a torn transfer) is handled by
+// SALVAGING the valid prefix rather than rejecting the whole batch (#96): when
+// the concatenated-JSON decode hits a mid-stream syntax error after already
+// decoding at least one clean value, extractRecords keeps that decoded prefix
+// and drops only the corrupted remainder — since the real wire format has no
+// separators between records, one bad object no longer costs an entire
+// ~73-record POST. The salvaged/dropped counts are logged (WARN) so the
+// partial loss stays observable. The newline-split fallback above is only
+// attempted when NOTHING decoded at all.
+//
 // Each extracted record object is CLASSIFIED by shape, not by a declared type:
 //
 //   - if it has a non-empty "nodeId" and any of virtualTraffic / subnetTraffic /
@@ -300,7 +310,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	records, err := extractRecords(raw)
+	records, outcome, err := extractRecords(raw)
 	if err != nil {
 		span.SetStatus(codes.Error, "could not parse body")
 		s.logger.Warn("stream: parsing body failed", "error", err)
@@ -308,6 +318,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			telemetry.Attrs{attrReason: reasonUnparsable})
 		s.writeError(w, http.StatusBadRequest, "could not parse body")
 		return
+	}
+	if outcome.truncated {
+		// #96: a mid-stream decode error salvaged a valid prefix rather than
+		// discarding the whole batch; surface the salvaged/dropped counts so
+		// the partial loss stays visible instead of hiding behind a plain 200.
+		s.logger.Warn("stream: salvaged valid prefix from a corrupted batch",
+			"salvaged_records", outcome.salvaged,
+			"dropped_bytes", outcome.droppedBytes)
 	}
 
 	if s.onIngest != nil && len(raw) > 0 {
@@ -531,14 +549,33 @@ type extractedRecord struct {
 	envTime time.Time
 }
 
+// extractOutcome reports whether extractRecords had to salvage a valid prefix
+// after a mid-stream decode error (#96), and how much was salvaged vs. dropped,
+// so the caller can surface the partial loss instead of it staying invisible
+// behind a plain 200 ack.
+type extractOutcome struct {
+	// truncated is true when concatenated-JSON decoding stopped on a syntax
+	// error after at least one value had already decoded cleanly. The
+	// corrupted value and everything after it in the body was dropped.
+	truncated bool
+	// salvaged is the number of records recovered from the decoded prefix
+	// (after envelope unwrapping); meaningful only when truncated is true.
+	salvaged int
+	// droppedBytes is the length, in bytes, of the undecoded remainder
+	// discarded at the corruption point. The exact record count inside that
+	// remainder is unknowable — those bytes never parsed as JSON — so byte
+	// length is the honest signal surfaced instead.
+	droppedBytes int
+}
+
 // extractRecords parses a request body into zero or more record objects (each
 // paired with its envelope time), tolerating the several envelope shapes
 // documented on the package. It returns an error only when nothing JSON-like can
 // be extracted at all.
-func extractRecords(raw []byte) ([]extractedRecord, error) {
+func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return nil, errors.New("empty body")
+		return nil, extractOutcome{}, errors.New("empty body")
 	}
 
 	// First try: the body is a stream of one-or-more JSON values (covers a
@@ -546,6 +583,7 @@ func extractRecords(raw []byte) ([]extractedRecord, error) {
 	// json.Decoder reads successive values regardless of separating
 	// whitespace/newlines).
 	var values []json.RawMessage
+	var outcome extractOutcome
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	for {
 		var v json.RawMessage
@@ -553,8 +591,18 @@ func extractRecords(raw []byte) ([]extractedRecord, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			// Not a clean JSON stream; fall back to line-by-line below.
-			values = nil
+			// A mid-stream syntax error. The real Tailscale wire format
+			// concatenates HEC objects with NO separators (see the package
+			// doc), so one corrupt record used to reject an entire ~73-record
+			// batch: discarding the already-decoded values here and falling
+			// through to the newline-split fallback below salvages nothing
+			// from a no-separator stream. Keep the valid PREFIX instead (#96)
+			// — only an empty prefix (nothing decoded before the very first
+			// error) falls through to that fallback.
+			if len(values) > 0 {
+				outcome.truncated = true
+				outcome.droppedBytes = len(trimmed) - int(dec.InputOffset())
+			}
 			break
 		}
 		values = append(values, v)
@@ -575,7 +623,7 @@ func extractRecords(raw []byte) ([]extractedRecord, error) {
 			}
 		}
 		if len(values) == 0 {
-			return nil, errors.New("no JSON values in body")
+			return nil, extractOutcome{}, errors.New("no JSON values in body")
 		}
 	}
 
@@ -586,9 +634,12 @@ func extractRecords(raw []byte) ([]extractedRecord, error) {
 		out = append(out, unwrap(v, time.Time{})...)
 	}
 	if len(out) == 0 {
-		return nil, errors.New("no records after unwrapping")
+		return nil, extractOutcome{}, errors.New("no records after unwrapping")
 	}
-	return out, nil
+	if outcome.truncated {
+		outcome.salvaged = len(out)
+	}
+	return out, outcome, nil
 }
 
 // envelope captures the optional HEC ("event") and Tailscale ("logs") wrappers
