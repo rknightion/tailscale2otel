@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -177,6 +178,57 @@ func (c *Config) Warnings() []string {
 			"otel_metric_overflow.")
 	}
 
+	// (#52e) A positive max_window <= interval can never catch up: catch-up
+	// advances at most max_window per tick, so delivery lag grows unboundedly. A
+	// zero/negative max_window is the intentional "no cap" sentinel — don't warn.
+	for _, col := range []struct {
+		name      string
+		enabled   bool
+		source    string
+		maxWindow time.Duration
+		interval  time.Duration
+	}{
+		{"flowlogs", c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Source,
+			c.Collectors.Flowlogs.MaxWindow.D(), c.Collectors.Flowlogs.Interval.D()},
+		{"auditlogs", c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Source,
+			c.Collectors.Auditlogs.MaxWindow.D(), c.Collectors.Auditlogs.Interval.D()},
+	} {
+		if col.enabled && pollsSource(col.source) && col.maxWindow > 0 && col.maxWindow <= col.interval {
+			w = append(w, fmt.Sprintf("collectors.%s.max_window (%v) <= interval (%v): catch-up advances "+
+				"at most max_window per tick, so with interval >= max_window the checkpoint falls further "+
+				"behind every tick without bound. Set max_window > interval, or 0 for no cap.",
+				col.name, col.maxWindow, col.interval))
+		}
+	}
+
+	// (#52g) Advisory only: a tailnet with exactly one half of an OAuth credential
+	// pair set is almost always a copy-paste slip (a wrong env var name for the
+	// other half). Never fires on a both-empty block — rendered/checked-in configs
+	// legitimately carry no credentials (they arrive via env at runtime).
+	checkPartialOAuth := func(label string, a TailscaleAuth) {
+		if a.Method != "oauth" {
+			return
+		}
+		hasID, hasSecret := a.OAuth.ClientID != "", a.OAuth.ClientSecret != ""
+		if hasID == hasSecret {
+			return
+		}
+		have, missing := "client_id", "client_secret"
+		if hasSecret {
+			have, missing = "client_secret", "client_id"
+		}
+		w = append(w, fmt.Sprintf("%s has oauth.%s set but oauth.%s empty: an OAuth client needs "+
+			"both — check the missing field's value / its TS2OTEL_* env var name (or leave both empty "+
+			"to supply them at runtime).", label, have, missing))
+	}
+	if len(c.Tailnets) > 0 {
+		for i, t := range c.Tailnets {
+			checkPartialOAuth(fmt.Sprintf("tailnets[%d] (%s)", i, t.Name), t.Auth)
+		}
+	} else if c.Provider != "headscale" {
+		checkPartialOAuth("tailscale.auth", c.Tailscale.Auth)
+	}
+
 	if c.configFileWarning != "" {
 		w = append(w, c.configFileWarning)
 	}
@@ -252,6 +304,13 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// log_level is documented (configuration.md) and framed as a validated enum,
+	// so reject a value outside the set here rather than silently failing open to
+	// info in cmd/tailscale2otel.parseLevel (the mismatch #106 flagged).
+	if !oneOf(c.LogLevel, "debug", "info", "warn", "error") {
+		return fmt.Errorf("log_level %q invalid: must be one of debug, info, warn, error", c.LogLevel)
+	}
+
 	if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
 		return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
 	}
@@ -267,11 +326,44 @@ func (c *Config) Validate() error {
 				"a full URL is only valid for protocol=http", c.OTLP.Endpoint)
 		}
 	}
+	// The http OTLP exporter dials a full URL. A scheme-less host:port (the grpc
+	// shape) parses to an empty host and silently zeroes the endpoint at runtime
+	// rather than failing at load; require an http/https scheme and a host so the
+	// mismatch is caught here (#52b).
+	if c.OTLP.Protocol == "http" {
+		u, err := url.Parse(c.OTLP.Endpoint)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=http: use a full URL with "+
+				"an http:// or https:// scheme and a host (e.g. "+
+				"https://otlp-gateway-prod-us-central-0.grafana.net/otlp); a scheme-less host:port "+
+				"is only valid for protocol=grpc", c.OTLP.Endpoint)
+		}
+	}
 	if c.OTLP.MetricInterval.D() <= 0 {
 		return fmt.Errorf("otlp.metric_interval must be > 0 (got %v); a zero or negative interval panics time.NewTicker at startup", c.OTLP.MetricInterval.D())
 	}
-	if c.Prometheus.Enabled && c.Admin.Enabled && c.Prometheus.Listen == c.Admin.Listen {
-		return fmt.Errorf("prometheus.listen and admin.listen both bind %q: give the Prometheus endpoint its own listener", c.Prometheus.Listen)
+	// Every enabled HTTP listener needs its own bind address. Two enabled servers
+	// on the same address race on net.Listen: one binds, the other logs an ERROR
+	// and the process keeps running with that surface silently dead. Check ALL
+	// four listeners pairwise, not just admin/prometheus (#52f).
+	listeners := []struct {
+		name    string
+		addr    string
+		enabled bool
+	}{
+		{"admin.listen", c.Admin.Listen, c.Admin.Enabled},
+		{"prometheus.listen", c.Prometheus.Listen, c.Prometheus.Enabled},
+		{"streaming.listen", c.Streaming.Listen, c.Streaming.Enabled},
+		{"webhook.listen", c.Webhook.Listen, c.Webhook.Enabled},
+	}
+	for i := range listeners {
+		for j := i + 1; j < len(listeners); j++ {
+			a, b := listeners[i], listeners[j]
+			if a.enabled && b.enabled && a.addr != "" && a.addr == b.addr {
+				return fmt.Errorf("%s and %s both bind %q: each enabled HTTP listener needs its own "+
+					"address (only one wins the net.Listen race; the other dies silently)", a.name, b.name, a.addr)
+			}
+		}
 	}
 	if provider == "tailscale" {
 		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {
@@ -319,18 +411,50 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
 	}
 
-	// Source validation. Only the two log collectors have a source; an empty
-	// value defaults to poll.
+	// Source + window-timing validation. Only the two log collectors have a
+	// source; an empty value defaults to poll.
 	logCollectors := []struct {
-		name   string
-		source string
+		name            string
+		enabled         bool
+		source          string
+		lag             time.Duration
+		initialLookback time.Duration
 	}{
-		{"flowlogs", c.Collectors.Flowlogs.Source},
-		{"auditlogs", c.Collectors.Auditlogs.Source},
+		{"flowlogs", c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Source,
+			c.Collectors.Flowlogs.Lag.D(), c.Collectors.Flowlogs.InitialLookback.D()},
+		{"auditlogs", c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Source,
+			c.Collectors.Auditlogs.Lag.D(), c.Collectors.Auditlogs.InitialLookback.D()},
 	}
 	for _, col := range logCollectors {
 		if col.source != "" && !oneOf(col.source, "poll", "stream", "both") {
 			return fmt.Errorf("collectors.%s.source %q invalid: must be one of poll, stream, both", col.name, col.source)
+		}
+		if !col.enabled {
+			continue
+		}
+		// (a) A pure-stream collector needs an ingestion path that actually exists.
+		if col.source == "stream" {
+			if len(c.Tailnets) > 1 {
+				return fmt.Errorf("collectors.%s.source=stream is not supported in multi-tailnet mode "+
+					"(streaming receivers require single-tailnet mode); use source: poll", col.name)
+			}
+			if !c.Streaming.Enabled {
+				return fmt.Errorf("collectors.%s.source=stream requires streaming.enabled: true — "+
+					"otherwise there is no ingestion path and %s are silently never collected", col.name, col.name)
+			}
+		}
+		// (c)/(d) Window timing applies only to the polling path.
+		if pollsSource(col.source) {
+			if col.initialLookback <= 0 {
+				return fmt.Errorf("collectors.%s.initial_lookback must be > 0 (got %v): a zero or "+
+					"negative cold-start lookback leaves the poll window's from >= to forever, so the "+
+					"collector never polls and never bootstraps its checkpoint", col.name, col.initialLookback)
+			}
+			if col.lag < 0 {
+				return fmt.Errorf("collectors.%s.lag must be >= 0 (got %v): a negative lag pushes the "+
+					"window end into the future, permanently skipping records that arrive within it",
+					col.name, col.lag)
+			}
 		}
 	}
 

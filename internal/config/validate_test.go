@@ -386,7 +386,10 @@ func TestValidateRejectsBadCollectorSource(t *testing.T) {
 
 func TestValidateAcceptsAllCollectorSources(t *testing.T) {
 	for _, src := range []string{"poll", "stream", "both"} {
-		if err := loadErr(t, "collectors:\n  flowlogs:\n    source: "+src+"\n"); err != nil {
+		// source=stream needs a live ingestion path (#52a), so enable the receiver
+		// for all three (poll/both just warn about dual ingestion, not error).
+		y := "streaming:\n  enabled: true\ncollectors:\n  flowlogs:\n    source: " + src + "\n"
+		if err := loadErr(t, y); err != nil {
 			t.Errorf("source %q should be valid: %v", src, err)
 		}
 	}
@@ -951,6 +954,155 @@ func TestValidateOTLPMetricIntervalMustBePositive(t *testing.T) {
 	c.OTLP.MetricInterval = config.Duration(30 * time.Second)
 	if err := c.Validate(); err != nil {
 		t.Errorf("positive metric_interval should be valid: %v", err)
+	}
+}
+
+// --- Issue #52: config validation gaps ---
+
+// TestValidate_StreamSourceNeedsStreaming pins #52(a): source: stream with the
+// stream receiver disabled has no ingestion path, and source: stream is dead in
+// multi-tailnet mode. Both must be rejected; source: both stays valid.
+func TestValidate_StreamSourceNeedsStreaming(t *testing.T) {
+	c := config.Default()
+	c.Collectors.Auditlogs.Source = "stream"
+	c.Streaming.Enabled = false
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "auditlogs") {
+		t.Fatalf("source=stream + streaming disabled: want error naming auditlogs, got %v", err)
+	}
+	// With streaming enabled it is valid.
+	c.Streaming.Enabled = true
+	if err := c.Validate(); err != nil {
+		t.Errorf("source=stream + streaming enabled: unexpected error %v", err)
+	}
+	// Multi-tailnet: source=stream rejected even though streaming.enabled can't be on.
+	// (Leave the default top-level tailscale block — Tailnet "-" coexists with the
+	// list — so the top-level auth-method check passes and we reach the source rule.)
+	c = config.Default()
+	c.Tailnets = []config.TailnetConfig{
+		{Name: "a.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+		{Name: "b.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+	}
+	c.Collectors.Flowlogs.Source = "stream"
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "multi-tailnet") {
+		t.Fatalf("source=stream in multi mode: want multi-tailnet error, got %v", err)
+	}
+	// source: both is not affected.
+	c = config.Default()
+	c.Collectors.Flowlogs.Source = "both"
+	if err := c.Validate(); err != nil {
+		t.Errorf("source=both: unexpected error %v", err)
+	}
+}
+
+// TestValidate_OTLPHTTPEndpointShape pins #52(b): under protocol: http a
+// scheme-less host:port endpoint silently zeroes the exporter, so it must be
+// rejected the way the grpc shape is.
+func TestValidate_OTLPHTTPEndpointShape(t *testing.T) {
+	c := config.Default()
+	c.OTLP.Protocol = "http"
+	c.OTLP.Endpoint = "otlp-gateway-prod-us-central-0.grafana.net:443" // grpc shape
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "otlp.endpoint") {
+		t.Fatalf("grpc-shaped endpoint under http: want otlp.endpoint error, got %v", err)
+	}
+	c.OTLP.Endpoint = "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+	if err := c.Validate(); err != nil {
+		t.Errorf("valid http URL endpoint: unexpected error %v", err)
+	}
+	c.OTLP.Endpoint = ""
+	if err := c.Validate(); err == nil {
+		t.Errorf("empty endpoint under http: want error, got nil")
+	}
+}
+
+// TestValidate_WindowTiming pins #52(c)/(d): a zero/negative initial_lookback
+// permanently stalls a window collector, and a negative lag skips records.
+func TestValidate_WindowTiming(t *testing.T) {
+	c := config.Default()
+	c.Collectors.Flowlogs.InitialLookback = config.Duration(0)
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "initial_lookback") {
+		t.Fatalf("initial_lookback=0: want error, got %v", err)
+	}
+	c = config.Default()
+	c.Collectors.Auditlogs.Lag = config.Duration(-1)
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "lag") {
+		t.Fatalf("negative lag: want error, got %v", err)
+	}
+}
+
+// TestWarnings_MaxWindowLEInterval pins #52(e): a positive max_window <= interval
+// never catches up; a zero max_window (no-cap sentinel) must NOT warn.
+func TestWarnings_MaxWindowLEInterval(t *testing.T) {
+	c := config.Default()
+	c.Collectors.Flowlogs.Interval = config.Duration(2 * time.Hour)
+	c.Collectors.Flowlogs.MaxWindow = config.Duration(1 * time.Hour)
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "flowlogs") || !strings.Contains(w, "max_window") {
+		t.Fatalf("max_window <= interval: want a flowlogs max_window warning, got %q", w)
+	}
+	// max_window=0 (no cap) must not warn.
+	c.Collectors.Flowlogs.MaxWindow = config.Duration(0)
+	for _, ww := range c.Warnings() {
+		if strings.Contains(ww, "max_window") {
+			t.Errorf("max_window=0 (no cap) should not warn; got %q", ww)
+		}
+	}
+}
+
+// TestValidate_ListenerCollisions pins #52(f): all four HTTP listeners are
+// bind-collision checked, not just admin/prometheus.
+func TestValidate_ListenerCollisions(t *testing.T) {
+	c := config.Default()
+	c.Streaming.Enabled = true
+	c.Webhook.Enabled = true
+	c.Streaming.Listen = ":8088"
+	c.Webhook.Listen = ":8088"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "streaming.listen") || !strings.Contains(err.Error(), "webhook.listen") {
+		t.Fatalf("streaming/webhook listen collision: want error naming both, got %v", err)
+	}
+}
+
+// TestWarnings_PartialTailnetCredential pins #52(g): a tailnet with exactly one
+// half of an OAuth pair set gets an advisory; a both-empty block does not (creds
+// legitimately come from env at runtime).
+func TestWarnings_PartialTailnetCredential(t *testing.T) {
+	c := config.Default()
+	c.Tailscale.Auth.Method = "oauth"
+	c.Tailscale.Auth.OAuth.ClientID = "id-only"
+	w := strings.Join(c.Warnings(), "\n")
+	if !strings.Contains(w, "client_secret") {
+		t.Fatalf("client_id set, secret empty: want advisory about client_secret, got %q", w)
+	}
+	// Both empty: no advisory (env-supplied at runtime).
+	c = config.Default()
+	c.Tailscale.Auth.Method = "oauth"
+	for _, ww := range c.Warnings() {
+		if strings.Contains(ww, "client_secret") || strings.Contains(ww, "client_id") {
+			t.Errorf("both-empty oauth should not warn; got %q", ww)
+		}
+	}
+}
+
+// TestValidate_LogLevelEnum pins issue #52-adjacent #106: log_level is documented
+// and framed as a validated enum, so Validate() must reject a value outside
+// debug/info/warn/error (matching the page's stated Convention) rather than
+// silently failing open to info in parseLevel.
+func TestValidate_LogLevelEnum(t *testing.T) {
+	for _, lvl := range []string{"debug", "info", "warn", "error"} {
+		c := config.Default()
+		c.LogLevel = lvl
+		if err := c.Validate(); err != nil {
+			t.Errorf("log_level=%q: unexpected error %v", lvl, err)
+		}
+	}
+	c := config.Default()
+	c.LogLevel = "warning" // the classic wrong spelling
+	err := c.Validate()
+	if err == nil {
+		t.Fatalf("log_level=warning: want a validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "log_level") {
+		t.Errorf("error %q should name log_level", err)
 	}
 }
 

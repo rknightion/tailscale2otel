@@ -45,6 +45,51 @@ func TestResolvedTailnetsMultiMode(t *testing.T) {
 	}
 }
 
+// TestResolvedTailnetsBackfillsHTTPDefaults pins issue #104: a tailnets[] entry
+// with no http: block must inherit real retry/timeout defaults (max_attempts=4,
+// not the zero that tsapi clamps to 1, silently disabling retries).
+func TestResolvedTailnetsBackfillsHTTPDefaults(t *testing.T) {
+	c := config.Default()
+	c.Tailscale = config.TailscaleConfig{} // multi mode: top-level block unset
+	c.Tailnets = []config.TailnetConfig{
+		{Name: "acme.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+	}
+	got := c.ResolvedTailnets()
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	def := config.Default().Tailscale.HTTP
+	if got[0].HTTP.Retry.MaxAttempts != def.Retry.MaxAttempts {
+		t.Errorf("MaxAttempts = %d, want default %d", got[0].HTTP.Retry.MaxAttempts, def.Retry.MaxAttempts)
+	}
+	if got[0].HTTP.Retry.BaseDelay != def.Retry.BaseDelay {
+		t.Errorf("BaseDelay = %v, want default %v", got[0].HTTP.Retry.BaseDelay.D(), def.Retry.BaseDelay.D())
+	}
+	if got[0].HTTP.Timeout != def.Timeout {
+		t.Errorf("Timeout = %v, want default %v", got[0].HTTP.Timeout.D(), def.Timeout.D())
+	}
+}
+
+// TestResolvedTailnetsHTTPFleetPolicy pins the fleet-wide-policy half of #104:
+// a value set on the top-level tailscale.http block backfills entries that omit
+// http:, while an explicit per-entry value still wins.
+func TestResolvedTailnetsHTTPFleetPolicy(t *testing.T) {
+	c := config.Default()
+	c.Tailscale.HTTP.Retry.MaxAttempts = 9 // fleet-wide policy
+	c.Tailnets = []config.TailnetConfig{
+		{Name: "inherits.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+		{Name: "overrides.example.com", Auth: config.TailscaleAuth{Method: "oauth"},
+			HTTP: config.TailscaleHTTPConfig{Retry: config.RetryConfig{MaxAttempts: 2}}},
+	}
+	got := c.ResolvedTailnets()
+	if got[0].HTTP.Retry.MaxAttempts != 9 {
+		t.Errorf("entry[0] MaxAttempts = %d, want 9 (inherited fleet policy)", got[0].HTTP.Retry.MaxAttempts)
+	}
+	if got[1].HTTP.Retry.MaxAttempts != 2 {
+		t.Errorf("entry[1] MaxAttempts = %d, want 2 (explicit override)", got[1].HTTP.Retry.MaxAttempts)
+	}
+}
+
 func TestValidateRejectsBothSingleAndList(t *testing.T) {
 	c := config.Default()
 	c.Tailscale.Tailnet = "acme.example.com"

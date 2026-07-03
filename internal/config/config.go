@@ -208,14 +208,29 @@ type ResolvedTailnet struct {
 // into the per-tailnet list the app fans out over. The list wins when present
 // (Validate rejects an explicit single tailnet alongside it). Under provider:
 // headscale the result is empty (Headscale has no tailnet fan-out in v1).
+//
+// Each tailnets[] entry's HTTP block is backfilled field-by-field with the
+// precedence entry > top-level tailscale.http > Default().Tailscale.HTTP, so an
+// entry that omits http: still gets real retry/timeout defaults (a zero
+// MaxAttempts otherwise clamps to 1 in tsapi, silently disabling retries — #104)
+// AND the top-level tailscale.http block acts as fleet-wide policy for the list
+// (which is also how TS2OTEL_TAILSCALE__HTTP__* reaches multi-tailnet clients).
 func (c *Config) ResolvedTailnets() []ResolvedTailnet {
 	if c.Provider == "headscale" {
 		return nil
 	}
 	if len(c.Tailnets) > 0 {
+		// Effective fleet base: the top-level tailscale.http block with any zero
+		// field filled from the built-in defaults, so backfill works even when the
+		// top-level block is entirely unset in multi mode.
+		base := mergeHTTPDefaults(c.Tailscale.HTTP, Default().Tailscale.HTTP)
 		out := make([]ResolvedTailnet, len(c.Tailnets))
 		for i, t := range c.Tailnets {
-			out[i] = ResolvedTailnet(t)
+			out[i] = ResolvedTailnet{
+				Name: t.Name,
+				Auth: t.Auth,
+				HTTP: mergeHTTPDefaults(t.HTTP, base),
+			}
 		}
 		return out
 	}
@@ -224,6 +239,28 @@ func (c *Config) ResolvedTailnets() []ResolvedTailnet {
 		Auth: c.Tailscale.Auth,
 		HTTP: c.Tailscale.HTTP,
 	}}
+}
+
+// mergeHTTPDefaults returns x with each zero-valued HTTP field taken from base.
+// A zero RateLimit is genuinely "unlimited" and indistinguishable from unset, so
+// it too inherits base (letting fleet-wide policy set on tailscale.http apply).
+func mergeHTTPDefaults(x, base TailscaleHTTPConfig) TailscaleHTTPConfig {
+	if x.Timeout <= 0 {
+		x.Timeout = base.Timeout
+	}
+	if x.Retry.MaxAttempts <= 0 {
+		x.Retry.MaxAttempts = base.Retry.MaxAttempts
+	}
+	if x.Retry.BaseDelay <= 0 {
+		x.Retry.BaseDelay = base.Retry.BaseDelay
+	}
+	if x.Retry.MaxDelay <= 0 {
+		x.Retry.MaxDelay = base.Retry.MaxDelay
+	}
+	if x.RateLimit == 0 {
+		x.RateLimit = base.RateLimit
+	}
+	return x
 }
 
 // TailscaleAuth selects and configures the Tailscale authentication method.

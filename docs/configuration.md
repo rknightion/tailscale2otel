@@ -188,6 +188,13 @@ The HTTP client used for all Tailscale API calls.
 | `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. |
 | `tailscale.http.rate_limit` | `0` | Global request rate cap in requests/second across **all** collectors. `0` = unlimited. |
 
+> **Multi-tailnet:** the `tailscale.http` block is the **fleet-wide default** for every `tailnets[]`
+> entry. Each entry's `http:` fields are backfilled field-by-field with the precedence *entry >
+> `tailscale.http` > built-in defaults*, so an entry that omits `http:` still gets real retry/timeout
+> defaults (a zero `max_attempts` would otherwise disable retries entirely), and setting a value once
+> on `tailscale.http` — including via `TS2OTEL_TAILSCALE__HTTP__*` env vars — applies it to the whole
+> list. An entry that sets its own `http:` field overrides the fleet default for that field only.
+
 ---
 
 ## `otlp` — the OTLP exporter
@@ -330,9 +337,9 @@ Pick exactly one method per log type. Which fields are honored depends on `sourc
 | `enabled` | both | ✓ | ✓ | Turn the collector on/off. |
 | `source` | both | ✓ | ✓ | Select the ingestion path. |
 | `interval` | both | ✓ | — | Poll cadence (no poller runs under `stream`). |
-| `lag` | both | ✓ | — | Query only up to `now − lag`, so late-arriving records aren't missed. |
-| `initial_lookback` | both | ✓ | — | Cold-start reach-back when there is no checkpoint yet. |
-| `max_window` | both | ✓ | — | Cap a single tick's window so a long outage catches up over several ticks. |
+| `lag` | both | ✓ | — | Query only up to `now − lag`, so late-arriving records aren't missed. Must be **≥ 0** (a negative lag pushes the window end into the future and permanently skips records that arrive within it — rejected at startup). |
+| `initial_lookback` | both | ✓ | — | Cold-start reach-back when there is no checkpoint yet. Must be **> 0** — `0` (or negative) leaves the poll window's `from ≥ to` forever, so the collector never polls and never checkpoints; rejected at startup rather than silently stalling. |
+| `max_window` | both | ✓ | — | Cap a single tick's window so a long outage catches up over several ticks. `0` (or negative) means **no cap**. A *positive* `max_window ≤ interval` can never catch up (each tick advances at most `max_window`), so it raises a startup **warning**. |
 | `log_mode` | `flowlogs` | ✓ | ✓ | Log detail level — output shaping in the shared processor. |
 | `max_log_records_per_window` | `flowlogs` | ✓ | ✓¹ | Cap on emitted flow LOG records (see below). |
 
@@ -342,6 +349,11 @@ received record. Either way, **metrics are never capped — only logs.**
 > The four windowing fields exist purely to drive the poller, so they are **ignored when
 > `source: stream`**. The `streaming`/`webhook` receivers and the pollers feed the *same* processors,
 > which is why `log_mode` and the `cardinality.*` knobs apply on every path.
+>
+> **`source: stream` requires a live ingestion path.** It is rejected at startup unless
+> `streaming.enabled: true`, and it is not supported in multi-tailnet mode (streaming receivers are
+> single-tailnet only) — otherwise the collector would have no way to receive records and would
+> silently ingest nothing. Use `source: poll` (the default) or `both` when the receiver is off.
 
 ### `collectors.devices`
 
@@ -639,8 +651,10 @@ address. It serves only `GET /metrics`; no status page or probes are exposed her
 > series (including device hostnames, flow identifiers, and tailnet name) to anyone who can reach
 > the port. Set a token or bind to loopback/tailnet.
 
-> **Validation:** `prometheus.listen` and `admin.listen` must differ when both servers are enabled
-> (the exporter errors at startup if they share the same address).
+> **Validation:** every *enabled* HTTP listener — `admin.listen`, `prometheus.listen`,
+> `streaming.listen`, and `webhook.listen` — must bind a distinct address. If any two enabled servers
+> share an address the exporter errors at startup (otherwise only one would win the `net.Listen` race
+> and the other would die silently).
 
 ### Prometheus `scrape_configs` snippet
 
