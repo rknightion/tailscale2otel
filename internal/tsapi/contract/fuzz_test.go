@@ -90,6 +90,9 @@ func TestFuzz_EdgeVariants(t *testing.T) {
 		`{"devices":null}`,                   // null array
 		`{"devices":[{}]}`,                   // empty element
 		`{"devices":[],"unexpectedField":1}`, // unknown top-level key (must not error)
+		// External/shared device: created (and possibly lastSeen/expires) are the
+		// empty string on the wire, which a plain time.Time rejects (#48).
+		`{"devices":[{"id":"1","created":"","lastSeen":"","expires":""}]}`,
 	} {
 		if rep := contract.Decode(op, []byte(body)); rep.Err != nil {
 			t.Errorf("edge %s: decode err %v", body, rep.Err)

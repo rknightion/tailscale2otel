@@ -161,6 +161,32 @@ func TestDevicesRich_OfflineMinimalAndExternal(t *testing.T) {
 	}
 }
 
+// TestDevicesRich_EmptyTimestamps pins #48: the Tailscale API returns created:""
+// (and can return empty lastSeen/expires) for external/shared devices; a plain
+// time.Time field rejects that and fails the whole decode. The tolerant wrapper
+// must decode them to a zero time without error.
+func TestDevicesRich_EmptyTimestamps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"devices":[
+		  {"id":"ext1","name":"shared.example.ts.net","isExternal":true,
+		   "created":"","lastSeen":"","expires":""}
+		]}`))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich with empty timestamps errored (the #48 regression): %v", err)
+	}
+	if len(devs) != 1 {
+		t.Fatalf("len = %d, want 1", len(devs))
+	}
+	if !devs[0].Created.IsZero() || !devs[0].LastSeen.IsZero() || !devs[0].Expires.IsZero() {
+		t.Errorf("empty timestamps should decode to zero time; got created=%v lastSeen=%v expires=%v",
+			devs[0].Created, devs[0].LastSeen, devs[0].Expires)
+	}
+}
+
 // TestDevicesRich_DecodesTags verifies the per-device `tags` array is decoded.
 // Verified against .capture/devices.json: a tagged device carries
 // "tags":[...]; an untagged device OMITS the field (never "tags":[]) so it

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"path"
 	"time"
+
+	tsclient "github.com/tailscale/tailscale-client-go/v2"
 )
 
 // RichDevice is the full device record returned by GET
@@ -117,9 +119,13 @@ type richDevice struct {
 	TailnetLockKey   string `json:"tailnetLockKey"`
 	TailnetLockError string `json:"tailnetLockError"`
 
-	Created  time.Time `json:"created"`
-	LastSeen time.Time `json:"lastSeen"`
-	Expires  time.Time `json:"expires"`
+	// tsclient.Time tolerates an empty-string wire value: the Tailscale API returns
+	// created:"" (and can return empty lastSeen/expires) for EXTERNAL/shared devices,
+	// which a plain time.Time rejects — failing the whole /devices?fields=all decode
+	// and taking every device metric + the enrichment cache down with it (#48).
+	Created  tsclient.Time `json:"created"`
+	LastSeen tsclient.Time `json:"lastSeen"`
+	Expires  tsclient.Time `json:"expires"`
 
 	AdvertisedRoutes []string `json:"advertisedRoutes"`
 	EnabledRoutes    []string `json:"enabledRoutes"`
@@ -176,9 +182,9 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 			IsEphemeral:               d.IsEphemeral,
 			TailnetLockKey:            d.TailnetLockKey,
 			TailnetLockError:          d.TailnetLockError,
-			Created:                   d.Created,
-			LastSeen:                  d.LastSeen,
-			Expires:                   d.Expires,
+			Created:                   d.Created.Time,
+			LastSeen:                  d.LastSeen.Time,
+			Expires:                   d.Expires.Time,
 			AdvertisedRoutes:          d.AdvertisedRoutes,
 			EnabledRoutes:             d.EnabledRoutes,
 			Distro: DistroInfo{

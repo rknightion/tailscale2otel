@@ -20,6 +20,7 @@ package contract
 //	getLogStreamingStatus     → LogStreamStatus(…,"configuration") path: /api/v2/tailnet/{t}/logging/{logType}/stream/status
 //	getPostureIntegrations    → PostureIntegrations   path: /api/v2/tailnet/{t}/posture/integrations
 //	listServices              → Services              path: /api/v2/tailnet/{t}/services
+//	listServiceHosts          → ServiceHosts(…,name)  path: /api/v2/tailnet/{t}/services/{serviceName}/devices (LiveSkip)
 //	getDnsConfiguration       → DNSConfiguration      path: /api/v2/tailnet/{t}/dns/configuration
 //	listDeviceInvites         → DeviceInvites(…,devID) path: /api/v2/device/{id}/device-invites (LiveSkip)
 //	getDevicePostureAttributes→ DevicePostureAttributes(…,devID) path: /api/v2/device/{id}/attributes (LiveSkip)
@@ -186,6 +187,19 @@ var Manifest = []Op{
 		KnownTopLevelKeys: []string{"vipServices"},
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.Services(ctx)
+			return err
+		},
+	},
+	{
+		ID:     "listServiceHosts",
+		Method: "GET",
+		// Devices backing a VIP service. LiveSkip: placeholder service name 404s
+		// against the real API. Guards the ServiceHost field tags (esp. NodeID's
+		// stableNodeID wire name) against future drift (#72).
+		KnownTopLevelKeys: []string{"hosts"},
+		LiveSkip:          true,
+		Invoke: func(ctx context.Context, c *tsapi.Client) error {
+			_, err := c.ServiceHosts(ctx, "svc:placeholder")
 			return err
 		},
 	},

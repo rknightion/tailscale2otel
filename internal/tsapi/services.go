@@ -38,7 +38,10 @@ type serviceHostsResponse struct {
 }
 
 type serviceHost struct {
-	NodeID        string `json:"nodeId"`
+	// The OAS ServiceHostInfo schema names this wire field stableNodeID, not
+	// nodeId; encoding/json only does case-insensitive matching, so json:"nodeId"
+	// never matched and NodeID always decoded empty (#72).
+	NodeID        string `json:"stableNodeID"`
 	ApprovalLevel string `json:"approvalLevel"`
 	Configured    string `json:"configured"`
 }

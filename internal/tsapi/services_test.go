@@ -53,9 +53,10 @@ func TestServiceHosts_Decodes(t *testing.T) {
 			http.Error(w, "bad path: "+r.URL.Path, http.StatusNotFound)
 			return
 		}
+		// The real API wire field is stableNodeID (OAS ServiceHostInfo), not nodeId (#72).
 		_, _ = w.Write([]byte(`{"hosts":[
-		  {"nodeId":"n72PkCQgkF11CNTRL","approvalLevel":"approved:auto","configured":"ready"},
-		  {"nodeId":"nzesx9PCUy11CNTRL","approvalLevel":"pending","configured":"pending"}
+		  {"stableNodeID":"n72PkCQgkF11CNTRL","approvalLevel":"approved:auto","configured":"ready"},
+		  {"stableNodeID":"nzesx9PCUy11CNTRL","approvalLevel":"pending","configured":"pending"}
 		]}`))
 	}))
 	defer srv.Close()
