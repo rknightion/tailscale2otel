@@ -46,6 +46,8 @@ type errSetStore struct{}
 
 func (errSetStore) Get(string) (time.Time, bool) { return time.Time{}, false }
 func (errSetStore) Set(string, time.Time) error  { return errors.New("disk full") }
+func (errSetStore) Keys() []string               { return nil }
+func (errSetStore) Delete(string) error          { return nil }
 
 // findPoint returns the first metric point for name carrying the given collector
 // attribute, and whether one was found.

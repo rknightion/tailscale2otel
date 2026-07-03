@@ -70,7 +70,12 @@ type App struct {
 	restore     func()                      // restores the prior otel error handler
 	runtimeHist *runtimeHistory             // short-term runtime/cardinality trends, for the status page
 	store       collector.CheckpointStore   // checkpoint store; read for window-collector state on the status page
-	logger      *slog.Logger
+	// checkpointEffective is the store kind actually in use ("file"|"memory"),
+	// which can differ from cfg.Checkpoint.Store after a fallback (unwritable path
+	// or a corrupt file). The status page and the checkpoint reporter use this, not
+	// the raw config value (#69).
+	checkpointEffective string
+	logger              *slog.Logger
 
 	flowDedup    *dedup.Set // runtimes[0] flow set, retained for the dedup self-obs reporter
 	auditDedup   *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
@@ -144,13 +149,14 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if err != nil {
 		return nil, err
 	}
-	store, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
+	store, checkpointEffective, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
 	if err != nil {
 		_ = ps.Shutdown(ctx)
 		return nil, err
 	}
 
 	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, store)
+	a.checkpointEffective = checkpointEffective
 	a.procCard = ps.Process().Cardinality()
 	a.procExportStats = ps.Process().ExportStats
 	a.metricGroups = metricGroupMap()
@@ -187,6 +193,10 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		a.flowDedup = a.runtimes[0].flowDedup
 		a.auditDedup = a.runtimes[0].auditDedup
 	}
+	// Reconcile checkpoint keys with the current namespacing shape (single<->multi
+	// transitions, tailnet renames) so window cursors survive instead of silently
+	// cold-starting and re-emitting the overlap window (#105).
+	a.migrateCheckpointKeys(withComponent(logger, compCheckpoint))
 	a.buildReceivers()
 	if cfg.Admin.Enabled {
 		a.adminSrv = a.buildAdminServer()
@@ -409,7 +419,7 @@ func (a *App) Run(ctx context.Context) error {
 		})
 		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)
 		go runExportReporter(ctx, a.procEmitter, a.procExportStats, interval)
-		if a.cfg.Checkpoint.Store == "file" {
+		if a.checkpointEffective == "file" {
 			go collector.RunCheckpointReporter(ctx, a.procEmitter, a.cfg.Checkpoint.FilePath, interval)
 		}
 		// Per-tailnet self-obs: cardinality + export volume ride each tailnet's
@@ -540,17 +550,42 @@ func newReleaseHTTPClient(timeout time.Duration) *http.Client {
 // access to /var/lib), it logs a WARN and falls back to the in-memory store so
 // the exporter still runs (window collectors just cold-start from
 // initial_lookback after a restart) instead of erroring on every checkpoint write.
-func checkpointStore(cfg *config.Config, logger *slog.Logger) (collector.CheckpointStore, error) {
+// It returns the effective store kind ("file"|"memory") alongside the store, so
+// the status page and the checkpoint reporter reflect what is actually in use
+// rather than the raw config value (#69). A corrupt/unreadable checkpoint file is
+// non-fatal: it is renamed aside and the store starts empty (a cold start),
+// instead of crash-looping startup.
+func checkpointStore(cfg *config.Config, logger *slog.Logger) (collector.CheckpointStore, string, error) {
 	if cfg.Checkpoint.Store != "file" || cfg.Checkpoint.FilePath == "" {
-		return collector.NewMemoryStore(), nil
+		return collector.NewMemoryStore(), "memory", nil
 	}
 	if err := ensureWritableDir(filepath.Dir(cfg.Checkpoint.FilePath)); err != nil {
 		logger.Warn("checkpoint.store=file but the path is not writable; falling back to in-memory checkpoints "+
 			"(window cursors will not survive a restart). Mount a writable volume at the directory, or set checkpoint.store=memory to silence this.",
 			"file_path", cfg.Checkpoint.FilePath, "error", err)
-		return collector.NewMemoryStore(), nil
+		return collector.NewMemoryStore(), "memory", nil
 	}
-	return collector.NewFileStore(cfg.Checkpoint.FilePath)
+	store, err := collector.NewFileStore(cfg.Checkpoint.FilePath)
+	if errors.Is(err, collector.ErrCorruptCheckpoint) {
+		// Non-critical window-cursor state: rename the corrupt file aside and start
+		// from an empty checkpoint (cold start from initial_lookback) rather than
+		// fail startup. The dir is writable (checked above), so a fresh file store
+		// persists going forward.
+		aside := cfg.Checkpoint.FilePath + ".corrupt"
+		if renameErr := os.Rename(cfg.Checkpoint.FilePath, aside); renameErr != nil {
+			logger.Warn("checkpoint file is corrupt and could not be renamed aside; falling back to in-memory checkpoints",
+				"file_path", cfg.Checkpoint.FilePath, "error", err, "rename_error", renameErr)
+			return collector.NewMemoryStore(), "memory", nil
+		}
+		logger.Warn("checkpoint file was corrupt/unreadable; renamed it aside and started from an empty checkpoint "+
+			"(window collectors cold-start from initial_lookback)",
+			"file_path", cfg.Checkpoint.FilePath, "moved_to", aside, "error", err)
+		store, err = collector.NewFileStore(cfg.Checkpoint.FilePath)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return store, "file", nil
 }
 
 // ensureWritableDir creates dir (and parents) if needed and verifies it is

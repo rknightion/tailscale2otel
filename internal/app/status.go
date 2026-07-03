@@ -515,7 +515,7 @@ func (a *App) redactedConfigSummary() statusdata.ConfigSummary {
 	cs := statusdata.ConfigSummary{
 		LogLevel:          c.LogLevel,
 		AuthMethod:        c.Tailscale.Auth.Method,
-		CheckpointStore:   c.Checkpoint.Store,
+		CheckpointStore:   a.checkpointEffective, // effective store, not the raw config value (#69)
 		EnabledCollectors: a.enabledCollectorNames(),
 		APIKeySet:         c.Tailscale.Auth.APIKey != "",
 		OAuthSecretSet:    c.Tailscale.Auth.OAuth.ClientSecret != "",

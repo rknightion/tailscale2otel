@@ -252,6 +252,10 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 			s.logger.Warn("collector failed", "collector", c.Name(), "error", runErr)
 		}
 	default:
+		// Defensive-only: Register requires SnapshotCollector and RegisterWindow
+		// requires WindowCollector, both compile-time (#58), so a registered
+		// collector always matches a case above. This branch can only be reached by
+		// a future code path that appends to Registry.entries directly.
 		s.logger.Warn("collector implements neither SnapshotCollector nor WindowCollector",
 			"collector", c.Name())
 	}

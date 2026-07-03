@@ -54,9 +54,16 @@ type Registry struct {
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{} }
 
-// Register adds a collector with the given interval. A non-positive interval
-// falls back to the collector's DefaultInterval.
-func (r *Registry) Register(c Collector, interval time.Duration) {
+// Register adds a snapshot collector with the given interval. A non-positive
+// interval falls back to the collector's DefaultInterval.
+//
+// The parameter is the typed SnapshotCollector (not the base Collector) so a
+// collector that fails to implement Collect — wrong receiver, missing method —
+// is a COMPILE error here rather than a silent no-op that still reports
+// scrape.success=1 every tick. This mirrors RegisterWindow's WindowCollector
+// guarantee and makes the scheduler's "neither interface" branch defensive-only
+// (#58).
+func (r *Registry) Register(c SnapshotCollector, interval time.Duration) {
 	if interval <= 0 {
 		interval = c.DefaultInterval()
 	}

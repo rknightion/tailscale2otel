@@ -1,19 +1,24 @@
 package collector_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
+// fakeCollector is a SnapshotCollector (Register now requires the typed interface
+// at compile time — #58 — so a base-only Collector would not compile here).
 type fakeCollector struct {
 	name string
 	def  time.Duration
 }
 
-func (f fakeCollector) Name() string                   { return f.name }
-func (f fakeCollector) DefaultInterval() time.Duration { return f.def }
+func (f fakeCollector) Name() string                                     { return f.name }
+func (f fakeCollector) DefaultInterval() time.Duration                   { return f.def }
+func (f fakeCollector) Collect(context.Context, telemetry.Emitter) error { return nil }
 
 func TestRegistry_UsesDefaultIntervalWhenUnset(t *testing.T) {
 	r := collector.NewRegistry()
