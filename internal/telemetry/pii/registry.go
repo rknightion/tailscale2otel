@@ -62,6 +62,8 @@ var identityKeys = map[string]bool{
 	"tailscale.dst.node":               true,
 	"tailscale.service.name":           true,
 	"tailscale.dns.search_path.domain": true, // J-A3: domain is this info gauge's identity
+	"enduser.id":                       true, // #74: per-user gauge identity (CatUserIDs)
+	"tailscale.user.login":             true, // #74: per-user gauge identity (CatEmails)
 }
 
 // nonIdentifier is the explicit allowlist of keys that are never PII/identifiers.
