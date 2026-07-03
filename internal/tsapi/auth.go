@@ -1,12 +1,18 @@
 package tsapi
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
+
+// defaultTailscaleBaseURL mirrors tsclient's default when Options.BaseURL is unset.
+const defaultTailscaleBaseURL = "https://api.tailscale.com"
 
 // buildHTTPClient constructs an authenticated, retrying HTTP client from opts.
 // OAuth (client-credentials) is preferred; API key is the fallback.
@@ -36,20 +42,41 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 
 	switch {
 	case opts.OAuthClientID != "":
-		// OAuthConfig.HTTPClient returns a client whose transport refreshes
-		// tokens; wrap it so retries apply to API calls too.
-		oc := tsclient.OAuthConfig{
+		// Build the client-credentials source ourselves rather than via
+		// tsclient.OAuthConfig.HTTPClient, which binds the token source to
+		// context.Background() on http.DefaultClient (no deadline). oauth2.Transport
+		// calls Source.Token() BEFORE the base RoundTrip and IGNORES the request
+		// context, so neither http.Client.Timeout nor the per-attempt deadline can
+		// bound a token fetch — a hung refresh would block every collector on that
+		// tailnet forever via the shared ReuseTokenSource mutex (#84). Binding the
+		// source to a context whose oauth2.HTTPClient has dial/TLS/response-header
+		// timeouts is the only thing that bounds it.
+		baseURL := opts.BaseURL
+		if baseURL == "" {
+			baseURL = defaultTailscaleBaseURL
+		}
+		tokenFetch := &http.Client{Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+			ForceAttemptHTTP2:     true,
+		}}
+		cc := clientcredentials.Config{
 			ClientID:     opts.OAuthClientID,
 			ClientSecret: opts.OAuthClientSecret,
 			Scopes:       opts.OAuthScopes,
-			BaseURL:      opts.BaseURL,
-		}.HTTPClient()
-		// No whole-client timeout: it would bound the entire retry chain incl.
-		// backoff sleeps, so a long Retry-After could never be honored. The
-		// retryTransport applies attemptTimeout per attempt instead.
-		oc.Timeout = 0
-		oc.Transport = wrap(oc.Transport)
-		return oc, nil
+			TokenURL:     baseURL + "/api/v2/oauth/token",
+		}
+		src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenFetch))
+		// API calls use the default transport (unchanged behavior); only the token
+		// FETCH runs on the bounded tokenFetch client above. Wrap so retries apply
+		// to API calls too. No whole-client timeout — it would bound the whole retry
+		// chain incl. backoff; retryTransport applies attemptTimeout per attempt.
+		return &http.Client{
+			Timeout:   0,
+			Transport: wrap(&oauth2.Transport{Source: src, Base: http.DefaultTransport}),
+		}, nil
 	case opts.APIKey != "":
 		return &http.Client{
 			Timeout:   0, // per-attempt timeout lives in retryTransport (see OAuth path)
