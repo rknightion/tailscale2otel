@@ -5,9 +5,67 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/config"
 )
+
+// TestStatusPage_PerTailnetIdentityInListMode pins #116: in multi-tailnet mode the
+// status page must read each runtime's tailnets[] auth method (not the unused
+// top-level tailscale: block), attribute collectors to their tailnet, and the
+// config summary must reflect the resolved runtime auth.
+func TestStatusPage_PerTailnetIdentityInListMode(t *testing.T) {
+	cfg := config.Default()
+	cfg.OTLP.Protocol = "stdout"
+	cfg.Tailscale.Auth.Method = "oauth" // top-level (ignored in multi mode)
+	cfg.Tailnets = []config.TailnetConfig{
+		{Name: "keyed.example.com", Auth: config.TailscaleAuth{Method: "apikey", APIKey: "k"}},
+		{Name: "oauthed.example.com", Auth: config.TailscaleAuth{Method: "oauth",
+			OAuth: config.OAuthConfig{ClientID: "id", ClientSecret: "sec"}}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("cfg.Validate: %v", err)
+	}
+	a, err := New(context.Background(), cfg, "v", slog.New(slog.NewTextHandler(discard{}, nil)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() {
+		if a.restore != nil {
+			a.restore()
+		}
+		if a.shutdown != nil {
+			_ = a.shutdown(context.Background())
+		}
+	})
+
+	now := time.Now()
+	byName := map[string]string{}
+	for _, ts := range a.tailnetStatuses(now) {
+		byName[ts.Name] = ts.AuthMethod
+	}
+	if byName["keyed.example.com"] != "apikey" {
+		t.Errorf("keyed tailnet AuthMethod = %q, want apikey (read the tailnets[] entry, not top-level)", byName["keyed.example.com"])
+	}
+	if byName["oauthed.example.com"] != "oauth" {
+		t.Errorf("oauthed tailnet AuthMethod = %q, want oauth", byName["oauthed.example.com"])
+	}
+	// Combined collector list carries tailnet attribution.
+	sawTailnet := false
+	for _, cs := range a.collectorStatuses(now) {
+		if cs.Tailnet != "" {
+			sawTailnet = true
+			break
+		}
+	}
+	if !sawTailnet {
+		t.Error("CollectorStatus entries lack Tailnet attribution in multi-tailnet mode")
+	}
+	// Config summary reflects the resolved primary runtime's auth, not the top-level block.
+	if got := a.redactedConfigSummary().AuthMethod; got != "apikey" {
+		t.Errorf("config summary AuthMethod = %q, want apikey (primary runtime), not the top-level oauth", got)
+	}
+}
 
 // TestNew_HeadscaleRuntimeHasNoAliasedSelfObs pins #54: under provider=headscale
 // the single runtime shares the PROCESS provider's emitter, so it must be built

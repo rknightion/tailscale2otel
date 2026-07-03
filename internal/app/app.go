@@ -195,6 +195,11 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			}
 			r := a.addRuntime(label, emitter, tp.Cardinality(), tp.ExportStats, cp, multi)
 			r.apiStats = apiStats
+			// Resolved per-tailnet identity for the status page (#116) — from the
+			// tailnets[] entry (rt is the ResolvedTailnet), not the top-level block.
+			r.authMethod = rt.Auth.Method
+			r.apiKeySet = rt.Auth.APIKey != ""
+			r.oauthSecretSet = rt.Auth.OAuth.ClientSecret != ""
 		}
 	}
 

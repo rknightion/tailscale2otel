@@ -41,6 +41,12 @@ type tailnetRuntime struct {
 	flowDedup   *dedup.Set
 	auditDedup  *dedup.Set
 	nodeMetrics *nodemetrics.Collector // nil unless the node-metrics collector is enabled
+	// Resolved per-tailnet identity for the status page (#116): in multi-tailnet
+	// mode these come from the tailnets[] entry, NOT the unused top-level
+	// tailscale: block. Empty authMethod ⇒ not a Tailscale runtime (headscale).
+	authMethod     string
+	apiKeySet      bool
+	oauthSecretSet bool
 }
 
 // runtimeDeps carries the process-level dependencies a runtime needs at build

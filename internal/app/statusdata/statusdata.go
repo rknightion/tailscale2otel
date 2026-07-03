@@ -106,7 +106,11 @@ type TelemetryInfo struct {
 
 // CollectorStatus is one row of the collector status table.
 type CollectorStatus struct {
-	Name           string `json:"name"`
+	Name string `json:"name"`
+	// Tailnet attributes the collector to its runtime, so the combined list and
+	// health reasons disambiguate duplicate collector names in multi-tailnet mode
+	// (#116). Empty in single-tailnet mode.
+	Tailnet        string `json:"tailnet,omitempty"`
 	IntervalSec    int64  `json:"interval_seconds"`
 	Runs           int64  `json:"runs"`
 	Failures       int64  `json:"failures"`

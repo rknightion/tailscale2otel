@@ -161,6 +161,11 @@ func (a *App) runtimeCollectorStatuses(rt *tailnetRuntime, now time.Time) []stat
 			Name:        name,
 			IntervalSec: int64(e.Interval.Seconds()),
 		}
+		// Attribute to the runtime in multi-tailnet mode so the combined list and
+		// health reasons disambiguate duplicate collector names (#116).
+		if a.multiTailnet() {
+			cs.Tailnet = rt.name
+		}
 		cs.Description, cs.Metrics = collectorBrief(name)
 		if r, ok := runs[name]; ok && r.Runs > 0 {
 			cs.HasRun = true
@@ -206,6 +211,11 @@ func (a *App) tailnetSummary() string {
 	if a.multiTailnet() {
 		return fmt.Sprintf("%d tailnets", len(a.runtimes))
 	}
+	// Use the actual runtime name (covers a single-entry tailnets: list, whose name
+	// lives in Tailnets[0], not the unused top-level tailscale.tailnet) — #116.
+	if len(a.runtimes) > 0 && a.runtimes[0].name != "" {
+		return a.runtimes[0].name
+	}
 	return a.cfg.Tailscale.Tailnet
 }
 
@@ -224,9 +234,13 @@ func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
 				failing++
 			}
 		}
+		authMethod := rt.authMethod
+		if authMethod == "" {
+			authMethod = a.cfg.Tailscale.Auth.Method // headscale / fallback
+		}
 		out = append(out, statusdata.TailnetStatus{
 			Name:       name,
-			AuthMethod: a.cfg.Tailscale.Auth.Method,
+			AuthMethod: authMethod, // per-runtime (tailnets[] entry), not the unused top-level block (#116)
 			Cache:      runtimeCacheInfo(rt),
 			Collectors: cols,
 			Devices:    runtimeDeviceRows(rt),
@@ -522,13 +536,25 @@ func runtimeInfo() statusdata.RuntimeInfo {
 // secret value — only "<thing>Set" booleans and OTLP header KEY names.
 func (a *App) redactedConfigSummary() statusdata.ConfigSummary {
 	c := a.cfg
+	// Auth identity: prefer the resolved primary runtime's (the tailnets[] entry in
+	// multi mode) over the unused top-level tailscale: block, which is ignored when
+	// a tailnets: list is configured (#116). Falls back to the top-level block for
+	// headscale / when no Tailscale runtime resolved an auth method.
+	authMethod := c.Tailscale.Auth.Method
+	apiKeySet := c.Tailscale.Auth.APIKey != ""
+	oauthSecretSet := c.Tailscale.Auth.OAuth.ClientSecret != ""
+	if len(a.runtimes) > 0 && a.runtimes[0].authMethod != "" {
+		authMethod = a.runtimes[0].authMethod
+		apiKeySet = a.runtimes[0].apiKeySet
+		oauthSecretSet = a.runtimes[0].oauthSecretSet
+	}
 	cs := statusdata.ConfigSummary{
 		LogLevel:          c.LogLevel,
-		AuthMethod:        c.Tailscale.Auth.Method,
+		AuthMethod:        authMethod,
 		CheckpointStore:   a.checkpointEffective, // effective store, not the raw config value (#69)
 		EnabledCollectors: a.enabledCollectorNames(),
-		APIKeySet:         c.Tailscale.Auth.APIKey != "",
-		OAuthSecretSet:    c.Tailscale.Auth.OAuth.ClientSecret != "",
+		APIKeySet:         apiKeySet,
+		OAuthSecretSet:    oauthSecretSet,
 		GCloudTokenSet:    c.OTLP.GrafanaCloud.Token != "",
 		StreamTokenSet:    c.Streaming.Token != "",
 		WebhookSecretSet:  c.Webhook.Secret != "",
