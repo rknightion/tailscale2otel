@@ -4062,7 +4062,7 @@
         "spec": {
           "id": 23,
           "title": "Devices per tailnet",
-          "description": "Device count per tailnet (online devices visible to the exporter).",
+          "description": "Device count per tailnet (all devices visible to the exporter, online or not).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -4081,7 +4081,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (last_over_time(tailscale_device_online_ratio[10m])) or vector(0)",
+                        "expr": "count by (tailscale_tailnet) (max by (tailscale_tailnet, host_id) (last_over_time(tailscale_device_online_ratio[10m]))) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_tailnet}}",
@@ -4395,7 +4395,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit or vector(0)",
+                        "expr": "max(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -6177,7 +6177,7 @@
         "spec": {
           "id": 50,
           "title": "Keys already expired",
-          "description": "Devices whose node key has already expired (le=0 bucket).",
+          "description": "Devices whose node key has already expired (per-device expiry gauge; clears after re-auth).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -6196,7 +6196,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_key_expiry_days_bucket{le=\"0\"}[10m])) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds[2h]) - time()) <= 0) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6330,7 +6330,7 @@
         "spec": {
           "id": 52,
           "title": "Devices by days-to-expiry bucket",
-          "description": "Histogram of devices bucketed by days until key expiry.",
+          "description": "Current device count per days-to-key-expiry band, from the per-device expiry gauge (point-in-time, non-cumulative; clears after re-auth).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -6349,7 +6349,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (le) (tailscale_devices_key_expiry_days_bucket)",
+                        "expr": "label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) <= 0), \"band\", \"expired\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) > 0 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 7*86400), \"band\", \"<=7d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 7*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 30*86400), \"band\", \"7-30d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 30*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 90*86400), \"band\", \"30-90d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 90*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 180*86400), \"band\", \"90-180d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 180*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 365*86400), \"band\", \"180-365d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 365*86400), \"band\", \">365d\", \"\", \"\")",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18852,7 +18852,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_node) (rate(tailscaled_inbound_bytes_total{path=\"derp\"}[$__rate_interval]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[$__rate_interval])) / clamp_min(sum by (tailscale_node) (rate(tailscaled_inbound_bytes_total[$__rate_interval]) + rate(tailscaled_outbound_bytes_total[$__rate_interval])), 1)",
+                        "expr": "sum by (tailscale_node) (label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[$__rate_interval]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[$__rate_interval]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum by (tailscale_node) (label_replace(rate(tailscaled_inbound_bytes_total[$__rate_interval]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[$__rate_interval]), \"dir\", \"out\", \"\", \"\")), 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_node}}",
@@ -19006,7 +19006,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[$__rate_interval]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[$__rate_interval])) / clamp_min(sum(rate(tailscaled_inbound_bytes_total[$__rate_interval]) + rate(tailscaled_outbound_bytes_total[$__rate_interval])), 1)",
+                        "expr": "sum (label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[$__rate_interval]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[$__rate_interval]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum (label_replace(rate(tailscaled_inbound_bytes_total[$__rate_interval]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[$__rate_interval]), \"dir\", \"out\", \"\", \"\")), 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -23106,7 +23106,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale_rdns_cache_lookups_total{result=\"hit\"}[$__rate_interval]) / clamp_min(rate(tailscale_rdns_cache_lookups_total[$__rate_interval]), 1)",
+                        "expr": "sum(rate(tailscale_rdns_cache_lookups_total{result=\"hit\"}[$__rate_interval])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[$__rate_interval])), 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "hit-rate",
@@ -24848,7 +24848,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit)",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",

@@ -233,6 +233,22 @@ def hq(q, metric, by="", win=RI):
     return "histogram_quantile(%s, sum by (%s) (rate(%s_bucket[%s])))" % (q, grp, metric, win)
 
 
+def derp_byte_fraction(by=""):
+    """Fraction of bytes relayed via DERP, robust to asymmetric inbound-/outbound-only series.
+
+    `rate(in)+rate(out)` is a one-to-one join on all shared labels, so a node/path present in only
+    one direction (asymmetric relay traffic) is silently dropped before the sum. Instead union the
+    two directions (disambiguated with a synthetic `dir` label via label_replace) then sum, so no
+    series is lost. Numerator restricts to path="derp"; denominator is all paths. `by` adds a
+    grouping label (e.g. "tailscale_node") for the per-node breakdown; empty = fleet-wide."""
+    grp = ("by (%s) " % by) if by else ""
+    def _u(sel):
+        return ('sum %s(label_replace(rate(tailscaled_inbound_bytes_total%s[%s]), "dir", "in", "", "") '
+                'or label_replace(rate(tailscaled_outbound_bytes_total%s[%s]), "dir", "out", "", ""))'
+                % (grp, sel, RI, sel, RI))
+    return '%s / clamp_min(%s, 1)' % (_u('{path="derp"}'), _u(''))
+
+
 def cond_item(var, op="matches", value=".+"):
     return {"kind": "ConditionalRenderingVariable",
             "spec": {"variable": var, "operator": op, "value": value}}
@@ -546,10 +562,11 @@ def tab_overview():
                    rename={"tailscale2otel_provider": "Provider", "Value": "Series"})],
                desc="Control-plane provider (tailscale, headscale) and its active series count."), 6, 5),
         (panel("Devices per tailnet", "bargauge",
-               [prom_t('sum by (tailscale_tailnet) (last_over_time(tailscale_device_online_ratio[%s])) or vector(0)' % WIN_FAST,
+               [prom_t('count by (tailscale_tailnet) (max by (tailscale_tailnet, host_id) (%s)) or vector(0)'
+                       % lot("tailscale_device_online_ratio"),
                        legend="{{tailscale_tailnet}}")],
                unit="short", options=bargauge_opts(),
-               desc="Device count per tailnet (online devices visible to the exporter)."), 6, 5),
+               desc="Device count per tailnet (all devices visible to the exporter, online or not)."), 6, 5),
     ]
     # Step 2: Golden signals "Service health" row (gated — only when self-obs metrics present)
     golden = [
@@ -570,7 +587,7 @@ def tab_overview():
                options=stat_opts(color="background"),
                desc="Worst-case fraction of scrape budget consumed across all collectors."), 3, 5),
         (panel("Series headroom", "stat",
-               [prom_t("max(tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit or vector(0)",
+               [prom_t("max(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit) or vector(0)",
                        instant=True)],
                unit="percentunit",
                thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
@@ -718,22 +735,42 @@ def tab_fleet():
     ]
 
     # C. Key-expiry distribution row (gate present="has_key_expiry_hist")
+    # NB: the cumulative key-expiry histogram buckets (tailscale_devices_key_expiry_days_bucket) are
+    # lifetime observation totals that only ever grow — using them as current device counts latches
+    # and shows garbage after a key is rotated (issue #109). The expired stat and the distribution
+    # barchart below are derived from the per-device expiry GAUGE instead, so they are point-in-time
+    # and clear after re-auth. (The median panel keeps histogram_quantile(rate(_bucket)), which is a
+    # correct use of the histogram.)
+    _kexp = "max by (host_id) (%s)" % lot("tailscale_device_key_expiry_seconds", WIN_SLOW)
+    _kdte = "(%s - time())" % _kexp  # seconds-to-expiry per device
+    _kbands = [
+        ("expired", "%s <= 0" % _kdte),
+        ("<=7d", "%s > 0 and %s < 7*86400" % (_kdte, _kdte)),
+        ("7-30d", "%s >= 7*86400 and %s < 30*86400" % (_kdte, _kdte)),
+        ("30-90d", "%s >= 30*86400 and %s < 90*86400" % (_kdte, _kdte)),
+        ("90-180d", "%s >= 90*86400 and %s < 180*86400" % (_kdte, _kdte)),
+        ("180-365d", "%s >= 180*86400 and %s < 365*86400" % (_kdte, _kdte)),
+        (">365d", "%s >= 365*86400" % _kdte),
+    ]
+    _kdist = " or ".join('label_replace(count(%s), "band", "%s", "", "")' % (cond, name)
+                         for (name, cond) in _kbands)
     keylife = [
         (panel("Keys already expired", "stat",
-               [prom_t('sum(%s) or vector(0)' % lot('tailscale_devices_key_expiry_days_bucket{le="0"}'))],
+               [prom_t('count((%s - time()) <= 0) or vector(0)'
+                       % lot("tailscale_device_key_expiry_seconds", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
-               desc="Devices whose node key has already expired (le=0 bucket)."), 6, 5),
+               desc="Devices whose node key has already expired (per-device expiry gauge; clears after re-auth)."), 6, 5),
         (panel("Median days-to-expiry", "timeseries",
                [prom_t(hq("0.5", "tailscale_devices_key_expiry_days"), legend="p50")],
                unit="d", custom=ts_custom(fill=10), options=ts_opts(),
                desc="Median days until device key expiry across the fleet."), 18, 5),
         (panel("Devices by days-to-expiry bucket", "barchart",
-               [prom_t("sum by (le) (tailscale_devices_key_expiry_days_bucket)",
-                       instant=True, fmt="table")],
+               [prom_t(_kdist, instant=True, fmt="table")],
                options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
-               desc="Histogram of devices bucketed by days until key expiry."), 24, 7),
+               desc="Current device count per days-to-key-expiry band, from the per-device expiry gauge "
+                    "(point-in-time, non-cumulative; clears after re-auth)."), 24, 7),
     ]
 
     # D. Connectivity aggregate row (gate present="has_connectivity", no PII)
@@ -1461,9 +1498,7 @@ def tab_nodemetrics():
     ]
     paths = [
         (panel("% traffic via DERP relay by node", "timeseries",
-               [prom_t("sum by (tailscale_node) (rate(tailscaled_inbound_bytes_total{path=\"derp\"}[%s]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[%s])) / "
-                       "clamp_min(sum by (tailscale_node) (rate(tailscaled_inbound_bytes_total[%s]) + rate(tailscaled_outbound_bytes_total[%s])), 1)"
-                       % (RI, RI, RI, RI), legend="{{tailscale_node}}")],
+               [prom_t(derp_byte_fraction("tailscale_node"), legend="{{tailscale_node}}")],
                unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Fraction of each node's traffic relayed via DERP rather than sent direct. Sustained "
                     "high values indicate NAT-traversal problems (added latency)."), 12, 7),
@@ -1473,9 +1508,7 @@ def tab_nodemetrics():
                unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts(),
                desc="Total tailnet throughput split by path: DERP relay vs direct IPv4 vs direct IPv6."), 12, 7),
         (panel("Fleet DERP share (now)", "stat",
-               [prom_t("sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[%s]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[%s])) / "
-                       "clamp_min(sum(rate(tailscaled_inbound_bytes_total[%s]) + rate(tailscaled_outbound_bytes_total[%s])), 1)"
-                       % (RI, RI, RI, RI), instant=True)],
+               [prom_t(derp_byte_fraction(), instant=True)],
                unit="percentunit", thresholds=thr([(None, "green"), (0.3, "yellow"), (0.6, "red")]),
                options=stat_opts(color="background"),
                desc="Fleet-wide fraction of bytes relayed via DERP."), 8, 6),
@@ -1728,7 +1761,7 @@ def tab_diagnostics():
                                                   lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
                unit="percentunit", options=stat_opts()), 6, 6),
         (panel("rDNS lookup hit-rate", "timeseries",
-               [prom_t('rate(tailscale_rdns_cache_lookups_total{result="hit"}[%s]) / clamp_min(rate(tailscale_rdns_cache_lookups_total[%s]), 1)' % (RI, RI),
+               [prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result="hit"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
                        legend="hit-rate")],
                unit="percentunit", custom=ts_custom(), options=ts_opts()), 9, 6),
         (panel("rDNS upstream queries/s", "timeseries",
@@ -1873,7 +1906,7 @@ def tab_cardinality():
                options=stat_opts(color="background"),
                desc="Number of metric families currently overflowing their series cap. >0 means detail loss."), 6, 5),
         (panel("Per-metric headroom (top-N)", "table",
-               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit)",
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit))",
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace"],

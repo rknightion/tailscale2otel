@@ -152,14 +152,31 @@ def alert(uid, title, expr, op, thr, dur, severity, summary, desc,
 
 
 def record(uid, metric, expr, desc, ds=PROM, paused=True, domain="observability"):
+    # Grafana-managed recording rules must resolve to a single value per series, either via an
+    # instant query or a range query + Reduce node. A (range) -> B (reduce, last) -> record from B,
+    # mirroring alert()'s pipeline; recording from a raw range node (no reduce) is invalid.
     return {
         "uid": uid, "title": metric,
-        "data": [_query_node(expr, ds)],
-        "record": {"metric": metric, "from": "A"},
+        "data": [_query_node(expr, ds), _reduce_node()],
+        "record": {"metric": metric, "from": "B"},
         "labels": {"service": "tailscale2otel", "domain": domain},
         "annotations": {"description": desc},
         "isPaused": paused,
     }
+
+
+def _derp_byte_fraction(win="10m"):
+    """Fleet fraction of bytes relayed via DERP, robust to asymmetric inbound-/outbound-only series.
+
+    `rate(in)+rate(out)` is a one-to-one join on all shared labels, so a node/path present in only
+    one direction (asymmetric relay traffic) is silently dropped before the outer sum runs. Instead
+    union the two directions (disambiguated with a synthetic `dir` label via label_replace) and then
+    sum, so no series is lost. Numerator restricts to path="derp"; denominator is all paths."""
+    def _u(sel):
+        return ('sum(label_replace(rate(tailscaled_inbound_bytes_total%s[%s]), "dir", "in", "", "") '
+                'or label_replace(rate(tailscaled_outbound_bytes_total%s[%s]), "dir", "out", "", ""))'
+                % (sel, win, sel, win))
+    return '%s / clamp_min(%s, 1)' % (_u('{path="derp"}'), _u(''))
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +204,7 @@ def groups():
               domain="observability", paused=False),
         alert("ts2o-series-budget-high", "Series budget high",
               "max by (metric_name)(tailscale2otel_series_active) / on() group_left() "
-              "tailscale2otel_series_limit",
+              "max(tailscale2otel_series_limit)",
               "gt", 0.8, "10m", "warning",
               "Busiest tailscale2otel metric approaching the per-metric series cap",
               "A metric family is using >80% of its per-metric series budget "
@@ -408,13 +425,15 @@ def groups():
               "latest. Informational fleet hygiene; surfaces update drift.",
               domain="security", hygiene=True, paused=True),
         alert("ts2o-device-keys-expiring-7d", "Device keys expiring (<7d)",
-              "sum(tailscale_devices_key_expiry_days_bucket{le=\"7\"}) - "
-              "sum(tailscale_devices_key_expiry_days_bucket{le=\"0\"})",
+              "count((max by (host_id) (tailscale_device_key_expiry_seconds) - time() < 7*86400) and "
+              "(max by (host_id) (tailscale_device_key_expiry_seconds) - time() > 0))",
               "gt", 0, "1h", "warning",
               "Device node keys are expiring within 7 days",
               "One or more device node keys expire within 7 days (and are not already expired) — they will "
-              "drop off the tailnet until re-authed. Computed from the key-expiry histogram (le=7 minus "
-              "le=0 buckets).",
+              "drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge "
+              "(expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the "
+              "ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, "
+              "which only grow and latch).",
               domain="security", paused=True),
         # --- Task 2.4: security/governance (B1/B2/B7/A1/A2) ---
         alert("ts2o-acl-unrestricted", "Unrestricted ACL rules present",
@@ -529,7 +548,8 @@ def groups():
               domain="security", paused=True),
         # --- WU12b: receiver health ---
         alert("ts2o-receiver-rejections", "Receiver rejecting ingest",
-              'sum(rate({__name__=~"tailscale_(stream|webhook)_rejected_total"}[10m]))',
+              '(sum(rate(tailscale_stream_rejected_total[10m])) or vector(0)) + '
+              '(sum(rate(tailscale_webhook_rejected_total[10m])) or vector(0))',
               "gt", 0, "10m", "warning",
               "Stream/webhook receiver is rejecting inbound ingest",
               "The stream or webhook receiver is rejecting inbound events (spoofed/oversized/decode errors) "
@@ -544,7 +564,7 @@ def groups():
         # --- WU12b: posture integration match rate ---
         alert("ts2o-posture-match-low", "Posture integration match rate low",
               "min(tailscale_posture_integration_matched_ratio / "
-              "clamp_min(tailscale_posture_integration_possible_matched_ratio, 1))",
+              "(tailscale_posture_integration_possible_matched_ratio > 0))",
               "lt", 0.8, "1h", "warning",
               "A posture integration is matching <80% of possible devices",
               "An MDM/EDR posture integration is matching <80% of possible devices — devices may be "
@@ -554,10 +574,7 @@ def groups():
 
     network = [
         alert("ts2o-high-derp-relay-usage", "High DERP relay usage",
-              "sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]) + "
-              "rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m])) / "
-              "clamp_min(sum(rate(tailscaled_inbound_bytes_total[10m]) + "
-              "rate(tailscaled_outbound_bytes_total[10m])), 1)",
+              _derp_byte_fraction(),
               "gt", 0.5, "30m", "warning",
               "Most tailnet traffic is relayed via DERP, not direct",
               "Over 50% of fleet bytes are relayed via DERP rather than sent peer-to-peer for 30m — a "
@@ -605,7 +622,7 @@ def groups():
               "nodes are dropping outbound packets (sustained) — a connectivity-degradation signal.",
               domain="infra", paused=True, nodata="OK"),
         alert("ts2o-vip-service-no-ha", "VIP service has no host redundancy",
-              "count(max by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)",
+              "count(sum by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)",
               "gt", 0, "30m", "info",
               "One or more VIP services are backed by a single host (no HA)",
               "one or more Tailscale (VIP) services are backed by a single host (no HA).",
@@ -613,8 +630,7 @@ def groups():
         # --- Task 2.5: per-tailnet API errors (F) ---
         alert("ts2o-tailnet-api-errors", "Per-tailnet API errors",
               "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total"
-              "{http_response_status_code=~\"4..|5..\"}[10m]) * on(job,instance) "
-              "group_left(tailscale_tailnet) target_info)",
+              "{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\"}[10m]))",
               "gt", 0, "15m", "warning",
               "Tailscale API errors for tailnet {{ $labels.tailscale_tailnet }}",
               "Per-tailnet 4xx/5xx API error rate > 0 for {{ $labels.tailscale_tailnet }} — one tailnet's "
@@ -638,10 +654,7 @@ def groups():
                "Fraction of devices reporting an encrypted local state store.",
                domain="security", paused=False),
         record("ts2o-rec-derp-byte-fraction", "tailscale:derp_relay:byte_fraction",
-               "sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]) + "
-               "rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m])) / "
-               "clamp_min(sum(rate(tailscaled_inbound_bytes_total[10m]) + "
-               "rate(tailscaled_outbound_bytes_total[10m])), 1)",
+               _derp_byte_fraction(),
                "Fleet fraction of bytes relayed via DERP (precomputes the heavy 4-rate dashboard/alert query).",
                domain="infra", paused=False),
         record("ts2o-rec-flow-throughput", "tailscale:flow_throughput:bytes:rate5m",

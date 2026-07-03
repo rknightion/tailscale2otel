@@ -163,7 +163,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "max by (metric_name)(tailscale2otel_series_active) / on() group_left() tailscale2otel_series_limit"
+              expr: "max by (metric_name)(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit)"
               instant: false
               range: true
               intervalMs: 1000
@@ -2366,7 +2366,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "sum(tailscale_devices_key_expiry_days_bucket{le=\"7\"}) - sum(tailscale_devices_key_expiry_days_bucket{le=\"0\"})"
+              expr: "count((max by (host_id) (tailscale_device_key_expiry_seconds) - time() < 7*86400) and (max by (host_id) (tailscale_device_key_expiry_seconds) - time() > 0))"
               instant: false
               range: true
               intervalMs: 1000
@@ -2420,7 +2420,7 @@ groups:
           domain: "security"
         annotations:
           summary: "Device node keys are expiring within 7 days"
-          description: "One or more device node keys expire within 7 days (and are not already expired) — they will drop off the tailnet until re-authed. Computed from the key-expiry histogram (le=7 minus le=0 buckets)."
+          description: "One or more device node keys expire within 7 days (and are not already expired) — they will drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge (expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, which only grow and latch)."
         isPaused: true
       - uid: "ts2o-acl-unrestricted"
         title: "Unrestricted ACL rules present"
@@ -3426,7 +3426,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "sum(rate({__name__=~\"tailscale_(stream|webhook)_rejected_total\"}[10m]))"
+              expr: "(sum(rate(tailscale_stream_rejected_total[10m])) or vector(0)) + (sum(rate(tailscale_webhook_rejected_total[10m])) or vector(0))"
               instant: false
               range: true
               intervalMs: 1000
@@ -3568,7 +3568,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "min(tailscale_posture_integration_matched_ratio / clamp_min(tailscale_posture_integration_possible_matched_ratio, 1))"
+              expr: "min(tailscale_posture_integration_matched_ratio / (tailscale_posture_integration_possible_matched_ratio > 0))"
               instant: false
               range: true
               intervalMs: 1000
@@ -3643,7 +3643,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m])) / clamp_min(sum(rate(tailscaled_inbound_bytes_total[10m]) + rate(tailscaled_outbound_bytes_total[10m])), 1)"
+              expr: "sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)"
               instant: false
               range: true
               intervalMs: 1000
@@ -4140,7 +4140,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "count(max by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)"
+              expr: "count(sum by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)"
               instant: false
               range: true
               intervalMs: 1000
@@ -4211,7 +4211,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\"}[10m]) * on(job,instance) group_left(tailscale_tailnet) target_info)"
+              expr: "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\"}[10m]))"
               instant: false
               range: true
               intervalMs: 1000
@@ -4292,9 +4292,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:devices_online:count"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "infra"
@@ -4320,9 +4333,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:posture_autoupdate:ratio"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "security"
@@ -4348,9 +4374,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:posture_encrypted:ratio"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "security"
@@ -4370,15 +4409,28 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "sum(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]) + rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m])) / clamp_min(sum(rate(tailscaled_inbound_bytes_total[10m]) + rate(tailscaled_outbound_bytes_total[10m])), 1)"
+              expr: "sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)"
               instant: false
               range: true
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:derp_relay:byte_fraction"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "infra"
@@ -4404,9 +4456,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:flow_throughput:bytes:rate5m"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "infra"
@@ -4432,9 +4497,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale2otel:series_active:sum"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "observability"
@@ -4460,9 +4538,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:device_keys_expiring_7d:count"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "security"
@@ -4488,9 +4579,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale2otel:series_active:by_group"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "observability"
@@ -4516,9 +4620,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:devices_hard_nat:fraction"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "infra"
@@ -4544,9 +4661,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale2otel:api_requests:error_ratio"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "observability"
@@ -4572,9 +4702,22 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
         record:
           metric: "tailscale:node_dropped_packets:rate5m"
-          from: "A"
+          from: "B"
         labels:
           service: "tailscale2otel"
           domain: "infra"
