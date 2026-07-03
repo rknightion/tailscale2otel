@@ -15,7 +15,7 @@ fields as a commented file.
 **Naming.** Take the dotted config key, prefix it with `TS2OTEL_`, uppercase it,
 and replace each `.` with `__` (a single `_` inside a name is preserved):
 
-```
+```text
 tailscale.auth.oauth.client_secret  ->  TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET
 collectors.flowlogs.interval        ->  TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL
 ```
