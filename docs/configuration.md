@@ -134,9 +134,25 @@ a startup warning.
 **Reduced device signal set.** Headscale's API exposes fewer device fields than Tailscale, so under
 `provider: headscale` the `devices` collector emits a *subset* of its usual signals — online status,
 advertised/enabled routes (exit-node and subnet-router derivations still work), key expiry, last-seen,
-and tag/user counts. Tailscale-only signals have **no data** because the source fields are absent:
-per-DERP-region latency, posture and posture attributes, tailnet-lock, update-available, OS/version
-distribution, and connectivity quality. Likewise device share-invites and user-invites are unavailable.
+and tag/user counts. Two booleans that Tailscale devices carry with no Headscale equivalent are
+defaulted to the only value that could ever be correct, rather than treated as missing: `authorized`
+(every node Headscale returns is registered, hence authorized, by definition) and `external` (Headscale
+has no device-sharing feature, so no node it returns can ever be "external"). By contrast, the
+following are genuine **no-data** gaps — the source fields are absent, so the affected signals are
+**not emitted at all** rather than reporting a fabricated zero/false: per-DERP-region latency, posture
+and posture attributes, tailnet-lock, `tailscale.device.update_available`, `tailscale.devices.ephemeral`,
+OS/version distribution, and connectivity quality. Likewise device share-invites and user-invites are
+unavailable.
+
+**Reduced user signal set.** Headscale's user API has no per-user device-count or connection-state
+concept, so `tailscale.user.devices` and `tailscale.user.connected` are **not emitted** under
+`provider: headscale` (rather than reporting a fabricated 0/not-connected). `tailscale.user.last_seen`
+and the aggregate `tailscale.users.count` are unaffected.
+
+**Spent one-time pre-auth keys.** Headscale reports whether a non-reusable pre-auth key has already
+been redeemed (`used`). A used one-time key is mapped to the same "invalid" state Tailscale's API uses
+for a dead/revoked key, so it stops reporting a live `tailscale.key.expiry` gauge and can no longer
+trigger the `tailscale.key.expiring` warning. Reusable keys are unaffected by use.
 
 **Headscale server metrics.** Headscale also exposes its own Prometheus endpoint (the *control-plane
 server*, default `:9090`) — distinct from per-node `tailscaled` `:5252`. Scrape it by adding it as a
@@ -187,6 +203,15 @@ The HTTP client used for all Tailscale API calls.
 | `tailscale.http.retry.base_delay` | `500ms` | Initial backoff delay. |
 | `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. |
 | `tailscale.http.rate_limit` | `0` | Global request rate cap in requests/second across **all** collectors. `0` = unlimited. |
+
+> **Tune `tailscale.http.timeout` together with `flowlogs`/`auditlogs` `max_window`.** After an outage,
+> the next poll tick fetches and decodes a catch-up window as large as `max_window` in a single request.
+> If streaming and decoding that much log data takes longer than `tailscale.http.timeout`, every attempt
+> at that window fails identically (the checkpoint never advances — see the `max_window` field below) —
+> a durable wedge that only clears with a config change or a smaller subsequent window. There is
+> currently no automatic shrink-on-timeout: raise `tailscale.http.timeout` to comfortably cover decoding
+> the largest configured `max_window` for your tailnet's flow/audit log volume, or lower `max_window` so
+> a worst-case catch-up window reliably completes within the timeout.
 
 > **Multi-tailnet:** the `tailscale.http` block is the **fleet-wide default** for every `tailnets[]`
 > entry. Each entry's `http:` fields are backfilled field-by-field with the precedence *entry >
@@ -339,7 +364,7 @@ Pick exactly one method per log type. Which fields are honored depends on `sourc
 | `interval` | both | ✓ | — | Poll cadence (no poller runs under `stream`). |
 | `lag` | both | ✓ | — | Query only up to `now − lag`, so late-arriving records aren't missed. Must be **≥ 0** (a negative lag pushes the window end into the future and permanently skips records that arrive within it — rejected at startup). |
 | `initial_lookback` | both | ✓ | — | Cold-start reach-back when there is no checkpoint yet. Must be **> 0** — `0` (or negative) leaves the poll window's `from ≥ to` forever, so the collector never polls and never checkpoints; rejected at startup rather than silently stalling. |
-| `max_window` | both | ✓ | — | Cap a single tick's window so a long outage catches up over several ticks. `0` (or negative) means **no cap**. A *positive* `max_window ≤ interval` can never catch up (each tick advances at most `max_window`), so it raises a startup **warning**. |
+| `max_window` | both | ✓ | — | Cap a single tick's window so a long outage catches up over several ticks. `0` (or negative) means **no cap**. A *positive* `max_window ≤ interval` can never catch up (each tick advances at most `max_window`), so it raises a startup **warning**. **Must be tuned together with [`tailscale.http.timeout`](#tailscalehttp)**: a catch-up window that takes longer to fetch+decode than the timeout fails every attempt identically and never advances (see the note under `tailscale.http`). |
 | `log_mode` | `flowlogs` | ✓ | ✓ | Log detail level — output shaping in the shared processor. |
 | `max_log_records_per_window` | `flowlogs` | ✓ | ✓¹ | Cap on emitted flow LOG records (see below). |
 

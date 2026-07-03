@@ -147,7 +147,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 		counts[countKey{typ: typ, authKind: authKind, revoked: revoked, invalid: k.Invalid}]++
 
-		if !k.Expires.IsZero() {
+		// An invalid key (revoked, or — for Headscale — a spent non-reusable
+		// one-time key mapped via hsapi.adaptPreAuthKey) can never be redeemed
+		// again regardless of its Expires timestamp, so its expiry is moot: skip
+		// both the per-key gauge and the expiring warning entirely rather than
+		// reporting a "live" expiry for a dead key (issue #64).
+		if !k.Expires.IsZero() && !k.Invalid {
 			// Per-key gauges (one series per key) are gated by
 			// cardinality.per_entity.key; the expiry-warning log below always
 			// fires regardless, so operators never lose the warning.

@@ -3,6 +3,7 @@ package flowlogs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 // Compile-time guarantees: *Collector is a WindowCollector and the test fake
@@ -384,17 +386,20 @@ func TestCollectWindow_NilOnIngestHookDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestCollectWindow_Forbidden403DisablesFeature verifies that an HTTP 403 /
-// forbidden error from the flow-log fetch is treated as the feature being
-// disabled: feature.enabled=0 is emitted and the window end is returned with no
-// error, so the scheduler advances rather than retrying.
+// TestCollectWindow_Forbidden403DisablesFeature verifies that a genuine HTTP
+// 403 response from the flow-log fetch — surfaced as a *tsapi.StatusError with
+// Code 403, optionally wrapped — is treated as the feature being disabled:
+// feature.enabled=0 is emitted and the window end is returned with no error, so
+// the scheduler advances rather than retrying.
 func TestCollectWindow_Forbidden403DisablesFeature(t *testing.T) {
+	statusErr := &tsapi.StatusError{Method: "GET", URL: "https://api.tailscale.com/api/v2/tailnet/-/network-logging/configuration", Code: 403, Body: "feature disabled"}
+
 	for _, tc := range []struct {
 		name string
 		err  error
 	}{
-		{"403 status", errors.New("flow logs: unexpected status 403")},
-		{"forbidden word", errors.New("request Forbidden: feature requires Premium")},
+		{"bare StatusError", statusErr},
+		{"wrapped StatusError", fmt.Errorf("flow logs: %w", statusErr)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := &fakeAPI{err: tc.err}
@@ -418,6 +423,47 @@ func TestCollectWindow_Forbidden403DisablesFeature(t *testing.T) {
 			}
 			if got := p.Attrs[semconv.AttrFeature]; got != "network_flow_logging" {
 				t.Fatalf("feature attr = %q, want network_flow_logging", got)
+			}
+			if pts := rec.MetricPoints(flowlog.MetricIO); len(pts) != 0 {
+				t.Fatalf("MetricPoints(%q) = %d, want 0 (nothing processed)", flowlog.MetricIO, len(pts))
+			}
+		})
+	}
+}
+
+// TestCollectWindow_AmbiguousErrorTextNotMisclassified verifies the fix for
+// issue #95: a fetch error whose *text* happens to contain "403" or
+// "forbidden" — but which is NOT a *tsapi.StatusError with Code 403 (e.g. a
+// proxy-port number embedded in the error, or a 5xx error whose HTML body
+// mentions "Forbidden") — must NOT be classified as the feature being
+// disabled. It must propagate as a real error with a zero high-water mark, so
+// the scheduler retries the window instead of silently advancing past it.
+func TestCollectWindow_AmbiguousErrorTextNotMisclassified(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"403 substring from a non-tsapi error", errors.New("dial tcp 10.0.0.1:8403: connect: connection refused")},
+		{"forbidden substring from a non-403 StatusError", &tsapi.StatusError{Method: "GET", URL: "https://api.tailscale.com/api/v2/tailnet/-/network-logging/configuration", Code: 502, Body: "<html><body>403 Forbidden by upstream proxy</body></html>"}},
+		{"wrapped forbidden substring, not a StatusError", fmt.Errorf("flow logs: %w", errors.New("request Forbidden: internal proxy error"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &fakeAPI{err: tc.err}
+			c := New(a, newProcessor(), 0, 0, nil, nil)
+			rec := telemetrytest.New()
+
+			from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+			to := time.Date(2026, 6, 2, 11, 59, 0, 0, time.UTC)
+
+			hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("CollectWindow() error = %v, want %v propagated (not misclassified as 403)", err, tc.err)
+			}
+			if !hwm.IsZero() {
+				t.Fatalf("CollectWindow() high-water mark = %v, want zero time (checkpoint must not advance)", hwm)
+			}
+			if pts := rec.MetricPoints(metricFeatureEnabled); len(pts) != 0 {
+				t.Fatalf("MetricPoints(%q) = %d, want 0 (must not emit feature=0 on an ambiguous error)", metricFeatureEnabled, len(pts))
 			}
 			if pts := rec.MetricPoints(flowlog.MetricIO); len(pts) != 0 {
 				t.Fatalf("MetricPoints(%q) = %d, want 0 (nothing processed)", flowlog.MetricIO, len(pts))

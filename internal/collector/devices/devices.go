@@ -228,6 +228,15 @@ type Collector struct {
 	collectTagRollup bool
 	tagRollupLimit   int
 
+	// updateAvailableData gates the per-device tailscale.device.update_available
+	// gauge; ephemeralData gates the tailscale.devices.ephemeral fleet
+	// aggregate. Both default true (Tailscale populates both source fields);
+	// set false when the control-plane API has no such field at all (e.g.
+	// Headscale), so the collector doesn't report a fabricated false/0 as if it
+	// were real data. See WithUpdateAvailableData / WithEphemeralData.
+	updateAvailableData bool
+	ephemeralData       bool
+
 	// now returns the current time; injectable for tests (key-expiry histogram).
 	now func() time.Time
 
@@ -365,6 +374,27 @@ func WithAttributeNamespaces(ns []string) Option {
 	}
 }
 
+// WithUpdateAvailableData controls whether the per-device
+// tailscale.device.update_available gauge is emitted. The default is true
+// (Tailscale reports this field natively); pass false when the control-plane
+// API does not report available-update status at all (e.g. Headscale has no
+// such concept), so the collector doesn't report a fabricated "no update
+// available" (false) as if it were real data. Per-device gauges are
+// additionally gated by WithPerEntity.
+func WithUpdateAvailableData(enabled bool) Option {
+	return func(c *Collector) { c.updateAvailableData = enabled }
+}
+
+// WithEphemeralData controls whether the tailscale.devices.ephemeral
+// fleet-aggregate gauge is emitted. The default is true (Tailscale reports
+// per-device ephemeral status natively); pass false when the control-plane API
+// does not report it at all (e.g. Headscale's node listing has no ephemeral
+// field), so the collector doesn't report a fabricated all-non-ephemeral count
+// as if it were real data.
+func WithEphemeralData(enabled bool) Option {
+	return func(c *Collector) { c.ephemeralData = enabled }
+}
+
 // New returns a devices Collector that lists via the rich devices endpoint,
 // repopulates cache, and uses interval as its poll cadence (a non-positive
 // interval defaults to 60s). When collectRoutes is true the per-device route
@@ -389,6 +419,8 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		collectTagRollup:    true,
 		tagRollupLimit:      50,
 		now:                 time.Now,
+		updateAvailableData: true,
+		ephemeralData:       true,
 	}
 	for _, o := range opts {
 		o(c)
@@ -497,8 +529,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					float64(d.Expires.Unix()), idAttrs)
 			}
 
-			e.Gauge(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
-				boolToFloat(d.UpdateAvailable), idAttrs)
+			// Gated by updateAvailableData: some control planes (Headscale) don't
+			// report update-available status at all, so emitting it
+			// unconditionally would report a fabricated "no update available" as
+			// if it were real data (issue #64).
+			if c.updateAvailableData {
+				e.Gauge(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
+					boolToFloat(d.UpdateAvailable), idAttrs)
+			}
 
 			for region, derp := range d.DERPLatency {
 				e.Gauge(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
@@ -702,8 +740,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// Fleet-hygiene aggregate gauges (always emitted; low cardinality).
 	e.Gauge(docDevicesUntagged.Name, docDevicesUntagged.Unit, docDevicesUntagged.Description,
 		float64(untagged), nil)
-	e.Gauge(docDevicesEphemeral.Name, docDevicesEphemeral.Unit, docDevicesEphemeral.Description,
-		float64(ephemeral), nil)
+	// Gated by ephemeralData: some control planes (Headscale) don't report
+	// per-device ephemeral status at all, so emitting this aggregate
+	// unconditionally would report a fabricated all-non-ephemeral count as if
+	// it were real data (issue #64).
+	if c.ephemeralData {
+		e.Gauge(docDevicesEphemeral.Name, docDevicesEphemeral.Unit, docDevicesEphemeral.Description,
+			float64(ephemeral), nil)
+	}
 	for ver, n := range byVersion {
 		e.Gauge(docDevicesByVersion.Name, docDevicesByVersion.Unit, docDevicesByVersion.Description,
 			float64(n), telemetry.Attrs{attrClientVersion: ver})

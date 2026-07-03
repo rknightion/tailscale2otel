@@ -33,8 +33,42 @@ func userIdentity(u User) string {
 	return u.Name
 }
 
-// adaptNode maps a Headscale Node into tsapi.RichDevice. Tailscale-only fields
-// (OS, DERP latency, posture, tailnet-lock, connectivity) are left zero.
+// adaptNode maps a Headscale Node into tsapi.RichDevice.
+//
+// Fields defaulted to a correct constant (NOT a data gap — Headscale has no
+// equivalent concept, and the zero/default value is the only value that could
+// ever be true):
+//   - Authorized: true. Headscale has no separate "authorize this device" step
+//     distinct from registration — every node the API returns is already
+//     registered/authorized. Defaulting to the zero value (false) would
+//     incorrectly bucket every Headscale device as unauthorized in
+//     tailscale.devices.count (see issue #64).
+//   - IsExternal: false (zero value, left unset). Headscale has no
+//     device-sharing feature, so no node it returns can ever be "external".
+//
+// Fields left at their zero value because Headscale's API genuinely does not
+// report them — this is a real data gap, not a default. Consumers MUST gate
+// emission on these (see devices.WithUpdateAvailableData /
+// devices.WithEphemeralData) rather than emit the zero value as if it were
+// real:
+//   - UpdateAvailable (no update-check data from Headscale)
+//   - IsEphemeral (Headscale's node listing has no per-node ephemeral field)
+//
+// Fields left at their zero value where the gap is already handled elsewhere
+// (either the field simply isn't rendered as a metric, or its zero value reads
+// naturally as "unknown"/"none" rather than a false positive):
+//   - OS, ClientVersion, Distro: no OS/version reporting in the Headscale node
+//     API.
+//   - KeyExpiryDisabled: false. Headscale doesn't report whether key expiry is
+//     disabled for a node; the devices collector treats false as "expiry is
+//     active", which is the common case, but this is an assumption, not
+//     verified data.
+//   - TailnetLockKey, TailnetLockError: Headscale has no tailnet-lock feature.
+//   - DERPLatency, HardNAT, Endpoints, ClientSupports: no per-device
+//     connectivity/DERP telemetry from Headscale.
+//
+// Keep this list in sync with tsapi.RichDevice — if a new field is added
+// there, decide which bucket it falls into and extend this comment.
 func adaptNode(n Node) tsapi.RichDevice {
 	return tsapi.RichDevice{
 		ID:                 n.ID,
@@ -44,6 +78,7 @@ func adaptNode(n Node) tsapi.RichDevice {
 		User:               userIdentity(n.User),
 		Addresses:          n.IPAddresses,
 		Tags:               n.Tags,
+		Authorized:         true,
 		ConnectedToControl: n.Online,
 		Created:            parseTime(n.CreatedAt),
 		LastSeen:           parseTime(n.LastSeen),
@@ -53,8 +88,14 @@ func adaptNode(n Node) tsapi.RichDevice {
 	}
 }
 
-// adaptUser maps a Headscale User into tsclient.User (lossy: no device count,
-// status, role, last-seen on the Headscale user API).
+// adaptUser maps a Headscale User into tsclient.User. DeviceCount and
+// CurrentlyConnected are left at their zero value (0 / false): Headscale's
+// user API has no per-user device-count or connection-state concept, so this
+// is a real data gap, not a default — consumers MUST gate emission on it (see
+// users.WithActivityData) rather than report the zero value as if it were
+// real. Status, Role, and Type are similarly left zero-valued (their empty
+// string reads as an "unknown" bucket in tailscale.users.count, which is
+// informative rather than a false positive, so no gating is needed there).
 func adaptUser(u User) tsclient.User {
 	return tsclient.User{
 		ID:            u.ID,
@@ -66,6 +107,13 @@ func adaptUser(u User) tsclient.User {
 }
 
 // adaptPreAuthKey maps a Headscale pre-auth key into tsapi.Key (Type "auth").
+// Invalid is set for a spent one-time key (Used && !Reusable): once redeemed,
+// a non-reusable key can never be used again, so it is mapped to the same
+// "invalid" state Tailscale's API uses for a dead/revoked key. This is what
+// makes the keys collector stop reporting a live tailscale.key.expiry gauge
+// and stop firing the tailscale.key.expiring warning for it (see issue #64).
+// A reusable key being used does not spend it, so Used is ignored when
+// Reusable is true.
 func adaptPreAuthKey(p PreAuthKey) tsapi.Key {
 	return tsapi.Key{
 		ID:          p.ID,
@@ -73,6 +121,7 @@ func adaptPreAuthKey(p PreAuthKey) tsapi.Key {
 		Type:        "auth",
 		Reusable:    p.Reusable,
 		Ephemeral:   p.Ephemeral,
+		Invalid:     p.Used && !p.Reusable,
 		Created:     parseTime(p.CreatedAt),
 		Expires:     parseTime(p.Expiration),
 	}

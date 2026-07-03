@@ -129,6 +129,46 @@ func TestCollect_PerEntityFalse(t *testing.T) {
 	}
 }
 
+// TestCollect_ActivityDataFalse guards issue #64 sub-item 3: when the
+// control-plane doesn't report per-user device-count/connection-state (e.g.
+// Headscale), WithActivityData(false) must suppress tailscale.user.devices and
+// tailscale.user.connected entirely rather than reporting a fabricated 0/false.
+// last_seen and the aggregate counts are unaffected.
+func TestCollect_ActivityDataFalse(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers()}, 0, users.WithActivityData(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	for _, name := range []string{"tailscale.user.devices", "tailscale.user.connected"} {
+		if pts := rec.MetricPoints(name); len(pts) != 0 {
+			t.Errorf("gauge %q emitted with WithActivityData(false): %+v", name, pts)
+		}
+	}
+	if pts := rec.MetricPoints("tailscale.user.last_seen"); len(pts) == 0 {
+		t.Error("last_seen should still be emitted with WithActivityData(false)")
+	}
+	if pts := rec.MetricPoints("tailscale.users.count"); len(pts) == 0 {
+		t.Error("users.count should still be emitted with WithActivityData(false)")
+	}
+}
+
+// TestCollect_ActivityDataDefaultTrue is the control: with no option supplied,
+// behavior must be unchanged from before issue #64 (both gauges emitted).
+func TestCollect_ActivityDataDefaultTrue(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers()}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	for _, name := range []string{"tailscale.user.devices", "tailscale.user.connected"} {
+		if pts := rec.MetricPoints(name); len(pts) == 0 {
+			t.Errorf("gauge %q should be emitted by default (WithActivityData unset)", name)
+		}
+	}
+}
+
 func TestCollect_CountByCombo(t *testing.T) {
 	rec := telemetrytest.New()
 	c := users.New(&fakeLister{users: sampleUsers()}, 0)

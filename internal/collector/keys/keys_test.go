@@ -239,6 +239,61 @@ func TestCollect_NoWarnForZeroExpiry(t *testing.T) {
 	}
 }
 
+// TestCollect_InvalidKeySuppressesExpiryAndWarn guards issue #64 sub-item 1: a
+// key mapped Invalid (e.g. a spent Headscale one-time key, via
+// hsapi.adaptPreAuthKey) must not report a live tailscale.key.expiry gauge or
+// trigger the tailscale.key.expiring warning, even though Expires is set and
+// within the warn window. The aggregate tailscale.keys.count rollup is
+// unaffected (it already tracks the invalid dimension).
+func TestCollect_InvalidKeySuppressesExpiryAndWarn(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	soon := now.Add(30 * time.Minute) // within the 1h expiryWarn window
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "spent", Description: "one-time", Type: "auth", Invalid: true, Expires: soon},
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if pts := rec.MetricPoints("tailscale.key.expiry"); len(pts) != 0 {
+		t.Errorf("an invalid/spent key must not report a live expiry gauge, got %+v", pts)
+	}
+	for _, r := range rec.LogRecords() {
+		if r.EventName == "tailscale.key.expiring" {
+			t.Fatalf("an invalid/spent key must not trigger the expiring warning, got %+v", r)
+		}
+	}
+
+	found := false
+	for _, p := range rec.MetricPoints("tailscale.keys.count") {
+		if p.Attrs["tailscale.key.invalid"] == "true" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("aggregate tailscale.keys.count should still include the invalid key")
+	}
+}
+
+// TestCollect_ValidKeyStillWarns is the control for the above: a key that is
+// NOT Invalid must be unaffected by the new gating.
+func TestCollect_ValidKeyStillWarns(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	soon := now.Add(30 * time.Minute)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "live", Description: "still good", Type: "auth", Invalid: false, Expires: soon},
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.key.expiry"); len(pts) != 1 {
+		t.Errorf("a valid key must still report its expiry gauge, got %+v", pts)
+	}
+	findLog(t, rec.LogRecords(), "tailscale.key.expiring")
+}
+
 func TestCollect_NilNowDefaultsToTimeNow(t *testing.T) {
 	// With nil now and a key already long expired, no panic and no false warn
 	// behavior is asserted here beyond a successful Collect.

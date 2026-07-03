@@ -113,12 +113,24 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			devOpts = append(devOpts, devices.WithUpstreamLatest(
 				d.tsRelease.Latest, cfg.VersionChecks.Devices.OutdatedMinorThreshold))
 		}
+		// Headscale provides no update-available or ephemeral signal, so suppress
+		// those gauges instead of emitting a fabricated 0/false for every node (#64).
+		if cfg.Provider == "headscale" {
+			devOpts = append(devOpts,
+				devices.WithUpdateAvailableData(false),
+				devices.WithEphemeralData(false))
+		}
 		rt.registry.Register(devices.New(cp.Client, rt.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())
 	}
 	if c.Users.Enabled && cp.Supports("users") {
-		rt.registry.Register(users.New(cp.Client, c.Users.Interval.D(),
-			users.WithPerEntity(cfg.Cardinality.PerEntity.User)), c.Users.Interval.D())
+		userOpts := []users.Option{users.WithPerEntity(cfg.Cardinality.PerEntity.User)}
+		// Headscale has no per-user device-count / currently-connected data, so
+		// suppress those gauges rather than emit fabricated zeros for every user (#64).
+		if cfg.Provider == "headscale" {
+			userOpts = append(userOpts, users.WithActivityData(false))
+		}
+		rt.registry.Register(users.New(cp.Client, c.Users.Interval.D(), userOpts...), c.Users.Interval.D())
 	}
 	if c.Keys.Enabled && cp.Supports("keys") {
 		rt.registry.Register(keys.New(cp.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,

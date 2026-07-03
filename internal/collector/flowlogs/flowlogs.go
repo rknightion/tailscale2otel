@@ -14,6 +14,7 @@ package flowlogs
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
 
 const (
@@ -117,9 +119,11 @@ func (c *Collector) Lag() time.Duration {
 // failure), while an enabled feature emits =1 and proceeds. A featureCheck
 // error fails open (proceed without emitting the gauge).
 //
-// A fetch error that looks like an HTTP 403/forbidden response is also treated
-// as the feature being disabled: it emits =0 and returns to with no error so
-// the scheduler advances instead of retrying. Any other fetch error returns the
+// A fetch error carrying a genuine HTTP 403 (a *tsapi.StatusError with
+// Code == 403, see isForbidden) is also treated as the feature being
+// disabled: it emits =0 and returns to with no error so the scheduler
+// advances instead of retrying. Any other fetch error — including one whose
+// text merely contains "403" or "forbidden" — is ambiguous and returns the
 // zero time so the scheduler does not advance the checkpoint and the window is
 // retried.
 //
@@ -232,9 +236,19 @@ func (c *Collector) emitFeature(e telemetry.Emitter, enabled bool) {
 		v, telemetry.Attrs{semconv.AttrFeature: featureName})
 }
 
-// isForbidden reports whether err looks like an HTTP 403/forbidden response,
-// indicating the feature is disabled rather than a transient failure.
+// isForbidden reports whether err is (or wraps) a *tsapi.StatusError with HTTP
+// status 403, indicating the feature is disabled rather than a transient
+// failure. This mirrors the logstream collector's precedent (see
+// internal/collector/logstream/logstream.go) of classifying by the typed
+// status code rather than by matching text in err.Error(): the flow-logs
+// error text embeds the full request URL plus up to 16KB of response body, so
+// a substring match on "403"/"forbidden" can misfire on unrelated content
+// (e.g. a proxy port like 10.0.0.1:8403, or a 5xx error page whose body
+// happens to mention "Forbidden") and would incorrectly advance the
+// checkpoint, silently dropping the window. Only a genuine typed 403 is
+// treated as "feature disabled"; every other error is ambiguous and must be
+// retried.
 func isForbidden(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "403") || strings.Contains(msg, "forbidden")
+	var se *tsapi.StatusError
+	return errors.As(err, &se) && se.Code == 403
 }

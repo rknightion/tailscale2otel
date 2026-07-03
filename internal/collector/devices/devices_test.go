@@ -527,6 +527,72 @@ func TestCollect_UpdateAvailable(t *testing.T) {
 	}
 }
 
+// TestCollect_UpdateAvailableDataFalse guards issue #64 sub-item 4: when the
+// control-plane doesn't report update-available status at all (e.g.
+// Headscale), WithUpdateAvailableData(false) must suppress
+// tailscale.device.update_available entirely rather than reporting a
+// fabricated "no update available" (false) as if it were real data.
+func TestCollect_UpdateAvailableDataFalse(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, false, false, devices.WithUpdateAvailableData(false))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.update_available"); len(pts) != 0 {
+		t.Errorf("update_available emitted with WithUpdateAvailableData(false): %+v", pts)
+	}
+	// Unrelated per-device gauges must be unaffected.
+	if pts := rec.MetricPoints("tailscale.device.online"); len(pts) == 0 {
+		t.Error("online gauge should still be emitted with WithUpdateAvailableData(false)")
+	}
+}
+
+// TestCollect_UpdateAvailableDataDefaultTrue is the control: with no option
+// supplied, behavior is unchanged from before issue #64.
+func TestCollect_UpdateAvailableDataDefaultTrue(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, false, false)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.update_available"); len(pts) != 3 {
+		t.Errorf("update_available points = %d, want 3 by default", len(pts))
+	}
+}
+
+// TestCollect_EphemeralDataFalse guards issue #64 sub-item 4: when the
+// control-plane doesn't report per-device ephemeral status at all (e.g.
+// Headscale's node listing), WithEphemeralData(false) must suppress the
+// tailscale.devices.ephemeral fleet aggregate entirely rather than reporting a
+// fabricated all-zero count as if it were real data.
+func TestCollect_EphemeralDataFalse(t *testing.T) {
+	c, rec := hygieneCollector(t, devices.WithEphemeralData(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.devices.ephemeral"); len(pts) != 0 {
+		t.Errorf("ephemeral aggregate emitted with WithEphemeralData(false): %+v", pts)
+	}
+	// Unrelated fleet aggregates must be unaffected.
+	if pts := rec.MetricPoints("tailscale.devices.untagged"); len(pts) == 0 {
+		t.Error("untagged aggregate should still be emitted with WithEphemeralData(false)")
+	}
+}
+
+// TestCollect_EphemeralDataDefaultTrue is the control: with no option
+// supplied, behavior is unchanged from before issue #64.
+func TestCollect_EphemeralDataDefaultTrue(t *testing.T) {
+	c, rec := hygieneCollector(t)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.devices.ephemeral"); len(pts) != 1 || pts[0].Value != 1 {
+		t.Errorf("ephemeral = %+v, want single value 1 by default", pts)
+	}
+}
+
 func TestCollect_DERPLatency(t *testing.T) {
 	devs := sampleDevices()
 	c, _, _ := newCollector(t, devs)

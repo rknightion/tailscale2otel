@@ -50,9 +50,10 @@ type lister interface {
 
 // Collector reports Tailscale user inventory on each tick.
 type Collector struct {
-	api       lister
-	interval  time.Duration
-	perEntity bool
+	api          lister
+	interval     time.Duration
+	perEntity    bool
+	activityData bool
 }
 
 // Option configures optional Collector behavior.
@@ -65,11 +66,26 @@ func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
 }
 
+// WithActivityData controls whether the per-user device-count and
+// currently-connected gauges (tailscale.user.devices, tailscale.user.connected)
+// are emitted. The default is true (Tailscale populates both fields natively);
+// pass false when the underlying control-plane API has no per-user
+// device-count/connection-state concept at all (e.g. Headscale's user API), so
+// the collector doesn't report a fabricated 0/not-connected as if it were real
+// data. Mirrors how LastSeen is already gated on IsZero for a provider that
+// omits it. Per-user gauges are additionally gated by WithPerEntity;
+// tailscale.user.last_seen and the aggregate counts are unaffected.
+func WithActivityData(enabled bool) Option {
+	return func(c *Collector) { c.activityData = enabled }
+}
+
 // New returns a users Collector. A non-positive interval falls back to the
 // default (300s) via DefaultInterval. Per-user gauges are emitted by default;
-// pass WithPerEntity(false) to emit only the aggregate counts.
+// pass WithPerEntity(false) to emit only the aggregate counts. Device-count and
+// connected-state gauges are emitted by default; pass WithActivityData(false)
+// when the control-plane doesn't report that data.
 func New(api lister, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: api, interval: interval, perEntity: true}
+	c := &Collector{api: api, interval: interval, perEntity: true, activityData: true}
 	for _, o := range opts {
 		o(c)
 	}
@@ -128,15 +144,21 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			attrLogin: u.LoginName,
 		}
 
-		e.Gauge(docUserDevices.Name, docUserDevices.Unit, docUserDevices.Description,
-			float64(u.DeviceCount), idAttrs)
+		// Device-count/connected-state gauges are gated by activityData: some
+		// control planes (Headscale) report neither field at all, so emitting
+		// them unconditionally would report a fabricated 0/not-connected as if
+		// it were real data (issue #64).
+		if c.activityData {
+			e.Gauge(docUserDevices.Name, docUserDevices.Unit, docUserDevices.Description,
+				float64(u.DeviceCount), idAttrs)
 
-		connected := 0.0
-		if u.CurrentlyConnected {
-			connected = 1.0
+			connected := 0.0
+			if u.CurrentlyConnected {
+				connected = 1.0
+			}
+			e.Gauge(docUserConnected.Name, docUserConnected.Unit, docUserConnected.Description,
+				connected, idAttrs)
 		}
-		e.Gauge(docUserConnected.Name, docUserConnected.Unit, docUserConnected.Description,
-			connected, idAttrs)
 
 		if !u.LastSeen.IsZero() {
 			e.Gauge(docUserLastSeen.Name, docUserLastSeen.Unit, docUserLastSeen.Description,
