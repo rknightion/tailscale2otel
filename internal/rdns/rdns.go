@@ -97,6 +97,7 @@ type Cache struct {
 	inflight map[netip.Addr]struct{}
 	stats    stats
 	reported stats // baseline for report()'s delta flush
+	closed   bool  // set under mu by Close; guards wg.Add against Close's wg.Wait
 
 	sem    chan struct{} // bounds concurrent background lookups
 	ctx    context.Context
@@ -189,17 +190,27 @@ func (c *Cache) LookupName(addr netip.Addr) (string, bool) {
 	// Any non-(positive/negative)-cached sighting is a miss; it may or may not
 	// schedule a background resolution depending on the bounds below.
 	c.stats.misses++
-	_, busy := c.inflight[addr]
-	_, cached := c.entries[addr]
-	if !cached && len(c.entries) >= c.max {
-		// A brand-new address can't be admitted without exceeding the size bound,
-		// so it goes un-enriched: surface it so the cache can be sized up.
-		c.stats.overflows++
+	if c.closed {
+		// Close has begun (or finished): never reserve a slot or call wg.Add
+		// once Close may be inside (or about to enter) wg.Wait, or a
+		// concurrent Add could race the WaitGroup's zero-counter transition.
 		c.mu.Unlock()
 		return "", false
 	}
-	// Skip when a lookup for this address is already in flight.
-	if busy {
+	// Skip when a lookup for this address is already in flight: it's neither a
+	// new admission decision nor an overflow, just a duplicate sighting.
+	if _, busy := c.inflight[addr]; busy {
+		c.mu.Unlock()
+		return "", false
+	}
+	_, cached := c.entries[addr]
+	if !cached && len(c.entries)+len(c.inflight) >= c.max {
+		// A brand-new address can't be admitted without exceeding the size
+		// bound. Counting reserved (in-flight) slots alongside committed
+		// entries closes the window where a burst of concurrent new
+		// addresses could each pass a stale admission check before any of
+		// their resolves land, overrunning max_entries.
+		c.stats.overflows++
 		c.mu.Unlock()
 		return "", false
 	}
@@ -211,9 +222,14 @@ func (c *Cache) LookupName(addr netip.Addr) (string, bool) {
 		return "", false
 	}
 	c.inflight[addr] = struct{}{}
+	// wg.Add happens while still holding mu, and Close sets closed=true while
+	// holding mu before it ever calls wg.Wait — so every Add here is ordered
+	// (via mu) to happen-before any concurrent Close's wg.Wait call, per
+	// sync.WaitGroup's "Add must happen before Wait" contract. Once closed is
+	// observed true (above), no further Add can occur.
+	c.wg.Add(1)
 	c.mu.Unlock()
 
-	c.wg.Add(1)
 	go c.resolve(addr)
 	return "", false
 }
@@ -324,8 +340,15 @@ func (c *Cache) report() {
 	c.emitter.Gauge(MetricCapacity, docCapacity.Unit, docCapacity.Description, capacity, nil)
 }
 
-// Close cancels outstanding lookups and waits for the background workers to exit.
+// Close cancels outstanding lookups and waits for the background workers to
+// exit. It first marks the cache closed (under mu) so that any LookupName
+// call it happens-before via mu will observe closed and skip wg.Add, and any
+// LookupName call that already completed its own wg.Add happens-before this
+// call via the same mutex — so wg.Wait below never races a concurrent Add.
 func (c *Cache) Close() {
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
 	c.cancel()
 	c.wg.Wait()
 }
