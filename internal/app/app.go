@@ -168,7 +168,15 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		cp := provider.Headscale(hsapi.NewProvider(hsClient))
 		// Headscale has no tailnet fan-out: collect under the process provider's
 		// emitter (no tailscale.tailnet attribute), matching v1 single-Resource output.
-		a.addRuntime("", a.procEmitter, ps.Process().Cardinality(), ps.Process().ExportStats, cp, multi)
+		// Pass nil card/exportStats (not the process provider's) so the per-runtime
+		// self-obs reporters and the status-page snapshot/total do NOT double-count:
+		// the headscale runtime shares the process emitter, so its self-obs
+		// (export.*, series.*) is already covered exactly once by the process-level
+		// reporters — aliasing them here ran a second reporter pair over identical
+		// state, inflating export.* ~2x and corrupting series.active (#54). This
+		// mirrors the newApp test seam and the multi-tailnet design (distinct
+		// providers get their own trackers; a shared provider gets none).
+		a.addRuntime("", a.procEmitter, nil, nil, cp, multi)
 	} else {
 		for i, rt := range resolved {
 			label := labels[i]
