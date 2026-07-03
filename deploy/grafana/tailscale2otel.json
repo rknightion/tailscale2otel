@@ -24610,7 +24610,7 @@
         "spec": {
           "id": 286,
           "title": "Dedup evictions/s",
-          "description": "Sustained evictions mean a dedup set is undersized.",
+          "description": "Steady-state evictions are normal: dedup keys are effectively unique, so a full set evicts one key per insert forever even when healthy. Only evictions approaching a set's capacity within one poll interval indicate real overlap loss (boundary double-counting).",
           "links": [],
           "data": {
             "kind": "QueryGroup",

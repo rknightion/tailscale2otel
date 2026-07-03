@@ -855,7 +855,7 @@ groups:
           skipinvestigation: "true"
         annotations:
           summary: "Cross-source dedup set {{ $labels.dedup_set }} is evicting"
-          description: "Sustained evictions from dedup set {{ $labels.dedup_set }} — it is undersized, so the cross-source de-duplication failsafe may be letting duplicates through (double counting). Increase the dedup set size or fix the poll-vs-stream overlap."
+          description: "Cross-source dedup set {{ $labels.dedup_set }} is evicting keys. NOTE: steady-state evictions are normal — dedup keys are effectively unique, so a full fixed-size set evicts one key per insert forever even in a healthy deployment. This rule ships PAUSED precisely because a raw evictions rate > 0 is not actionable on its own. The real overflow signal is evictions approaching the set's capacity within a single poll interval (overlap keys aged out before the next poll dedups against them → boundary double-counting); only enable this with a threshold tuned to your poll interval and set size."
         isPaused: true
       - uid: "ts2o-enrich-cache-stale"
         title: "Enrichment cache stale"

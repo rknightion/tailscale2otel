@@ -1891,7 +1891,7 @@ def tab_cardinality():
         (panel("Dedup evictions/s", "timeseries",
                [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[%s]))" % RI, legend="{{dedup_set}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Sustained evictions mean a dedup set is undersized."), 12, 6),
+               desc="Steady-state evictions are normal: dedup keys are effectively unique, so a full set evicts one key per insert forever even when healthy. Only evictions approaching a set's capacity within one poll interval indicate real overlap loss (boundary double-counting)."), 12, 6),
     ]
 
     # C5: additional headroom panels added to the overflow row (Task 1.8 Step 1)

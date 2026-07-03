@@ -325,7 +325,7 @@ var (
 		Name:        MetricDedupEvictions,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Counter,
-		Description: "Keys evicted from a de-duplication set because it was at capacity, by set (sustained growth means the set is undersized).",
+		Description: "Keys evicted from a de-duplication set because it was at capacity, by set. Steady-state evictions are NORMAL and not a problem: flow dedup keys embed each batch's window timestamps, so keys are effectively unique, and once the fixed-size set first fills it evicts exactly one key per insert forever — even in a perfectly healthy deployment. The real overflow signal is evictions approaching the set's capacity *within a single poll interval* (overlap keys aged out before the next poll can dedup against them, i.e. genuine boundary double-counting), NOT sustained nonzero evictions.",
 		Attributes:  []string{semconv.AttrDedupSet},
 		Group:       GroupSelfObs,
 	}

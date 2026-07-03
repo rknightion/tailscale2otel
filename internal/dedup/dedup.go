@@ -71,8 +71,14 @@ func (s *Set) Cap() int {
 }
 
 // Evictions reports the cumulative number of keys evicted because the set was at
-// capacity. A high or fast-growing value means the set is undersized for the
-// overlap window and may be dropping keys it should still remember.
+// capacity. Steady-state evictions are NORMAL: dedup keys are effectively unique
+// (flow keys embed each batch's window timestamps), so once the fixed-size set
+// first fills it evicts exactly one key per insert forever, even when everything
+// is healthy — a monotonically rising counter here is expected, not a fault. The
+// real failure mode is keys evicted younger than the poll-overlap horizon, i.e.
+// evictions approaching the set's capacity within a single poll interval; that
+// (not sustained nonzero evictions) is what signals genuine boundary
+// double-counting.
 func (s *Set) Evictions() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()

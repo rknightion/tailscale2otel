@@ -277,9 +277,13 @@ def groups():
               "sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[15m]))",
               "gt", 0, "15m", "warning",
               "Cross-source dedup set {{ $labels.dedup_set }} is evicting",
-              "Sustained evictions from dedup set {{ $labels.dedup_set }} — it is undersized, so the "
-              "cross-source de-duplication failsafe may be letting duplicates through (double counting). "
-              "Increase the dedup set size or fix the poll-vs-stream overlap.",
+              "Cross-source dedup set {{ $labels.dedup_set }} is evicting keys. NOTE: steady-state "
+              "evictions are normal — dedup keys are effectively unique, so a full fixed-size set evicts "
+              "one key per insert forever even in a healthy deployment. This rule ships PAUSED precisely "
+              "because a raw evictions rate > 0 is not actionable on its own. The real overflow signal is "
+              "evictions approaching the set's capacity within a single poll interval (overlap keys aged "
+              "out before the next poll dedups against them → boundary double-counting); only enable this "
+              "with a threshold tuned to your poll interval and set size.",
               domain="observability", paused=True),
         alert("ts2o-enrich-cache-stale", "Enrichment cache stale",
               "max(tailscale2otel_enrich_cache_age_seconds)", "gt", 3600, "15m", "warning",
