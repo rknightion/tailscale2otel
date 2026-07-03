@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
@@ -48,6 +49,14 @@ const (
 	defaultDiscoveryInterval = 5 * time.Minute
 	defaultMaxResponseBytes  = 4 * 1024 * 1024
 	defaultMaxSamples        = 50000
+
+	// defaultConcurrency bounds how many targets are scraped in parallel per
+	// tick when Options.Concurrency is unset. It is combined with the per-tick
+	// deadline (see Collect) so that neither a large target count nor a batch
+	// of slow/unreachable targets can make a single Collect call run
+	// unboundedly: targets fan out in bounded waves, and the whole tick is
+	// additionally capped at the collector's own interval (#80).
+	defaultConcurrency = 10
 
 	// metricUp is the per-target scrape health gauge.
 	metricUp = "tailscale.node.up"
@@ -152,6 +161,13 @@ type Options struct {
 	MaxResponseBytes  int64
 	MaxSamples        int
 
+	// Concurrency bounds how many targets are scraped in parallel per tick
+	// through a worker pool (never one goroutine per target). <= 0 defaults to
+	// defaultConcurrency. Together with the per-tick deadline Collect derives
+	// from Interval, this bounds a tick's total wall-clock duration
+	// regardless of how many targets are slow or unreachable (#80).
+	Concurrency int
+
 	// Passthrough filters applied to forwarded samples only (never to
 	// tailscale.node.up or the discovery.* gauges). MetricAllow/MetricDeny are
 	// anchored against the metric NAME; DropLabels strips label keys (the
@@ -180,6 +196,7 @@ type Collector struct {
 	timeout           time.Duration // resolved scrape timeout, for building discovered clients
 	maxResponseBytes  int64
 	maxSamples        int
+	concurrency       int // resolved worker-pool size for scrapeAll (#80)
 
 	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
 	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
@@ -229,6 +246,10 @@ func New(opts Options) *Collector {
 	if maxSamples <= 0 {
 		maxSamples = defaultMaxSamples
 	}
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = defaultConcurrency
+	}
 	static := resolveTargets(opts.Targets, timeout)
 	return &Collector{
 		static:            static,
@@ -240,6 +261,7 @@ func New(opts Options) *Collector {
 		timeout:           timeout,
 		maxResponseBytes:  maxResponseBytes,
 		maxSamples:        maxSamples,
+		concurrency:       concurrency,
 		metricAllow:       compileAnchored(opts.MetricAllow),
 		metricDeny:        compileAnchored(opts.MetricDeny),
 		dropLabels:        toSet(opts.DropLabels),
@@ -389,17 +411,53 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if len(targets) == 0 {
 		return nil
 	}
-	var failures int
-	for i := range targets {
-		if err := c.scrapeTarget(ctx, &targets[i].target, c.clientOf(&targets[i]), e); err != nil {
-			failures++
-		}
-	}
+
+	// Bound the whole tick to at most the collector's own interval: a
+	// context.WithTimeout wraps every target scrape below, so a batch of
+	// slow/unreachable targets can never push a single Collect call past its
+	// next scheduled tick. Without this, the scheduler's single-slot
+	// time.Ticker would drop/collapse the next tick(s) rather than queue them,
+	// degrading the collector's actual cadence as the slow/unreachable
+	// population grows (#80). Targets still in flight when the deadline fires
+	// are aborted (their in-flight HTTP request is canceled) and still emit
+	// tailscale.node.up=0, same as any other scrape failure.
+	tickCtx, cancel := context.WithTimeout(ctx, c.DefaultInterval())
+	defer cancel()
+
+	successes := c.scrapeAll(tickCtx, targets, e)
+	failures := len(targets) - successes
 	c.pruneStale(gen)
 	if failures == len(targets) {
 		return fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
 	}
 	return nil
+}
+
+// scrapeAll scrapes every target through a bounded worker pool (at most
+// c.concurrency scrapes in flight at once) and returns the number that
+// succeeded. Every target is still attempted exactly once and always emits
+// its tailscale.node.up gauge via scrapeTarget — even one whose scrape starts
+// after ctx has already expired, since that fails (and reports up=0) almost
+// immediately rather than blocking. Combined with the caller's per-tick
+// context.WithTimeout, this bounds a tick's total duration to roughly the
+// configured interval regardless of target count or health (#80).
+func (c *Collector) scrapeAll(ctx context.Context, targets []resolvedTarget, e telemetry.Emitter) int {
+	sem := make(chan struct{}, c.concurrency)
+	var wg sync.WaitGroup
+	var successes atomic.Int64
+	for i := range targets {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(rt *resolvedTarget) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := c.scrapeTarget(ctx, &rt.target, c.clientOf(rt), e); err == nil {
+				successes.Add(1)
+			}
+		}(&targets[i])
+	}
+	wg.Wait()
+	return int(successes.Load())
 }
 
 // maybeDiscover runs the Discoverer when due (every discoveryInterval since the

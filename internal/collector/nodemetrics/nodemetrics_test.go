@@ -507,6 +507,118 @@ func TestAllTargetsFail_ReturnsError(t *testing.T) {
 	}
 }
 
+// slowServer returns an httptest.Server whose handler sleeps for delay before
+// responding with a minimal valid Prometheus body. Used to simulate
+// slow/unreachable targets for the per-tick bounding tests below (#80).
+func slowServer(delay time.Duration) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(delay)
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+}
+
+// TestCollect_BoundsPerTickDuration is the #80 regression test: a batch of
+// targets slower than the collector's own interval must not make a single
+// Collect call run past that interval. Before the fix, Collect scraped
+// targets strictly in series with no overall deadline, so nTargets slow
+// targets pushed a tick's duration toward nTargets*delay, unboundedly
+// overrunning the interval budget as the slow/unreachable population grows.
+func TestCollect_BoundsPerTickDuration(t *testing.T) {
+	const (
+		interval = 150 * time.Millisecond
+		delay    = 500 * time.Millisecond
+		nTargets = 3
+	)
+	targets := make([]nodemetrics.Target, nTargets)
+	for i := range nTargets {
+		srv := slowServer(delay)
+		t.Cleanup(srv.Close)
+		targets[i] = nodemetrics.Target{URL: srv.URL, Instance: fmt.Sprintf("slow%d", i)}
+	}
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:  targets,
+		Interval: interval,
+		Timeout:  2 * time.Second, // per-target timeout must NOT be what bounds this tick
+	})
+	rec := telemetrytest.New()
+
+	start := time.Now()
+	_ = c.Collect(context.Background(), rec.Emitter())
+	elapsed := time.Since(start)
+
+	// A strictly-serial, unbounded scrape would take ~nTargets*delay (1.5s).
+	// Assert the tick instead completed close to the configured interval
+	// (generous slack for scheduler/CI jitter, but far below the unbounded
+	// figure), proving a per-tick deadline is enforced.
+	if maxAllowed := interval + 350*time.Millisecond; elapsed > maxAllowed {
+		t.Fatalf("Collect() took %v, want <= %v (interval %v bound)", elapsed, maxAllowed, interval)
+	}
+
+	// Every target must still get its tailscale.node.up point (0, since none
+	// completed within the deadline) even though the scrape was aborted.
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != nTargets {
+		t.Fatalf("up points = %d, want %d (every target still reports health)", len(up), nTargets)
+	}
+	for _, p := range up {
+		if p.Value != 0 {
+			t.Fatalf("up value = %v for %+v, want 0 (aborted by the tick deadline)", p.Value, p.Attrs)
+		}
+	}
+}
+
+// TestCollect_ScrapesTargetsConcurrently verifies targets are scraped through
+// a bounded worker pool rather than one at a time: forcing Concurrency to 1
+// (strictly serial) must take meaningfully longer than the same target set
+// scraped at full concurrency, even though every target succeeds in both
+// cases. A generous interval/timeout keeps the per-tick deadline out of play
+// here, isolating the worker-pool behavior from TestCollect_BoundsPerTickDuration.
+func TestCollect_ScrapesTargetsConcurrently(t *testing.T) {
+	const (
+		nTargets = 4
+		delay    = 150 * time.Millisecond
+	)
+	newTargets := func() []nodemetrics.Target {
+		targets := make([]nodemetrics.Target, nTargets)
+		for i := range nTargets {
+			srv := slowServer(delay)
+			t.Cleanup(srv.Close)
+			targets[i] = nodemetrics.Target{URL: srv.URL, Instance: fmt.Sprintf("t%d", i)}
+		}
+		return targets
+	}
+
+	run := func(concurrency int) time.Duration {
+		c := nodemetrics.New(nodemetrics.Options{
+			Targets:     newTargets(),
+			Interval:    10 * time.Second, // generous: the deadline must not bind here
+			Timeout:     5 * time.Second,
+			Concurrency: concurrency,
+		})
+		rec := telemetrytest.New()
+		start := time.Now()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect() error = %v, want nil (all targets healthy)", err)
+		}
+		return time.Since(start)
+	}
+
+	serial := run(1)
+	parallel := run(nTargets)
+
+	if parallel >= serial {
+		t.Fatalf("parallel scrape (%v) not faster than serial scrape (%v); targets are not scraped concurrently", parallel, serial)
+	}
+	// Serial (concurrency=1) should take roughly nTargets sequential round
+	// trips; assert a comfortable margin rather than a tight bound to avoid
+	// flakiness.
+	if want := time.Duration(nTargets) * delay / 2; serial < want {
+		t.Fatalf("serial scrape (concurrency=1) took %v, want >= %v (~%d sequential round trips)", serial, want, nTargets)
+	}
+}
+
 func TestUntypedAndUnknownAsGauge(t *testing.T) {
 	// No TYPE line for "u" => unknown => gauge. "v" explicitly untyped => gauge.
 	body := "u 42\n# TYPE v untyped\nv 3.14\n"
