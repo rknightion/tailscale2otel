@@ -1,5 +1,7 @@
 # tailscale2otel
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/rknightion/tailscale2otel/badge)](https://scorecard.dev/viewer/?uri=github.com/rknightion/tailscale2otel)
+
 Poll the [Tailscale API](https://tailscale.com/api) for every available kind of observability
 data and export it as **OpenTelemetry-native metrics and logs** (plus an optional **traces** pillar
 for the exporter's own self-observability) — optimized for Grafana Cloud (OTLP) but compatible with
