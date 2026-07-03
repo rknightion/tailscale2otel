@@ -449,6 +449,13 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)
 		go runExportReporter(ctx, a.procEmitter, a.procExportStats, interval)
+		// Emit enrich.cache_age at export time (grows while stale) so the staleness
+		// alert can fire (#108). Only when the devices collector — the sole cache
+		// refresher — is enabled; otherwise the cache never refreshes and the age is
+		// not a meaningful signal (matches the old emit-only-when-devices-ran behavior).
+		if a.cfg.Collectors.Devices.Enabled {
+			go runEnrichCacheAgeReporter(ctx, a.runtimes, interval)
+		}
 		if a.checkpointEffective == "file" {
 			go collector.RunCheckpointReporter(ctx, a.procEmitter, a.cfg.Checkpoint.FilePath, interval)
 		}

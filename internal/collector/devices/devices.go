@@ -459,8 +459,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	c.cache.Replace(toMetas(devs))
-	e.Gauge(docCacheAge.Name, docCacheAge.Unit, docCacheAge.Description,
-		c.cache.Age().Seconds(), nil)
+	// cache_age is NOT emitted here: right after Replace it is always ~0, so a
+	// last-value gauge could never grow to reveal a stalled devices collector. It is
+	// emitted at export time by the app-level enrich-cache-age reporter instead (#108).
 	e.Gauge(docCacheSize.Name, docCacheSize.Unit, docCacheSize.Description,
 		float64(c.cache.Len()), nil)
 

@@ -176,11 +176,14 @@ var (
 		Group:       groupDevices,
 	}
 
-	docCacheAge = metricdoc.Metric{
+	// DocCacheAge is exported because it is now emitted by a periodic app-level
+	// reporter (computed at export time so it grows while the cache is stale — #108),
+	// not synchronously by the devices collector at refresh (when age is always ~0).
+	DocCacheAge = metricdoc.Metric{
 		Name:        metricCacheAge,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Age of the device-enrichment cache (since last refresh).",
+		Description: "Age of the device-enrichment cache (time since its last successful refresh). Emitted at export time so it grows while stale; alert on it to detect a devices collector that has stopped refreshing.",
 		Group:       groupSelfObs,
 	}
 	docCacheSize = metricdoc.Metric{
@@ -419,7 +422,7 @@ func Catalog() []metricdoc.Metric {
 		docDevicesHardNAT, docDevicesDirectCapable, docDevicesClientSupports,
 		docExitNodesCount, docSubnetRoutesAdv, docSubnetRoutesEnabled, docSubnetRoutesUnapproved,
 		docSubnetRoutesRouters, docDeviceExitNode,
-		docCacheAge, docCacheSize,
+		DocCacheAge, docCacheSize,
 	}
 }
 

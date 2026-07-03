@@ -1229,15 +1229,11 @@ func TestCollect_CacheSelfObs(t *testing.T) {
 		t.Fatalf("Collect() error = %v", err)
 	}
 
-	age := rec.MetricPoints("tailscale2otel.enrich.cache_age")
-	if len(age) != 1 {
-		t.Fatalf("cache_age points = %d, want 1", len(age))
-	}
-	if age[0].Unit != semconv.UnitSeconds {
-		t.Fatalf("cache_age unit = %q, want s", age[0].Unit)
-	}
-	if age[0].Kind != "gauge" {
-		t.Fatalf("cache_age kind = %q, want gauge", age[0].Kind)
+	// cache_age is NO LONGER emitted by the devices collector (it was always ~0
+	// right after refresh); the app-level reporter emits it at export time so it
+	// grows while stale (#108). The collector still emits cache_size.
+	if age := rec.MetricPoints("tailscale2otel.enrich.cache_age"); len(age) != 0 {
+		t.Fatalf("devices collector should no longer emit cache_age (moved to app reporter); got %d points", len(age))
 	}
 
 	size := rec.MetricPoints("tailscale2otel.enrich.cache_size")
