@@ -42,6 +42,38 @@ func TestLookupName_AsyncPopulation(t *testing.T) {
 	})
 }
 
+// TestLookupName_MultiPTRDeterministic verifies that an IP with multiple PTR
+// records always resolves to the SAME name regardless of the order the resolver
+// returns them in (many resolvers rotate multi-PTR RRsets). Without a
+// deterministic pick, the name — which feeds the tailscale.src/dst.node
+// flow-metric labels — would flip across cache refreshes and split the series
+// (#119). The pick is the lexicographic minimum of the returned names.
+func TestLookupName_MultiPTRDeterministic(t *testing.T) {
+	orders := [][]string{
+		{"mx1.example.net.", "mail.example.net."},
+		{"mail.example.net.", "mx1.example.net."}, // resolver rotated the RRset
+	}
+	for i, order := range orders {
+		synctest.Test(t, func(t *testing.T) {
+			names := order
+			c := New(Options{
+				Lookup: func(ctx context.Context, a netip.Addr) ([]string, error) {
+					return names, nil
+				},
+			})
+			defer c.Close()
+
+			c.LookupName(addr("203.0.113.20")) // miss -> async lookup
+			synctest.Wait()
+
+			name, ok := c.LookupName(addr("203.0.113.20"))
+			if !ok || name != "mail.example.net" {
+				t.Fatalf("order %d: LookupName = (%q,%v), want (mail.example.net,true) — the lexicographic-min PTR", i, name, ok)
+			}
+		})
+	}
+}
+
 func TestLookupName_NegativeCache(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var calls atomic.Int32

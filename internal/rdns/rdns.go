@@ -244,16 +244,39 @@ func (c *Cache) resolve(addr netip.Addr) {
 	defer cancel()
 	names, err := c.lookup(ctx, addr)
 
+	name := pickPTRName(names)
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.inflight, addr)
-	if err != nil || len(names) == 0 || names[0] == "" {
+	if err != nil || name == "" {
 		c.stats.queryFail++
 		c.entries[addr] = entry{expires: c.now().Add(c.negTTL)}
 		return
 	}
 	c.stats.querySuccess++
-	c.entries[addr] = entry{name: strings.TrimSuffix(names[0], "."), expires: c.now().Add(c.ttl)}
+	c.entries[addr] = entry{name: name, expires: c.now().Add(c.ttl)}
+}
+
+// pickPTRName returns a deterministic PTR name for an address: the lexicographic
+// minimum of the (trailing-dot-trimmed, non-empty) names the resolver returned.
+// LookupAddr's slice order is resolver-dependent — many resolvers rotate
+// multi-PTR RRsets — so storing names[0] would let a multi-PTR IP's
+// tailscale.src/dst.node flow-metric label flip between values across cache
+// refreshes, splitting the series and breaking increase() continuity (#119).
+// Returns "" when there is no usable name (caller then caches a negative).
+func pickPTRName(names []string) string {
+	var best string
+	for _, n := range names {
+		n = strings.TrimSuffix(n, ".")
+		if n == "" {
+			continue
+		}
+		if best == "" || n < best {
+			best = n
+		}
+	}
+	return best
 }
 
 // sweep deletes entries whose TTL has elapsed, reclaiming their slots, and
