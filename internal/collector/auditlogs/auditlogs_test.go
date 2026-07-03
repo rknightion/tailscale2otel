@@ -157,6 +157,53 @@ func TestCollectWindow_BoundaryEventDedupedAcrossWindows(t *testing.T) {
 	}
 }
 
+func TestCollectWindow_DistinctGroupedEventsSameTimeNotCollapsed(t *testing.T) {
+	// Two distinct sub-changes sharing an eventGroupID AND an identical eventTime
+	// must not be collapsed: the grouped dedup key must incorporate action/target
+	// too (#97), not just groupID|time.
+	t0 := from.Add(30 * time.Second)
+	a := audit.Event{
+		EventTime:    t0,
+		EventGroupID: "grp-1",
+		Type:         "CONFIG",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:       audit.Target{ID: "n1", Name: "node-a.ts.net", Type: "NODE"},
+		Action:       "CREATE",
+	}
+	b := audit.Event{
+		EventTime:    t0,
+		EventGroupID: "grp-1",
+		Type:         "CONFIG",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:       audit.Target{ID: "n2", Name: "node-b.ts.net", Type: "NODE"},
+		Action:       "DELETE",
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{
+		Version: "v1",
+		Tailnet: "example.com",
+		Logs:    []audit.Event{a, b},
+	}}
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+
+	var total float64
+	for _, p := range rec.MetricPoints(audit.MetricAuditEvents) {
+		total += p.Value
+	}
+	if total != 2 {
+		t.Fatalf("%s total = %v, want 2 (distinct grouped events not collapsed)", audit.MetricAuditEvents, total)
+	}
+	if logs := rec.LogRecords(); len(logs) != 2 {
+		t.Fatalf("LogRecords = %d, want 2 (distinct grouped events not collapsed)", len(logs))
+	}
+}
+
 func TestCollectWindow_DistinctEmptyGroupIDNotCollapsed(t *testing.T) {
 	// Two distinct events that share an event time but have no eventGroupID must
 	// not be collapsed into one: the dedup key must incorporate action/target.

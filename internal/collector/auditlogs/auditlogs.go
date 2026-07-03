@@ -115,15 +115,17 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 	return to, nil
 }
 
-// eventKey derives a stable de-dup key for a single audit event. When the event
-// carries an eventGroupID it identifies a logical change, so the key is
-// "<eventGroupID>|<eventTime>". When the eventGroupID is empty the key instead
-// combines the event time with the action and target ID, so distinct events
-// sharing a timestamp are not collapsed into one.
+// eventKey derives a stable de-dup key for a single audit event, used to suppress
+// the inclusive-window boundary repeat. Both branches include action/target so
+// two DISTINCT sub-changes that share an eventGroupID AND an identical eventTime
+// (a real API shape) are not collapsed into one — the grouped branch previously
+// keyed on "<eventGroupID>|<eventTime>" only and dropped the second (#97). This
+// stays boundary-safe: a true boundary repeat has identical everything. It mirrors
+// audit.DedupKey's cross-source key shape (action|target.id|target.property).
 func eventKey(ev audit.Event) string {
 	t := ev.EventTime.UTC().Format(time.RFC3339Nano)
 	if ev.EventGroupID != "" {
-		return ev.EventGroupID + "|" + t
+		return ev.EventGroupID + "|" + t + "|" + ev.Action + "|" + ev.Target.ID + "|" + ev.Target.Property
 	}
 	return t + "|" + ev.Action + "|" + ev.Target.ID
 }
