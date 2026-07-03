@@ -127,7 +127,10 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 > `tools/apidrift`): the PR-time **decode-fuzz** and `oas` classifier tests run inside `go test -race ./...`
 > and **do** gate PRs. The three *scheduled* lanes (`api-drift.yml`, `clientlib-main.yml`,
 > `live-contract.yml`) are advisory — on detection they open a deduped tracking issue + fail the
-> scheduled run, but never block PRs. The live lane auths keylessly via GitHub OIDC (no stored token).
+> scheduled run, but never block PRs. The live lane does NOT use GitHub OIDC — it mints a short-lived
+> Tailscale API token via OAuth client-credentials, using a read-only (`all:read`) OAuth client whose
+> credentials live in the environment of a dedicated self-hosted runner (label `tailscale-api`), not
+> in GitHub secrets (see `.github/workflows/live-contract.yml`).
 
 ## Config & secrets
 

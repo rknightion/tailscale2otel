@@ -17,7 +17,7 @@ var (
 		Name:        metricConfigured,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "`1` if a log stream is configured for this log type, else `0`.",
+		Description: "`1` if a log stream is configured for this log type, else `0` (a **flag**, despite `_ratio`).",
 		Attributes:  typeAttr,
 		Group:       groupLogStreaming,
 	}
@@ -81,7 +81,7 @@ var (
 		Name:        metricError,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "`1` if the last delivery reported an error, else `0`. The error text is on the `tailscale.logstream.error` LOG event, never a label.",
+		Description: "`1` if the last delivery reported an error, else `0` (a **flag**, despite `_ratio`). The error text is on the `tailscale.logstream.error` LOG event, never a label.",
 		Attributes:  typeAttr,
 		Group:       groupLogStreaming,
 	}

@@ -55,7 +55,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID` | `""` | Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN` | `""` | Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN) |
-| `TS2OTEL_OTLP__TLS__INSECURE` | `false` | skip TLS certificate verification (debugging only — do not use in production) |
+| `TS2OTEL_OTLP__TLS__INSECURE` | `false` | disable TLS entirely (plaintext h2c/http) — NOT a cert-verify skip; do not use in production |
+| `TS2OTEL_OTLP__TLS__INSECURE_SKIP_VERIFY` | `false` | keep TLS but skip server-cert verification (self-signed/private-CA gateways, testing only — prefer ca_file) |
 | `TS2OTEL_OTLP__TLS__CA_FILE` | `""` | path to a custom CA bundle to trust |
 | `TS2OTEL_OTLP__TLS__CERT_FILE` | `""` | client certificate path (for mutual TLS) |
 | `TS2OTEL_OTLP__TLS__KEY_FILE` | `""` | client private key path (for mutual TLS) |

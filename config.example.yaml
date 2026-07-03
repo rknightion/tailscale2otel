@@ -92,7 +92,8 @@ otlp:
     token: ""                         # Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN)
   headers: {}                         # extra raw OTLP headers, e.g. {X-Scope-OrgID: "1"} (alternative to grafana_cloud); FILE-ONLY (maps aren't settable via env)
   tls:
-    insecure: false                   # skip TLS certificate verification (debugging only — do not use in production)
+    insecure: false                   # disable TLS entirely (plaintext h2c/http) — NOT a cert-verify skip; do not use in production
+    insecure_skip_verify: false       # keep TLS but skip server-cert verification (self-signed/private-CA gateways, testing only — prefer ca_file)
     ca_file: ""                       # path to a custom CA bundle to trust
     cert_file: ""                     # client certificate path (for mutual TLS)
     key_file: ""                      # client private key path (for mutual TLS)

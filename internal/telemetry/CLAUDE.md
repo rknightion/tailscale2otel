@@ -13,6 +13,8 @@ touch the OTEL SDK directly — they emit through a small interface and declare 
 Counter(name, unit, desc string, add float64, attrs Attrs)        // monotonic counter
 Gauge(name, unit, desc string, value float64, attrs Attrs)        // synchronous gauge
 UpDownCounter(name, unit, desc string, value float64, attrs Attrs)
+Histogram(name, unit, desc string, value float64, bounds []float64, attrs Attrs)
+HistogramCtx(ctx context.Context, name, unit, desc string, value float64, bounds []float64, attrs Attrs) // like Histogram, but ctx lets the SDK attach a trace exemplar
 LogEvent(ev Event)                                                // one OTEL log record
 ```
 

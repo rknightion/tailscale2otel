@@ -278,7 +278,7 @@ var (
 	docDeviceInviteLog = metricdoc.LogEvent{
 		Name:        eventDeviceInvite,
 		Severity:    "INFO",
-		Description: "Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's nodeId.",
+		Description: "Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's device id, consistent with every other device signal (not its nodeId).",
 		Attributes:  []string{semconv.HostName, semconv.HostID, semconv.AttrUser, attrActorLogin},
 		Group:       groupDevices,
 	}

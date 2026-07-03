@@ -13,17 +13,17 @@ import (
 // in .capture/probe_dns_configuration.json).
 const dnsConfigFixtureFull = `{
   "nameservers":[
-    {"address":"10.0.0.254"},
+    {"address":"192.0.2.254"},
     {"address":"1.1.1.1","useWithExitNode":true}
   ],
   "splitDNS":{
     "corp.example.com":[
-      {"address":"10.0.0.53","useWithExitNode":true},
-      {"address":"10.0.1.53"}
+      {"address":"192.0.2.53","useWithExitNode":true},
+      {"address":"192.0.2.153"}
     ],
     "other.internal":null
   },
-  "searchPaths":["rob-knight.net"],
+  "searchPaths":["example.com"],
   "preferences":{"overrideLocalDNS":true,"magicDNS":true}
 }`
 
@@ -54,14 +54,14 @@ func TestDNSConfiguration_DecodesUnifiedConfig(t *testing.T) {
 	if len(cfg.Nameservers) != 2 {
 		t.Fatalf("len(Nameservers) = %d, want 2", len(cfg.Nameservers))
 	}
-	if cfg.Nameservers[0].Address != "10.0.0.254" || cfg.Nameservers[0].UseWithExitNode {
-		t.Errorf("Nameservers[0] = %+v, want {10.0.0.254 false}", cfg.Nameservers[0])
+	if cfg.Nameservers[0].Address != "192.0.2.254" || cfg.Nameservers[0].UseWithExitNode {
+		t.Errorf("Nameservers[0] = %+v, want {192.0.2.254 false}", cfg.Nameservers[0])
 	}
 	if cfg.Nameservers[1].Address != "1.1.1.1" || !cfg.Nameservers[1].UseWithExitNode {
 		t.Errorf("Nameservers[1] = %+v, want {1.1.1.1 true}", cfg.Nameservers[1])
 	}
-	if len(cfg.SearchPaths) != 1 || cfg.SearchPaths[0] != "rob-knight.net" {
-		t.Errorf("SearchPaths = %v, want [rob-knight.net]", cfg.SearchPaths)
+	if len(cfg.SearchPaths) != 1 || cfg.SearchPaths[0] != "example.com" {
+		t.Errorf("SearchPaths = %v, want [example.com]", cfg.SearchPaths)
 	}
 	if len(cfg.SplitDNS) != 2 {
 		t.Fatalf("len(SplitDNS) = %d, want 2 (corp.example.com + other.internal)", len(cfg.SplitDNS))
@@ -70,11 +70,11 @@ func TestDNSConfiguration_DecodesUnifiedConfig(t *testing.T) {
 	if len(corp) != 2 {
 		t.Fatalf("corp resolvers = %d, want 2", len(corp))
 	}
-	if corp[0].Address != "10.0.0.53" || !corp[0].UseWithExitNode {
-		t.Errorf("corp[0] = %+v, want {10.0.0.53 true}", corp[0])
+	if corp[0].Address != "192.0.2.53" || !corp[0].UseWithExitNode {
+		t.Errorf("corp[0] = %+v, want {192.0.2.53 true}", corp[0])
 	}
-	if corp[1].Address != "10.0.1.53" || corp[1].UseWithExitNode {
-		t.Errorf("corp[1] = %+v, want {10.0.1.53 false}", corp[1])
+	if corp[1].Address != "192.0.2.153" || corp[1].UseWithExitNode {
+		t.Errorf("corp[1] = %+v, want {192.0.2.153 false}", corp[1])
 	}
 	// A null resolver list decodes to a present key with zero resolvers.
 	if got, ok := cfg.SplitDNS["other.internal"]; !ok || len(got) != 0 {
@@ -82,10 +82,10 @@ func TestDNSConfiguration_DecodesUnifiedConfig(t *testing.T) {
 	}
 }
 
-// TestDNSConfiguration_MinimalConfig matches the real capture: a single global
+// TestDNSConfiguration_MinimalConfig uses a synthetic config mirroring a typical capture: a single global
 // resolver, no useWithExitNode, no splitDNS key at all.
 func TestDNSConfiguration_MinimalConfig(t *testing.T) {
-	const fixture = `{"nameservers":[{"address":"10.0.0.254"}],"searchPaths":["rob-knight.net"],"preferences":{"overrideLocalDNS":true,"magicDNS":true}}`
+	const fixture = `{"nameservers":[{"address":"192.0.2.254"}],"searchPaths":["example.com"],"preferences":{"overrideLocalDNS":true,"magicDNS":true}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(fixture))
 	}))

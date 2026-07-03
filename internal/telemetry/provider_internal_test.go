@@ -123,6 +123,29 @@ func TestTLSConfigPinsMinVersionTLS12(t *testing.T) {
 	}
 }
 
+// TestTLSConfigInsecureSkipVerify pins #94: the opt-in skip-verify knob builds a
+// tls.Config with InsecureSkipVerify=true even when no CA/cert/key file is set
+// (distinct from Insecure, which disables TLS entirely).
+func TestTLSConfigInsecureSkipVerify(t *testing.T) {
+	cfg, err := tlsConfig(Options{InsecureSkipVerify: true})
+	if err != nil {
+		t.Fatalf("tlsConfig: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("tlsConfig returned nil; want a config with InsecureSkipVerify set")
+	}
+	if !cfg.InsecureSkipVerify {
+		t.Error("cfg.InsecureSkipVerify = false, want true")
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %#x, want TLS1.2", cfg.MinVersion)
+	}
+	// Default (no knob, no files) stays nil → system defaults.
+	if c, _ := tlsConfig(Options{}); c != nil {
+		t.Errorf("tlsConfig with no TLS opts should be nil, got %+v", c)
+	}
+}
+
 // TestCumulativeTemporalitySelectorAlwaysCumulative pins the OTLP metric
 // temporality. Grafana Cloud / Mimir OTLP ingestion accepts CUMULATIVE only
 // (delta is rejected with HTTP 400 and there is no server-side delta->cumulative

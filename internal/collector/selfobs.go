@@ -40,8 +40,12 @@ const (
 	MetricScrapeBudget = "tailscale2otel.scrape.budget"
 	// MetricCheckpointPersistErrors is a monotonic counter incremented when a
 	// window collector's high-water mark fails to persist to the checkpoint
-	// store (e.g. a disk error). The window itself succeeded; only the durable
-	// checkpoint write failed, so the next tick re-polls the same window.
+	// store (e.g. a disk error). The window itself succeeded, and both store
+	// implementations advance their in-memory cursor before attempting the disk
+	// write, so the next tick still polls the *next* window regardless of this
+	// failure — the failed window is only re-polled after a process restart
+	// (when the in-memory advance is lost and the store falls back to its last
+	// successfully persisted value).
 	MetricCheckpointPersistErrors = "tailscale2otel.checkpoint.persist.errors"
 	// MetricCheckpointDiskSize is a gauge of the on-disk size of the checkpoint
 	// file in bytes. It is emitted by RunCheckpointReporter.

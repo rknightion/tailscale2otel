@@ -34,7 +34,7 @@ var (
 		Name:        metricLastChanged,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Unix timestamp the ACL policy last changed (detected by ETag).",
+		Description: "Unix timestamp the ACL policy last changed (detected by ETag). State is in-process only: the Tailscale API exposes no true last-modified field, so the collector tracks the wall-clock time it first observed the current ETag, not a real policy-modification timestamp. On every process restart this resets to the restart time, since the very next Collect() treats the current ETag as newly observed.",
 		Group:       groupACL,
 	}
 	docACLSize = metricdoc.Metric{

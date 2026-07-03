@@ -77,10 +77,14 @@ type Options struct {
 	Endpoint string // full URL for http (incl. /otlp); host:port for grpc
 	Headers  map[string]string
 
-	Insecure bool
-	CAFile   string
-	CertFile string
-	KeyFile  string
+	Insecure bool // plaintext: disable TLS entirely (h2c / http://) — NOT a cert-verify skip
+	// InsecureSkipVerify keeps TLS on but skips server-certificate verification
+	// (self-signed / private-CA gateways for testing). Distinct from Insecure,
+	// which sends everything in plaintext. Default false (#94).
+	InsecureSkipVerify bool
+	CAFile             string
+	CertFile           string
+	KeyFile            string
 
 	MetricInterval time.Duration // PeriodicReader interval (default 60s)
 
@@ -586,10 +590,10 @@ func newLogExporter(ctx context.Context, opts Options) (sdklog.Exporter, error) 
 // tlsConfig builds a *tls.Config from optional CA/cert/key files, or nil when
 // none are configured (use system defaults).
 func tlsConfig(opts Options) (*tls.Config, error) {
-	if opts.CAFile == "" && opts.CertFile == "" && opts.KeyFile == "" {
+	if opts.CAFile == "" && opts.CertFile == "" && opts.KeyFile == "" && !opts.InsecureSkipVerify {
 		return nil, nil
 	}
-	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: opts.InsecureSkipVerify} //nolint:gosec // G402: opt-in skip-verify knob (otlp.tls.insecure_skip_verify), default false
 	if opts.CAFile != "" {
 		pem, err := os.ReadFile(opts.CAFile)
 		if err != nil {

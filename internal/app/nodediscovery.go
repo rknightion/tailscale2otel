@@ -223,7 +223,7 @@ func (d *nodeDiscoverer) toTarget(dev *tsapi.RichDevice, addr netip.Addr) nodeme
 }
 
 // magicDNSShort returns the first DNS label of a MagicDNS name, e.g.
-// "jules.saga-turtle.ts.net" -> "jules" — the friendly short identity, which is
+// "laptop.example.ts.net" -> "laptop" — the friendly short identity, which is
 // still unique within a tailnet (Tailscale dedupes device names). It returns the
 // input unchanged when there is no dot (already short, or empty).
 func magicDNSShort(name string) string {

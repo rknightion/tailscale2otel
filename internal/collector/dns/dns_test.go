@@ -69,15 +69,15 @@ func resolverPoint(t *testing.T, rec *telemetrytest.Recorder, address, domain st
 func TestCollectEmitsCountsFlagsAndResolvers(t *testing.T) {
 	api := &fakeAPI{cfg: &tsapi.DNSConfig{
 		Nameservers: []tsapi.DNSResolver{
-			{Address: "10.0.0.254"},
+			{Address: "192.0.2.254"},
 			{Address: "1.1.1.1", UseWithExitNode: true},
 		},
 		SplitDNS: map[string][]tsapi.DNSResolver{
 			"corp.example.com": {
-				{Address: "10.0.0.53", UseWithExitNode: true},
-				{Address: "10.0.1.53"},
+				{Address: "192.0.2.53", UseWithExitNode: true},
+				{Address: "192.0.2.153"},
 			},
-			"dev.example.com": {{Address: "10.0.2.53"}},
+			"dev.example.com": {{Address: "192.0.2.253"}},
 		},
 		SearchPaths:      []string{"example.com", "corp.example.com"},
 		OverrideLocalDNS: true,
@@ -104,7 +104,7 @@ func TestCollectEmitsCountsFlagsAndResolvers(t *testing.T) {
 	if got := gaugeValue(t, rec, "tailscale.dns.override_local"); got != 1 {
 		t.Errorf("override_local = %v, want 1", got)
 	}
-	// 2 exit-node-eligible resolvers: 1.1.1.1 (global) + 10.0.0.53 (split).
+	// 2 exit-node-eligible resolvers: 1.1.1.1 (global) + 192.0.2.53 (split).
 	if got := gaugeValue(t, rec, "tailscale.dns.resolvers.use_with_exit_node"); got != 2 {
 		t.Errorf("use_with_exit_node = %v, want 2", got)
 	}
@@ -114,22 +114,22 @@ func TestCollectEmitsCountsFlagsAndResolvers(t *testing.T) {
 		t.Fatalf("resolver points = %d, want 5", got)
 	}
 	// Global resolver with exit-node off.
-	g := resolverPoint(t, rec, "10.0.0.254", "")
+	g := resolverPoint(t, rec, "192.0.2.254", "")
 	if g.Value != 1 || g.Attrs[attrKind] != "global" || g.Attrs[attrUseWithExitNode] != "false" {
-		t.Errorf("10.0.0.254 = %+v, want value 1 kind=global use_with_exit_node=false", g.Attrs)
+		t.Errorf("192.0.2.254 = %+v, want value 1 kind=global use_with_exit_node=false", g.Attrs)
 	}
 	// Split resolver with exit-node on, carries its domain label.
-	s := resolverPoint(t, rec, "10.0.0.53", "corp.example.com")
+	s := resolverPoint(t, rec, "192.0.2.53", "corp.example.com")
 	if s.Value != 1 || s.Attrs[attrKind] != "split" || s.Attrs[attrUseWithExitNode] != "true" {
-		t.Errorf("10.0.0.53 = %+v, want value 1 kind=split use_with_exit_node=true", s.Attrs)
+		t.Errorf("192.0.2.53 = %+v, want value 1 kind=split use_with_exit_node=true", s.Attrs)
 	}
 }
 
 func TestCollectMinimalConfig(t *testing.T) {
 	// Matches the real capture: one global resolver, no exit-node, no splitDNS.
 	api := &fakeAPI{cfg: &tsapi.DNSConfig{
-		Nameservers:      []tsapi.DNSResolver{{Address: "10.0.0.254"}},
-		SearchPaths:      []string{"rob-knight.net"},
+		Nameservers:      []tsapi.DNSResolver{{Address: "192.0.2.254"}},
+		SearchPaths:      []string{"example.com"},
 		OverrideLocalDNS: true,
 		MagicDNS:         true,
 	}}

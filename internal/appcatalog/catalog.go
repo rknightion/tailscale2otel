@@ -393,8 +393,10 @@ var (
 )
 
 // DocSeriesByGroup is the per-group active-series rollup descriptor. A gauge whose
-// unit "{series}" annotation is dropped under Prometheus normalization, leaving
-// tailscale2otel_series_by_group_ratio (a **count**, despite the suffix).
+// unit "{series}" annotation is dropped under Prometheus normalization — annotation
+// units get no suffix, so the resulting name is the unsuffixed
+// tailscale2otel_series_by_group (a plain count; only a unit-"1" gauge would get
+// the "_ratio" suffix).
 var DocSeriesByGroup = metricdoc.Metric{
 	Name:        MetricSeriesByGroup,
 	Unit:        semconv.UnitSeries,

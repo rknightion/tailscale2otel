@@ -318,10 +318,16 @@ type GrafanaCloudConfig struct {
 
 // TLSConfig configures transport security for OTLP.
 type TLSConfig struct {
-	Insecure bool   `yaml:"insecure"`
-	CAFile   string `yaml:"ca_file"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
+	// Insecure disables TLS entirely (plaintext h2c / http://) — NOT a
+	// certificate-verification skip. Use InsecureSkipVerify for that.
+	Insecure bool `yaml:"insecure"`
+	// InsecureSkipVerify keeps TLS on but skips server-certificate verification
+	// (self-signed / private-CA OTLP gateways, for testing). Default false. A
+	// footgun — prefer ca_file with the gateway's CA in production.
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	CAFile             string `yaml:"ca_file"`
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
 }
 
 // EnrichmentConfig configures device-enrichment caching.

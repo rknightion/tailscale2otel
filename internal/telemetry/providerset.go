@@ -14,16 +14,22 @@ import (
 // target_info, so two tailnet providers sharing one service.instance.id would
 // emit colliding series (same job+instance+labels) and ambiguous target_info
 // rows. Making instance unique per tailnet models each tailnet as its own OTLP
-// target; tailscale.tailnet rides along in target_info for human-readable joins.
+// target. tailscale.tailnet itself is NOT one of those Resource attributes —
+// per Roadmap item L it is stamped as a per-signal const attribute on every
+// metric data point/log record/span (see constLabelAttrs in provider.go), not
+// carried in the Resource/target_info; the InstanceID uniqueness requirement
+// above is about whatever other Resource attributes each per-tailnet target
+// carries, not about disambiguating tailnet in target_info.
 type PerTailnetOptions struct {
 	Name       string
 	InstanceID string // distinct service.instance.id for this tailnet (required)
 }
 
 // ProviderSet owns one process-level Provider (no tailscale.tailnet attribute;
-// carries process/global self-obs) plus one Provider per tailnet (each Resource
-// carries tailscale.tailnet=<name>; carries that tailnet's signals + per-tailnet
-// self-obs). All providers export to the same configured backend.
+// carries process/global self-obs) plus one Provider per tailnet (each Provider
+// stamps tailscale.tailnet=<name> as a const attribute on every signal it emits,
+// via constLabelAttrs — NOT a Resource attribute; carries that tailnet's signals
+// + per-tailnet self-obs). All providers export to the same configured backend.
 type ProviderSet struct {
 	process *Provider
 	tailnet map[string]*Provider
