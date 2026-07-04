@@ -35,3 +35,7 @@ site/
 
 # Codex security-scan findings (local review artifacts)
 tailscale2otel-security-findings/
+
+# Local scratch TODO/backlog notes — never committed (the old committed todos.txt
+# was removed in the docs consolidation; keep any future scratch list local). #122
+todos.txt
