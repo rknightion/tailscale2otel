@@ -208,6 +208,17 @@ type Collector struct {
 	lastDiscOK  bool                 // outcome of the last discovery attempt (guarded by mu)
 	prev        map[string]prevEntry // series key -> last cumulative value + generation
 	gen         uint64               // scrape generation, bumped once per Collect
+
+	// gsb accumulates the per-target tailscale.node.up gauge and flushes it as an
+	// observable-gauge snapshot each Collect, so a target dropped from the active
+	// set (removed from discovery, or a static target deleted) drops its node.up
+	// series out of the export instead of ghosting at its last value (#55). Only
+	// Collect's single goroutine touches it — scrapeAll's concurrent workers
+	// return their (instance, up) results, which Collect Adds after they join, so
+	// the builder needs no synchronization. The forwarded passthrough samples
+	// (emitSample) are intentionally NOT snapshotted: their metric names are
+	// dynamic and include monotonic counters, a different concern from #55.
+	gsb *telemetry.GaugeSnapshotBuilder
 }
 
 // New returns a nodemetrics Collector. A zero Interval defaults to 60s and a
@@ -267,6 +278,7 @@ func New(opts Options) *Collector {
 		dropLabels:        toSet(opts.DropLabels),
 		active:            static,
 		prev:              make(map[string]prevEntry),
+		gsb:               telemetry.NewGaugeSnapshotBuilder(),
 	}
 }
 
@@ -409,6 +421,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	if len(targets) == 0 {
+		// Flush an empty node.up snapshot so any series from a prior tick with
+		// targets is cleared rather than ghosting once discovery drops them all.
+		c.gsb.Flush(e)
 		return nil
 	}
 
@@ -427,6 +442,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	successes := c.scrapeAll(tickCtx, targets, e)
 	failures := len(targets) - successes
 	c.pruneStale(gen)
+	// Emit the node.up snapshot on every path (including all-failed, where every
+	// point is 0): a target absent this tick drops out instead of ghosting (#55).
+	c.gsb.Flush(e)
 	if failures == len(targets) {
 		return fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
 	}
@@ -445,18 +463,32 @@ func (c *Collector) scrapeAll(ctx context.Context, targets []resolvedTarget, e t
 	sem := make(chan struct{}, c.concurrency)
 	var wg sync.WaitGroup
 	var successes atomic.Int64
+	// Each worker records its target's node.up point at its own index (disjoint
+	// writes, so no synchronization is needed); Collect feeds them into the
+	// single-goroutine builder after the workers join.
+	ups := make([]telemetry.GaugePoint, len(targets))
 	for i := range targets {
 		sem <- struct{}{}
 		wg.Add(1)
-		go func(rt *resolvedTarget) {
+		go func(idx int, rt *resolvedTarget) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := c.scrapeTarget(ctx, &rt.target, c.clientOf(rt), e); err == nil {
+			instance, err := c.scrapeTarget(ctx, &rt.target, c.clientOf(rt), e)
+			up := 0.0
+			if err == nil {
 				successes.Add(1)
+				up = 1
 			}
-		}(&targets[i])
+			ups[idx] = telemetry.GaugePoint{Value: up, Attrs: telemetry.Attrs{attrInstance: instance}}
+		}(i, &targets[i])
 	}
 	wg.Wait()
+	// Back on Collect's goroutine: accumulate node.up for the flush. A target no
+	// longer in `targets` (dropped from discovery) contributes no point, so the
+	// builder's next Flush clears its prior series (#55).
+	for i := range ups {
+		c.gsb.Add(docNodeUp.Name, docNodeUp.Unit, docNodeUp.Description, ups[i].Value, ups[i].Attrs)
+	}
 	return int(successes.Load())
 }
 
@@ -625,20 +657,20 @@ func (r *maxBytesReadCloser) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// scrapeTarget fetches and re-emits one target. It always emits the per-target
-// tailscale.node.up health gauge (1 on success, 0 on any GET/read/parse error)
-// and returns a non-nil error on failure so Collect can count it.
-func (c *Collector) scrapeTarget(ctx context.Context, t *Target, client *http.Client, e telemetry.Emitter) error {
+// scrapeTarget fetches and re-emits one target's forwarded samples, returning
+// the resolved instance label and a non-nil error on any GET/read/parse
+// failure. The per-target tailscale.node.up health gauge is NOT emitted here:
+// scrapeTarget runs on a worker-pool goroutine (#80), and node.up now flows
+// through the (single-goroutine) GaugeSnapshotBuilder so departed targets drop
+// out instead of ghosting (#55). scrapeAll derives up (1 on nil error, else 0)
+// from the returned error and feeds node.up into the builder after the workers
+// join. The returned instance is always non-empty for a valid target URL.
+func (c *Collector) scrapeTarget(ctx context.Context, t *Target, client *http.Client, e telemetry.Emitter) (string, error) {
 	instance := t.Instance
 	if instance == "" {
 		instance = hostPort(t.URL)
 	}
-	if err := c.fetchAndEmit(ctx, t, client, instance, e); err != nil {
-		e.Gauge(docNodeUp.Name, docNodeUp.Unit, docNodeUp.Description, 0, telemetry.Attrs{attrInstance: instance})
-		return err
-	}
-	e.Gauge(docNodeUp.Name, docNodeUp.Unit, docNodeUp.Description, 1, telemetry.Attrs{attrInstance: instance})
-	return nil
+	return instance, c.fetchAndEmit(ctx, t, client, instance, e)
 }
 
 // fetchAndEmit performs the GET, parses the body, and emits every sample. It

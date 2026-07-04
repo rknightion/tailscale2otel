@@ -55,12 +55,17 @@ type api interface {
 type Collector struct {
 	api      api
 	interval time.Duration
+	// gsb accumulates the churning per-resolver / per-search-path info gauges
+	// each tick and flushes them via an observable gauge, so a resolver or
+	// search path that goes away drops its series instead of ghosting (#55). It
+	// persists across Collect calls for the collector's lifetime.
+	gsb *telemetry.GaugeSnapshotBuilder
 }
 
 // New returns a DNS collector. A non-positive interval resolves to the default
 // (600s) via DefaultInterval.
 func New(a api, interval time.Duration) *Collector {
-	return &Collector{api: a, interval: interval}
+	return &Collector{api: a, interval: interval, gsb: telemetry.NewGaugeSnapshotBuilder()}
 }
 
 // Name returns the stable collector identifier.
@@ -102,7 +107,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		if r.UseWithExitNode {
 			exitCount++
 		}
-		e.Gauge(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
+		c.gsb.Add(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
 			attrAddress:         r.Address,
 			attrKind:            resolverKindGlobal,
 			attrDomain:          "",
@@ -120,7 +125,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			// address="" + a non-empty split domain combination cannot occur
 			// for any real resolver (a global resolver always has domain=""
 			// instead), so this synthetic point is unambiguous.
-			e.Gauge(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
+			c.gsb.Add(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
 				attrAddress:         "",
 				attrKind:            resolverKindSplit,
 				attrDomain:          domain,
@@ -132,7 +137,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if r.UseWithExitNode {
 				exitCount++
 			}
-			e.Gauge(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
+			c.gsb.Add(docResolver.Name, docResolver.Unit, docResolver.Description, 1, telemetry.Attrs{
 				attrAddress:         r.Address,
 				attrKind:            resolverKindSplit,
 				attrDomain:          domain,
@@ -145,10 +150,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	// Per-search-path info gauge: one datapoint per domain, value always 1.
 	for _, sp := range cfg.SearchPaths {
-		e.Gauge(docSearchPath.Name, docSearchPath.Unit, docSearchPath.Description, 1, telemetry.Attrs{
+		c.gsb.Add(docSearchPath.Name, docSearchPath.Unit, docSearchPath.Description, 1, telemetry.Attrs{
 			attrSearchPathDomain: sp,
 		})
 	}
+
+	// Flush the churning info gauges via observable snapshots so resolvers /
+	// search paths that departed since the last tick drop out instead of
+	// ghosting (#55). Only reached on the success path (an API error returned
+	// above, before any Add).
+	c.gsb.Flush(e)
 
 	return nil
 }

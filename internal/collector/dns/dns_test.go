@@ -274,6 +274,52 @@ func TestCollectSearchPathInfoGauge(t *testing.T) {
 	}
 }
 
+// TestResolverSeriesDropsOutOnReuse is the #55 regression test: reusing the
+// SAME collector instance (so its GaugeSnapshotBuilder persists) across two
+// Collects, a resolver present on the first tick but gone on the second must
+// have its tailscale.dns.resolver series cleared after the second collection —
+// not ghost forever under cumulative temporality. rec.MetricPoints triggers a
+// fresh SDK collection each call, so the second read reflects the second tick.
+func TestResolverSeriesDropsOutOnReuse(t *testing.T) {
+	api := &fakeAPI{cfg: &tsapi.DNSConfig{
+		Nameservers: []tsapi.DNSResolver{
+			{Address: "192.0.2.1"},
+			{Address: "192.0.2.2"},
+		},
+	}}
+	rec := telemetrytest.New()
+	c := New(api, 0) // single instance reused across both ticks
+
+	// Tick 1: two resolvers — both series present.
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect tick 1: %v", err)
+	}
+	if got := len(rec.MetricPoints("tailscale.dns.resolver")); got != 2 {
+		t.Fatalf("tick 1 resolver points = %d, want 2", got)
+	}
+
+	// Tick 2 on the SAME collector: 192.0.2.2 is gone. Its series must drop.
+	api.cfg = &tsapi.DNSConfig{
+		Nameservers: []tsapi.DNSResolver{{Address: "192.0.2.1"}},
+	}
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect tick 2: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.dns.resolver")
+	if len(pts) != 1 {
+		t.Fatalf("tick 2 resolver points = %d, want 1 (departed resolver must drop, not ghost)", len(pts))
+	}
+	if got := pts[0].Attrs[attrAddress]; got != "192.0.2.1" {
+		t.Fatalf("tick 2 surviving resolver address = %q, want 192.0.2.1", got)
+	}
+	for _, p := range pts {
+		if p.Attrs[attrAddress] == "192.0.2.2" {
+			t.Errorf("tick 2: departed resolver 192.0.2.2 still present (ghost): %+v", p.Attrs)
+		}
+	}
+}
+
 func TestCollectSearchPathEmptyYieldsNoInfoPoints(t *testing.T) {
 	api := &fakeAPI{cfg: &tsapi.DNSConfig{}}
 	rec := telemetrytest.New()

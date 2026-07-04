@@ -73,14 +73,22 @@ per source metric. `Observe(name, attrs)` is called from the emit hot path for *
 **resets** the sets so each interval measures active-per-interval cardinality (a metric that stops
 emitting drops out of *this tracker's own measurement* rather than lingering at a stale value).
 
-> **Ghost per-entity series (#55).** That drop-out applies only to the self-obs tracker above (keyed
-> by a fixed, low-cardinality `metric.name` set). It does **not** apply to the exported per-entity
-> gauges (`tailscale.device.online`, `tailscale.node.up`, `tailscale.dns.*`, …): under the forced
-> cumulative temporality the SDK's `cumulativeLastValue` keeps every attribute set it has ever seen
-> and re-exports its last value forever (upstream otel-go #3006 — observable gauges behave
-> identically). So when an entity disappears (renamed/removed) its series lingers as a "ghost", and
-> sustained churn can exhaust the per-instrument cardinality limit. v1 documents this for operators
-> (`docs/metrics.md`) rather than implementing per-entity eviction.
+> **Churning per-entity gauges must use `GaugeSnapshot`, not `Gauge` (#55).** A *synchronous* gauge
+> (`Emitter.Gauge`) under the forced cumulative temporality never drops a series: the SDK's
+> `cumulativeLastValue` keeps every attribute set it has ever seen and re-exports its last value forever
+> (upstream otel-go #3006). An **observable** gauge is different — pin down the version, because it
+> matters: in otel-go v1.44 an `ObservableGauge` routes to `PrecomputedLastValue`, whose cumulative
+> collect *clears* stale sets each cycle, so it reports only the series observed in the current
+> collection. `Emitter.GaugeSnapshot(name, unit, desc, []GaugePoint)` (emitter.go) wraps that: a series
+> absent from a later snapshot drops out instead of ghosting. Collectors accumulate via
+> `telemetry.GaugeSnapshotBuilder` (`gaugesnapshot.go`: hold one, `Add` points each `Collect`, then
+> `Flush` — Flush re-emits every gauge it has ever seen, empty snapshots included, so an emptied metric
+> clears). Every attribute-keyed (churning) gauge in the devices, nodemetrics, and dns collectors now
+> uses this; only **nil-attr single-series** gauges stay synchronous (they can't churn). The one
+> deliberate exception is nodemetrics' forwarded passthrough samples (`emitSample`) — dynamic names +
+> monotonic counters, so snapshot semantics don't fit; documented in `docs/metrics.md`. The self-obs
+> `series.active` tracker's own drop-out (line above) is unrelated — it resets its in-process map each
+> interval, independent of instrument temporality.
 
 Things to preserve when editing:
 

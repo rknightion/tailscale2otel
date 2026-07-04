@@ -256,6 +256,15 @@ type Collector struct {
 	// outdatedThreshold is the minor-skew >= which a device counts as outdated.
 	upstreamLatest    func() (string, bool)
 	outdatedThreshold int
+
+	// gsb accumulates every CHURNING (attribute-keyed) gauge this collector emits
+	// and flushes them as observable-gauge snapshots each tick, so a device that
+	// leaves the tailnet (or a version/tag/region/CIDR that stops appearing) drops
+	// out of the export instead of ghosting at its last value forever (#55). Only
+	// nil-attr single-series gauges (devices.count totals, etc.) stay synchronous.
+	// A collector runs its Collect on a single goroutine, so the builder needs no
+	// synchronization.
+	gsb *telemetry.GaugeSnapshotBuilder
 }
 
 // Option configures optional Collector behavior.
@@ -432,6 +441,7 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		now:                 time.Now,
 		updateAvailableData: true,
 		ephemeralData:       true,
+		gsb:                 telemetry.NewGaugeSnapshotBuilder(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -528,16 +538,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				idAttrs[semconv.AttrTags] = strings.Join(d.Tags, ",")
 			}
 
-			e.Gauge(docOnline.Name, docOnline.Unit, docOnline.Description,
+			c.gsb.Add(docOnline.Name, docOnline.Unit, docOnline.Description,
 				boolToFloat(d.ConnectedToControl), idAttrs)
 
 			if !d.LastSeen.IsZero() {
-				e.Gauge(docLastSeen.Name, docLastSeen.Unit, docLastSeen.Description,
+				c.gsb.Add(docLastSeen.Name, docLastSeen.Unit, docLastSeen.Description,
 					float64(d.LastSeen.Unix()), idAttrs)
 			}
 
 			if !d.KeyExpiryDisabled && !d.Expires.IsZero() {
-				e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
+				c.gsb.Add(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
 					float64(d.Expires.Unix()), idAttrs)
 			}
 
@@ -546,12 +556,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			// unconditionally would report a fabricated "no update available" as
 			// if it were real data (issue #64).
 			if c.updateAvailableData {
-				e.Gauge(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
+				c.gsb.Add(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
 					boolToFloat(d.UpdateAvailable), idAttrs)
 			}
 
 			for region, derp := range d.DERPLatency {
-				e.Gauge(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
+				c.gsb.Add(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
 					derp.LatencyMs/1000, telemetry.Attrs{
 						semconv.HostName:  d.Hostname,
 						semconv.HostID:    d.ID,
@@ -565,27 +575,27 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					semconv.HostName: d.Hostname,
 					semconv.HostID:   d.ID,
 				}
-				e.Gauge(docRoutesAdvertised.Name, docRoutesAdvertised.Unit, docRoutesAdvertised.Description,
+				c.gsb.Add(docRoutesAdvertised.Name, docRoutesAdvertised.Unit, docRoutesAdvertised.Description,
 					float64(len(d.AdvertisedRoutes)), routeAttrs)
-				e.Gauge(docRoutesEnabled.Name, docRoutesEnabled.Unit, docRoutesEnabled.Description,
+				c.gsb.Add(docRoutesEnabled.Name, docRoutesEnabled.Unit, docRoutesEnabled.Description,
 					float64(len(d.EnabledRoutes)), routeAttrs)
 			}
 
 			if c.collectConnectivity {
 				connAttrs := telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID}
-				e.Gauge(docConnHardNAT.Name, docConnHardNAT.Unit, docConnHardNAT.Description,
+				c.gsb.Add(docConnHardNAT.Name, docConnHardNAT.Unit, docConnHardNAT.Description,
 					boolToFloat(d.HardNAT), connAttrs)
-				e.Gauge(docConnEndpoints.Name, docConnEndpoints.Unit, docConnEndpoints.Description,
+				c.gsb.Add(docConnEndpoints.Name, docConnEndpoints.Unit, docConnEndpoints.Description,
 					float64(len(d.Endpoints)), connAttrs)
 				if d.ClientSupports.UDP != nil {
 					udp := boolPtrTrue(d.ClientSupports.UDP)
-					e.Gauge(docConnUDP.Name, docConnUDP.Unit, docConnUDP.Description,
+					c.gsb.Add(docConnUDP.Name, docConnUDP.Unit, docConnUDP.Description,
 						boolToFloat(udp), connAttrs)
-					e.Gauge(docConnDirectCapable.Name, docConnDirectCapable.Unit, docConnDirectCapable.Description,
+					c.gsb.Add(docConnDirectCapable.Name, docConnDirectCapable.Unit, docConnDirectCapable.Description,
 						boolToFloat(udp && !d.HardNAT), connAttrs)
 				}
 				if d.ClientSupports.IPv6 != nil {
-					e.Gauge(docConnIPv6.Name, docConnIPv6.Unit, docConnIPv6.Description,
+					c.gsb.Add(docConnIPv6.Name, docConnIPv6.Unit, docConnIPv6.Description,
 						boolToFloat(boolPtrTrue(d.ClientSupports.IPv6)), connAttrs)
 				}
 			}
@@ -647,7 +657,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					if len(d.Tags) > 0 {
 						skewAttrs[semconv.AttrTags] = strings.Join(d.Tags, ",")
 					}
-					e.Gauge(docDeviceVersionSkew.Name, docDeviceVersionSkew.Unit, docDeviceVersionSkew.Description,
+					c.gsb.Add(docDeviceVersionSkew.Name, docDeviceVersionSkew.Unit, docDeviceVersionSkew.Description,
 						float64(skew), skewAttrs)
 				}
 				if skew >= c.outdatedThreshold {
@@ -705,7 +715,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				exitEnabled++
 			}
 			if c.perEntity {
-				e.Gauge(docDeviceExitNode.Name, docDeviceExitNode.Unit, docDeviceExitNode.Description,
+				c.gsb.Add(docDeviceExitNode.Name, docDeviceExitNode.Unit, docDeviceExitNode.Description,
 					1, telemetry.Attrs{
 						semconv.HostName:    d.Hostname,
 						semconv.HostID:      d.ID,
@@ -757,7 +767,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	for k, n := range counts {
-		e.Gauge(docDevicesCount.Name, docDevicesCount.Unit, docDevicesCount.Description,
+		c.gsb.Add(docDevicesCount.Name, docDevicesCount.Unit, docDevicesCount.Description,
 			float64(n), telemetry.Attrs{
 				semconv.OSType: k.os,
 				attrAuthorized: k.authorized,
@@ -780,14 +790,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			float64(ephemeral), nil)
 	}
 	for ver, n := range byVersion {
-		e.Gauge(docDevicesByVersion.Name, docDevicesByVersion.Unit, docDevicesByVersion.Description,
+		c.gsb.Add(docDevicesByVersion.Name, docDevicesByVersion.Unit, docDevicesByVersion.Description,
 			float64(n), telemetry.Attrs{attrClientVersion: ver})
 	}
-	c.emitTagRollup(e, byTag)
+	c.emitTagRollup(byTag)
 
 	// B6 fleet-level version-skew gauges (emitted when upstream latest is known).
 	if haveLatest {
-		e.Gauge(docFleetLatestVersion.Name, docFleetLatestVersion.Unit, docFleetLatestVersion.Description,
+		c.gsb.Add(docFleetLatestVersion.Name, docFleetLatestVersion.Unit, docFleetLatestVersion.Description,
 			1, telemetry.Attrs{attrClientVersion: latestNorm})
 		e.Gauge(docDevicesOutdated.Name, docDevicesOutdated.Unit, docDevicesOutdated.Description,
 			float64(outdated), nil)
@@ -795,7 +805,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	if c.collectDeviceInvites {
 		for k, n := range inviteCounts {
-			e.Gauge(docDeviceInvites.Name, docDeviceInvites.Unit, docDeviceInvites.Description,
+			c.gsb.Add(docDeviceInvites.Name, docDeviceInvites.Unit, docDeviceInvites.Description,
 				float64(n), telemetry.Attrs{
 					attrInviteAccepted:      k.accepted,
 					attrInviteAllowExitNode: k.allowExitNode,
@@ -810,15 +820,15 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		e.Gauge(docDevicesDirectCapable.Name, docDevicesDirectCapable.Unit, docDevicesDirectCapable.Description,
 			float64(directCapableCount), nil)
 		for capName, n := range capSupports {
-			e.Gauge(docDevicesClientSupports.Name, docDevicesClientSupports.Unit, docDevicesClientSupports.Description,
+			c.gsb.Add(docDevicesClientSupports.Name, docDevicesClientSupports.Unit, docDevicesClientSupports.Description,
 				float64(n), telemetry.Attrs{attrConnCapability: capName})
 		}
 	}
 
 	// B4 fleet exit/subnet aggregates (always emitted; low cardinality).
-	e.Gauge(docExitNodesCount.Name, docExitNodesCount.Unit, docExitNodesCount.Description,
+	c.gsb.Add(docExitNodesCount.Name, docExitNodesCount.Unit, docExitNodesCount.Description,
 		float64(exitAdvertised), telemetry.Attrs{attrExitNodeState: exitStateAdvertised})
-	e.Gauge(docExitNodesCount.Name, docExitNodesCount.Unit, docExitNodesCount.Description,
+	c.gsb.Add(docExitNodesCount.Name, docExitNodesCount.Unit, docExitNodesCount.Description,
 		float64(exitEnabled), telemetry.Attrs{attrExitNodeState: exitStateEnabled})
 	e.Gauge(docSubnetRoutesAdv.Name, docSubnetRoutesAdv.Unit, docSubnetRoutesAdv.Description,
 		float64(len(subnetAdvertised)), nil)
@@ -834,15 +844,21 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		float64(unapproved), nil)
 	if c.subnetRouteRollup {
 		for cidr, n := range routersByCIDR {
-			e.Gauge(docSubnetRoutesRouters.Name, docSubnetRoutesRouters.Unit, docSubnetRoutesRouters.Description,
+			c.gsb.Add(docSubnetRoutesRouters.Name, docSubnetRoutesRouters.Unit, docSubnetRoutesRouters.Description,
 				float64(n), telemetry.Attrs{attrRouteCIDR: cidr})
 		}
 	}
 
 	if c.derpRollup {
-		c.emitDERPRollup(e, devs)
+		c.emitDERPRollup(devs)
 	}
 
+	// Flush all churning per-entity/aggregate gauges accumulated this tick as
+	// observable-gauge snapshots, so a device (or version/tag/region/CIDR/posture
+	// series) that stopped appearing drops out of the export instead of ghosting
+	// (#55). Reached only on the success path; a mid-Collect API error returned
+	// earlier, leaving the previous snapshot in place until the next good tick.
+	c.gsb.Flush(e)
 	return nil
 }
 
@@ -852,12 +868,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 // device count; ties broken by tag name for determinism) keep their own series
 // and the remainder fold into a single tailscale.tag="__other__" series so the
 // total is preserved.
-func (c *Collector) emitTagRollup(e telemetry.Emitter, byTag map[string]int) {
+func (c *Collector) emitTagRollup(byTag map[string]int) {
 	if !c.collectTagRollup || len(byTag) == 0 {
 		return
 	}
 	emit := func(tag string, n int) {
-		e.Gauge(docDevicesByTag.Name, docDevicesByTag.Unit, docDevicesByTag.Description,
+		c.gsb.Add(docDevicesByTag.Name, docDevicesByTag.Unit, docDevicesByTag.Description,
 			float64(n), telemetry.Attrs{attrTag: tag})
 	}
 	if c.tagRollupLimit <= 0 || len(byTag) <= c.tagRollupLimit {
@@ -949,7 +965,7 @@ func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter,
 // emitDERPRollup aggregates the per-device DERP latency already fetched into
 // tailnet-wide per-region gauges: the best (min) latency to each region, the
 // number of devices reporting it, and how many prefer it.
-func (c *Collector) emitDERPRollup(e telemetry.Emitter, devs []tsapi.RichDevice) {
+func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 	type agg struct {
 		minMs     float64
 		haveMin   bool
@@ -976,11 +992,11 @@ func (c *Collector) emitDERPRollup(e telemetry.Emitter, devs []tsapi.RichDevice)
 	}
 	for region, a := range byRegion {
 		attrs := telemetry.Attrs{attrDERPRegion: region}
-		e.Gauge(docDerpRegionLatencyMin.Name, docDerpRegionLatencyMin.Unit, docDerpRegionLatencyMin.Description,
+		c.gsb.Add(docDerpRegionLatencyMin.Name, docDerpRegionLatencyMin.Unit, docDerpRegionLatencyMin.Description,
 			a.minMs/1000, attrs)
-		e.Gauge(docDerpRegionDevices.Name, docDerpRegionDevices.Unit, docDerpRegionDevices.Description,
+		c.gsb.Add(docDerpRegionDevices.Name, docDerpRegionDevices.Unit, docDerpRegionDevices.Description,
 			float64(a.devices), attrs)
-		e.Gauge(docDerpRegionPreferred.Name, docDerpRegionPreferred.Unit, docDerpRegionPreferred.Description,
+		c.gsb.Add(docDerpRegionPreferred.Name, docDerpRegionPreferred.Unit, docDerpRegionPreferred.Description,
 			float64(a.preferred), attrs)
 	}
 }
@@ -1007,12 +1023,12 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 			metricAttrs[label] = fmt.Sprint(v)
 		}
 	}
-	e.Gauge(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
+	c.gsb.Add(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
 
 	// Promote the allow-listed posture attributes to queryable metrics (hybrid
 	// model), reusing the already-fetched attribute map — no extra API call.
 	if c.attrNamespaceWildcard || len(c.attrNamespaces) > 0 {
-		c.emitAttributes(e, d, attrs)
+		c.emitAttributes(d, attrs)
 	}
 
 	// Decide whether to emit the LOG. The signature is computed over the FULL
@@ -1063,7 +1079,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 // (constant 1, the string carried as the `value` label). Attributes whose
 // namespace (the part before ":") is not allow-listed are skipped, as are
 // non-scalar values (posture values are documented as string|number|bool).
-func (c *Collector) emitAttributes(e telemetry.Emitter, d *tsapi.RichDevice, attrs map[string]any) {
+func (c *Collector) emitAttributes(d *tsapi.RichDevice, attrs map[string]any) {
 	for key, v := range attrs {
 		ns, _, ok := strings.Cut(key, ":")
 		if !ok {
@@ -1079,12 +1095,12 @@ func (c *Collector) emitAttributes(e telemetry.Emitter, d *tsapi.RichDevice, att
 		}
 		switch val := v.(type) {
 		case bool:
-			e.Gauge(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(val), labels)
+			c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(val), labels)
 		case float64:
-			e.Gauge(docAttribute.Name, docAttribute.Unit, docAttribute.Description, val, labels)
+			c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, val, labels)
 		case string:
 			labels[attrAttributeValue] = val
-			e.Gauge(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
+			c.gsb.Add(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
 		default:
 			// Skip anything that isn't a scalar string/number/bool.
 		}

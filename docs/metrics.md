@@ -192,23 +192,25 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > cardinality (ephemeral `source_port` is the biggest driver). `tailscale2otel.series.active` pins at
 > the same cap, so it flags the condition too.
 
-> **Ghost per-entity series under churn.** Metrics are exported with **cumulative** temporality (what
-> Grafana Cloud / Mimir ingest). Once a per-entity gauge — `tailscale.device.online`,
-> `tailscale.node.up`, the per-resolver `tailscale.dns.*`, and similar — has emitted a value for an
-> attribute set, the OTEL-Go SDK re-exports that last value on **every** interval indefinitely: there
-> is no staleness/eviction for synchronous (or observable) instruments under cumulative temporality
-> (upstream [otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)). So when
-> a device is **removed or renamed** (a new attribute set), its old series lingers as a "ghost" at its
-> last value forever. Consequences to be aware of:
-> - Dashboards that count `device.online==1` (or alerts on it) can include devices that no longer
->   exist — join against a fresh inventory or a recency signal rather than trusting a lone gauge.
-> - Under sustained churn, dead series accumulate and consume the per-instrument cardinality slots
->   above until they hit `cardinality.metric_limit` and new live series collapse into
->   `otel_metric_overflow`. Size `metric_limit` for churn, and restart the exporter to clear ghosts
->   (in-memory state resets on restart).
+> **Per-entity gauges drop out on churn (no ghost series).** Metrics are exported with **cumulative**
+> temporality (what Grafana Cloud / Mimir ingest). A *synchronous* cumulative gauge would re-export a
+> stale value forever once its attribute set has been seen (upstream
+> [otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)), so every churning
+> per-entity gauge — `tailscale.device.online` and its per-device siblings, the by-version/by-tag/
+> by-region/by-CIDR rollups, `tailscale.node.up`, and the per-resolver/per-search-path `tailscale.dns.*`
+> — is instead emitted as an **observable** gauge from a per-tick snapshot. An observable gauge under
+> cumulative temporality reports only the series observed in the current collection, so when a device is
+> **removed or renamed** (or a version/tag/resolver stops appearing) its series simply **drops out of
+> the export on the next scrape** rather than ghosting, and it stops consuming a cardinality-limit slot
+> (issue #55). Dashboards and alerts on `device.online==1` / `node.up` therefore reflect the live fleet
+> without needing to join against a separate recency signal.
 >
-> This is an inherent SDK/temporality trade-off, not a per-tick bug; v1 documents it rather than
-> implementing per-entity eviction (see issue #55).
+> One deliberate exception: the **forwarded node-metrics passthrough samples** (the raw series scraped
+> from each node's tailscaled `:5252` endpoint) are still synchronous — their names are dynamic and
+> include monotonic counters, so snapshot semantics don't apply. If a node leaves discovery, its
+> `tailscale.node.up` drops out immediately, but its forwarded gauge samples can linger until an
+> exporter restart; rate-based counter panels are unaffected. Size `cardinality.metric_limit` for your
+> node churn accordingly.
 
 ### Devices (`tailscale.device.*`, `tailscale.devices.count`)
 

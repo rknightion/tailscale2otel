@@ -357,6 +357,38 @@ func TestCollect_PerEntityFalse(t *testing.T) {
 	}
 }
 
+// TestCollect_DepartedDeviceDropsOut proves the #55 fix end-to-end for the
+// devices collector: a device present one tick but gone the next drops out of
+// the per-device gauges (here tailscale.device.online) instead of ghosting at
+// its last value forever. It reuses ONE collector instance across both ticks so
+// its GaugeSnapshotBuilder persists, and mutates the fake API's device list
+// between them.
+func TestCollect_DepartedDeviceDropsOut(t *testing.T) {
+	devs := sampleDevices() // three devices
+	c, _, api := newCollector(t, devs)
+	rec := telemetrytest.New()
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("collect 1: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.online"); len(pts) != 3 {
+		t.Fatalf("tick 1: online series = %d, want 3", len(pts))
+	}
+
+	// Two devices leave the tailnet; only the laptop remains.
+	api.devices = devs[:1]
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("collect 2: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.device.online")
+	if len(pts) != 1 {
+		t.Fatalf("tick 2: online series = %d, want 1 (departed devices must drop out, not ghost)", len(pts))
+	}
+	if _, ok := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"}); !ok {
+		t.Errorf("tick 2: surviving series is not the laptop; points=%+v", pts)
+	}
+}
+
 func TestCollect_Online(t *testing.T) {
 	devs := sampleDevices()
 	c, _, _ := newCollector(t, devs)

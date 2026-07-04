@@ -1133,6 +1133,12 @@ func (f *fakeDiscoverer) setErr(err error) {
 	f.err = err
 }
 
+func (f *fakeDiscoverer) setTargets(ts []nodemetrics.Target) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.targets = ts
+}
+
 func (f *fakeDiscoverer) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1392,6 +1398,52 @@ func TestDiscovery_FailureKeepsStaleTargets(t *testing.T) {
 	collectExpectB("after-recovery")
 	if got := fake.callCount(); got != 3 {
 		t.Fatalf("calls after recovery = %d, want 3 (lastDiscACK not advanced by failure, so due immediately)", got)
+	}
+}
+
+// TestDiscovery_DepartedTargetDropsNodeUp proves the #55 fix for nodemetrics: a
+// target removed from the active set (dropped from discovery) drops its
+// tailscale.node.up series out of the export instead of ghosting at its last
+// value. node.up now flows through the collector's GaugeSnapshotBuilder.
+func TestDiscovery_DepartedTargetDropsNodeUp(t *testing.T) {
+	srvA, _ := countingServer(t, "# TYPE g gauge\ng 1\n")
+	defer srvA.Close()
+	srvB, _ := countingServer(t, "# TYPE g gauge\ng 2\n")
+	defer srvB.Close()
+
+	now := time.Unix(1_700_000_000, 0)
+	interval := time.Minute
+	fake := &fakeDiscoverer{targets: []nodemetrics.Target{
+		{URL: srvA.URL, Instance: "node-a"},
+		{URL: srvB.URL, Instance: "node-b"},
+	}}
+	c := nodemetrics.New(nodemetrics.Options{
+		Discoverer:        fake,
+		DiscoveryInterval: interval,
+		Now:               func() time.Time { return now },
+	})
+	rec := telemetrytest.New()
+
+	// Tick 1: both nodes discovered and up → two node.up series.
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("collect 1: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.node.up"); len(pts) != 2 {
+		t.Fatalf("tick 1: node.up series = %d, want 2", len(pts))
+	}
+
+	// node-b leaves discovery; advance past the interval so tick 2 rediscovers.
+	now = now.Add(interval)
+	fake.setTargets([]nodemetrics.Target{{URL: srvA.URL, Instance: "node-a"}})
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("collect 2: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.node.up")
+	if len(pts) != 1 {
+		t.Fatalf("tick 2: node.up series = %d, want 1 (node-b must drop out, not ghost); pts=%+v", len(pts), pts)
+	}
+	if pts[0].Attrs["tailscale.node"] != "node-a" {
+		t.Errorf("tick 2 surviving node.up = %q, want node-a", pts[0].Attrs["tailscale.node"])
 	}
 }
 
