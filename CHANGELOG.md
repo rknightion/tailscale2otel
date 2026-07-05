@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/rknightion/tailscale2otel/compare/v0.6.0...v1.0.0) (2026-07-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* v1.0.0 stabilises the public interface (config, metric names, HTTP endpoints, Helm values). There are no new breaking changes over 0.6.0; docs/upgrading.md carries the consolidated pre-1.0 to v1.0.0 migration notes for anyone upgrading from an earlier 0.x.
+
+### Features
+
+* declare stable v1.0.0 release ([eba5996](https://github.com/rknightion/tailscale2otel/commit/eba5996d51ff0013557ba450defa0257cea2f158))
+
 ## [0.6.0](https://github.com/rknightion/tailscale2otel/compare/v0.5.0...v0.6.0) (2026-07-04)
 
 
