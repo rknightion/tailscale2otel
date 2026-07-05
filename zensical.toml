@@ -27,6 +27,7 @@ nav = [
       { Architecture = "architecture.md" }
     ] },
   { Operations = [
+      { Upgrading = "upgrading.md" },
       { Troubleshooting = "troubleshooting.md" },
       { Security = "security.md" }
     ] },
