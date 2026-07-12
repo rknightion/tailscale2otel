@@ -97,7 +97,10 @@ jobs:
       contents: write # upload release assets
       id-token: write # keyless cosign signing
       packages: write
-    uses: rknightion/.github/.github/workflows/binaries.yml@f31690684f4292d1fe8e528618f7c8306fe27d9a # v1.3.1
+      attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
+    # Pinned past v1.4.0 to pick up the SLSA build-provenance step (the .intoto.jsonl release
+    # asset). Renovate will repin this to the tag once the shared repo cuts its next release.
+    uses: rknightion/.github/.github/workflows/binaries.yml@7aa955ca8134be9eac7bbd009317f35d6216bef5 # main
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true

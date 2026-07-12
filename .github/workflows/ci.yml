@@ -204,6 +204,53 @@ jobs:
           coverage-reports: coverage.out
           force-coverage-parser: go
 
+  # Bounded exploratory fuzzing of the untrusted-input decode paths: the HEC receiver's
+  # envelope parser (its body is attacker-reachable — the token is optional) and the flow/audit
+  # record decoders, whose wire format is polymorphic by design.
+  #
+  # Deliberately NOT in ci-success. Each target's SEED corpus already runs inside the normal
+  # `go test -race ./...` leg, so a known crasher always gates a merge; this job only explores
+  # for NEW ones, which is nondeterministic. Gating on it would let an unrelated PR randomly trip
+  # a latent crasher and block Renovate automerge. A failure here is a real bug — read the log.
+  fuzz:
+    name: fuzz (${{ matrix.package }} ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: ./internal/stream
+            target: FuzzExtractRecords
+          - package: ./internal/stream
+            target: FuzzParseHECTime
+          - package: ./internal/flowlog
+            target: FuzzProcessorProcessAll
+          - package: ./internal/audit
+            target: FuzzProcessorProcessAll
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          # zizmor: ignore[cache-poisoning] - test-only job, does not publish artifacts
+          cache: true
+
+      - name: go test -fuzz ${{ matrix.target }}
+        run: go test ${{ matrix.package }} -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime=120s
+
+      # A crasher is written to testdata/corpus/<target>/ — surface it so the failing input can be
+      # committed as a regression seed rather than being lost with the runner.
+      - name: Upload crashers
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crashers-${{ matrix.target }}-${{ strategy.job-index }}
+          path: ${{ matrix.package }}/testdata/corpus/**
+          if-no-files-found: ignore
+
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
   # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.

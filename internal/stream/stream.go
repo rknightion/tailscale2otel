@@ -768,9 +768,17 @@ func (e envelope) envelopeTime() time.Time {
 	return time.Time{}
 }
 
+// maxHECTimeSeconds is the largest epoch-seconds value that still converts to a
+// time representable as int64 nanoseconds — the width of an OTLP timestamp. It
+// lands in 2262; anything beyond it would wrap rather than fail.
+const maxHECTimeSeconds = float64(math.MaxInt64) / 1e9
+
 // parseHECTime parses a Splunk-HEC "time" value (unix epoch SECONDS, normally a
 // JSON number but tolerated as a quoted string) into a UTC time.Time. It returns
-// the zero time for an absent, null, non-positive, or unparseable value.
+// the zero time for an absent, null, non-positive, out-of-range, or unparseable
+// value — the receiver body is attacker-reachable (the token is optional), and the
+// parsed value becomes an exported log record's timestamp, so a value that cannot
+// be represented is rejected rather than silently wrapped into a nonsense year.
 func parseHECTime(raw json.RawMessage) time.Time {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -783,7 +791,7 @@ func parseHECTime(raw json.RawMessage) time.Time {
 		}
 	}
 	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil || f <= 0 {
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f <= 0 || f > maxHECTimeSeconds {
 		return time.Time{}
 	}
 	sec, frac := math.Modf(f)

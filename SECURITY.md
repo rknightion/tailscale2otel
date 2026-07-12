@@ -1,9 +1,59 @@
 # Security & data handling
 
-This document describes the operational security posture of `tailscale2otel`: what
-data it handles, where that data goes, and the configuration levers and footguns
-operators should be aware of. For the user-facing pitch see `README.md`; for the
-full signal catalog see `docs/metrics.md`.
+This document covers two things: how to **report a vulnerability** in `tailscale2otel`
+(immediately below), and the **operational security posture** of the service — what data
+it handles, where that data goes, and the configuration levers and footguns operators
+should be aware of. For the user-facing pitch see `README.md`; for the full signal catalog
+see `docs/metrics.md`.
+
+## Reporting a vulnerability
+
+**Report privately. Do not open a public issue for a security bug.**
+
+Use GitHub's private vulnerability reporting, which is enabled on this repository:
+
+- **<https://github.com/rknightion/tailscale2otel/security/advisories/new>**
+
+That channel is private between you and the maintainer until a fix ships, and it is the
+only supported way to report. A useful report includes the affected version or commit, the
+configuration involved (redact secrets), what an attacker gains, and the steps to reproduce
+it. A proof of concept helps but is not required.
+
+### Supported versions
+
+Only the **latest release** is supported. Fixes land on `main` and ship in the next
+release; there are no backports to older tags.
+
+### Disclosure process and timelines
+
+This is a single-maintainer hobby project, so these are honest targets rather than a
+commercial SLA:
+
+| Stage | Target |
+| --- | --- |
+| Acknowledge your report | within 5 working days |
+| Initial assessment (accepted / rejected, with reasoning) | within 10 working days |
+| Fix released for an accepted vulnerability | within 90 days of acknowledgement, and sooner where severity warrants it |
+
+Coordinated disclosure: please give me the 90 days to ship a fix before disclosing
+publicly. Once a fix is released I will publish a GitHub Security Advisory (which assigns
+a CVE) and credit you by name unless you would rather stay anonymous. If a report is
+rejected I will say why, and you are then free to disclose as you see fit. If I have gone
+quiet past the targets above, treat that as a reason to chase me, not as a reason to sit on
+the bug indefinitely.
+
+### Scope
+
+In scope: the `tailscale2otel` binary, its container images, and the Helm chart in this
+repository. Notably in scope are the inbound receivers (the Splunk-HEC `streaming` endpoint
+and the `webhook` endpoint), the `prometheus` pull endpoint, the admin HTTP server, and any
+path where a secret could leak into logs, metrics, or the status page.
+
+Out of scope: vulnerabilities in the Tailscale API or the Tailscale client themselves
+(report those to [Tailscale](https://tailscale.com/security)), vulnerabilities in your OTLP
+backend, and the operator footguns documented below — the empty-secret auth behaviour and
+`streaming.auto_configure` are **known, intentional, and documented**, so they are
+configuration hazards rather than vulnerabilities.
 
 ## Telemetry payload sensitivity
 
