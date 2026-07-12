@@ -7,9 +7,9 @@ data and export it as **OpenTelemetry-native metrics and logs** (plus an optiona
 for the exporter's own self-observability) — optimized for Grafana Cloud (OTLP) but compatible with
 any OTEL backend.
 
-Tailscale exposes a rich observability surface (network flow logs, configuration audit logs, a
-detailed device inventory, users, keys, settings, ACL, DNS) but no Prometheus endpoint, and it
-streams logs only to SIEM/storage sinks. `tailscale2otel` synthesizes well-modeled,
+Tailscale itself exposes a rich observability surface (network flow logs, configuration audit logs, a
+detailed device inventory, users, keys, settings, ACL, DNS) via its API, but no Prometheus endpoint of
+its own, and it streams logs only to SIEM/storage sinks. `tailscale2otel` synthesizes well-modeled,
 [semantic-convention](https://opentelemetry.io/docs/specs/semconv/)-compliant OTEL telemetry from
 that data so you get device-fleet health, network throughput by node/protocol, an audit/event
 stream, and key-expiry signals out of the box.
@@ -19,6 +19,9 @@ stream, and key-expiry signals out of the box.
 - **Network flow logs → metrics + logs.** Aggregated `tailscale.network.io`/`.packets`/`.flows`
   counters (low cardinality) for dashboards & alerting, plus full-fidelity per-connection flow
   records as OTEL logs for drill-down. Source IPs are enriched to device names.
+- **Optional reverse-DNS (PTR) enrichment** (`enrichment.reverse_dns.enabled`, off by default)
+  resolves *external* (non-tailnet) flow addresses to hostnames, replacing the raw IP / `external`
+  bucket in flow logs and metrics. Lookups are async and cached; the hot path never blocks.
 - **Configuration audit logs → logs + counters,** including a curated security-/lifecycle-categorized
   change counter (`tailscale.config.audit.changes`) for low-noise alerting.
 - **Device inventory, users, keys, settings, ACL, DNS** → gauges (online status, connectivity/NAT
@@ -43,6 +46,9 @@ stream, and key-expiry signals out of the box.
   [`docs/configuration.md`](./docs/configuration.md#headscale-headscale-control-plane-connection)
   for exactly what's affected.
 - **OTLP push** (gRPC/HTTP) with first-class Grafana Cloud support; `stdout` mode for local debug.
+- **Optional Prometheus pull endpoint** (`prometheus.enabled`, off by default) — serves `GET /metrics`
+  on its own dedicated listener (default `:2112`), independent of and alongside OTLP push, with an
+  optional bearer-token/basic-auth secret.
 - **Admin status page** at `/` (plus `/healthz`/`/readyz` and a `/api/status.json`) showing live
   collector health, active-series cardinality, the metrics/log catalog, discovered nodes, and a
   redacted config — and **opt-in continuous profiling** (pprof for Alloy, or Pyroscope push).
@@ -228,10 +234,16 @@ default and disabled when no targets are set.
 
 ## Dashboards & metrics reference
 
-- Ready-to-import Grafana 13 dashboards live in [`deploy/grafana/`](./deploy/grafana/) — device
-  **fleet & inventory**, network **flow & throughput**, **audit & webhook events** (logs), and
-  **exporter health**. They use `${DS_PROM}`/`${DS_LOKI}` datasource variables, so pick your
-  Prometheus/Loki datasources on import. See [`deploy/grafana/README.md`](./deploy/grafana/README.md).
+- The flagship dashboard is [`deploy/grafana/tailscale2otel.json`](./deploy/grafana/tailscale2otel.json)
+  — a single, comprehensive, **tabbed** dashboard (Overview, Fleet & Devices, Network & Flows, Events
+  & Logs, Security & Audit, Policy & Config, Node Metrics, Exporter Diagnostics, Cardinality & Cost,
+  Tailnets) covering the whole project. It uses the Grafana **dashboard schema v2**
+  (`dashboard.grafana.app/v2`, **Grafana 13+**) with dynamic per-tab/per-row rendering, so a section
+  only appears when its data is present. `deploy/grafana/` also ships four standalone, **legacy**
+  (`schemaVersion: 39`, Grafana ≤12-friendly) dashboards — device **fleet & inventory**, network
+  **flow & throughput**, **audit & webhook events** (logs), and **exporter health** — for stacks not
+  yet on schema v2. All use `${DS_PROM}`/`${DS_LOKI}` datasource variables, so pick your Prometheus/Loki
+  datasources on import. See [`deploy/grafana/README.md`](./deploy/grafana/README.md).
 - A full catalog of every metric and log event — including the OTLP→Prometheus name normalization
   (e.g. `tailscale.network.io` → `tailscale_network_io_bytes_total`, unit-`1` gauges → `*_ratio`) —
   is in [`docs/metrics.md`](./docs/metrics.md).
@@ -351,4 +363,5 @@ without it; the client-lib lane never receives the key by design, since it build
 
 ## License
 
-TBD.
+Apache License 2.0. Full text in [`LICENSE`](./LICENSE); third-party dependency attribution and
+notes on bundled notices/SBOMs are in [`LICENSING.md`](./LICENSING.md).

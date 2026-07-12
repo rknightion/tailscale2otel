@@ -86,7 +86,10 @@ Labels follow the same dots→underscores rule, so the OTEL attributes `tailscal
 ## Metrics
 
 Instrument column: **counter** = monotonic cumulative (rendered as `_total` in Prometheus, use
-`rate()`/`increase()`); **gauge** = point-in-time value.
+`rate()`/`increase()`); **gauge** = point-in-time value; **histogram** = a distribution with
+explicit buckets (rendered as `_bucket`/`_sum`/`_count` in Prometheus — never `_total`, and never
+`_ratio` even at unit `1`); **updowncounter** = a non-monotonic sum (rendered without a `_total`
+suffix, unlike a counter).
 
 > **Universal attributes (every metric).** In addition to the per-metric attributes listed below,
 > every metric data point carries `tailscale.tailnet` (`tailscale_tailnet` — the tailnet name;

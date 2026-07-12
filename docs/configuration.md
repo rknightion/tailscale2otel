@@ -515,8 +515,11 @@ Configuration/audit events → event logs + a counter.
 Optional scraper that pulls `tailscaled` per-node Prometheus `/metrics` and forwards them centrally
 over OTLP (counters as deltas, gauges as gauges, plus a per-target `tailscale.node.up`). **Off by
 default**, and inert unless it has at least one static target or discovery enabled. Node identity is
-carried as the `instance` label, not an OTEL Resource. See **[`docs/node-metrics.md`](./node-metrics.md)**
-for the operator how-to.
+carried as the `tailscale.node` label (Prometheus: `tailscale_node`), not an OTEL Resource and
+deliberately not `instance` — Grafana Cloud's OTLP→Prometheus translation promotes the resource
+attribute `service.instance.id` to the `instance` label, and that would clobber a per-series
+`instance` attribute and collapse `tailscale.node.up` to one series. See
+**[`docs/node-metrics.md`](./node-metrics.md)** for the operator how-to.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -527,7 +530,7 @@ for the operator how-to.
 | `collectors.node_metrics.max_samples` | `50000` | Per-target sample cap per scrape. Must be `> 0` when enabled. |
 | `collectors.node_metrics.metric_allow` | `[]` | Anchored regexes on the forwarded metric **name**; if non-empty, a name must match one to be forwarded. Must compile. |
 | `collectors.node_metrics.metric_deny` | `[]` | Anchored regexes; a name matching any is dropped (applied after `metric_allow`). Must compile. |
-| `collectors.node_metrics.drop_labels` | `[]` | Label keys stripped from every forwarded series. `instance` is never dropped. |
+| `collectors.node_metrics.drop_labels` | `[]` | Label keys stripped from every forwarded series. `tailscale.node` (the node-identity label) is never dropped. |
 
 These filters apply **only** to forwarded samples — never to `tailscale.node.up` or the `discovery.*`
 gauges.
@@ -541,7 +544,7 @@ targets.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `url` | — (required) | Scrape URL, e.g. `http://100.64.0.10:5252/metrics`. Required for each target when the scraper is enabled. |
-| `instance` | URL `host:port` | Overrides the `instance` label. |
+| `instance` | URL `host:port` | Overrides the `tailscale.node` identity label for this target. |
 | `labels` | `{}` | Extra static labels merged onto every series from this target. |
 | `bearer_token` | `""` | Static bearer token sent as `Authorization: Bearer …`. |
 | `bearer_token_file` | `""` | Path read fresh each scrape; takes precedence over `bearer_token`. |

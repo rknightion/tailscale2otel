@@ -83,17 +83,23 @@ machine.
 
 ## Module / package layout
 
-Three modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel`) plus two
+Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel`) plus three
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
-are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`).
+are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
+`tools/apidrift`).
 
 - `cmd/tailscale2otel/main.go` — thin entrypoint: load config, build slog logger, `app.New` → `Run`.
   `version` is injected via `-ldflags -X main.version=...`.
-- `internal/app/` — **composition root**. `app.New` builds the telemetry provider, Tailscale client,
-  checkpoint store, shared flow/audit processors, receivers, the collector registry, the admin HTTP
-  server (probes + status page + opt-in pprof), and the opt-in Pyroscope profiler; `collectors.go` is
-  where each collector is registered/gated. Start here to understand how everything connects. The admin
-  status page (`/` HTML + `/api/status.json`) is assembled in `status.go`/`admin_status.go` from
+- `internal/app/` — **composition root**. `app.New` resolves the configured tailnets and builds one
+  `*tailnetRuntime` per tailnet — its own provider/client, enrich cache, flow/audit processors, and
+  collector registry+scheduler — fanning into a `telemetry.ProviderSet` (see `internal/telemetry/CLAUDE.md`),
+  or a single Headscale-backed runtime when `provider: headscale` (`internal/hsapi` + `internal/provider`).
+  It also builds the shared checkpoint store, the reverse-DNS cache (`internal/rdns`), the release/update-check
+  fetchers (`internal/release`), the receivers, the admin HTTP server (probes + status page + opt-in pprof),
+  the opt-in Prometheus pull-endpoint server (a **second**, separate listener, default `:2112`), and the
+  opt-in Pyroscope profiler; `collectors.go` registers/gates each collector per runtime. Start here to
+  understand how everything connects. The admin status page (`/` HTML + `/api/status.json`) is assembled
+  in `status.go`/`admin_status.go` from
   `internal/app/statusdata/` DTOs, rendered via the embedded template in `internal/app/statushtml/`
   (self-contained — no CDN/external assets, so it renders on an air-gapped tailnet).
 - `internal/appcatalog/` — the app layer's self-obs metric descriptors (`tailscale2otel.up`,
@@ -101,15 +107,26 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   these without importing `internal/app` (which imports `internal/catalog` for the status page — see the
   import-cycle gotcha below).
 - `internal/collector/` — scheduler + registry + checkpoints, and one subpackage per source
-  (devices, flowlogs, auditlogs, users, keys, settings, acl, dns, nodemetrics). See
-  `internal/collector/CLAUDE.md` for the "add a collector" recipe.
+  (devices, flowlogs, auditlogs, users, keys, settings, acl, dns, nodemetrics, contacts, services,
+  webhooks, postureintegrations, logstream). See `internal/collector/CLAUDE.md` for the "add a
+  collector" recipe.
 - `internal/telemetry/`, `internal/semconv/`, `internal/metricdoc/`, `internal/catalog/` — the OTEL
   facade and the code-as-docs metrics catalog. See `internal/telemetry/CLAUDE.md`.
 - `internal/tsapi/` — Tailscale API client + log "doers" (auth: OAuth preferred, or API key).
+- `internal/provider/` — abstracts the control plane (Tailscale or Headscale) behind one `ControlPlane`
+  interface + capability set, so collectors and app wiring stay provider-agnostic; `*tsapi.Client`
+  satisfies it directly, a Headscale adapter (`internal/hsapi`) satisfies the same interface for the
+  feature subset Headscale exposes.
+- `internal/hsapi/` — minimal read-only HTTP/JSON client for the Headscale control-plane API
+  (`/api/v1/*`, Bearer auth) plus the adapter mapping its types onto `provider.ControlPlane`.
 - `internal/stream/` (Splunk-HEC receiver), `internal/webhook/` (HMAC-verified), `internal/dedup/`
   (bounded FIFO failsafe) — alternate ingestion paths that feed the **same** processors as the pollers.
 - `internal/flowlog/`, `internal/audit/` — record types + shared processors (used by both poll & stream).
 - `internal/enrich/` — in-memory device cache (IP/nodeID → name) populated by the devices collector.
+- `internal/rdns/` — best-effort, non-blocking reverse-DNS (PTR) cache enriching external IPs seen in
+  flow logs; bounded, with positive/negative TTLs, shared process-wide across tailnet runtimes.
+- `internal/release/` — cached, fail-open "latest version" fetcher + version parse/compare, shared by
+  the self update-available check and per-device version-skew metrics.
 - `internal/config/` — layered config loader (defaults → YAML → `TS2OTEL_*` env), `Validate()` and advisory `Warnings()`.
 - `tools/metricscatalog/` (docs/metrics.md generator), `tools/configcheck/` (validates config via the
   real `config.Load`, catching cross-field rules JSON Schema can't express).

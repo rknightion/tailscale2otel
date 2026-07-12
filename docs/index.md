@@ -9,10 +9,10 @@ image: assets/social-card.png
 `tailscale2otel` polls the [Tailscale API](https://tailscale.com/api) for every available kind of
 observability data and exports it as **OpenTelemetry-native metrics and logs** (plus an optional
 **traces** pillar for the exporter's own self-observability) — optimized for
-Grafana Cloud (OTLP) but compatible with any OTEL backend. Tailscale exposes a rich observability
-surface (network flow logs, configuration audit logs, a detailed device inventory, users, keys,
-settings, ACL, DNS) but no Prometheus endpoint, and it streams logs only to SIEM/storage sinks.
-`tailscale2otel` synthesizes well-modelled,
+Grafana Cloud (OTLP) but compatible with any OTEL backend. Tailscale itself exposes a rich
+observability surface (network flow logs, configuration audit logs, a detailed device inventory,
+users, keys, settings, ACL, DNS) via its API, but no Prometheus endpoint of its own, and it streams
+logs only to SIEM/storage sinks. `tailscale2otel` synthesizes well-modelled,
 [semantic-convention](https://opentelemetry.io/docs/specs/semconv/)-compliant OTEL telemetry from
 that data so you get device-fleet health, network throughput by node and protocol, an audit and
 event stream, and key-expiry and device version-skew signals out of the box — as a lightweight
@@ -23,6 +23,9 @@ single static binary with no external runtime dependencies.
 - **Network flow logs → metrics + logs.** Aggregated `tailscale.network.io` / `.packets` / `.flows`
   counters (low cardinality) for dashboards and alerting, plus full-fidelity per-connection flow
   records as OTEL logs for drill-down. Source IPs are enriched to device names.
+- **Optional reverse-DNS (PTR) enrichment** (`enrichment.reverse_dns.enabled`, off by default)
+  resolves *external* (non-tailnet) flow addresses to hostnames, replacing the raw IP / `external`
+  bucket in flow logs and metrics. Lookups are async and cached; the hot path never blocks.
 - **Configuration audit logs → logs + counters.** Every tailnet configuration change captured as a
   structured OTEL log event, plus a curated security-/lifecycle-categorized change counter
   (`tailscale.config.audit.changes`) for alerting on high-value changes without the full-stream noise.
@@ -51,6 +54,9 @@ single static binary with no external runtime dependencies.
   exactly what's affected.
 - **OTLP push** over gRPC or HTTP with first-class Grafana Cloud support; `stdout` mode for local
   debugging without a backend.
+- **Optional Prometheus pull endpoint** (`prometheus.enabled`, off by default) — serves `GET /metrics`
+  on its own dedicated listener (default `:2112`), independent of and alongside OTLP push, with an
+  optional bearer-token/basic-auth secret.
 - **Admin status page** at `/` (plus `/healthz`, `/readyz`, and `/api/status.json`) showing live
   collector health, active-series cardinality, the metrics and log catalog, discovered nodes, and a
   redacted config snapshot — and opt-in continuous profiling via pprof or Pyroscope.

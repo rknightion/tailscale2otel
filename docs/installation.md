@@ -126,7 +126,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     ## Binary
 
-    Build from source with the Go toolchain (Go 1.21+ required):
+    Build from source with the Go toolchain (Go 1.26+ required — see `go.mod` for the pinned version):
 
     ```sh
     git clone https://github.com/rknightion/tailscale2otel.git

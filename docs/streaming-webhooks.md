@@ -69,12 +69,13 @@ collectors:
 | `tailscale.stream.records` | Records successfully routed to a processor (`type`: `flow` or `audit`) |
 | `tailscale.stream.rejected` | Requests/records not ingested (`reason`: `auth`, `unparsable`, or `too_large`) |
 | `tailscale.stream.decode_errors` | Records classified as a known type but whose typed decode failed |
+| `tailscale.stream.skipped` | Records extracted from an otherwise-valid request body but never routed to a processor (`reason`: `unclassified` = matched neither the flow nor audit shape, `unwrap_drop` = a non-object value was dropped while unwrapping the envelope before classification) |
 | `tailscale.stream.inflight` | In-flight HTTP requests currently being processed (UpDownCounter) — useful for backpressure monitoring |
 | `tailscale.stream.request.duration` | Wall-clock duration of HEC request handling, in seconds (histogram) |
 
 ## Webhook receiver
 
-When `webhook.enabled: true`, `tailscale2otel` binds an HTTP endpoint that receives real-time Tailscale event notifications. Each event is emitted as an OTEL log record (with severity INFO or WARN depending on event type) and increments a `tailscale.webhook.events` counter keyed by event type. The receiver also emits `tailscale.webhook.inflight` (in-flight requests, UpDownCounter) and `tailscale.webhook.request.duration` (handler wall-clock time, histogram) for backpressure and latency monitoring.
+When `webhook.enabled: true`, `tailscale2otel` binds an HTTP endpoint that receives real-time Tailscale event notifications. Each event is emitted as an OTEL log record (with severity INFO or WARN depending on event type) and increments a `tailscale.webhook.events` counter keyed by event type. The receiver also emits `tailscale.webhook.rejected` (deliveries rejected, e.g. bad HMAC, keyed by `reason` — the signal to watch when a secret or timestamp tolerance is misconfigured), `tailscale.webhook.inflight` (in-flight requests, UpDownCounter), and `tailscale.webhook.request.duration` (handler wall-clock time, histogram) for backpressure and latency monitoring.
 
 ```yaml
 webhook:
@@ -83,7 +84,7 @@ webhook:
   path: /tailscale/webhook           # endpoint path Tailscale POSTs events to
   secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty = verification SKIPPED, WARN)
   tolerance: 5m                      # reject signed timestamps older than this (replay window); "0" disables
-  dedup_audit_events: false          # best-effort: drop a webhook event already counted via the audit logs
+  dedup_audit_events: false          # best-effort, bidirectional: audit and webhook events sharing a normalized key are deduplicated against a shared set, first-arrival-wins (either copy can be the one that survives)
 ```
 
 **HMAC verification.** Tailscale signs each webhook request with a `Tailscale-Webhook-Signature` header containing a Unix timestamp and one or more HMAC-SHA256 signatures (`t=<seconds>,v1=<hex>`). The receiver verifies the signature by computing `HMAC-SHA256(secret, "<seconds>.<body>")` and comparing against each `v1` value using a constant-time comparison. Multiple `v1` entries are accepted — a match against any one is sufficient, which supports secret rotation without downtime. The `tolerance` field (default `5m`) rejects requests whose timestamp is older than the window, limiting replay attacks.

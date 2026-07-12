@@ -138,7 +138,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__NODE_METRICS__MAX_SAMPLES` | `50000` | per-target sample cap per scrape — bounds cardinality |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__METRIC_ALLOW` | `[]` | if non-empty, only forwarded metric names matching one of these anchored regexes are kept _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__METRIC_DENY` | `[]` | forwarded metric names matching any of these anchored regexes are dropped (after allow) _(comma-separated list)_ |
-| `TS2OTEL_COLLECTORS__NODE_METRICS__DROP_LABELS` | `[]` | label keys stripped from every forwarded series (the instance label is never dropped) _(comma-separated list)_ |
+| `TS2OTEL_COLLECTORS__NODE_METRICS__DROP_LABELS` | `[]` | label keys stripped from every forwarded series (the tailscale.node identity label is never dropped) _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__ENABLED` | `false` | OPTIONAL: discover scrape targets from the Tailscale devices API (unioned with static targets) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INTERVAL` | `5m` | how often the device inventory is re-scanned for targets |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__MAX_TARGETS` | `1000` | cap discovered targets per refresh |
@@ -158,7 +158,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__ENABLED` | `false` | run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream) |
 | `TS2OTEL_STREAMING__LISTEN` | `:8088` | bind address for the Splunk-HEC-compatible receiver |
 | `TS2OTEL_STREAMING__PATH` | `/services/collector/event` | HEC endpoint path Tailscale POSTs to |
-| `TS2OTEL_STREAMING__TOKEN` | `""` | expected as "Authorization: Splunk <token>" (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN) |
+| `TS2OTEL_STREAMING__TOKEN` | `""` | shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN) |
 | `TS2OTEL_STREAMING__PUBLIC_URL` | `""` | externally reachable receiver URL; REQUIRED only when auto_configure: true |
 | `TS2OTEL_STREAMING__TLS__CERT_FILE` | `""` | HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints) |
 | `TS2OTEL_STREAMING__TLS__KEY_FILE` | `""` | HTTPS key |

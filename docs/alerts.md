@@ -41,7 +41,7 @@ Rules are organised into four groups:
   `tailscale.config.audit.changes` counter are natural additions here — e.g.
   `tailscale_acl_unrestricted_rules_ratio > 0` (any-to-any non-deny rules),
   `tailscale_acl_ssh_wildcard_ratio > 0` (wildcard SSH rules), or
-  `increase(tailscale_config_audit_changes_total{change_category="auth_provider"}[1h]) > 0`.
+  `increase(tailscale_config_audit_changes_total{tailscale_audit_change="auth_provider"}[1h]) > 0`.
 - **`tailscale2otel-integrations`** — MDM/EDR posture sync, log-stream delivery health
 - **`tailscale2otel-network`** — DERP relay usage, region latency, flow data presence
 - **`tailscale2otel-recording`** — precomputed recording rules (DERP byte fraction, posture ratios,

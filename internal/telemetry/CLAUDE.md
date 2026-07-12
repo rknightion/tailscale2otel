@@ -22,6 +22,30 @@ The concrete `otelEmitter` (`emitter.go`) caches instruments by name and convert
 OTEL key-values. Pass `name`/`unit`/`desc` straight from your `metricdoc` descriptor (below) so the
 emitted signal can't drift from the declared one. The Emitter is safe for concurrent use.
 
+## ProviderSet — one Provider per tailnet, fanned out from one process
+
+A `Provider` is **per-tailnet**, not global. `app.New` never constructs a bare `Provider`; it always
+builds a `telemetry.ProviderSet` (`providerset.go`): one **process** Provider (no `tailscale.tailnet`
+attribute; carries process/global self-obs — `tailscale2otel.up`, build info, and any signal with no
+tailnet dimension) plus one **tailnet** Provider per configured tailnet, each stamping
+`tailscale.tailnet=<name>` as a per-signal **const attribute** (`constLabelAttrs` in `provider.go` —
+NOT a Resource attribute) on every metric/log/span it emits. All providers export to the same
+configured OTLP backend. This holds even for a single-tailnet deployment — it still goes through a
+`ProviderSet` with exactly one tailnet entry; there is no separate single-Provider code path.
+
+- `NewProviderSet(ctx, base Options, tailnets []PerTailnetOptions)` builds the process provider from
+  `base` (`TailnetName` cleared), then one Provider per `PerTailnetOptions{Name, InstanceID}` entry
+  (`base` with `TailnetName` + a **distinct** `InstanceID`). `InstanceID` must be unique per tailnet: on
+  Grafana Cloud's OTLP→Prometheus mapping, Resource attributes other than job/instance/service_* live
+  only in `target_info`, so two tailnet providers sharing one `service.instance.id` would collide.
+- `.Process()` / `.Tailnet(name)` return the respective `*Provider`; `.TailnetNames()` returns
+  construction order; `.PromGatherers()` merges every provider's Prometheus registry (process first,
+  then each tailnet) into one `prometheus.Gatherers` for the single opt-in `/metrics` pull endpoint;
+  `.Shutdown(ctx)` flushes/stops all of them, joining any errors.
+- `provider: headscale` deployments have no tailnet fan-out: the single Headscale runtime shares the
+  **process** provider/emitter directly (no `tailscale.tailnet` attribute), matching the pre-multi-tailnet
+  single-Resource output — see `app.New`'s Headscale branch and `internal/provider`/`internal/hsapi`.
+
 ## semconv — attribute & unit constants
 
 `internal/semconv` holds every attribute key and unit string used across collectors/processors (stable

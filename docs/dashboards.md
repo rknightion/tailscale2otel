@@ -39,9 +39,9 @@ python3 gen/build.py --out tailscale2otel.json
 | **Security & Audit** | ACL-hygiene risk (wildcard/unrestricted/auto-approver/SSH/posture-gated), config-change and device-churn rates, device-share invites, MDM posture, posture-integration sync/match, key and access expiry, tailnet-lock, and audit metric-vs-log correlation. |
 | **Policy & Config** | ACL (size + risk-scoring), DNS, settings, users (by role/status/type), and key inventory (auth keys, OAuth clients, and API tokens). |
 | **Node Metrics** | Per-node scraper health and forwarded `tailscaled_*` series (conditionally rendered). |
+| **Tailnets** | MSP scorecard (one row per tailnet: online devices, scrape staleness, API errors) — appears only on multi-tailnet deployments. |
 | **Exporter Diagnostics** | Per-collector scrape duration/success/errors, API request stats, cardinality, enrichment cache, and Go runtime. |
 | **Cardinality & Cost** | Per-metric series vs cap, overflow table, series-by-group cost driver, per-metric headroom, flow-cardinality drivers, dedup sets, and an ingest-vs-export DPM/LPM cost view. |
-| **Tailnets** | MSP scorecard (one row per tailnet: online devices, scrape staleness, API errors) — appears only on multi-tailnet deployments. |
 
 ## Legacy dashboards (Grafana ≤12 friendly)
 

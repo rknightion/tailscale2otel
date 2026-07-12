@@ -68,10 +68,11 @@ These make natural alert conditions — see [Alerts](alerts.md).
 
 In addition to the raw `tailscale.config.audit.events` counter (action + origin), a curated
 `tailscale.config.audit.changes` counter emits only **security- and lifecycle-relevant** events,
-categorized by `change_category` (`acl`, `key_expiry`, `exit_node`, `tailnet_lock`, `user_role`,
-`auth_provider`, `secret`, `device`, `api_key`, `posture_integration`, `magic_dns`, `dns_config`, …)
-and `actor.type`. It is purpose-built for alerting on high-value change categories (and device churn)
-without the noise of the full audit stream.
+categorized by the `tailscale.audit.change` attribute (Prometheus label `tailscale_audit_change`;
+values include `acl`, `key_expiry`, `exit_node`, `tailnet_lock`, `user_role`, `auth_provider`,
+`secret`, `device`, `api_key`, `posture_integration`, `magic_dns`, `dns_config`, …) and `actor.type`.
+It is purpose-built for alerting on high-value change categories (and device churn) without the
+noise of the full audit stream.
 
 ## Outbound version checks
 

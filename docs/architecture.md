@@ -15,39 +15,52 @@ single line of PromQL or touching a sidecar.
 
 ## High-level data flow
 
+`app.New` fans out over the configured tailnets: each gets its own `*tailnetRuntime` (client,
+enrichment cache, scheduler, flow/audit processors), and every runtime feeds a per-tailnet
+`telemetry.Provider` inside one process-wide `telemetry.ProviderSet`. Under `provider: headscale`
+there is no fan-out — a single runtime talks to Headscale instead.
+
 ```mermaid
 flowchart LR
-    subgraph Sources
+    subgraph Sources ["Per tailnet (N runtimes)"]
         A[Tailscale API]
         B[Log stream\nSplunk-HEC]
         C[Webhook receiver]
     end
 
-    subgraph Collectors ["internal/collector (one per source)"]
+    HS[Headscale API\nprovider: headscale]
+
+    subgraph Collectors ["internal/collector (one per source, per runtime)"]
         D[devices / users / keys\nsettings / acl / dns\nservices / contacts / webhooks\nposture / log_stream / nodemetrics]
         E[flowlogs / auditlogs\nwindow collectors]
     end
 
-    subgraph Processors
+    subgraph Processors ["Per-runtime processors"]
         F[flowlog.Processor\naudit.Processor]
         G[enrich.DeviceCache]
+        R[rdns.Cache\nexternal-IP PTR lookups]
     end
 
-    subgraph Telemetry ["internal/telemetry"]
-        H[telemetry.Emitter facade]
+    subgraph Telemetry ["internal/telemetry.ProviderSet"]
+        H[per-tailnet Provider\n+ process Provider]
     end
 
     I[(OTLP endpoint\nGrafana Cloud)]
+    P[(Prometheus /metrics\noptional pull listener)]
 
     A --> D
     A --> E
+    HS -.-> D
     B --> F
     C --> F
     E --> F
     D --> H
     F --> G
+    F --> R
     G --> H
+    R --> H
     H --> I
+    H -.-> P
 ```
 
 Collectors and processors emit only through the `telemetry.Emitter` interface — they never touch
@@ -71,16 +84,35 @@ the full list of what's affected and the required connection settings.
 
 `app.New` is where everything gets wired together. On startup it:
 
-1. Builds the OTEL telemetry provider (gRPC/HTTP/stdout exporter, cumulative temporality for
-   Grafana Cloud).
-2. Constructs the Tailscale API client (`internal/tsapi`) with either OAuth (preferred —
-   auto-refreshing, no expiry) or a static API key.
-3. Creates the shared `flowlog.Processor` and `audit.Processor` so both the poll path and the
-   stream/webhook path feed identical conversion logic.
-4. Initialises the in-memory device enrichment cache (`internal/enrich`).
-5. Registers every enabled collector with the scheduler (`internal/collector`).
-6. Starts any enabled receivers (`internal/stream` for Splunk-HEC, `internal/webhook`).
-7. Launches the admin HTTP server (health probes, status page, optional pprof).
+1. Resolves the configured tailnets (`cfg.ResolvedTailnets()` — one `tailscale:` block or a
+   `tailnets:` list) and builds a `telemetry.ProviderSet`: one process-level OTEL provider (no
+   `tailscale.tailnet` attribute; process/global self-obs) plus one per-tailnet provider (each
+   stamps `tailscale.tailnet=<name>` and gets a distinct `service.instance.id`, so tailnets never
+   collide on a shared Grafana Cloud backend).
+2. Builds process-level shared dependencies (`buildProcessDeps`): the reverse-DNS cache
+   (`internal/rdns`, gated by `enrichment.reverse_dns.enabled`), the webhook↔audit cross-dedup set
+   (`internal/dedup`), and the release/version-check fetchers (`internal/release`, gated by
+   `version_checks.self.enabled` / `version_checks.devices.enabled`).
+3. Builds the collection machinery, branching on `provider`:
+   - **`tailscale` (default):** one `*tailnetRuntime` per resolved tailnet. Each runtime gets its
+     own `internal/tsapi` client (OAuth preferred — auto-refreshing, no expiry — or a static API
+     key), its own `enrich.DeviceCache`, its own `flowlog.Processor` / `audit.Processor` pair (so
+     both the poll path and the stream/webhook path feed identical conversion logic within that
+     tailnet), and its own collector registry + scheduler (`internal/collector`).
+   - **`headscale`:** a single runtime backed by `internal/hsapi` behind the `internal/provider`
+     abstraction (`provider.Headscale`) — no per-tailnet fan-out; it shares the process emitter
+     rather than getting its own tailnet provider.
+4. Starts any enabled receivers (`internal/stream` for Splunk-HEC, `internal/webhook`).
+5. Launches the admin HTTP server (health probes, status page, `POST /api/rdns/purge`, optional
+   pprof) when `admin.enabled`.
+6. Launches the standalone Prometheus pull-endpoint server (`internal/app/metrics.go`) when
+   `prometheus.enabled`, serving the merged per-provider gatherers from the `ProviderSet`.
+7. Starts continuous profiling (Pyroscope push agent) when configured; failure to reach Pyroscope
+   is non-fatal.
+
+`Run` then starts, per runtime, its scheduler loop plus (when self-observability is enabled) the
+release-check background loops (`selfRelease.Run` / `tsRelease.Run`) driving
+`tailscale2otel.update_available` and the device version-skew metrics.
 
 The file `internal/app/collectors.go` is the canonical list of what is registered and under what
 config gates. Start here when you want to understand how a new data source would be added.
@@ -121,16 +153,34 @@ signals are identical regardless of which path delivers the record.
 
 ## Device enrichment
 
-The `devices` collector populates an in-memory cache (`internal/enrich.DeviceCache`) that maps IP
-addresses and node IDs to human-readable device names. The flow-log and audit processors consult
-this cache when annotating log records and metrics with `source.address` / `destination.address`
-labels.
+Two enrichment layers feed source/destination naming on flow and audit records; the device cache
+resolves **tailnet** addresses, reverse-DNS resolves **external** ones.
+
+- **`internal/enrich.DeviceCache`** — populated by the `devices` collector, in-memory, one instance
+  per `tailnetRuntime`. Maps IP addresses and node IDs *within that tailnet* to human-readable
+  device names. The flow-log and audit processors consult this cache first when annotating records
+  and metrics with `source.address` / `destination.address` labels; a hit resolves to the device
+  name, a miss on an in-tailnet-looking address resolves to `unknown`, and an address outside the
+  tailnet resolves to `external`.
+- **`internal/rdns.Cache`** (opt-in, `enrichment.reverse_dns.enabled`) — an async, bounded reverse-DNS
+  (PTR) cache that only ever runs for addresses the device cache already bucketed as `external`
+  (`flowlog.Processor` calls it exactly there — see `internal/flowlog/processor.go`). Lookups never
+  block the hot path: a miss returns immediately and the resolved PTR name becomes available on a
+  later sighting once the background lookup completes. Positive and negative results are cached with
+  separate TTLs (`enrichment.reverse_dns.cache_ttl` / `negative_ttl`), bounded by `max_entries`. It
+  is process-level shared infra (one cache, not one per tailnet) built in `app.buildProcessDeps` and
+  wired into every runtime's `flowlog.Processor` in `newRuntime` (`internal/app/tailnetruntime.go`).
+  It emits its own self-obs metrics (`tailscale.rdns.cache.lookups`, `.evictions`, `.overflows`,
+  `.entries`, `.capacity`, `tailscale.rdns.queries`) and can be cleared on demand via
+  `POST /api/rdns/purge` (see [Self-observability and the admin status
+  page](#self-observability-and-the-admin-status-page) below).
 
 !!! warning "Degraded enrichment without the devices collector"
     If the `devices` collector is disabled, the enrichment cache is empty and flow/audit records
     fall back to `unknown` (for unresolvable internal IPs) or `external` (for addresses outside the
     tailnet). Device-name labels will be absent or generic until the collector is re-enabled and has
-    run at least once.
+    run at least once. Reverse-DNS enrichment is unaffected by this — it only depends on
+    `enrichment.reverse_dns.enabled`, not on the `devices` collector.
 
 ## Checkpointing
 
@@ -145,6 +195,24 @@ handled externally).
 
 If a window collection fails the high-water mark is **not** advanced, so the same window is
 retried on the next tick.
+
+## Version / release checks
+
+`internal/release.Fetcher` is a cached, fail-open fetcher for an external "latest release" string
+plus version parse/compare helpers (`release.Parse`, `release.Less`), shared by two independent,
+config-gated background loops built in `app.buildProcessDeps` and started from `Run`:
+
+- **`version_checks.self.enabled`** — `a.selfRelease` polls the tailscale2otel GitHub releases feed
+  and drives `tailscale2otel.update_available` (comparing the running build version to the latest
+  tagged release).
+- **`version_checks.devices.enabled`** — `a.tsRelease` polls the latest stable Tailscale client
+  release and feeds the `devices` collector's per-device / fleet version-skew metrics (flagging
+  devices more than `version_checks.devices.outdated_minor_threshold` minor versions behind).
+
+Both fetchers make plain outbound HTTPS calls (no Tailscale auth), cache their result for
+`version_checks.cache_ttl`, and are fail-open: a blocked or failing fetch silently emits nothing
+rather than erroring. Both loops run independently of `self_observability.enabled` — an operator can
+want update alerts with broad self-obs off.
 
 ## Self-observability and the admin status page
 
@@ -181,6 +249,17 @@ In addition, an admin HTTP server (default `:9090`) serves:
 - `/` — an HTML status page with live collector health, cardinality table, the metrics/log catalog,
   discovered node-metrics targets, and a redacted config view.
 - `/api/status.json` — the same data as JSON, for programmatic access.
+- `POST /api/rdns/purge` — the admin server's **only mutating** endpoint: clears the reverse-DNS
+  cache (`internal/rdns.Cache`). Method-gated (405 + `Allow: POST` on anything but `POST`), gated by
+  the same admin-token auth as `/` and `/api/status.json` (`requireAdminAuth`), and additionally
+  same-origin-checked (`sameOrigin`, `internal/app/admin_status.go`) as CSRF hardening: a browser
+  request carrying `Sec-Fetch-Site` must be `same-origin`/`none`, or (falling back for clients that
+  don't send it) an `Origin` header must match the request `Host`; a request with **no** `Origin` /
+  `Sec-Fetch-Site` at all (e.g. `curl`) is allowed through since the admin-token gate is the primary
+  control for those. A cross-origin browser request gets `403 cross-origin request forbidden`.
+  Responds `200 application/json` with `{"purged": <int>, "enabled": <bool>}` — `enabled` reports
+  whether reverse-DNS is configured at all (`enrichment.reverse_dns.enabled`); when it is false,
+  `purged` is always `0`.
 - `/healthz` and `/readyz` — liveness and readiness probes.
 - `/debug/pprof` — optional, requires `profiling.pprof.enabled: true`, which in turn requires
   **both** `admin.enabled: true` **and** `admin.auth.token` to be set (heap/goroutine dumps can
@@ -189,16 +268,31 @@ In addition, an admin HTTP server (default `:9090`) serves:
 The status page is entirely self-contained — no CDN or external assets — so it renders on
 air-gapped tailnets.
 
+### Prometheus pull endpoint
+
+A second, independent HTTP listener — off by default, `prometheus.enabled` (default `:2112`,
+`internal/app/metrics.go`) — serves a single `GET /metrics` in the standard Prometheus exposition
+format, for scrapers that can't consume OTLP push. It is separate from the admin server so pull
+scraping works even with the status page/pprof disabled, and it gathers from every provider in the
+`telemetry.ProviderSet` (process + each tailnet) merged into one `prometheus.Gatherers`. Optionally
+gated by `prometheus.auth.token` (same Basic/Bearer constant-time check as the admin token); empty
+token leaves it open.
+
 ## Key package boundaries
 
 | Package | Role |
 |---|---|
-| `internal/app` | Composition root; wires all components together |
+| `internal/app` | Composition root; wires all components together, one `*tailnetRuntime` per tailnet |
 | `internal/collector/<name>` | One subpackage per data source; fetch + emit |
 | `internal/flowlog`, `internal/audit` | Shared record types and processors |
-| `internal/enrich` | In-memory device enrichment cache |
-| `internal/telemetry` | `Emitter` facade; the only code that touches the OTEL SDK |
+| `internal/enrich` | In-memory, per-tailnet device enrichment cache (IP/nodeID → device name) |
+| `internal/rdns` | Async, bounded reverse-DNS (PTR) cache for external flow addresses |
+| `internal/telemetry` | `Emitter` facade + `ProviderSet`; the only code that touches the OTEL SDK |
 | `internal/tsapi` | Tailscale API client (OAuth / API key, retry, rate-limit handling) |
+| `internal/hsapi` | Minimal read-only Headscale control-plane API client |
+| `internal/provider` | `ControlPlane` abstraction unifying Tailscale/Headscale behind one capability set |
+| `internal/dedup` | Bounded FIFO de-duplication set (poll/stream overlap, webhook↔audit cross-source) |
+| `internal/release` | Cached, fail-open "latest release" fetcher for the version-check loops |
 | `internal/stream`, `internal/webhook` | Alternate log ingestion receivers |
 | `internal/config` | Layered config loader and validation |
 

@@ -7,8 +7,9 @@ jitter, time-window bookkeeping, checkpoints, and per-tick self-observability; e
 ## The two collector interfaces (`collector.go`)
 
 - **`SnapshotCollector`** — point-in-time reads. `Name()`, `DefaultInterval()`,
-  `Collect(ctx, telemetry.Emitter) error`. Used by devices, users, keys, settings, acl, dns, nodemetrics.
-  Stateless between ticks (exception: `acl` keeps an ETag to detect changes).
+  `Collect(ctx, telemetry.Emitter) error`. Used by devices, users, keys, settings, acl, dns, nodemetrics,
+  contacts, services, webhooks, postureintegrations, logstream. Stateless between ticks (exception: `acl`
+  keeps an ETag to detect changes).
 - **`WindowCollector`** — time-windowed reads. Adds `CollectWindow(ctx, from, to, e) (highWaterMark time.Time, err error)`
   and `Lag() time.Duration`. Used by flowlogs, auditlogs. The scheduler sets `to = now - Lag()` so the
   query never reaches "now" (late records). Return a zero high-water mark on failure so the checkpoint

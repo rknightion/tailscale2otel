@@ -35,13 +35,19 @@ only degrades IP→name enrichment, so flow/audit records fall back to
 
 ## Receiver authentication footguns
 
-The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs.
-Their auth is **opt-in by presence of a secret**, so an empty value silently
-disables it (these behaviours are also noted in `config.example.yaml`):
+The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs, and
+the optional `prometheus` pull endpoint serves `GET /metrics`. Their auth is **opt-in by
+presence of a secret**, so an empty value silently disables it (these behaviours are also
+noted in `config.example.yaml`):
 
 - Leaving `webhook.secret` empty **skips HMAC verification entirely** —
   unauthenticated POSTs are accepted.
 - Leaving `streaming.token` empty **disables receiver authentication**.
+- Leaving `prometheus.auth.token` empty **serves `/metrics` unauthenticated** — every
+  series, including device hostnames, flow identifiers, and the tailnet name, to anyone
+  who can reach the port (`prometheus.listen`, default `:2112`). A startup warning fires
+  for this only when the listener is also bound to a wildcard address; an unauthenticated
+  loopback or tailnet-bound endpoint is silent.
 
 Always set these when exposing a receiver, especially on a wildcard/all-interfaces
 bind or without TLS. Tailscale requires HTTPS for the streaming sink; a

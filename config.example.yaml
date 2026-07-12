@@ -220,7 +220,7 @@ collectors:
       #   tls: { ca_file: /etc/ca.pem, server_name: relay.ts.net, insecure_skip_verify: false }
     metric_allow: []                  # if non-empty, only forwarded metric names matching one of these anchored regexes are kept
     metric_deny: []                   # forwarded metric names matching any of these anchored regexes are dropped (after allow)
-    drop_labels: []                   # label keys stripped from every forwarded series (the instance label is never dropped)
+    drop_labels: []                   # label keys stripped from every forwarded series (the tailscale.node identity label is never dropped)
     discovery:                        # OPTIONAL: discover scrape targets from the Tailscale devices API (unioned with static targets)
       enabled: false
       interval: 5m                    # how often the device inventory is re-scanned for targets
@@ -249,7 +249,7 @@ streaming:
   enabled: false                      # run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream)
   listen: ":8088"                     # bind address for the Splunk-HEC-compatible receiver
   path: /services/collector/event     # HEC endpoint path Tailscale POSTs to
-  token: ""                           # expected as "Authorization: Splunk <token>" (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN)
+  token: ""                           # shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN)
   public_url: ""                      # externally reachable receiver URL; REQUIRED only when auto_configure: true
   tls:
     cert_file: ""                     # HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints)
