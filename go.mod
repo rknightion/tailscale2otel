@@ -1,6 +1,6 @@
 module github.com/rknightion/tailscale2otel
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/go-viper/mapstructure/v2 v2.5.0

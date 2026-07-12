@@ -4,7 +4,7 @@
 // that JSON Schema draft-07 cannot express.
 module github.com/rknightion/tailscale2otel/tools/configcheck
 
-go 1.26.4
+go 1.26.5
 
 require github.com/rknightion/tailscale2otel v0.0.0
 
