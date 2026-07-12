@@ -1,5 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
       "description": "OpenTelemetry: update core (v1.x) and the 0.x log modules together in ONE PR and never automerge - a core bump without the log modules (or vice-versa) breaks the build. Repo rules run after the fleet-wide automerge in config.js, so this overrides it for these packages.",
@@ -20,6 +21,13 @@
       "matchManagers": ["gomod"],
       "matchPackageNames": ["github.com/rknightion/tailscale2otel"],
       "enabled": false
+    },
+    {
+      "description": "Update indirect deps in the tools/* modules. They pull the whole build list in transitively via replace ../.., so every dep except the self-module is indirect there - and Renovate skips indirect deps by default. A root bump of a shared dep would otherwise leave tools/*/go.mod pinned to the old version, and Go then refuses to build them ('updates to go.mod needed'). Enabling this puts both sides of the bump in the same PR.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["tools/**/go.mod"],
+      "matchDepTypes": ["indirect"],
+      "enabled": true
     }
   ]
 }
