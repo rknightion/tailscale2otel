@@ -33,15 +33,24 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			"n-desktop":        {"custom:foo": "baz"},
 			"n-phone":          {},
 		},
+		// custom:foo expires in 5 days (within the fixed 14-day warn window), so
+		// both tailscale.device.attribute.expiry and the
+		// tailscale.device.attribute.expiring WARN log are exercised here too.
+		postureExpiries: map[string]map[string]time.Time{
+			"3690401478992208": {"custom:foo": now.Add(5 * 24 * time.Hour)},
+		},
 		invites: map[string][]tsapi.DeviceInvite{
 			"3690401478992208": {{Accepted: true, AllowExitNode: true, MultiUse: false}},
 		},
 	}
 	// Wildcard attribute_namespaces so both the numeric and info attribute gauges
 	// (tailscale.device.attribute{,.info}) are emitted and drift-checked too.
+	// WithClock pins "now" so the attribute-expiry WARN log's day threshold is
+	// deterministic (matches the other collectors' fixed-clock catalog tests).
 	c := devices.New(api, cache, 0, true, true,
 		devices.WithAttributeNamespaces([]string{"*"}),
-		devices.WithDeviceInvites(true))
+		devices.WithDeviceInvites(true),
+		devices.WithClock(func() time.Time { return now }))
 
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -94,6 +103,15 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		if _, ok := declared[name]; !ok {
 			t.Errorf("attribute metric %q not declared in devices.Catalog()", name)
 		}
+	}
+
+	// The attribute-expiry gauge (issue #164) must be emitted (custom:foo carries
+	// an expiry above) and declared in Catalog().
+	if pts := rec.MetricPoints("tailscale.device.attribute.expiry"); len(pts) == 0 {
+		t.Error("tailscale.device.attribute.expiry not emitted with an expiring attribute present")
+	}
+	if _, ok := declared["tailscale.device.attribute.expiry"]; !ok {
+		t.Error("tailscale.device.attribute.expiry not declared in devices.Catalog()")
 	}
 
 	// The device-invites count gauge must be both emitted (collect_device_invites

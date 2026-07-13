@@ -51,6 +51,7 @@ const (
 	metricDevicesCount              = "tailscale.devices.count"
 	metricAttribute                 = "tailscale.device.attribute"
 	metricAttributeInfo             = "tailscale.device.attribute.info"
+	metricAttributeExpiry           = "tailscale.device.attribute.expiry"
 
 	metricDevicesUntagged  = "tailscale.devices.untagged"
 	metricDevicesEphemeral = "tailscale.devices.ephemeral"
@@ -67,9 +68,10 @@ const (
 	metricCacheAge  = "tailscale2otel.enrich.cache_age"
 	metricCacheSize = "tailscale2otel.enrich.cache_size"
 
-	eventPosture         = "tailscale.device.posture"
-	eventDeviceInvite    = "tailscale.device_invite"
-	eventDeviceKeyExpiry = "tailscale.device.key_expiring"
+	eventPosture               = "tailscale.device.posture"
+	eventDeviceInvite          = "tailscale.device_invite"
+	eventDeviceKeyExpiry       = "tailscale.device.key_expiring"
+	eventDeviceAttributeExpiry = "tailscale.device.attribute.expiring"
 
 	metricTailnetLockErrors    = "tailscale.tailnet_lock.errors"
 	metricDerpRegionLatencyMin = "tailscale.derp.region.latency_min"
@@ -116,6 +118,13 @@ const (
 	// node key expires on the tailscale.device.key_expiring log event.
 	// Numeric, non-identifying — not added to the PII registry.
 	attrDeviceKeyExpiresInDays = "tailscale.device.key_expires_in_days"
+
+	// attrDeviceAttributeExpiresInDays carries the remaining days until a
+	// device posture attribute expires on the
+	// tailscale.device.attribute.expiring log event. Numeric, non-identifying
+	// — not added to the PII registry, same rationale as
+	// attrDeviceKeyExpiresInDays.
+	attrDeviceAttributeExpiresInDays = "tailscale.device.attribute_expires_in_days"
 
 	// Fleet-hygiene roll-up labels.
 	attrClientVersion = "tailscale.client_version"
@@ -207,7 +216,7 @@ const keyExpiryWarnDays = 14
 // by *tsapi.Client.
 type api interface {
 	DevicesRich(ctx context.Context) ([]tsapi.RichDevice, error)
-	DevicePostureAttributes(ctx context.Context, deviceID string) (map[string]any, error)
+	DevicePostureAttributes(ctx context.Context, deviceID string) (tsapi.DeviceAttributes, error)
 	DeviceInvites(ctx context.Context, deviceID string) ([]tsapi.DeviceInvite, error)
 }
 
@@ -664,7 +673,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 
 		if c.collectPosture {
-			c.emitPosture(ctx, e, d)
+			c.emitPosture(ctx, e, d, nowT)
 		}
 
 		if c.collectDeviceInvites {
@@ -1068,11 +1077,12 @@ func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 // emits the full posture LOG event depending on the configured posture log mode.
 // Per-device errors are non-fatal: the device is skipped and collection
 // continues.
-func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice) {
-	attrs, err := c.api.DevicePostureAttributes(ctx, d.ID)
+func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time) {
+	da, err := c.api.DevicePostureAttributes(ctx, d.ID)
 	if err != nil {
 		return
 	}
+	attrs := da.Attributes
 
 	// Info-gauge metric: always emitted (independent of log mode). Constant 1,
 	// carrying the curated posture subset plus device identity as labels.
@@ -1089,8 +1099,11 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 
 	// Promote the allow-listed posture attributes to queryable metrics (hybrid
 	// model), reusing the already-fetched attribute map — no extra API call.
+	// Attribute expiries (present only for attributes explicitly set with one)
+	// share the same namespace allow-list fence.
 	if c.attrNamespaceWildcard || len(c.attrNamespaces) > 0 {
 		c.emitAttributes(d, attrs)
+		c.emitAttributeExpiries(e, d, da.Expiries, nowT)
 	}
 
 	// Decide whether to emit the LOG. The signature is computed over the FULL
@@ -1165,6 +1178,50 @@ func (c *Collector) emitAttributes(d *tsapi.RichDevice, attrs map[string]any) {
 			c.gsb.Add(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
 		default:
 			// Skip anything that isn't a scalar string/number/bool.
+		}
+	}
+}
+
+// emitAttributeExpiries promotes attribute expiries (present only for
+// attributes explicitly set with one, e.g. a custom: namespace attribute set
+// via the API with an expiry) to the tailscale.device.attribute.expiry gauge,
+// and — for anything falling within the fixed 14-day warn window (the same
+// keyExpiryWarnDays lead used by the node-key expiry log) — the
+// tailscale.device.attribute.expiring WARN log. This is the attribute analog
+// of the docKeyExpiry gauge / eventDeviceKeyExpiry log pair. Gated by the same
+// attribute_namespaces allow-list as emitAttributes: a namespace not
+// allow-listed is skipped even if its attribute carries an expiry, so the two
+// signals never disagree about which attributes are "in scope".
+func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevice, expiries map[string]time.Time, nowT time.Time) {
+	for key, expiry := range expiries {
+		ns, _, ok := strings.Cut(key, ":")
+		if !ok {
+			continue // Tailscale posture keys are always namespaced.
+		}
+		if !c.attrNamespaceWildcard && !c.attrNamespaces[ns] {
+			continue
+		}
+		labels := telemetry.Attrs{
+			semconv.HostName: d.Hostname,
+			semconv.HostID:   d.ID,
+			attrAttribute:    key,
+		}
+		c.gsb.Add(docAttributeExpiry.Name, docAttributeExpiry.Unit, docAttributeExpiry.Description,
+			float64(expiry.Unix()), labels)
+
+		days := expiry.Sub(nowT).Hours() / 24
+		if days > 0 && days <= keyExpiryWarnDays {
+			e.LogEvent(telemetry.Event{
+				Name:     docDeviceAttributeExpiringLog.Name,
+				Severity: telemetry.SeverityWarn,
+				Body:     "device posture attribute expiring soon",
+				Attrs: telemetry.Attrs{
+					semconv.HostName:                 d.Hostname,
+					semconv.HostID:                   d.ID,
+					attrAttribute:                    key,
+					attrDeviceAttributeExpiresInDays: fmt.Sprintf("%.2f", days),
+				},
+			})
 		}
 	}
 }

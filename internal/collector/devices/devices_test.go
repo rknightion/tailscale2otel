@@ -25,6 +25,11 @@ type fakeAPI struct {
 	postureIDs  []string
 	postureFail string // device ID whose posture call should return postureErr
 
+	// postureExpiries carries, per device, the attribute-expiry map returned
+	// alongside the posture map (tsapi.DeviceAttributes.Expiries) — nil unless
+	// a test opts in.
+	postureExpiries map[string]map[string]time.Time
+
 	invites    map[string][]tsapi.DeviceInvite
 	inviteErr  error
 	inviteFail string // device ID whose invites call returns inviteErr
@@ -36,12 +41,15 @@ func (f *fakeAPI) DevicesRich(_ context.Context) ([]tsapi.RichDevice, error) {
 	return f.devices, f.err
 }
 
-func (f *fakeAPI) DevicePostureAttributes(_ context.Context, deviceID string) (map[string]any, error) {
+func (f *fakeAPI) DevicePostureAttributes(_ context.Context, deviceID string) (tsapi.DeviceAttributes, error) {
 	f.postureIDs = append(f.postureIDs, deviceID)
 	if deviceID == f.postureFail {
-		return nil, f.postureErr
+		return tsapi.DeviceAttributes{}, f.postureErr
 	}
-	return f.posture[deviceID], nil
+	return tsapi.DeviceAttributes{
+		Attributes: f.posture[deviceID],
+		Expiries:   f.postureExpiries[deviceID],
+	}, nil
 }
 
 func (f *fakeAPI) DeviceInvites(_ context.Context, deviceID string) ([]tsapi.DeviceInvite, error) {
@@ -1749,6 +1757,112 @@ func TestCollect_AttributeDisabledWithoutAllowList(t *testing.T) {
 	}
 	if postureLogCount(rec) != 1 {
 		t.Errorf("posture logs = %d, want 1 (unaffected)", postureLogCount(rec))
+	}
+}
+
+// attrExpiryCollector builds a single-device posture collector with
+// collect_posture on, the given attribute-namespace allow-list, and the given
+// attribute expiries (tsapi.DeviceAttributes.Expiries) — a fixed clock (the
+// package `now`) so the WARN-log day-threshold math is deterministic.
+func attrExpiryCollector(devID string, posture map[string]any, expiries map[string]time.Time, ns ...string) (*devices.Collector, *telemetrytest.Recorder, *fakeAPI) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	api := &fakeAPI{
+		devices:         []tsapi.RichDevice{{ID: devID, Hostname: "laptop", OS: "linux", ConnectedToControl: true}},
+		posture:         map[string]map[string]any{devID: posture},
+		postureExpiries: map[string]map[string]time.Time{devID: expiries},
+	}
+	c := devices.New(api, cache, 0, false, true,
+		devices.WithAttributeNamespaces(ns), devices.WithClock(func() time.Time { return now }))
+	return c, telemetrytest.New(), api
+}
+
+func TestCollect_AttributeExpiryGauge(t *testing.T) {
+	expiry := now.Add(5 * 24 * time.Hour)
+	c, rec, _ := attrExpiryCollector("dev1", map[string]any{"custom:foo": "bar"},
+		map[string]time.Time{"custom:foo": expiry}, "custom")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.device.attribute.expiry")
+	if len(pts) != 1 {
+		t.Fatalf("attribute.expiry points = %d, want 1; pts=%+v", len(pts), pts)
+	}
+	p := pts[0]
+	if p.Value != float64(expiry.Unix()) {
+		t.Errorf("attribute.expiry value = %v, want %v (unix epoch seconds)", p.Value, expiry.Unix())
+	}
+	if p.Attrs[semconv.HostID] != "dev1" || p.Attrs[semconv.HostName] != "laptop" {
+		t.Errorf("attribute.expiry identity labels = %+v", p.Attrs)
+	}
+	if p.Attrs["attribute"] != "custom:foo" {
+		t.Errorf("attribute.expiry attribute label = %q, want custom:foo", p.Attrs["attribute"])
+	}
+}
+
+// TestCollect_AttributeExpiryWarnLog verifies the fixed 14-day warn window: an
+// attribute expiring in 5 days emits the WARN log; one 30 days out and one
+// already expired do not — but the expiry gauge is emitted unconditionally for
+// all three (the log is the extra actionable signal, same relationship as the
+// key-expiry histogram/log pair).
+func TestCollect_AttributeExpiryWarnLog(t *testing.T) {
+	expiries := map[string]time.Time{
+		"custom:soon":    now.Add(5 * 24 * time.Hour),  // within the 14d warn window
+		"custom:far":     now.Add(30 * 24 * time.Hour), // beyond the window
+		"custom:expired": now.Add(-1 * time.Hour),      // already expired
+	}
+	posture := map[string]any{"custom:soon": "x", "custom:far": "y", "custom:expired": "z"}
+	c, rec, _ := attrExpiryCollector("dev1", posture, expiries, "custom")
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	var logs []telemetrytest.LogRecord
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device.attribute.expiring" {
+			logs = append(logs, lr)
+		}
+	}
+	if len(logs) != 1 {
+		t.Fatalf("attribute.expiring log events = %d, want 1; all logs: %+v", len(logs), rec.LogRecords())
+	}
+	lr := logs[0]
+	if lr.SeverityText != "WARN" {
+		t.Errorf("severity = %q, want WARN", lr.SeverityText)
+	}
+	if lr.Attrs["attribute"] != "custom:soon" {
+		t.Errorf("attribute label = %q, want custom:soon", lr.Attrs["attribute"])
+	}
+	if lr.Attrs[semconv.HostID] != "dev1" || lr.Attrs[semconv.HostName] != "laptop" {
+		t.Errorf("identity labels = %+v", lr.Attrs)
+	}
+	if lr.Attrs["tailscale.device.attribute_expires_in_days"] == "" {
+		t.Error("tailscale.device.attribute_expires_in_days attr missing")
+	}
+
+	if pts := rec.MetricPoints("tailscale.device.attribute.expiry"); len(pts) != 3 {
+		t.Errorf("attribute.expiry points = %d, want 3 (gauge unconditional on window)", len(pts))
+	}
+}
+
+// TestCollect_AttributeExpiryNamespaceGated verifies an expiry on an attribute
+// whose namespace is not allow-listed is skipped entirely — same fencing as
+// the sibling tailscale.device.attribute{,.info} metrics — so the expiry gauge
+// and WARN log never disagree with the allow-list about which attributes are
+// in scope.
+func TestCollect_AttributeExpiryNamespaceGated(t *testing.T) {
+	expiries := map[string]time.Time{"node:something": now.Add(5 * 24 * time.Hour)}
+	posture := map[string]any{"node:something": "x"}
+	c, rec, _ := attrExpiryCollector("dev1", posture, expiries, "custom") // allow-list excludes "node"
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.attribute.expiry"); len(pts) != 0 {
+		t.Errorf("attribute.expiry points = %d, want 0 (namespace not allow-listed)", len(pts))
+	}
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.device.attribute.expiring" {
+			t.Errorf("unexpected attribute.expiring log for non-allow-listed namespace: %+v", lr)
+		}
 	}
 }
 

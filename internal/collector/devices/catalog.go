@@ -251,6 +251,14 @@ var (
 		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute, attrAttributeValue},
 		Group:       groupDevices,
 	}
+	docAttributeExpiry = metricdoc.Metric{
+		Name:        metricAttributeExpiry,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Unix epoch seconds of a device posture attribute's expiry; only attributes explicitly set with an expiry (e.g. a `custom:` namespace attribute set via the API with an expiry) appear — most posture attributes never carry one. One series per device per expiring attribute, the namespaced posture key carried as the `attribute` label (same identity as `tailscale.device.attribute{,.info}`). **Gated** by `collect_posture` and the `attribute_namespaces` allow-list.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute},
+		Group:       groupDevices,
+	}
 )
 
 // Tailnet-lock + per-DERP-region rollup descriptors (devices extension). The
@@ -312,6 +320,14 @@ var (
 		Severity:    "WARN",
 		Description: "Emitted per device when its node key expires within the fixed 14-day warn window (and has not yet expired). Carries the device hostname, device ID (`host.id`), and remaining days (`tailscale.device.key_expires_in_days`). The fleet-wide `tailscale.devices.key_expiry` histogram is always emitted for devices with key expiry enabled; this log adds the per-device actionable signal.",
 		Attributes:  []string{semconv.HostName, semconv.HostID, attrDeviceKeyExpiresInDays},
+		Group:       groupDevices,
+	}
+
+	docDeviceAttributeExpiringLog = metricdoc.LogEvent{
+		Name:        eventDeviceAttributeExpiry,
+		Severity:    "WARN",
+		Description: "Emitted per device+attribute when a posture attribute's expiry falls within the fixed 14-day warn window (and has not yet expired) — the attribute analog of `tailscale.device.key_expiring`, reusing the same lead time. Carries the device hostname, device ID (`host.id`), the expiring attribute key (`attribute`), and remaining days (`tailscale.device.attribute_expires_in_days`). **Gated** by `collect_posture` and the `attribute_namespaces` allow-list.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute, attrDeviceAttributeExpiresInDays},
 		Group:       groupDevices,
 	}
 )
@@ -441,7 +457,7 @@ func Catalog() []metricdoc.Metric {
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
 		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
-		docAttribute, docAttributeInfo,
+		docAttribute, docAttributeInfo, docAttributeExpiry,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docConnHardNAT, docConnEndpoints, docConnDirectCapable, docConnUDP, docConnIPv6,
 		docDevicesHardNAT, docDevicesDirectCapable, docDevicesClientSupports,
@@ -453,5 +469,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog}
+	return []metricdoc.LogEvent{docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog, docDeviceAttributeExpiringLog}
 }

@@ -2563,6 +2563,76 @@ groups:
           summary: "Device node keys are expiring within 7 days"
           description: "One or more device node keys expire within 7 days (and are not already expired) — they will drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge (expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, which only grow and latch). Warning tier below ts2o-device-key-expiring-critical (48h)."
         isPaused: false
+      - uid: "ts2o-device-attribute-expiring-14d"
+        title: "Device posture attribute expiring (<14d)"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and (max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() > 0))"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Device posture attributes are expiring within 14 days"
+          description: "One or more device posture attributes (set with an expiry, e.g. a custom: namespace attribute) expire within 14 days (and are not already expired) — an expired attribute silently breaks posture-based ACLs. Matches the tailscale.device.attribute.expiring WARN log lead. Computed from the per-device-attribute expiry gauge (expiry - now within (0, 14d]), so it clears once the attribute is refreshed. Gated by collect_posture and attribute_namespaces; absent when no attribute carries an expiry."
+        isPaused: false
       - uid: "ts2o-auth-keys-expiring-7d"
         title: "Auth/API keys expiring (<7d)"
         condition: "C"

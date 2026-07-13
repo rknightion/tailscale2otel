@@ -45,7 +45,7 @@ var headscaleFeatures = []string{"devices", "users", "keys", "acl", "nodemetrics
 // Headscale adapter constructs the same types (Tailscale-only fields zeroed).
 type ControlPlane interface {
 	DevicesRich(ctx context.Context) ([]tsapi.RichDevice, error)
-	DevicePostureAttributes(ctx context.Context, deviceID string) (map[string]any, error)
+	DevicePostureAttributes(ctx context.Context, deviceID string) (tsapi.DeviceAttributes, error)
 	DeviceInvites(ctx context.Context, deviceID string) ([]tsapi.DeviceInvite, error)
 	Users(ctx context.Context) ([]tsclient.User, error)
 	UserInvites(ctx context.Context) ([]tsapi.UserInvite, error)

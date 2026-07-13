@@ -168,8 +168,8 @@ func (p *Provider) DevicesRich(ctx context.Context) ([]tsapi.RichDevice, error) 
 	return out, nil
 }
 
-func (p *Provider) DevicePostureAttributes(context.Context, string) (map[string]any, error) {
-	return map[string]any{}, nil
+func (p *Provider) DevicePostureAttributes(context.Context, string) (tsapi.DeviceAttributes, error) {
+	return tsapi.DeviceAttributes{}, nil
 }
 
 func (p *Provider) DeviceInvites(context.Context, string) ([]tsapi.DeviceInvite, error) {

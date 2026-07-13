@@ -244,10 +244,11 @@ func TestDevicePostureAttributes_DecodesMap(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	attrs, err := newClient(t, srv.URL).DevicePostureAttributes(context.Background(), "dev123")
+	got, err := newClient(t, srv.URL).DevicePostureAttributes(context.Background(), "dev123")
 	if err != nil {
 		t.Fatalf("DevicePostureAttributes: %v", err)
 	}
+	attrs := got.Attributes
 	if attrs["custom:foo"] != "bar" {
 		t.Fatalf("custom:foo = %v", attrs["custom:foo"])
 	}
@@ -256,6 +257,39 @@ func TestDevicePostureAttributes_DecodesMap(t *testing.T) {
 	}
 	if attrs["posture:latestMacOSVersion"] != true {
 		t.Fatalf("posture flag = %v", attrs["posture:latestMacOSVersion"])
+	}
+	if len(got.Expiries) != 0 {
+		t.Fatalf("Expiries = %v, want empty (envelope carries no expiries key)", got.Expiries)
+	}
+}
+
+// TestDevicePostureAttributes_DecodesExpiries verifies the "expiries" envelope
+// sibling (present only for attributes explicitly set with an expiry, e.g. a
+// custom: namespace attribute) is decoded alongside the attribute map. This
+// fixture is schema-derived (issue #164): every live lab capture in
+// .capture/device-attrs-*-20260713.json omits "expiries" entirely (no lab
+// attribute currently carries one), so there is no live capture to mirror for
+// the present case.
+func TestDevicePostureAttributes_DecodesExpiries(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"attributes":{"custom:foo":"bar","node:os":"linux"},` +
+			`"expiries":{"custom:foo":"2026-08-01T00:00:00Z"}}`))
+	}))
+	defer srv.Close()
+
+	got, err := newClient(t, srv.URL).DevicePostureAttributes(context.Background(), "dev123")
+	if err != nil {
+		t.Fatalf("DevicePostureAttributes: %v", err)
+	}
+	if len(got.Expiries) != 1 {
+		t.Fatalf("Expiries = %v, want exactly 1 entry", got.Expiries)
+	}
+	want := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	if !got.Expiries["custom:foo"].Equal(want) {
+		t.Fatalf("Expiries[custom:foo] = %v, want %v", got.Expiries["custom:foo"], want)
+	}
+	if _, ok := got.Expiries["node:os"]; ok {
+		t.Fatalf("Expiries carries node:os, want only attributes with an explicit expiry")
 	}
 }
 
@@ -386,11 +420,14 @@ func TestDevicePostureAttributes_Empty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	attrs, err := newClient(t, srv.URL).DevicePostureAttributes(context.Background(), "dev123")
+	got, err := newClient(t, srv.URL).DevicePostureAttributes(context.Background(), "dev123")
 	if err != nil {
 		t.Fatalf("DevicePostureAttributes: %v", err)
 	}
-	if len(attrs) != 0 {
-		t.Fatalf("attrs = %v, want empty", attrs)
+	if len(got.Attributes) != 0 {
+		t.Fatalf("attrs = %v, want empty", got.Attributes)
+	}
+	if len(got.Expiries) != 0 {
+		t.Fatalf("Expiries = %v, want empty", got.Expiries)
 	}
 }

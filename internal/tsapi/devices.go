@@ -248,13 +248,30 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 	return out, nil
 }
 
-// DevicePostureAttributes returns the posture attribute map for deviceID.
-func (c *Client) DevicePostureAttributes(ctx context.Context, deviceID string) (map[string]any, error) {
+// DeviceAttributes is the decoded posture-attribute payload for a device: the
+// attribute map plus, for attributes that were set with an expiry (custom:
+// namespace attributes set via the API with an expiry), the expiry time keyed
+// by the same attribute key. Most attributes never appear in Expiries.
+type DeviceAttributes struct {
+	Attributes map[string]any
+	Expiries   map[string]time.Time
+}
+
+// DevicePostureAttributes returns the posture attribute map (plus any
+// attribute expiries) for deviceID.
+func (c *Client) DevicePostureAttributes(ctx context.Context, deviceID string) (DeviceAttributes, error) {
 	attrs, err := c.ts.Devices().GetPostureAttributes(ctx, deviceID)
 	if err != nil {
-		return nil, err
+		return DeviceAttributes{}, err
 	}
-	return attrs.Attributes, nil
+	out := DeviceAttributes{Attributes: attrs.Attributes}
+	if len(attrs.Expiries) > 0 {
+		out.Expiries = make(map[string]time.Time, len(attrs.Expiries))
+		for key, t := range attrs.Expiries {
+			out.Expiries[key] = t.Time
+		}
+	}
+	return out, nil
 }
 
 // devicesURL builds the rich devices endpoint URL (fields=all), mirroring

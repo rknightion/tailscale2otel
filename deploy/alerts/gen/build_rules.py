@@ -460,6 +460,18 @@ def groups():
               "ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, "
               "which only grow and latch). Warning tier below ts2o-device-key-expiring-critical (48h).",
               domain="security", paused=False),
+        alert("ts2o-device-attribute-expiring-14d", "Device posture attribute expiring (<14d)",
+              "count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and "
+              "(max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() > 0))",
+              "gt", 0, "1h", "warning",
+              "Device posture attributes are expiring within 14 days",
+              "One or more device posture attributes (set with an expiry, e.g. a custom: namespace "
+              "attribute) expire within 14 days (and are not already expired) — an expired attribute "
+              "silently breaks posture-based ACLs. Matches the tailscale.device.attribute.expiring WARN "
+              "log lead. Computed from the per-device-attribute expiry gauge (expiry - now within "
+              "(0, 14d]), so it clears once the attribute is refreshed. Gated by collect_posture and "
+              "attribute_namespaces; absent when no attribute carries an expiry.",
+              domain="security", paused=False),
         alert("ts2o-auth-keys-expiring-7d", "Auth/API keys expiring (<7d)",
               "count((max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() < 7*86400) and "
               "(max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() > 0))",

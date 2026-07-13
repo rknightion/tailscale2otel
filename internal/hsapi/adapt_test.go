@@ -104,7 +104,7 @@ func TestProviderControlPlaneEmptyAuxiliaries(t *testing.T) {
 		t.Errorf("UserInvites should be empty,nil; got %v,%v", ui, err)
 	}
 	attrs, err := p.DevicePostureAttributes(context.Background(), "1")
-	if err != nil || len(attrs) != 0 {
+	if err != nil || len(attrs.Attributes) != 0 || len(attrs.Expiries) != 0 {
 		t.Errorf("DevicePostureAttributes should be empty,nil; got %v,%v", attrs, err)
 	}
 }
