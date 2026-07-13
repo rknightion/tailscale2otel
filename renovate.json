@@ -10,13 +10,6 @@
       "automerge": false
     },
     {
-      "description": "Never automerge pre-1.0 (0.x) Go module minor/patch updates - a 0.x minor can be breaking (e.g. the otel log modules).",
-      "matchManagers": ["gomod"],
-      "matchCurrentVersion": "< 1.0.0",
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": false
-    },
-    {
       "description": "Ignore the self-module reference: the tools/* modules require github.com/rknightion/tailscale2otel but replace ../.. makes Go always build from local code, so the require version is cosmetic.",
       "matchManagers": ["gomod"],
       "matchPackageNames": ["github.com/rknightion/tailscale2otel"],
@@ -28,6 +21,14 @@
       "matchFileNames": ["tools/**/go.mod"],
       "matchDepTypes": ["indirect"],
       "enabled": true
+    },
+    {
+      "description": "...but never raise a standalone MAJOR upgrade of one of those indirect deps. In Go a major is a distinct module path, so backoff/v5 and /v7 (or yaml/v2 and /v3) legitimately coexist in the build list because different deps require each. Renovate reads the older line as upgradable, rewrites it to the newer path, and emits a DUPLICATE require entry - an invalid go.mod that fails with 'updates to go.mod needed' (this broke #158 and #159). Indirect requires are MVS output: they may only move in lockstep with a root bump, never be upgraded on their own.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["tools/**/go.mod"],
+      "matchDepTypes": ["indirect"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ]
 }
