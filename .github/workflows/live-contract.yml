@@ -2,7 +2,7 @@ name: Live API contract
 
 on:
   schedule:
-    - cron: "45 6 * * 1" # Mondays 06:45 UTC
+    - cron: "45 6 * * *" # Daily 06:45 UTC
   workflow_dispatch:
 
 # No id-token/OIDC: there is no published OIDC->Tailscale-API action. Instead we mint a
