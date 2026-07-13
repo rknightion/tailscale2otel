@@ -421,6 +421,9 @@ def build_variables():
         ("has_svc", "tailscale_service_ports"),
         ("has_posture_int", "tailscale_posture_integration_matched_ratio"),
         ("has_dropped", "tailscaled_outbound_dropped_packets_total"),
+        # #172: curated client-metrics family (#171) — present once the node-metrics scraper
+        # has produced the curated tailscale_node_* series.
+        ("has_node_curated", "tailscale_node_io_bytes_total"),
     ]
     for (name, metric) in presence:
         v.append(presence_var(name, metric))
@@ -698,6 +701,13 @@ def tab_fleet():
 
     # B. Fleet hygiene row (no PII gate — counts/enums only)
     hygiene = [
+        (panel("Stale devices (>30d)", "stat",
+               [prom_t("count((time() - %s) > 30*86400) or vector(0)"
+                       % sv(lot("tailscale_device_last_seen_seconds", WIN_SLOW)))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Devices not seen in over 30 days (last-seen staleness) — candidates for "
+                    "decommissioning. Companion to the per-device 'Last seen' table below."), 4, 5),
         (panel("Untagged", "stat",
                [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_untagged_ratio", WIN_SLOW)))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
@@ -1313,6 +1323,13 @@ def tab_policy():
                unit="short", options=stat_opts(), novalue="0"), 6, 5),
     ]
     users = [
+        (panel("Stale users (>30d)", "stat",
+               [prom_t("count((time() - %s) > 30*86400) or vector(0)"
+                       % sv(lot("tailscale_user_last_seen_seconds", WIN_SLOW)))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Users not seen in over 30 days (last-seen staleness). Shows 0 when per-user "
+                    "metrics are disabled (cardinality.per_entity.user); see the Per-user detail row."), 6, 5),
         (panel("Users by role", "barchart",
                [prom_t("sum by (tailscale_user_role) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s))" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_role}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
@@ -1532,8 +1549,40 @@ def tab_nodemetrics():
                unit="short", options=bargauge_opts(),
                desc="Number of devices that prefer each DERP region."), 8, 7),
     ]
+    # #172: curated client-health panels over the tailscale_node_* family (#171). Unlike the raw
+    # tailscaled_* paths row above, the curated tailscale_path label folds into direct / derp /
+    # peer_relay, so the traffic-mix panel separates the peer-relay bucket; health messages are
+    # broken out by curated tailscale_health_type rather than a per-node count.
+    clienthealth = [
+        (panel("Active health warnings by type", "timeseries",
+               [prom_t("sum by (tailscale_health_type) (%s)" % lot("tailscale_node_health_messages_ratio", "15m"),
+                       legend="{{tailscale_health_type}}")],
+               unit="short", custom=ts_custom(style="line", fill=10, points="always"),
+               options=ts_opts(placement="right"),
+               desc="Active tailscaled client health-warning messages across the fleet, by health type "
+                    "(curated tailscale.node.health_messages; alert ts2o-node-health-warnings)."), 12, 7),
+        (panel("Traffic mix by path (direct / DERP / peer-relay)", "timeseries",
+               [prom_t("sum by (tailscale_path) (rate(tailscale_node_io_bytes_total[%s]))" % RI, legend="{{tailscale_path}}")],
+               unit="Bps", custom=ts_custom(stack="normal", fill=25), options=ts_opts(),
+               desc="Tailnet data-plane throughput split by curated path bucket: direct, DERP relay, or "
+                    "peer relay (curated tailscale.node.io — includes the peer_relay bucket the raw "
+                    "tailscaled path label does not separate)."), 12, 7),
+        (panel("Peer-relay throughput by node", "timeseries",
+               [prom_t("sum by (tailscale_node) (rate(tailscale_node_peer_relay_io_bytes_total[%s]))" % RI,
+                       legend="{{tailscale_node}}")],
+               unit="Bps", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Bytes each node forwarded while acting as a peer relay (curated "
+                    "tailscale.node.peer_relay.io)."), 12, 7),
+        (panel("Path mix (now)", "barchart",
+               [prom_t("sum by (tailscale_path) (rate(tailscale_node_io_bytes_total[%s]))" % RI,
+                       legend="{{tailscale_path}}", instant=True, fmt="table")],
+               unit="Bps", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Current data-plane byte rate by curated path bucket (direct / DERP / peer-relay)."), 12, 6),
+    ]
     return [row("Scraper health", health), row("Traffic (tailscaled)", traffic),
             row("Connection paths (DERP vs direct)", paths, present="has_path"),
+            row("Client health (curated)", clienthealth, present="has_node_curated"),
             row("DERP regions (tailnet rollup)", derprollup, present="has_derp_rollup"),
             row("Routing & health", routing)]
 

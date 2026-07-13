@@ -539,6 +539,38 @@ def groups():
               "An outstanding device invite/share allows the recipient to use the device as an exit node — "
               "review whether routing the recipient's traffic is intended.",
               domain="security", paused=True),
+        # --- #172: config-change / posture-state detection (audit + feature/setting gauges) ---
+        alert("ts2o-flow-logging-disabled", "Network flow logging disabled",
+              'min(tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"})',
+              "lt", 1, "30m", "warning",
+              "Tailnet network flow logging is disabled",
+              "tailscale_feature_enabled_ratio{tailscale_feature=\"network_flow_logging\"} == 0 — the "
+              "tailnet is not exporting network flow logs, so flow-based forensics/audit data is not "
+              "being captured. Ships PAUSED because many tailnets legitimately run without flow logging "
+              "(a paid feature); enable it if flow logging is expected for this tailnet. Absent "
+              "(=> not firing) when the flowlogs collector is disabled entirely. Grafana-managed "
+              "equivalent of the datasource-managed FlowLoggingDisabled rule.",
+              domain="security", hygiene=True, paused=True),
+        alert("ts2o-device-approval-disabled", "Device approval disabled",
+              'min(tailscale_setting_enabled_ratio{tailscale_setting_name="devices_approval"})',
+              "lt", 1, "30m", "warning",
+              "Tailnet device approval is disabled",
+              "tailscale_setting_enabled_ratio{tailscale_setting_name=\"devices_approval\"} == 0 — new "
+              "devices can join the tailnet without manual admin approval. Ships PAUSED because device "
+              "approval is off by default in Tailscale and many tailnets run that way intentionally; "
+              "enable this alert if your tailnet requires device approval. Absent (=> not firing) when "
+              "the settings collector is disabled.",
+              domain="security", hygiene=True, paused=True),
+        alert("ts2o-logstream-config-changed", "Log-streaming (SIEM export) config changed",
+              'sum(rate(tailscale_config_audit_changes_total{tailscale_audit_change="logstream_endpoint"}[15m]))',
+              "gt", 0, "0m", "warning",
+              "A configuration-log / SIEM streaming endpoint was changed",
+              "An audit event changed a LOGSTREAM_ENDPOINT setting — a tailnet log-streaming (SIEM) sink "
+              "was added, reconfigured, or removed. Removing/disabling it is a forensics/compliance gap. "
+              "Audit-driven, so it fires on the change itself (catching a disable even if quickly "
+              "reverted); pair with ts2o-logstream-delivery-failing (delivery health). Ships PAUSED — "
+              "enable where log-export changes must be reviewed.",
+              domain="security", hygiene=True, paused=True),
     ]
 
     integrations = [
@@ -674,6 +706,17 @@ def groups():
               "gt", 0, "30m", "info",
               "One or more VIP services are backed by a single host (no HA)",
               "one or more Tailscale (VIP) services are backed by a single host (no HA).",
+              domain="infra", paused=True, nodata="OK"),
+        # --- #172: curated client health (tailscale_node_* family) ---
+        alert("ts2o-node-health-warnings", "Node client health warnings",
+              "max by (tailscale_node, tailscale_health_type) (tailscale_node_health_messages_ratio)",
+              "gt", 0, "15m", "warning",
+              "Node {{ $labels.tailscale_node }} reporting health warnings ({{ $labels.tailscale_health_type }})",
+              "tailscale_node_health_messages_ratio > 0 — the tailscaled client on "
+              "{{ $labels.tailscale_node }} is self-reporting one or more active health warnings of type "
+              "{{ $labels.tailscale_health_type }} (e.g. no-DERP-connection, key-expiry, network-down). "
+              "Curated from the node-metrics scraper (absent => not firing). See the Client health row on "
+              "the Node Metrics tab.",
               domain="infra", paused=True, nodata="OK"),
         # --- Task 2.5: per-tailnet API errors (F) ---
         alert("ts2o-tailnet-api-errors", "Per-tailnet API errors",

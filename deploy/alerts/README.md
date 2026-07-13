@@ -54,7 +54,7 @@ stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`doma
 label (`security` / `infra` / `observability`); rules not worthy of automatic
 investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
 "true"` so IRM routing / auto-investigation stays focused. The generated set currently
-has **63 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
+has **68 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
 `-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
 `gen/build_rules.py` is the source of truth.
 
