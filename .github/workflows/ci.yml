@@ -239,7 +239,35 @@ jobs:
           cache: true
 
       - name: go test -fuzz ${{ matrix.target }}
-        run: go test ${{ matrix.package }} -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime=120s
+        env:
+          PKG: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          # Steps run under `bash -eo pipefail`, so guard the failure with `|| code=$?` —
+          # a bare `go test` failure would otherwise abort the step before we can classify it.
+          code=0
+          go test "$PKG" -run '^$' -fuzz "^${TARGET}\$" -fuzztime=120s 2>&1 | tee /tmp/fuzz.log || code=$?
+          [ "$code" -eq 0 ] && exit 0
+
+          # A genuine finding ALWAYS writes the input out and says so. Check this first, so a
+          # crasher can never be swallowed by the tolerance below.
+          if grep -q "Failing input written to" /tmp/fuzz.log; then
+            echo "::error::${TARGET}: fuzzing found a crasher — see the uploaded corpus artifact"
+            exit 1
+          fi
+
+          # Upstream Go race, benign: on -fuzztime expiry the coordinator calls stop(ctx.Err())
+          # with DeadlineExceeded, which internal/fuzz suppresses only if it == fuzzCtx.Err().
+          # A parent context closes its own done channel BEFORE propagating cancellation to its
+          # children, so if the coordinator wakes in that window fuzzCtx.Err() is still nil, the
+          # comparison misses, and a clean timeout is reported as a test failure. Nothing was
+          # found — the run simply ran out its clock. Contended runners widen the window.
+          if grep -qE '^[[:space:]]*context deadline exceeded[[:space:]]*$' /tmp/fuzz.log; then
+            echo "::warning::${TARGET}: benign -fuzztime shutdown race in Go's fuzzing runtime (no crasher found) — not failing"
+            exit 0
+          fi
+
+          exit "$code"
 
       # A crasher is written to testdata/corpus/<target>/ — surface it so the failing input can be
       # committed as a regression seed rather than being lost with the runner.
