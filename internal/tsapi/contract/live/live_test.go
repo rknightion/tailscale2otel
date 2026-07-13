@@ -11,9 +11,11 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/tsapi/contract"
 )
 
-// TestLiveContract hits the real Tailscale API read-only using a token passed in
-// via TS_API_ACCESS_TOKEN (minted by the workflow through OIDC; never stored) and
-// asserts every consumed GET still decodes cleanly. Ops flagged LiveSkip carry a
+// TestLiveContract hits the real Tailscale API read-only using a token passed in via
+// TS_API_ACCESS_TOKEN — minted per-run by the workflow from a read-only OAuth client,
+// never stored — and asserts every consumed GET still decodes cleanly. Note the skip
+// below exits 0: the workflow guarantees both vars are set and treats a skip as a
+// failure, so it can't be mistaken for a clean run. Ops flagged LiveSkip carry a
 // placeholder path param that would 404 against prod, so they are excluded here
 // and covered instead by the fuzz + unit tests.
 func TestLiveContract(t *testing.T) {

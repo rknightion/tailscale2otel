@@ -5,22 +5,26 @@ on:
     - cron: "45 6 * * 1" # Mondays 06:45 UTC
   workflow_dispatch:
 
-# No id-token/OIDC: there is no published OIDC->Tailscale-API action. Instead we mint
-# a short-lived token from Tailscale's documented OAuth endpoint using a READ-ONLY
-# (all:read) OAuth client whose credentials live in the environment of a DEDICATED
-# self-hosted runner (label `tailscale-api`) — NOT in GitHub secrets, and NOT in the
-# shared m7kni runner pool (whose env any private-repo job could read). This keeps the
-# secret off GitHub and scoped to this one purpose. The minted token is masked and
-# lives only for this run. The job self-skips if the creds are not present.
+# No id-token/OIDC: there is no published OIDC->Tailscale-API action. Instead we mint a
+# short-lived token from Tailscale's documented OAuth endpoint using a READ-ONLY (all:read)
+# OAuth client. Its credentials are GitHub secrets, which is safe here precisely because this
+# lane is schedule + workflow_dispatch only: a fork PR never runs it, so it can never reach
+# them. Worst case on a leak is "can read the tailnet". The minted token is masked and lives
+# only for this run.
+#
+# This deliberately replaces an earlier design that kept the creds off GitHub, in the env of a
+# dedicated self-hosted runner. That runner was never provisioned, so the lane queued forever
+# and was auto-cancelled at 24h every week — it produced no signal at all between 413b314 and
+# the fix (see #160). Standing a self-hosted runner up on a PUBLIC repo is also a risk GitHub
+# warns against, since a fork PR can target it.
 permissions:
   contents: read
   issues: write
 
 jobs:
   live:
-    # Dedicated runner that holds the read-only TS_OAUTH_CLIENT_ID/SECRET in its env.
-    # NOT the shared pool (which is labelled just self-hosted,linux,x64,docker).
-    runs-on: [self-hosted, tailscale-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -31,17 +35,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Mint short-lived read-only API token (OAuth creds from runner env; not in GitHub)
-        id: tsauth
-        # TS_OAUTH_CLIENT_ID / TS_OAUTH_CLIENT_SECRET are read directly from the
-        # self-hosted runner's process environment (configured once on the runner),
-        # NOT from GitHub secrets — referenced as shell vars, not ${{ env.* }}.
+      - name: Mint short-lived read-only API token
+        # Missing config is a misconfiguration of this lane, not a reason to pass quietly:
+        # fail here rather than self-skipping, or the lane reports green having checked nothing.
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          TS_TAILNET: ${{ vars.TS_TAILNET }}
         run: |
           set -euo pipefail
-          if [ -z "${TS_OAUTH_CLIENT_ID:-}" ] || [ -z "${TS_OAUTH_CLIENT_SECRET:-}" ]; then
-            echo "TS_OAUTH_CLIENT_ID/TS_OAUTH_CLIENT_SECRET not set on the runner — cannot mint a token." >&2
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          missing=""
+          [ -n "${TS_OAUTH_CLIENT_ID:-}" ] || missing="$missing secrets.TS_OAUTH_CLIENT_ID"
+          [ -n "${TS_OAUTH_CLIENT_SECRET:-}" ] || missing="$missing secrets.TS_OAUTH_CLIENT_SECRET"
+          [ -n "${TS_TAILNET:-}" ] || missing="$missing vars.TS_TAILNET"
+          if [ -n "$missing" ]; then
+            echo "live contract is misconfigured — unset:$missing" >&2
+            exit 1
           fi
           token=$(curl -fsSL -u "${TS_OAUTH_CLIENT_ID}:${TS_OAUTH_CLIENT_SECRET}" \
             -d 'grant_type=client_credentials' \
@@ -52,17 +61,24 @@ jobs:
           fi
           echo "::add-mask::$token"
           echo "TS_API_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Run live contract
         id: live
-        if: steps.tsauth.outputs.configured == 'true'
         env:
           TS_TAILNET: ${{ vars.TS_TAILNET }}
         run: |
           set +e
           go test -tags live -run TestLiveContract ./internal/tsapi/contract/live/ -v > /tmp/live.log 2>&1
-          echo "code=$?" >> "$GITHUB_OUTPUT"
+          code=$?
+          set -e
+          # The test t.Skip()s when the token or tailnet is empty, and a skip still exits 0.
+          # The step above makes that unreachable, but if it ever happens again, a skip must
+          # never look clean — "Resolve tracking issue" would close the drift issue on nothing.
+          if grep -q -- '--- SKIP' /tmp/live.log; then
+            echo "live contract skipped despite passing preflight — refusing to report it clean." >&2
+            code=1
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
 
       - name: Build report
         if: steps.live.outputs.code != '0' && steps.live.outputs.code != ''
@@ -88,8 +104,8 @@ jobs:
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       - name: Resolve tracking issue on clean run
-        # Only when the contract actually ran and passed — never on the creds-absent self-skip
-        # (configured=false leaves live.outputs.code empty), which proves nothing.
+        # Only when the contract actually ran and passed. A failed mint step leaves code empty,
+        # and a skipped test is forced to code=1 above — neither proves anything.
         if: steps.live.outputs.code == '0'
         uses: ./.github/actions/resolve-drift
         with:
