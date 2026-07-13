@@ -98,9 +98,10 @@ jobs:
       id-token: write # keyless cosign signing
       packages: write
       attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
-    # Pinned past v1.4.0 to pick up the SLSA build-provenance step (the .intoto.jsonl release
-    # asset). Renovate will repin this to the tag once the shared repo cuts its next release.
-    uses: rknightion/.github/.github/workflows/binaries.yml@7aa955ca8134be9eac7bbd009317f35d6216bef5 # main
+    # Pinned past v1.4.3 for the checksums-locate fix (the attest step was nondeterministically
+    # handed the cosign .sigstore.json bundle instead of SHA256SUMS — see #176). Renovate will
+    # repin this to the tag once the shared repo cuts its next release.
+    uses: rknightion/.github/.github/workflows/binaries.yml@d1c590b295b9d7f2535fadc7bc5e74f2eddbd512 # main
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true
