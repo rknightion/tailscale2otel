@@ -202,6 +202,48 @@ scrape is a plain `GET` with no added headers.
   target — it does not name the resulting attribute key. See the
   [reference](./metrics.md#node-metrics-scraper) for how these query in Grafana.
 
+### Curated metrics
+
+On top of the verbatim forward, the scraper emits a small set of **curated**, first-class metrics
+derived from specific `tailscaled` families. These are the catalog-documented `tailscale.node.*`
+series that dashboards and alerts build on, with stable OTel-native attributes instead of the raw
+per-node label spellings. Curation is **purely additive**: the raw `tailscaled_*` series is still
+forwarded byte-for-byte exactly as above — the curated series are emitted *in addition*, never
+instead.
+
+| Source family | Curated metric | Attributes |
+|---|---|---|
+| `tailscaled_inbound_bytes_total` / `tailscaled_outbound_bytes_total` | `tailscale.node.io` (`By`) | `network.io.direction` (`receive`/`transmit`), `tailscale.path` |
+| `tailscaled_inbound_packets_total` / `tailscaled_outbound_packets_total` | `tailscale.node.packets` (`{packet}`) | `network.io.direction`, `tailscale.path` |
+| `tailscaled_inbound_dropped_packets_total` / `tailscaled_outbound_dropped_packets_total` | `tailscale.node.packets.dropped` (`{packet}`) | `network.io.direction`, `tailscale.drop.reason` |
+| `tailscaled_peer_relay_forwarded_bytes_total` | `tailscale.node.peer_relay.io` (`By`) | — |
+| `tailscaled_peer_relay_forwarded_packets_total` | `tailscale.node.peer_relay.packets` (`{packet}`) | — |
+| `tailscaled_peer_relay_endpoints` | `tailscale.node.peer_relay.endpoints` | — |
+| `tailscaled_health_messages` | `tailscale.node.health_messages` | `tailscale.health.type` |
+| `tailscaled_home_derp_region_id` | `tailscale.node.derp.home_region` (value = region ID) | — |
+
+Every curated series also carries the `tailscale.node` identity label, exactly like
+`tailscale.node.up`.
+
+**Attribute folding (deliberate cardinality reduction).** `tailscale.path` collapses the raw
+`path` label's IP-version split — `direct_ipv4`/`direct_ipv6` → `direct`,
+`peer_relay_ipv4`/`peer_relay_ipv6` → `peer_relay`, `derp` stays `derp` — halving the per-node path
+fan-out; any unrecognized value folds to `other`. `tailscale.drop.reason` is a bounded admit-set
+(`acl`, `error`) with any other value folded to `other`, since scraped labels come from
+semi-trusted tailnet-member nodes. `tailscale.health.type` is passed through as-is (the value set is
+code-defined in `tailscaled`, not free text). The raw forwarded series keep their **original,
+unfolded** `path`/`reason` values — folding applies only to the curated copy.
+
+**Counters share the delta.** A curated counter (`tailscale.node.io`, `.packets`,
+`.packets.dropped`, `.peer_relay.*`) consumes the **same** per-scrape delta the raw forward
+computes for its source series — including counter-reset detection and stale-baseline eviction — so
+there is no second baseline and no double-counting.
+
+**Filters bypass curation.** The `metric_allow` / `metric_deny` / `drop_labels` passthrough filters
+apply **only to the raw forward**. Curated metrics are catalog metrics, not passthrough, so they are
+emitted regardless of those filters — denying `tailscaled_.*` still yields the curated
+`tailscale.node.*` series.
+
 ### Scrape and discovery safety limits
 
 The scraper enforces bounded work per node. `max_response_bytes` caps the number of bytes read from

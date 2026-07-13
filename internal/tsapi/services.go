@@ -110,7 +110,7 @@ func (c *Client) ServiceAddrs(ctx context.Context) ([]ServiceAddr, error) {
 	}
 	out := make([]ServiceAddr, 0, len(wire.VIPServices))
 	for _, s := range wire.VIPServices {
-		out = append(out, ServiceAddr{Name: s.Name, Addrs: s.Addrs})
+		out = append(out, ServiceAddr(s))
 	}
 	return out, nil
 }

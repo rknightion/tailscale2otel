@@ -37,20 +37,20 @@ var (
 
 // Metric and event names emitted by this collector.
 const (
-	metricOnline           = "tailscale.device.online"
-	metricLastSeen         = "tailscale.device.last_seen"
-	metricKeyExpiry        = "tailscale.device.key.expiry"
-	metricUpdateAvailable  = "tailscale.device.update_available"
-	metricDERPLatency      = "tailscale.device.derp.latency"
+	metricOnline          = "tailscale.device.online"
+	metricLastSeen        = "tailscale.device.last_seen"
+	metricKeyExpiry       = "tailscale.device.key.expiry"
+	metricUpdateAvailable = "tailscale.device.update_available"
+	metricDERPLatency     = "tailscale.device.derp.latency"
 
 	metricMultipleConnections       = "tailscale.device.multiple_connections"
 	metricBlocksIncomingConnections = "tailscale.device.blocks_incoming_connections"
 	metricPostureIdentityDisabled   = "tailscale.device.posture_identity.disabled"
-	metricRoutesAdvertised = "tailscale.device.routes.advertised"
-	metricRoutesEnabled    = "tailscale.device.routes.enabled"
-	metricDevicesCount     = "tailscale.devices.count"
-	metricAttribute        = "tailscale.device.attribute"
-	metricAttributeInfo    = "tailscale.device.attribute.info"
+	metricRoutesAdvertised          = "tailscale.device.routes.advertised"
+	metricRoutesEnabled             = "tailscale.device.routes.enabled"
+	metricDevicesCount              = "tailscale.devices.count"
+	metricAttribute                 = "tailscale.device.attribute"
+	metricAttributeInfo             = "tailscale.device.attribute.info"
 
 	metricDevicesUntagged  = "tailscale.devices.untagged"
 	metricDevicesEphemeral = "tailscale.devices.ephemeral"

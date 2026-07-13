@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 )
 
 // TestEmitDeltaBaselineMapIsCapped verifies that prevHardCap bounds the
@@ -23,11 +22,12 @@ func TestEmitDeltaBaselineMapIsCapped(t *testing.T) {
 	}
 	c.mu.Unlock()
 
-	// Attempt to insert a brand-new series via emitDelta — it must be rejected
-	// because the map is already at the hard cap.
-	rec := telemetrytest.New()
-	s := &sample{name: "test_total", value: 5, cumulative: true}
-	c.emitDelta(s, telemetry.Attrs{"k": "new"}, rec.Emitter())
+	// Attempt to insert a brand-new series via the shared delta pipeline — it must
+	// be rejected because the map is already at the hard cap (and reported as a
+	// first observation, ok=false, so nothing is emitted).
+	if d, ok := c.delta("test_total", 5, telemetry.Attrs{"k": "new"}); ok || d != 0 {
+		t.Errorf("delta at cap = (%v, %v), want (0, false) — new series must not be tracked", d, ok)
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

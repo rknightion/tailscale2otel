@@ -53,6 +53,42 @@ const (
 	AttrProvider  = "tailscale2otel.provider"
 	AttrCollector = "tailscale.collector"
 	AttrFeature   = "tailscale.feature"
+
+	// AttrHealthType is the tailscaled health-warning class carried on the
+	// curated tailscale.node.health_messages gauge (from the scraped `type`
+	// label). The value set is code-defined in tailscaled, not attacker
+	// free text, so it is passed through as-is (no folding).
+	AttrHealthType = "tailscale.health.type"
+	// AttrPath is the data-plane path a node's curated throughput/packet counters
+	// (tailscale.node.io / .packets) were carried over. The scraped tailscaled
+	// `path` label (direct_ipv4|direct_ipv6|derp|peer_relay_ipv4|peer_relay_ipv6)
+	// is folded to the bounded set below to halve series cardinality.
+	AttrPath = "tailscale.path"
+	// AttrDropReason is why a packet was dropped on the curated
+	// tailscale.node.packets.dropped counter (from the scraped `reason` label),
+	// folded to a bounded admit-set (unrecognized -> DropReasonOther) since
+	// scraped labels come from semi-trusted tailnet-member nodes.
+	AttrDropReason = "tailscale.drop.reason"
+)
+
+// tailscale.path values — the bounded, folded set of data-plane paths. The raw
+// tailscaled `path` label splits direct/peer_relay by IP version; the curated
+// metric collapses those so per-node path cardinality stays at most four.
+const (
+	PathDirect    = "direct"
+	PathDERP      = "derp"
+	PathPeerRelay = "peer_relay"
+	PathOther     = "other"
+)
+
+// tailscale.drop.reason values — the bounded admit-set for curated dropped-packet
+// reasons. tailscaled emits `acl` (blocked by the packet filter) and `error`
+// (dropped due to an error); any other/future value folds to DropReasonOther so
+// the label cardinality stays bounded (same posture as flowlog transportName).
+const (
+	DropReasonACL   = "acl"
+	DropReasonError = "error"
+	DropReasonOther = "other"
 )
 
 // Self-observability attribute keys.

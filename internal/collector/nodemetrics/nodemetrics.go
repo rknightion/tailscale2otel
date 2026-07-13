@@ -219,6 +219,18 @@ type Collector struct {
 	// (emitSample) are intentionally NOT snapshotted: their metric names are
 	// dynamic and include monotonic counters, a different concern from #55.
 	gsb *telemetry.GaugeSnapshotBuilder
+
+	// curatedGauges accumulates the churning curated GAUGE families
+	// (health_messages, derp.home_region, peer_relay.endpoints) and flushes them
+	// as observable-gauge snapshots each Collect, so a node that leaves the fleet
+	// drops its curated series out instead of ghosting (#55) — the same reason
+	// node.up uses a snapshot. Unlike node.up, curated gauges are emitted from
+	// deep inside the concurrent scrapeAll workers (curateGauge), so Adds are
+	// guarded by curatedMu; Flush runs on Collect's goroutine after the workers
+	// join. Curated COUNTERS need no builder: they ride the shared delta pipeline
+	// and are emitted directly (the Emitter is concurrency-safe).
+	curatedMu     sync.Mutex
+	curatedGauges *telemetry.GaugeSnapshotBuilder
 }
 
 // New returns a nodemetrics Collector. A zero Interval defaults to 60s and a
@@ -279,6 +291,7 @@ func New(opts Options) *Collector {
 		active:            static,
 		prev:              make(map[string]prevEntry),
 		gsb:               telemetry.NewGaugeSnapshotBuilder(),
+		curatedGauges:     telemetry.NewGaugeSnapshotBuilder(),
 	}
 }
 
@@ -421,9 +434,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	if len(targets) == 0 {
-		// Flush an empty node.up snapshot so any series from a prior tick with
-		// targets is cleared rather than ghosting once discovery drops them all.
+		// Flush empty node.up + curated-gauge snapshots so any series from a prior
+		// tick with targets is cleared rather than ghosting once discovery drops
+		// them all.
 		c.gsb.Flush(e)
+		c.flushCuratedGauges(e)
 		return nil
 	}
 
@@ -442,9 +457,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	successes := c.scrapeAll(tickCtx, targets, e)
 	failures := len(targets) - successes
 	c.pruneStale(gen)
-	// Emit the node.up snapshot on every path (including all-failed, where every
-	// point is 0): a target absent this tick drops out instead of ghosting (#55).
+	// Emit the node.up + curated-gauge snapshots on every path (including
+	// all-failed, where node.up is 0 for every point): a target absent this tick
+	// drops out instead of ghosting (#55).
 	c.gsb.Flush(e)
+	c.flushCuratedGauges(e)
 	if failures == len(targets) {
 		return fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
 	}
@@ -730,18 +747,81 @@ func applyAuthHeaders(req *http.Request, t *Target) error {
 // This is the SINGLE choke point for forwarded samples, so the passthrough
 // filters (metric_allow/metric_deny on the name; drop_labels on the attrs) are
 // applied here and nowhere else: tailscale.node.up and the discovery.* gauges,
-// emitted elsewhere, are never filtered.
+// emitted elsewhere, are never filtered. Curation is ADDITIVE and runs
+// alongside the raw forward: when a sample's family matches a curated mapping
+// (see curated.go), the derived tailscale.node.* series is emitted IN ADDITION
+// to the verbatim forward, and curation deliberately BYPASSES the passthrough
+// filters (curated metrics are catalog metrics, not passthrough).
 func (c *Collector) emitSample(s *sample, t *Target, instance string, e telemetry.Emitter) {
-	if !c.allowMetric(s.name) {
+	allowed := c.allowMetric(s.name)
+	if s.cumulative {
+		c.emitCumulative(s, t, instance, allowed, e)
+		return
+	}
+	if allowed {
+		attrs := mergeAttrs(t.Labels, s.labels, instance)
+		c.applyDropLabels(attrs)
+		e.Gauge(s.name, "", s.help, s.value, attrs)
+	}
+	c.curateGauge(s, instance)
+}
+
+// emitCumulative handles a cumulative sample: it computes the series delta ONCE
+// (the shared baseline pipeline, see delta) and feeds it to both the verbatim
+// raw forward (when the name passes the passthrough filters) and any curated
+// counter the family maps to. The single delta means a curated counter never
+// maintains its own baseline. When the sample is neither forwarded nor curated
+// it returns immediately WITHOUT touching the baseline map, preserving the prior
+// behavior where a filtered-out non-curated counter is not tracked.
+func (c *Collector) emitCumulative(s *sample, t *Target, instance string, allowed bool, e telemetry.Emitter) {
+	if isNaN(s.value) {
+		return
+	}
+	cc, curated := curatedCounters[s.name]
+	if !allowed && !curated {
 		return
 	}
 	attrs := mergeAttrs(t.Labels, s.labels, instance)
 	c.applyDropLabels(attrs)
-	if s.cumulative {
-		c.emitDelta(s, attrs, e)
+	delta, ok := c.delta(s.name, s.value, attrs)
+	if !ok || delta <= 0 {
 		return
 	}
-	e.Gauge(s.name, "", s.help, s.value, attrs)
+	if allowed {
+		e.Counter(s.name, "", s.help, delta, attrs)
+	}
+	if curated {
+		out := cc.attrs(s.labels)
+		out[attrInstance] = instance
+		e.Counter(cc.name, cc.unit, cc.desc, delta, out)
+	}
+}
+
+// curateGauge emits the curated GAUGE derived from a non-cumulative sample, if
+// its family maps to one (see curated.go). Curated gauges churn per node, so
+// they accumulate into the churn-safe curatedGauges snapshot builder (guarded by
+// curatedMu — curateGauge runs on the concurrent scrapeAll workers) and are
+// flushed once per Collect. Filters are bypassed (curated metrics are catalog
+// metrics, not passthrough).
+func (c *Collector) curateGauge(s *sample, instance string) {
+	cg, ok := curatedGaugeSpecs[s.name]
+	if !ok {
+		return
+	}
+	out := cg.attrs(s.labels)
+	out[attrInstance] = instance
+	c.curatedMu.Lock()
+	c.curatedGauges.Add(cg.name, cg.unit, cg.desc, s.value, out)
+	c.curatedMu.Unlock()
+}
+
+// flushCuratedGauges flushes the curated-gauge snapshot builder under curatedMu.
+// It runs on Collect's goroutine after the scrapeAll workers have joined, so the
+// lock is uncontended here; it guards against a late worker only in principle.
+func (c *Collector) flushCuratedGauges(e telemetry.Emitter) {
+	c.curatedMu.Lock()
+	c.curatedGauges.Flush(e)
+	c.curatedMu.Unlock()
 }
 
 // allowMetric reports whether a forwarded metric NAME passes the passthrough
@@ -780,35 +860,34 @@ func (c *Collector) applyDropLabels(attrs telemetry.Attrs) {
 	}
 }
 
-// emitDelta applies the per-series delta logic. NaN samples are skipped (a
-// counter must not be NaN). The first observation of a series stores a baseline
-// and emits nothing; subsequent scrapes emit a positive delta (or, on reset, the
-// current value).
-func (c *Collector) emitDelta(s *sample, attrs telemetry.Attrs, e telemetry.Emitter) {
-	if isNaN(s.value) {
-		return
-	}
-	key := seriesKey(s.name, attrs)
+// delta reads and updates the per-series counter baseline, returning the
+// monotonic increment to emit and whether a prior baseline existed (ok=false on
+// the FIRST observation of a series, which only stores the baseline and emits
+// nothing). It is the SINGLE baseline read/update per source series: the raw
+// forward and any curated counter both consume the returned delta, so a curated
+// metric never maintains its own baseline. On a detected counter reset (current
+// value below the baseline) the delta is the current value (the new series
+// started from zero). The baseline map is bounded by prevHardCap: at the cap a
+// brand-new series is not tracked (its delta is suppressed) while existing
+// series keep updating.
+func (c *Collector) delta(name string, value float64, attrs telemetry.Attrs) (float64, bool) {
+	key := seriesKey(name, attrs)
 
 	c.mu.Lock()
 	pe, seen := c.prev[key]
 	if seen || len(c.prev) < prevHardCap {
-		c.prev[key] = prevEntry{value: s.value, gen: c.gen}
+		c.prev[key] = prevEntry{value: value, gen: c.gen}
 	}
 	c.mu.Unlock()
 
 	if !seen {
-		return // baseline only on first observation
+		return 0, false
 	}
-	delta := s.value - pe.value
-	if s.value < pe.value {
-		// Counter reset: the new series started from zero, so the current value
-		// is the increment.
-		delta = s.value
+	d := value - pe.value
+	if value < pe.value {
+		d = value // counter reset: current value is the increment
 	}
-	if delta > 0 {
-		e.Counter(s.name, "", s.help, delta, attrs)
-	}
+	return d, true
 }
 
 // mergeAttrs builds the per-sample attribute set: target passthrough labels

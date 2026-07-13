@@ -109,6 +109,9 @@ var nonIdentifier = map[string]bool{
 	"tailscale.oauth_app.node_attribute_count": true, // #167: numeric count
 	"tailscale.device.key_expires_in_days":     true, // J-B5: numeric days-to-expiry
 	"result":                                   true, // rdns cache: hit/miss/negative/success/failure
+	"tailscale.health.type":                    true, // #171: tailscaled health-message type (code-defined enum)
+	"tailscale.path":                           true, // #171: folded traffic path (direct|derp|peer_relay|other)
+	"tailscale.drop.reason":                    true, // #171: bounded drop-reason admit-set (acl|error|other)
 }
 
 // categoryForIPClass maps an ipClass to the toggle category.
