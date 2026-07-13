@@ -2,10 +2,14 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -15,6 +19,9 @@ type fakeAPI struct {
 	svcErr  error
 	hosts   map[string][]tsapi.ServiceHost
 	hostErr map[string]error
+
+	addrs    []tsapi.ServiceAddr
+	addrsErr error
 }
 
 func (f *fakeAPI) Services(context.Context) ([]tsapi.VIPService, error) {
@@ -26,6 +33,10 @@ func (f *fakeAPI) ServiceHosts(_ context.Context, name string) ([]tsapi.ServiceH
 		return nil, e
 	}
 	return f.hosts[name], nil
+}
+
+func (f *fakeAPI) ServiceAddrs(context.Context) ([]tsapi.ServiceAddr, error) {
+	return f.addrs, f.addrsErr
 }
 
 var _ collector.SnapshotCollector = (*Collector)(nil)
@@ -154,5 +165,110 @@ func TestEmptyServices(t *testing.T) {
 	}
 	if cnt := rec.MetricPoints("tailscale.services.count"); len(cnt) != 1 || cnt[0].Value != 0 {
 		t.Fatalf("count = %+v, want 0", cnt)
+	}
+}
+
+// sampleServiceAddrs mirrors the real /services response shape (name + both
+// IPv4/IPv6 VIP addrs), anonymized from .capture/services-live-20260713.json.
+func sampleServiceAddrs() []tsapi.ServiceAddr {
+	return []tsapi.ServiceAddr{
+		{Name: "svc:argocd", Addrs: []string{"100.124.43.64", "fd7a:115c:a1e0::7501:2b54"}},
+		{Name: "svc:grpc", Addrs: []string{"100.69.161.118", "fd7a:115c:a1e0::c501:a17f"}},
+	}
+}
+
+func TestWithEnrichCache_PopulatesServiceVIPMap(t *testing.T) {
+	cache := enrich.NewDeviceCache()
+	api := &fakeAPI{svcs: sampleServices(), addrs: sampleServiceAddrs()}
+	c := New(api, 0, WithEnrichCache(cache))
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if got := cache.ResolveName("100.124.43.64:443"); got != "svc:argocd" {
+		t.Errorf("ResolveName(argocd VIPv4) = %q, want svc:argocd", got)
+	}
+	if got := cache.ResolveName("[fd7a:115c:a1e0::7501:2b54]:443"); got != "svc:argocd" {
+		t.Errorf("ResolveName(argocd VIPv6) = %q, want svc:argocd", got)
+	}
+	if got := cache.ResolveName("100.69.161.118:443"); got != "svc:grpc" {
+		t.Errorf("ResolveName(grpc VIPv4) = %q, want svc:grpc", got)
+	}
+}
+
+func TestWithoutEnrichCache_DoesNotFetchAddrs(t *testing.T) {
+	// No WithEnrichCache option -> ServiceAddrs must not even be called. A
+	// forced error confirms the collector never reaches it.
+	api := &fakeAPI{svcs: sampleServices(), addrsErr: fmt.Errorf("must not be called")}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect should not fail: %v", err)
+	}
+}
+
+func TestWithEnrichCache_AddrsFetchErrorIsNonFatal(t *testing.T) {
+	cache := enrich.NewDeviceCache()
+	// Seed the cache with a stale entry so we can confirm a failed refresh
+	// leaves it in place rather than clearing it.
+	cache.ReplaceServices(map[netip.Addr]string{
+		netip.MustParseAddr("100.124.43.64"): "svc:argocd",
+	})
+	api := &fakeAPI{svcs: sampleServices(), addrsErr: fmt.Errorf("transient")}
+	c := New(api, 0, WithEnrichCache(cache))
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect should not fail when ServiceAddrs errors: %v", err)
+	}
+	// Inventory metrics are unaffected by the addr-fetch failure.
+	if cnt := rec.MetricPoints("tailscale.services.count"); len(cnt) != 1 || cnt[0].Value != 2 {
+		t.Fatalf("count = %+v, want 2", cnt)
+	}
+	if got := cache.ResolveName("100.124.43.64:443"); got != "svc:argocd" {
+		t.Errorf("stale cache entry lost on fetch error: got %q, want svc:argocd", got)
+	}
+}
+
+// TestGuard_RawServiceAddressesNeverEmitted is the #166 acceptance criterion:
+// even with an addr-bearing fake wired through WithEnrichCache, no emitted
+// metric or log attribute value may contain a raw service address. The
+// service-VIP addresses may only ever be used as in-memory cache keys.
+func TestGuard_RawServiceAddressesNeverEmitted(t *testing.T) {
+	cache := enrich.NewDeviceCache()
+	addrs := sampleServiceAddrs()
+	api := &fakeAPI{
+		svcs: sampleServices(),
+		hosts: map[string][]tsapi.ServiceHost{
+			"svc:argocd": {{NodeID: "n1", ApprovalLevel: "approved:auto", Configured: "ready"}},
+		},
+		addrs: addrs,
+	}
+	c := New(api, 0, WithEnrichCache(cache), WithCollectHosts(true))
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	var rawAddrs []string
+	for _, s := range addrs {
+		rawAddrs = append(rawAddrs, s.Addrs...)
+	}
+
+	checkAttrs := func(attrs map[string]string) {
+		for k, v := range attrs {
+			for _, raw := range rawAddrs {
+				if strings.Contains(v, raw) {
+					t.Errorf("attribute %q = %q contains raw service address %q", k, v, raw)
+				}
+			}
+		}
+	}
+	for _, name := range []string{"tailscale.services.count", "tailscale.service.ports", "tailscale.service.hosts"} {
+		for _, p := range rec.MetricPoints(name) {
+			checkAttrs(p.Attrs)
+		}
 	}
 }

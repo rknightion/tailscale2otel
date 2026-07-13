@@ -391,6 +391,40 @@ func TestProcessExternalDstResolvesViaCache(t *testing.T) {
 	}
 }
 
+// TestProcessServiceVIPDstResolvesToServiceName covers #166: a flow whose peer
+// is a Tailscale Service VIP (a CGNAT-range address with no device entry)
+// resolves to the service NAME via the cache's service map instead of
+// collapsing to "unknown". Only the derived name is emitted — never the VIP.
+func TestProcessServiceVIPDstResolvesToServiceName(t *testing.T) {
+	rec := telemetrytest.New()
+	cache := cacheWith(t)
+	vip := netip.MustParseAddr("100.81.142.157")
+	cache.ReplaceServices(map[netip.Addr]string{vip: "svc:argocd"})
+
+	flow := flowlog.FlowLog{
+		Logged: time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
+		NodeID: "nLaptop",
+		VirtualTraffic: []flowlog.ConnectionCounts{
+			{Proto: protoTCP, Src: "100.64.0.1:51000", Dst: vip.String() + ":443", TxPkts: 2, TxBytes: 200, RxPkts: 2, RxBytes: 400},
+		},
+	}
+	p := flowlog.NewProcessor(cache, flowlog.Options{NodeDims: true})
+	p.Process(flow, rec.Emitter())
+
+	tx := findPoint(t, rec.MetricPoints(flowlog.MetricIO),
+		map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstNode] != "svc:argocd" {
+		t.Fatalf("metric dst.node = %q, want svc:argocd", tx.Attrs[semconv.AttrDstNode])
+	}
+	logs := rec.LogRecords()
+	if len(logs) != 1 {
+		t.Fatalf("logs = %d, want 1", len(logs))
+	}
+	if got := logs[0].Attrs[semconv.AttrDstNode]; got != "svc:argocd" {
+		t.Fatalf("log dst.node = %q, want svc:argocd", got)
+	}
+}
+
 // externalFlow has one exit connection to a non-Tailscale destination (8.8.8.8)
 // from a known tailnet source (100.64.0.1 -> laptop).
 func externalFlow() flowlog.FlowLog {

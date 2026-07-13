@@ -38,6 +38,12 @@ type DeviceCache struct {
 	byNode  map[string]*DeviceMeta
 	updated time.Time
 	now     func() time.Time
+
+	// byService maps a Tailscale Service (VIP service) backing address to the
+	// service's name (e.g. "svc:argocd"), so flow-log peers destined for a
+	// service VIP resolve to the service name instead of falling through to
+	// "unknown". Populated by ReplaceServices; consulted by ResolveName.
+	byService map[netip.Addr]string
 }
 
 // Option configures a DeviceCache.
@@ -51,9 +57,10 @@ func WithClock(now func() time.Time) Option {
 // NewDeviceCache returns an empty cache ready for use.
 func NewDeviceCache(opts ...Option) *DeviceCache {
 	c := &DeviceCache{
-		byAddr: map[netip.Addr]*DeviceMeta{},
-		byNode: map[string]*DeviceMeta{},
-		now:    time.Now,
+		byAddr:    map[netip.Addr]*DeviceMeta{},
+		byNode:    map[string]*DeviceMeta{},
+		byService: map[netip.Addr]string{},
+		now:       time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -83,6 +90,23 @@ func (c *DeviceCache) Replace(metas []DeviceMeta) {
 	c.mu.Unlock()
 }
 
+// ReplaceServices atomically swaps the cached Tailscale Service (VIP service)
+// address map: backing address -> service name (e.g. "svc:argocd"). It builds
+// the new map before taking the write lock, mirroring Replace. A nil or empty
+// map clears the service map (e.g. the services collector is disabled or its
+// last fetch failed and the caller chooses to drop stale entries); callers
+// that want to keep the previous map on a transient fetch failure should
+// simply not call ReplaceServices for that tick.
+func (c *DeviceCache) ReplaceServices(byAddr map[netip.Addr]string) {
+	cp := make(map[netip.Addr]string, len(byAddr))
+	for a, name := range byAddr {
+		cp[a] = name
+	}
+	c.mu.Lock()
+	c.byService = cp
+	c.mu.Unlock()
+}
+
 // LookupAddr returns the device owning the given address, if cached.
 func (c *DeviceCache) LookupAddr(a netip.Addr) (*DeviceMeta, bool) {
 	c.mu.RLock()
@@ -100,8 +124,10 @@ func (c *DeviceCache) LookupNode(id string) (*DeviceMeta, bool) {
 }
 
 // ResolveName maps an "addr:port" (or bare address) to a device's short name.
-// Unrecognized Tailscale-range addresses resolve to "unknown"; addresses
-// outside Tailscale's ranges resolve to "external".
+// A Service (VIP service) backing address that isn't also a known device
+// resolves to the service name (e.g. "svc:argocd"). Unrecognized
+// Tailscale-range addresses resolve to "unknown"; addresses outside
+// Tailscale's ranges resolve to "external".
 func (c *DeviceCache) ResolveName(addrPort string) string {
 	addr, ok := parseAddr(addrPort)
 	if !ok {
@@ -109,9 +135,13 @@ func (c *DeviceCache) ResolveName(addrPort string) string {
 	}
 	c.mu.RLock()
 	m, found := c.byAddr[addr]
+	svc, svcFound := c.byService[addr]
 	c.mu.RUnlock()
 	if found {
 		return m.Hostname
+	}
+	if svcFound {
+		return svc
 	}
 	if IsTailscaleAddr(addr) {
 		return "unknown" // a tailnet address we don't (yet) have cached

@@ -7,9 +7,11 @@ package services
 
 import (
 	"context"
+	"net/netip"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/enrich"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -38,6 +40,7 @@ const (
 type api interface {
 	Services(ctx context.Context) ([]tsapi.VIPService, error)
 	ServiceHosts(ctx context.Context, name string) ([]tsapi.ServiceHost, error)
+	ServiceAddrs(ctx context.Context) ([]tsapi.ServiceAddr, error)
 }
 
 // Collector implements collector.SnapshotCollector for Tailscale Services.
@@ -46,6 +49,7 @@ type Collector struct {
 	interval     time.Duration
 	perEntity    bool
 	collectHosts bool
+	cache        *enrich.DeviceCache
 }
 
 // Option configures optional Collector behavior.
@@ -59,6 +63,18 @@ func WithPerEntity(enabled bool) Option { return func(c *Collector) { c.perEntit
 // WithCollectHosts enables per-service backing-host detail, which makes one
 // extra API call per service (N+1). Off by default.
 func WithCollectHosts(enabled bool) Option { return func(c *Collector) { c.collectHosts = enabled } }
+
+// WithEnrichCache supplies the shared enrich.DeviceCache so flow-log peers
+// destined for a Service VIP resolve to the service name instead of falling
+// through to "unknown" (#166). Off (nil, the default) when not supplied. When
+// set, every Collect fetches each service's backing addresses via the
+// carve-out tsapi.ServiceAddrs and repopulates the cache's service-VIP map —
+// unconditionally, independent of WithPerEntity/WithCollectHosts, since it's a
+// second call already shaped like Services() and cheap relative to the
+// inventory metrics above it.
+func WithEnrichCache(cache *enrich.DeviceCache) Option {
+	return func(c *Collector) { c.cache = cache }
+}
 
 // New returns a services collector. A non-positive interval resolves to 600s.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
@@ -89,6 +105,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	e.Gauge(docCount.Name, docCount.Unit, docCount.Description, float64(len(svcs)), nil)
 
+	if c.cache != nil {
+		c.populateEnrichCache(ctx)
+	}
+
 	if !c.perEntity {
 		return nil
 	}
@@ -101,6 +121,31 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 	return nil
+}
+
+// populateEnrichCache fetches each service's backing addresses via the
+// carve-out tsapi.ServiceAddrs and repopulates the shared enrich cache's
+// service-VIP map, so flow-log peers destined for a Service resolve to the
+// service name (#166). A fetch failure is non-fatal: the inventory metrics
+// emitted above are unaffected, and the cache's previous service map (if any)
+// is left in place rather than being cleared. The decoded addresses are used
+// ONLY as map keys here — they are never attached to an emitted attribute.
+func (c *Collector) populateEnrichCache(ctx context.Context) {
+	addrs, err := c.api.ServiceAddrs(ctx)
+	if err != nil {
+		return
+	}
+	byAddr := make(map[netip.Addr]string, len(addrs)*2)
+	for _, s := range addrs {
+		for _, raw := range s.Addrs {
+			a, err := netip.ParseAddr(raw)
+			if err != nil {
+				continue
+			}
+			byAddr[a] = s.Name
+		}
+	}
+	c.cache.ReplaceServices(byAddr)
 }
 
 // emitHosts fetches and emits the backing-host counts for one service, bucketed

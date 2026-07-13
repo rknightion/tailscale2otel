@@ -200,3 +200,76 @@ func TestIsTailscaleAddr(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveName_ServiceVIP(t *testing.T) {
+	c := enrich.NewDeviceCache()
+	vip := netip.MustParseAddr("100.124.43.64")
+	c.ReplaceServices(map[netip.Addr]string{vip: "svc:argocd"})
+
+	if got := c.ResolveName("100.124.43.64:443"); got != "svc:argocd" {
+		t.Fatalf("ResolveName(service VIP) = %q, want %q", got, "svc:argocd")
+	}
+	// Bare address (no port) resolves the same way.
+	if got := c.ResolveName("100.124.43.64"); got != "svc:argocd" {
+		t.Fatalf("ResolveName(bare service VIP) = %q, want %q", got, "svc:argocd")
+	}
+}
+
+func TestResolveName_DeviceWinsOverServiceOnAddressCollision(t *testing.T) {
+	// A device hit takes priority over a service-VIP hit at the same address
+	// (shouldn't normally collide, but the device index is authoritative).
+	c := enrich.NewDeviceCache()
+	addr := netip.MustParseAddr("100.64.0.1")
+	c.Replace([]enrich.DeviceMeta{{NodeID: "n1", Hostname: "laptop", Addrs: []netip.Addr{addr}}})
+	c.ReplaceServices(map[netip.Addr]string{addr: "svc:argocd"})
+
+	if got := c.ResolveName("100.64.0.1:443"); got != "laptop" {
+		t.Fatalf("ResolveName(collision) = %q, want device hostname %q", got, "laptop")
+	}
+}
+
+func TestResolveName_UnknownWhenNoServiceCached(t *testing.T) {
+	c := enrich.NewDeviceCache()
+	// A CGNAT address with no device and no service entry still falls through
+	// to "unknown", not a stale/zero-value service name.
+	if got := c.ResolveName("100.100.100.100:443"); got != "unknown" {
+		t.Fatalf("ResolveName(no service) = %q, want unknown", got)
+	}
+}
+
+func TestReplaceServicesOverwritesPriorContents(t *testing.T) {
+	c := enrich.NewDeviceCache()
+	a := netip.MustParseAddr("100.124.43.64")
+	b := netip.MustParseAddr("100.69.161.118")
+	c.ReplaceServices(map[netip.Addr]string{a: "svc:argocd"})
+	c.ReplaceServices(map[netip.Addr]string{b: "svc:grpc"})
+
+	if got := c.ResolveName("100.124.43.64:1"); got != "unknown" {
+		t.Fatalf("stale service address still resolves: got %q, want unknown", got)
+	}
+	if got := c.ResolveName("100.69.161.118:1"); got != "svc:grpc" {
+		t.Fatalf("new service address resolves to %q, want svc:grpc", got)
+	}
+}
+
+func TestReplaceServicesIsIndependentOfDeviceReplace(t *testing.T) {
+	// Replace() (devices) must not clear the service map, and vice versa —
+	// they are separate indexes populated by separate collectors.
+	c := enrich.NewDeviceCache()
+	svcAddr := netip.MustParseAddr("100.124.43.64")
+	devAddr := netip.MustParseAddr("100.64.0.1")
+	c.ReplaceServices(map[netip.Addr]string{svcAddr: "svc:argocd"})
+	c.Replace([]enrich.DeviceMeta{{NodeID: "n1", Hostname: "laptop", Addrs: []netip.Addr{devAddr}}})
+
+	if got := c.ResolveName("100.124.43.64:1"); got != "svc:argocd" {
+		t.Fatalf("service entry cleared by device Replace: got %q, want svc:argocd", got)
+	}
+	if got := c.ResolveName("100.64.0.1:1"); got != "laptop" {
+		t.Fatalf("device entry missing: got %q, want laptop", got)
+	}
+
+	c.ReplaceServices(nil)
+	if got := c.ResolveName("100.64.0.1:1"); got != "laptop" {
+		t.Fatalf("device entry cleared by service ReplaceServices(nil): got %q, want laptop", got)
+	}
+}

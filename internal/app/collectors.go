@@ -170,7 +170,10 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	if c.Services.Enabled && cp.Supports("services") {
 		rt.registry.Register(services.New(rt.client, c.Services.Interval.D(),
 			services.WithPerEntity(cfg.Cardinality.PerEntity.Service),
-			services.WithCollectHosts(c.Services.CollectHosts)), c.Services.Interval.D())
+			services.WithCollectHosts(c.Services.CollectHosts),
+			// Feed the service-VIP -> name map so flow logs resolve a service
+			// VIP peer to its service name instead of "unknown" (#166).
+			services.WithEnrichCache(rt.cache)), c.Services.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") {
 		// Static node_metrics targets are process-global (a shared jump host, not a

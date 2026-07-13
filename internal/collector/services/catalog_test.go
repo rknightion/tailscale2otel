@@ -20,6 +20,10 @@ func (catalogFakeAPI) ServiceHosts(context.Context, string) ([]tsapi.ServiceHost
 	return []tsapi.ServiceHost{{NodeID: "n1", ApprovalLevel: "approved:auto", Configured: "ready"}}, nil
 }
 
+func (catalogFakeAPI) ServiceAddrs(context.Context) ([]tsapi.ServiceAddr, error) {
+	return nil, nil
+}
+
 // TestCatalogMatchesEmitted drives collect_hosts so all three declared metrics
 // are emitted and checked against the catalog.
 func TestCatalogMatchesEmitted(t *testing.T) {

@@ -47,6 +47,35 @@ func TestServices_DecodesNamePortsTags(t *testing.T) {
 	}
 }
 
+func TestServiceAddrs_DecodesNameAndAddrs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/tailnet/example.com/services" {
+			http.Error(w, "bad path: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(servicesFixture))
+	}))
+	defer srv.Close()
+
+	svcs, err := newClient(t, srv.URL).ServiceAddrs(context.Background())
+	if err != nil {
+		t.Fatalf("ServiceAddrs: %v", err)
+	}
+	if len(svcs) != 2 {
+		t.Fatalf("len = %d, want 2", len(svcs))
+	}
+	if svcs[0].Name != "svc:argocd" {
+		t.Errorf("name = %q, want svc:argocd", svcs[0].Name)
+	}
+	wantAddrs := []string{"100.124.43.64", "fd7a:115c:a1e0::7501:2b54"}
+	if len(svcs[0].Addrs) != len(wantAddrs) || svcs[0].Addrs[0] != wantAddrs[0] || svcs[0].Addrs[1] != wantAddrs[1] {
+		t.Errorf("addrs = %v, want %v", svcs[0].Addrs, wantAddrs)
+	}
+	if svcs[1].Name != "svc:grpc" || len(svcs[1].Addrs) != 1 || svcs[1].Addrs[0] != "100.69.161.118" {
+		t.Errorf("svcs[1] = %+v", svcs[1])
+	}
+}
+
 func TestServiceHosts_Decodes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/tailnet/example.com/services/svc:argocd/devices" {
