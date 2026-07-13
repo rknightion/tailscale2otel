@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -1059,6 +1061,81 @@ func TestValidate_ListenerCollisions(t *testing.T) {
 	err := c.Validate()
 	if err == nil || !strings.Contains(err.Error(), "streaming.listen") || !strings.Contains(err.Error(), "webhook.listen") {
 		t.Fatalf("streaming/webhook listen collision: want error naming both, got %v", err)
+	}
+}
+
+// TestValidate_AdminTLSBothOrNeither pins #170: admin.tls.cert_file and
+// admin.tls.key_file are both-or-neither — setting only one is a hard error
+// naming both keys.
+func TestValidate_AdminTLSBothOrNeither(t *testing.T) {
+	c := config.Default()
+	c.Admin.TLS.CertFile = "/does/not/matter.crt"
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error: admin.tls.cert_file set without admin.tls.key_file")
+	}
+	if !strings.Contains(err.Error(), "admin.tls.cert_file") || !strings.Contains(err.Error(), "admin.tls.key_file") {
+		t.Errorf("error %q should name both admin.tls.cert_file and admin.tls.key_file", err.Error())
+	}
+
+	c = config.Default()
+	c.Admin.TLS.KeyFile = "/does/not/matter.key"
+	err = c.Validate()
+	if err == nil {
+		t.Fatal("expected error: admin.tls.key_file set without admin.tls.cert_file")
+	}
+	if !strings.Contains(err.Error(), "admin.tls.cert_file") || !strings.Contains(err.Error(), "admin.tls.key_file") {
+		t.Errorf("error %q should name both admin.tls.cert_file and admin.tls.key_file", err.Error())
+	}
+}
+
+// TestValidate_PrometheusTLSBothOrNeither mirrors
+// TestValidate_AdminTLSBothOrNeither for the prometheus.tls block.
+func TestValidate_PrometheusTLSBothOrNeither(t *testing.T) {
+	c := config.Default()
+	c.Prometheus.TLS.CertFile = "/does/not/matter.crt"
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error: prometheus.tls.cert_file set without prometheus.tls.key_file")
+	}
+	if !strings.Contains(err.Error(), "prometheus.tls.cert_file") || !strings.Contains(err.Error(), "prometheus.tls.key_file") {
+		t.Errorf("error %q should name both prometheus.tls.cert_file and prometheus.tls.key_file", err.Error())
+	}
+}
+
+// TestValidate_AdminTLSFilesMustBeReadable pins #170: when both admin.tls files
+// are set, Validate must confirm they exist and are readable rather than
+// deferring the failure to the first ListenAndServeTLS call at startup.
+func TestValidate_AdminTLSFilesMustBeReadable(t *testing.T) {
+	c := config.Default()
+	c.Admin.TLS.CertFile = filepath.Join(t.TempDir(), "missing.crt")
+	c.Admin.TLS.KeyFile = filepath.Join(t.TempDir(), "missing.key")
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error: admin.tls cert/key files do not exist")
+	}
+	if !strings.Contains(err.Error(), "admin.tls.cert_file") {
+		t.Errorf("error %q should name admin.tls.cert_file", err.Error())
+	}
+}
+
+// TestValidate_AdminTLSValidWithReadableFiles is the positive counterpart of
+// TestValidate_AdminTLSFilesMustBeReadable: real, readable files pass.
+func TestValidate_AdminTLSValidWithReadableFiles(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+	if err := os.WriteFile(certPath, []byte("cert"), 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	c := config.Default()
+	c.Admin.TLS.CertFile = certPath
+	c.Admin.TLS.KeyFile = keyPath
+	if err := c.Validate(); err != nil {
+		t.Errorf("admin.tls with readable cert/key files should be valid: %v", err)
 	}
 }
 

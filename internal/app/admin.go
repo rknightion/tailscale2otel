@@ -132,10 +132,21 @@ func (a *App) buildAdminServer() *http.Server {
 }
 
 // runAdmin serves the admin endpoints until ctx is canceled, then shuts down
-// gracefully. Errors other than the expected close are logged.
+// gracefully. Errors other than the expected close are logged. Serves HTTPS
+// when both admin.tls files are configured (Validate has already confirmed
+// they exist and are readable); otherwise serves plain HTTP, byte-identical to
+// before TLS support existed.
 func (a *App) runAdmin(ctx context.Context) {
+	certFile := a.cfg.Admin.TLS.CertFile
+	keyFile := a.cfg.Admin.TLS.KeyFile
 	errCh := make(chan error, 1)
-	go func() { errCh <- a.adminSrv.ListenAndServe() }()
+	go func() {
+		if certFile != "" && keyFile != "" {
+			errCh <- a.adminSrv.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			errCh <- a.adminSrv.ListenAndServe()
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

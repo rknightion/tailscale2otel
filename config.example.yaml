@@ -310,6 +310,9 @@ admin:
   auth:
     token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind)
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
+  tls:
+    cert_file: ""                     # serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)
+    key_file: ""                      # HTTPS key for admin.tls.cert_file
 
 # ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
 prometheus:
@@ -318,6 +321,9 @@ prometheus:
   auth:
     token: ""                         # gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
+  tls:
+    cert_file: ""                     # serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)
+    key_file: ""                      # HTTPS key for prometheus.tls.cert_file
 
 # ── Profiling (OPTIONAL: all off by default, carries no Tailscale data) ─────────
 profiling:

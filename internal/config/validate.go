@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -313,6 +314,35 @@ func validateReceiverPath(field, p string) error {
 	return nil
 }
 
+// validateTLSFiles enforces the shared TLS-file contract for a listener block
+// (admin.tls / prometheus.tls): cert_file and key_file must be set together
+// (both-or-neither), and any set path must exist and be readable now — not
+// discovered as an opaque http.Server.ListenAndServeTLS failure at startup.
+// label is the config prefix (e.g. "admin") used in error messages.
+func validateTLSFiles(label, certFile, keyFile string) error {
+	if (certFile == "") != (keyFile == "") {
+		return fmt.Errorf("%s.tls.cert_file and %s.tls.key_file must both be set or both be empty "+
+			"(got cert_file=%q, key_file=%q)", label, label, certFile, keyFile)
+	}
+	for _, f := range [...]struct {
+		field string
+		path  string
+	}{
+		{"cert_file", certFile},
+		{"key_file", keyFile},
+	} {
+		if f.path == "" {
+			continue
+		}
+		fh, err := os.Open(f.path)
+		if err != nil {
+			return fmt.Errorf("%s.tls.%s %q: %w", label, f.field, f.path, err)
+		}
+		_ = fh.Close()
+	}
+	return nil
+}
+
 // Validate reports the first configuration error it finds, or nil if the
 // Config is valid.
 func (c *Config) Validate() error {
@@ -399,6 +429,15 @@ func (c *Config) Validate() error {
 					"address (only one wins the net.Listen race; the other dies silently)", a.name, b.name, a.addr)
 			}
 		}
+	}
+	// admin.tls / prometheus.tls: both-or-neither, and any configured file must
+	// exist and be readable now rather than surfacing as an opaque
+	// ListenAndServeTLS failure at startup.
+	if err := validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile); err != nil {
+		return err
+	}
+	if err := validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile); err != nil {
+		return err
 	}
 	if provider == "tailscale" {
 		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {

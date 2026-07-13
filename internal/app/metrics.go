@@ -55,11 +55,22 @@ func (a *App) requireMetricsAuth(next http.Handler) http.Handler {
 	})
 }
 
-// runMetrics serves the Prometheus endpoint until ctx is canceled, then shuts down
-// gracefully. Mirrors runAdmin.
+// runMetrics serves the Prometheus endpoint until ctx is canceled, then shuts
+// down gracefully. Mirrors runAdmin, including HTTPS when both prometheus.tls
+// files are configured (Validate has already confirmed they exist and are
+// readable); otherwise serves plain HTTP, byte-identical to before TLS support
+// existed.
 func (a *App) runMetrics(ctx context.Context) {
+	certFile := a.cfg.Prometheus.TLS.CertFile
+	keyFile := a.cfg.Prometheus.TLS.KeyFile
 	errCh := make(chan error, 1)
-	go func() { errCh <- a.metricsSrv.ListenAndServe() }()
+	go func() {
+		if certFile != "" && keyFile != "" {
+			errCh <- a.metricsSrv.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			errCh <- a.metricsSrv.ListenAndServe()
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

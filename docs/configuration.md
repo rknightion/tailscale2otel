@@ -57,6 +57,8 @@ Every config field is settable via an environment variable:
 | `admin.auth.token` | `TS2OTEL_ADMIN__AUTH__TOKEN` |
 | `prometheus.auth.token` | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` |
 | `prometheus.auth.token_file` | `""` | Read `prometheus.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `prometheus.tls.cert_file` | `""` | HTTPS certificate for the Prometheus pull endpoint. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |
+| `prometheus.tls.key_file` | `""` | HTTPS key for `prometheus.tls.cert_file`. Both paths must exist and be readable at startup. |
 | `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
 | `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
 | `profiling.pyroscope.basic_auth_password_file` | `""` | Read `profiling.pyroscope.basic_auth_password` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
@@ -724,6 +726,8 @@ internet.
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
 | `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. `/healthz` and `/readyz` are never gated. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
 | `admin.auth.token_file` | `""` | Read `admin.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `admin.tls.cert_file` | `""` | HTTPS certificate for the admin server. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |
+| `admin.tls.key_file` | `""` | HTTPS key for `admin.tls.cert_file`. Both paths must exist and be readable at startup. |
 
 > **WARN (advisory):** if `landing_page` is served on a wildcard (all-interfaces) bind with no
 > `admin.auth.token`, a startup warning fires — the page exposes internal state to anyone who can

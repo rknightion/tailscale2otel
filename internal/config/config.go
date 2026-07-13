@@ -93,6 +93,16 @@ type AdminConfig struct {
 	LandingPage bool `yaml:"landing_page"`
 	// Auth optionally gates the status page and pprof behind a shared secret.
 	Auth AdminAuth `yaml:"auth"`
+	// TLS optionally serves the admin listener over HTTPS instead of plain HTTP.
+	TLS AdminTLS `yaml:"tls"`
+}
+
+// AdminTLS configures TLS for the admin server (mirrors StreamingTLS). Both
+// fields are empty by default (plain HTTP); Validate requires both-or-neither
+// and that any set path exists and is readable.
+type AdminTLS struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 // AdminAuth gates the status page ("/" and "/api/status.json") and the pprof
@@ -116,6 +126,17 @@ type PrometheusConfig struct {
 	Enabled bool           `yaml:"enabled"`
 	Listen  string         `yaml:"listen"`
 	Auth    PrometheusAuth `yaml:"auth"`
+	// TLS optionally serves the prometheus listener over HTTPS instead of plain
+	// HTTP.
+	TLS PrometheusTLS `yaml:"tls"`
+}
+
+// PrometheusTLS configures TLS for the prometheus pull-endpoint server. Mirrors
+// AdminTLS/StreamingTLS; same Validate rules (both-or-neither, files must exist
+// and be readable).
+type PrometheusTLS struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 // PrometheusAuth optionally gates /metrics behind a shared secret presented as the
