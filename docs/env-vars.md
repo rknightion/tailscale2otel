@@ -42,13 +42,15 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_DELAY` | `0s` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
 | `TS2OTEL_HEADSCALE__HTTP__RATE_LIMIT` | `0` | HTTP client used for all Headscale API calls |
 | `TS2OTEL_TAILSCALE__TAILNET` | `-` | "-" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. "example.com" |
-| `TS2OTEL_TAILSCALE__AUTH__METHOD` | `oauth` | oauth (recommended) \| apikey |
+| `TS2OTEL_TAILSCALE__AUTH__METHOD` | `oauth` | oauth (recommended) \| apikey \| workload_identity (keyless OIDC exchange) |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID` | `""` | OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID) |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET` | `""` | OAuth client secret — keep in env, not here (..._CLIENT_SECRET) |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES` | `[all:read]` | least-privilege read scopes requested for the token _(comma-separated list)_ |
 | `TS2OTEL_TAILSCALE__AUTH__APIKEY` | `""` | personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires <=90d and is tied to its creator |
 | `TS2OTEL_TAILSCALE__AUTH__APIKEY_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__CLIENT_ID` | `""` | federated OAuth client ID from the Tailscale admin console (TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__CLIENT_ID) |
+| `TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE` | `""` | path to the OIDC ID token, e.g. a Kubernetes projected service-account token; re-read on every exchange (rotation-safe) |
 | `TS2OTEL_TAILSCALE__HTTP__TIMEOUT` | `30s` | per-attempt timeout (each retry attempt; a retried request may take longer, and long Retry-After waits are honored) |
 | `TS2OTEL_TAILSCALE__HTTP__RETRY__MAX_ATTEMPTS` | `4` | total attempts per request (1 = no retry); exponential backoff between tries |
 | `TS2OTEL_TAILSCALE__HTTP__RETRY__BASE_DELAY` | `500ms` | initial backoff delay |

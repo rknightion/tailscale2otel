@@ -136,9 +136,13 @@ func tsapiOptionsFor(rt config.ResolvedTailnet, version string) tsapi.Options {
 		MaxDelay:    rt.HTTP.Retry.MaxDelay.D(),
 		RateLimit:   rt.HTTP.RateLimit,
 	}
-	if rt.Auth.Method == "apikey" {
+	switch rt.Auth.Method {
+	case "apikey":
 		o.APIKey = rt.Auth.APIKey.Reveal()
-	} else {
+	case "workload_identity":
+		o.WorkloadIdentityClientID = rt.Auth.WorkloadIdentity.ClientID
+		o.WorkloadIdentityIDTokenFile = rt.Auth.WorkloadIdentity.IDTokenFile
+	default: // "oauth"
 		o.OAuthClientID = rt.Auth.OAuth.ClientID
 		o.OAuthClientSecret = rt.Auth.OAuth.ClientSecret.Reveal()
 		o.OAuthScopes = rt.Auth.OAuth.Scopes

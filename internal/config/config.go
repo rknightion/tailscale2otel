@@ -316,14 +316,28 @@ func mergeHTTPDefaults(x, base TailscaleHTTPConfig) TailscaleHTTPConfig {
 
 // TailscaleAuth selects and configures the Tailscale authentication method.
 type TailscaleAuth struct {
-	Method string      `yaml:"method"`
-	OAuth  OAuthConfig `yaml:"oauth"`
-	APIKey Secret      `yaml:"apikey"`
+	Method           string                 `yaml:"method"`
+	OAuth            OAuthConfig            `yaml:"oauth"`
+	APIKey           Secret                 `yaml:"apikey"`
+	WorkloadIdentity WorkloadIdentityConfig `yaml:"workload_identity"`
 	// APIKeyFile reads APIKey from a file at Load (Docker-secrets style). Value
 	// XOR file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use. TailnetConfig entries embed this struct,
 	// so tailnets[].auth.apikey_file gets the same behavior for free.
 	APIKeyFile string `yaml:"apikey_file"`
+}
+
+// WorkloadIdentityConfig holds workload-identity-federation settings
+// (auth.method: workload_identity): a federated OAuth client ID plus the path
+// to an OIDC ID token (e.g. a Kubernetes projected service-account token)
+// exchanged for a short-lived Tailscale API access token via
+// POST /api/v2/oauth/token-exchange. The token file is re-read on every
+// exchange (projected tokens rotate in place). There is no scopes field:
+// scopes are fixed by the federated identity's admin-console configuration,
+// not requested in the exchange.
+type WorkloadIdentityConfig struct {
+	ClientID    string `yaml:"client_id"`
+	IDTokenFile string `yaml:"id_token_file"`
 }
 
 // OAuthConfig holds OAuth client-credentials settings.

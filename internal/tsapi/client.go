@@ -26,12 +26,25 @@ type Options struct {
 	BaseURL   string // default https://api.tailscale.com
 	UserAgent string
 
-	// Authentication (used only when HTTPClient is nil). OAuth is preferred for
-	// long-running use (auto-refreshing, no fixed expiry).
+	// Authentication (used only when HTTPClient is nil). OAuth and workload
+	// identity are both preferred over APIKey for long-running use
+	// (auto-refreshing, no fixed expiry). Exactly one auth method's fields are
+	// expected to be set; callers (internal/app, from config validation) enforce
+	// the mutual exclusion.
 	APIKey            string
 	OAuthClientID     string
 	OAuthClientSecret string
 	OAuthScopes       []string
+
+	// WorkloadIdentityClientID is the federated OAuth client ID configured for
+	// workload identity federation in the Tailscale admin console.
+	WorkloadIdentityClientID string
+	// WorkloadIdentityIDTokenFile is the path to an OIDC ID token (e.g. a
+	// Kubernetes projected service-account token) exchanged for a short-lived
+	// Tailscale API access token via POST /api/v2/oauth/token-exchange. The file
+	// is re-read on every exchange — projected tokens rotate in place, and
+	// caching the first read would eventually submit an expired JWT.
+	WorkloadIdentityIDTokenFile string
 
 	Timeout     time.Duration
 	MaxAttempts int

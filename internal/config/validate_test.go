@@ -1225,3 +1225,53 @@ func TestWarnings_FlowMetricsModeBoth(t *testing.T) {
 		t.Errorf("both-mode warning should explain double-counting; got %q", w)
 	}
 }
+
+// TestValidate_WorkloadIdentity pins the #168 auth-method contract: both
+// client_id and id_token_file are required, the token file must be readable at
+// validate time, and a fully-configured method passes (single and tailnets[]).
+func TestValidate_WorkloadIdentity(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("jwt"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+
+	valid := func() *config.Config {
+		c := config.Default()
+		c.Tailscale.Auth.Method = "workload_identity"
+		c.Tailscale.Auth.WorkloadIdentity.ClientID = "fed-client"
+		c.Tailscale.Auth.WorkloadIdentity.IDTokenFile = tokenPath
+		return c
+	}
+
+	if err := valid().Validate(); err != nil {
+		t.Errorf("fully-configured workload_identity should be valid: %v", err)
+	}
+
+	c := valid()
+	c.Tailscale.Auth.WorkloadIdentity.ClientID = ""
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "workload_identity.client_id") {
+		t.Errorf("missing client_id: want error naming workload_identity.client_id, got %v", err)
+	}
+
+	c = valid()
+	c.Tailscale.Auth.WorkloadIdentity.IDTokenFile = ""
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "workload_identity.id_token_file") {
+		t.Errorf("missing id_token_file: want error naming workload_identity.id_token_file, got %v", err)
+	}
+
+	c = valid()
+	c.Tailscale.Auth.WorkloadIdentity.IDTokenFile = filepath.Join(t.TempDir(), "absent")
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "id_token_file") {
+		t.Errorf("unreadable id_token_file: want error naming the path, got %v", err)
+	}
+
+	c = config.Default()
+	c.Tailscale.Tailnet = "-"
+	c.Tailnets = []config.TailnetConfig{{
+		Name: "acme.example.com",
+		Auth: config.TailscaleAuth{Method: "workload_identity"},
+	}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "tailnets[0].auth.workload_identity.client_id") {
+		t.Errorf("tailnets[] entry missing client_id: want error naming the entry, got %v", err)
+	}
+}

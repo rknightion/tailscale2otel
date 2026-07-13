@@ -47,7 +47,7 @@ headscale:
 tailscale:
   tailnet: "-"                        # "-" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. "example.com"
   auth:
-    method: oauth                     # oauth (recommended) | apikey
+    method: oauth                     # oauth (recommended) | apikey | workload_identity (keyless OIDC exchange)
     oauth:                            # used when method: oauth — scoped, short-lived, not user-bound
       client_id: ""                   # OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID)
       client_secret: ""               # OAuth client secret — keep in env, not here (..._CLIENT_SECRET)
@@ -56,6 +56,9 @@ tailscale:
         - all:read
     apikey: ""                        # personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires <=90d and is tied to its creator
     apikey_file: ""                   # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
+    workload_identity:                # used when method: workload_identity — fully keyless OIDC token exchange (no stored secret)
+      client_id: ""                   # federated OAuth client ID from the Tailscale admin console (TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__CLIENT_ID)
+      id_token_file: ""               # path to the OIDC ID token, e.g. a Kubernetes projected service-account token; re-read on every exchange (rotation-safe)
   http:                               # HTTP client used for all Tailscale API calls
     timeout: 30s                      # per-attempt timeout (each retry attempt; a retried request may take longer, and long Retry-After waits are honored)
     retry:

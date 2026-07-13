@@ -191,13 +191,15 @@ Prefer OAuth: its tokens are short-lived, auto-refreshing, and not bound to a us
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `tailscale.auth.method` | `oauth` | Authentication method. One of `oauth` (recommended) or `apikey`. |
+| `tailscale.auth.method` | `oauth` | Authentication method. One of `oauth` (recommended), `apikey`, or `workload_identity` (fully keyless OIDC token exchange — no stored secret). |
 | `tailscale.auth.oauth.client_id` | `""` | OAuth client ID. Required when `method: oauth`. Set via `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID`. |
 | `tailscale.auth.oauth.client_secret` | `""` | OAuth client secret. Required when `method: oauth`. Set via `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`. |
 | `tailscale.auth.oauth.client_secret_file` | `""` | Read `tailscale.auth.oauth.client_secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `tailscale.auth.oauth.scopes` | `["all:read"]` | OAuth scopes requested for the token. Least-privilege read scopes are the default; add `log_streaming` if you use `streaming.auto_configure`. Comma-separated in env: `TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES=all:read,log_streaming`. |
 | `tailscale.auth.apikey` | `""` | Personal API key. Used **only** when `method: apikey`. Set via `TS2OTEL_TAILSCALE__AUTH__APIKEY`. |
 | `tailscale.auth.apikey_file` | `""` | Read `tailscale.auth.apikey` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `tailscale.auth.workload_identity.client_id` | `""` | Federated OAuth client ID (workload identity federation). Required when `method: workload_identity`. Set via `TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__CLIENT_ID`. |
+| `tailscale.auth.workload_identity.id_token_file` | `""` | Path to the OIDC ID token (e.g. a Kubernetes projected service-account token) exchanged for a short-lived Tailscale API token. Re-read on every exchange, so in-place rotation just works. Scopes are fixed by the federated identity's admin-console configuration — there is no scopes field. |
 
 > **WARN (advisory):** `method: apikey` triggers a startup warning — a personal API key expires in
 > ≤90 days and stops working when the user who created it is suspended or removed. For an unattended

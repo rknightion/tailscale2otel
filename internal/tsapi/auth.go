@@ -15,11 +15,17 @@ import (
 const defaultTailscaleBaseURL = "https://api.tailscale.com"
 
 // buildHTTPClient constructs an authenticated, retrying HTTP client from opts.
-// OAuth (client-credentials) is preferred; API key is the fallback.
+// OAuth (client-credentials) and workload identity federation are both
+// preferred over a static API key for long-running use (auto-refreshing, no
+// fixed expiry); API key is the fallback.
 func buildHTTPClient(opts Options) (*http.Client, error) {
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
+	}
+	baseURL := opts.BaseURL
+	if baseURL == "" {
+		baseURL = defaultTailscaleBaseURL
 	}
 	// wrap builds the retrying transport around base. The rate limiter lives ON
 	// the retryTransport (not as a wrapping base) so its token wait happens on the
@@ -41,6 +47,20 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 	}
 
 	switch {
+	case opts.WorkloadIdentityClientID != "":
+		// Same #84 rationale as the OAuth case below: bind the token EXCHANGE to a
+		// bounded client via context, since oauth2.Transport ignores the request
+		// context when fetching a token.
+		src := oauth2.ReuseTokenSource(nil, &workloadIdentityTokenSource{
+			ctx:         context.WithValue(context.Background(), oauth2.HTTPClient, newBoundedTokenFetchClient(timeout)),
+			baseURL:     baseURL,
+			clientID:    opts.WorkloadIdentityClientID,
+			idTokenFile: opts.WorkloadIdentityIDTokenFile,
+		})
+		return &http.Client{
+			Timeout:   0,
+			Transport: wrap(&oauth2.Transport{Source: src, Base: http.DefaultTransport}),
+		}, nil
 	case opts.OAuthClientID != "":
 		// Build the client-credentials source ourselves rather than via
 		// tsclient.OAuthConfig.HTTPClient, which binds the token source to
@@ -51,24 +71,13 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 		// tailnet forever via the shared ReuseTokenSource mutex (#84). Binding the
 		// source to a context whose oauth2.HTTPClient has dial/TLS/response-header
 		// timeouts is the only thing that bounds it.
-		baseURL := opts.BaseURL
-		if baseURL == "" {
-			baseURL = defaultTailscaleBaseURL
-		}
-		tokenFetch := &http.Client{Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
-			TLSHandshakeTimeout:   timeout,
-			ResponseHeaderTimeout: timeout,
-			ForceAttemptHTTP2:     true,
-		}}
 		cc := clientcredentials.Config{
 			ClientID:     opts.OAuthClientID,
 			ClientSecret: opts.OAuthClientSecret,
 			Scopes:       opts.OAuthScopes,
 			TokenURL:     baseURL + "/api/v2/oauth/token",
 		}
-		src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenFetch))
+		src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, newBoundedTokenFetchClient(timeout)))
 		// API calls use the default transport (unchanged behavior); only the token
 		// FETCH runs on the bounded tokenFetch client above. Wrap so retries apply
 		// to API calls too. No whole-client timeout — it would bound the whole retry
@@ -83,8 +92,22 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 			Transport: wrap(&authKeyTransport{base: http.DefaultTransport, key: opts.APIKey}),
 		}, nil
 	default:
-		return nil, errors.New("tsapi: no authentication configured (set APIKey or OAuth client credentials)")
+		return nil, errors.New("tsapi: no authentication configured (set APIKey, OAuth client credentials, or workload identity)")
 	}
+}
+
+// newBoundedTokenFetchClient builds an http.Client used ONLY for token-endpoint
+// fetches (OAuth client-credentials refresh, or workload-identity token
+// exchange), bounded by dial/TLS/response-header timeouts. See the #84
+// rationale on the call sites above.
+func newBoundedTokenFetchClient(timeout time.Duration) *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+		TLSHandshakeTimeout:   timeout,
+		ResponseHeaderTimeout: timeout,
+		ForceAttemptHTTP2:     true,
+	}}
 }
 
 func orDuration(d, def time.Duration) time.Duration {

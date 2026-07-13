@@ -343,6 +343,30 @@ func validateTLSFiles(label, certFile, keyFile string) error {
 	return nil
 }
 
+// validateWorkloadIdentity enforces the workload-identity auth contract when
+// that method is selected: both client_id and id_token_file are required, and
+// the token file must exist and be readable now — startup-time failure beats a
+// first-poll failure (tsapi re-checks per exchange as defense-in-depth, since
+// projected tokens rotate in place). label is the config prefix (e.g.
+// "tailscale.auth") used in error messages.
+func validateWorkloadIdentity(label string, a TailscaleAuth) error {
+	if a.Method != "workload_identity" {
+		return nil
+	}
+	if a.WorkloadIdentity.ClientID == "" {
+		return fmt.Errorf("%s.workload_identity.client_id: required when %s.method is workload_identity", label, label)
+	}
+	if a.WorkloadIdentity.IDTokenFile == "" {
+		return fmt.Errorf("%s.workload_identity.id_token_file: required when %s.method is workload_identity", label, label)
+	}
+	fh, err := os.Open(a.WorkloadIdentity.IDTokenFile)
+	if err != nil {
+		return fmt.Errorf("%s.workload_identity.id_token_file %q: %w", label, a.WorkloadIdentity.IDTokenFile, err)
+	}
+	_ = fh.Close()
+	return nil
+}
+
 // Validate reports the first configuration error it finds, or nil if the
 // Config is valid.
 func (c *Config) Validate() error {
@@ -440,8 +464,11 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if provider == "tailscale" {
-		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey") {
-			return fmt.Errorf("tailscale.auth.method %q invalid: must be one of oauth, apikey", c.Tailscale.Auth.Method)
+		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey", "workload_identity") {
+			return fmt.Errorf("tailscale.auth.method %q invalid: must be one of oauth, apikey, workload_identity", c.Tailscale.Auth.Method)
+		}
+		if err := validateWorkloadIdentity("tailscale.auth", c.Tailscale.Auth); err != nil {
+			return err
 		}
 		// Single tailscale: block and a tailnets: list are mutually exclusive.
 		// Default() seeds tailscale.tailnet="-" (the "principal's default tailnet"
@@ -461,8 +488,11 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("tailnets[%d].name %q: duplicate tailnet name", i, t.Name)
 			}
 			seenTailnet[t.Name] = true
-			if !oneOf(t.Auth.Method, "oauth", "apikey") {
-				return fmt.Errorf("tailnets[%d].auth.method %q invalid: must be one of oauth, apikey", i, t.Auth.Method)
+			if !oneOf(t.Auth.Method, "oauth", "apikey", "workload_identity") {
+				return fmt.Errorf("tailnets[%d].auth.method %q invalid: must be one of oauth, apikey, workload_identity", i, t.Auth.Method)
+			}
+			if err := validateWorkloadIdentity(fmt.Sprintf("tailnets[%d].auth", i), t.Auth); err != nil {
+				return err
 			}
 		}
 		// Single-tailnet mode needs a tailnet name. The default is the "-" sentinel
