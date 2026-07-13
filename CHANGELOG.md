@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.0.0](https://github.com/rknightion/tailscale2otel/compare/v1.0.0...v2.0.0) (2026-07-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* the telemetry attributes above (and their Prometheus label normalizations) are renamed with no compatibility window; update external queries per the docs/upgrading.md v2.0.0 table.
+
+### Features
+
+* add -version and -validate flags to the release binary ([86c2e35](https://github.com/rknightion/tailscale2otel/commit/86c2e35ec1667ac2588ff0037bf7e8730744afce)), closes [#162](https://github.com/rknightion/tailscale2otel/issues/162)
+* align telemetry attributes with OTel semantic conventions ([e59642d](https://github.com/rknightion/tailscale2otel/commit/e59642d49d278ae49e422218b04586f4124b9093)), closes [#161](https://github.com/rknightion/tailscale2otel/issues/161)
+* **auth:** workload identity federation (auth.method: workload_identity) ([d55341a](https://github.com/rknightion/tailscale2otel/commit/d55341aaa482ec43d05bedeab39e98d49f74e451)), closes [#168](https://github.com/rknightion/tailscale2otel/issues/168)
+* **ci:** report which live-contract ops actually ran ([550f84d](https://github.com/rknightion/tailscale2otel/commit/550f84d5023bf9d5f75235d9981c43ef82b7c0a8))
+* **collector:** OAuth Apps collector + OpenAPI spec re-vendor ([8f2c3ca](https://github.com/rknightion/tailscale2otel/commit/8f2c3cacdd1c7b9da833c5d01ee9609363b740f1)), closes [#167](https://github.com/rknightion/tailscale2otel/issues/167)
+* **config:** file-based secrets (*_file) for all credentials ([a474fb9](https://github.com/rknightion/tailscale2otel/commit/a474fb95dad7b884b878955ea84f5894a4f45c51)), closes [#169](https://github.com/rknightion/tailscale2otel/issues/169)
+* **deploy:** alert + dashboard pack for the v2.0.0 program ([25aa62b](https://github.com/rknightion/tailscale2otel/commit/25aa62bb55dad0056e132f1222d56fe97fd9bb3e)), closes [#172](https://github.com/rknightion/tailscale2otel/issues/172)
+* **devices:** emit multipleConnections, blocksIncomingConnections, postureIdentity.disabled ([e5551fc](https://github.com/rknightion/tailscale2otel/commit/e5551fce3112477ce0be5d5529f6f1fd53b1a45d)), closes [#163](https://github.com/rknightion/tailscale2otel/issues/163)
+* **devices:** posture-attribute expiry telemetry ([de0c50c](https://github.com/rknightion/tailscale2otel/commit/de0c50c31458639053d1f5db280d139b40a96462)), closes [#164](https://github.com/rknightion/tailscale2otel/issues/164)
+* **keys:** key owner (userId) and auto-applied device tags ([e548e5e](https://github.com/rknightion/tailscale2otel/commit/e548e5e54d7f66b74c30d7ab1226ecdd3baa1398)), closes [#165](https://github.com/rknightion/tailscale2otel/issues/165)
+* **nodemetrics:** curate key tailscaled client metrics into the named catalog ([c362a92](https://github.com/rknightion/tailscale2otel/commit/c362a9258ae09bc14189a5824fea99ae97cf4bad)), closes [#171](https://github.com/rknightion/tailscale2otel/issues/171)
+* **security:** fuzz the untrusted-input decoders, add a vuln-reporting policy ([ba82856](https://github.com/rknightion/tailscale2otel/commit/ba8285649315baae6979ae36ea40799b885bd167)), closes [#144](https://github.com/rknightion/tailscale2otel/issues/144)
+* **services:** resolve service-VIP flow peers to service names ([f3669cd](https://github.com/rknightion/tailscale2otel/commit/f3669cd544024498a2a31f8d68884fb0dbd9a8ae)), closes [#166](https://github.com/rknightion/tailscale2otel/issues/166)
+* TLS support for the admin and Prometheus listeners ([63c02a1](https://github.com/rknightion/tailscale2otel/commit/63c02a183ff623aa6b09b4dadba1b94e9a0359c5)), closes [#170](https://github.com/rknightion/tailscale2otel/issues/170)
+
+
+### Bug Fixes
+
+* **ci:** don't fail fuzz jobs on Go's benign -fuzztime shutdown race ([c42b28d](https://github.com/rknightion/tailscale2otel/commit/c42b28d0223fd6bdc56b6e06af346ee3dd7bcb7c))
+* **ci:** run the live API contract lane on ubuntu-latest ([0acd799](https://github.com/rknightion/tailscale2otel/commit/0acd799a430d713b3583578657cbdfecd62d5498)), closes [#160](https://github.com/rknightion/tailscale2otel/issues/160)
+* **deps:** update module github.com/grafana/pyroscope-go to v1.4.1 ([#142](https://github.com/rknightion/tailscale2otel/issues/142)) ([b7f83df](https://github.com/rknightion/tailscale2otel/commit/b7f83df71d69cae3b1b361538cc3527e007bbd58))
+* **deps:** update module github.com/klauspost/compress to v1.19.0 ([#41](https://github.com/rknightion/tailscale2otel/issues/41)) ([15a754d](https://github.com/rknightion/tailscale2otel/commit/15a754d1f809bec9e5f01ad3e20df9289bb999ab))
+* **deps:** update module google.golang.org/grpc to v1.82.0 ([#42](https://github.com/rknightion/tailscale2otel/issues/42)) ([8abf4ce](https://github.com/rknightion/tailscale2otel/commit/8abf4ce9c9fd1124a9ab7ef958c894365a85e7f1))
+* **renovate:** stop raising invalid major bumps of tools/* indirect deps ([688a7a6](https://github.com/rknightion/tailscale2otel/commit/688a7a6271fe3afe146e6325c53ab395571b4a2f))
+
 ## [1.0.0](https://github.com/rknightion/tailscale2otel/compare/v0.6.0...v1.0.0) (2026-07-05)
 
 
