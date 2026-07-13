@@ -80,6 +80,27 @@ jobs:
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
+      - name: Summarize which ops were exercised
+        # A bare green tells you nothing about coverage: if an op silently stopped being
+        # exercised, the lane would still pass. List what actually ran, on pass and on fail.
+        if: steps.live.outputs.code != ''
+        run: |
+          set -euo pipefail
+          {
+            echo "## Live Tailscale API contract — tailnet \`${TS_TAILNET}\`"
+            echo
+            echo "| op | result | time |"
+            echo "| --- | --- | --- |"
+            # e.g. "    --- PASS: TestLiveContract/listUsers (0.02s)"
+            sed -nE 's#^ +--- (PASS|FAIL|SKIP): TestLiveContract/([A-Za-z0-9_]+) \((.*)\)$#| \2 | \1 | \3 |#p' \
+              /tmp/live.log
+            echo
+            n=$(grep -cE '^ +--- (PASS|FAIL|SKIP): TestLiveContract/' /tmp/live.log || true)
+            echo "${n} op(s) exercised against the live API."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          TS_TAILNET: ${{ vars.TS_TAILNET }}
+
       - name: Build report
         if: steps.live.outputs.code != '0' && steps.live.outputs.code != ''
         run: |
