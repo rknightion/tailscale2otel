@@ -75,11 +75,16 @@ func sampleDevices() []tsapi.RichDevice {
 			KeyExpiryDisabled:  false,
 			ConnectedToControl: true,
 			UpdateAvailable:    false,
-			Expires:            now.Add(48 * time.Hour),
-			LastSeen:           now.Add(-1 * time.Minute),
-			AdvertisedRoutes:   []string{"0.0.0.0/0", "10.0.0.0/24"},
-			EnabledRoutes:      []string{"10.0.0.0/24"},
-			Distro:             tsapi.DistroInfo{Name: "ubuntu", Version: "24.04", CodeName: "noble"},
+			// Anomaly/security signals (#163): multiple connections flagged, and
+			// a posture-identity object present but not disabled (the
+			// serialNumbers-only shape a real device sends).
+			MultipleConnections: true,
+			PostureIdentity:     &tsapi.PostureIdentity{Disabled: false},
+			Expires:             now.Add(48 * time.Hour),
+			LastSeen:            now.Add(-1 * time.Minute),
+			AdvertisedRoutes:    []string{"0.0.0.0/0", "10.0.0.0/24"},
+			EnabledRoutes:       []string{"10.0.0.0/24"},
+			Distro:              tsapi.DistroInfo{Name: "ubuntu", Version: "24.04", CodeName: "noble"},
 			DERPLatency: map[string]tsapi.DERPRegion{
 				"Frankfurt": {Preferred: true, LatencyMs: 12.5},
 				"Amsterdam": {Preferred: false, LatencyMs: 8.0},
@@ -105,8 +110,11 @@ func sampleDevices() []tsapi.RichDevice {
 			KeyExpiryDisabled:  true,
 			ConnectedToControl: false,
 			UpdateAvailable:    true,
-			Expires:            now.Add(72 * time.Hour),
-			LastSeen:           now.Add(-2 * time.Hour),
+			// Blocks incoming, and posture-identity checks disabled.
+			BlocksIncomingConnections: true,
+			PostureIdentity:           &tsapi.PostureIdentity{Disabled: true},
+			Expires:                   now.Add(72 * time.Hour),
+			LastSeen:                  now.Add(-2 * time.Hour),
 		},
 		{
 			// External phone, never seen (zero LastSeen), zero Expires, linux,
@@ -624,6 +632,191 @@ func TestCollect_EphemeralDataDefaultTrue(t *testing.T) {
 	}
 	if pts := rec.MetricPoints("tailscale.devices.ephemeral"); len(pts) != 1 || pts[0].Value != 1 {
 		t.Errorf("ephemeral = %+v, want single value 1 by default", pts)
+	}
+}
+
+// TestCollect_MultipleConnections verifies the anomaly/security gauge (#163):
+// laptop has multipleConnections=true, desktop and phone omit it (false).
+func TestCollect_MultipleConnections(t *testing.T) {
+	devs := sampleDevices()
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device.multiple_connections")
+	if len(pts) != 3 {
+		t.Fatalf("multiple_connections points = %d, want 3", len(pts))
+	}
+	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"})
+	if !ok || laptop.Value != 1 {
+		t.Fatalf("laptop multiple_connections = %+v ok=%v, want 1", laptop, ok)
+	}
+	desktop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "n-desktop"})
+	if !ok || desktop.Value != 0 {
+		t.Fatalf("desktop multiple_connections = %+v ok=%v, want 0", desktop, ok)
+	}
+}
+
+// TestCollect_MultipleConnectionsDataFalse guards the Headscale suppression
+// path: when the control plane doesn't report multipleConnections at all,
+// WithMultipleConnectionsData(false) must suppress the gauge entirely rather
+// than reporting a fabricated "false" as if it were real data.
+func TestCollect_MultipleConnectionsDataFalse(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, false, false, devices.WithMultipleConnectionsData(false))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.multiple_connections"); len(pts) != 0 {
+		t.Errorf("multiple_connections emitted with WithMultipleConnectionsData(false): %+v", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.device.online"); len(pts) == 0 {
+		t.Error("online gauge should still be emitted with WithMultipleConnectionsData(false)")
+	}
+}
+
+// TestCollect_MultipleConnectionsDataDefaultTrue is the control: with no
+// option supplied, the gauge is emitted for every device.
+func TestCollect_MultipleConnectionsDataDefaultTrue(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, false, false)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.multiple_connections"); len(pts) != 3 {
+		t.Errorf("multiple_connections points = %d, want 3 by default", len(pts))
+	}
+}
+
+// TestCollect_BlocksIncomingConnections verifies the gauge (#163): desktop has
+// blocksIncomingConnections=true, laptop and phone omit it (false).
+func TestCollect_BlocksIncomingConnections(t *testing.T) {
+	devs := sampleDevices()
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device.blocks_incoming_connections")
+	if len(pts) != 3 {
+		t.Fatalf("blocks_incoming_connections points = %d, want 3", len(pts))
+	}
+	desktop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "n-desktop"})
+	if !ok || desktop.Value != 1 {
+		t.Fatalf("desktop blocks_incoming_connections = %+v ok=%v, want 1", desktop, ok)
+	}
+	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"})
+	if !ok || laptop.Value != 0 {
+		t.Fatalf("laptop blocks_incoming_connections = %+v ok=%v, want 0", laptop, ok)
+	}
+}
+
+// TestCollect_BlocksIncomingConnectionsDataFalse guards the Headscale
+// suppression path, mirroring TestCollect_MultipleConnectionsDataFalse.
+func TestCollect_BlocksIncomingConnectionsDataFalse(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, false, false, devices.WithBlocksIncomingConnectionsData(false))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.blocks_incoming_connections"); len(pts) != 0 {
+		t.Errorf("blocks_incoming_connections emitted with WithBlocksIncomingConnectionsData(false): %+v", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.device.online"); len(pts) == 0 {
+		t.Error("online gauge should still be emitted with WithBlocksIncomingConnectionsData(false)")
+	}
+}
+
+// TestCollect_BlocksIncomingConnectionsDataDefaultTrue is the control: with no
+// option supplied, the gauge is emitted for every device.
+func TestCollect_BlocksIncomingConnectionsDataDefaultTrue(t *testing.T) {
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(&fakeAPI{devices: sampleDevices()}, cache, 0, false, false)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.device.blocks_incoming_connections"); len(pts) != 3 {
+		t.Errorf("blocks_incoming_connections points = %d, want 3 by default", len(pts))
+	}
+}
+
+// TestCollect_PostureIdentityDisabled verifies the gauge is emitted only for
+// devices whose wire payload carried a postureIdentity object at all: laptop
+// (serialNumbers-only, decodes disabled=false) and desktop (disabled=true) get
+// a series; phone (no postureIdentity key) gets none — absence, not a false
+// value.
+func TestCollect_PostureIdentityDisabled(t *testing.T) {
+	devs := sampleDevices()
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.device.posture_identity.disabled")
+	if len(pts) != 2 {
+		t.Fatalf("posture_identity.disabled points = %d, want 2 (phone has no postureIdentity object)", len(pts))
+	}
+	laptop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "3690401478992208"})
+	if !ok || laptop.Value != 0 {
+		t.Fatalf("laptop posture_identity.disabled = %+v ok=%v, want 0", laptop, ok)
+	}
+	desktop, ok := pointByAttr(pts, map[string]string{semconv.HostID: "n-desktop"})
+	if !ok || desktop.Value != 1 {
+		t.Fatalf("desktop posture_identity.disabled = %+v ok=%v, want 1", desktop, ok)
+	}
+	if _, ok := pointByAttr(pts, map[string]string{semconv.HostID: "n-phone"}); ok {
+		t.Error("phone should have no posture_identity.disabled series (no postureIdentity object on the wire)")
+	}
+}
+
+// TestCollect_PostureIdentitySerialNeverEmitted guards the seam-freeze fence
+// on #163: postureIdentity.serialNumbers must never reach a metric or log
+// attribute anywhere in the collector's output, even when a device's
+// PostureIdentity is populated. tsapi.PostureIdentity has no field for
+// serialNumbers at all, so this also stands as a regression guard should a
+// future change add one without the same fencing.
+func TestCollect_PostureIdentitySerialNeverEmitted(t *testing.T) {
+	const serial = "TESTSERIAL999ZZZ"
+	devs := []tsapi.RichDevice{
+		{
+			ID:              "d-serial",
+			Hostname:        "serial-host",
+			OS:              "linux",
+			PostureIdentity: &tsapi.PostureIdentity{Disabled: false},
+		},
+	}
+	c, _, _ := newCollector(t, devs)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	for _, name := range rec.MetricNames() {
+		for _, p := range rec.MetricPoints(name) {
+			for k, v := range p.Attrs {
+				if strings.Contains(k, serial) || strings.Contains(v, serial) {
+					t.Fatalf("metric %s leaked serial in attrs: %+v", name, p.Attrs)
+				}
+			}
+		}
+	}
+	for _, lr := range rec.LogRecords() {
+		if strings.Contains(lr.Body, serial) {
+			t.Fatalf("log %s leaked serial in body: %q", lr.EventName, lr.Body)
+		}
+		for k, v := range lr.Attrs {
+			if strings.Contains(k, serial) || strings.Contains(v, serial) {
+				t.Fatalf("log %s leaked serial in attrs: %+v", lr.EventName, lr.Attrs)
+			}
+		}
 	}
 }
 

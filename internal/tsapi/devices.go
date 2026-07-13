@@ -33,6 +33,19 @@ type RichDevice struct {
 	SSHEnabled                bool
 	IsEphemeral               bool
 
+	// MultipleConnections is the wire multipleConnections flag: true when more
+	// than one client has simultaneously connected using this device's identity
+	// (an anomaly/security signal). Present-when-true on the wire — absent means
+	// false, not "unknown".
+	MultipleConnections bool
+
+	// PostureIdentity carries only the postureIdentity.disabled field from the
+	// wire; nil when the device's payload has no postureIdentity object at all.
+	// postureIdentity.serialNumbers are deliberately NOT decoded — same fencing
+	// pattern as VIPService in services.go:8-11, which skips addrs so it can
+	// never become telemetry.
+	PostureIdentity *PostureIdentity
+
 	// TailnetLockKey is the device's tailnet-lock public key (present on every
 	// node regardless of whether tailnet lock is enabled); TailnetLockError is
 	// non-empty when the node has a tailnet-lock problem (e.g. an unsigned node).
@@ -63,6 +76,14 @@ type RichDevice struct {
 
 	// ClientSupports is clientConnectivity.clientSupports (capability tri-states).
 	ClientSupports ClientSupports
+}
+
+// PostureIdentity is the subset of the wire postureIdentity object this
+// package decodes: only whether device-identity posture checks are disabled.
+// serialNumbers are deliberately never decoded (see the fence comment on
+// RichDevice.PostureIdentity) so they can never become telemetry.
+type PostureIdentity struct {
+	Disabled bool
 }
 
 // DistroInfo describes the operating-system distribution reported by a device.
@@ -115,6 +136,16 @@ type richDevice struct {
 	BlocksIncomingConnections bool `json:"blocksIncomingConnections"`
 	SSHEnabled                bool `json:"sshEnabled"`
 	IsEphemeral               bool `json:"isEphemeral"`
+
+	MultipleConnections bool `json:"multipleConnections"`
+
+	// PostureIdentity intentionally decodes ONLY the disabled field.
+	// serialNumbers (a wire sibling field) is never given a struct field here,
+	// so it cannot be decoded, stored, or reach telemetry no matter what else
+	// changes downstream — see the fence comment on RichDevice.PostureIdentity.
+	PostureIdentity *struct {
+		Disabled bool `json:"disabled"`
+	} `json:"postureIdentity"`
 
 	TailnetLockKey   string `json:"tailnetLockKey"`
 	TailnetLockError string `json:"tailnetLockError"`
@@ -180,6 +211,7 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 			BlocksIncomingConnections: d.BlocksIncomingConnections,
 			SSHEnabled:                d.SSHEnabled,
 			IsEphemeral:               d.IsEphemeral,
+			MultipleConnections:       d.MultipleConnections,
 			TailnetLockKey:            d.TailnetLockKey,
 			TailnetLockError:          d.TailnetLockError,
 			Created:                   d.Created.Time,
@@ -192,6 +224,9 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 				Version:  d.Distro.Version,
 				CodeName: d.Distro.CodeName,
 			},
+		}
+		if d.PostureIdentity != nil {
+			rd.PostureIdentity = &PostureIdentity{Disabled: d.PostureIdentity.Disabled}
 		}
 		rd.HardNAT = d.ClientConnectivity.MappingVariesByDestIP
 		rd.Endpoints = d.ClientConnectivity.Endpoints

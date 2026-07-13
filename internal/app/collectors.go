@@ -119,7 +119,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		if cfg.Provider == "headscale" {
 			devOpts = append(devOpts,
 				devices.WithUpdateAvailableData(false),
-				devices.WithEphemeralData(false))
+				devices.WithEphemeralData(false),
+				// Headscale reports neither multipleConnections nor
+				// blocksIncomingConnections; suppress rather than fabricate 0s.
+				// The posture-identity gauge self-gates on wire presence.
+				devices.WithMultipleConnectionsData(false),
+				devices.WithBlocksIncomingConnectionsData(false))
 		}
 		rt.registry.Register(devices.New(cp.Client, rt.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())

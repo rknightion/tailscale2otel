@@ -81,6 +81,30 @@ var (
 		Attributes:  []string{semconv.HostName, semconv.HostID, attrDERPRegion, attrDERPPreferred},
 		Group:       groupDevices,
 	}
+	docMultipleConnections = metricdoc.Metric{
+		Name:        metricMultipleConnections,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if more than one client has simultaneously connected using this device's identity (`multipleConnections`) — an anomaly/security signal. **Gated** by `cardinality.per_entity.device`.",
+		Attributes:  deviceIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docBlocksIncomingConnections = metricdoc.Metric{
+		Name:        metricBlocksIncomingConnections,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the device blocks incoming connections (`blocksIncomingConnections`). **Gated** by `cardinality.per_entity.device`.",
+		Attributes:  deviceIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docPostureIdentityDisabled = metricdoc.Metric{
+		Name:        metricPostureIdentityDisabled,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the device's posture-identity checks are disabled (`postureIdentity.disabled`). Emitted only when the wire `postureIdentity` object is present on the device (absent → no series; this is independent of `collect_posture`, which controls the separate posture-attribute fetch). **Gated** by `cardinality.per_entity.device`.",
+		Attributes:  deviceIdentityAttrs,
+		Group:       groupDevices,
+	}
 	docRoutesAdvertised = metricdoc.Metric{
 		Name:        metricRoutesAdvertised,
 		Unit:        semconv.UnitRoutes,
@@ -413,6 +437,7 @@ var (
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
+		docMultipleConnections, docBlocksIncomingConnections, docPostureIdentityDisabled,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
 		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,

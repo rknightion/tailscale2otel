@@ -42,6 +42,10 @@ const (
 	metricKeyExpiry        = "tailscale.device.key.expiry"
 	metricUpdateAvailable  = "tailscale.device.update_available"
 	metricDERPLatency      = "tailscale.device.derp.latency"
+
+	metricMultipleConnections       = "tailscale.device.multiple_connections"
+	metricBlocksIncomingConnections = "tailscale.device.blocks_incoming_connections"
+	metricPostureIdentityDisabled   = "tailscale.device.posture_identity.disabled"
 	metricRoutesAdvertised = "tailscale.device.routes.advertised"
 	metricRoutesEnabled    = "tailscale.device.routes.enabled"
 	metricDevicesCount     = "tailscale.devices.count"
@@ -248,6 +252,19 @@ type Collector struct {
 	updateAvailableData bool
 	ephemeralData       bool
 
+	// multipleConnectionsData / blocksIncomingConnectionsData gate the
+	// per-device tailscale.device.multiple_connections /
+	// .blocks_incoming_connections gauges, same rationale as
+	// updateAvailableData/ephemeralData above: both default true (Tailscale
+	// reports these fields natively), set false when the control-plane API has
+	// no such concept at all (e.g. Headscale), so the collector doesn't report
+	// a fabricated "false" as if it were real data. tailscale.device.posture_identity.disabled
+	// needs no such option — it is gated purely by wire presence (nil
+	// PostureIdentity), which Headscale already satisfies since its adapter
+	// never populates the field.
+	multipleConnectionsData       bool
+	blocksIncomingConnectionsData bool
+
 	// now returns the current time; injectable for tests (key-expiry histogram).
 	now func() time.Time
 
@@ -415,6 +432,27 @@ func WithEphemeralData(enabled bool) Option {
 	return func(c *Collector) { c.ephemeralData = enabled }
 }
 
+// WithMultipleConnectionsData controls whether the per-device
+// tailscale.device.multiple_connections gauge is emitted. The default is true
+// (Tailscale reports this field natively); pass false when the control-plane
+// API does not report it at all (e.g. Headscale), so the collector doesn't
+// report a fabricated "no multiple connections" (false) as if it were real
+// data. Per-device gauges are additionally gated by WithPerEntity.
+func WithMultipleConnectionsData(enabled bool) Option {
+	return func(c *Collector) { c.multipleConnectionsData = enabled }
+}
+
+// WithBlocksIncomingConnectionsData controls whether the per-device
+// tailscale.device.blocks_incoming_connections gauge is emitted. The default
+// is true (Tailscale reports this field natively); pass false when the
+// control-plane API does not report it at all (e.g. Headscale), so the
+// collector doesn't report a fabricated "does not block incoming" (false) as
+// if it were real data. Per-device gauges are additionally gated by
+// WithPerEntity.
+func WithBlocksIncomingConnectionsData(enabled bool) Option {
+	return func(c *Collector) { c.blocksIncomingConnectionsData = enabled }
+}
+
 // New returns a devices Collector that lists via the rich devices endpoint,
 // repopulates cache, and uses interval as its poll cadence (a non-positive
 // interval defaults to 60s). When collectRoutes is true the per-device route
@@ -441,7 +479,11 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		now:                 time.Now,
 		updateAvailableData: true,
 		ephemeralData:       true,
-		gsb:                 telemetry.NewGaugeSnapshotBuilder(),
+
+		multipleConnectionsData:       true,
+		blocksIncomingConnectionsData: true,
+
+		gsb: telemetry.NewGaugeSnapshotBuilder(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -558,6 +600,26 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if c.updateAvailableData {
 				c.gsb.Add(docUpdateAvailable.Name, docUpdateAvailable.Unit, docUpdateAvailable.Description,
 					boolToFloat(d.UpdateAvailable), idAttrs)
+			}
+
+			// Gated by multipleConnectionsData/blocksIncomingConnectionsData: same
+			// rationale as updateAvailableData above (Headscale reports neither).
+			if c.multipleConnectionsData {
+				c.gsb.Add(docMultipleConnections.Name, docMultipleConnections.Unit, docMultipleConnections.Description,
+					boolToFloat(d.MultipleConnections), idAttrs)
+			}
+			if c.blocksIncomingConnectionsData {
+				c.gsb.Add(docBlocksIncomingConnections.Name, docBlocksIncomingConnections.Unit, docBlocksIncomingConnections.Description,
+					boolToFloat(d.BlocksIncomingConnections), idAttrs)
+			}
+
+			// tailscale.device.posture_identity.disabled is gated purely by wire
+			// presence, not a data-source option: Headscale's adapter never
+			// populates PostureIdentity (stays nil), so this already suppresses
+			// itself for control planes with no such concept.
+			if d.PostureIdentity != nil {
+				c.gsb.Add(docPostureIdentityDisabled.Name, docPostureIdentityDisabled.Unit, docPostureIdentityDisabled.Description,
+					boolToFloat(d.PostureIdentity.Disabled), idAttrs)
 			}
 
 			for region, derp := range d.DERPLatency {

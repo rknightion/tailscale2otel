@@ -2,8 +2,10 @@ package tsapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,12 +19,13 @@ const devicesRichFixture = `{"devices":[
     "hostname":"laptop","os":"linux","user":"alice@example.com","clientVersion":"1.99.0",
     "addresses":["100.64.0.1","fd7a::1"],"tags":["tag:server","tag:prod"],
     "authorized":true,"isExternal":false,"updateAvailable":true,"keyExpiryDisabled":false,
-    "isEphemeral":true,
+    "isEphemeral":true,"multipleConnections":true,
     "connectedToControl":true,"blocksIncomingConnections":false,"sshEnabled":true,
     "created":"2026-03-24T15:45:46Z","lastSeen":"2026-06-02T21:50:25Z","expires":"2026-09-20T15:45:46Z",
     "advertisedRoutes":["10.0.0.0/24"],"enabledRoutes":["10.0.0.0/24"],
     "distro":{"name":"ubuntu","version":"24.04","codeName":"noble"},
-    "clientConnectivity":{"latency":{"Frankfurt":{"preferred":true,"latencyMs":1.0156919999999998},"Amsterdam":{"latencyMs":8.675937999999999}}}
+    "clientConnectivity":{"latency":{"Frankfurt":{"preferred":true,"latencyMs":1.0156919999999998},"Amsterdam":{"latencyMs":8.675937999999999}}},
+    "postureIdentity":{"serialNumbers":["TESTSERIAL123ABC"]}
   },
   {
     "id":"346670268899695","nodeId":"nExampleFlow11CNTRL","name":"alex.example.ts.net",
@@ -31,7 +34,8 @@ const devicesRichFixture = `{"devices":[
     "authorized":true,"isExternal":false,"updateAvailable":false,"keyExpiryDisabled":false,
     "connectedToControl":false,"blocksIncomingConnections":true,"sshEnabled":false,
     "created":"2026-01-01T00:00:00Z","lastSeen":"2026-05-24T09:38:04Z","expires":"2026-08-26T19:09:04Z",
-    "distro":{}
+    "distro":{},
+    "postureIdentity":{"disabled":true}
   },
   {
     "id":"999","nodeId":"nExternal11CNTRL","name":"shared.other.ts.net",
@@ -297,6 +301,82 @@ func TestDevicesRich_ClientConnectivity(t *testing.T) {
 	}
 	if d.DERPLatency["Frankfurt"].LatencyMs != 1.0 {
 		t.Errorf("DERP latency lost: %+v", d.DERPLatency)
+	}
+}
+
+// TestDevicesRich_DecodesMultipleConnections verifies the per-device
+// `multipleConnections` flag is decoded. It has present-when-true semantics on
+// the wire (verified against .capture/devices-rich-live-20260713.json: every
+// live device omits it), so a device that omits the field must decode false.
+func TestDevicesRich_DecodesMultipleConnections(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(devicesRichFixture))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich: %v", err)
+	}
+	if !devs[0].MultipleConnections {
+		t.Error("devs[0].MultipleConnections = false, want true")
+	}
+	if devs[1].MultipleConnections {
+		t.Error("devs[1].MultipleConnections = true, want false (field omitted)")
+	}
+}
+
+// TestDevicesRich_PostureIdentity verifies the postureIdentity.disabled field
+// is decoded, and that the object's mere presence is distinguishable from its
+// absence: devs[0] carries a serialNumbers-only object (disabled omitted,
+// decodes false, object still present), devs[1] carries disabled:true, and
+// devs[2] has no postureIdentity key at all (nil).
+func TestDevicesRich_PostureIdentity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(devicesRichFixture))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich: %v", err)
+	}
+	if devs[0].PostureIdentity == nil {
+		t.Fatal("devs[0].PostureIdentity = nil, want present (serialNumbers-only object)")
+	}
+	if devs[0].PostureIdentity.Disabled {
+		t.Error("devs[0].PostureIdentity.Disabled = true, want false (disabled key absent)")
+	}
+	if devs[1].PostureIdentity == nil || !devs[1].PostureIdentity.Disabled {
+		t.Errorf("devs[1].PostureIdentity = %+v, want present with Disabled=true", devs[1].PostureIdentity)
+	}
+	if devs[2].PostureIdentity != nil {
+		t.Errorf("devs[2].PostureIdentity = %+v, want nil (no postureIdentity key on the wire)", devs[2].PostureIdentity)
+	}
+}
+
+// TestDevicesRich_PostureIdentitySerialNumbersNeverDecoded guards the seam
+// freeze: postureIdentity.serialNumbers must never surface anywhere in the
+// decoded RichDevice, even though devs[0]'s wire payload carries one. Marshal
+// the decoded value back to JSON — a generic scan rather than a field-by-field
+// check, so it also catches a future field added without the same fencing —
+// and assert the serial string is gone.
+func TestDevicesRich_PostureIdentitySerialNumbersNeverDecoded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(devicesRichFixture))
+	}))
+	defer srv.Close()
+
+	devs, err := newClient(t, srv.URL).DevicesRich(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesRich: %v", err)
+	}
+	raw, err := json.Marshal(devs[0])
+	if err != nil {
+		t.Fatalf("marshal devs[0]: %v", err)
+	}
+	if strings.Contains(string(raw), "TESTSERIAL123ABC") {
+		t.Fatalf("serial number leaked into decoded RichDevice: %s", raw)
 	}
 }
 
