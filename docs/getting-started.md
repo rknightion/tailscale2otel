@@ -62,6 +62,11 @@ convention — see [Configuration](configuration.md) for the full mapping rules.
 
 ## Smoke test: run with stdout output
 
+Two flags help before any real rollout: `tailscale2otel -version` prints the build version and
+exits, and `tailscale2otel -validate -config <path>` loads and validates a config file (the same
+load/validate path the server uses) without starting the exporter — useful for pre-rollout config
+linting. It prints any advisory warnings, exits 0 if valid, 1 otherwise.
+
 Before pointing the exporter at a real backend, verify it can connect to the Tailscale API and
 format telemetry by printing to stdout instead:
 

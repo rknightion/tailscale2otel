@@ -738,8 +738,9 @@ address. It serves only `GET /metrics`; no status page or probes are exposed her
 > `pii_filter.tailnet_name` note above).
 > A `target_info` info metric is also emitted per provider. On **Grafana Cloud** the primary metrics
 > path is OTLP (which uses the `target_info` join for resource attributes); the Prometheus endpoint
-> is an additional pull-compatible path for existing Prometheus-only infrastructure. See roadmap item
-> L for the planned native per-tailnet metric-attribute promotion.
+> is an additional pull-compatible path for existing Prometheus-only infrastructure. Per-tailnet
+> identity (`tailscale.tailnet`, `tailscale2otel.provider`) is a signal-scoped metric/log/trace
+> attribute rather than a resource attribute, so it needs no `target_info` join on either export path.
 
 | Key | Default | Description |
 |-----|---------|-------------|

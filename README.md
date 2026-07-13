@@ -91,6 +91,9 @@ docker run --rm \
 go build -o tailscale2otel ./cmd/tailscale2otel
 cp config.example.yaml config.yaml   # then edit; secrets stay in env vars
 ./tailscale2otel -config config.yaml
+
+./tailscale2otel -version                      # print version and exit
+./tailscale2otel -validate -config config.yaml # lint a config without starting the exporter
 ```
 
 ### Local debug (no backend)

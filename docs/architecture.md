@@ -117,6 +117,12 @@ release-check background loops (`selfRelease.Run` / `tsRelease.Run`) driving
 The file `internal/app/collectors.go` is the canonical list of what is registered and under what
 config gates. Start here when you want to understand how a new data source would be added.
 
+There is no cross-process coordination anywhere in this pipeline — checkpoints, the dedup set, and
+the enrichment cache are all in-process state. Run exactly one instance per tailnet (or one
+instance covering the whole fleet via `tailnets:`); a second instance polling or streaming the same
+tailnet double-counts flow/audit logs independently of the poll-vs-stream choice below. See
+[Troubleshooting](troubleshooting.md#running-more-than-one-instance-against-the-same-tailnet-double-counts).
+
 ## Collector types and scheduling
 
 `internal/collector` defines two interfaces:

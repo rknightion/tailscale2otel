@@ -87,6 +87,12 @@ webhook:
   dedup_audit_events: false          # best-effort, bidirectional: audit and webhook events sharing a normalized key are deduplicated against a shared set, first-arrival-wins (either copy can be the one that survives)
 ```
 
+!!! note "No `auto_configure` for webhooks"
+    Unlike `streaming.auto_configure`, there is no equivalent for the webhook receiver — the
+    Tailscale API has no webhook-registration endpoint. Webhooks must be registered manually in the
+    [Tailscale admin console](https://login.tailscale.com/admin/webhooks), pointed at this
+    receiver's `listen`/`path`, with the same secret configured on both sides.
+
 **HMAC verification.** Tailscale signs each webhook request with a `Tailscale-Webhook-Signature` header containing a Unix timestamp and one or more HMAC-SHA256 signatures (`t=<seconds>,v1=<hex>`). The receiver verifies the signature by computing `HMAC-SHA256(secret, "<seconds>.<body>")` and comparing against each `v1` value using a constant-time comparison. Multiple `v1` entries are accepted — a match against any one is sufficient, which supports secret rotation without downtime. The `tolerance` field (default `5m`) rejects requests whose timestamp is older than the window, limiting replay attacks.
 
 **Event severity.** Most event types are emitted at INFO. The following are emitted at WARN: `nodeKeyExpired`, `nodeKeyExpiringInOneDay`, `nodeNeedsApproval`, `userNeedsApproval`, `nodeNeedsAuthorization`, `nodeNeedsSignature`, `nodeDeleted`, `webhookDeleted`, `userSuspended`, `userDeleted`.

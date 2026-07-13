@@ -129,6 +129,27 @@ See [Streaming & Webhooks](streaming-webhooks.md) for when to prefer `stream` ov
 
 ---
 
+## Running more than one instance against the same tailnet double-counts
+
+**Cause.** `tailscale2otel` is designed to run as exactly **one instance per tailnet** (or, with
+`tailnets:`, one instance covering the whole MSP fleet). It is not a stateless, horizontally
+scalable scraper: each poller run and each streamed/webhook record is converted and emitted once,
+with no cross-process coordination. Pointing a second instance at the same tailnet — a second
+replica, a leftover process from a botched deploy, or a duplicate `tailscale:`/`tailnets:` entry
+across two config files — makes both instances poll and stream the same flow logs, audit logs, and
+webhook events independently, so every one of those metrics and log records is emitted twice (or
+more). This is a distinct failure mode from `source: both` above: it happens even when every
+collector correctly uses a single `source`, because the duplication is across *processes*, not
+across ingestion paths within one process. The cross-source dedup set (`internal/dedup`) only
+covers overlap within a single running instance and cannot see a second process at all.
+
+**Fix.** Confirm exactly one running instance (container, pod, or systemd unit) targets each
+tailnet, and that `checkpoint.file_path` (when `checkpoint.store: file`) is not shared read/write
+by two instances at once. For multi-tailnet/MSP fleets, use one instance with a `tailnets:` list
+rather than one instance per tailnet.
+
+---
+
 ## Flow/audit enrichment shows `unknown` or `external`
 
 **Cause.** IP-to-device-name resolution for flow logs and audit records depends on the in-memory
