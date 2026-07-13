@@ -488,6 +488,134 @@ func TestCollect_ScopesLog(t *testing.T) {
 	})
 }
 
+// TestCollect_OwnerAttr guards the #165 seam: tailscale.key.owner is set from
+// UserID on the expiry/scopes/preauthorized per-key gauges and the expiring
+// WARN event, and omitted when UserID is empty.
+func TestCollect_OwnerAttr(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	soon := now.Add(30 * time.Minute) // within the 1h expiryWarn window
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "owned", Description: "ci runner", Type: "auth", Reusable: true, Preauthorized: true, Expires: soon, UserID: "uOwner1"},
+		{ID: "unowned", Description: "trust cred", Type: "auth", Reusable: true, Expires: now.Add(72 * time.Hour)}, // no UserID
+		{ID: "oauth", Type: "client", Scopes: []string{"all:read"}, UserID: "uOwner2"},
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	exp := findPoint(t, rec.MetricPoints("tailscale.key.expiry"), map[string]string{"tailscale.key.id": "owned"})
+	if exp.Attrs["tailscale.key.owner"] != "uOwner1" {
+		t.Errorf("expiry owner attr = %q, want uOwner1", exp.Attrs["tailscale.key.owner"])
+	}
+	pa := findPoint(t, rec.MetricPoints("tailscale.key.preauthorized"), map[string]string{"tailscale.key.id": "owned"})
+	if pa.Attrs["tailscale.key.owner"] != "uOwner1" {
+		t.Errorf("preauthorized owner attr = %q, want uOwner1", pa.Attrs["tailscale.key.owner"])
+	}
+	sc := findPoint(t, rec.MetricPoints("tailscale.key.scopes"), map[string]string{"tailscale.key.id": "oauth"})
+	if sc.Attrs["tailscale.key.owner"] != "uOwner2" {
+		t.Errorf("scopes owner attr = %q, want uOwner2", sc.Attrs["tailscale.key.owner"])
+	}
+	log := findLog(t, rec.LogRecords(), "tailscale.key.expiring")
+	if log.Attrs["tailscale.key.owner"] != "uOwner1" {
+		t.Errorf("expiring log owner attr = %q, want uOwner1", log.Attrs["tailscale.key.owner"])
+	}
+
+	unowned := findPoint(t, rec.MetricPoints("tailscale.key.expiry"), map[string]string{"tailscale.key.id": "unowned"})
+	if _, ok := unowned.Attrs["tailscale.key.owner"]; ok {
+		t.Errorf("unowned key must not carry tailscale.key.owner, got %+v", unowned.Attrs)
+	}
+}
+
+// TestCollect_TagsAttr guards the #165 seam: tailscale.key.tags is the sorted,
+// comma-joined capabilities.devices.create.tags set on the expiry/preauthorized
+// per-key gauges and the expiring WARN event (auth keys only), omitted when empty.
+func TestCollect_TagsAttr(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	soon := now.Add(30 * time.Minute)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "tagged", Description: "ci runner", Type: "auth", Reusable: true, Preauthorized: true, Expires: soon, Tags: []string{"tag:z", "tag:a"}},
+		{ID: "untagged", Description: "no tags", Type: "auth", Reusable: true, Expires: now.Add(72 * time.Hour)},
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	exp := findPoint(t, rec.MetricPoints("tailscale.key.expiry"), map[string]string{"tailscale.key.id": "tagged"})
+	if got := exp.Attrs["tailscale.key.tags"]; got != "tag:a,tag:z" {
+		t.Errorf("expiry tags attr = %q, want sorted %q", got, "tag:a,tag:z")
+	}
+	pa := findPoint(t, rec.MetricPoints("tailscale.key.preauthorized"), map[string]string{"tailscale.key.id": "tagged"})
+	if got := pa.Attrs["tailscale.key.tags"]; got != "tag:a,tag:z" {
+		t.Errorf("preauthorized tags attr = %q, want sorted %q", got, "tag:a,tag:z")
+	}
+	log := findLog(t, rec.LogRecords(), "tailscale.key.expiring")
+	if got := log.Attrs["tailscale.key.tags"]; got != "tag:a,tag:z" {
+		t.Errorf("expiring log tags attr = %q, want sorted %q", got, "tag:a,tag:z")
+	}
+
+	untagged := findPoint(t, rec.MetricPoints("tailscale.key.expiry"), map[string]string{"tailscale.key.id": "untagged"})
+	if _, ok := untagged.Attrs["tailscale.key.tags"]; ok {
+		t.Errorf("untagged key must not carry tailscale.key.tags, got %+v", untagged.Attrs)
+	}
+}
+
+// TestCollect_KeysByOwner guards the #165 new aggregate: one series per
+// owner x type, bounded to keys with a non-empty owner, unaffected by
+// WithPerEntity(false).
+func TestCollect_KeysByOwner(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "a1", Type: "auth", Reusable: true, Expires: now.Add(48 * time.Hour), UserID: "u1"},
+		{ID: "a2", Type: "auth", Reusable: true, Expires: now.Add(48 * time.Hour), UserID: "u1"},
+		{ID: "c1", Type: "client", Scopes: []string{"all"}, UserID: "u2"},
+		{ID: "noOwner", Type: "auth", Reusable: true, Expires: now.Add(48 * time.Hour)}, // no UserID -> excluded
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.keys.by_owner")
+	if len(pts) != 2 {
+		t.Fatalf("by_owner points = %d, want 2 (u1/auth + u2/client) (%+v)", len(pts), pts)
+	}
+	u1 := findPoint(t, pts, map[string]string{"tailscale.key.owner": "u1", "tailscale.key.type": "auth"})
+	if u1.Value != 2 {
+		t.Errorf("u1/auth by_owner value = %v, want 2", u1.Value)
+	}
+	if u1.Unit != "1" || u1.Kind != "gauge" {
+		t.Errorf("by_owner unit/kind = %q/%q, want 1/gauge", u1.Unit, u1.Kind)
+	}
+	u2 := findPoint(t, pts, map[string]string{"tailscale.key.owner": "u2", "tailscale.key.type": "client"})
+	if u2.Value != 1 {
+		t.Errorf("u2/client by_owner value = %v, want 1", u2.Value)
+	}
+	for _, p := range pts {
+		if p.Attrs["tailscale.key.owner"] == "" {
+			t.Errorf("by_owner point must never have an empty owner, got %+v", p)
+		}
+	}
+}
+
+// TestCollect_KeysByOwner_NotGatedByPerEntity guards that the aggregate stays
+// available when cardinality.per_entity.key (WithPerEntity(false)) is off.
+func TestCollect_KeysByOwner_NotGatedByPerEntity(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "a1", Type: "auth", Reusable: true, Expires: now.Add(48 * time.Hour), UserID: "u1"},
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.keys.by_owner")
+	if len(pts) != 1 {
+		t.Fatalf("by_owner points = %d with WithPerEntity(false), want 1 (aggregate stays on)", len(pts))
+	}
+}
+
 func TestCollect_TypeAndAuthKind(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()

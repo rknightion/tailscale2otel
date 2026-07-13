@@ -21,7 +21,7 @@ var (
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
 		Description: "Unix timestamp a Tailscale key expires; one series per key.",
-		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription},
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrOwner, attrTags},
 		Group:       groupKeys,
 	}
 	docKeysCount = metricdoc.Metric{
@@ -37,7 +37,7 @@ var (
 		Name:        EventExpiring,
 		Severity:    "WARN",
 		Description: "Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp).",
-		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrExpiresIn},
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrExpiresIn, attrOwner, attrTags},
 		Group:       groupKeys,
 	}
 
@@ -46,7 +46,7 @@ var (
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
 		Description: "Number of OAuth scopes granted to a credential (scope-sprawl signal); one series per OAuth-client/API credential. Gated by `cardinality.per_entity.key`.",
-		Attributes:  []string{attrID, attrType, attrDescription},
+		Attributes:  []string{attrID, attrType, attrDescription, attrOwner},
 		Group:       groupKeys,
 	}
 
@@ -55,7 +55,7 @@ var (
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
 		Description: "Whether an auth key is preauthorized (1) or not (0); one series per auth key. Gated by `cardinality.per_entity.key`.",
-		Attributes:  []string{attrID, attrType, attrDescription},
+		Attributes:  []string{attrID, attrType, attrDescription, attrOwner, attrTags},
 		Group:       groupKeys,
 	}
 
@@ -66,11 +66,20 @@ var (
 		Attributes:  []string{attrID, attrScopeValues, attrDescription},
 		Group:       groupKeys,
 	}
+
+	docKeysByOwner = metricdoc.Metric{
+		Name:        MetricKeysByOwner,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Key count (a **count**) bucketed by owning user and type — the \"who holds the keys\" breakdown. Emitted only for keys with a non-empty owner (userId); stays available when `cardinality.per_entity.key` is off.",
+		Attributes:  []string{attrOwner, attrType},
+		Group:       groupKeys,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docKeyExpiry, docKeysCount, docKeyScopes, docKeyPreauthorized}
+	return []metricdoc.Metric{docKeyExpiry, docKeysCount, docKeyScopes, docKeyPreauthorized, docKeysByOwner}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

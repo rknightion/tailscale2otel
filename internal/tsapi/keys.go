@@ -30,6 +30,13 @@ type Key struct {
 	Reusable      bool
 	Ephemeral     bool
 	Preauthorized bool
+	// Tags are the auto-applied device tags from capabilities.devices.create.tags
+	// (auth keys only — the only key type carrying create capabilities).
+	Tags []string
+
+	// UserID is the id of the user who created this key (wire: userId); empty
+	// for keys created by trust credentials (OAuth clients, federated identities).
+	UserID string
 }
 
 type keysResponse struct {
@@ -46,12 +53,14 @@ type wireKey struct {
 	Expires      time.Time `json:"expires"`
 	Revoked      time.Time `json:"revoked"`
 	Invalid      bool      `json:"invalid"`
+	UserID       string    `json:"userId"`
 	Capabilities struct {
 		Devices struct {
 			Create struct {
-				Reusable      bool `json:"reusable"`
-				Ephemeral     bool `json:"ephemeral"`
-				Preauthorized bool `json:"preauthorized"`
+				Reusable      bool     `json:"reusable"`
+				Ephemeral     bool     `json:"ephemeral"`
+				Preauthorized bool     `json:"preauthorized"`
+				Tags          []string `json:"tags"`
 			} `json:"create"`
 		} `json:"devices"`
 	} `json:"capabilities"`
@@ -79,6 +88,8 @@ func (c *Client) KeysRich(ctx context.Context) ([]Key, error) {
 			Reusable:      k.Capabilities.Devices.Create.Reusable,
 			Ephemeral:     k.Capabilities.Devices.Create.Ephemeral,
 			Preauthorized: k.Capabilities.Devices.Create.Preauthorized,
+			Tags:          k.Capabilities.Devices.Create.Tags,
+			UserID:        k.UserID,
 		})
 	}
 	return out, nil

@@ -23,6 +23,7 @@ var keyCategory = map[string]Category{
 	"error.message":                    CatFreeTextDetails,
 	"tailscale.target.name":            CatFreeTextDetails,
 	"tailscale.key.description":        CatFreeTextDetails,
+	"tailscale.key.owner":              CatUserIDs, // #165: key owner userId on per-key gauges + keys.by_owner
 	"value":                            CatFreeTextDetails,
 	"tailscale.acl.rule":               CatFreeTextDetails, // J-B1 risky-rule src/dst contents
 }
@@ -64,6 +65,7 @@ var identityKeys = map[string]bool{
 	"tailscale.dns.search_path.domain": true, // J-A3: domain is this info gauge's identity
 	"user.id":                          true, // #74: per-user gauge identity (CatUserIDs)
 	"user.name":                        true, // #74: per-user gauge identity (CatEmails)
+	"tailscale.key.owner":              true, // #165: keys.by_owner series identity (CatUserIDs)
 }
 
 // nonIdentifier is the explicit allowlist of keys that are never PII/identifiers.
@@ -100,6 +102,7 @@ var nonIdentifier = map[string]bool{
 	"tailscale.target.id":                  true,
 	"category":                             true, // self-obs tailscale2otel.pii_filter.category attr
 	"tailscale.key.scope_values":           true, // J-A1: OAuth capability strings (not PII)
+	"tailscale.key.tags":                   true, // #165: auto-applied ACL tags (same class as tailscale.tags)
 	"tailscale.device.key_expires_in_days": true, // J-B5: numeric days-to-expiry
 	"result":                               true, // rdns cache: hit/miss/negative/success/failure
 }

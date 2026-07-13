@@ -7,6 +7,7 @@ package keys
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ const (
 	MetricKeysCount        = "tailscale.keys.count"
 	MetricKeyScopes        = "tailscale.key.scopes"
 	MetricKeyPreauthorized = "tailscale.key.preauthorized"
+	MetricKeysByOwner      = "tailscale.keys.by_owner"
 	EventExpiring          = "tailscale.key.expiring"
 )
 
@@ -38,6 +40,8 @@ const (
 	attrInvalid     = "tailscale.key.invalid"
 	attrExpiresIn   = "tailscale.key.expires_in_seconds"
 	attrScopeValues = "tailscale.key.scope_values"
+	attrOwner       = "tailscale.key.owner"
+	attrTags        = "tailscale.key.tags"
 )
 
 // keyType values mirror the API's keyType enum (federated is out of scope; see
@@ -129,6 +133,31 @@ type countKey struct {
 	invalid  bool
 }
 
+// ownerKey groups keys for the tailscale.keys.by_owner aggregate.
+type ownerKey struct {
+	owner string
+	typ   string
+}
+
+// addOwner sets attrOwner on attrs to k.UserID; omitted when empty (keys owned
+// by a trust credential, not a user).
+func addOwner(attrs telemetry.Attrs, k tsapi.Key) {
+	if k.UserID != "" {
+		attrs[attrOwner] = k.UserID
+	}
+}
+
+// addTags sets attrTags on attrs to the sorted, comma-joined auto-applied tag
+// set from capabilities.devices.create.tags; omitted when empty.
+func addTags(attrs telemetry.Attrs, k tsapi.Key) {
+	if len(k.Tags) == 0 {
+		return
+	}
+	sorted := append([]string(nil), k.Tags...)
+	sort.Strings(sorted)
+	attrs[attrTags] = strings.Join(sorted, ",")
+}
+
 // Collect fetches the current keys and emits the inventory metrics and any
 // expiry warnings.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
@@ -139,6 +168,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	now := c.now()
 	counts := make(map[countKey]int)
+	byOwner := make(map[ownerKey]int)
 
 	for i := range ks {
 		k := ks[i]
@@ -146,6 +176,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		revoked := !k.Revoked.IsZero()
 
 		counts[countKey{typ: typ, authKind: authKind, revoked: revoked, invalid: k.Invalid}]++
+		if k.UserID != "" {
+			byOwner[ownerKey{owner: k.UserID, typ: typ}]++
+		}
 
 		// An invalid key (revoked, or — for Headscale — a spent non-reusable
 		// one-time key mapped via hsapi.adaptPreAuthKey) can never be redeemed
@@ -157,30 +190,36 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			// cardinality.per_entity.key; the expiry-warning log below always
 			// fires regardless, so operators never lose the warning.
 			if c.perEntity {
+				attrs := telemetry.Attrs{
+					attrID:          k.ID,
+					attrType:        typ,
+					attrAuthKind:    authKind,
+					attrDescription: k.Description,
+				}
+				addOwner(attrs, k)
+				addTags(attrs, k)
 				e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
-					float64(k.Expires.Unix()), telemetry.Attrs{
-						attrID:          k.ID,
-						attrType:        typ,
-						attrAuthKind:    authKind,
-						attrDescription: k.Description,
-					})
+					float64(k.Expires.Unix()), attrs)
 			}
 
 			if c.expiryWarn > 0 {
 				until := k.Expires.Sub(now)
 				if until > 0 && until <= c.expiryWarn {
+					attrs := telemetry.Attrs{
+						attrID:          k.ID,
+						attrType:        typ,
+						attrAuthKind:    authKind,
+						attrDescription: k.Description,
+						attrExpiresIn:   strconv.Itoa(int(until.Seconds())),
+					}
+					addOwner(attrs, k)
+					addTags(attrs, k)
 					e.LogEvent(telemetry.Event{
 						Name:     docKeyExpiring.Name,
 						Severity: telemetry.SeverityWarn,
 						Body: fmt.Sprintf("Tailscale key %q (%s/%s) expires in %s",
 							keyLabel(k), typ, authKind, until.Round(time.Second)),
-						Attrs: telemetry.Attrs{
-							attrID:          k.ID,
-							attrType:        typ,
-							attrAuthKind:    authKind,
-							attrDescription: k.Description,
-							attrExpiresIn:   strconv.Itoa(int(until.Seconds())),
-						},
+						Attrs: attrs,
 					})
 				}
 			}
@@ -189,12 +228,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		// Per-credential scope-sprawl signal (OAuth clients / API tokens only;
 		// auth keys carry no scopes). Per-key -> gated by cardinality.per_entity.key.
 		if c.perEntity && len(k.Scopes) > 0 {
+			scopeAttrs := telemetry.Attrs{
+				attrID:          k.ID,
+				attrType:        typ,
+				attrDescription: k.Description,
+			}
+			addOwner(scopeAttrs, k)
 			e.Gauge(docKeyScopes.Name, docKeyScopes.Unit, docKeyScopes.Description,
-				float64(len(k.Scopes)), telemetry.Attrs{
-					attrID:          k.ID,
-					attrType:        typ,
-					attrDescription: k.Description,
-				})
+				float64(len(k.Scopes)), scopeAttrs)
 			// Body is generic (type + count only) so it is safe without pii_filter.
 			// The key label (description, a free_text_details attr) and the scope
 			// list (attrScopeValues, non-identifier) are preserved in Attrs so
@@ -218,12 +259,15 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if k.Preauthorized {
 				pa = 1.0
 			}
+			paAttrs := telemetry.Attrs{
+				attrID:          k.ID,
+				attrType:        typ,
+				attrDescription: k.Description,
+			}
+			addOwner(paAttrs, k)
+			addTags(paAttrs, k)
 			e.Gauge(docKeyPreauthorized.Name, docKeyPreauthorized.Unit, docKeyPreauthorized.Description,
-				pa, telemetry.Attrs{
-					attrID:          k.ID,
-					attrType:        typ,
-					attrDescription: k.Description,
-				})
+				pa, paAttrs)
 		}
 	}
 
@@ -234,6 +278,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				attrAuthKind: key.authKind,
 				attrRevoked:  key.revoked,
 				attrInvalid:  key.invalid,
+			})
+	}
+
+	// tailscale.keys.by_owner: the "who holds the keys" breakdown, one series
+	// per owner x type. Stays available when cardinality.per_entity.key is off
+	// (unlike the per-key gauges above, it is not gated by c.perEntity).
+	for key, n := range byOwner {
+		e.Gauge(docKeysByOwner.Name, docKeysByOwner.Unit, docKeysByOwner.Description,
+			float64(n), telemetry.Attrs{
+				attrOwner: key.owner,
+				attrType:  key.typ,
 			})
 	}
 
