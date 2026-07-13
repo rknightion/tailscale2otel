@@ -3,10 +3,9 @@ package pii
 // keyCategory maps a fixed-meaning attribute key to its category.
 var keyCategory = map[string]Category{
 	"tailscale.user":                   CatEmails,
-	"tailscale.user.login":             CatEmails,
-	"tailscale.actor.login":            CatEmails,
-	"tailscale.actor.display":          CatUserDisplayNames,
-	"enduser.id":                       CatUserIDs,
+	"user.name":                        CatEmails, // audit actor + device-invite acceptor + users collector login
+	"user.full_name":                   CatUserDisplayNames,
+	"user.id":                          CatUserIDs,
 	"host.name":                        CatHostnames,
 	"tailscale.node.hostname":          CatHostnames,
 	"host.id":                          CatNodeIDs,
@@ -21,7 +20,7 @@ var keyCategory = map[string]Category{
 	"tailscale.audit.new":              CatFreeTextDetails,
 	"tailscale.audit.details":          CatFreeTextDetails,
 	"tailscale.device.posture.details": CatFreeTextDetails, // #56: dynamic posture-log attribute map
-	"error":                            CatFreeTextDetails,
+	"error.message":                    CatFreeTextDetails,
 	"tailscale.target.name":            CatFreeTextDetails,
 	"tailscale.key.description":        CatFreeTextDetails,
 	"value":                            CatFreeTextDetails,
@@ -63,8 +62,8 @@ var identityKeys = map[string]bool{
 	"tailscale.dst.node":               true,
 	"tailscale.service.name":           true,
 	"tailscale.dns.search_path.domain": true, // J-A3: domain is this info gauge's identity
-	"enduser.id":                       true, // #74: per-user gauge identity (CatUserIDs)
-	"tailscale.user.login":             true, // #74: per-user gauge identity (CatEmails)
+	"user.id":                          true, // #74: per-user gauge identity (CatUserIDs)
+	"user.name":                        true, // #74: per-user gauge identity (CatEmails)
 }
 
 // nonIdentifier is the explicit allowlist of keys that are never PII/identifiers.

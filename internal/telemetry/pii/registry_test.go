@@ -4,17 +4,17 @@ import "testing"
 
 func TestRegistryCoversKnownKeys(t *testing.T) {
 	keyCat := map[string]Category{
-		"tailscale.user":          CatEmails,
-		"tailscale.actor.login":   CatEmails,
-		"tailscale.actor.display": CatUserDisplayNames,
-		"enduser.id":              CatUserIDs,
-		"host.name":               CatHostnames,
-		"host.id":                 CatNodeIDs,
-		"tailscale.service.name":  CatServiceAddrs,
-		"endpoint":                CatEndpointPaths,
-		"tailscale.route.cidr":    CatNetworkTopology,
-		"tailscale.tailnet":       CatTailnetName,
-		"tailscale.audit.old":     CatFreeTextDetails,
+		"tailscale.user":         CatEmails,
+		"user.name":              CatEmails,
+		"user.full_name":         CatUserDisplayNames,
+		"user.id":                CatUserIDs,
+		"host.name":              CatHostnames,
+		"host.id":                CatNodeIDs,
+		"tailscale.service.name": CatServiceAddrs,
+		"endpoint":               CatEndpointPaths,
+		"tailscale.route.cidr":   CatNetworkTopology,
+		"tailscale.tailnet":      CatTailnetName,
+		"tailscale.audit.old":    CatFreeTextDetails,
 	}
 	for k, want := range keyCat {
 		got, ok := keyCategory[k]

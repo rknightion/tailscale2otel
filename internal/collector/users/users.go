@@ -12,6 +12,7 @@ import (
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
 	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/internal/tsapi"
 )
@@ -30,11 +31,13 @@ const (
 
 // Attribute keys emitted by this collector.
 const (
-	attrRole           = "tailscale.user.role"
-	attrStatus         = "tailscale.user.status"
-	attrType           = "tailscale.user.type"
-	attrID             = "enduser.id"
-	attrLogin          = "tailscale.user.login"
+	attrRole   = "tailscale.user.role"
+	attrStatus = "tailscale.user.status"
+	attrType   = "tailscale.user.type"
+	// User identity uses the stable OTel user.* registry (the deprecated
+	// enduser.*/tailscale.user.login names are gone as of v2.0.0).
+	attrID             = semconv.AttrUserID
+	attrLogin          = semconv.AttrUserName
 	attrInviteRole     = "tailscale.user_invite.role"
 	attrInviteAccepted = "tailscale.user_invite.accepted"
 )

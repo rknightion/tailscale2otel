@@ -1,6 +1,6 @@
 ---
 title: Upgrading
-description: Upgrade notes and breaking changes, including the pre-1.0 to v1.0.0 migration
+description: Upgrade notes and breaking changes, including the v2.0.0 semantic-convention attribute renames
 tags:
   - Deployment
   - Configuration
@@ -12,6 +12,54 @@ This page collects the behaviour changes worth knowing about when moving between
 `tailscale2otel` releases. Each config key references the full dotted key path; see
 [Configuration](configuration.md) for defaults and the `TS2OTEL_*` env-var equivalents,
 and [Metrics](metrics.md) for the signal catalogue.
+
+## Upgrading to v2.0.0
+
+`v2.0.0` is a **breaking** release with a single, contained change: five telemetry
+attributes carrying user/actor identity and error text are renamed to their stable
+OpenTelemetry semantic-convention equivalents. OTel deprecated the `enduser.*` namespace in
+favour of the ECS-aligned `user.*` registry (`user.id`, `user.name`, `user.full_name`), and
+`error.message` is the stable key for a human-readable error string. The old names are
+**gone** — this is a hard cutover with no duplicate-attribute deprecation window.
+
+Nothing else changed: no metric names, units, config keys, endpoints, or Helm values move
+in `2.0.0`, and no other attributes are renamed. Tailscale-specific concepts (DERP, exit
+nodes, subnet routes, tailnet identity, actor *type*) keep their `tailscale.*` names because
+no semantic convention covers them.
+
+### Renamed attributes
+
+The rename affects the audit log records, the device-invite log event (devices collector),
+and the users collector's per-user gauges and log events. In PromQL/LogQL you query the
+**Prometheus-normalized** label name (right-hand columns), not the OTel attribute key:
+
+| old attribute | new attribute | old Prom/Loki label | new Prom/Loki label |
+| --- | --- | --- | --- |
+| `enduser.id` | `user.id` | `enduser_id` | `user_id` |
+| `tailscale.actor.login` | `user.name` | `tailscale_actor_login` | `user_name` |
+| `tailscale.actor.display` | `user.full_name` | `tailscale_actor_display` | `user_full_name` |
+| `tailscale.user.login` | `user.name` | `tailscale_user_login` | `user_name` |
+| `error` | `error.message` | `error` | `error_message` |
+
+Both `tailscale.actor.login` (audit actor / device-invite acceptor) and
+`tailscale.user.login` (users collector) collapse onto the single `user.name` key, since
+both are the same "short login/username" concept the `user.name` convention describes.
+
+**Action:** update any dashboard, alert rule, or saved query that references an old label to
+its new name. The shipped Grafana dashboards and alert rules in `deploy/` are already updated
+— re-import them to pick up the new labels. The `pii_filter` toggles are unchanged: the same
+category still gates each attribute (`user.id` → user IDs, `user.name` → emails,
+`user.full_name` → display names, `error.message` → free-text details), so no PII
+configuration needs changing.
+
+### Log `event.name` was already present
+
+The `feat!` motivation also referenced OTel's March 2026 deprecation of the Span Events API
+in favour of log records carrying an event name. No migration is needed there: the flow and
+audit log records have **always** set the native OTLP LogRecord `EventName` field
+(`tailscale.network.flow` and `tailscale.config.audit`) — that is the OTel-blessed
+post-Span-Events mechanism, and it did not change in `2.0.0`. It is called out here only so
+the pre-2.0 behaviour is on record.
 
 ## Upgrading to v1.0.0
 

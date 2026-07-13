@@ -219,8 +219,8 @@ func TestCollect_PerUserDevices(t *testing.T) {
 		t.Fatalf("devices points = %d, want 3 (%+v)", len(pts), pts)
 	}
 	alice := findPoint(t, pts, map[string]string{
-		"enduser.id":           "u1",
-		"tailscale.user.login": "alice@example.com",
+		"user.id":   "u1",
+		"user.name": "alice@example.com",
 	})
 	if alice.Value != 3 {
 		t.Fatalf("alice devices = %v, want 3", alice.Value)
@@ -241,11 +241,11 @@ func TestCollect_PerUserConnected(t *testing.T) {
 	if len(pts) != 3 {
 		t.Fatalf("connected points = %d, want 3 (%+v)", len(pts), pts)
 	}
-	alice := findPoint(t, pts, map[string]string{"enduser.id": "u1"})
+	alice := findPoint(t, pts, map[string]string{"user.id": "u1"})
 	if alice.Value != 1 {
 		t.Fatalf("alice connected = %v, want 1", alice.Value)
 	}
-	bob := findPoint(t, pts, map[string]string{"enduser.id": "u2"})
+	bob := findPoint(t, pts, map[string]string{"user.id": "u2"})
 	if bob.Value != 0 {
 		t.Fatalf("bob connected = %v, want 0", bob.Value)
 	}
@@ -266,7 +266,7 @@ func TestCollect_PerUserLastSeen(t *testing.T) {
 	if len(pts) != 2 {
 		t.Fatalf("last_seen points = %d, want 2 (%+v)", len(pts), pts)
 	}
-	alice := findPoint(t, pts, map[string]string{"enduser.id": "u1"})
+	alice := findPoint(t, pts, map[string]string{"user.id": "u1"})
 	want := float64(time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC).Unix())
 	if alice.Value != want {
 		t.Fatalf("alice last_seen = %v, want %v", alice.Value, want)
@@ -275,7 +275,7 @@ func TestCollect_PerUserLastSeen(t *testing.T) {
 		t.Fatalf("last_seen unit = %q, want s", alice.Unit)
 	}
 	for _, p := range pts {
-		if p.Attrs["enduser.id"] == "u2" {
+		if p.Attrs["user.id"] == "u2" {
 			t.Fatalf("bob (zero LastSeen) should be skipped, got %+v", p)
 		}
 	}

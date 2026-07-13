@@ -12313,10 +12313,10 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_actor_login) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` | tailscale_actor_login != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (user_name) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
-                        "legendFormat": "{{tailscale_actor_login}}"
+                        "legendFormat": "{{user_name}}"
                       }
                     }
                   }
@@ -16907,13 +16907,13 @@
                         "__name__": true,
                         "job": true,
                         "instance": true,
-                        "enduser_id": true,
+                        "user_id": true,
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true
                       },
                       "renameByName": {
-                        "tailscale_user_login": "User",
+                        "user_name": "User",
                         "Value #A": "Connected",
                         "Value #B": "Devices",
                         "Value #C": "Last seen"

@@ -1702,8 +1702,8 @@ func TestCollect_DeviceInvitesLogEvents(t *testing.T) {
 	if got := accepted.Attrs["host.id"]; got != "3690401478992208" {
 		t.Errorf("accepted host.id = %q, want 3690401478992208 (device id)", got)
 	}
-	if got := accepted.Attrs["tailscale.actor.login"]; got != "alice@external.example" {
-		t.Errorf("accepted tailscale.actor.login = %q, want alice@external.example", got)
+	if got := accepted.Attrs["user.name"]; got != "alice@external.example" {
+		t.Errorf("accepted user.name = %q, want alice@external.example", got)
 	}
 	if accepted.SeverityText != "INFO" {
 		t.Errorf("accepted severity = %q, want INFO", accepted.SeverityText)
@@ -1720,8 +1720,8 @@ func TestCollect_DeviceInvitesLogEvents(t *testing.T) {
 	if got := pending.Attrs["host.id"]; got != "3690401478992208" {
 		t.Errorf("pending host.id = %q, want 3690401478992208 (device id)", got)
 	}
-	if got := pending.Attrs["tailscale.actor.login"]; got != "" {
-		t.Errorf("pending tailscale.actor.login = %q, want empty (not yet accepted)", got)
+	if got := pending.Attrs["user.name"]; got != "" {
+		t.Errorf("pending user.name = %q, want empty (not yet accepted)", got)
 	}
 	// Body must NOT contain the hostname (PII); the hostname lives in host.name attr.
 	if pending.Body != "device share invite pending" {

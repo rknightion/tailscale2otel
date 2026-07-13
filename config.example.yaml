@@ -274,7 +274,7 @@ webhook:
 pii_filter:
   emails: true              # user/actor login names (often email addresses)
   user_display_names: true  # actor display (human) names
-  user_ids: true            # numeric/opaque user IDs (enduser.id)
+  user_ids: true            # numeric/opaque user IDs (user.id)
   hostnames: true           # device + collector-host hostnames
   node_ids: true            # Tailscale node IDs
   tailscale_ips: true       # 100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses

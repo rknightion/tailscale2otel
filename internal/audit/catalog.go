@@ -42,8 +42,8 @@ var (
 		Severity:    "INFO",
 		Description: "Per configuration-audit event: actor, target, action, and (when present) the before/after change. Emitted at **WARN** when the event carries an error, otherwise INFO.",
 		Attributes: []string{
-			attrAction, attrOrigin, attrEventGroupID, attrEndUserID,
-			attrActorLogin, attrActorDisplay, attrActorType,
+			attrAction, attrOrigin, attrEventGroupID, attrUserID,
+			attrUserName, attrUserFullName, attrActorType,
 			attrTargetID, attrTargetName, attrTargetType, attrTargetProperty,
 			attrOld, attrNew, attrDetails, attrError,
 		},

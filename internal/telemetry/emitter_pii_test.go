@@ -146,7 +146,7 @@ func TestEmitterCounterMergesWhenLabelRedacted(t *testing.T) {
 	}
 }
 
-// TestEmitterLogDropsAttr: with emails off, a LogEvent with tailscale.actor.login
+// TestEmitterLogDropsAttr: with emails off, a LogEvent with user.name
 // must be emitted without that attr.
 func TestEmitterLogDropsAttr(t *testing.T) {
 	cats := allOnCats()
@@ -157,7 +157,7 @@ func TestEmitterLogDropsAttr(t *testing.T) {
 		Name: "tailscale.audit.event",
 		Body: "some action",
 		Attrs: telemetry.Attrs{
-			"tailscale.actor.login":  "a@b.com",
+			"user.name":              "a@b.com",
 			"tailscale.audit.action": "update",
 		},
 	})
@@ -167,8 +167,8 @@ func TestEmitterLogDropsAttr(t *testing.T) {
 		t.Fatalf("expected 1 log record, got %d", len(recs))
 	}
 	attrs := logAttrs(recs[0])
-	if _, ok := attrs["tailscale.actor.login"]; ok {
-		t.Error("tailscale.actor.login (email) must be dropped when emails category is off")
+	if _, ok := attrs["user.name"]; ok {
+		t.Error("user.name (email) must be dropped when emails category is off")
 	}
 	if _, ok := attrs["tailscale.audit.action"]; !ok {
 		t.Error("tailscale.audit.action (non-PII) must be kept")

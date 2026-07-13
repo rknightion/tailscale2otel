@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/internal/dedup"
+	"github.com/rknightion/tailscale2otel/internal/semconv"
 	"github.com/rknightion/tailscale2otel/internal/telemetry"
 )
 
@@ -33,9 +34,13 @@ const (
 	attrDetails      = "tailscale.audit.details"
 	attrChange       = "tailscale.audit.change"
 
-	attrEndUserID    = "enduser.id"
-	attrActorLogin   = "tailscale.actor.login"
-	attrActorDisplay = "tailscale.actor.display"
+	// Actor identity now uses the stable OTel user.* registry (the deprecated
+	// enduser.* namespace is gone as of v2.0.0); actor TYPE stays tailscale.*
+	// (bounded enum, no convention). Reference the semconv constants, never
+	// literals, so the docs/Prometheus names can't drift.
+	attrUserID       = semconv.AttrUserID
+	attrUserName     = semconv.AttrUserName
+	attrUserFullName = semconv.AttrUserFullName
 	attrActorType    = "tailscale.actor.type"
 
 	attrTargetID       = "tailscale.target.id"
@@ -43,7 +48,7 @@ const (
 	attrTargetType     = "tailscale.target.type"
 	attrTargetProperty = "tailscale.target.property"
 
-	attrError = "error"
+	attrError = semconv.AttrErrorMessage
 )
 
 // Processor converts Tailscale configuration audit Events into OTEL log records
@@ -162,9 +167,9 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		attrAction:         ev.Action,
 		attrOrigin:         ev.Origin,
 		attrEventGroupID:   ev.EventGroupID,
-		attrEndUserID:      ev.Actor.ID,
-		attrActorLogin:     ev.Actor.LoginName,
-		attrActorDisplay:   ev.Actor.DisplayName,
+		attrUserID:         ev.Actor.ID,
+		attrUserName:       ev.Actor.LoginName,
+		attrUserFullName:   ev.Actor.DisplayName,
 		attrActorType:      ev.Actor.Type,
 		attrTargetID:       ev.Target.ID,
 		attrTargetName:     ev.Target.Name,
@@ -242,7 +247,7 @@ func renderRaw(raw json.RawMessage) (string, bool) {
 // summary builds the human-readable log body using only non-PII enum fields, e.g.
 // "CREATE on NODE.ALLOWED_IPS via ADMIN_CONSOLE".
 // PII identifiers (actor login/display, target name/id) are emitted as attributes
-// (tailscale.actor.login, tailscale.target.name, etc.) where they remain queryable
+// (user.name, tailscale.target.name, etc.) where they remain queryable
 // and subject to pii_filter redaction — they are intentionally absent from the body.
 func summary(ev Event) string {
 	if ev.Target.Property != "" {

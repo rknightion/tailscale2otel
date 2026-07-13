@@ -174,7 +174,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413) |
 | `TS2OTEL_PII_FILTER__EMAILS` | `true` | user/actor login names (often email addresses) |
 | `TS2OTEL_PII_FILTER__USER_DISPLAY_NAMES` | `true` | actor display (human) names |
-| `TS2OTEL_PII_FILTER__USER_IDS` | `true` | numeric/opaque user IDs (enduser.id) |
+| `TS2OTEL_PII_FILTER__USER_IDS` | `true` | numeric/opaque user IDs (user.id) |
 | `TS2OTEL_PII_FILTER__HOSTNAMES` | `true` | device + collector-host hostnames |
 | `TS2OTEL_PII_FILTER__NODE_IDS` | `true` | Tailscale node IDs |
 | `TS2OTEL_PII_FILTER__TAILSCALE_IPS` | `true` | 100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses |

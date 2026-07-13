@@ -104,9 +104,9 @@ const (
 	attrInviteMultiUse      = "tailscale.device_invite.multi_use"
 
 	// attrActorLogin is the loginName of the user who accepted a device-share
-	// invite (acceptedBy.loginName on the wire). Uses the shared PII key
-	// "tailscale.actor.login" (CatEmails in the PII registry).
-	attrActorLogin = "tailscale.actor.login"
+	// invite (acceptedBy.loginName on the wire). Uses the stable OTel user.*
+	// registry key "user.name" (CatEmails in the PII registry).
+	attrActorLogin = semconv.AttrUserName
 
 	// attrDeviceKeyExpiresInDays carries the remaining days until a device's
 	// node key expires on the tailscale.device.key_expiring log event.

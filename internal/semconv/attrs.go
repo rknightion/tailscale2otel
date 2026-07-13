@@ -22,6 +22,19 @@ const (
 	OSVersion = "os.version"
 )
 
+// Stable OTEL user/identity attribute keys (ECS-aligned user.* registry; the
+// deprecated enduser.* namespace is no longer used). Carried on security-audit
+// actors and the users collector's per-user gauges/log events.
+const (
+	AttrUserID       = "user.id"
+	AttrUserName     = "user.name"
+	AttrUserFullName = "user.full_name"
+
+	// AttrErrorMessage is the stable OTEL key for a human-readable error string
+	// (error.message); carried on error-bearing audit log records.
+	AttrErrorMessage = "error.message"
+)
+
 // Tailscale-specific attribute keys (namespaced under "tailscale.").
 const (
 	AttrTrafficType = "tailscale.traffic_type"

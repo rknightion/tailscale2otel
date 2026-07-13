@@ -659,9 +659,9 @@ Tailscale IPs, for example.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `pii_filter.emails` | `true` | User/actor login names (frequently email addresses, e.g. `enduser.login`). |
-| `pii_filter.user_display_names` | `true` | Actor display (human) names (e.g. `enduser.name`). |
-| `pii_filter.user_ids` | `true` | Numeric/opaque user IDs (e.g. `enduser.id`). |
+| `pii_filter.emails` | `true` | User/actor login names (frequently email addresses, e.g. `user.name`). |
+| `pii_filter.user_display_names` | `true` | Actor display (human) names (e.g. `user.full_name`). |
+| `pii_filter.user_ids` | `true` | Numeric/opaque user IDs (e.g. `user.id`). |
 | `pii_filter.hostnames` | `true` | Device and collector-host hostnames. |
 | `pii_filter.node_ids` | `true` | Tailscale node IDs (e.g. the `nodeId` field on a device). |
 | `pii_filter.tailscale_ips` | `true` | Tailscale overlay addresses: `100.64.0.0/10` (IPv4) and `fd7a:115c:a1e0::/48` (IPv6). |

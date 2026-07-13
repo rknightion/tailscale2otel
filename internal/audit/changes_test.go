@@ -96,7 +96,7 @@ func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
 				t.Errorf("actor.type attr = %q, want %q", got, tc.ev.Actor.Type)
 			}
 			// PII fence: never high-cardinality identity on the counter.
-			for _, k := range []string{"enduser.id", "tailscale.actor.login", "tailscale.actor.display", "tailscale.target.id", "tailscale.target.name"} {
+			for _, k := range []string{"user.id", "user.name", "user.full_name", "tailscale.target.id", "tailscale.target.name"} {
 				if _, ok := mp.Attrs[k]; ok {
 					t.Errorf("changes counter must not carry %q", k)
 				}

@@ -50,7 +50,7 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 	}
 	// Body must contain the action and target type (non-PII enums) but NOT
 	// the actor login or target name — those are PII identifiers that live in
-	// attributes (tailscale.actor.login, tailscale.target.name) where they are
+	// attributes (user.name, tailscale.target.name) where they are
 	// subject to pii_filter redaction.
 	wantBody := "CREATE on NODE.ALLOWED_IPS via ADMIN_CONSOLE"
 	if lr.Body != wantBody {
@@ -69,9 +69,9 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 		"tailscale.audit.action":         "CREATE",
 		"tailscale.audit.origin":         "ADMIN_CONSOLE",
 		"tailscale.audit.event_group_id": "abc123",
-		"enduser.id":                     "u1",
-		"tailscale.actor.login":          "a@example.com",
-		"tailscale.actor.display":        "Lion",
+		"user.id":                        "u1",
+		"user.name":                      "a@example.com",
+		"user.full_name":                 "Lion",
 		"tailscale.actor.type":           "USER",
 		"tailscale.target.id":            "n1",
 		"tailscale.target.name":          "node.ts.net",
@@ -84,9 +84,9 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 			t.Errorf("log attr %q = %q, want %q", k, got, want)
 		}
 	}
-	// No error => no "error" attr, and no old/new since they were empty.
-	if _, ok := lr.Attrs["error"]; ok {
-		t.Errorf("unexpected error attr present: %q", lr.Attrs["error"])
+	// No error => no "error.message" attr, and no old/new since they were empty.
+	if _, ok := lr.Attrs["error.message"]; ok {
+		t.Errorf("unexpected error attr present: %q", lr.Attrs["error.message"])
 	}
 	if _, ok := lr.Attrs["tailscale.audit.old"]; ok {
 		t.Errorf("unexpected old attr present: %q", lr.Attrs["tailscale.audit.old"])
@@ -120,7 +120,7 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 		t.Errorf("metric origin attr = %q, want ADMIN_CONSOLE", mp.Attrs["tailscale.audit.origin"])
 	}
 	// Low-cardinality only: actor/target must NOT be on the metric.
-	for _, k := range []string{"enduser.id", "tailscale.actor.login", "tailscale.target.id", "tailscale.target.name"} {
+	for _, k := range []string{"user.id", "user.name", "tailscale.target.id", "tailscale.target.name"} {
 		if _, ok := mp.Attrs[k]; ok {
 			t.Errorf("metric should not carry high-cardinality attr %q (=%q)", k, mp.Attrs[k])
 		}
@@ -145,8 +145,8 @@ func TestProcessErrorRaisesSeverityAndErrorAttr(t *testing.T) {
 	if lr.SeverityText != "WARN" {
 		t.Fatalf("severity = %q, want WARN", lr.SeverityText)
 	}
-	if lr.Attrs["error"] != "permission denied" {
-		t.Fatalf("error attr = %q, want permission denied", lr.Attrs["error"])
+	if lr.Attrs["error.message"] != "permission denied" {
+		t.Fatalf("error.message attr = %q, want permission denied", lr.Attrs["error.message"])
 	}
 	if lr.Attrs["tailscale.audit.old"] != "1.2.3.4/32" {
 		t.Fatalf("old attr = %q, want 1.2.3.4/32", lr.Attrs["tailscale.audit.old"])

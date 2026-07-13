@@ -117,7 +117,7 @@ func TestIdentitySuppressesWhenUserIdentityRedacted(t *testing.T) {
 	c[CatUserIDs] = false
 	c[CatEmails] = false
 	r := New(c)
-	_, suppress := r.Identity(map[string]any{"enduser.id": "user-A", "tailscale.user.login": "a@example.com", "tailscale.user.role": "member"})
+	_, suppress := r.Identity(map[string]any{"user.id": "user-A", "user.name": "a@example.com", "tailscale.user.role": "member"})
 	if !suppress {
 		t.Error("both user identity keys redacted -> per-user gauge series collapses -> suppress")
 	}

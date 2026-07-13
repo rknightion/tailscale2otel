@@ -182,7 +182,7 @@ extraVolumeMounts:
 | config.pii_filter.tailnet_name | bool | `true` | Emit the tailnet identifier. |
 | config.pii_filter.tailscale_ips | bool | `true` | Emit Tailscale-range addresses (100.64.0.0/10, fd7a:115c:a1e0::/48). |
 | config.pii_filter.user_display_names | bool | `true` | Emit actor display (human) names. |
-| config.pii_filter.user_ids | bool | `true` | Emit numeric/opaque user IDs (enduser.id). |
+| config.pii_filter.user_ids | bool | `true` | Emit numeric/opaque user IDs (user.id). |
 | config.profiling.block_profile_rate | int | `0` | runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull. |
 | config.profiling.mutex_profile_fraction | int | `0` | runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull. |
 | config.profiling.pprof.enabled | bool | `false` | Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. Requires admin.enabled + admin.auth.token. |

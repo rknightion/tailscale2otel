@@ -524,7 +524,7 @@ config:
     emails: true
     # -- Emit actor display (human) names.
     user_display_names: true
-    # -- Emit numeric/opaque user IDs (enduser.id).
+    # -- Emit numeric/opaque user IDs (user.id).
     user_ids: true
     # -- Emit device + collector-host hostnames.
     hostnames: true

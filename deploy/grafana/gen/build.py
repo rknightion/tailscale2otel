@@ -1332,9 +1332,9 @@ def tab_policy():
                 prom_t(sv(lot("tailscale_user_devices_ratio", WIN_SLOW)), instant=True, fmt="table", refid="B"),
                 prom_t("time() - %s" % sv(lot("tailscale_user_last_seen_seconds", WIN_SLOW)), instant=True, fmt="table", refid="C")],
                transformations=[merge(),
-                                organize(exclude=["Time", "__name__", "job", "instance", "enduser_id",
+                                organize(exclude=["Time", "__name__", "job", "instance", "user_id",
                                                   "service_instance_id", "service_name", "service_namespace"],
-                                         rename={"tailscale_user_login": "User", "Value #A": "Connected",
+                                         rename={"user_name": "User", "Value #A": "Connected",
                                                  "Value #B": "Devices", "Value #C": "Last seen"})],
                overrides=[{"matcher": {"id": "byName", "options": "Last seen"},
                            "properties": [{"id": "unit", "value": "s"}]}],
@@ -1428,7 +1428,7 @@ def tab_policy():
             row("Settings & features", settings),
             row("Services / VIP", services_vip, present="has_services"),
             row("Users", users),
-            # Task 1H.4 — PII gate: users_pe shows tailscale_user_login
+            # Task 1H.4 — PII gate: users_pe shows user_name
             row("Per-user detail", users_pe, present="has_users_pe", hide_when=["pii_usernames"]),
             row("User invites", invites, present="has_invites"),
             row("API keys", keys),
@@ -1992,9 +1992,9 @@ def tab_security():
         # precedent (all barcharts are Prometheus instant+table); the proven Loki
         # aggregation pattern here is the range timeseries (see "Log volume by event").
         (panel("Top $topn actors over time", "timeseries",
-               [loki_t("topk($topn, sum by (tailscale_actor_login) "
-                       "(count_over_time(%s | tailscale_actor_login != `` [$__auto])))" % AUD,
-                       legend="{{tailscale_actor_login}}")],
+               [loki_t("topk($topn, sum by (user_name) "
+                       "(count_over_time(%s | user_name != `` [$__auto])))" % AUD,
+                       legend="{{user_name}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
         (panel("Top $topn targets over time", "timeseries",
                [loki_t("topk($topn, sum by (tailscale_target_name) "
