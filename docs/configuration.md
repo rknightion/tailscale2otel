@@ -56,8 +56,10 @@ Every config field is settable via an environment variable:
 | `webhook.secret` | `TS2OTEL_WEBHOOK__SECRET` |
 | `admin.auth.token` | `TS2OTEL_ADMIN__AUTH__TOKEN` |
 | `prometheus.auth.token` | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` |
+| `prometheus.auth.token_file` | `""` | Read `prometheus.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
 | `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
+| `profiling.pyroscope.basic_auth_password_file` | `""` | Read `profiling.pyroscope.basic_auth_password` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 
 ### Scalar lists
 
@@ -132,7 +134,7 @@ Used only when `provider: headscale`. Auth is a Bearer API key; keep it in an en
 
 Under `provider: headscale` only the `devices`, `users`, `keys`, `acl`, and `nodemetrics` collectors
 run. The Tailscale-only collectors (`flowlogs`, `auditlogs`, `services`, `webhooks`, `contacts`,
-`posture_integrations`, `log_stream`, `settings`, `dns`) auto-disable; enabling them explicitly triggers
+`posture_integrations`, `log_stream`, `oauth_apps`, `settings`, `dns`) auto-disable; enabling them explicitly triggers
 a startup warning.
 
 **Reduced device signal set.** Headscale's API exposes fewer device fields than Tailscale, so under
@@ -166,6 +168,7 @@ static `node_metrics` target (see the `node_metrics` section); there is no dedic
 |-----|---------|-------------|
 | `headscale.url` | `""` | Headscale control-plane base URL, e.g. `https://headscale.example.org`. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__URL`. |
 | `headscale.api_key` | `""` | Bearer API key for the Headscale server. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__API_KEY`. |
+| `headscale.api_key_file` | `""` | Read `headscale.api_key` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `headscale.http.timeout` | `30s` | Per-request timeout for Headscale API calls. |
 | `headscale.http.retry.max_attempts` | `0` | Accepted for config parity with `tailscale.http`, but **not applied** by the minimal v1 Headscale client (which honors only `timeout`). |
 | `headscale.http.retry.base_delay` | `0s` | Accepted for parity; not applied in v1 (see above). |
@@ -189,8 +192,10 @@ Prefer OAuth: its tokens are short-lived, auto-refreshing, and not bound to a us
 | `tailscale.auth.method` | `oauth` | Authentication method. One of `oauth` (recommended) or `apikey`. |
 | `tailscale.auth.oauth.client_id` | `""` | OAuth client ID. Required when `method: oauth`. Set via `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID`. |
 | `tailscale.auth.oauth.client_secret` | `""` | OAuth client secret. Required when `method: oauth`. Set via `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`. |
+| `tailscale.auth.oauth.client_secret_file` | `""` | Read `tailscale.auth.oauth.client_secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `tailscale.auth.oauth.scopes` | `["all:read"]` | OAuth scopes requested for the token. Least-privilege read scopes are the default; add `log_streaming` if you use `streaming.auto_configure`. Comma-separated in env: `TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES=all:read,log_streaming`. |
 | `tailscale.auth.apikey` | `""` | Personal API key. Used **only** when `method: apikey`. Set via `TS2OTEL_TAILSCALE__AUTH__APIKEY`. |
+| `tailscale.auth.apikey_file` | `""` | Read `tailscale.auth.apikey` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 
 > **WARN (advisory):** `method: apikey` triggers a startup warning — a personal API key expires in
 > ≤90 days and stops working when the user who created it is suspended or removed. For an unattended
@@ -291,6 +296,7 @@ header is built for you (no need to hand-craft it in `otlp.headers`).
 |-----|---------|-------------|
 | `otlp.grafana_cloud.instance_id` | `""` | Grafana Cloud OTLP instance/stack ID (the Basic-auth username). Set via `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID`. |
 | `otlp.grafana_cloud.token` | `""` | Grafana Cloud OTLP token (the Basic-auth password). Set via `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN`. |
+| `otlp.grafana_cloud.token_file` | `""` | Read `otlp.grafana_cloud.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 
 ### `otlp.tls`
 
@@ -501,6 +507,7 @@ Configuration/audit events → event logs + a counter.
 | `collectors.webhooks.enabled` / `.interval` | `true` / `600s` | Configured webhook gauges and per-webhook status. |
 | `collectors.posture_integrations.enabled` / `.interval` | `true` / `600s` | MDM/EDR posture-integration gauges. |
 | `collectors.log_stream.enabled` / `.interval` | `true` / `600s` | Log-streaming configuration gauges. |
+| `collectors.oauth_apps.enabled` / `.interval` | `true` / `300s` | OAuth-application inventory (count, per-app scope/node-attribute gauges). Alpha API — idles silently (no error) on tailnets without it enabled. |
 
 ### `collectors.services`
 
@@ -613,6 +620,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.listen` | `:8088` | Listen address. |
 | `streaming.path` | `/services/collector/event` | HEC event path. |
 | `streaming.token` | `""` | Shared secret for the receiver. Tailscale's log-streaming sender authenticates with **HTTP Basic auth** — `Authorization: Basic base64(<user>:<token>)`, where the password is this token (any username is accepted). The `Authorization: Splunk <token>` scheme is also accepted, as a fallback for other Splunk-HEC-compatible senders, but is not what Tailscale itself sends. Set via `TS2OTEL_STREAMING__TOKEN`. |
+| `streaming.token_file` | `""` | Read `streaming.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `streaming.public_url` | `""` | Externally reachable receiver URL. **Required when `auto_configure: true`** (it is the sink URL registered with Tailscale). |
 | `streaming.tls.cert_file` / `.key_file` | `""` | HTTPS is required by Tailscale; a `tailscale cert` works for private tailnet endpoints. |
 | `streaming.decompress` | `auto` | Request-body decompression: `auto` \| `gzip` \| `zstd` \| `none`. |
@@ -635,6 +643,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.listen` | `:8089` | Listen address. |
 | `webhook.path` | `/tailscale/webhook` | Webhook path. |
 | `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Set via `TS2OTEL_WEBHOOK__SECRET`. |
+| `webhook.secret_file` | `""` | Read `webhook.secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `webhook.tolerance` | `5m` | Reject signed timestamps older than this (the replay window). `0` disables the timestamp check. |
 | `webhook.dedup_audit_events` | `false` | Best-effort: drop a webhook event already counted via the audit logs (shares a cross-source de-dup set with the audit processor). |
 
@@ -714,6 +723,7 @@ internet.
 | `admin.listen` | `:9090` | Listen address. For defense-in-depth bind to loopback (`127.0.0.1:9090`) or a tailnet IP. |
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
 | `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. `/healthz` and `/readyz` are never gated. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
+| `admin.auth.token_file` | `""` | Read `admin.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 
 > **WARN (advisory):** if `landing_page` is served on a wildcard (all-interfaces) bind with no
 > `admin.auth.token`, a startup warning fires — the page exposes internal state to anyone who can

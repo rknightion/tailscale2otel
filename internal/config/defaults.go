@@ -147,6 +147,10 @@ func Default() *Config {
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
+			OAuthApps: SimpleCollector{
+				Enabled:  true,
+				Interval: dur(300 * time.Second),
+			},
 			NodeMetrics: NodeMetricsConfig{
 				Enabled:          false,
 				Interval:         dur(60 * time.Second),

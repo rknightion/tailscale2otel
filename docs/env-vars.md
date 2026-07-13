@@ -35,6 +35,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROVIDER` | `tailscale` | control-plane backend: tailscale (default) \| headscale |
 | `TS2OTEL_HEADSCALE__URL` | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL) |
 | `TS2OTEL_HEADSCALE__API_KEY` | `""` | Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY) |
+| `TS2OTEL_HEADSCALE__API_KEY_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_HEADSCALE__HTTP__TIMEOUT` | `30s` | per-request timeout (the ONLY http knob applied in v1) |
 | `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_ATTEMPTS` | `0` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
 | `TS2OTEL_HEADSCALE__HTTP__RETRY__BASE_DELAY` | `0s` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
@@ -44,8 +45,10 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_TAILSCALE__AUTH__METHOD` | `oauth` | oauth (recommended) \| apikey |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID` | `""` | OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID) |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET` | `""` | OAuth client secret — keep in env, not here (..._CLIENT_SECRET) |
+| `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES` | `[all:read]` | least-privilege read scopes requested for the token _(comma-separated list)_ |
 | `TS2OTEL_TAILSCALE__AUTH__APIKEY` | `""` | personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires <=90d and is tied to its creator |
+| `TS2OTEL_TAILSCALE__AUTH__APIKEY_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_TAILSCALE__HTTP__TIMEOUT` | `30s` | per-attempt timeout (each retry attempt; a retried request may take longer, and long Retry-After waits are honored) |
 | `TS2OTEL_TAILSCALE__HTTP__RETRY__MAX_ATTEMPTS` | `4` | total attempts per request (1 = no retry); exponential backoff between tries |
 | `TS2OTEL_TAILSCALE__HTTP__RETRY__BASE_DELAY` | `500ms` | initial backoff delay |
@@ -55,6 +58,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID` | `""` | Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN` | `""` | Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN) |
+| `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_OTLP__TLS__INSECURE` | `false` | disable TLS entirely (plaintext h2c/http) — NOT a cert-verify skip; do not use in production |
 | `TS2OTEL_OTLP__TLS__INSECURE_SKIP_VERIFY` | `false` | keep TLS but skip server-cert verification (self-signed/private-CA gateways, testing only — prefer ca_file) |
 | `TS2OTEL_OTLP__TLS__CA_FILE` | `""` | path to a custom CA bundle to trust |
@@ -128,6 +132,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__INTERVAL` | `600s` | MDM/EDR posture-integration sync health: matched counts + last_sync staleness |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__ENABLED` | `true` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__INTERVAL` | `600s` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |
+| `TS2OTEL_COLLECTORS__OAUTH_APPS__ENABLED` | `true` | OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it) |
+| `TS2OTEL_COLLECTORS__OAUTH_APPS__INTERVAL` | `300s` | OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it) |
 | `TS2OTEL_COLLECTORS__SERVICES__ENABLED` | `true` | Tailscale Services (VIP) inventory |
 | `TS2OTEL_COLLECTORS__SERVICES__INTERVAL` | `600s` | Tailscale Services (VIP) inventory |
 | `TS2OTEL_COLLECTORS__SERVICES__COLLECT_HOSTS` | `false` | also fetch per-service backing-host detail — one extra API call per service (N+1) |
@@ -159,6 +165,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__LISTEN` | `:8088` | bind address for the Splunk-HEC-compatible receiver |
 | `TS2OTEL_STREAMING__PATH` | `/services/collector/event` | HEC endpoint path Tailscale POSTs to |
 | `TS2OTEL_STREAMING__TOKEN` | `""` | shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN) |
+| `TS2OTEL_STREAMING__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_STREAMING__PUBLIC_URL` | `""` | externally reachable receiver URL; REQUIRED only when auto_configure: true |
 | `TS2OTEL_STREAMING__TLS__CERT_FILE` | `""` | HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints) |
 | `TS2OTEL_STREAMING__TLS__KEY_FILE` | `""` | HTTPS key |
@@ -169,6 +176,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | bind address for the webhook receiver |
 | `TS2OTEL_WEBHOOK__PATH` | `/tailscale/webhook` | endpoint path Tailscale POSTs events to |
 | `TS2OTEL_WEBHOOK__SECRET` | `""` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN) |
+| `TS2OTEL_WEBHOOK__SECRET_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | reject signed timestamps older than this (replay window); "0" disables the check |
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | best-effort: drop a webhook event already counted via the audit logs |
 | `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413) |
@@ -191,14 +199,17 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ADMIN__LISTEN` | `:9090` | serves /healthz, /readyz, and the status page |
 | `TS2OTEL_ADMIN__LANDING_PAGE` | `true` | serve the human status page at / and machine-readable /api/status.json |
 | `TS2OTEL_ADMIN__AUTH__TOKEN` | `""` | gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind) |
+| `TS2OTEL_ADMIN__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |
 | `TS2OTEL_PROMETHEUS__LISTEN` | `:2112` | bind for /metrics (default :2112); keep distinct from admin.listen |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
+| `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROFILING__PPROF__ENABLED` | `false` | mount net/http/pprof on the admin server (REQUIRES admin.enabled + admin.auth.token — heap dumps can expose in-memory secrets) |
 | `TS2OTEL_PROFILING__PYROSCOPE__ENABLED` | `false` | run the Pyroscope continuous-profiling push agent |
 | `TS2OTEL_PROFILING__PYROSCOPE__SERVER_ADDRESS` | `""` | REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net |
 | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER` | `""` | Grafana Cloud: the profiles instance ID (set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER) |
 | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` | `""` | Grafana Cloud: a profiles:write access-policy token (..._BASIC_AUTH_PASSWORD) |
+| `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROFILING__PYROSCOPE__TENANT_ID` | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud) |
 | `TS2OTEL_PROFILING__PYROSCOPE__UPLOAD_RATE` | `60s` | how often profiles are flushed |
 | `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `0` | runtime.SetMutexProfileFraction (0 = disabled) |

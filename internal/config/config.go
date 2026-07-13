@@ -74,6 +74,13 @@ type Config struct {
 	// configFileWarning is a load-time advisory about the config file itself
 	// (currently: loose permissions). Surfaced by Warnings(), like unknownEnv.
 	configFileWarning string
+
+	// secretFileConflicts records every "*_file" sibling (see resolveSecretFiles)
+	// whose paired value field was ALSO set — a value-XOR-file violation.
+	// Populated by Load before Validate runs, so the conflict is reported as a
+	// normal Validate error (naming the key pair) rather than a special-cased
+	// Load error.
+	secretFileConflicts []string
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -95,6 +102,10 @@ type AdminConfig struct {
 // TS2OTEL_ADMIN__AUTH__TOKEN.
 type AdminAuth struct {
 	Token Secret `yaml:"token"`
+	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
+	// file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use.
+	TokenFile string `yaml:"token_file"`
 }
 
 // PrometheusConfig configures the optional Prometheus pull endpoint (GET /metrics)
@@ -113,6 +124,10 @@ type PrometheusConfig struct {
 // var: TS2OTEL_PROMETHEUS__AUTH__TOKEN.
 type PrometheusAuth struct {
 	Token Secret `yaml:"token"`
+	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
+	// file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use.
+	TokenFile string `yaml:"token_file"`
 }
 
 // ProfilingConfig configures continuous/on-demand profiling. Everything here is
@@ -139,13 +154,17 @@ type ProfilingPprof struct {
 // When enabled it requires ServerAddress; the basic-auth/tenant fields cover
 // Grafana Cloud Profiles and multi-tenant servers.
 type ProfilingPyroscope struct {
-	Enabled           bool              `yaml:"enabled"`
-	ServerAddress     string            `yaml:"server_address"`
-	BasicAuthUser     string            `yaml:"basic_auth_user"`
-	BasicAuthPassword Secret            `yaml:"basic_auth_password"`
-	TenantID          string            `yaml:"tenant_id"`
-	UploadRate        Duration          `yaml:"upload_rate"`
-	Tags              map[string]string `yaml:"tags"`
+	Enabled           bool   `yaml:"enabled"`
+	ServerAddress     string `yaml:"server_address"`
+	BasicAuthUser     string `yaml:"basic_auth_user"`
+	BasicAuthPassword Secret `yaml:"basic_auth_password"`
+	// BasicAuthPasswordFile reads BasicAuthPassword from a file at Load
+	// (Docker-secrets style). Value XOR file: setting both is a Validate error.
+	// The file content is trimmed of surrounding whitespace before use.
+	BasicAuthPasswordFile string            `yaml:"basic_auth_password_file"`
+	TenantID              string            `yaml:"tenant_id"`
+	UploadRate            Duration          `yaml:"upload_rate"`
+	Tags                  map[string]string `yaml:"tags"`
 }
 
 // VersionChecksConfig configures the optional outbound "is a newer release
@@ -175,9 +194,13 @@ type VersionCheckDevices struct {
 // HeadscaleConfig holds Headscale control-plane connection settings (used when
 // provider: headscale). Auth is a Bearer API key; keep it in env (TS2OTEL_*).
 type HeadscaleConfig struct {
-	URL    string              `yaml:"url"`
-	APIKey Secret              `yaml:"api_key"`
-	HTTP   TailscaleHTTPConfig `yaml:"http"` // reuse the same timeout/retry/rate_limit shape
+	URL    string `yaml:"url"`
+	APIKey Secret `yaml:"api_key"`
+	// APIKeyFile reads APIKey from a file at Load (Docker-secrets style). Value
+	// XOR file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use.
+	APIKeyFile string              `yaml:"api_key_file"`
+	HTTP       TailscaleHTTPConfig `yaml:"http"` // reuse the same timeout/retry/rate_limit shape
 }
 
 // TailscaleConfig holds Tailscale API connection settings.
@@ -275,13 +298,24 @@ type TailscaleAuth struct {
 	Method string      `yaml:"method"`
 	OAuth  OAuthConfig `yaml:"oauth"`
 	APIKey Secret      `yaml:"apikey"`
+	// APIKeyFile reads APIKey from a file at Load (Docker-secrets style). Value
+	// XOR file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use. TailnetConfig entries embed this struct,
+	// so tailnets[].auth.apikey_file gets the same behavior for free.
+	APIKeyFile string `yaml:"apikey_file"`
 }
 
 // OAuthConfig holds OAuth client-credentials settings.
 type OAuthConfig struct {
-	ClientID     string   `yaml:"client_id"`
-	ClientSecret Secret   `yaml:"client_secret"`
-	Scopes       []string `yaml:"scopes"`
+	ClientID     string `yaml:"client_id"`
+	ClientSecret Secret `yaml:"client_secret"`
+	// ClientSecretFile reads ClientSecret from a file at Load (Docker-secrets
+	// style). Value XOR file: setting both is a Validate error. The file content
+	// is trimmed of surrounding whitespace before use. TailnetConfig entries embed
+	// TailscaleAuth (and so this struct), so tailnets[].auth.oauth.client_secret_file
+	// gets the same behavior for free.
+	ClientSecretFile string   `yaml:"client_secret_file"`
+	Scopes           []string `yaml:"scopes"`
 }
 
 // TailscaleHTTPConfig configures the HTTP client used for the Tailscale API.
@@ -317,6 +351,10 @@ type OTLPConfig struct {
 type GrafanaCloudConfig struct {
 	InstanceID string `yaml:"instance_id"`
 	Token      Secret `yaml:"token"`
+	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
+	// file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use.
+	TokenFile string `yaml:"token_file"`
 }
 
 // TLSConfig configures transport security for OTLP.
@@ -454,6 +492,10 @@ type Collectors struct {
 	LogStream           SimpleCollector    `yaml:"log_stream"`
 	Services            ServicesCollector  `yaml:"services"`
 	NodeMetrics         NodeMetricsConfig  `yaml:"node_metrics"`
+	// OAuthApps is a point-in-time inventory snapshot of the tailnet's OAuth
+	// clients (a config-surface seam for #167; the collector itself ships
+	// separately).
+	OAuthApps SimpleCollector `yaml:"oauth_apps"`
 }
 
 // SimpleCollector is a point-in-time inventory collector: it just polls a
@@ -649,6 +691,10 @@ type StreamingConfig struct {
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
 	Token   Secret `yaml:"token"`
+	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
+	// file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use.
+	TokenFile string `yaml:"token_file"`
 	// PublicURL is the externally reachable URL Tailscale should POST logs to
 	// (this receiver's public endpoint). Required only when AutoConfigure is on,
 	// since it is the sink URL registered with Tailscale.
@@ -676,6 +722,10 @@ type WebhookConfig struct {
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
 	Secret  Secret `yaml:"secret"`
+	// SecretFile reads Secret from a file at Load (Docker-secrets style). Value
+	// XOR file: setting both is a Validate error. The file content is trimmed of
+	// surrounding whitespace before use.
+	SecretFile string `yaml:"secret_file"`
 	// Tolerance is the maximum age of a webhook's signed timestamp before it is
 	// rejected as a replay. Tailscale signs "<unix>.<body>", so this bounds how
 	// long a captured, validly-signed delivery can be replayed. 0 disables the
@@ -793,6 +843,15 @@ func Load(path string) (*Config, error) {
 
 	cfg.unknownEnv = unknownEnvVars(validKeys)
 	cfg.configFileWarning = cfgFileWarning
+
+	// 4. Resolve every *_file secret sibling (Docker-secrets style) now that file
+	//    + env layering is complete: read each configured file once, trim it, and
+	//    populate the paired Secret value. Done before Validate so a bad/missing
+	//    file surfaces as a Load error, and so Validate sees the resolved value.
+	if err := cfg.resolveSecretFiles(); err != nil {
+		return nil, err
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

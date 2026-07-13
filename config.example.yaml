@@ -23,10 +23,11 @@ provider: tailscale                   # control-plane backend: tailscale (defaul
 # ── Headscale connection (only used when provider: headscale) ───────────────────
 # Under provider: headscale only the devices/users/keys/acl/nodemetrics collectors
 # run; the Tailscale-only collectors (flowlogs, auditlogs, services, webhooks,
-# contacts, posture_integrations, log_stream, settings, dns) auto-disable.
+# contacts, posture_integrations, log_stream, oauth_apps, settings, dns) auto-disable.
 headscale:
   url: ""                             # Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)
   api_key: ""                         # Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY)
+  api_key_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   http:                               # HTTP client used for all Headscale API calls
     timeout: 30s                      # per-request timeout (the ONLY http knob applied in v1)
     retry:                            # accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client
@@ -50,9 +51,11 @@ tailscale:
     oauth:                            # used when method: oauth — scoped, short-lived, not user-bound
       client_id: ""                   # OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID)
       client_secret: ""               # OAuth client secret — keep in env, not here (..._CLIENT_SECRET)
+      client_secret_file: ""          # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
       scopes:                         # least-privilege read scopes requested for the token
         - all:read
     apikey: ""                        # personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires <=90d and is tied to its creator
+    apikey_file: ""                   # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   http:                               # HTTP client used for all Tailscale API calls
     timeout: 30s                      # per-attempt timeout (each retry attempt; a retried request may take longer, and long Retry-After waits are honored)
     retry:
@@ -90,6 +93,7 @@ otlp:
   grafana_cloud:                      # convenience: instance_id + token become an "Authorization: Basic" header for Grafana Cloud
     instance_id: ""                   # Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID)
     token: ""                         # Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN)
+    token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   headers: {}                         # extra raw OTLP headers, e.g. {X-Scope-OrgID: "1"} (alternative to grafana_cloud); FILE-ONLY (maps aren't settable via env)
   tls:
     insecure: false                   # disable TLS entirely (plaintext h2c/http) — NOT a cert-verify skip; do not use in production
@@ -199,6 +203,9 @@ collectors:
   log_stream:                         # log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)
     enabled: true
     interval: 600s
+  oauth_apps:                         # OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it)
+    enabled: true
+    interval: 300s
   services:                           # Tailscale Services (VIP) inventory
     enabled: true
     interval: 600s
@@ -250,6 +257,7 @@ streaming:
   listen: ":8088"                     # bind address for the Splunk-HEC-compatible receiver
   path: /services/collector/event     # HEC endpoint path Tailscale POSTs to
   token: ""                           # shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN)
+  token_file: ""                      # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   public_url: ""                      # externally reachable receiver URL; REQUIRED only when auto_configure: true
   tls:
     cert_file: ""                     # HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints)
@@ -264,6 +272,7 @@ webhook:
   listen: ":8089"                     # bind address for the webhook receiver
   path: /tailscale/webhook            # endpoint path Tailscale POSTs events to
   secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN)
+  secret_file: ""                     # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
   max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413)
@@ -300,6 +309,7 @@ admin:
   landing_page: true                  # serve the human status page at / and machine-readable /api/status.json
   auth:
     token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind)
+    token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
 
 # ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
 prometheus:
@@ -307,6 +317,7 @@ prometheus:
   listen: ":2112"                     # bind for /metrics (default :2112); keep distinct from admin.listen
   auth:
     token: ""                         # gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN
+    token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
 
 # ── Profiling (OPTIONAL: all off by default, carries no Tailscale data) ─────────
 profiling:
@@ -317,6 +328,7 @@ profiling:
     server_address: ""                # REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net
     basic_auth_user: ""               # Grafana Cloud: the profiles instance ID (set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER)
     basic_auth_password: ""           # Grafana Cloud: a profiles:write access-policy token (..._BASIC_AUTH_PASSWORD)
+    basic_auth_password_file: ""      # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
     tenant_id: ""                     # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
     upload_rate: 60s                  # how often profiles are flushed
     tags: {}                          # extra static labels merged onto every profile, e.g. { env: prod }

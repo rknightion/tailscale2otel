@@ -316,6 +316,13 @@ func validateReceiverPath(field, p string) error {
 // Validate reports the first configuration error it finds, or nil if the
 // Config is valid.
 func (c *Config) Validate() error {
+	// A "*_file" secret sibling whose paired value field was ALSO set (recorded
+	// by resolveSecretFiles at Load) — report the first one, matching this
+	// method's "first error found" contract.
+	if len(c.secretFileConflicts) > 0 {
+		return fmt.Errorf("%s: set only one, not both (value XOR file)", c.secretFileConflicts[0])
+	}
+
 	provider := c.Provider
 	if provider == "" {
 		provider = "tailscale"
