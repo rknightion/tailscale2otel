@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 func TestAPIStats_RecordAggregates(t *testing.T) {

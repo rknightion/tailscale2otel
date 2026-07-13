@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/audit"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/audit"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 func sampleEvent() audit.Event {

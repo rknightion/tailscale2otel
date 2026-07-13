@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/oas"
-	"github.com/rknightion/tailscale2otel/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v2/internal/oas"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi/contract"
 )
 
 func TestManifest_WellFormed(t *testing.T) {

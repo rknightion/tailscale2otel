@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // emitExportDelta emits the increase in export volume since *last and advances

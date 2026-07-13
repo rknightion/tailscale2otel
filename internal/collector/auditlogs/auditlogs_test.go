@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/audit"
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/collector/auditlogs"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/audit"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/auditlogs"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 // Compile-time assertions: *Collector is a WindowCollector, and both *fakeAPI

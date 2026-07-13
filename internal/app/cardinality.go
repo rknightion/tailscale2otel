@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/catalog"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // metricGroupMap returns a metric-source-name -> docs-group map built from the

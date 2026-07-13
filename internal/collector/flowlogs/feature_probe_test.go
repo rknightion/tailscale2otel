@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // Compile-time guarantee: *FeatureProbe is a SnapshotCollector.

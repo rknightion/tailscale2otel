@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rknightion/tailscale2otel/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 )
 
 // Self-cardinality metric names. The tracker never measures any metric in the

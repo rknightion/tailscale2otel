@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/rknightion/tailscale2otel/internal/app/statushtml"
+	"github.com/rknightion/tailscale2otel/v2/internal/app/statushtml"
 )
 
 // handleIndex renders the HTML admin status/landing page. Because "/" is the

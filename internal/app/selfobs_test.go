@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/config"
-	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // TestIsCleanShutdownErr guards the false-positive trap: a receiver/admin server

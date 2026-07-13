@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/catalog"
 )
 
 // TestDocsMetricsInSync is a drift guard inside the normal test suite (not just

@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // RunCheckpointReporter emits checkpoint file health metrics (disk size and

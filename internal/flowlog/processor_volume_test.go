@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // fiveConnFlow returns a single FlowLog whose VirtualTraffic holds five distinct

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
 )
 
 // TestFileStore_CorruptFileReportsSentinel pins #69: a checkpoint file that fails

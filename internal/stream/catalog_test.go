@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/internal/stream"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/stream"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard for the

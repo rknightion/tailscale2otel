@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/enrich"
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // ioTotal returns the sum of every recorded MetricIO data point's value.

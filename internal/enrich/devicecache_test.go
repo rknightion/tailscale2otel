@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
 )
 
 func TestResolveName_KnownTailscaleAddress(t *testing.T) {

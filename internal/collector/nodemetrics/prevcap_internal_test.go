@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // TestEmitDeltaBaselineMapIsCapped verifies that prevHardCap bounds the

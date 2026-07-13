@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
 )
 
 // Generated regions in docs/metrics.md are delimited by HTML comment markers:

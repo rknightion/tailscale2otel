@@ -2,11 +2,11 @@
 // It validates config files (config.example.yaml and the Helm-rendered configmap)
 // by invoking the real internal/config.Load, which enforces the cross-field rules
 // that JSON Schema draft-07 cannot express.
-module github.com/rknightion/tailscale2otel/tools/configcheck
+module github.com/rknightion/tailscale2otel/v2/tools/configcheck
 
 go 1.26.5
 
-require github.com/rknightion/tailscale2otel v0.0.0
+require github.com/rknightion/tailscale2otel/v2 v2.0.0
 
 require (
 	github.com/fatih/structs v1.1.0 // indirect
@@ -25,4 +25,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/rknightion/tailscale2otel => ../..
+replace github.com/rknightion/tailscale2otel/v2 => ../..

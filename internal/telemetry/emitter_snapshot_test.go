@@ -3,8 +3,8 @@ package telemetry_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // idsOf returns the set of the "id" attribute across the recorded points for a

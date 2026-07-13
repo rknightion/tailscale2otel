@@ -19,11 +19,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 const (

@@ -1,6 +1,6 @@
 package stream
 
-import "github.com/rknightion/tailscale2otel/internal/metricdoc"
+import "github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
 
 // Catalog declarations are the SINGLE SOURCE OF TRUTH for this receiver's own
 // gateway counters. The stream receiver routes accepted records to the shared

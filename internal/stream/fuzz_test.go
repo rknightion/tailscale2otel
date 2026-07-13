@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/audit"
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/audit"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
 )
 
 // The receiver's parse chain is the only place tailscale2otel decodes bytes it

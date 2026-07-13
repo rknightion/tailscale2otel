@@ -1,8 +1,8 @@
 package nodemetrics
 
 import (
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 )
 
 // Catalog declarations are the SINGLE SOURCE OF TRUTH for this collector's own,

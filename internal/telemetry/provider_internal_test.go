@@ -23,7 +23,7 @@ import (
 	tracetest "go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // TestBuildResourceOmitsTailnetProvider asserts buildResource no longer carries

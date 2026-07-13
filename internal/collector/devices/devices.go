@@ -20,12 +20,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/enrich"
-	"github.com/rknightion/tailscale2otel/internal/release"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/release"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 // Compile-time assertions: *Collector is a SnapshotCollector and *tsapi.Client

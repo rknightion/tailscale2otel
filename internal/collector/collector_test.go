@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // fakeCollector is a SnapshotCollector (Register now requires the typed interface

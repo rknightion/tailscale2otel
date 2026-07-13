@@ -6,8 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // pointForSet returns the value of the single point for metric name carrying the

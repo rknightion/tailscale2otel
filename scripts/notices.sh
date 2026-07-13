@@ -21,7 +21,7 @@ set -euo pipefail
 GO_LICENSES="${GO_LICENSES:-go-licenses}"
 TARGET="${TARGET:-./cmd/tailscale2otel}"
 OUT="${OUT:-THIRD_PARTY_NOTICES.md}"
-SELF="github.com/rknightion/tailscale2otel"
+SELF="github.com/rknightion/tailscale2otel/v2"
 TMPL="$(cd "$(dirname "$0")" && pwd)/notices.tsv.tmpl"
 
 command -v "$GO_LICENSES" >/dev/null 2>&1 || {

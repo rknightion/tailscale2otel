@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
-	"github.com/rknightion/tailscale2otel/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi/contract"
 )
 
 // TestLiveContract hits the real Tailscale API read-only using a token passed in via

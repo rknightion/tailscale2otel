@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 // logStreamStatusFixture mirrors a real /logging/{type}/stream/status response,

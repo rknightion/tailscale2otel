@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
 )
 
 func TestAdd_NewKeyReturnsTrue(t *testing.T) {

@@ -83,7 +83,7 @@ machine.
 
 ## Module / package layout
 
-Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel`) plus three
+Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v2`) plus three
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
 are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
 `tools/apidrift`).

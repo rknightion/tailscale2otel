@@ -3,8 +3,8 @@ package catalog_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/catalog"
-	"github.com/rknightion/tailscale2otel/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v2/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // TestEveryCatalogAttributeIsClassified asserts that every attribute key declared

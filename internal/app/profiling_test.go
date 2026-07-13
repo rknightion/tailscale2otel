@@ -7,7 +7,7 @@ import (
 
 	"github.com/grafana/pyroscope-go"
 
-	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/config"
 )
 
 func TestPyroscopeConfig_Mapping(t *testing.T) {

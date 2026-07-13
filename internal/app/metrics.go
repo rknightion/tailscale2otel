@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
 )
 
 // buildMetricsServer builds the dedicated Prometheus pull-endpoint server. Only

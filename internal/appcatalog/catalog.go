@@ -18,8 +18,8 @@
 package appcatalog
 
 import (
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 )
 
 // GroupSelfObs is the docs section these metrics render under.

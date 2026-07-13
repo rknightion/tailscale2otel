@@ -14,7 +14,7 @@ import (
 	"github.com/tailscale/hujson"
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 const defaultInterval = 600 * time.Second

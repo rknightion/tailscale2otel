@@ -1,11 +1,11 @@
 // Separate CI-only module so it never affects the main module's `go build ./...`.
 // It diffs two Tailscale OpenAPI JSON specs restricted to the operations
 // tailscale2otel consumes, reporting drift with severity-ranked exit codes.
-module github.com/rknightion/tailscale2otel/tools/apidrift
+module github.com/rknightion/tailscale2otel/v2/tools/apidrift
 
 go 1.26.5
 
-require github.com/rknightion/tailscale2otel v0.0.0
+require github.com/rknightion/tailscale2otel/v2 v2.0.0
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -53,4 +53,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/rknightion/tailscale2otel => ../..
+replace github.com/rknightion/tailscale2otel/v2 => ../..

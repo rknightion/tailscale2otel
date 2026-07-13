@@ -8,9 +8,9 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/internal/collector/users"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/users"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 // fakeLister returns a canned slice of users and user invites (or an error).

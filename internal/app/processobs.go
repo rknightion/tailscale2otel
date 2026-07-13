@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // emitProcess records process.uptime (gauge) and, when readCPU returns ok=true,

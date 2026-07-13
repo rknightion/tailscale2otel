@@ -5,9 +5,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // runtimeStats is a snapshot of Go runtime health, holding the raw integer

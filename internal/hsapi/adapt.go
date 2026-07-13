@@ -8,8 +8,8 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/internal/provider"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/provider"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 // parseTime parses an RFC3339 timestamp, returning the zero time on empty/invalid

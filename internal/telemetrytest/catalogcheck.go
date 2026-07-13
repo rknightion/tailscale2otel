@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
 )
 
 // AssertCatalogAttrs is the attribute-drift guard for a package's catalog_test.go

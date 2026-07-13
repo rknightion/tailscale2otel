@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/config"
 )
 
 // TestLoadEnvOverridesDefaults: with no file, TS2OTEL_* variables populate the

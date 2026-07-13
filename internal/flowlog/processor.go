@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/enrich"
-	"github.com/rknightion/tailscale2otel/internal/portservice"
-	"github.com/rknightion/tailscale2otel/internal/rdns"
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/portservice"
+	"github.com/rknightion/tailscale2otel/v2/internal/rdns"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // Exported metric names emitted by the processor.

@@ -3,9 +3,9 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/config"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // TestCollectorDocs_CoverAllRegistered guards the admin info-tooltip data: every

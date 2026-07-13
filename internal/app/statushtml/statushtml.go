@@ -9,7 +9,7 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
 )
 
 //go:embed page.html.tmpl

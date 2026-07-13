@@ -5,18 +5,18 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/rknightion/tailscale2otel/internal/audit"
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/internal/config"
-	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/enrich"
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/internal/provider"
-	"github.com/rknightion/tailscale2otel/internal/rdns"
-	"github.com/rknightion/tailscale2otel/internal/release"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/audit"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v2/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/provider"
+	"github.com/rknightion/tailscale2otel/v2/internal/rdns"
+	"github.com/rknightion/tailscale2otel/v2/internal/release"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 // tailnetRuntime is the per-tailnet bundle the app fans out over: its own OTEL

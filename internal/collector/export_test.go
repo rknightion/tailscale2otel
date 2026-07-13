@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // RunTick is a test shim that calls the unexported runTick method so external

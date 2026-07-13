@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
 )
 
 // migrateCheckpointKeys reconciles stored checkpoint keys with the current

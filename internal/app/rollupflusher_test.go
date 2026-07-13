@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/enrich"
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // A non-positive export interval (otlp.metric_interval: 0s) must not crash the

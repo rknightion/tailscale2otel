@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 // curatedFixtureScrape1 and curatedFixtureScrape2 are two consecutive tailscaled

@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rknightion/tailscale2otel/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/config"
 )
 
 func main() {

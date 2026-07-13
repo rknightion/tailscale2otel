@@ -4,8 +4,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/rknightion/tailscale2otel/internal/semconv"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // Flow-metric emission modes (Options.FlowMetricsMode). "all" is the safe library

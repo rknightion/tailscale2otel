@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/release"
+	"github.com/rknightion/tailscale2otel/v2/internal/release"
 )
 
 func TestParse(t *testing.T) {

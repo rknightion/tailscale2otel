@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
 )
 
 // registerProbes registers the liveness (/healthz) and readiness (/readyz)

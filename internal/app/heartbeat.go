@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // runHeartbeat emits tailscale2otel.up=1 immediately and then on each interval

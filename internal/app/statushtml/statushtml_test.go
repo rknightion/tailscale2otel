@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/internal/app/statushtml"
+	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v2/internal/app/statushtml"
 )
 
 // TestRender_ZeroStatus asserts the template executes against a zero value

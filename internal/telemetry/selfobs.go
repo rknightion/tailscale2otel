@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
-	"github.com/rknightion/tailscale2otel/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 )
 
 // exportDurationBucketsSeconds are the explicit histogram bucket boundaries for

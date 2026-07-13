@@ -9,8 +9,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
 const defaultInterval = 600 * time.Second

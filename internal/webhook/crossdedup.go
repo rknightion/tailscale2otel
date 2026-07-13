@@ -3,7 +3,7 @@ package webhook
 import (
 	"encoding/json"
 
-	"github.com/rknightion/tailscale2otel/internal/audit"
+	"github.com/rknightion/tailscale2otel/v2/internal/audit"
 )
 
 // webhookActionMap maps the Tailscale webhook event types that overlap with

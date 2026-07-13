@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // Resolver is the narrow, fakeable interface the flow processor depends on.

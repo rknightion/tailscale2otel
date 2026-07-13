@@ -3,8 +3,8 @@ package telemetrytest_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
 func TestRecorderCapturesCounterAndGauge(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
 )
 
 // Sample shaped per the Tailscale GET /tailnet/{tailnet}/logging/network

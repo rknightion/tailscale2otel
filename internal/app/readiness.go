@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
 )
 
 // receiverHealth tracks terminal failures of the optional stream/webhook

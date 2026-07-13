@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/oas"
+	"github.com/rknightion/tailscale2otel/v2/internal/oas"
 )
 
 func TestSynthesizeBody_ObjectWithArray(t *testing.T) {

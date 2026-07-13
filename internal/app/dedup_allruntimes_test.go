@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
 )
 
 // TestDedupInfo_ReportsAllRuntimes pins #60: in multi-tailnet mode every runtime's

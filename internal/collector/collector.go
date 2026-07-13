@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // Collector is implemented by every Tailscale data source.

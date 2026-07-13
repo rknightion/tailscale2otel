@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/ringbuf"
+	"github.com/rknightion/tailscale2otel/v2/internal/ringbuf"
 )
 
 // historyLen is the number of recent runs retained per collector for the admin

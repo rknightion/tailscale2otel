@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/ringbuf"
+	"github.com/rknightion/tailscale2otel/v2/internal/ringbuf"
 )
 
 // samplerInterval is how often the in-process runtime/cardinality history is

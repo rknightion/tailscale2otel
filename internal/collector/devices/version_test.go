@@ -3,7 +3,7 @@ package devices_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/internal/collector/devices"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/devices"
 )
 
 func TestNormalizeVersion(t *testing.T) {

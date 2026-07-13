@@ -6,13 +6,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/internal/catalog"
-	"github.com/rknightion/tailscale2otel/internal/collector"
-	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/internal/dedup"
-	"github.com/rknightion/tailscale2otel/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v2/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 const rfc3339 = time.RFC3339
