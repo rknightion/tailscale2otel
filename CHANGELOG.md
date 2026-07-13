@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/rknightion/tailscale2otel/compare/v2.0.0...v2.0.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **build:** bump module path to /v2 so v2.x releases can build ([c252d50](https://github.com/rknightion/tailscale2otel/commit/c252d5031eb83429000a5f7fb314394b8a6afb7a)), closes [#174](https://github.com/rknightion/tailscale2otel/issues/174)
+
 ## [2.0.0](https://github.com/rknightion/tailscale2otel/compare/v1.0.0...v2.0.0) (2026-07-13)
 
 
