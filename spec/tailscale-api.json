@@ -49,7 +49,7 @@
     {
       "name": "UserInvites",
       "x-displayName": "User invites",
-      "description": "Manage user invites.\nLearn more about about [inviting users](/kb/1371/invite-users).\n"
+      "description": "Manage user invites.\nLearn more about [inviting users](/kb/1371/invite-users).\n"
     },
     {
       "name": "DeviceInvites",
@@ -79,6 +79,11 @@
       "name": "Services",
       "x-displayName": "Services",
       "description": "Manage Tailscale Services for a tailnet.\nLearn more about [Tailscale Services](/kb/1552/tailscale-services).\n"
+    },
+    {
+      "name": "OAuthApps",
+      "x-displayName": "OAuth apps",
+      "description": "Manage OAuth apps for a tailnet.\nLearn more about [OAuth apps](/docs/features/oauth-apps).\n"
     }
   ],
   "paths": {
@@ -4574,6 +4579,251 @@
           }
         }
       }
+    },
+    "/tailnet/{tailnet}/oauth-apps": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/tailnet"
+        }
+      ],
+      "get": {
+        "summary": "List OAuth apps",
+        "description": "List all OAuth apps for a tailnet.\n\nOAuth Scope: `oauth_apps:read`.\n",
+        "operationId": "listOAuthApps",
+        "tags": [
+          "OAuthApps"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "oauthApps": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OAuthApp"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "description": "Tailnet not found.",
+            "$ref": "#/components/responses/404"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an OAuth app",
+        "description": "Create an OAuth app within a tailnet.\n\nThe generated client secret is returned only in this response and cannot be retrieved later, so be sure to record it.\n\nOAuth Scope: `oauth_apps`.  If you include `allowedNodeAttributes` in the request body, you must also have `devices:posture_attributes`.\n",
+        "operationId": "createOAuthApp",
+        "tags": [
+          "OAuthApps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "$ref": "#/components/schemas/name"
+                  },
+                  "description": {
+                    "$ref": "#/components/schemas/description"
+                  },
+                  "redirectURIs": {
+                    "$ref": "#/components/schemas/redirectURIs"
+                  },
+                  "scopes": {
+                    "$ref": "#/components/schemas/scopes"
+                  },
+                  "allowedNodeAttributes": {
+                    "$ref": "#/components/schemas/allowedNodeAttributes"
+                  }
+                },
+                "required": [
+                  "name",
+                  "redirectURIs",
+                  "scopes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "description": "Tailnet not found.",
+            "$ref": "#/components/responses/404"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      }
+    },
+    "/tailnet/{tailnet}/oauth-apps/{appId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/tailnet"
+        },
+        {
+          "$ref": "#/components/parameters/appId"
+        }
+      ],
+      "get": {
+        "summary": "Get OAuth app",
+        "description": "Retrieve a specific OAuth app.\n\nOAuth Scope: `oauth_apps:read`.\n",
+        "operationId": "getOAuthApp",
+        "tags": [
+          "OAuthApps"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "description": "OAuth app not found.",
+            "$ref": "#/components/responses/404"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update OAuth app",
+        "description": "Update a specific OAuth app.\n\nThe client secret is not regenerated and is not returned in this response.\n\nOAuth Scope: `oauth_apps`.\n",
+        "operationId": "updateOAuthApp",
+        "tags": [
+          "OAuthApps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "$ref": "#/components/schemas/name"
+                  },
+                  "description": {
+                    "$ref": "#/components/schemas/description"
+                  },
+                  "redirectURIs": {
+                    "$ref": "#/components/schemas/redirectURIs"
+                  },
+                  "scopes": {
+                    "$ref": "#/components/schemas/scopes"
+                  },
+                  "allowedNodeAttributes": {
+                    "$ref": "#/components/schemas/allowedNodeAttributes"
+                  }
+                },
+                "required": [
+                  "name",
+                  "redirectURIs",
+                  "scopes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "description": "OAuth app not found.",
+            "$ref": "#/components/responses/404"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete OAuth app",
+        "description": "Delete a specific OAuth app.\n\nOAuth Scope: `oauth_apps`.\n",
+        "operationId": "deleteOAuthApp",
+        "tags": [
+          "OAuthApps"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "description": "OAuth app not found.",
+            "$ref": "#/components/responses/404"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4920,6 +5170,16 @@
         "example": "svc:example",
         "schema": {
           "type": "string"
+        }
+      },
+      "appId": {
+        "in": "path",
+        "name": "appId",
+        "description": "The ID of the OAuth app.\n",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": "a123456CNTRL"
         }
       }
     },
@@ -7053,6 +7313,122 @@
             "description": "Indicates whether the Service was auto-approved by an auto-approver.\n"
           }
         }
+      },
+      "OAuthApp": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "a123456CNTRL",
+            "description": "The unique identifier for the OAuth app.\n"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 50,
+            "pattern": "^[a-zA-Z0-9._-]+$",
+            "example": "my-oauth-app",
+            "description": "The name of the OAuth app.\nMust be between 3 and 50 characters and contain only alphanumeric characters, dashes, periods, and underscores.\n"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "example": "An OAuth app used to provision devices.",
+            "description": "A human-readable description of the OAuth app.\nMust be at most 300 characters.\n"
+          },
+          "redirectURIs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "https://example.com/oauth/callback"
+            ],
+            "description": "The list of permitted redirect URIs for the OAuth authorization code flow.\nAt least one redirect URI is required.\n\nEach URI must use the `https` scheme, except for `localhost`, `127.0.0.1`, and `::1`,\nwhich may use any scheme. Raw IP address hosts are not permitted.\n"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "auth_keys:create"
+            ],
+            "description": "The list of OAuth scopes granted to the app.\nMust be non-empty.\nLearn more about [OAuth clients and scopes](/kb/1215/oauth-clients).\n"
+          },
+          "allowedNodeAttributes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "custom:myattribute"
+            ],
+            "description": "The list of custom node attributes that the OAuth app is allowed to set.\n"
+          },
+          "clientSecret": {
+            "type": "string",
+            "format": "password",
+            "example": "xxxxx",
+            "description": "The client secret for the OAuth app.\nOnly populated when the app is created and cannot be retrieved afterwards.\n"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2022-12-01T05:23:30Z",
+            "description": "The time the OAuth app was created.\n"
+          },
+          "updated": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2022-12-01T05:23:30Z",
+            "description": "The time the OAuth app was last updated.\n"
+          }
+        }
+      },
+      "name": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 50,
+        "pattern": "^[a-zA-Z0-9._-]+$",
+        "example": "my-oauth-app",
+        "description": "The name of the OAuth app.\nMust be between 3 and 50 characters and contain only alphanumeric characters, dashes, periods, and underscores.\n"
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 300,
+        "example": "An OAuth app used to provision devices.",
+        "description": "A human-readable description of the OAuth app.\nMust be at most 300 characters.\n"
+      },
+      "redirectURIs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "example": [
+          "https://example.com/oauth/callback"
+        ],
+        "description": "The list of permitted redirect URIs for the OAuth authorization code flow.\nAt least one redirect URI is required.\n\nEach URI must use the `https` scheme, except for `localhost`, `127.0.0.1`, and `::1`,\nwhich may use any scheme. Raw IP address hosts are not permitted.\n"
+      },
+      "scopes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "example": [
+          "auth_keys:create"
+        ],
+        "description": "The list of OAuth scopes granted to the app.\nMust be non-empty.\nLearn more about [OAuth clients and scopes](/kb/1215/oauth-clients).\n"
+      },
+      "allowedNodeAttributes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "example": [
+          "custom:myattribute"
+        ],
+        "description": "The list of custom node attributes that the OAuth app is allowed to set.\n"
       }
     },
     "responses": {

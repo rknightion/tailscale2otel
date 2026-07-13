@@ -23,7 +23,8 @@ var keyCategory = map[string]Category{
 	"error.message":                    CatFreeTextDetails,
 	"tailscale.target.name":            CatFreeTextDetails,
 	"tailscale.key.description":        CatFreeTextDetails,
-	"tailscale.key.owner":              CatUserIDs, // #165: key owner userId on per-key gauges + keys.by_owner
+	"tailscale.oauth_app.name":         CatFreeTextDetails, // #167: operator-chosen app label (like key.description)
+	"tailscale.key.owner":              CatUserIDs,         // #165: key owner userId on per-key gauges + keys.by_owner
 	"value":                            CatFreeTextDetails,
 	"tailscale.acl.rule":               CatFreeTextDetails, // J-B1 risky-rule src/dst contents
 }
@@ -99,12 +100,15 @@ var nonIdentifier = map[string]bool{
 	"go.version": true, "http.response.status_code": true, "attribute": true,
 	"tailscale.key.id": true, "tailscale.posture.integration": true,
 	"tailscale.webhook_endpoint.id": true, "tailscale.audit.event_group_id": true,
-	"tailscale.target.id":                  true,
-	"category":                             true, // self-obs tailscale2otel.pii_filter.category attr
-	"tailscale.key.scope_values":           true, // J-A1: OAuth capability strings (not PII)
-	"tailscale.key.tags":                   true, // #165: auto-applied ACL tags (same class as tailscale.tags)
-	"tailscale.device.key_expires_in_days": true, // J-B5: numeric days-to-expiry
-	"result":                               true, // rdns cache: hit/miss/negative/success/failure
+	"tailscale.target.id":                      true,
+	"category":                                 true, // self-obs tailscale2otel.pii_filter.category attr
+	"tailscale.key.scope_values":               true, // J-A1: OAuth capability strings (not PII)
+	"tailscale.key.tags":                       true, // #165: auto-applied ACL tags (same class as tailscale.tags)
+	"tailscale.oauth_app.id":                   true, // #167: opaque app ID (like tailscale.key.id)
+	"tailscale.oauth_app.scope_values":         true, // #167: OAuth capability strings (like key.scope_values)
+	"tailscale.oauth_app.node_attribute_count": true, // #167: numeric count
+	"tailscale.device.key_expires_in_days":     true, // J-B5: numeric days-to-expiry
+	"result":                                   true, // rdns cache: hit/miss/negative/success/failure
 }
 
 // categoryForIPClass maps an ipClass to the toggle category.

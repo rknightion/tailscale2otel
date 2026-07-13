@@ -25,6 +25,7 @@ package contract
 //	listDeviceInvites         → DeviceInvites(…,devID) path: /api/v2/device/{id}/device-invites (LiveSkip)
 //	getDevicePostureAttributes→ DevicePostureAttributes(…,devID) path: /api/v2/device/{id}/attributes (LiveSkip)
 //	listUserInvites           → UserInvites           path: /api/v2/tailnet/{t}/user-invites
+//	listOAuthApps             → OAuthApps             path: /api/v2/tailnet/{t}/oauth-apps
 
 import (
 	"context"
@@ -241,6 +242,15 @@ var Manifest = []Op{
 		KnownTopLevelKeys: []string{""}, // sentinel: bare array
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.UserInvites(ctx)
+			return err
+		},
+	},
+	{
+		ID:                "listOAuthApps",
+		Method:            "GET",
+		KnownTopLevelKeys: []string{"oauthApps"},
+		Invoke: func(ctx context.Context, c *tsapi.Client) error {
+			_, err := c.OAuthApps(ctx)
 			return err
 		},
 	},

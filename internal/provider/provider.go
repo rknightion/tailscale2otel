@@ -30,7 +30,7 @@ const (
 // Provider.Supports(<key>). Kept in sync with the Collectors config struct.
 var AllFeatures = []string{
 	"devices", "users", "keys", "acl", "dns", "settings", "contacts", "webhooks",
-	"posture_integrations", "log_stream", "services", "flowlogs", "auditlogs", "nodemetrics",
+	"posture_integrations", "log_stream", "oauth_apps", "services", "flowlogs", "auditlogs", "nodemetrics",
 }
 
 // headscaleFeatures is the subset of AllFeatures that Headscale's API supports.

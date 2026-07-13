@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
 	"github.com/rknightion/tailscale2otel/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/internal/collector/oauthapps"
 	"github.com/rknightion/tailscale2otel/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
@@ -87,6 +88,10 @@ var collectorDocs = map[string]collectorDoc{
 	"logstream": {
 		about:   "Reports configuration/network log-streaming delivery health — Tailscale's own view of whether it is delivering audit/flow logs to your configured SIEM sink.",
 		metrics: logstream.Catalog,
+	},
+	"oauth_apps": {
+		about:   "Inventories the tailnet's OAuth applications (device-provisioning, alpha API) — app count plus per-app scope and allowed-node-attribute gauges. Idles silently on tailnets without the feature.",
+		metrics: oauthapps.Catalog,
 	},
 	"services": {
 		about:   "Reports Tailscale Services (VIP) — service count plus per-service exposed-port rules and (optionally) backing-host counts bucketed by approval/config state.",

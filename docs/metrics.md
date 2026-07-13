@@ -294,6 +294,20 @@ User roll-ups and per-user gauges. Per-user "id dims" = `user_id`, `user_name`.
 > Set one to `false` to drop that collector's per-entity series and keep only its aggregate
 > `*.count` roll-up; the key-expiry **warning log** still fires regardless.
 
+### OAuth Apps (`tailscale.oauth_apps.count`, `tailscale.oauth_app.*`)
+
+Inventory of the tailnet's OAuth applications (device provisioning — alpha API). The collector
+idles silently (no error) on tailnets without the feature. App names are operator-chosen labels
+gated by `pii_filter.free_text_details`; redirect URIs and client secrets are never decoded.
+
+<!-- BEGIN GENERATED: metrics groups="OAuth Apps" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.oauth_app.node_attributes` | `1` | gauge | `tailscale_oauth_app_node_attributes_ratio` | `tailscale_oauth_app_id`, `tailscale_oauth_app_name` | Number of custom node attributes an OAuth application is allowed to set; one series per app. |
+| `tailscale.oauth_app.scopes` | `1` | gauge | `tailscale_oauth_app_scopes_ratio` | `tailscale_oauth_app_id`, `tailscale_oauth_app_name` | Number of OAuth scopes granted to an OAuth application (scope-sprawl signal); one series per app. |
+| `tailscale.oauth_apps.count` | `1` | gauge | `tailscale_oauth_apps_count_ratio` | — | Number of OAuth applications registered on the tailnet (a **count**). |
+<!-- END GENERATED -->
+
 ### Settings / ACL / DNS (`tailscale.setting.*`, `tailscale.acl.*`, `tailscale.dns.*`)
 
 <!-- BEGIN GENERATED: metrics groups="Settings,ACL,DNS" -->
@@ -491,6 +505,7 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 | `tailscale.key.scopes` | INFO | `tailscale_key_id`, `tailscale_key_scope_values`, `tailscale_key_description` | Emitted for each OAuth-client/API credential that carries scopes (scope-sprawl audit log). `tailscale.key.scope_values` is a comma-separated list of the granted capability strings. Gated by `cardinality.per_entity.key`. |
 | `tailscale.logstream.error` | ERROR | `tailscale_logstream_type` | Emitted when a log stream's last delivery reported an error; the error text is the log body. |
 | `tailscale.network.flow` | INFO | `source_address`, `source_port`, `destination_address`, `destination_port`, `network_transport`, `network_type`, `tailscale_traffic_type`, `tailscale_src_node`, `tailscale_dst_node`, `tailscale_dst_service`, `tailscale_node_id`, `tailscale_node_hostname`, `tailscale_connections`, `tailscale_tx_bytes`, `tailscale_rx_bytes`, `tailscale_tx_packets`, `tailscale_rx_packets` | Per-connection (per_connection) or per-record (per_record) network-flow detail: the 5-tuple, transport, traffic type, source/destination node, and tx/rx bytes & packets. |
+| `tailscale.oauth_app.info` | INFO | `tailscale_oauth_app_id`, `tailscale_oauth_app_name`, `tailscale_oauth_app_scope_values`, `tailscale_oauth_app_node_attribute_count` | Emitted for each OAuth application on the tailnet. `tailscale.oauth_app.scope_values` is a comma-separated list of the granted scope strings; `tailscale.oauth_app.node_attribute_count` is the number of custom node attributes it may set. |
 | `tailscale.webhook.<type>` | INFO / WARN by type | `tailscale_webhook_type`, `tailscale_tailnet` | Per webhook event; `<type>` is the Tailscale event type. Emitted at **WARN** for attention-worthy types (node key expiry, needs-approval/authorization/signature, deletions), otherwise INFO. The client-misconfig health events `exitNodeIPForwardingNotEnabled`/`subnetIPForwardingNotEnabled` are INFO and surfaced via the `NodeIPForwardingMisconfigured` alert. |
 <!-- END GENERATED -->
 

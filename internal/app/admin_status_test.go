@@ -192,6 +192,7 @@ func TestAdminServer_ReadyzReadyWithNoCollectors(t *testing.T) {
 	cfg.Collectors.Webhooks.Enabled = false
 	cfg.Collectors.PostureIntegrations.Enabled = false
 	cfg.Collectors.LogStream.Enabled = false
+	cfg.Collectors.OAuthApps.Enabled = false
 	cfg.Collectors.Services.Enabled = false
 	cfg.Collectors.NodeMetrics.Enabled = false
 

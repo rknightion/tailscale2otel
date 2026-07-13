@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/internal/collector/keys"
 	"github.com/rknightion/tailscale2otel/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/internal/collector/oauthapps"
 	"github.com/rknightion/tailscale2otel/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/internal/collector/settings"
@@ -157,6 +158,9 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	}
 	if c.LogStream.Enabled && cp.Supports("log_stream") {
 		rt.registry.Register(logstream.New(rt.client, c.LogStream.Interval.D()), c.LogStream.Interval.D())
+	}
+	if c.OAuthApps.Enabled && cp.Supports("oauth_apps") {
+		rt.registry.Register(oauthapps.New(rt.client, c.OAuthApps.Interval.D()), c.OAuthApps.Interval.D())
 	}
 	if c.Services.Enabled && cp.Supports("services") {
 		rt.registry.Register(services.New(rt.client, c.Services.Interval.D(),
