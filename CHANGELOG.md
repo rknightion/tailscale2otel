@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/rknightion/tailscale2otel/compare/v2.0.1...v2.0.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/rknightion/tailscale2otel/v2 to v2.0.1 ([#177](https://github.com/rknightion/tailscale2otel/issues/177)) ([ac0e152](https://github.com/rknightion/tailscale2otel/commit/ac0e152218c392e9a7316adaa2c793830219ff09))
+
 ## [2.0.1](https://github.com/rknightion/tailscale2otel/compare/v2.0.0...v2.0.1) (2026-07-13)
 
 
