@@ -4,16 +4,28 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"runtime/pprof"
 
 	"github.com/grafana/pyroscope-go"
 
 	"github.com/rknightion/tailscale2otel/v2/internal/config"
 )
 
+// goroutineLeakAvailable reports whether the runtime exposes the goroutineleak
+// profile. It is registered only when the binary is built with
+// GOEXPERIMENT=goroutineleakprofile (Go 1.26+); a binary built without it simply
+// omits the type instead of pushing an empty/erroring profile. Release builds and
+// the container image set the experiment; a plain `go build` does not.
+func goroutineLeakAvailable() bool {
+	return pprof.Lookup("goroutineleak") != nil
+}
+
 // pyroscopeProfileTypes returns the profile types pushed to Pyroscope: the
-// standard CPU + alloc/inuse memory set plus goroutines, adding the mutex and
-// block profiles only when their runtime fractions are enabled (collecting them
-// otherwise would just push empty profiles).
+// standard CPU + alloc/inuse memory set plus goroutines, the mutex and block
+// profiles when their runtime fractions are enabled (on by default — see
+// config.Default; collecting them with the fraction off would just push empty
+// profiles), and goroutine-leak when the runtime exposes it (built with the
+// experiment).
 func pyroscopeProfileTypes(p config.ProfilingConfig) []pyroscope.ProfileType {
 	types := []pyroscope.ProfileType{
 		pyroscope.ProfileCPU,
@@ -28,6 +40,9 @@ func pyroscopeProfileTypes(p config.ProfilingConfig) []pyroscope.ProfileType {
 	}
 	if p.BlockProfileRate > 0 {
 		types = append(types, pyroscope.ProfileBlockCount, pyroscope.ProfileBlockDuration)
+	}
+	if goroutineLeakAvailable() {
+		types = append(types, pyroscope.ProfileGoroutineLeak)
 	}
 	return types
 }
@@ -65,11 +80,18 @@ func pyroscopeConfig(cfg *config.Config, version string) pyroscope.Config {
 // push is disabled) so the caller can Stop it on shutdown.
 func startProfiling(cfg *config.Config, version string, logger *slog.Logger) (*pyroscope.Profiler, error) {
 	prof := cfg.Profiling
-	if prof.MutexProfileFraction > 0 {
-		runtime.SetMutexProfileFraction(prof.MutexProfileFraction)
-	}
-	if prof.BlockProfileRate > 0 {
-		runtime.SetBlockProfileRate(prof.BlockProfileRate)
+	// Apply the process-global mutex/block sampling rates only when something
+	// actually consumes them (the pprof pull path or the Pyroscope push). They are
+	// on by default (config.Default sets the fractions), so gating here keeps a
+	// process with all profiling disabled from paying the sampling overhead for
+	// profiles nobody collects.
+	if prof.Pprof.Enabled || prof.Pyroscope.Enabled {
+		if prof.MutexProfileFraction > 0 {
+			runtime.SetMutexProfileFraction(prof.MutexProfileFraction)
+		}
+		if prof.BlockProfileRate > 0 {
+			runtime.SetBlockProfileRate(prof.BlockProfileRate)
+		}
 	}
 	if !prof.Pyroscope.Enabled {
 		return nil, nil

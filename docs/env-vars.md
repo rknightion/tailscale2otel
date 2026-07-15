@@ -218,8 +218,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROFILING__PYROSCOPE__TENANT_ID` | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud) |
 | `TS2OTEL_PROFILING__PYROSCOPE__UPLOAD_RATE` | `60s` | how often profiles are flushed |
-| `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `0` | runtime.SetMutexProfileFraction (0 = disabled) |
-| `TS2OTEL_PROFILING__BLOCK_PROFILE_RATE` | `0` | runtime.SetBlockProfileRate (0 = disabled) |
+| `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `5` | runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled |
+| `TS2OTEL_PROFILING__BLOCK_PROFILE_RATE` | `100000` | runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled |
 | `TS2OTEL_TRACING__ENABLED` | `false` | emit spans. TS2OTEL_TRACING__ENABLED |
 | `TS2OTEL_TRACING__SAMPLER` | `parentbased_always_on` | head sampler: always_on\|always_off\|traceidratio\|parentbased_always_on\|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER |
 | `TS2OTEL_TRACING__SAMPLER_ARG` | `1.0` | sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). TS2OTEL_TRACING__SAMPLER_ARG |

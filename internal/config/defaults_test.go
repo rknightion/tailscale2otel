@@ -173,11 +173,13 @@ func TestProfilingDefaults(t *testing.T) {
 	if p.Pyroscope.UploadRate.D() != 60*time.Second {
 		t.Errorf("Profiling.Pyroscope.UploadRate = %v, want default 60s", p.Pyroscope.UploadRate.D())
 	}
-	if p.MutexProfileFraction != 0 {
-		t.Errorf("Profiling.MutexProfileFraction = %d, want default 0", p.MutexProfileFraction)
+	// Contention profiling is on by default (applied only when a profiling
+	// consumer is enabled — see startProfiling).
+	if p.MutexProfileFraction != 5 {
+		t.Errorf("Profiling.MutexProfileFraction = %d, want default 5", p.MutexProfileFraction)
 	}
-	if p.BlockProfileRate != 0 {
-		t.Errorf("Profiling.BlockProfileRate = %d, want default 0", p.BlockProfileRate)
+	if p.BlockProfileRate != 100_000 {
+		t.Errorf("Profiling.BlockProfileRate = %d, want default 100000", p.BlockProfileRate)
 	}
 }
 

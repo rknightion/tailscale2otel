@@ -803,8 +803,8 @@ Tailscale data. The pprof handlers mount on the admin server.
 | `profiling.pyroscope.tenant_id` | `""` | `X-Scope-OrgID` for multi-tenant servers (leave empty for Grafana Cloud). |
 | `profiling.pyroscope.upload_rate` | `60s` | How often profiles are flushed to the server. |
 | `profiling.pyroscope.tags` | `{}` | Extra static labels merged onto every profile, e.g. `{ env: prod }`. Must be set via YAML (map field). |
-| `profiling.mutex_profile_fraction` | `0` | `runtime.SetMutexProfileFraction` (`0` = disabled). Mutex profiles stay empty until set. |
-| `profiling.block_profile_rate` | `0` | `runtime.SetBlockProfileRate` (`0` = disabled). Block profiles stay empty until set. |
+| `profiling.mutex_profile_fraction` | `5` | `runtime.SetMutexProfileFraction`; on by default (samples 1/5 of contention events). Applied only when `pprof` or `pyroscope` is enabled. `0` disables the mutex profile. |
+| `profiling.block_profile_rate` | `100000` | `runtime.SetBlockProfileRate` (ns); on by default (records blocking events averaging ≥100µs). Applied only when `pprof` or `pyroscope` is enabled. `0` disables the block profile. |
 
 > **Validation / advisories:**
 > - `pprof.enabled` errors at startup unless `admin.enabled: true` **and** `admin.auth.token` is set
@@ -812,6 +812,12 @@ Tailscale data. The pprof handlers mount on the admin server.
 > - `pyroscope.enabled` errors at startup without `pyroscope.server_address`.
 > - A `grafana.net` `server_address` with an empty `basic_auth_password` triggers a **WARN** —
 >   Grafana Cloud Profiles requires the Basic-auth credentials.
+> - When enabled, Pyroscope pushes the full profile set: CPU, memory (alloc/inuse), goroutines,
+>   mutex/block contention, and **goroutine-leak**. Goroutine-leak relies on the Go
+>   `goroutineleakprofile` runtime experiment, which the release binaries and container image are
+>   built with (`GOEXPERIMENT=goroutineleakprofile`); a binary built without it silently omits that
+>   one profile type. The mutex/block sampling rates above are applied only when a consumer (`pprof`
+>   or `pyroscope`) is enabled.
 
 ---
 

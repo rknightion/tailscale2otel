@@ -216,6 +216,12 @@ func Default() *Config {
 			Pyroscope: ProfilingPyroscope{
 				UploadRate: dur(60 * time.Second),
 			},
+			// Contention profiling on by default (applied only when pprof or
+			// Pyroscope is enabled — see startProfiling). Fraction 5 samples 1/5 of
+			// mutex-contention events; block rate 100µs records blocking events
+			// averaging at least that long. Set either to 0 to drop that profile.
+			MutexProfileFraction: 5,
+			BlockProfileRate:     100_000,
 		},
 		VersionChecks: VersionChecksConfig{
 			Self:     VersionCheckSelf{Enabled: true},

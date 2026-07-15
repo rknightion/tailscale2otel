@@ -341,8 +341,8 @@ profiling:
     tenant_id: ""                     # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
     upload_rate: 60s                  # how often profiles are flushed
     tags: {}                          # extra static labels merged onto every profile, e.g. { env: prod }
-  mutex_profile_fraction: 0           # runtime.SetMutexProfileFraction (0 = disabled)
-  block_profile_rate: 0               # runtime.SetBlockProfileRate (0 = disabled)
+  mutex_profile_fraction: 5           # runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled
+  block_profile_rate: 100000          # runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled
 
 # ── OTEL traces (third signal pillar, OFF by default) ───────────────────────────
 # Emits spans for the exporter's own work: one root span per collector scrape

@@ -30,6 +30,10 @@ builds:
     binary: tailscale2otel
     env:
       - CGO_ENABLED=0
+      # Registers the goroutineleak pprof profile, pushed to Pyroscope by default
+      # (the profiling code guards on availability). Keep in sync with
+      # deploy/Dockerfile. Verified to cross-compile across the release matrix.
+      - GOEXPERIMENT=goroutineleakprofile
     flags:
       - -trimpath
     ldflags:

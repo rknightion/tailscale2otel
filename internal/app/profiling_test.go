@@ -50,12 +50,22 @@ func TestPyroscopeConfig_UploadRate(t *testing.T) {
 }
 
 func TestPyroscopeProfileTypes(t *testing.T) {
+	// goroutine-leak is present only when built with GOEXPERIMENT=goroutineleakprofile,
+	// so the expected count shifts by one between CI (plain) and release builds.
+	leak := 0
+	if goroutineLeakAvailable() {
+		leak = 1
+	}
+
 	base := pyroscopeProfileTypes(config.ProfilingConfig{})
-	if got := len(base); got != 6 {
-		t.Fatalf("default profile types = %d, want 6 (cpu+alloc/inuse+goroutines): %v", got, base)
+	if got, want := len(base), 6+leak; got != want {
+		t.Fatalf("default profile types = %d, want %d (cpu+alloc/inuse+goroutines[+leak]): %v", got, want, base)
 	}
 	if slices.Contains(base, pyroscope.ProfileMutexCount) || slices.Contains(base, pyroscope.ProfileBlockCount) {
-		t.Fatalf("default profile types must not include mutex/block: %v", base)
+		t.Fatalf("profile types for an empty config must not include mutex/block: %v", base)
+	}
+	if goroutineLeakAvailable() && !slices.Contains(base, pyroscope.ProfileGoroutineLeak) {
+		t.Errorf("goroutineleak available but not in profile set: %v", base)
 	}
 
 	withMutex := pyroscopeProfileTypes(config.ProfilingConfig{MutexProfileFraction: 5})
