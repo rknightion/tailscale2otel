@@ -1074,21 +1074,75 @@ func TestValidate_WindowTiming(t *testing.T) {
 	}
 }
 
-// TestWarnings_MaxWindowLEInterval pins #52(e): a positive max_window <= interval
-// never catches up; a zero max_window (no-cap sentinel) must NOT warn.
-func TestWarnings_MaxWindowLEInterval(t *testing.T) {
-	c := config.Default()
-	c.Collectors.Flowlogs.Interval = config.Duration(2 * time.Hour)
-	c.Collectors.Flowlogs.MaxWindow = config.Duration(1 * time.Hour)
-	w := strings.Join(c.Warnings(), "\n")
-	if !strings.Contains(w, "flowlogs") || !strings.Contains(w, "max_window") {
-		t.Fatalf("max_window <= interval: want a flowlogs max_window warning, got %q", w)
+// TestValidate_MaxWindowLEInterval pins #202: a positive max_window <= interval
+// can never catch up (catch-up advances at most max_window per tick, so a
+// backlogged poller falls further behind every tick without bound). Since the
+// next major release this is a hard Validate() error, not just a Warnings()
+// advisory — equality and below both reject, above and the zero/negative
+// no-cap sentinel both stay valid. Covers both flowlogs and auditlogs, and
+// confirms a stream-only collector is unaffected by the check.
+func TestValidate_MaxWindowLEInterval(t *testing.T) {
+	cases := []struct {
+		name      string
+		maxWindow time.Duration
+		interval  time.Duration
+		wantErr   bool
+	}{
+		{"equal", time.Hour, time.Hour, true},
+		{"below", 30 * time.Second, time.Minute, true},
+		{"above", 2 * time.Hour, time.Hour, false},
+		{"zero_no_cap", 0, time.Hour, false},
+		{"negative_no_cap", -1, time.Hour, false},
 	}
-	// max_window=0 (no cap) must not warn.
-	c.Collectors.Flowlogs.MaxWindow = config.Duration(0)
-	for _, ww := range c.Warnings() {
-		if strings.Contains(ww, "max_window") {
-			t.Errorf("max_window=0 (no cap) should not warn; got %q", ww)
+
+	for _, tc := range cases {
+		t.Run("flowlogs_"+tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Collectors.Flowlogs.Interval = config.Duration(tc.interval)
+			c.Collectors.Flowlogs.MaxWindow = config.Duration(tc.maxWindow)
+			err := c.Validate()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "flowlogs") || !strings.Contains(err.Error(), "max_window") {
+					t.Fatalf("maxWindow=%v interval=%v: want a flowlogs max_window error, got %v", tc.maxWindow, tc.interval, err)
+				}
+			} else if err != nil {
+				t.Errorf("maxWindow=%v interval=%v: unexpected error %v", tc.maxWindow, tc.interval, err)
+			}
+		})
+		t.Run("auditlogs_"+tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Collectors.Auditlogs.Interval = config.Duration(tc.interval)
+			c.Collectors.Auditlogs.MaxWindow = config.Duration(tc.maxWindow)
+			err := c.Validate()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "auditlogs") || !strings.Contains(err.Error(), "max_window") {
+					t.Fatalf("maxWindow=%v interval=%v: want an auditlogs max_window error, got %v", tc.maxWindow, tc.interval, err)
+				}
+			} else if err != nil {
+				t.Errorf("maxWindow=%v interval=%v: unexpected error %v", tc.maxWindow, tc.interval, err)
+			}
+		})
+	}
+
+	// A stream-only collector never runs the poller, so the check must not
+	// apply even with a guaranteed-bad max_window/interval pair.
+	c := config.Default()
+	c.Streaming.Enabled = true
+	c.Collectors.Flowlogs.Source = "stream"
+	c.Collectors.Flowlogs.Interval = config.Duration(time.Hour)
+	c.Collectors.Flowlogs.MaxWindow = config.Duration(time.Hour)
+	if err := c.Validate(); err != nil {
+		t.Errorf("source=stream: max_window<=interval must not error, got %v", err)
+	}
+
+	// The condition must no longer surface as a Warnings() advisory (avoid
+	// double-reporting the same thing as both an error and a warning).
+	c = config.Default()
+	c.Collectors.Flowlogs.Interval = config.Duration(2 * time.Hour)
+	c.Collectors.Flowlogs.MaxWindow = config.Duration(time.Hour)
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "max_window") {
+			t.Errorf("max_window<=interval should no longer be a Warnings() advisory (it's a Validate() error now); got %q", w)
 		}
 	}
 }

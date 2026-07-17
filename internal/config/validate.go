@@ -207,29 +207,6 @@ func (c *Config) Warnings() []string {
 			"otel_metric_overflow.")
 	}
 
-	// (#52e) A positive max_window <= interval can never catch up: catch-up
-	// advances at most max_window per tick, so delivery lag grows unboundedly. A
-	// zero/negative max_window is the intentional "no cap" sentinel — don't warn.
-	for _, col := range []struct {
-		name      string
-		enabled   bool
-		source    string
-		maxWindow time.Duration
-		interval  time.Duration
-	}{
-		{"flowlogs", c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Source,
-			c.Collectors.Flowlogs.MaxWindow.D(), c.Collectors.Flowlogs.Interval.D()},
-		{"auditlogs", c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Source,
-			c.Collectors.Auditlogs.MaxWindow.D(), c.Collectors.Auditlogs.Interval.D()},
-	} {
-		if col.enabled && pollsSource(col.source) && col.maxWindow > 0 && col.maxWindow <= col.interval {
-			w = append(w, fmt.Sprintf("collectors.%s.max_window (%v) <= interval (%v): catch-up advances "+
-				"at most max_window per tick, so with interval >= max_window the checkpoint falls further "+
-				"behind every tick without bound. Set max_window > interval, or 0 for no cap.",
-				col.name, col.maxWindow, col.interval))
-		}
-	}
-
 	// (#52g) Advisory only: a tailnet with exactly one half of an OAuth credential
 	// pair set is almost always a copy-paste slip (a wrong env var name for the
 	// other half). Never fires on a both-empty block — rendered/checked-in configs
@@ -526,11 +503,15 @@ func (c *Config) Validate() error {
 		source          string
 		lag             time.Duration
 		initialLookback time.Duration
+		maxWindow       time.Duration
+		interval        time.Duration
 	}{
 		{"flowlogs", c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Source,
-			c.Collectors.Flowlogs.Lag.D(), c.Collectors.Flowlogs.InitialLookback.D()},
+			c.Collectors.Flowlogs.Lag.D(), c.Collectors.Flowlogs.InitialLookback.D(),
+			c.Collectors.Flowlogs.MaxWindow.D(), c.Collectors.Flowlogs.Interval.D()},
 		{"auditlogs", c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Source,
-			c.Collectors.Auditlogs.Lag.D(), c.Collectors.Auditlogs.InitialLookback.D()},
+			c.Collectors.Auditlogs.Lag.D(), c.Collectors.Auditlogs.InitialLookback.D(),
+			c.Collectors.Auditlogs.MaxWindow.D(), c.Collectors.Auditlogs.Interval.D()},
 	}
 	for _, col := range logCollectors {
 		if col.source != "" && !oneOf(col.source, "poll", "stream", "both") {
@@ -561,6 +542,16 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("collectors.%s.lag must be >= 0 (got %v): a negative lag pushes the "+
 					"window end into the future, permanently skipping records that arrive within it",
 					col.name, col.lag)
+			}
+			// A positive max_window <= interval can never catch up: catch-up
+			// advances at most max_window per tick, so a backlogged poller falls
+			// further behind every tick without bound. A zero/negative max_window
+			// is the intentional "no cap" sentinel and is exempt.
+			if col.maxWindow > 0 && col.maxWindow <= col.interval {
+				return fmt.Errorf("collectors.%s.max_window (%v) <= interval (%v): catch-up advances "+
+					"at most max_window per tick, so with interval >= max_window the checkpoint falls "+
+					"further behind every tick without bound; set max_window > interval, or 0 for no cap",
+					col.name, col.maxWindow, col.interval)
 			}
 		}
 	}
