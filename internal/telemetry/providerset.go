@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -90,16 +89,21 @@ func (s *ProviderSet) PromGatherers() prometheus.Gatherers {
 	return gs
 }
 
-// Shutdown flushes and stops every provider (process + all tailnets).
+// Shutdown flushes and stops every provider (process + all tailnets). The
+// providers are independent, so they are shut down concurrently under the shared
+// deadline (see shutdownAll / #204): one tailnet's blocked exporter must not
+// consume the whole budget and prevent other tailnets — or the process provider —
+// from flushing. Each provider in turn shuts its own metric/log/trace pipelines
+// concurrently, so the concurrency is two levels deep under one overall ceiling.
 func (s *ProviderSet) Shutdown(ctx context.Context) error {
-	var errs []error
+	fns := make([]func(context.Context) error, 0, 1+len(s.order))
 	if s.process != nil {
-		errs = append(errs, s.process.Shutdown(ctx))
+		fns = append(fns, s.process.Shutdown)
 	}
 	for _, name := range s.order {
 		if p := s.tailnet[name]; p != nil {
-			errs = append(errs, p.Shutdown(ctx))
+			fns = append(fns, p.Shutdown)
 		}
 	}
-	return errors.Join(errs...)
+	return shutdownAll(ctx, fns...)
 }

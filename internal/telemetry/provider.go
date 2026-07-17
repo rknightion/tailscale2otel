@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -215,8 +216,37 @@ func metricProviderOptions(res *resource.Resource, cardinalityLimit int, tracing
 	return opts
 }
 
+// lockedWriter serializes concurrent writes to an underlying writer. The stdout
+// metric, log and trace exporters all share one destination (opts.StdoutWriter,
+// or os.Stdout when unset) and write to it concurrently: during normal operation
+// each exporter flushes on its own independent schedule, and since #204 the
+// Provider's metric/log/trace Shutdowns run concurrently too. Without a shared
+// lock their JSON records interleave on os.Stdout (and a test *bytes.Buffer
+// data-races). Wrapping the shared writer once in NewProvider gives all three
+// exporters the same mutex.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
 // NewProvider builds the telemetry pipeline for the given options.
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
+	// stdout protocol only: the metric/log/trace exporters share one writer and
+	// flush concurrently, so serialize writes to it. opts is a value copy, so this
+	// rewrite is local to this Provider and never mutates the caller's Options.
+	if opts.Protocol == "stdout" {
+		w := opts.StdoutWriter
+		if w == nil {
+			w = os.Stdout
+		}
+		opts.StdoutWriter = &lockedWriter{w: w}
+	}
 	// Two resources by design: metrics OMIT service.version (see buildResource —
 	// it would become a per-series service_version label on Grafana Cloud and churn
 	// the whole series set every redeploy, #187), logs/traces KEEP it. Everything
@@ -366,12 +396,49 @@ func (p *Provider) Cardinality() *CardinalityTracker { return p.card }
 // a no-op tracer, so callers never need to nil-check.
 func (p *Provider) Tracer() trace.Tracer { return p.tracer }
 
-// Shutdown flushes and stops the metric, log, and trace pipelines.
+// Shutdown flushes and stops the metric, log, and trace pipelines. The three are
+// independent exporters, so they are shut down concurrently under ctx (see
+// shutdownAll / #204): a metric exporter blocked on an unresponsive backend must
+// not consume the shared shutdown budget and rob the log and trace pipelines of
+// their chance to flush.
 func (p *Provider) Shutdown(ctx context.Context) error {
-	errs := []error{p.mp.Shutdown(ctx), p.lp.Shutdown(ctx)}
+	fns := []func(context.Context) error{p.mp.Shutdown, p.lp.Shutdown}
 	if p.tp != nil {
-		errs = append(errs, p.tp.Shutdown(ctx))
+		fns = append(fns, p.tp.Shutdown)
 	}
+	return shutdownAll(ctx, fns...)
+}
+
+// shutdownAll runs every shutdown function concurrently under ctx and returns the
+// joined error of all of them.
+//
+// Concurrency is the fix for #204: running the independent telemetry pipelines
+// (and independent tailnet providers) sequentially lets a single blocked exporter
+// consume the whole shared shutdown budget, so every later pipeline/provider is
+// handed an already-expired context and drops its buffered signals even when its
+// own backend is healthy. Running them concurrently gives each an independent shot
+// at flushing within the single overall deadline: a blocked exporter occupies only
+// its own goroutine, never another pipeline's opportunity to flush. Each function
+// gets its own child context (canceled as soon as it returns) so a completed
+// pipeline releases its context resources promptly; the shared deadline on ctx
+// remains the overall ceiling. A genuinely blocked function still returns via that
+// deadline (ctx.Err()), and its error is retained in the join — no goroutine leak.
+func shutdownAll(ctx context.Context, fns ...func(context.Context) error) error {
+	if len(fns) == 0 {
+		return nil
+	}
+	errs := make([]error, len(fns))
+	var wg sync.WaitGroup
+	wg.Add(len(fns))
+	for i, fn := range fns {
+		go func() {
+			defer wg.Done()
+			cctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			errs[i] = fn(cctx)
+		}()
+	}
+	wg.Wait()
 	return errors.Join(errs...)
 }
 
