@@ -15,9 +15,15 @@
 //	Signature:     hex(HMAC-SHA256(secret, signedString))
 //	Comparison:    constant time (subtle.ConstantTimeCompare) over each v1 value.
 //
-// When Options.Tolerance > 0, requests whose timestamp is older than the
-// tolerance are rejected as possible replays. A tolerance of 0 disables the
-// staleness check, which keeps tests using fixed timestamps deterministic.
+// When Options.Tolerance > 0, requests are rejected as possible replays if
+// their timestamp falls outside [now-Tolerance, now+Tolerance] — too old
+// ("stale_timestamp") OR too far in the future ("future_timestamp"). The
+// future-side check matters because a correctly-signed request timestamped
+// arbitrarily far ahead would otherwise be accepted immediately and remain
+// replayable until (its future timestamp + Tolerance), turning a short
+// clock-skew allowance into a much longer replay window. A tolerance of 0
+// disables both checks, which keeps tests using fixed timestamps
+// deterministic.
 package webhook
 
 import (
@@ -393,8 +399,12 @@ func (s *Server) verify(header string, body []byte) (string, error) {
 	}
 
 	if s.opts.Tolerance > 0 {
-		if ts.Before(s.now().Add(-s.opts.Tolerance)) {
+		now := s.now()
+		if ts.Before(now.Add(-s.opts.Tolerance)) {
 			return "stale_timestamp", errors.New("timestamp older than tolerance")
+		}
+		if ts.After(now.Add(s.opts.Tolerance)) {
+			return "future_timestamp", errors.New("timestamp newer than tolerance")
 		}
 	}
 

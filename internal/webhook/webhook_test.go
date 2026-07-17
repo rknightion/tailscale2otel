@@ -317,6 +317,88 @@ func TestHandler_StaleTimestampRejected(t *testing.T) {
 	}
 }
 
+// TestHandler_FutureTimestampRejected verifies the other half of replay
+// protection (#205): a correctly-signed request whose signed timestamp is
+// NEWER than the tolerance window is rejected too, not just stale ones. Without
+// this check a future-dated timestamp would be accepted immediately and stay
+// valid until (future timestamp + tolerance), extending the replay window from
+// minutes to however far into the future the timestamp claims to be.
+func TestHandler_FutureTimestampRejected(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{
+		Path:      "/webhook",
+		Secret:    testSecret,
+		Tolerance: 5 * time.Minute,
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	future := time.Now().Add(time.Hour)
+	sig := signBody(testSecret, future, twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 for a timestamp too far in the future", resp.StatusCode)
+	}
+	rej := rec.MetricPoints("tailscale.webhook.rejected")
+	if len(rej) != 1 || rej[0].Attrs["reason"] != "future_timestamp" {
+		t.Fatalf("rejected = %+v, want one future_timestamp", rej)
+	}
+	if len(rec.LogRecords()) != 0 {
+		t.Errorf("future-dated request must emit no event log records, got %d", len(rec.LogRecords()))
+	}
+}
+
+// TestHandler_TimestampToleranceBoundaries pins the server clock and checks
+// both edges of the [now-tolerance, now+tolerance] window: the boundary itself
+// must remain valid (matching the pre-existing stale_timestamp semantics,
+// ts.Before/ts.After are strict comparisons), one tick past either boundary
+// must be rejected, and "now" must always be accepted.
+func TestHandler_TimestampToleranceBoundaries(t *testing.T) {
+	const tolerance = 5 * time.Minute
+	fixedNow := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
+
+	cases := []struct {
+		name       string
+		ts         time.Time
+		wantStatus int
+		wantReason string // "" when wantStatus is 200
+	}{
+		{"at_now", fixedNow, http.StatusOK, ""},
+		{"oldest_allowed_boundary", fixedNow.Add(-tolerance), http.StatusOK, ""},
+		{"newest_allowed_boundary", fixedNow.Add(tolerance), http.StatusOK, ""},
+		{"just_past_oldest_boundary", fixedNow.Add(-tolerance).Add(-time.Second), http.StatusUnauthorized, "stale_timestamp"},
+		{"just_past_newest_boundary", fixedNow.Add(tolerance).Add(time.Second), http.StatusUnauthorized, "future_timestamp"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			s := New(Options{
+				Path:      "/webhook",
+				Secret:    testSecret,
+				Tolerance: tolerance,
+			}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+			s.now = func() time.Time { return fixedNow }
+
+			sig := signBody(testSecret, tc.ts, twoEventBody)
+			resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+			rej := rec.MetricPoints("tailscale.webhook.rejected")
+			if tc.wantReason == "" {
+				if len(rej) != 0 {
+					t.Fatalf("unexpected rejected metric points: %+v", rej)
+				}
+				return
+			}
+			if len(rej) != 1 || rej[0].Attrs["reason"] != tc.wantReason {
+				t.Fatalf("rejected = %+v, want one %s", rej, tc.wantReason)
+			}
+		})
+	}
+}
+
 func TestHandler_RejectsNonPOST(t *testing.T) {
 	s, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/webhook", nil)
