@@ -23,8 +23,8 @@ var (
 		Name:        "tailscale2otel.build_info",
 		Unit:        "1",
 		Instrument:  metricdoc.Gauge,
-		Description: "Constant `1` build-info gauge; the Go runtime version is carried as the `go.version` label (the service version is promoted from the resource as `service_version`).",
-		Attributes:  []string{"go.version"},
+		Description: "Constant `1` build-info gauge carrying the build version as the `version` label and the Go runtime version as `go.version`. This is the metrics-side home of the service version: it is kept off the resource (and so off every series as `service_version`) — join it with `group_left` to attribute other metrics to a build.",
+		Attributes:  []string{"version", "go.version"},
 		Group:       groupSelfObs,
 	}
 	docExportFailures = metricdoc.Metric{

@@ -33,6 +33,61 @@ func TestProvider_StdoutFlushesMetricOnShutdown(t *testing.T) {
 	}
 }
 
+// TestProvider_MetricsResourceOmitsServiceVersion asserts service.version is NOT
+// attached to the metrics resource, while the logs resource DOES keep it.
+//
+// Grafana Cloud's OTLP ingest promotes service.* resource attributes to per-series
+// labels, so a service.version on the metrics resource becomes a service_version
+// label on every series — a per-build value on every series, which mints a fresh
+// series set on each redeploy (#187; the doubling symptom in graph2otel#104). The
+// stdout exporter prints each signal's Resource block, so a metrics-only flush must
+// not mention service.version, and a run that emits a log must.
+func TestProvider_MetricsResourceOmitsServiceVersion(t *testing.T) {
+	ctx := context.Background()
+
+	// Metrics-only flush: the log batch processor has nothing to emit, so the
+	// buffer holds only ResourceMetrics — which must not carry service.version.
+	var metricsBuf bytes.Buffer
+	pm, err := telemetry.NewProvider(ctx, telemetry.Options{
+		ServiceName:    "tailscale2otel",
+		ServiceVersion: "v1.2.3-abcdef",
+		Protocol:       "stdout",
+		StdoutWriter:   &metricsBuf,
+		MetricInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	pm.Emitter().Counter("tailscale.test.counter", "1", "", 1, nil)
+	if err := pm.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if strings.Contains(metricsBuf.String(), "service.version") {
+		t.Fatalf("metrics resource carries service.version (#187 regression); got:\n%s", metricsBuf.String())
+	}
+
+	// A run that emits a log record must carry service.version on the logs
+	// resource (logs are never summed, so per-record version attribution is safe).
+	var logBuf bytes.Buffer
+	pl, err := telemetry.NewProvider(ctx, telemetry.Options{
+		ServiceName:    "tailscale2otel",
+		ServiceVersion: "v1.2.3-abcdef",
+		Protocol:       "stdout",
+		StdoutWriter:   &logBuf,
+		MetricInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	pl.Emitter().LogEvent(telemetry.Event{Name: "tailscale.test", Body: "hi"})
+	if err := pl.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "service.version") {
+		t.Fatalf("logs resource is missing service.version; got:\n%s", logBuf.String())
+	}
+}
+
 // TestProvider_AppliesCardinalityLimit asserts the configured per-instrument
 // cardinality limit reaches the MeterProvider: emitting more distinct attribute
 // sets than the limit produces the SDK's otel.metric.overflow series. Without the

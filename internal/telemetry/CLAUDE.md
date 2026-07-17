@@ -46,6 +46,39 @@ configured OTLP backend. This holds even for a single-tailnet deployment — it 
   **process** provider/emitter directly (no `tailscale.tailnet` attribute), matching the pre-multi-tailnet
   single-Resource output — see `app.New`'s Headscale branch and `internal/provider`/`internal/hsapi`.
 
+## Resource vs. per-series labels — what may go on the metrics Resource
+
+The OTLP→Prometheus convention promotes only `service.name` (+`service.namespace`) → `job` and
+`service.instance.id` → `instance` onto series; **every other resource attribute belongs on the
+`target_info` info metric**. Grafana Cloud's OTLP ingest deviates and promotes the whole `service.*`
+namespace, so anything you add there becomes a label on **every series**.
+
+**Never put a value that changes per build/deploy on the metrics Resource.** Each new value mints a
+whole new series set: after a redeploy the old and new series coexist for the query lookback window
+(an OTLP push carries no staleness signal, unlike a scrape target going down), so any panel that sums
+across a bounded dimension transiently doubles — and active-series cardinality grows by the number of
+values ever seen. Diagnosed live in graph2otel#104; fixed here in #187.
+
+Consequences baked into `provider.go`:
+
+- **`buildResource(ctx, opts, includeServiceVersion)` builds two resources**: metrics get
+  `includeServiceVersion=false`, logs/traces get `true`. Logs/traces have no per-series label surface
+  and are never summed, so `service.version` is safe (and useful) there.
+- The **version's metrics home is the `tailscale2otel.build_info` gauge** (`version` label) — the
+  classic Prometheus info-metric pattern. Join it with `group_left` to attribute a metric to a build:
+  ```promql
+  tailscale_devices_count_ratio * on (job) group_left(version) tailscale2otel_build_info_ratio
+  ```
+  **Join on `job`, not `instance`.** `build_info` is emitted by the **process** provider, while the
+  tailnet signals come from per-tailnet providers that each carry a *distinct* `service.instance.id`
+  (they must — see ProviderSet above), so `on (job, instance)` matches nothing. `job` is
+  `service.name`, identical across the set, and `build_info` is a single series per process.
+- The attribute key is **`version`, not `service.version`** — the latter normalizes to the
+  `service_version` Prometheus label, re-entering the promoted-resource namespace.
+- `reservedPromotedLabels` lists what Grafana Cloud promotes, so the Emitter can drop a colliding
+  data-point attr (a duplicate label gets the whole sample rejected as `otlp_parse_error`). Keep it in
+  sync with what the **metrics** resource actually carries — `service_version` is deliberately absent.
+
 ## semconv — attribute & unit constants
 
 `internal/semconv` holds every attribute key and unit string used across collectors/processors (stable

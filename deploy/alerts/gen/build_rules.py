@@ -20,9 +20,12 @@ Conventions baked in here:
     B (reduce, last) -> C (threshold). ``condition: C``. This is exactly what the
     Grafana UI produces, so the rules round-trip cleanly through the API/UI.
   * Metric names are the OTLP->Prometheus *normalized* names (see ../README.md).
-  * ``service_version`` is a per-deploy label on every exporter series, so gauge
-    reads are wrapped in ``max by (<real dims>)`` to avoid a redeploy doubling
-    alert instances (same rationale as the dashboards' sv() helper).
+  * Gauge reads are wrapped in ``max by (<real dims>)`` so an alert instance is
+    keyed only by the dimensions it is about, aggregating away the exporter's
+    infra labels (job/instance/service_*). The exporter no longer emits a
+    per-deploy ``service_version`` label (#187 — the version lives on
+    ``tailscale2otel_build_info``), so a redeploy no longer forks these series;
+    the ``max by`` is still required for the remaining infra labels.
   * Gated/optional signals (posture integrations, log streaming, services,
     tailnet-lock, DERP rollups, node discovery) are ABSENT until the tailnet has
     the data, so their rules use ``noDataState: OK`` — absent => not firing.

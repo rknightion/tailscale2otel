@@ -476,7 +476,7 @@
       "id": 13,
       "type": "table",
       "title": "Build Info",
-      "description": "tailscale2otel_build_info_ratio {service_version, go_version} (unit '1' gauge -> _ratio suffix quirk; value is always 1, the metadata lives in labels).",
+      "description": "tailscale2otel_build_info_ratio {version, go_version} (unit '1' gauge -> _ratio suffix quirk; value is always 1, the metadata lives in labels).",
       "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
       "fieldConfig": {
@@ -500,9 +500,9 @@
           "id": "organize",
           "options": {
             "excludeByName": { "Time": true, "__name__": true, "job": true, "Value": true },
-            "indexByName": { "service_version": 0, "go_version": 1, "instance": 2 },
+            "indexByName": { "version": 0, "go_version": 1, "instance": 2 },
             "renameByName": {
-              "service_version": "Version",
+              "version": "Version",
               "go_version": "Go Version",
               "instance": "Instance"
             }

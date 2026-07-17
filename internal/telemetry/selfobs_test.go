@@ -131,7 +131,7 @@ func TestInstallExportErrorHandler_RestoreReinstallsPrevious(t *testing.T) {
 func TestEmitBuildInfo_EmitsGaugeWithGoVersion(t *testing.T) {
 	rec := telemetrytest.New()
 
-	telemetry.EmitBuildInfo(rec.Emitter(), "go1.26")
+	telemetry.EmitBuildInfo(rec.Emitter(), "v1.2.3", "go1.26")
 
 	points := rec.MetricPoints("tailscale2otel.build_info")
 	if len(points) != 1 {
@@ -150,9 +150,15 @@ func TestEmitBuildInfo_EmitsGaugeWithGoVersion(t *testing.T) {
 	if got := p.Attrs["go.version"]; got != "go1.26" {
 		t.Fatalf("go.version = %q, want go1.26", got)
 	}
-	// The service version must NOT be emitted as a data-point attribute: it is
-	// promoted from the resource and would otherwise collide as a duplicate
-	// service_version label (otlp_parse_error).
+	// build_info is the ONLY metrics-side surface carrying the service version:
+	// service.version is deliberately off the metrics resource (#187), so without
+	// this attribute the version would be unqueryable from metrics entirely.
+	if got := p.Attrs["version"]; got != "v1.2.3" {
+		t.Fatalf("version = %q, want v1.2.3, attrs=%v", got, p.Attrs)
+	}
+	// The key must be "version", not "service.version": the latter normalizes to
+	// the service_version Prometheus label, re-entering the promoted-resource
+	// namespace this issue moved the version out of.
 	if _, ok := p.Attrs["service.version"]; ok {
 		t.Fatalf("service.version should not be a data-point attribute, attrs=%v", p.Attrs)
 	}
@@ -161,7 +167,7 @@ func TestEmitBuildInfo_EmitsGaugeWithGoVersion(t *testing.T) {
 func TestEmitBuildInfo_SkipsEmptyGoVersion(t *testing.T) {
 	rec := telemetrytest.New()
 
-	telemetry.EmitBuildInfo(rec.Emitter(), "")
+	telemetry.EmitBuildInfo(rec.Emitter(), "v1.2.3", "")
 
 	points := rec.MetricPoints("tailscale2otel.build_info")
 	if len(points) != 1 {
@@ -169,6 +175,22 @@ func TestEmitBuildInfo_SkipsEmptyGoVersion(t *testing.T) {
 	}
 	if _, ok := points[0].Attrs["go.version"]; ok {
 		t.Fatalf("go.version should be absent for empty value, attrs=%v", points[0].Attrs)
+	}
+}
+
+// TestEmitBuildInfo_SkipsEmptyVersion asserts an absent build version does not
+// pollute the attribute set with an empty label (same rule as go.version).
+func TestEmitBuildInfo_SkipsEmptyVersion(t *testing.T) {
+	rec := telemetrytest.New()
+
+	telemetry.EmitBuildInfo(rec.Emitter(), "", "go1.26")
+
+	points := rec.MetricPoints("tailscale2otel.build_info")
+	if len(points) != 1 {
+		t.Fatalf("got %d data points, want 1", len(points))
+	}
+	if _, ok := points[0].Attrs["version"]; ok {
+		t.Fatalf("version should be absent for empty value, attrs=%v", points[0].Attrs)
 	}
 }
 

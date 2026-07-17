@@ -60,18 +60,6 @@ def lot(metric, w=WIN_FAST):
     return "last_over_time(%s[%s])" % (metric, w)
 
 
-def sv(expr):
-    """Strip the deploy-churning service_version label from a raw instant-vector expr.
-
-    service_version is a promoted resource label on every exporter series, so a redeploy
-    forks each series (new color, duplicate legend / extra table row, a constant 'Version'
-    column) for one staleness window. `max without (service_version)` collapses the fork
-    while preserving every other label (host_name, tailscale_collector, …) so renames and
-    organize() still resolve. Use on raw `lot(...)` table/stat exprs that have no other
-    aggregation. NOT for the Diagnostics 'Build info' table, which shows Version on purpose."""
-    return "max without (service_version) (%s)" % expr
-
-
 PII = "tailscale2otel_pii_filter_category_ratio"  # PII filter self-obs gauge
 
 
@@ -605,7 +593,7 @@ def tab_overview():
     # Step 3: Security scorecard row (gated — only when ACL risk metrics present)
     scorecard = [
         (panel("Unrestricted ACL rules", "stat",
-               [prom_t("sum(%(e)s) or vector(0)" % {"e": sv(lot("tailscale_acl_unrestricted_rules_ratio", WIN_SLOW))},
+               [prom_t("sum(%(e)s) or vector(0)" % {"e": lot("tailscale_acl_unrestricted_rules_ratio", WIN_SLOW)},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "red")]),
@@ -613,21 +601,21 @@ def tab_overview():
                desc="Total ACL rules that grant unrestricted access (wildcard src/dst). Any non-zero value warrants review."), 4, 5),
         (panel("Auto-approved exit nodes", "stat",
                [prom_t('sum(%(e)s) or vector(0)' % {
-                   "e": sv(lot('tailscale_acl_autoapprovers_ratio{tailscale_acl_autoapprover_kind="exit_node"}', WIN_SLOW))},
+                   "e": lot('tailscale_acl_autoapprovers_ratio{tailscale_acl_autoapprover_kind="exit_node"}', WIN_SLOW)},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow"), (3, "red")]),
                options=stat_opts(color="background"),
                desc="ACL auto-approver entries for exit-node routes. Review whether automatic exit-node approval is intended."), 4, 5),
         (panel("Unapproved subnet routes", "stat",
-               [prom_t("max(%(e)s) or vector(0)" % {"e": sv(lot("tailscale_subnet_routes_unapproved", WIN_SLOW))},
+               [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_subnet_routes_unapproved", WIN_SLOW)},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                desc="Subnet routes advertised but not yet approved by an admin."), 4, 5),
         (panel("Untagged devices", "stat",
-               [prom_t("max(%(e)s) or vector(0)" % {"e": sv(lot("tailscale_devices_untagged_ratio"))},
+               [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_devices_untagged_ratio")},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
@@ -635,7 +623,7 @@ def tab_overview():
                desc="Devices not associated with any ACL tag — harder to audit and apply granular policies to."), 4, 5),
         (panel("Pending exit-node shares", "stat",
                [prom_t('sum(%(e)s) or vector(0)' % {
-                   "e": sv(lot('tailscale_device_invites_count_ratio{tailscale_device_invite_accepted="false",tailscale_device_invite_allow_exit_node="true"}', WIN_SLOW))},
+                   "e": lot('tailscale_device_invites_count_ratio{tailscale_device_invite_accepted="false",tailscale_device_invite_allow_exit_node="true"}', WIN_SLOW)},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow")]),
@@ -666,7 +654,7 @@ def tab_fleet():
 
     # Shared infra label exclusion list for instant-vector tables
     _infra = ["Time", "__name__", "job", "instance", "host_id",
-              "service_instance_id", "service_name", "service_namespace", "service_version"]
+              "service_instance_id", "service_name", "service_namespace"]
 
     inv = [
         (panel("Online", "stat", [prom_t("count(%s == 1) or vector(0)" % on)],
@@ -703,27 +691,27 @@ def tab_fleet():
     hygiene = [
         (panel("Stale devices (>30d)", "stat",
                [prom_t("count((time() - %s) > 30*86400) or vector(0)"
-                       % sv(lot("tailscale_device_last_seen_seconds", WIN_SLOW)))],
+                       % lot("tailscale_device_last_seen_seconds", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                desc="Devices not seen in over 30 days (last-seen staleness) — candidates for "
                     "decommissioning. Companion to the per-device 'Last seen' table below."), 4, 5),
         (panel("Untagged", "stat",
-               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_untagged_ratio", WIN_SLOW)))],
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_devices_untagged_ratio", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
                options=stat_opts(color="background"),
                desc="Devices not associated with any ACL tag."), 4, 5),
         (panel("Ephemeral", "stat",
-               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_ephemeral_ratio", WIN_SLOW)))],
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_devices_ephemeral_ratio", WIN_SLOW))],
                unit="short", options=stat_opts(color="value"),
                desc="Ephemeral devices currently registered."), 4, 5),
         (panel("Outdated (≥N behind)", "stat",
-               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_devices_outdated_ratio", WIN_SLOW)))],
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_devices_outdated_ratio", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                desc="Devices running a client version that is at least one minor release behind the fleet latest."), 4, 5),
         (panel("Latest stable", "table",
-               [prom_t(sv(lot("tailscale_fleet_latest_version_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t(lot("tailscale_fleet_latest_version_ratio", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_infra + ["Value"],
                    rename={"tailscale_client_version": "Version"})],
@@ -820,7 +808,7 @@ def tab_fleet():
     # D (per-device part). Hard-NAT device table — separate row so PII gate only hides this table
     needsrelay = [
         (panel("Needs relay (hard-NAT)", "table",
-               [prom_t("%s == 1" % sv(lot('tailscale_device_connectivity_hard_nat_ratio{host_name=~"$host_name"}')),
+               [prom_t("%s == 1" % lot('tailscale_device_connectivity_hard_nat_ratio{host_name=~"$host_name"}'),
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_infra + ["Value"],
@@ -832,16 +820,16 @@ def tab_fleet():
     exitsubnet = [
         (panel("Exit nodes advertised", "stat",
                [prom_t('sum(%s) or vector(0)'
-                       % sv(lot('tailscale_exit_nodes_count_ratio{tailscale_exit_node_state="advertised"}', WIN_SLOW)))],
+                       % lot('tailscale_exit_nodes_count_ratio{tailscale_exit_node_state="advertised"}', WIN_SLOW))],
                unit="short", options=stat_opts(color="value"),
                desc="Exit nodes currently in the 'advertised' state."), 6, 5),
         (panel("Exit nodes enabled", "stat",
                [prom_t('sum(%s) or vector(0)'
-                       % sv(lot('tailscale_exit_nodes_count_ratio{tailscale_exit_node_state="enabled"}', WIN_SLOW)))],
+                       % lot('tailscale_exit_nodes_count_ratio{tailscale_exit_node_state="enabled"}', WIN_SLOW))],
                unit="short", options=stat_opts(color="value"),
                desc="Exit nodes currently in the 'enabled' state."), 6, 5),
         (panel("Unapproved subnet routes", "stat",
-               [prom_t("max(%s) or vector(0)" % sv(lot("tailscale_subnet_routes_unapproved", WIN_SLOW)))],
+               [prom_t("max(%s) or vector(0)" % lot("tailscale_subnet_routes_unapproved", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                desc="Subnet routes advertised but not yet approved by an admin."), 6, 5),
@@ -850,7 +838,7 @@ def tab_fleet():
     # E (per-device exit table). Separate row for PII gate
     exitinv = [
         (panel("Exit-node inventory", "table",
-               [prom_t("%s == 1" % sv(lot('tailscale_device_exit_node_ratio{host_name=~"$host_name"}')),
+               [prom_t("%s == 1" % lot('tailscale_device_exit_node_ratio{host_name=~"$host_name"}'),
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_infra + ["Value"],
@@ -873,7 +861,7 @@ def tab_fleet():
     # F. Version staleness — per-device table (hide on pii_perdevice)
     versiontable = [
         (panel("Most-behind devices (top-N)", "table",
-               [prom_t("topk($topn, %s)" % sv(lot('tailscale_device_version_skew_ratio{host_name=~"$host_name"}')),
+               [prom_t("topk($topn, %s)" % lot('tailscale_device_version_skew_ratio{host_name=~"$host_name"}'),
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_infra,
@@ -894,21 +882,21 @@ def tab_fleet():
     # G. Existing per-device tables (add hide_when=["pii_perdevice"])
     tables = [
         (panel("Updates available", "table",
-               [prom_t("%s == 1" % sv(lot("tailscale_device_update_available_ratio" + df)), instant=True, fmt="table")],
+               [prom_t("%s == 1" % lot("tailscale_device_update_available_ratio" + df), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                    "service_instance_id", "service_name", "service_namespace", "Value"],
                                           rename={"host_name": "Host", "os_type": "OS", "os_version": "OS version",
                                                   "tailscale_user": "User"})],
                desc="Devices with a client update available."), 8, 8),
         (panel("Device key expiry (time until)", "table",
-               [prom_t("%s - time()" % sv(lot("tailscale_device_key_expiry_seconds" + df, WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t("%s - time()" % lot("tailscale_device_key_expiry_seconds" + df, WIN_SLOW), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                              "service_instance_id", "service_name", "service_namespace"],
                                                     rename={"host_name": "Host", "tailscale_user": "User",
                                                             "Value": "Expires in"})],
                desc="Time until each device node key expires."), 8, 8),
         (panel("Last seen (time since)", "table",
-               [prom_t("time() - %s" % sv(lot("tailscale_device_last_seen_seconds" + df, WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t("time() - %s" % lot("tailscale_device_last_seen_seconds" + df, WIN_SLOW), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"host_name": "Host", "tailscale_user": "User",
@@ -917,7 +905,7 @@ def tab_fleet():
     ]
     derp = [
         (panel("DERP latency by host / region", "table",
-               [prom_t(sv(lot("tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}")), instant=True, fmt="table")],
+               [prom_t(lot("tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}"), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"host_name": "Host", "tailscale_derp_region": "Region",
@@ -929,8 +917,8 @@ def tab_fleet():
     ]
     routes = [
         (panel("Subnet routes — advertised vs enabled", "table",
-               [prom_t(sv(lot("tailscale_device_routes_advertised{host_name=~\"$host_name\"}")), instant=True, fmt="table", refid="A"),
-                prom_t(sv(lot("tailscale_device_routes_enabled{host_name=~\"$host_name\"}")), instant=True, fmt="table", refid="B")],
+               [prom_t(lot("tailscale_device_routes_advertised{host_name=~\"$host_name\"}"), instant=True, fmt="table", refid="A"),
+                prom_t(lot("tailscale_device_routes_enabled{host_name=~\"$host_name\"}"), instant=True, fmt="table", refid="B")],
                unit="short", transformations=[merge(),
                                               organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                                 "service_instance_id", "service_name", "service_namespace"],
@@ -938,7 +926,7 @@ def tab_fleet():
     ]
     posture = [
         (panel("Posture overview", "table",
-               [prom_t(sv(lot("tailscale_device_posture_ratio{host_name=~\"$host_name\"}", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t(lot("tailscale_device_posture_ratio{host_name=~\"$host_name\"}", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance", "host_id",
                                                   "service_instance_id", "service_name", "service_namespace", "Value"])],
                desc="Per-device posture: OS, client version, auto-update, encryption, track."), 16, 8),
@@ -1064,13 +1052,13 @@ def tab_network():
     # Rollup topology tables — tailscale_src_node + port/peer topology; gate pii_topology.
     rollup_topo = [
         (panel("Unique dst peers per src", "table",
-               [prom_t(sv(lot("tailscale_network_unique_dst_peers")), instant=True, fmt="table")],
+               [prom_t(lot("tailscale_network_unique_dst_peers"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_src_node": "Source node", "Value": "Unique peers"})],
                desc="Distinct destination peers per source node (last flush)."), 12, 6),
         (panel("Unique dst ports per src", "table",
-               [prom_t(sv(lot("tailscale_network_unique_dst_ports")), instant=True, fmt="table")],
+               [prom_t(lot("tailscale_network_unique_dst_ports"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_src_node": "Source node", "Value": "Unique ports"})],
@@ -1192,7 +1180,7 @@ def tab_events():
                unit="cps", custom=ts_custom(), options=ts_opts(),
                desc="Entries rejected as spoofed and requests that hit the max body size (SIEM backpressure)."), 8, 6),
         (panel("Last activity age by type", "table",
-               [prom_t("time() - %s" % sv(lot("tailscale_logstream_last_activity_seconds", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t("time() - %s" % lot("tailscale_logstream_last_activity_seconds", WIN_SLOW), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"tailscale_logstream_type": "Log type", "Value": "Last activity age"})],
@@ -1258,11 +1246,11 @@ def tab_policy():
                unit="short", options=bargauge_opts()), 12, 5),
         # Task 1H.9 — ACL inventory counts (risk stats live on Security/WU7)
         (panel("Auto-approvers (inventory)", "bargauge",
-               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)" % sv(lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW)),
+               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)" % lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW),
                        legend="{{tailscale_acl_autoapprover_kind}}")],
                unit="short", options=bargauge_opts()), 12, 5),
         (panel("Posture-gated rules (inventory)", "bargauge",
-               [prom_t("sum by (tailscale_acl_section) (%s)" % sv(lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW)))],
+               [prom_t("sum by (tailscale_acl_section) (%s)" % lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW))],
                unit="short", options=bargauge_opts()), 12, 5),
     ]
     dns = [
@@ -1289,7 +1277,7 @@ def tab_policy():
     # Task 1.6 Step 1 — Resolvers table gated by has_dns_resolver
     dns_resolvers = [
         (panel("Resolvers", "table",
-               [prom_t("%s" % sv(lot("tailscale_dns_resolver_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t("%s" % lot("tailscale_dns_resolver_ratio", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_infra_tbl + ["Value"],
                    rename={"tailscale_dns_resolver_address": "Address",
@@ -1298,14 +1286,14 @@ def tab_policy():
                desc="DNS resolver configuration. FIX-3: no domain label on live wire."), 24, 6),
     ]
     settings = [
-        (panel("Tailnet settings", "table", [prom_t(sv(lot("tailscale_setting_enabled_ratio", WIN_SLOW)), instant=True, fmt="table")],
+        (panel("Tailnet settings", "table", [prom_t(lot("tailscale_setting_enabled_ratio", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_setting_name": "Setting", "Value": "Enabled"})],
                desc="Per-setting enabled (1) / disabled (0)."), 8, 7),
         (panel("Device key duration", "stat", [prom_t("max(%s)" % lot("tailscale_setting_devices_key_duration_days", WIN_SLOW))],
                unit="d", options=stat_opts()), 4, 7),
-        (panel("Tailnet features", "table", [prom_t(sv(lot("tailscale_feature_enabled_ratio", WIN_SLOW)), instant=True, fmt="table")],
+        (panel("Tailnet features", "table", [prom_t(lot("tailscale_feature_enabled_ratio", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_feature": "Feature", "Value": "Enabled"})],
@@ -1325,7 +1313,7 @@ def tab_policy():
     users = [
         (panel("Stale users (>30d)", "stat",
                [prom_t("count((time() - %s) > 30*86400) or vector(0)"
-                       % sv(lot("tailscale_user_last_seen_seconds", WIN_SLOW)))],
+                       % lot("tailscale_user_last_seen_seconds", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                desc="Users not seen in over 30 days (last-seen staleness). Shows 0 when per-user "
@@ -1345,9 +1333,9 @@ def tab_policy():
     ]
     users_pe = [
         (panel("Per-user detail", "table",
-               [prom_t(sv(lot("tailscale_user_connected_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
-                prom_t(sv(lot("tailscale_user_devices_ratio", WIN_SLOW)), instant=True, fmt="table", refid="B"),
-                prom_t("time() - %s" % sv(lot("tailscale_user_last_seen_seconds", WIN_SLOW)), instant=True, fmt="table", refid="C")],
+               [prom_t(lot("tailscale_user_connected_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
+                prom_t(lot("tailscale_user_devices_ratio", WIN_SLOW), instant=True, fmt="table", refid="B"),
+                prom_t("time() - %s" % lot("tailscale_user_last_seen_seconds", WIN_SLOW), instant=True, fmt="table", refid="C")],
                transformations=[merge(),
                                 organize(exclude=["Time", "__name__", "job", "instance", "user_id",
                                                   "service_instance_id", "service_name", "service_namespace"],
@@ -1366,11 +1354,11 @@ def tab_policy():
     keys = [
         # Task 1.6 Step 2 — updated Keys by type (aggregate to type+auth_kind)
         (panel("Keys by type", "bargauge",
-               [prom_t("sum by (tailscale_key_type, tailscale_key_auth_kind) (%s)" % sv(lot("tailscale_keys_count_ratio", WIN_SLOW)),
+               [prom_t("sum by (tailscale_key_type, tailscale_key_auth_kind) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
                        legend="{{tailscale_key_type}} / {{tailscale_key_auth_kind}}")],
                unit="short", options=bargauge_opts()), 10, 7),
         (panel("Key expiry (time until)", "table",
-               [prom_t("%s - time()" % sv(lot("tailscale_key_expiry_seconds", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t("%s - time()" % lot("tailscale_key_expiry_seconds", WIN_SLOW), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"tailscale_key_id": "Key ID", "tailscale_key_type": "Type",
@@ -1378,13 +1366,13 @@ def tab_policy():
                desc="Time until each API/auth key expires."), 14, 7),
         # Task 1.6 Step 2 — Preauthorized auth keys
         (panel("Preauthorized auth keys", "stat",
-               [prom_t("sum(%s == 1) or vector(0)" % sv(lot("tailscale_key_preauthorized_ratio", WIN_SLOW)))],
+               [prom_t("sum(%s == 1) or vector(0)" % lot("tailscale_key_preauthorized_ratio", WIN_SLOW))],
                unit="short", options=stat_opts(), novalue="0"), 10, 7),
     ]
     # Task 1.6 Step 2 — Credential scopes top-N (gated on the key-scopes metric)
     credscopes = [
         (panel("Credential scopes (top-N)", "table",
-               [prom_t("topk($topn, %s)" % sv(lot("tailscale_key_scopes_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t("topk($topn, %s)" % lot("tailscale_key_scopes_ratio", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_infra_tbl + ["tailscale_key_id"],
                    rename={"tailscale_key_description": "Description",
@@ -1414,7 +1402,7 @@ def tab_policy():
                unit="short", options=bargauge_opts(),
                desc="Port rules exposed by each Service. Gated by cardinality.per_entity.service."), 18, 6),
         (panel("Backing hosts by service", "table",
-               [prom_t(sv(lot("tailscale_service_hosts_ratio", WIN_SLOW)), instant=True, fmt="table")],
+               [prom_t(lot("tailscale_service_hosts_ratio", WIN_SLOW), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_service_name": "Service",
@@ -1425,7 +1413,7 @@ def tab_policy():
                     "Gated by collect_hosts + cardinality.per_entity.service."), 24, 7),
         # Task 1H.8 — VIP service health (merged hosts + port-rules)
         (panel("VIP service health", "table",
-               [prom_t(sv(lot("tailscale_service_hosts_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
+               [prom_t(lot("tailscale_service_hosts_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
                 prom_t("max by (tailscale_service_name) (%s)" % lot("tailscale_service_ports", WIN_SLOW),
                        instant=True, fmt="table", refid="B")],
                transformations=[merge(),
@@ -1465,7 +1453,7 @@ def tab_nodemetrics():
                mappings=UP_MAP, thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background")), 5, 5),
         (panel("Discovered targets", "stat", [prom_t("max(%s)" % lot("tailscale2otel_nodemetrics_discovery_targets"))],
                unit="short", options=stat_opts()), 5, 5),
-        (panel("Node up", "table", [prom_t(sv(lot("tailscale_node_up_ratio", "15m")), instant=True, fmt="table")],
+        (panel("Node up", "table", [prom_t(lot("tailscale_node_up_ratio", "15m"), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_node": "Node", "Value": "Up"})],
@@ -1491,24 +1479,24 @@ def tab_nodemetrics():
                desc="Outbound packets dropped by tailscaled per node — a connectivity-degradation signal."), 24, 7),
     ]
     routing = [
-        (panel("Advertised routes", "table", [prom_t(sv(lot("tailscaled_advertised_routes", "15m")), instant=True, fmt="table")],
+        (panel("Advertised routes", "table", [prom_t(lot("tailscaled_advertised_routes", "15m"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Advertised"})]), 8, 7),
-        (panel("Approved routes", "table", [prom_t(sv(lot("tailscaled_approved_routes", "15m")), instant=True, fmt="table")],
+        (panel("Approved routes", "table", [prom_t(lot("tailscaled_approved_routes", "15m"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Approved"})]), 8, 7),
-        (panel("Health messages", "table", [prom_t(sv(lot("tailscaled_health_messages", "15m")), instant=True, fmt="table")],
+        (panel("Health messages", "table", [prom_t(lot("tailscaled_health_messages", "15m"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Messages"})],
                desc="tailscaled self-reported health warnings."), 8, 7),
-        (panel("Home DERP region", "table", [prom_t(sv(lot("tailscaled_home_derp_region_id", "15m")), instant=True, fmt="table")],
+        (panel("Home DERP region", "table", [prom_t(lot("tailscaled_home_derp_region_id", "15m"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Region ID"})]), 12, 6),
-        (panel("Peer relay endpoints", "table", [prom_t(sv(lot("tailscaled_peer_relay_endpoints", "15m")), instant=True, fmt="table")],
+        (panel("Peer relay endpoints", "table", [prom_t(lot("tailscaled_peer_relay_endpoints", "15m"), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                                 "service_instance_id", "service_name", "service_namespace"],
                                                        rename={"tailscale_node": "Node", "Value": "Endpoints"})]), 12, 6),
@@ -1642,7 +1630,7 @@ def tab_diagnostics():
         (panel("Build info", "table", [prom_t(lot("tailscale2otel_build_info_ratio", WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace", "Value"],
-                                         rename={"service_version": "Version", "go_version": "Go version"})],
+                                         rename={"version": "Version", "go_version": "Go version"})],
                desc="Version / Go version (labels)."), 8, 5),
     ]
     collectors = [
@@ -1653,7 +1641,7 @@ def tab_diagnostics():
                [prom_t("max by (tailscale_collector) (tailscale2otel_scrape_success_ratio%s)" % cf, legend="{{tailscale_collector}}")],
                unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=10), options=ts_opts(placement="right")), 12, 7),
         (panel("Last scrape age", "table",
-               [prom_t("time() - %s" % sv(lot("tailscale2otel_scrape_last_timestamp_seconds" + cf)), instant=True, fmt="table")],
+               [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds" + cf), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                             "service_instance_id", "service_name", "service_namespace"],
                                                    rename={"tailscale_collector": "Collector", "Value": "Age"})],
@@ -1821,7 +1809,7 @@ def tab_diagnostics():
     # --- WU9 F: PII filter status metadata (present="has_pii"; NOT PII-gated — this is metadata about pii).
     pii_status = [
         (panel("PII filter status", "table",
-               [prom_t("%s" % sv(lot("tailscale2otel_pii_filter_category_ratio", WIN_FAST)), instant=True, fmt="table")],
+               [prom_t("%s" % lot("tailscale2otel_pii_filter_category_ratio", WIN_FAST), instant=True, fmt="table")],
                mappings=vmap({"0": {"text": "REDACTED", "color": "red", "index": 0},
                               "1": {"text": "emitted", "color": "green", "index": 1}}),
                transformations=[organize(exclude=TBL_NOISE,
@@ -2061,20 +2049,20 @@ def tab_security():
     aclrisk = [
         (panel("Wildcard rules", "bargauge",
                [prom_t("sum by (tailscale_acl_section, tailscale_acl_position) (%s)"
-                       % sv(lot("tailscale_acl_wildcard_rules_ratio", WIN_SLOW)),
+                       % lot("tailscale_acl_wildcard_rules_ratio", WIN_SLOW),
                        legend="{{tailscale_acl_section}}/{{tailscale_acl_position}}")],
                unit="short", options=bargauge_opts(),
                desc="Number of ACL rules containing wildcards, by section and position."), 8, 6),
         (panel("Unrestricted rules (grants)", "stat",
                [prom_t("sum(%s) or vector(0)"
-                       % sv(lot('tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section="grants"}', WIN_SLOW)),
+                       % lot('tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section="grants"}', WIN_SLOW),
                        instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
                desc="Grant rules with no destination restriction."), 4, 6),
         (panel("Unrestricted rules (acls)", "stat",
                [prom_t("sum(%s) or vector(0)"
-                       % sv(lot('tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section="acls"}', WIN_SLOW)),
+                       % lot('tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section="acls"}', WIN_SLOW),
                        instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
@@ -2087,14 +2075,14 @@ def tab_security():
                desc="Whether any SSH rule uses a wildcard source or destination."), 4, 6),
         (panel("Auto-approvers by kind", "barchart",
                [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)"
-                       % sv(lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW)),
+                       % lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW),
                        legend="{{tailscale_acl_autoapprover_kind}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
                desc="Count of auto-approver entries by kind (routes/exit-nodes)."), 12, 6),
         (panel("Posture-gated rules", "bargauge",
                [prom_t("sum by (tailscale_acl_section) (%s)"
-                       % sv(lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW)),
+                       % lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW),
                        legend="{{tailscale_acl_section}}")],
                unit="short", options=bargauge_opts(),
                desc="Rules that require a passing device-posture check, by section."), 12, 6),
@@ -2176,7 +2164,7 @@ def tab_security():
     mdmfail = [
         (panel("Devices failing posture attr", "table",
                [prom_t("%s == 0"
-                       % sv(lot('tailscale_device_attribute_ratio{attribute=~"$posture_attr", host_name=~"$host_name"}', WIN_FAST)),
+                       % lot('tailscale_device_attribute_ratio{attribute=~"$posture_attr", host_name=~"$host_name"}', WIN_FAST),
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=["Time", "__name__", "job", "instance",
@@ -2285,25 +2273,25 @@ def tab_security():
                unit="short", options=bargauge_opts(),
                desc="Devices matched to a provider host by each posture integration."), 12, 5),
         (panel("Oldest sync age", "stat",
-               [prom_t("max(time() - %s) or vector(0)" % sv(lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW)), instant=True)],
+               [prom_t("max(time() - %s) or vector(0)" % lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW), instant=True)],
                unit="s", thresholds=thr([(None, "green"), (3600, "yellow"), (86400, "red")]),
                options=stat_opts(color="background"),
                desc="Time since the least-recently-synced integration last synced (alert on staleness)."), 6, 5),
         # Task 1H.8: match rate = matched / possible-match (clamped to avoid div-by-zero)
         (panel("Posture match rate", "stat",
                [prom_t("%s / clamp_min(%s, 1)"
-                       % (sv(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW)),
-                          sv(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW))),
+                       % (lot("tailscale_posture_integration_matched_ratio", WIN_SLOW),
+                          lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW)),
                        instant=True)],
                unit="percentunit",
                thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
                options=stat_opts(color="background"),
                desc="Fraction of possible-match devices that were actually matched by the integration."), 6, 5),
         (panel("Integration sync detail", "table",
-               [prom_t(sv(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW)), instant=True, fmt="table", refid="A"),
-                prom_t(sv(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW)), instant=True, fmt="table", refid="B"),
-                prom_t(sv(lot("tailscale_posture_integration_provider_hosts_ratio", WIN_SLOW)), instant=True, fmt="table", refid="C"),
-                prom_t("time() - %s" % sv(lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW)), instant=True, fmt="table", refid="D")],
+               [prom_t(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
+                prom_t(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW), instant=True, fmt="table", refid="B"),
+                prom_t(lot("tailscale_posture_integration_provider_hosts_ratio", WIN_SLOW), instant=True, fmt="table", refid="C"),
+                prom_t("time() - %s" % lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW), instant=True, fmt="table", refid="D")],
                transformations=[merge(),
                                 organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],

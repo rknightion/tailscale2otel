@@ -217,9 +217,18 @@ func metricProviderOptions(res *resource.Resource, cardinalityLimit int, tracing
 
 // NewProvider builds the telemetry pipeline for the given options.
 func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
-	res, err := buildResource(ctx, opts)
+	// Two resources by design: metrics OMIT service.version (see buildResource —
+	// it would become a per-series service_version label on Grafana Cloud and churn
+	// the whole series set every redeploy, #187), logs/traces KEEP it. Everything
+	// else (service.name, service.instance.id, host/os/process detectors) is
+	// identical.
+	metricRes, err := buildResource(ctx, opts, false)
 	if err != nil {
-		return nil, fmt.Errorf("build resource: %w", err)
+		return nil, fmt.Errorf("build metrics resource: %w", err)
+	}
+	logRes, err := buildResource(ctx, opts, true)
+	if err != nil {
+		return nil, fmt.Errorf("build logs resource: %w", err)
 	}
 	constAttrs := constLabelAttrs(opts)
 	metricExp, err := newMetricExporter(ctx, opts)
@@ -245,7 +254,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		interval = 60 * time.Second
 	}
 	mpOpts := append(
-		metricProviderOptions(res, opts.CardinalityLimit, opts.TracingEnabled),
+		metricProviderOptions(metricRes, opts.CardinalityLimit, opts.TracingEnabled),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(interval))),
 	)
 	var promReg *prometheus.Registry
@@ -259,7 +268,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	}
 	mp := sdkmetric.NewMeterProvider(mpOpts...)
 	lp := sdklog.NewLoggerProvider(
-		sdklog.WithResource(res),
+		sdklog.WithResource(logRes),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
 	)
 
@@ -270,7 +279,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 			return nil, fmt.Errorf("trace exporter: %w", err)
 		}
 		tpOpts := []sdktrace.TracerProviderOption{
-			sdktrace.WithResource(res),
+			sdktrace.WithResource(logRes),
 			sdktrace.WithBatcher(traceExp),
 			sdktrace.WithSampler(buildSampler(opts.TraceSampler, opts.TraceSamplerArg)),
 		}
@@ -366,9 +375,29 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func buildResource(ctx context.Context, opts Options) (*resource.Resource, error) {
+// buildResource builds the OTEL resource. includeServiceVersion controls whether
+// service.version is attached: it is TRUE for the logs/traces resource and FALSE
+// for the metrics resource.
+//
+// The split exists because the OTLP->Prometheus convention promotes only
+// service.name (+service.namespace)->job and service.instance.id->instance to
+// labels; every other resource attribute belongs on the target_info info metric.
+// Grafana Cloud's OTLP ingest deviates and promotes the whole service.* namespace,
+// so a service.version on the metrics resource becomes a service_version label on
+// EVERY series. That makes each build mint a fresh series set: after a redeploy the
+// old and new versions' series coexist for the query lookback window (an OTLP push
+// carries no staleness signal, unlike a scrape target going down), so any panel
+// that sums across a bounded dimension transiently doubles — and active-series
+// cardinality grows by the number of versions ever seen (#187; the doubling was
+// diagnosed live in graph2otel#104, which runs a per-commit :main build).
+//
+// Version stays queryable from metrics via the tailscale2otel.build_info gauge
+// (join with group_left). Logs and traces are never summed and have no per-series
+// label surface, so their resource keeps service.version for per-record/-span
+// version attribution.
+func buildResource(ctx context.Context, opts Options, includeServiceVersion bool) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{attribute.String("service.name", opts.ServiceName)}
-	if opts.ServiceVersion != "" {
+	if includeServiceVersion && opts.ServiceVersion != "" {
 		attrs = append(attrs, attribute.String("service.version", opts.ServiceVersion))
 	}
 	if opts.InstanceID != "" {
@@ -451,13 +480,19 @@ func (constAttrSpanProcessor) Shutdown(context.Context) error   { return nil }
 func (constAttrSpanProcessor) ForceFlush(context.Context) error { return nil }
 
 // reservedPromotedLabels returns the Prometheus label names that Grafana Cloud
-// promotes from the OTEL Resource onto every exported series: service.name→job,
-// service.instance.id→instance, plus the service_* labels (confirmed on live
-// series). A data-point attribute that normalizes to one of these would duplicate
-// the promoted label and get the whole sample rejected as otlp_parse_error, so the
-// Emitter drops it (the resource value wins). Host/OS/process resource attributes
-// are deliberately NOT reserved — Grafana keeps those in target_info only, so a
-// data-point host.name (e.g. the node-metrics passthrough) does not collide.
+// promotes from the OTEL *metrics* Resource onto every exported series:
+// service.name→job, service.instance.id→instance, plus the service_* labels
+// (confirmed on live series). A data-point attribute that normalizes to one of
+// these would duplicate the promoted label and get the whole sample rejected as
+// otlp_parse_error, so the Emitter drops it (the resource value wins). Host/OS/
+// process resource attributes are deliberately NOT reserved — Grafana keeps those
+// in target_info only, so a data-point host.name (e.g. the node-metrics
+// passthrough) does not collide.
+//
+// service_version is deliberately NOT reserved: the metrics resource no longer
+// carries service.version (#187), so there is nothing for Grafana Cloud to promote
+// and nothing to collide with. It stays on the logs/traces resource, which has no
+// per-series label surface and so never reaches this guard.
 func reservedPromotedLabels(opts Options) map[string]struct{} {
 	r := map[string]struct{}{
 		"job":      {},
@@ -465,9 +500,6 @@ func reservedPromotedLabels(opts Options) map[string]struct{} {
 	}
 	if opts.ServiceName != "" {
 		r["service_name"] = struct{}{}
-	}
-	if opts.ServiceVersion != "" {
-		r["service_version"] = struct{}{}
 	}
 	if opts.InstanceID != "" {
 		r["service_instance_id"] = struct{}{}

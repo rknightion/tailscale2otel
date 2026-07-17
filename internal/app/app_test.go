@@ -685,15 +685,19 @@ func TestApp_RunGracefulShutdown(t *testing.T) {
 	if pts := rec.MetricPoints("tailscale2otel.up"); len(pts) == 0 || pts[0].Value != 1 {
 		t.Fatalf("tailscale2otel.up = %+v, want a point of value 1", pts)
 	}
-	// ...and build_info must have been emitted (constant 1). The service version
-	// rides on the resource (promoted to service_version), not on the data point,
-	// so it is not asserted here; the Go runtime version is the point's label.
+	// ...and build_info must have been emitted (constant 1) carrying the injected
+	// build version. service.version is off the metrics resource (#187), so this
+	// gauge is the only metrics-side version surface — assert the app actually
+	// threads the version through to it, not just that the point exists.
 	bi := rec.MetricPoints("tailscale2otel.build_info")
 	if len(bi) != 1 {
 		t.Fatalf("build_info points = %d, want 1", len(bi))
 	}
 	if bi[0].Value != 1 {
 		t.Fatalf("build_info value = %v, want 1", bi[0].Value)
+	}
+	if got := bi[0].Attrs["version"]; got != "v9.9.9" {
+		t.Fatalf("build_info version = %q, want v9.9.9, attrs=%v", got, bi[0].Attrs)
 	}
 	if _, ok := bi[0].Attrs["go.version"]; !ok {
 		t.Fatalf("build_info missing go.version label, attrs=%v", bi[0].Attrs)

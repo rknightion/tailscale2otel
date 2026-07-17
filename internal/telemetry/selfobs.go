@@ -59,18 +59,25 @@ func errorType(err error) string {
 }
 
 // EmitBuildInfo records the "tailscale2otel.build_info" gauge with a constant
-// value of 1, carrying the Go runtime version as an attribute. An empty value is
-// omitted so absent build metadata does not pollute the attribute set.
+// value of 1, carrying the build version and the Go runtime version as
+// attributes. An empty value is omitted so absent build metadata does not
+// pollute the attribute set.
 //
-// The service version is deliberately NOT emitted as a data-point attribute: it
-// already lives on the OTEL Resource (service.version), which Grafana Cloud
-// promotes to a service_version label on every exported series — including this
-// one. Emitting it here too produced a duplicate label that Mimir rejects as an
-// otlp_parse_error (the Emitter's collision guard then dropped it, logging a WARN
-// on startup). The resource copy carries identical information, so build_info
-// keeps showing service_version with zero data loss and no warning.
-func EmitBuildInfo(e Emitter, goVersion string) {
+// This gauge is the ONLY metrics-side surface carrying the service version.
+// service.version is deliberately kept off the metrics resource (#187) — Grafana
+// Cloud's OTLP ingest promotes service.* resource attributes to labels on every
+// exported series, and a per-build value on every series mints a whole new series
+// set on each redeploy. The classic Prometheus answer is an info metric, which is
+// exactly this gauge: join it with `group_left` where a panel needs the version.
+//
+// The attribute key is "version", not "service.version": the latter normalizes to
+// the service_version Prometheus label, re-entering the promoted-resource
+// namespace the version was moved out of. See buildResource in provider.go.
+func EmitBuildInfo(e Emitter, version, goVersion string) {
 	attrs := Attrs{}
+	if version != "" {
+		attrs["version"] = version
+	}
 	if goVersion != "" {
 		attrs["go.version"] = goVersion
 	}

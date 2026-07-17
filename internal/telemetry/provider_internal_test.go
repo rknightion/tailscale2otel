@@ -31,7 +31,7 @@ import (
 // these to signal-scoped attributes (metric data points, log records, spans) so they
 // are real, joinless labels on every backend rather than target_info-only.
 func TestBuildResourceOmitsTailnetProvider(t *testing.T) {
-	res, err := buildResource(context.Background(), Options{ServiceName: "svc", TailnetName: "alpha", Provider: "tailscale"})
+	res, err := buildResource(context.Background(), Options{ServiceName: "svc", TailnetName: "alpha", Provider: "tailscale"}, false)
 	if err != nil {
 		t.Fatalf("buildResource: %v", err)
 	}
@@ -176,11 +176,13 @@ func TestCumulativeTemporalitySelectorAlwaysCumulative(t *testing.T) {
 // instances in Grafana. A partial-resource error (e.g. a detector that can't
 // read its source in CI) is tolerated; a hard error is not.
 func TestBuildResourceEnrichesAndMergesCleanly(t *testing.T) {
+	// includeServiceVersion=true exercises the full schemaless service.* block
+	// (the logs/traces resource) against the detectors — the widest merge.
 	res, err := buildResource(context.Background(), Options{
 		ServiceName:    "tailscale2otel",
 		ServiceVersion: "test",
 		InstanceID:     "inst-42",
-	})
+	}, true)
 	if err != nil && !errors.Is(err, resource.ErrPartialResource) {
 		t.Fatalf("buildResource returned a non-partial error: %v", err)
 	}

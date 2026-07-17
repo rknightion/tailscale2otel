@@ -210,7 +210,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 
 	if cfg.SelfObservability.Enabled {
 		a.restore = telemetry.InstallExportErrorHandler(a.procEmitter, withComponent(logger, compTelemetry))
-		telemetry.EmitBuildInfo(a.procEmitter, runtime.Version())
+		telemetry.EmitBuildInfo(a.procEmitter, version, runtime.Version())
 	}
 	if len(a.runtimes) > 0 {
 		a.flowDedup = a.runtimes[0].flowDedup
@@ -401,7 +401,7 @@ func newApp(
 	rt.apiStats = apiStats
 	if cfg.SelfObservability.Enabled {
 		a.restore = telemetry.InstallExportErrorHandler(emitter, withComponent(a.logger, compTelemetry))
-		telemetry.EmitBuildInfo(emitter, runtime.Version())
+		telemetry.EmitBuildInfo(emitter, version, runtime.Version())
 	}
 	a.flowDedup = rt.flowDedup
 	a.auditDedup = rt.auditDedup

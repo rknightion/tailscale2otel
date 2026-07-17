@@ -97,7 +97,7 @@ var nonIdentifier = map[string]bool{
 	"tailscale.actor.type": true, "tailscale.target.type": true, "tailscale.target.property": true,
 	"tailscale.tx.bytes": true, "tailscale.rx.bytes": true, "tailscale.tx.packets": true,
 	"tailscale.rx.packets": true, "tailscale.connections": true, "error.type": true,
-	"go.version": true, "http.response.status_code": true, "attribute": true,
+	"go.version": true, "version": true, "http.response.status_code": true, "attribute": true,
 	"tailscale.key.id": true, "tailscale.posture.integration": true,
 	"tailscale.webhook_endpoint.id": true, "tailscale.audit.event_group_id": true,
 	"tailscale.target.id":                        true,
