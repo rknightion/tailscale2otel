@@ -25,10 +25,20 @@ var (
 // classifyIP buckets an address string. A value that does not parse as an IP
 // (hostnames, sentinels like "external"/"unknown") returns ipNotIP so the caller
 // falls back to the key's registry category.
+//
+// A value formatted as "host:port" or "[host]:port" (e.g. the default
+// node-metrics identity, #198) is classified by its address portion: a bare
+// netip.ParseAddr is tried first, and only on failure does a netip.ParseAddrPort
+// attempt strip the port. A genuine "hostname:port" still fails both parses and
+// returns ipNotIP, so it correctly falls back to the key's registry category.
 func classifyIP(s string) ipClass {
 	addr, err := netip.ParseAddr(s)
 	if err != nil {
-		return ipNotIP
+		addrPort, apErr := netip.ParseAddrPort(s)
+		if apErr != nil {
+			return ipNotIP
+		}
+		addr = addrPort.Addr()
 	}
 	switch {
 	case cgnat4.Contains(addr) || tailscale6.Contains(addr):

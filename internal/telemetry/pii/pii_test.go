@@ -155,6 +155,110 @@ func TestLogDropsPostureDetailsWhenFreeTextOff(t *testing.T) {
 	}
 }
 
+// TestHostPortRedactedByCorrectCategory is the pii-package half of #198: the
+// default node-metrics identity value for tailscale.node is "host:port" (see
+// internal/collector/nodemetrics), so it must be classified by its address
+// portion and redacted under tailscale_ips/internal_ips/external_ips — NOT
+// under hostnames (the ipValueKeys fallback category), and disabling any ONE
+// of those categories must not touch the others.
+func TestHostPortRedactedByCorrectCategory(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  Category
+	}{
+		{"ipv4 tailscale", "100.64.0.1:5252", CatTailscaleIPs},
+		{"ipv4 internal", "10.0.0.5:5252", CatInternalIPs},
+		{"ipv4 external", "8.8.8.8:5252", CatExternalIPs},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Disabling the correct category redacts it.
+			on := allOn()
+			on[c.want] = false
+			out := New(on).Log(map[string]any{"tailscale.node": c.value})
+			if _, ok := out["tailscale.node"]; ok {
+				t.Errorf("category %v off should redact %q", c.want, c.value)
+			}
+
+			// Disabling hostnames (the ipValueKeys fallback) must NOT redact
+			// an IP:port value — this is the bug #198 fixes.
+			hostnamesOff := allOn()
+			hostnamesOff[CatHostnames] = false
+			out2 := New(hostnamesOff).Log(map[string]any{"tailscale.node": c.value})
+			if _, ok := out2["tailscale.node"]; !ok {
+				t.Errorf("hostnames off must NOT redact IP:port value %q (category independence)", c.value)
+			}
+
+			// Disabling every OTHER IP category must not redact this one.
+			for _, other := range []Category{CatTailscaleIPs, CatInternalIPs, CatExternalIPs} {
+				if other == c.want {
+					continue
+				}
+				otherOff := allOn()
+				otherOff[other] = false
+				out3 := New(otherOff).Log(map[string]any{"tailscale.node": c.value})
+				if _, ok := out3["tailscale.node"]; !ok {
+					t.Errorf("category %v off must not redact %q (belongs to %v)", other, c.value, c.want)
+				}
+			}
+		})
+	}
+}
+
+// TestHostPortIPv6BracketedRedactedByCorrectCategory is the bracketed-IPv6
+// analog of TestHostPortRedactedByCorrectCategory.
+func TestHostPortIPv6BracketedRedactedByCorrectCategory(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  Category
+	}{
+		{"ipv6 tailscale bracketed", "[fd7a:115c:a1e0::1]:5252", CatTailscaleIPs},
+		{"ipv6 internal bracketed (ULA)", "[fc00::1]:5252", CatInternalIPs},
+		{"ipv6 external bracketed", "[2606:4700::1111]:5252", CatExternalIPs},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			on := allOn()
+			on[c.want] = false
+			out := New(on).Log(map[string]any{"tailscale.node": c.value})
+			if _, ok := out["tailscale.node"]; ok {
+				t.Errorf("category %v off should redact %q", c.want, c.value)
+			}
+
+			hostnamesOff := allOn()
+			hostnamesOff[CatHostnames] = false
+			out2 := New(hostnamesOff).Log(map[string]any{"tailscale.node": c.value})
+			if _, ok := out2["tailscale.node"]; !ok {
+				t.Errorf("hostnames off must NOT redact bracketed IPv6:port value %q", c.value)
+			}
+		})
+	}
+}
+
+// TestHostPortFallsBackToHostnameForGenuineHostname proves the fallback path
+// (ipKeyFallback -> CatHostnames) still fires for a value that merely looks
+// like host:port but whose host segment is not an IP address at all, and that
+// it stays independent of the IP categories.
+func TestHostPortFallsBackToHostnameForGenuineHostname(t *testing.T) {
+	value := "laptop-1:5252"
+
+	hostnamesOff := allOn()
+	hostnamesOff[CatHostnames] = false
+	out := New(hostnamesOff).Log(map[string]any{"tailscale.node": value})
+	if _, ok := out["tailscale.node"]; ok {
+		t.Errorf("hostnames off should redact genuine hostname:port %q", value)
+	}
+
+	tailscaleIPsOff := allOn()
+	tailscaleIPsOff[CatTailscaleIPs] = false
+	out2 := New(tailscaleIPsOff).Log(map[string]any{"tailscale.node": value})
+	if _, ok := out2["tailscale.node"]; !ok {
+		t.Errorf("tailscale_ips off must not redact genuine hostname:port %q", value)
+	}
+}
+
 func TestUnknownKeyIPValueClassified(t *testing.T) {
 	c := allOn()
 	c[CatExternalIPs] = false

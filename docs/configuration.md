@@ -722,6 +722,14 @@ Tailscale IPs, for example.
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
 > category to `false` simply omits that class of identifier from emitted telemetry entirely.
 
+> **`host:port` values are classified by their address, not their string shape.** Some IP-valued
+> attributes — notably the node-metrics identity default `tailscale.node` — can appear as `host:port`
+> (`100.64.0.1:5252`) or bracketed IPv6 (`[fd7a:115c:a1e0::1]:5252`). These are classified by the
+> address portion alone, so they are gated by the matching `tailscale_ips` / `internal_ips` /
+> `external_ips` toggle — never by `hostnames`. A value that merely looks like `host:port` but whose
+> host segment is not a parseable IP (a genuine hostname such as `laptop-1:5252`) still falls back to
+> `hostnames`, unchanged.
+
 > **Log message bodies never carry free text — the two signals below are no exception.** The filter
 > applies to metric labels and log record **attributes**. Log record **bodies** are always fixed,
 > generic, human-readable strings that never contain free-text identifiers — this holds regardless of
