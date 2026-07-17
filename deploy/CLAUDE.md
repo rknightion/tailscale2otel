@@ -40,12 +40,17 @@ mounted via an `emptyDir` by default. Set `persistence.enabled=true` to create a
 storage across pod rescheduling. The app gracefully falls back to in-memory if the path is not
 writable (a WARN is logged), so no crash occurs on misconfiguration.
 
-Two files in the chart are **generated and drift-checked in CI** (the `Helm` workflow) — regenerate by
-matching the actions in `.github/workflows/helm.yml`, do not hand-edit:
+Two files in the chart are **generated and drift-checked in CI** (the `Helm` workflow) — regenerate
+with `scripts/regen-generated.sh helm`, do not hand-edit:
 
 - `values.schema.json` — JSON Schema **draft-07** (Helm only validates draft-07), generated from
-  `values.yaml` by `losisin/helm-values-schema-json-action`.
-- `README.md` — generated from `README.md.gotmpl` + value annotations by `helm-docs`.
+  `values.yaml` by `losisin/helm-values-schema-json-action` (which installs tool **v2.5.0**).
+- `README.md` — generated from `README.md.gotmpl` + value annotations by `helm-docs` (**v1.14.2**).
+
+**Both tools are version-pinned** — a different local version silently generates different output.
+Install the pinned pair once per machine with `scripts/regen-generated.sh tools`; the script verifies
+the version before regenerating and SKIPs loudly rather than writing a wrong file. See the root
+`CLAUDE.md` (and the script header) for the pins and the helm-docs ldflag gotcha.
 
 CI also runs `configcheck` over the chart-rendered config, so a `values.yaml` `config:` change that
 violates a cross-field rule (e.g. poll+stream on one log type) fails the Helm workflow, not just the app.

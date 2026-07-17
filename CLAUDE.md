@@ -25,6 +25,7 @@ by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.
 without the README). `scripts/regen-generated.sh` reproduces all four locally, byte-for-byte with CI:
 
 ```sh
+scripts/regen-generated.sh tools  # ONCE PER MACHINE: install the pinned helm tools (see below)
 scripts/regen-generated.sh        # all (pass helm / helm-docs / helm-schema / metrics / envref to scope)
 go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just docs/metrics.md
 go test ./internal/config -run TestEnvReferenceDocInSync -update       # just docs/env-vars.md
@@ -34,8 +35,23 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | --- | --- | --- |
 | `docs/metrics.md` | the in-code telemetry catalog | `tools/metricscatalog` |
 | `docs/env-vars.md` | `config.example.yaml` (keys, defaults, inline comments) | `TestEnvReferenceDocInSync -update` (root module; no separate tool) |
-| `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` |
-| `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` |
+| `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
+| `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
+
+> **The two helm tools are version-pinned — install them with `scripts/regen-generated.sh tools`.**
+> CI pins the *actions*, and each action installs one specific tool binary; a local tool of any other
+> version generates **different output**, which lands as unrelated churn or a red `fail-on-diff`. The
+> script now verifies the installed version against the pin and **loudly SKIPs rather than writing a
+> wrong file**, so a mismatch can no longer silently corrupt an artifact. The pins live at the top of
+> `scripts/regen-generated.sh` — **when Renovate bumps `losisin/helm-docs-github-action` or
+> `losisin/helm-values-schema-json-action` in `.github/workflows/helm.yml`, update them to match**
+> (the action version ≠ the tool version: action `v3.0.1` installs tool `v2.5.0`).
+>
+> Gotcha worth knowing: a plain `go install …/helm-docs@v1.14.2` yields a binary that reports **no
+> version**, because helm-docs reads its version from a build-time ldflag rather than Go build info.
+> The README template's version footer is guarded by `{{ if .HelmDocsVersion }}`, so that binary
+> silently drops the footer — a plausible-but-wrong README. The `tools` target passes the ldflag
+> goreleaser would (`-X main.version=1.14.2`); don't hand-install these tools without it.
 
 > **The pre-commit hook installs itself.** Git can't run anything on clone (by design), so once per
 > clone run `go generate ./...` (or `scripts/setup.sh`) — either points `core.hooksPath` at `.githooks`

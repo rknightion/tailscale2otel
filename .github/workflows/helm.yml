@@ -45,6 +45,12 @@ jobs:
 
       # Regenerate values.schema.json (draft-07; Helm only validates draft-07) and
       # fail if the committed copy drifts. The committed file is the baseline.
+      #
+      # NOTE: this action installs helm-values-schema-json v2.5.0 (the tool version
+      # is baked into the action's dist/index.js and is NOT the action's own
+      # version). scripts/regen-generated.sh pins the same tool version so local
+      # regeneration is byte-identical. If you bump this action, re-check the tool
+      # version it installs and update HELM_SCHEMA_VERSION in that script to match.
       - name: values.schema.json is in sync (losisin/helm-values-schema-json)
         uses: losisin/helm-values-schema-json-action@cfefdf4241da6dbe17f3378e3cd0e863d4a4c3c8 # v3.0.1
         with:
@@ -55,6 +61,12 @@ jobs:
 
       # Regenerate the chart README from README.md.gotmpl + value annotations and
       # fail if it drifts from the committed copy.
+      #
+      # NOTE: this action installs helm-docs v1.14.2 (an upstream release binary,
+      # whose version ldflag is set — that ldflag is what renders the README's
+      # version footer). scripts/regen-generated.sh pins the same version AND
+      # passes the ldflag, so local regeneration is byte-identical. If you bump
+      # this action, update HELM_DOCS_VERSION in that script to match.
       - name: helm-docs is in sync (norwoodj/helm-docs)
         uses: losisin/helm-docs-github-action@3a4528e97c49a5e83de6b78c50c61c8ee5c9f944 # v2
         with:

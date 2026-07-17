@@ -39,3 +39,8 @@ tailscale2otel-security-findings/
 # Local scratch TODO/backlog notes — never committed (the old committed todos.txt
 # was removed in the docs consolidation; keep any future scratch list local). #122
 todos.txt
+
+# Python bytecode cache — created by running the dashboard/alert generators
+# (deploy/grafana/gen/build.py, deploy/alerts/gen/build_rules.py).
+__pycache__/
+*.py[cod]
