@@ -98,16 +98,30 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 
 // newBoundedTokenFetchClient builds an http.Client used ONLY for token-endpoint
 // fetches (OAuth client-credentials refresh, or workload-identity token
-// exchange), bounded by dial/TLS/response-header timeouts. See the #84
-// rationale on the call sites above.
+// exchange). See the #84 rationale on the call sites above.
+//
+// #200: the Transport-level dial/TLS/response-header timeouts bound
+// everything UP TO the arrival of response headers, but not the body read
+// that follows — a token endpoint that sends valid headers and then stalls
+// mid-body (e.g. a slow/broken chunked response) could still hang the
+// refresh forever, serializing every caller behind oauth2.ReuseTokenSource's
+// mutex. Client.Timeout bounds the WHOLE exchange (connect + TLS + headers +
+// body read), so it is set here too, in addition to the Transport timeouts.
+// This is a single unretried call with no backoff, so — unlike
+// tailscale.http.timeout, which bounds one attempt inside a retry chain, and
+// unlike retryTransport's attemptTimeout, which excludes queued/backoff wait
+// time — this bound is the entire token fetch, start to finish.
 func newBoundedTokenFetchClient(timeout time.Duration) *http.Client {
-	return &http.Client{Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
-		TLSHandshakeTimeout:   timeout,
-		ResponseHeaderTimeout: timeout,
-		ForceAttemptHTTP2:     true,
-	}}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+			ForceAttemptHTTP2:     true,
+		},
+	}
 }
 
 func orDuration(d, def time.Duration) time.Duration {

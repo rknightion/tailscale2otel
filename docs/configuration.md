@@ -217,6 +217,13 @@ The HTTP client used for all Tailscale API calls.
 | `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. |
 | `tailscale.http.rate_limit` | `0` | Global request rate cap in requests/second across **all** collectors. `0` = unlimited. |
 
+> **Token fetches use the same timeout, end-to-end.** `tailscale.http.timeout` also bounds each OAuth
+> client-credentials refresh and workload-identity token exchange — but there it covers the *whole* call
+> (connect + headers + **body read**) with no retries and no backoff, unlike a normal API call where it
+> bounds one attempt and `max_attempts` governs the retry chain. A token endpoint that sends valid
+> headers and then stalls mid-body therefore fails within this timeout instead of hanging the refresh —
+> and every collector queued behind that single shared refresh — indefinitely.
+
 > **Tune `tailscale.http.timeout` together with `flowlogs`/`auditlogs` `max_window`.** After an outage,
 > the next poll tick fetches and decodes a catch-up window as large as `max_window` in a single request.
 > If streaming and decoding that much log data takes longer than `tailscale.http.timeout`, every attempt

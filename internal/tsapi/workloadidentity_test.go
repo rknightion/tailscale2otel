@@ -273,6 +273,71 @@ func TestWorkloadIdentityTokenFetchIsBounded(t *testing.T) {
 	}
 }
 
+// TestWorkloadIdentityTokenFetchBodyStallIsBounded pins #200 for the
+// workload-identity path: a token-exchange endpoint that sends valid headers
+// and then stalls mid-body must still time out — ResponseHeaderTimeout alone
+// does not cover the body read that follows the headers.
+func TestWorkloadIdentityTokenFetchBodyStallIsBounded(t *testing.T) {
+	var exchangeHits int32
+	unblock := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/oauth/token-exchange") {
+			atomic.AddInt32(&exchangeHits, 1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"access_toke`)) // flush headers + a partial body
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+			case <-unblock:
+			}
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	defer close(unblock)
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("jwt"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	c, err := buildHTTPClient(Options{
+		WorkloadIdentityClientID:    "wif-client-id",
+		WorkloadIdentityIDTokenFile: tokenPath,
+		BaseURL:                     srv.URL,
+		Timeout:                     150 * time.Millisecond,
+		MaxAttempts:                 1,
+	})
+	if err != nil {
+		t.Fatalf("buildHTTPClient: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v2/tailnet/example.com/devices", nil)
+		resp, reqErr := c.Do(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		done <- reqErr
+	}()
+
+	select {
+	case reqErr := <-done:
+		if reqErr == nil {
+			t.Fatal("expected an error from the body-stalled token exchange, got nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("request hung well past the 150ms token-fetch bound (#200 regression: body read unbounded)")
+	}
+	if atomic.LoadInt32(&exchangeHits) == 0 {
+		t.Fatal("token-exchange endpoint was never hit; test did not exercise the exchange path")
+	}
+}
+
 // TestNewClient_WorkloadIdentity_NoAPIKey confirms NewClient wires opts through
 // to a working client when only workload-identity fields are set (no APIKey,
 // no OAuthClientID) — i.e. the new auth method is reachable from the public
