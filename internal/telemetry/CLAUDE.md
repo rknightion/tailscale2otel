@@ -62,8 +62,20 @@ values ever seen. Diagnosed live in graph2otel#104; fixed here in #187.
 Consequences baked into `provider.go`:
 
 - **`buildResource(ctx, opts, includeServiceVersion)` builds two resources**: metrics get
-  `includeServiceVersion=false`, logs/traces get `true`. Logs/traces have no per-series label surface
-  and are never summed, so `service.version` is safe (and useful) there.
+  `includeServiceVersion=false`, logs/traces get `true`. Logs are never summed and have no per-series
+  label surface, so `service.version` is unambiguously safe (and useful) there.
+- **Traces are a deliberate, eyes-open exception (#195).** Spans themselves have no series surface, but
+  Grafana Cloud's Tempo **metrics-generator** derives Prometheus series from them and promotes span
+  resource attributes to labels — so `service.version` on the traces resource *does* reach a per-series
+  surface, as `service_version` on `traces_spanmetrics_*`. Confirmed live: a 6h window showed two builds'
+  spanmetrics coexisting (90 + 54 series), i.e. the same redeploy artifact, on that family only.
+  **Accepted, not overlooked.** `traces_target_info` carrying the version is the *correct* info-metric
+  pattern, version-on-RED is a legitimate canary/comparison dimension, and the cardinality is trivial
+  (~90 series) next to the thousands of flow series #187 protects. Dropping `service.version` from the
+  traces resource would trade genuinely useful per-span build attribution in Tempo for a small artifact.
+  If the redeploy artifact ever matters, the surgical fix is **backend-side** — exclude `service_version`
+  from the Tempo metrics-generator's dimensions — which keeps it on spans and off the generated series.
+  Do not "fix" this in `provider.go` without re-reading #195.
 - The **version's metrics home is the `tailscale2otel.build_info` gauge** (`version` label) — the
   classic Prometheus info-metric pattern. Join it with `group_left` to attribute a metric to a build:
   ```promql
