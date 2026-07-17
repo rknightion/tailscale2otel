@@ -41,15 +41,31 @@
 //   - a Tailscale batch wrapper {"logs": [<record>, ...]} — each element is
 //     classified (this is also the shape the .capture files use at top level).
 //
-// A genuinely corrupt/truncated body (e.g. a torn transfer) is handled by
-// SALVAGING the valid prefix rather than rejecting the whole batch (#96): when
-// the concatenated-JSON decode hits a mid-stream syntax error after already
-// decoding at least one clean value, extractRecords keeps that decoded prefix
-// and drops only the corrupted remainder — since the real wire format has no
-// separators between records, one bad object no longer costs an entire
-// ~73-record POST. The salvaged/dropped counts are logged (WARN) so the
-// partial loss stays observable. The newline-split fallback above is only
-// attempted when NOTHING decoded at all.
+// # Atomic batch delivery (#201)
+//
+// The receiver treats each POST as an ALL-OR-NOTHING batch: it parses and
+// type-checks the COMPLETE body before routing a single record to a processor,
+// so a request is never acknowledged with 200 after silently dropping part of
+// its payload. Two conditions reject the whole request with a 4xx and emit
+// NOTHING (no partial prefix):
+//
+//   - the body is structurally corrupt/truncated — a mid-stream JSON syntax
+//     error (a torn concatenated batch), or an invalid line in an NDJSON body
+//     (rejected{reason=malformed}); or
+//   - a record classifies as a KNOWN type (flow/audit) but fails typed decoding
+//     (rejected{reason=decode_error} — e.g. a wire-format change we no longer
+//     understand).
+//
+// The sender then retries rather than treating the partial loss as delivered.
+// This deliberately REPLACES the earlier valid-prefix salvage (#96): salvaging a
+// truncated batch and ACKing it 200 was itself the durability hole #201 closes.
+//
+// Genuinely-UNKNOWN future record types stay forward-compatible: an object that
+// classifies to neither the flow nor the audit shape (or a non-object value in an
+// envelope slot) is SKIPPED and counted (#67, MetricSkipped) and the batch still
+// SUCCEEDS (200) with the understood records emitted. The distinction is "a known
+// record we failed to decode / structural corruption" ⇒ hard reject, versus "a
+// record type we do not recognize at all" ⇒ skip.
 //
 // Each extracted record object is CLASSIFIED by shape, not by a declared type:
 //
@@ -110,12 +126,18 @@ const (
 	// MetricRecords counts records successfully routed to a processor. It
 	// carries a low-cardinality "type" attribute ("flow" or "audit").
 	MetricRecords = "tailscale.stream.records"
-	// MetricRejected counts requests/records that could not be ingested. It
-	// carries a low-cardinality "reason" attribute ("auth" or "unparsable").
+	// MetricRejected counts whole REQUESTS the receiver refused to ingest. It
+	// carries a low-cardinality "reason" attribute: "auth", "too_large",
+	// "unparsable" (nothing JSON-like), "malformed" (the body was structurally
+	// corrupt/truncated), or "decode_error" (a known record failed typed decoding).
+	// The last two are the #201 atomic-batch rejections — a corrupt or partially
+	// undecodable batch is rejected whole rather than partially ACKed.
 	MetricRejected = "tailscale.stream.rejected"
 	// MetricDecodeErrors counts records that classified as a known type but whose
-	// typed decode failed (a malformed flow/audit record inside an otherwise
-	// valid request). Carries the "type" attribute ("flow" or "audit").
+	// typed decode failed (a malformed flow/audit record). Carries the "type"
+	// attribute ("flow" or "audit"). Under the #201 atomic contract any such record
+	// also rejects its whole request (rejected{reason=decode_error}); this counter
+	// records which wire type broke.
 	MetricDecodeErrors = "tailscale.stream.decode_errors"
 	// MetricInflight tracks in-flight HTTP requests currently being processed
 	// by the HEC receiver (UpDownCounter: +1 on entry, -1 on return).
@@ -149,6 +171,16 @@ const (
 	reasonAuth       = "auth"
 	reasonUnparsable = "unparsable"
 	reasonTooLarge   = "too_large"
+
+	// reasonMalformed and reasonDecodeError are the two #201 atomic-batch
+	// rejection reasons on MetricRejected. reasonMalformed = the body was
+	// structurally corrupt/truncated (a mid-stream JSON syntax error, or an
+	// invalid line in an NDJSON body); reasonDecodeError = a record classified as
+	// a KNOWN type (flow/audit) but failed typed decoding. Either rejects the
+	// WHOLE request with no partial emit, distinct from an unknown future record
+	// type (which is skipped, not rejected — see reasonUnclassified below).
+	reasonMalformed   = "malformed"
+	reasonDecodeError = "decode_error"
 
 	// reasonUnclassified and reasonUnwrapDrop are the "reason" values for
 	// MetricSkipped (#67): the two ways a record extracted from a valid
@@ -334,20 +366,30 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "could not parse body")
 		return
 	}
-	if outcome.truncated {
-		// #96: a mid-stream decode error salvaged a valid prefix rather than
-		// discarding the whole batch; surface the salvaged/dropped counts so
-		// the partial loss stays visible instead of hiding behind a plain 200.
-		s.logger.Warn("stream: salvaged valid prefix from a corrupted batch",
-			"salvaged_records", outcome.salvaged,
+
+	// #201 atomic batch delivery, phase 0: a structurally corrupt/truncated body
+	// rejects the WHOLE request before any record is emitted, so a partial batch
+	// is never ACKed as success and the sender retries. This replaces the earlier
+	// valid-prefix salvage (#96) — the salvageable records are deliberately
+	// discarded here rather than routed to a processor.
+	if outcome.corrupt {
+		span.SetStatus(codes.Error, "corrupt batch")
+		s.logger.Warn("stream: rejecting structurally corrupt batch (no partial emit)",
 			"dropped_bytes", outcome.droppedBytes)
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+			telemetry.Attrs{attrReason: reasonMalformed})
+		s.writeError(w, http.StatusBadRequest, "corrupt or truncated batch")
+		return
 	}
 
-	if s.onIngest != nil && len(raw) > 0 {
-		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
-	}
-
-	var flows, audits, classifyUnknown, flowDecodeErr, auditDecodeErr int
+	// Phase 1: classify and typed-decode the COMPLETE batch WITHOUT routing any
+	// record to a processor yet. Decoded records are staged; a known record that
+	// fails typed decoding is tallied so the whole request can be rejected below
+	// (nothing emitted). Genuinely-unknown record types are counted as skips and
+	// do NOT fail the batch (forward compatibility).
+	pendingFlows := make([]flowlog.FlowLog, 0, len(records))
+	pendingAudits := make([]audit.Event, 0, len(records))
+	var classifyUnknown, flowDecodeErr, auditDecodeErr int
 	for _, rec := range records {
 		switch classify(rec.raw) {
 		case kindFlow:
@@ -356,8 +398,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				flowDecodeErr++
 				continue
 			}
-			s.flowProc.Process(f, s.emitter)
-			flows++
+			pendingFlows = append(pendingFlows, f)
 		case kindAudit:
 			var ev audit.Event
 			if err := json.Unmarshal(rec.raw, &ev); err != nil {
@@ -373,12 +414,48 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			if ev.EventTime.IsZero() && !rec.envTime.IsZero() {
 				ev.EventTime = rec.envTime
 			}
-			s.auditProc.Process(ev, s.emitter)
-			audits++
+			pendingAudits = append(pendingAudits, ev)
 		default:
 			classifyUnknown++
 		}
 	}
+
+	// #201: a KNOWN record (flow/audit) that failed typed decoding means the batch
+	// is not fully understood — reject the WHOLE request with nothing emitted, so a
+	// wire-format change surfaces as retries + an alert rather than silent record
+	// loss behind a 200. decode_errors{type=...} records which wire type broke.
+	if flowDecodeErr > 0 || auditDecodeErr > 0 {
+		span.SetStatus(codes.Error, "record decode failure")
+		if flowDecodeErr > 0 {
+			s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
+				float64(flowDecodeErr), telemetry.Attrs{attrType: typeFlow})
+		}
+		if auditDecodeErr > 0 {
+			s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
+				float64(auditDecodeErr), telemetry.Attrs{attrType: typeAudit})
+		}
+		s.logger.Warn("stream: rejecting batch with undecodable known record(s) (no partial emit)",
+			"flow_decode_errors", flowDecodeErr, "audit_decode_errors", auditDecodeErr)
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+			telemetry.Attrs{attrReason: reasonDecodeError})
+		s.writeError(w, http.StatusBadRequest, "batch contains an undecodable record")
+		return
+	}
+
+	// Phase 2: the batch is fully understood (every record either decoded cleanly
+	// or is a forward-compatible unknown). NOW emit — route the staged records,
+	// count skips, and ack success. Nothing above this point touched a processor.
+	if s.onIngest != nil && len(raw) > 0 {
+		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
+	}
+	for i := range pendingFlows {
+		s.flowProc.Process(pendingFlows[i], s.emitter)
+	}
+	for i := range pendingAudits {
+		s.auditProc.Process(pendingAudits[i], s.emitter)
+	}
+	flows := len(pendingFlows)
+	audits := len(pendingAudits)
 	// #67: total skipped records, combining both stages a record can be
 	// dropped at — classify()-stage kindUnknown (above) and unwrap-stage drops
 	// (a non-object HEC "event"/nested value, tallied inside extractRecords).
@@ -399,14 +476,6 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if s.onIngest != nil {
 			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
 		}
-	}
-	if flowDecodeErr > 0 {
-		s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
-			float64(flowDecodeErr), telemetry.Attrs{attrType: typeFlow})
-	}
-	if auditDecodeErr > 0 {
-		s.emitter.Counter(docStreamDecodeErrors.Name, docStreamDecodeErrors.Unit, docStreamDecodeErrors.Description,
-			float64(auditDecodeErr), telemetry.Attrs{attrType: typeAudit})
 	}
 	if classifyUnknown > 0 {
 		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
@@ -579,35 +648,35 @@ type extractedRecord struct {
 	envTime time.Time
 }
 
-// extractOutcome reports whether extractRecords had to salvage a valid prefix
-// after a mid-stream decode error (#96), and how much was salvaged vs. dropped,
-// so the caller can surface the partial loss instead of it staying invisible
-// behind a plain 200 ack.
+// extractOutcome reports structural facts about a parsed request body that the
+// caller (handle) needs for the #201 atomic batch-delivery decision.
 type extractOutcome struct {
-	// truncated is true when concatenated-JSON decoding stopped on a syntax
-	// error after at least one value had already decoded cleanly. The
-	// corrupted value and everything after it in the body was dropped.
-	truncated bool
-	// salvaged is the number of records recovered from the decoded prefix
-	// (after envelope unwrapping); meaningful only when truncated is true.
-	salvaged int
-	// droppedBytes is the length, in bytes, of the undecoded remainder
-	// discarded at the corruption point. The exact record count inside that
-	// remainder is unknowable — those bytes never parsed as JSON — so byte
-	// length is the honest signal surfaced instead.
+	// corrupt is true when the body contained a JSON structural error somewhere:
+	// a mid-stream syntax error during concatenated-value decoding (after at
+	// least one clean value), or a non-empty NDJSON line that is not valid JSON.
+	// It rejects the WHOLE request (rejected{reason=malformed}) — the receiver no
+	// longer salvages a valid prefix and ACKs the partial batch (this reverses
+	// #96). Any records still returned alongside it are for logging only and must
+	// NOT be emitted.
+	corrupt bool
+	// droppedBytes is the length, in bytes, of the undecoded remainder discarded
+	// at a concatenated-stream corruption point (0 for the NDJSON-line case). The
+	// exact record count inside that remainder is unknowable — those bytes never
+	// parsed as JSON — so byte length is the honest signal logged instead.
 	droppedBytes int
 	// unwrapDropped counts values dropped inside unwrap itself (#67): a
 	// non-object value (e.g. a scalar/null HEC "event", or a malformed nested
 	// array) encountered while unwrapping an envelope, before the record ever
-	// reaches classify(). Distinct from a classify()-stage kindUnknown result,
-	// which counts as skipped in the caller (handle) instead.
+	// reaches classify(). This is a forward-compatible SKIP (the batch still
+	// succeeds), distinct from the corrupt flag above.
 	unwrapDropped int
 }
 
 // extractRecords parses a request body into zero or more record objects (each
 // paired with its envelope time), tolerating the several envelope shapes
-// documented on the package. It returns an error only when nothing JSON-like can
-// be extracted at all.
+// documented on the package. It sets outcome.corrupt when the body contains a
+// structural JSON error, and returns an error only when nothing JSON-like can be
+// extracted at all.
 func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
@@ -627,16 +696,17 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			// A mid-stream syntax error. The real Tailscale wire format
-			// concatenates HEC objects with NO separators (see the package
-			// doc), so one corrupt record used to reject an entire ~73-record
-			// batch: discarding the already-decoded values here and falling
-			// through to the newline-split fallback below salvages nothing
-			// from a no-separator stream. Keep the valid PREFIX instead (#96)
-			// — only an empty prefix (nothing decoded before the very first
-			// error) falls through to that fallback.
+			// A mid-stream syntax error after at least one clean value: the body
+			// is structurally corrupt/truncated. Under the #201 atomic contract
+			// the whole request is rejected (no partial emit), so flag it and stop.
+			// The values decoded before the error are kept only so the caller can
+			// report the dropped-bytes count — they are NOT emitted. An EMPTY
+			// prefix (nothing decoded before the very first error) means the body
+			// doesn't even start with valid JSON; fall through to the line scan
+			// below to tell "entirely non-JSON" apart from "mixes valid and corrupt
+			// NDJSON lines".
 			if len(values) > 0 {
-				outcome.truncated = true
+				outcome.corrupt = true
 				outcome.droppedBytes = len(trimmed) - int(dec.InputOffset())
 			}
 			break
@@ -645,10 +715,12 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	}
 
 	if len(values) == 0 {
-		// Fallback: split on newlines and parse each non-empty line. This
-		// salvages NDJSON where one line is malformed without discarding the
-		// rest. strings.SplitSeq (Go 1.24+) iterates the lines lazily without
-		// allocating an intermediate slice.
+		// The stream decoder could not read even one value: the body does not
+		// start with valid JSON. Scan it line by line so we can distinguish a body
+		// that is entirely non-JSON (errors -> rejected{reason=unparsable}) from an
+		// NDJSON body that mixes valid lines with a corrupt one (corrupt ->
+		// rejected{reason=malformed}). strings.SplitSeq (Go 1.24+) iterates lines
+		// lazily without allocating an intermediate slice.
 		for line := range strings.SplitSeq(string(trimmed), "\n") {
 			line = strings.TrimSpace(line)
 			if len(line) == 0 {
@@ -656,6 +728,11 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 			}
 			if json.Valid([]byte(line)) {
 				values = append(values, json.RawMessage(line))
+			} else {
+				// A structurally-invalid line alongside valid ones: the batch is
+				// corrupt. (When there are NO valid lines at all we return an error
+				// below, which the caller maps to reason=unparsable instead.)
+				outcome.corrupt = true
 			}
 		}
 		if len(values) == 0 {
@@ -674,9 +751,6 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	}
 	if len(out) == 0 {
 		return nil, extractOutcome{}, errors.New("no records after unwrapping")
-	}
-	if outcome.truncated {
-		outcome.salvaged = len(out)
 	}
 	outcome.unwrapDropped = unwrapDropped
 	return out, outcome, nil

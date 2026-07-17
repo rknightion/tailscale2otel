@@ -45,6 +45,8 @@ const (
 	reasonUnparsable   = "unparsable"
 	reasonUnclassified = "unclassified"
 	reasonUnwrapDrop   = "unwrap_drop"
+	reasonMalformed    = "malformed"
+	reasonDecodeError  = "decode_error"
 )
 
 const testToken = "s3cr3t-token"
@@ -328,70 +330,33 @@ func TestEnvelope_SplunkEventWrapper(t *testing.T) {
 	}
 }
 
-// TestEnvelope_NDJSONSalvagesMalformedLine pins the line-by-line salvage path:
-// when the decoder cannot cleanly stream ANY value at all (the malformed line
-// comes first), the newline-split fallback still recovers every valid line
-// around it. This exercises the split-by-newline fallback (the loop converted
-// to strings.SplitSeq in P2-1).
-//
-// Note (#96): the fallback is now reached ONLY when the concatenated-JSON
-// decoder salvages an EMPTY prefix — a decode error after at least one clean
-// value takes the new prefix-preservation path instead (see
-// TestEnvelope_ConcatenatedSalvagesValidPrefix), which by design keeps only the
-// records decoded before the corruption point, not ones after it. So the
-// malformed line here is first, not in the middle, to keep exercising this
-// fallback's own "recover everything around a total non-stream" behavior
-// without colliding with the prefix-preservation path.
-func TestEnvelope_NDJSONSalvagesMalformedLine(t *testing.T) {
+// TestEnvelope_NDJSONMalformedLineRejectsBatch pins the #201 atomic contract for
+// the NDJSON path: a structurally-invalid line anywhere in the body corrupts the
+// whole batch, so the receiver REJECTS the request (non-2xx) and emits NOTHING —
+// it does NOT salvage the valid lines and ACK a partial success. Before #201 the
+// newline-split fallback recovered the valid records around the malformed line and
+// returned 200, silently dropping the malformed one.
+func TestEnvelope_NDJSONMalformedLineRejectsBatch(t *testing.T) {
 	s, rec := newServer(t, stream.Options{Token: testToken})
 
-	// A torn/garbage line first (so the decoder salvages zero values and falls
-	// through to the newline-split path), then a valid flow and a valid audit.
+	// A torn/garbage line first (so the stream decoder salvages zero values and
+	// falls through to the newline-split scan), then a valid flow and audit.
 	body := `{"oops": broken json` + "\n" + captureFlowRecord + "\n" + captureAuditRecord + "\n"
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (structurally corrupt batch rejected); body=%q", w.Code, w.Body.String())
 	}
-	// Both valid records survived the malformed first line.
-	recs := rec.MetricPoints(metricRecords)
-	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
-		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	// Atomic rejection emits NO records: not the malformed line, and not the
+	// otherwise-valid lines around it.
+	if recs := rec.MetricPoints(metricRecords); len(recs) != 0 {
+		t.Fatalf("records emitted = %+v, want none (atomic reject must not emit a partial batch)", recs)
 	}
-	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
-		t.Fatalf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
+	if io := rec.MetricPoints(flowlog.MetricIO); len(io) != 0 {
+		t.Fatalf("flow IO points = %d, want 0 (no record routed to a processor)", len(io))
 	}
-}
-
-// TestEnvelope_ConcatenatedPrefixPreservationTakesPriorityOverLineSplit locks
-// in the #96 priority rule the note above documents: when a valid record DOES
-// decode before a mid-stream corruption, the prefix-preservation path is taken
-// even if the body happens to contain newlines that a naive line-split could
-// have used to recover more — records after the corruption point are dropped,
-// not recovered via a secondary newline scan. This is a deliberate scope
-// decision (see the package doc), not an oversight.
-func TestEnvelope_ConcatenatedPrefixPreservationTakesPriorityOverLineSplit(t *testing.T) {
-	s, rec := newServer(t, stream.Options{Token: testToken})
-
-	// A valid flow, then a torn/garbage line, then a valid audit: the same
-	// shape TestEnvelope_NDJSONSalvagesMalformedLine used before #96.
-	body := captureFlowRecord + "\n" + `{"oops": broken json` + "\n" + captureAuditRecord + "\n"
-	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (the decoded prefix is still accepted); body=%q", w.Code, w.Body.String())
-	}
-	recs := rec.MetricPoints(metricRecords)
-	// The flow (decoded before the corruption) survives via prefix preservation.
-	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
-		t.Fatalf("%s{type=flow} = %v, want 1 (prefix salvaged)", metricRecords, fp.Value)
-	}
-	// The audit (after the corruption) is intentionally NOT recovered: no
-	// records{type=audit} point should exist at all.
-	for _, p := range recs {
-		if p.Attrs[attrType] == typeAudit {
-			t.Fatalf("records{type=audit} = %v, want no point (records after the corruption point are dropped, not recovered)", p.Value)
-		}
+	if p := findPoint(t, rec.MetricPoints(metricRejected), map[string]string{attrReason: reasonMalformed}); p.Value != 1 {
+		t.Fatalf("%s{reason=malformed} = %v, want 1", metricRejected, p.Value)
 	}
 }
 
@@ -515,46 +480,42 @@ func TestStream_AuditEventTimeFromLogsWrapperEnvelope(t *testing.T) {
 // HEC objects: a flow then an audit) with a THIRD, corrupted HEC object appended
 // directly after it — no separator, matching the real wire format — whose
 // "fields.recorded" value is an unquoted bareword (BROKEN) that is not valid
-// JSON. There is no newline anywhere in this body, so the pre-#96 newline-split
-// fallback could not have recovered anything from it at all.
+// JSON. There is no newline anywhere in this body, so a newline-split fallback
+// could not have recovered anything from it at all.
 const concatenatedCorruptedBody = realHECStreamBody +
 	`{"time":1780500999.0,"event":{"nodeId":"n0003CNTRL","virtualTraffic":[{"proto":6}]},"fields":{"recorded":BROKEN}}`
 
-// TestEnvelope_ConcatenatedSalvagesValidPrefix pins the #96 fix: extractRecords
-// must keep the successfully-decoded prefix of a concatenated (no-separator) HEC
-// batch instead of discarding it when a later record in the same batch is
-// corrupt. Before the fix, any mid-stream decode error nil'd out the whole
-// decoded prefix and fell back to a newline-split path that cannot salvage
-// anything from a no-separator stream, so the entire batch (including the two
-// valid leading records) was rejected as unparsable.
-func TestEnvelope_ConcatenatedSalvagesValidPrefix(t *testing.T) {
+// TestEnvelope_ConcatenatedCorruptionRejectsBatch pins the #201 atomic contract:
+// a concatenated (no-separator) HEC batch whose SUFFIX is corrupt must be REJECTED
+// whole (non-2xx) with NOTHING emitted — the valid leading records are not routed
+// to a processor and the request is not ACKed as success, so the sender retries
+// rather than treating the truncation as delivered. This deliberately replaces the
+// earlier valid-prefix salvage (#96), which ACKed the partial batch with a 200.
+func TestEnvelope_ConcatenatedCorruptionRejectsBatch(t *testing.T) {
 	s, rec := newServer(t, stream.Options{})
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(concatenatedCorruptedBody))
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (valid prefix must still be accepted); body=%q", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (corrupt suffix rejects the whole batch); body=%q", w.Code, w.Body.String())
 	}
 
-	// The flow + audit records decoded before the corrupt trailing object must
-	// still have been routed to their processors.
-	recs := rec.MetricPoints(metricRecords)
-	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
-		t.Fatalf("%s{type=flow} = %v, want 1 (valid prefix salvaged)", metricRecords, fp.Value)
+	// Atomic rejection: neither the corrupt trailing object NOR the two valid
+	// leading records may have been emitted.
+	if recs := rec.MetricPoints(metricRecords); len(recs) != 0 {
+		t.Fatalf("records emitted = %+v, want none (atomic reject must not emit the valid prefix)", recs)
 	}
-	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
-		t.Fatalf("%s{type=audit} = %v, want 1 (valid prefix salvaged)", metricRecords, ap.Value)
+	if io := rec.MetricPoints(flowlog.MetricIO); len(io) != 0 {
+		t.Fatalf("flow IO points = %d, want 0 (no record routed to a processor)", len(io))
 	}
-	// A salvaged partial batch is a 200 ack with the valid records processed,
-	// not a rejection: the request must NOT count toward rejected{reason=unparsable}.
-	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
-		t.Fatalf("rejected points = %d, want 0 (%+v)", len(rej), rej)
+	if p := findPoint(t, rec.MetricPoints(metricRejected), map[string]string{attrReason: reasonMalformed}); p.Value != 1 {
+		t.Fatalf("%s{reason=malformed} = %v, want 1", metricRejected, p.Value)
 	}
 }
 
-// TestEnvelope_ConcatenatedTruncationIsLogged asserts the other #96 acceptance
-// criterion: salvaged-vs-dropped counts from a truncated batch must be visible.
-// This receiver surfaces them via a WARN log line (no new metric was needed).
-func TestEnvelope_ConcatenatedTruncationIsLogged(t *testing.T) {
+// TestEnvelope_ConcatenatedCorruptionIsLogged asserts the corrupt-batch rejection
+// is observable: a WARN log line naming the dropped byte count, so an operator can
+// see a truncated batch was refused rather than silently dropped.
+func TestEnvelope_ConcatenatedCorruptionIsLogged(t *testing.T) {
 	var buf bytes.Buffer
 	rec := telemetrytest.New()
 	cache := enrich.NewDeviceCache()
@@ -564,16 +525,13 @@ func TestEnvelope_ConcatenatedTruncationIsLogged(t *testing.T) {
 	s := stream.New(stream.Options{}, flowProc, auditProc, rec.Emitter(), logger)
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(concatenatedCorruptedBody))
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%q", w.Code, w.Body.String())
 	}
 
 	out := buf.String()
 	if !strings.Contains(out, "level=WARN") {
-		t.Fatalf("log output = %q, want a WARN entry for the truncated/salvaged batch", out)
-	}
-	if !strings.Contains(out, "salvaged_records=2") {
-		t.Fatalf("log output = %q, want salvaged_records=2 (the flow + audit prefix)", out)
+		t.Fatalf("log output = %q, want a WARN entry for the rejected corrupt batch", out)
 	}
 	if !strings.Contains(out, "dropped_bytes=") {
 		t.Fatalf("log output = %q, want a dropped_bytes field", out)
@@ -706,33 +664,81 @@ func TestHandler_HECFlowRecord(t *testing.T) {
 	}
 }
 
-func TestHandler_MalformedFlowRecordCountsDecodeError(t *testing.T) {
+// TestHandler_MalformedKnownRecordRejectsBatch pins the #201 atomic contract for
+// a KNOWN record that fails typed decoding: the record classifies as a flow (it
+// has nodeId + traffic) but its typed FlowLog decode fails (start is a number, not
+// an RFC3339 string). Under the atomic contract the WHOLE batch is rejected
+// (non-2xx) with NOTHING emitted — the otherwise-valid flow batched alongside it
+// must NOT be routed to a processor, and the request must NOT be ACKed as success.
+// The failure is still surfaced via decode_errors{type=flow} (which type of the
+// wire format broke) and a rejected{reason=decode_error} request-level counter.
+func TestHandler_MalformedKnownRecordRejectsBatch(t *testing.T) {
 	s, rec := newServer(t, stream.Options{Token: testToken})
 
-	// Classifiable as a flow (has nodeId + traffic) but the typed FlowLog decode
-	// fails (start is a number, not an RFC3339 string). Batched with a valid flow
-	// so we can assert the good one still flows while the bad one is counted, not
-	// silently swallowed.
 	malformed := `{"nodeId":"x","virtualTraffic":[{"proto":6}],"start":123}`
 	body := captureFlowRecord + "\n" + malformed + "\n"
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%q", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (a known record failing typed decode rejects the batch); body=%q", w.Code, w.Body.String())
 	}
 
-	// The valid flow was still processed.
-	p := findPoint(t, rec.MetricPoints(metricRecords), map[string]string{attrType: typeFlow})
-	if p.Value != 1 {
-		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, p.Value)
+	// Atomic rejection: NOTHING emitted — not the malformed record, and not the
+	// valid flow batched with it.
+	if recs := rec.MetricPoints(metricRecords); len(recs) != 0 {
+		t.Fatalf("records emitted = %+v, want none (atomic reject must not emit the valid record)", recs)
+	}
+	if io := rec.MetricPoints(flowlog.MetricIO); len(io) != 0 {
+		t.Fatalf("flow IO points = %d, want 0 (no record routed to a processor)", len(io))
 	}
 
-	// The malformed flow was counted as a decode error.
+	// The malformed flow is still counted as a decode error (surfacing which wire
+	// type broke), and the request is counted as a decode_error rejection.
 	dp := findPoint(t, rec.MetricPoints(metricDecodeErrors), map[string]string{attrType: typeFlow})
 	if dp.Value != 1 {
 		t.Fatalf("%s{type=flow} = %v, want 1", metricDecodeErrors, dp.Value)
 	}
 	if dp.Kind != "sum" || !dp.Monotonic {
 		t.Fatalf("decode_errors = %+v, want a monotonic sum (counter)", dp)
+	}
+	if rp := findPoint(t, rec.MetricPoints(metricRejected), map[string]string{attrReason: reasonDecodeError}); rp.Value != 1 {
+		t.Fatalf("%s{reason=decode_error} = %v, want 1", metricRejected, rp.Value)
+	}
+}
+
+// TestHandler_UnknownRecordTypeSkippedBatchSucceeds pins the forward-compatible
+// side of the #201 contract: a genuinely-UNKNOWN record type (an object that
+// classifies to neither the flow nor the audit shape) is SKIPPED and counted, and
+// the batch still SUCCEEDS (200) with the other, understood records emitted. This
+// is the deliberate asymmetry versus a known-record decode failure (which rejects
+// the whole batch): an unrecognized future type must not break ingestion of the
+// records we DO understand.
+func TestHandler_UnknownRecordTypeSkippedBatchSucceeds(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	// A record of a type this receiver does not recognize at all, batched with a
+	// valid flow and a valid audit.
+	unknown := `{"someFutureRecord":{"kind":"quantum-tunnel"},"version":9}`
+	body := captureFlowRecord + "\n" + unknown + "\n" + captureAuditRecord + "\n"
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (an unknown future type is skipped, not rejected); body=%q", w.Code, w.Body.String())
+	}
+
+	// The unknown record is counted as a skip, and the request is NOT rejected.
+	if p := findPoint(t, rec.MetricPoints(metricSkipped), map[string]string{attrReason: reasonUnclassified}); p.Value != 1 {
+		t.Fatalf("%s{reason=unclassified} = %v, want 1", metricSkipped, p.Value)
+	}
+	if rej := rec.MetricPoints(metricRejected); len(rej) != 0 {
+		t.Fatalf("rejected points = %d, want 0 (unknown type is not a rejection) (%+v)", len(rej), rej)
+	}
+
+	// The understood records around it are still emitted.
+	recs := rec.MetricPoints(metricRecords)
+	if fp := findPoint(t, recs, map[string]string{attrType: typeFlow}); fp.Value != 1 {
+		t.Fatalf("%s{type=flow} = %v, want 1", metricRecords, fp.Value)
+	}
+	if ap := findPoint(t, recs, map[string]string{attrType: typeAudit}); ap.Value != 1 {
+		t.Fatalf("%s{type=audit} = %v, want 1", metricRecords, ap.Value)
 	}
 }
 

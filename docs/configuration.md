@@ -642,6 +642,16 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 > a non-empty `streaming.public_url` are set. Running the poller and this receiver for the same log
 > type triggers a dual-ingestion **WARN**.
 
+> **Batch delivery is all-or-nothing.** The receiver parses and type-checks a whole POST before routing
+> a single record, so a request is never acknowledged `200` after silently dropping part of its payload.
+> A structurally corrupt/truncated body (`rejected{reason=malformed}`) or a record that classifies as a
+> known type but fails typed decoding (`rejected{reason=decode_error}`, e.g. after an unhandled
+> wire-format change) rejects the **whole** request with a `4xx` and emits nothing, so the sender
+> retries rather than treating the loss as delivered. A record whose type is not recognised at all stays
+> forward-compatible: it is skipped and counted (`skipped`) and the batch still succeeds. This replaces
+> the earlier valid-prefix salvage — salvaging a truncated batch and ACKing it `200` was itself a
+> durability hole.
+
 ---
 
 ## `webhook` — event webhook receiver
