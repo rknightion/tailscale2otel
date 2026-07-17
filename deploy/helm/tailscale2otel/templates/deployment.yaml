@@ -5,7 +5,14 @@ metadata:
   labels:
     {{- include "tailscale2otel.labels" . | nindent 4 }}
 spec:
-  # Singleton poller — do not scale horizontally (would double-emit).
+  # Singleton poller — do not scale horizontally (would double-emit). The schema
+  # already constrains replicaCount to exactly 1; this is a second, harder-to-miss
+  # guard for --set/--values overrides that bypass schema validation (e.g. `helm
+  # template --skip-schema-validation`, or a values file layered in after schema
+  # checks via some other tooling).
+  {{- if ne (int .Values.replicaCount) 1 }}
+  {{- fail (printf "replicaCount must be 1: tailscale2otel is a singleton poller with no leader election or shared checkpoint coordination — running %d replicas would double-emit every metric and log against the same tailnet" (int .Values.replicaCount)) }}
+  {{- end }}
   replicas: {{ .Values.replicaCount }}
   strategy:
     type: Recreate

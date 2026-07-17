@@ -10,9 +10,12 @@ image:
 # -- Image pull secrets for private registries.
 imagePullSecrets: []
 
-# -- Replica count. Keep at 1 — this is a singleton poller (no leader election);
-# scaling up would double-emit every metric and log.
-replicaCount: 1
+# -- Replica count. MUST stay 1 — this is a singleton poller (no leader election
+# or shared checkpoint coordination); scaling up would double-emit every metric
+# and log against the same tailnet. Enforced by the generated values.schema.json
+# AND a template `fail` guard (see templates/deployment.yaml) — any other value
+# is rejected.
+replicaCount: 1 # @schema minimum:1;maximum:1
 
 # -- Override the chart name portion of resource names.
 nameOverride: ""

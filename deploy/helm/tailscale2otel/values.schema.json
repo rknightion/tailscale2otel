@@ -843,7 +843,9 @@
             }
         },
         "replicaCount": {
-            "type": "integer"
+            "type": "integer",
+            "maximum": 1,
+            "minimum": 1
         },
         "resources": {
             "type": "object",
