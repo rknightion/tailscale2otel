@@ -23,6 +23,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/collector"
 	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
@@ -145,7 +146,9 @@ func (c *Collector) emitHealth(e telemetry.Emitter, lt string, st *tsapi.LogStre
 			Name:     docErrorLog.Name,
 			Severity: telemetry.SeverityError,
 			Body:     st.LastError,
-			Attrs:    telemetry.Attrs{attrType: lt},
+			// Raw upstream error text — free-text; drop the body when free_text_details is off (#197).
+			BodyPII: []pii.Category{pii.CatFreeTextDetails},
+			Attrs:   telemetry.Attrs{attrType: lt},
 		})
 	}
 }

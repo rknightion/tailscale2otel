@@ -6,6 +6,8 @@ package telemetry
 import (
 	"context"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // Attrs is a set of attributes attached to a metric data point or log record.
@@ -40,6 +42,12 @@ type Event struct {
 	Severity  Severity
 	Timestamp time.Time // event time; zero means "now"
 	Attrs     Attrs
+	// BodyPII lists the PII categories a STANDALONE free-text Body belongs to (a
+	// raw upstream error, a webhook message). When any listed category is disabled
+	// the emitter replaces the whole body, since such a body is not reconstructable
+	// from classified attributes (#197). Leave nil for a generic or attribute-mirrored
+	// body — the emitter still scrubs any disabled-category attribute value out of it.
+	BodyPII []pii.Category
 }
 
 // GaugePoint is one series in a GaugeSnapshot: a value and the attributes that

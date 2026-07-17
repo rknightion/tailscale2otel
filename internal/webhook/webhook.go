@@ -51,6 +51,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // requestDurationBucketsSeconds are the explicit histogram bucket boundaries
@@ -448,6 +449,9 @@ func (s *Server) emit(ev event) {
 		Body:      ev.Message,
 		Severity:  severityForType(ev.Type),
 		Timestamp: parseTimestamp(ev.Timestamp),
+		// The body is the attacker/upstream-supplied free-text message; classify it
+		// so a disabled free_text_details drops it from the body, not just attrs (#197).
+		BodyPII: []pii.Category{pii.CatFreeTextDetails},
 		Attrs: telemetry.Attrs{
 			attrType:            dim,
 			semconv.AttrTailnet: ev.Tailnet,

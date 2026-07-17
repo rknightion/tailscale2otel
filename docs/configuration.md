@@ -730,28 +730,29 @@ Tailscale IPs, for example.
 > host segment is not a parseable IP (a genuine hostname such as `laptop-1:5252`) still falls back to
 > `hostnames`, unchanged.
 
-> **Log message bodies never carry free text — the two signals below are no exception.** The filter
-> applies to metric labels and log record **attributes**. Log record **bodies** are always fixed,
-> generic, human-readable strings that never contain free-text identifiers — this holds regardless of
-> `pii_filter.free_text_details`, for every signal, including the two below that some readers might
-> expect to carry more detail:
+> **The filter covers log message bodies too, not only attributes.** A disabled category's identifiers
+> are removed from log record **bodies** as well as from metric labels and log **attributes** — so an
+> operator who turns a category off does not get it leaked back through the human-readable body. Two
+> shapes of body are handled:
 >
-> - **`tailscale.acl.risky_rule`** — the body is always the generic
->   `"Unrestricted ACL rule in section %q"` (just the section name); it never contains the offending
->   rule text. The rule text lives only in the `tailscale.acl.rule` **attribute**, which — like every
->   other attribute — is gated by `pii_filter.free_text_details` (redacted when `false`, present when
->   `true`).
-> - **`tailscale.key.scopes`** — the body is always the generic
->   `"Tailscale key (%s) has %d scope(s)"` (type + scope count only); it never contains the key
->   description. The description lives only in the `tailscale.key.description` **attribute**, gated by
->   `pii_filter.free_text_details` the same way.
+> - **Standalone free-text bodies** — a raw upstream message or error whose whole content is free text
+>   (`tailscale.webhook.*`, `tailscale.device.tailnet_lock_error`, `tailscale.logstream.error`). When
+>   `pii_filter.free_text_details` is `false` the body is replaced entirely with `[redacted]`; the
+>   generic event name, severity, and low-cardinality attributes still convey what happened.
+> - **Mixed bodies** — a body that embeds an identifier which is also carried as an attribute (flow
+>   addresses on `tailscale.network.flow`, the key description on `tailscale.key.expiring`, the app name
+>   on `tailscale.oauth_app.info`). Only the disabled-category value is masked, in place, wherever it
+>   appears; the non-PII structure (transport, byte counts, scope counts, …) is preserved. A flow body's
+>   Tailscale source address, for example, is masked when `tailscale_ips` is `false` but kept when it is
+>   `true`, independent of the `hostnames` toggle.
 >
-> (`tailscale.audit.details` is an unrelated attribute belonging to the audit-log processor, not to
-> either of these two signals.)
->
-> Because both bodies are always PII-safe by design, there is no additional backend-side redaction
-> needed for them; `pii_filter.free_text_details` is what governs whether the corresponding attributes
-> carry the free text.
+> When every category is enabled (the default) bodies are byte-identical to before — redaction only
+> engages once a category is turned off. A handful of bodies are generic by construction and so are
+> never affected: `tailscale.acl.risky_rule` (`"Unrestricted ACL rule in section %q"` — the rule text
+> lives only in the `tailscale.acl.rule` attribute) and `tailscale.key.scopes`
+> (`"Tailscale key (%s) has %d scope(s)"` — the description lives only in the
+> `tailscale.key.description` attribute); both attributes are still gated by
+> `pii_filter.free_text_details`. (`tailscale.audit.details` is an unrelated audit-log attribute.)
 
 ---
 

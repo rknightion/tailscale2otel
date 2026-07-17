@@ -274,6 +274,10 @@ func (e *otelEmitter) HistogramCtx(ctx context.Context, name, unit, desc string,
 }
 
 func (e *otelEmitter) LogEvent(ev Event) {
+	// Redact the body BEFORE the attrs — the body scrub reads the original attr
+	// values to know what to strip (a disabled category's value must not survive
+	// in the body just because bodies bypass the attribute filter, #197).
+	body := e.redactor.RedactBody(ev.Body, ev.BodyPII, ev.Attrs)
 	ev.Attrs = Attrs(e.redactor.Log(ev.Attrs))
 	var r log.Record
 	if !ev.Timestamp.IsZero() {
@@ -281,7 +285,7 @@ func (e *otelEmitter) LogEvent(ev Event) {
 	}
 	r.SetSeverity(toLogSeverity(ev.Severity))
 	r.SetSeverityText(ev.Severity.String())
-	r.SetBody(log.StringValue(ev.Body))
+	r.SetBody(log.StringValue(body))
 	// The log SDK exposes a native EventName field (log v0.20.0+); use it instead
 	// of carrying the event type as a separate "event.name" attribute.
 	if ev.Name != "" {

@@ -25,6 +25,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/release"
 	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
 )
 
@@ -686,7 +687,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				Name:     docTailnetLockError.Name,
 				Severity: telemetry.SeverityError,
 				Body:     d.TailnetLockError,
-				Attrs:    telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID},
+				// Raw upstream error text — free-text; drop the body when free_text_details is off (#197).
+				BodyPII: []pii.Category{pii.CatFreeTextDetails},
+				Attrs:   telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID},
 			})
 		}
 

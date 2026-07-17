@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // MetricPoint is a single recorded metric data point, flattened for assertions.
@@ -55,15 +56,26 @@ type Recorder struct {
 	emitter telemetry.Emitter
 }
 
-// New returns a Recorder backed by an in-memory metric reader and log exporter.
+// New returns a Recorder backed by an in-memory metric reader and log exporter,
+// with PII filtering off (every category enabled).
 func New() *Recorder {
+	return newRecorder(nil)
+}
+
+// NewWithPII returns a Recorder whose Emitter applies the given PII categories, so
+// tests can assert redaction of metric labels, log attributes, and log bodies.
+func NewWithPII(cats pii.Categories) *Recorder {
+	return newRecorder(cats)
+}
+
+func newRecorder(cats pii.Categories) *Recorder {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 
 	exp := &recordingLogExporter{}
 	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)))
 
-	e := telemetry.NewEmitter(mp.Meter("test"), lp.Logger("test"))
+	e := telemetry.NewEmitterWithPII(mp.Meter("test"), lp.Logger("test"), cats)
 
 	return &Recorder{
 		reader:  reader,
