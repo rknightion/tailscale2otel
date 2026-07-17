@@ -612,10 +612,24 @@ func (c *Config) Validate() error {
 	// enabled; when dynamic discovery is enabled its fields are validated too.
 	// Either static targets OR discovery is a valid way to have something to scrape.
 	if nm := c.Collectors.NodeMetrics; nm.Enabled {
+		seenTargetID := make(map[string]int, len(nm.Targets))
 		for i, t := range nm.Targets {
 			if t.URL == "" {
 				return fmt.Errorf("collectors.node_metrics.targets[%d].url is required", i)
 			}
+			// Reject two static targets that resolve to the same EFFECTIVE identity
+			// (normalized URL + node-identity label). Such a pair scrapes one endpoint
+			// twice under one identity and, for counters, corrupts each other's delta
+			// baseline (the two source series would share a baseline key). Targets that
+			// differ only by URL, or only by instance, are fine — e.g. one verify-on and
+			// one skip-verify HTTPS scrape of the same URL, labeled distinctly.
+			id := nodeMetricsTargetIdentity(t)
+			if j, dup := seenTargetID[id]; dup {
+				return fmt.Errorf("collectors.node_metrics.targets[%d] duplicates targets[%d]: both resolve to "+
+					"the same target identity (url %q, instance %q) — remove one or give them distinct instances",
+					i, j, t.URL, effectiveNodeMetricsInstance(t))
+			}
+			seenTargetID[id] = i
 		}
 		if nm.MaxResponseBytes <= 0 {
 			return fmt.Errorf("collectors.node_metrics.max_response_bytes must be > 0")
@@ -711,4 +725,41 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// nodeMetricsTargetIdentity is the effective identity of a node-metrics scrape
+// target: its normalized URL plus its effective node-identity label. It MUST stay in
+// lockstep with the runtime identity in internal/collector/nodemetrics
+// (targetIdentity/effectiveInstance/normalizeTargetURL) so a config that passes
+// validation and the set the collector actually dedups/keys baselines by agree.
+func nodeMetricsTargetIdentity(t NodeMetricsTarget) string {
+	return normalizeNodeMetricsURL(t.URL) + "\x00" + effectiveNodeMetricsInstance(t)
+}
+
+// effectiveNodeMetricsInstance mirrors the collector's node-identity resolution: the
+// explicit Instance when set, else the host:port parsed from the URL (falling back to
+// the raw URL when it cannot be parsed).
+func effectiveNodeMetricsInstance(t NodeMetricsTarget) string {
+	if t.Instance != "" {
+		return t.Instance
+	}
+	u, err := url.Parse(t.URL)
+	if err != nil || u.Host == "" {
+		return t.URL
+	}
+	return u.Host
+}
+
+// normalizeNodeMetricsURL canonicalizes a target URL for identity comparison,
+// lowercasing the (case-insensitive) scheme and host while leaving the path/query
+// byte-exact. A URL that fails to parse falls back to its raw string. It mirrors the
+// collector's normalizeTargetURL.
+func normalizeNodeMetricsURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	return u.String()
 }

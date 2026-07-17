@@ -1628,6 +1628,197 @@ func TestDropLabels_RemovesLabelKeepsInstance(t *testing.T) {
 	}
 }
 
+// TestDropLabels_BaselineKeepsFullSourceIdentity is the #199 regression guard:
+// a dropped label that distinguishes two SOURCE counters must NOT collapse their
+// delta baselines. requests_total{peer="a"} and requests_total{peer="b"} share the
+// emitted series once "peer" is dropped, but each keeps its own baseline; scrape 1
+// stores both baselines and emits nothing (first observations are suppressed), and
+// scrape 2 emits the SUM of the two independently-correct deltas (10+10=20), not a
+// false absolute value or a spurious reset.
+func TestDropLabels_BaselineKeepsFullSourceIdentity(t *testing.T) {
+	body := "# TYPE requests_total counter\n" +
+		"requests_total{peer=\"a\"} 100\n" +
+		"requests_total{peer=\"b\"} 200\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:    []nodemetrics.Target{{URL: srv.URL, Instance: "node-a"}},
+		DropLabels: []string{"peer"},
+	})
+
+	// Scrape 1: both source series record a baseline; NOTHING is emitted (each is a
+	// first observation). The buggy pre-fix code shared one post-drop baseline, so
+	// the second source series emitted a false absolute value here.
+	rec1 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec1.Emitter()); err != nil {
+		t.Fatalf("Collect() 1 error = %v", err)
+	}
+	if pts := rec1.MetricPoints("requests_total"); len(pts) != 0 {
+		t.Fatalf("scrape 1 requests_total = %+v, want none (both are first observations)", pts)
+	}
+
+	// Scrape 2: each source series grows by 10; the merged emitted series (peer
+	// dropped) must carry the SUM, 20.
+	body = "# TYPE requests_total counter\n" +
+		"requests_total{peer=\"a\"} 110\n" +
+		"requests_total{peer=\"b\"} 210\n"
+	rec2 := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatalf("Collect() 2 error = %v", err)
+	}
+	pts := rec2.MetricPoints("requests_total")
+	if len(pts) != 1 {
+		t.Fatalf("scrape 2 requests_total = %d point(s), want 1 merged series; pts=%+v", len(pts), pts)
+	}
+	if _, ok := pts[0].Attrs["peer"]; ok {
+		t.Fatalf("scrape 2 peer label present = %+v, want dropped", pts[0].Attrs)
+	}
+	if pts[0].Value != 20 {
+		t.Fatalf("scrape 2 merged delta = %v, want 20 (10+10, summed from two source baselines)", pts[0].Value)
+	}
+	if pts[0].Attrs["tailscale.node"] != "node-a" {
+		t.Fatalf("scrape 2 tailscale.node = %q, want node-a", pts[0].Attrs["tailscale.node"])
+	}
+}
+
+// TestDropLabels_HistogramComponentsMergeDeltas verifies #199 for histogram
+// COMPONENTS: the cumulative _bucket/_sum/_count series carry the same delta
+// pipeline as plain counters, so dropping a label that distinguishes two histogram
+// series must merge each component's independently-correct delta (not collapse their
+// baselines). Two series {method="get"} and {method="post"} merge once "method" is
+// dropped; the shared le="+Inf" bucket, _sum, and _count each emit the SUM.
+func TestDropLabels_HistogramComponentsMergeDeltas(t *testing.T) {
+	body := "# TYPE lat histogram\n" +
+		"lat_bucket{method=\"get\",le=\"+Inf\"} 10\n" +
+		"lat_sum{method=\"get\"} 4\n" +
+		"lat_count{method=\"get\"} 10\n" +
+		"lat_bucket{method=\"post\",le=\"+Inf\"} 20\n" +
+		"lat_sum{method=\"post\"} 8\n" +
+		"lat_count{method=\"post\"} 20\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:    []nodemetrics.Target{{URL: srv.URL, Instance: "node-a"}},
+		DropLabels: []string{"method"},
+	})
+	// Baseline scrape: nothing emitted.
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("Collect() baseline error = %v", err)
+	}
+	// get: +Inf +5, sum +2, count +5. post: +Inf +7, sum +4, count +10.
+	body = "# TYPE lat histogram\n" +
+		"lat_bucket{method=\"get\",le=\"+Inf\"} 15\n" +
+		"lat_sum{method=\"get\"} 6\n" +
+		"lat_count{method=\"get\"} 15\n" +
+		"lat_bucket{method=\"post\",le=\"+Inf\"} 27\n" +
+		"lat_sum{method=\"post\"} 12\n" +
+		"lat_count{method=\"post\"} 30\n"
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() delta error = %v", err)
+	}
+	// Each component merges to one series (method dropped) carrying the summed delta.
+	bkt := rec.MetricPoints("lat_bucket")
+	if len(bkt) != 1 || bkt[0].Value != 12 { // 5 + 7
+		t.Fatalf("lat_bucket +Inf = %+v, want single merged delta 12 (5+7)", bkt)
+	}
+	if _, ok := bkt[0].Attrs["method"]; ok {
+		t.Fatalf("lat_bucket retained method label = %+v, want dropped", bkt[0].Attrs)
+	}
+	if sum := rec.MetricPoints("lat_sum"); len(sum) != 1 || sum[0].Value != 6 { // 2 + 4
+		t.Fatalf("lat_sum = %+v, want single merged delta 6 (2+4)", sum)
+	}
+	if cnt := rec.MetricPoints("lat_count"); len(cnt) != 1 || cnt[0].Value != 15 { // 5 + 10
+		t.Fatalf("lat_count = %+v, want single merged delta 15 (5+10)", cnt)
+	}
+}
+
+// TestDropLabels_CuratedCounterKeepsFullSourceBaseline verifies #199 for the
+// CURATED counter path: dropping the raw `path` label that a curated io family
+// folds on must not corrupt the curated delta. Two source series fold onto one
+// curated series (network.io.direction=receive, tailscale.path=direct), and even
+// with drop_labels:["path"] the curated counter emits the summed delta.
+func TestDropLabels_CuratedCounterKeepsFullSourceBaseline(t *testing.T) {
+	body := "# TYPE tailscaled_inbound_bytes_total counter\n" +
+		"tailscaled_inbound_bytes_total{path=\"direct_ipv4\"} 1000\n" +
+		"tailscaled_inbound_bytes_total{path=\"direct_ipv6\"} 500\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:    []nodemetrics.Target{{URL: srv.URL, Instance: "node-a"}},
+		DropLabels: []string{"path"}, // drops path from the raw forward, not the curated series
+	})
+
+	// Baseline scrape: nothing emitted.
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("Collect() baseline error = %v", err)
+	}
+
+	// direct_ipv4 +200, direct_ipv6 +100 -> curated (path=direct) delta 300.
+	body = "# TYPE tailscaled_inbound_bytes_total counter\n" +
+		"tailscaled_inbound_bytes_total{path=\"direct_ipv4\"} 1200\n" +
+		"tailscaled_inbound_bytes_total{path=\"direct_ipv6\"} 600\n"
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() delta error = %v", err)
+	}
+	io := rec.MetricPoints("tailscale.node.io")
+	p, ok := pointByAttr(io, map[string]string{
+		"tailscale.node": "node-a", "network.io.direction": "receive", "tailscale.path": "direct",
+	})
+	if !ok {
+		t.Fatalf("no curated tailscale.node.io point for direct/receive; pts=%+v", io)
+	}
+	if p.Value != 300 {
+		t.Fatalf("curated tailscale.node.io delta = %v, want 300 (200+100 summed source baselines)", p.Value)
+	}
+}
+
+// TestBaseline_DistinctTargetsDoNotShareBaseline verifies #199's target-identity
+// requirement: two targets with the SAME node label but DIFFERENT URLs must keep
+// separate delta baselines, so a lower value on one target is never mistaken for a
+// counter reset on the other. Both serve requests_total for tailscale.node "n".
+func TestBaseline_DistinctTargetsDoNotShareBaseline(t *testing.T) {
+	bodyA := "# TYPE requests_total counter\nrequests_total 100\n"
+	bodyB := "# TYPE requests_total counter\nrequests_total 5\n"
+	srvA := serveText(&bodyA)
+	defer srvA.Close()
+	srvB := serveText(&bodyB)
+	defer srvB.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{
+			{URL: srvA.URL, Instance: "n"},
+			{URL: srvB.URL, Instance: "n"},
+		},
+	})
+	// Baseline scrape: A=100, B=5. Distinct baselines, nothing emitted.
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("Collect() baseline error = %v", err)
+	}
+	// A grows to 110 (delta 10), B grows to 9 (delta 4). If the baselines had
+	// collided on the shared node label, B's 9 vs a stored 110 would look like a
+	// reset (emit 9) — the sum would be wrong.
+	bodyA = "# TYPE requests_total counter\nrequests_total 110\n"
+	bodyB = "# TYPE requests_total counter\nrequests_total 9\n"
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() delta error = %v", err)
+	}
+	pts := rec.MetricPoints("requests_total")
+	// Both targets emit onto the same {tailscale.node=n} series; the counter sums
+	// the two correct deltas: 10 + 4 = 14.
+	if len(pts) != 1 {
+		t.Fatalf("requests_total points = %d, want 1 merged series; pts=%+v", len(pts), pts)
+	}
+	if pts[0].Value != 14 {
+		t.Fatalf("merged delta = %v, want 14 (10+4 from two separate target baselines)", pts[0].Value)
+	}
+}
+
 // TestNodeUp_EmittedDespiteMetricAllow is a regression guard: the per-target
 // tailscale.node.up health gauge (and discovery gauges) bypass the passthrough
 // filters entirely, so it still emits even when MetricAllow matches nothing.

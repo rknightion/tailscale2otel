@@ -548,10 +548,26 @@ attribute `service.instance.id` to the `instance` label, and that would clobber 
 | `collectors.node_metrics.max_samples` | `50000` | Per-target sample cap per scrape. Must be `> 0` when enabled. |
 | `collectors.node_metrics.metric_allow` | `[]` | Anchored regexes on the forwarded metric **name**; if non-empty, a name must match one to be forwarded. Must compile. |
 | `collectors.node_metrics.metric_deny` | `[]` | Anchored regexes; a name matching any is dropped (applied after `metric_allow`). Must compile. |
-| `collectors.node_metrics.drop_labels` | `[]` | Label keys stripped from every forwarded series. `tailscale.node` (the node-identity label) is never dropped. |
+| `collectors.node_metrics.drop_labels` | `[]` | Label keys stripped from the forwarded series' **emitted** attributes. `tailscale.node` (the node-identity label) is never dropped. Dropping affects only the output labels: counter delta baselines are keyed off the full pre-drop source series (see below), so dropping a label that distinguishes two source counters merges them on output while each keeps its own correct delta. |
 
 These filters apply **only** to forwarded samples — never to `tailscale.node.up` or the `discovery.*`
 gauges.
+
+> **Source-series identity vs. emitted labels.** Cumulative counters are forwarded as deltas, and each
+> delta baseline is keyed off the *complete* scraped source series — its metric name, every raw label
+> (before `drop_labels` and before any curated folding), and the target's stable identity (normalized
+> URL + node-identity label). So two source series that collapse onto one emitted series — because
+> `drop_labels` removed a distinguishing label, or a curated mapping folds one — keep separate baselines
+> (and separate first-observation suppression and reset detection), and their individually-correct
+> deltas sum on the merged output. Distinct targets never share a baseline even when they scrape
+> identical series.
+>
+> **Duplicate targets are rejected.** Two static `targets[]` that resolve to the same effective identity
+> (same normalized URL **and** same `instance`/node label) are a startup config error — such a pair
+> would scrape one endpoint twice under one identity and corrupt each other's baselines. Targets that
+> differ only by URL, or only by `instance`, are fine (e.g. a verify-on and a skip-verify scrape of the
+> same URL, labeled distinctly). Discovered targets remain deduped against the static set by URL (static
+> wins), and any residual same-identity duplicate at runtime is collapsed deterministically.
 
 #### `collectors.node_metrics.targets[]`
 

@@ -524,6 +524,49 @@ func TestValidateNodeMetricsValidWithURL(t *testing.T) {
 	}
 }
 
+// TestValidateNodeMetricsRejectsDuplicateTargetIdentity guards the #199 uniqueness
+// rule: two static targets that resolve to the same effective identity (normalized
+// URL + node-identity label) are rejected, since they scrape one endpoint twice
+// under one identity and would corrupt each other's counter delta baseline.
+func TestValidateNodeMetricsRejectsDuplicateTargetIdentity(t *testing.T) {
+	// Same URL, same explicit instance -> identical identity -> rejected.
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n" +
+		"      - url: http://100.64.0.1:5252/metrics\n        instance: nodeA\n" +
+		"      - url: http://100.64.0.1:5252/metrics\n        instance: nodeA\n"
+	err := loadErr(t, y)
+	if err == nil {
+		t.Fatal("expected error: two static targets with the same identity")
+	}
+	if !strings.Contains(err.Error(), "node_metrics") || !strings.Contains(err.Error(), "identity") {
+		t.Errorf("error %q should mention node_metrics + identity", err.Error())
+	}
+}
+
+// TestValidateNodeMetricsRejectsDuplicateURLDefaultInstance: two targets sharing a
+// URL and BOTH leaving instance empty collide, because the effective instance is
+// derived from the (shared) URL host:port.
+func TestValidateNodeMetricsRejectsDuplicateURLDefaultInstance(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n" +
+		"      - url: http://100.64.0.1:5252/metrics\n" +
+		"      - url: HTTP://100.64.0.1:5252/metrics\n" // scheme-case-only difference still collides
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("err = %v, want a duplicate-identity error (normalized URLs collide)", err)
+	}
+}
+
+// TestValidateNodeMetricsAllowsSameURLDistinctInstances: two targets on the SAME URL
+// but with DIFFERENT instances are legitimately distinct (e.g. one verify-on and one
+// skip-verify HTTPS scrape) and must validate.
+func TestValidateNodeMetricsAllowsSameURLDistinctInstances(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n" +
+		"      - url: https://100.64.0.1:5252/metrics\n        instance: verify\n" +
+		"      - url: https://100.64.0.1:5252/metrics\n        instance: skip\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("same URL with distinct instances should validate: %v", err)
+	}
+}
+
 func TestValidateNodeMetricsDiscoveryRejectsBadScheme(t *testing.T) {
 	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      scheme: ftp\n"
 	err := loadErr(t, y)

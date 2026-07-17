@@ -179,10 +179,14 @@ type Options struct {
 
 // resolvedTarget pairs a Target with the *http.Client to scrape it through,
 // keeping the two from ever desyncing when the active set changes at runtime.
-// A nil client means "use the shared Collector.client".
+// A nil client means "use the shared Collector.client". id is the target's stable
+// effective identity (see targetIdentity): it deduplicates the runtime target set
+// and namespaces this target's delta baselines so two distinct targets never share
+// a baseline (#199).
 type resolvedTarget struct {
 	target Target
 	client *http.Client // nil => use the shared Collector.client
+	id     string       // stable effective identity (normalized URL + node label)
 }
 
 // Collector implements collector.SnapshotCollector for node /metrics scraping.
@@ -273,7 +277,7 @@ func New(opts Options) *Collector {
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
-	static := resolveTargets(opts.Targets, timeout)
+	static := dedupTargets(resolveTargets(opts.Targets, timeout))
 	return &Collector{
 		static:            static,
 		interval:          opts.Interval,
@@ -336,6 +340,7 @@ func resolveTargets(ts []Target, timeout time.Duration) []resolvedTarget {
 	out := make([]resolvedTarget, len(ts))
 	for i := range ts {
 		out[i].target = ts[i]
+		out[i].id = targetIdentity(ts[i].URL, effectiveInstance(&ts[i]))
 		tls := ts[i].TLS
 		if tls == nil {
 			continue
@@ -349,6 +354,67 @@ func resolveTargets(ts []Target, timeout time.Duration) []resolvedTarget {
 		out[i].client = &http.Client{Timeout: timeout, Transport: tr, CheckRedirect: noRedirect}
 	}
 	return out
+}
+
+// dedupTargets removes runtime targets that share an effective identity (normalized
+// URL + instance, see targetIdentity), keeping the FIRST occurrence so the result is
+// deterministic and order-stable. Targets that differ only by URL, or only by
+// instance, are kept — this collapses ONLY true duplicates (same endpoint, same node
+// label). Config validation already rejects colliding STATIC targets (validate.go);
+// this is the runtime backstop so a duplicate that reaches New (e.g. via the
+// programmatic Options API) or emerges from the discovery union can never
+// double-scrape as one identity or let two targets corrupt a shared delta baseline
+// (#199).
+func dedupTargets(rts []resolvedTarget) []resolvedTarget {
+	out := make([]resolvedTarget, 0, len(rts))
+	seen := make(map[string]struct{}, len(rts))
+	for i := range rts {
+		if _, ok := seen[rts[i].id]; ok {
+			continue
+		}
+		seen[rts[i].id] = struct{}{}
+		out = append(out, rts[i])
+	}
+	return out
+}
+
+// effectiveInstance is the node-identity label a target resolves to: its explicit
+// Instance when set, else the host:port derived from its URL. It mirrors the value
+// scrapeTarget attaches as the tailscale.node attribute, so the two never diverge.
+func effectiveInstance(t *Target) string {
+	if t.Instance != "" {
+		return t.Instance
+	}
+	return hostPort(t.URL)
+}
+
+// targetIdentity returns a target's stable EFFECTIVE identity: its normalized URL
+// plus its effective node-identity label (its explicit Instance, else the host:port
+// derived from the URL). Two entries sharing this identity are the same target — a
+// true duplicate — so it dedups the runtime target set (dedupTargets) and is
+// rejected by config validation. It also namespaces each target's delta baselines so
+// two DISTINCT targets never share a baseline, even when they carry the same node
+// label or scrape byte-identical series (#199). The instance component is what keeps
+// two same-URL/different-config targets (e.g. one verify-on and one skip-verify HTTPS
+// scrape of the same endpoint) as separate targets with separate baselines; the
+// discovery UNION keeps its own, separate endpoint-level dedup (see unionTargets).
+func targetIdentity(rawURL, instance string) string {
+	return normalizeTargetURL(rawURL) + "\x00" + instance
+}
+
+// normalizeTargetURL canonicalizes a target URL for identity comparison: the
+// scheme and host are lowercased (both are case-insensitive per RFC 3986) while
+// the path/query are left byte-exact (a metrics server may treat them as
+// significant). A URL that fails to parse falls back to its raw string, so an
+// unparseable value still keys deterministically.
+func normalizeTargetURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	return u.String()
 }
 
 // noRedirect is the CheckRedirect for every scrape client: it stops the HTTP
@@ -490,7 +556,7 @@ func (c *Collector) scrapeAll(ctx context.Context, targets []resolvedTarget, e t
 		go func(idx int, rt *resolvedTarget) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			instance, err := c.scrapeTarget(ctx, &rt.target, c.clientOf(rt), e)
+			instance, err := c.scrapeTarget(ctx, rt, c.clientOf(rt), e)
 			up := 0.0
 			if err == nil {
 				successes.Add(1)
@@ -533,7 +599,7 @@ func (c *Collector) maybeDiscover(ctx context.Context) {
 		c.mu.Unlock()
 		return // keep prior active set and lastDiscACK; retry next tick
 	}
-	union := unionTargets(c.static, resolveTargets(discovered, c.timeout))
+	union := dedupTargets(unionTargets(c.static, resolveTargets(discovered, c.timeout)))
 	c.mu.Lock()
 	c.active = union
 	c.lastDiscACK = now
@@ -596,10 +662,16 @@ func (c *Collector) Snapshot() DiscoveryStatus {
 	}
 }
 
-// unionTargets returns the static targets first, then each discovered target
-// whose URL is not already present. Dedup is by Target.URL and STATIC WINS, so an
-// operator's explicit static target (its labels/auth/TLS) is never overridden by
-// a discovered duplicate. Order is stable.
+// unionTargets returns the static targets first, then each discovered target whose
+// URL is not already present. Dedup here is ENDPOINT-level (by Target.URL) and STATIC
+// WINS, so an operator's explicit static target (its labels/auth/TLS) is never
+// overridden by a discovered duplicate, and a discovered node that is also statically
+// configured is not scraped twice. This is deliberately distinct from the effective
+// target IDENTITY used for baselines and validation (see targetIdentity): two STATIC
+// entries for the same URL with different instances/configs are legitimately separate
+// targets and are BOTH kept here, whereas a DISCOVERED duplicate of a static URL is
+// dropped. Order is stable; the caller collapses any residual same-identity entries
+// via dedupTargets.
 func unionTargets(static, discovered []resolvedTarget) []resolvedTarget {
 	out := make([]resolvedTarget, 0, len(static)+len(discovered))
 	seen := make(map[string]struct{}, len(static)+len(discovered))
@@ -682,17 +754,16 @@ func (r *maxBytesReadCloser) Read(p []byte) (int, error) {
 // out instead of ghosting (#55). scrapeAll derives up (1 on nil error, else 0)
 // from the returned error and feeds node.up into the builder after the workers
 // join. The returned instance is always non-empty for a valid target URL.
-func (c *Collector) scrapeTarget(ctx context.Context, t *Target, client *http.Client, e telemetry.Emitter) (string, error) {
-	instance := t.Instance
-	if instance == "" {
-		instance = hostPort(t.URL)
-	}
-	return instance, c.fetchAndEmit(ctx, t, client, instance, e)
+func (c *Collector) scrapeTarget(ctx context.Context, rt *resolvedTarget, client *http.Client, e telemetry.Emitter) (string, error) {
+	t := &rt.target
+	instance := effectiveInstance(t)
+	return instance, c.fetchAndEmit(ctx, t, rt.id, client, instance, e)
 }
 
 // fetchAndEmit performs the GET, parses the body, and emits every sample. It
-// returns an error on any transport, status, read, or parse failure.
-func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, client *http.Client, instance string, e telemetry.Emitter) error {
+// returns an error on any transport, status, read, or parse failure. targetID is
+// the scrape target's stable identity, threaded down to key delta baselines (#199).
+func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, targetID string, client *http.Client, instance string, e telemetry.Emitter) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.URL, nil)
 	if err != nil {
 		return err
@@ -714,7 +785,7 @@ func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, client *http.Cl
 		return err
 	}
 	for i := range samples {
-		c.emitSample(&samples[i], t, instance, e)
+		c.emitSample(&samples[i], t, targetID, instance, e)
 	}
 	return nil
 }
@@ -752,10 +823,10 @@ func applyAuthHeaders(req *http.Request, t *Target) error {
 // (see curated.go), the derived tailscale.node.* series is emitted IN ADDITION
 // to the verbatim forward, and curation deliberately BYPASSES the passthrough
 // filters (curated metrics are catalog metrics, not passthrough).
-func (c *Collector) emitSample(s *sample, t *Target, instance string, e telemetry.Emitter) {
+func (c *Collector) emitSample(s *sample, t *Target, targetID, instance string, e telemetry.Emitter) {
 	allowed := c.allowMetric(s.name)
 	if s.cumulative {
-		c.emitCumulative(s, t, instance, allowed, e)
+		c.emitCumulative(s, t, targetID, instance, allowed, e)
 		return
 	}
 	if allowed {
@@ -773,7 +844,15 @@ func (c *Collector) emitSample(s *sample, t *Target, instance string, e telemetr
 // maintains its own baseline. When the sample is neither forwarded nor curated
 // it returns immediately WITHOUT touching the baseline map, preserving the prior
 // behavior where a filtered-out non-curated counter is not tracked.
-func (c *Collector) emitCumulative(s *sample, t *Target, instance string, allowed bool, e telemetry.Emitter) {
+//
+// The baseline is keyed off the FULL pre-drop source-series identity (metric name
+// + every raw scraped label + the stable target identity, see baselineKey), NOT
+// the emitted post-drop attributes. So when several source series collapse onto one
+// emitted series — because drop_labels removed a distinguishing label, or the
+// curated mapping folds a raw label — each keeps its OWN baseline (and its own
+// first-observation suppression / reset detection), and their independently-correct
+// deltas SUM on the merged emitted series via the counter's own accumulation (#199).
+func (c *Collector) emitCumulative(s *sample, t *Target, targetID, instance string, allowed bool, e telemetry.Emitter) {
 	if isNaN(s.value) {
 		return
 	}
@@ -781,13 +860,13 @@ func (c *Collector) emitCumulative(s *sample, t *Target, instance string, allowe
 	if !allowed && !curated {
 		return
 	}
-	attrs := mergeAttrs(t.Labels, s.labels, instance)
-	c.applyDropLabels(attrs)
-	delta, ok := c.delta(s.name, s.value, attrs)
+	delta, ok := c.delta(baselineKey(targetID, s.name, s.labels), s.value)
 	if !ok || delta <= 0 {
 		return
 	}
 	if allowed {
+		attrs := mergeAttrs(t.Labels, s.labels, instance)
+		c.applyDropLabels(attrs)
 		e.Counter(s.name, "", s.help, delta, attrs)
 	}
 	if curated {
@@ -860,19 +939,18 @@ func (c *Collector) applyDropLabels(attrs telemetry.Attrs) {
 	}
 }
 
-// delta reads and updates the per-series counter baseline, returning the
-// monotonic increment to emit and whether a prior baseline existed (ok=false on
-// the FIRST observation of a series, which only stores the baseline and emits
-// nothing). It is the SINGLE baseline read/update per source series: the raw
-// forward and any curated counter both consume the returned delta, so a curated
-// metric never maintains its own baseline. On a detected counter reset (current
-// value below the baseline) the delta is the current value (the new series
+// delta reads and updates the per-series counter baseline for the given source
+// key, returning the monotonic increment to emit and whether a prior baseline
+// existed (ok=false on the FIRST observation of a series, which only stores the
+// baseline and emits nothing). It is the SINGLE baseline read/update per source
+// series: the raw forward and any curated counter both consume the returned delta,
+// so a curated metric never maintains its own baseline. On a detected counter reset
+// (current value below the baseline) the delta is the current value (the new series
 // started from zero). The baseline map is bounded by prevHardCap: at the cap a
-// brand-new series is not tracked (its delta is suppressed) while existing
-// series keep updating.
-func (c *Collector) delta(name string, value float64, attrs telemetry.Attrs) (float64, bool) {
-	key := seriesKey(name, attrs)
-
+// brand-new series is not tracked (its delta is suppressed) while existing series
+// keep updating. The key must uniquely identify the SOURCE series (see baselineKey)
+// so merged emitted series never share a baseline.
+func (c *Collector) delta(key string, value float64) (float64, bool) {
 	c.mu.Lock()
 	pe, seen := c.prev[key]
 	if seen || len(c.prev) < prevHardCap {
@@ -914,27 +992,23 @@ func mergeAttrs(targetLabels, metricLabels map[string]string, instance string) t
 	return out
 }
 
-// seriesKey is the stable, injective key used for delta tracking:
-// name + "\x00" + sorted "k=<quoted v>" over ALL attrs (incl tailscale.node), joined by
-// ",". The value is rendered with strconv.Quote so that a value containing "="
-// or "," (both legal in Prometheus label values) cannot be confused with the
-// key/value or part separators — keys are [a-zA-Z0-9_] so they need no quoting.
-func seriesKey(name string, attrs telemetry.Attrs) string {
-	parts := make([]string, 0, len(attrs))
-	for k, v := range attrs {
-		parts = append(parts, k+"="+strconv.Quote(attrString(v)))
+// baselineKey is the stable, injective key used for delta tracking. It identifies
+// one SOURCE series — NOT the (possibly merged) emitted series — so that two source
+// series which collapse onto one emitted series keep separate baselines (#199). It
+// is the target identity, then the metric name, then the sorted "k=<quoted v>" over
+// EVERY raw scraped label (BEFORE drop_labels and BEFORE any curated folding),
+// joined by "," and separated by "\x00". The value is rendered with strconv.Quote
+// so a value containing "=" or "," (both legal in Prometheus label values) cannot be
+// confused with the key/value or part separators; label keys are [a-zA-Z0-9_] so
+// they need no quoting, and neither the target identity nor a metric name contains a
+// literal NUL, keeping the "\x00" separators unambiguous.
+func baselineKey(targetID, name string, labels map[string]string) string {
+	parts := make([]string, 0, len(labels))
+	for k, v := range labels {
+		parts = append(parts, k+"="+strconv.Quote(v))
 	}
 	sort.Strings(parts)
-	return name + "\x00" + strings.Join(parts, ",")
-}
-
-// attrString renders an attr value as a string for series keying. Values here
-// are always strings in practice; the fallback keeps keying total.
-func attrString(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
+	return targetID + "\x00" + name + "\x00" + strings.Join(parts, ",")
 }
 
 // hostPort extracts host:port from a target URL for the default tailscale.node
