@@ -214,7 +214,7 @@ The HTTP client used for all Tailscale API calls.
 | `tailscale.http.timeout` | `30s` | Per-attempt timeout for each Tailscale API call (connect + headers + body read). Retries and `Retry-After` backoff are NOT counted against it, so a retried request can exceed this; total attempts are bounded by `max_attempts`. |
 | `tailscale.http.retry.max_attempts` | `4` | Maximum attempts per request (initial try + retries) under exponential backoff. |
 | `tailscale.http.retry.base_delay` | `500ms` | Initial backoff delay. |
-| `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. |
+| `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. Also **caps a server-sent `Retry-After`**: a `429`/`503` carrying a longer `Retry-After` (numeric seconds or an HTTP date) waits at most `max_delay`, not the full server value, so an upstream cannot park a collector inside one request for hours. A `Retry-After` below `max_delay` is still honoured exactly. The wait counts toward `api.duration`, and request-context cancellation still interrupts it immediately. |
 | `tailscale.http.rate_limit` | `0` | Global request rate cap in requests/second across **all** collectors. `0` = unlimited. |
 
 > **Token fetches use the same timeout, end-to-end.** `tailscale.http.timeout` also bounds each OAuth

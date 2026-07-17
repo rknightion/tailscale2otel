@@ -244,6 +244,189 @@ func TestRetryTransport_ResendsBodyOnRetry(t *testing.T) {
 	}
 }
 
+// retryAfterRoundTripper returns canned statuses; the first (non-final)
+// response also carries the given Retry-After header value, so capping tests
+// can drive a precise header.
+type retryAfterRoundTripper struct {
+	statuses   []int
+	retryAfter string
+	calls      int
+}
+
+func (f *retryAfterRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	h := http.Header{}
+	if f.calls == 0 && f.retryAfter != "" {
+		h.Set("Retry-After", f.retryAfter)
+	}
+	s := f.statuses[f.calls]
+	f.calls++
+	return &http.Response{
+		StatusCode: s,
+		Header:     h,
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+// TestRetryTransport_RetryAfterCappedAtMaxDelay covers #206: a Retry-After
+// value that exceeds maxDelay must be clamped, not honored verbatim — most
+// collectors share an app-lifetime parent context, so an uncapped multi-hour
+// Retry-After would park a logical request (and its select on spanCtx.Done())
+// far longer than the configured retry maximum intends.
+func TestRetryTransport_RetryAfterCappedAtMaxDelay(t *testing.T) {
+	t.Run("numeric seconds above cap is clamped to maxDelay", func(t *testing.T) {
+		rt := &retryTransport{
+			base:      &retryAfterRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}, retryAfter: "3600"},
+			max:       2,
+			baseDelay: time.Millisecond,
+			maxDelay:  15 * time.Millisecond,
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		start := time.Now()
+		resp, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		elapsed := time.Since(start)
+		if elapsed < 10*time.Millisecond {
+			t.Fatalf("elapsed = %v, want >= ~maxDelay (Retry-After should still back off up to the cap)", elapsed)
+		}
+		if elapsed > 500*time.Millisecond {
+			t.Fatalf("elapsed = %v, want capped near maxDelay (15ms), not the full 3600s Retry-After", elapsed)
+		}
+	})
+
+	t.Run("HTTP-date above cap is clamped to maxDelay", func(t *testing.T) {
+		future := time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)
+		rt := &retryTransport{
+			base:      &retryAfterRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}, retryAfter: future},
+			max:       2,
+			baseDelay: time.Millisecond,
+			maxDelay:  15 * time.Millisecond,
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		start := time.Now()
+		resp, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		elapsed := time.Since(start)
+		if elapsed < 10*time.Millisecond {
+			t.Fatalf("elapsed = %v, want >= ~maxDelay (Retry-After should still back off up to the cap)", elapsed)
+		}
+		if elapsed > 500*time.Millisecond {
+			t.Fatalf("elapsed = %v, want capped near maxDelay (15ms), not the full 1h Retry-After", elapsed)
+		}
+	})
+
+	t.Run("numeric seconds below cap is honored exactly", func(t *testing.T) {
+		rt := &retryTransport{
+			base:      &retryAfterRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}, retryAfter: "1"},
+			max:       2,
+			baseDelay: time.Millisecond,
+			maxDelay:  5 * time.Second,
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		start := time.Now()
+		resp, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		elapsed := time.Since(start)
+		if elapsed < 900*time.Millisecond || elapsed > 1900*time.Millisecond {
+			t.Fatalf("elapsed = %v, want ~1s (the sub-cap Retry-After honored exactly)", elapsed)
+		}
+	})
+
+	t.Run("HTTP-date below cap is honored exactly", func(t *testing.T) {
+		// http.TimeFormat has whole-second granularity, so formatting truncates
+		// up to ~1s of the offset; add a 2s offset so the parsed-back deadline
+		// is always at least ~1s out, and widen the assertion window to match.
+		soon := time.Now().Add(2 * time.Second).UTC().Format(http.TimeFormat)
+		rt := &retryTransport{
+			base:      &retryAfterRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}, retryAfter: soon},
+			max:       2,
+			baseDelay: time.Millisecond,
+			maxDelay:  5 * time.Second,
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		start := time.Now()
+		resp, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		elapsed := time.Since(start)
+		if elapsed < 900*time.Millisecond || elapsed > 2900*time.Millisecond {
+			t.Fatalf("elapsed = %v, want ~1-2s (the sub-cap Retry-After honored exactly, minus date-format truncation)", elapsed)
+		}
+	})
+
+	t.Run("zero Retry-After falls through to jittered backoff, unaffected by the cap fix", func(t *testing.T) {
+		rt := &retryTransport{
+			base:      &retryAfterRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}, retryAfter: "0"},
+			max:       2,
+			baseDelay: 40 * time.Millisecond,
+			maxDelay:  40 * time.Millisecond,
+			rnd:       func() float64 { return 0 }, // sleep == baseDelay/2 == 20ms
+		}
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+		start := time.Now()
+		resp, err := rt.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		elapsed := time.Since(start)
+		if elapsed < 15*time.Millisecond || elapsed > 500*time.Millisecond {
+			t.Fatalf("elapsed = %v, want ~20ms (computeBackoff jitter, Retry-After=0 ignored)", elapsed)
+		}
+	})
+}
+
+// TestRetryTransport_RetryAfterCapDoesNotBlockCancellation verifies that even
+// after capping, the wait still selects on the parent (spanCtx) context: a
+// cancellation during a capped-but-still-substantial Retry-After wait returns
+// immediately rather than waiting out the capped sleep.
+func TestRetryTransport_RetryAfterCapDoesNotBlockCancellation(t *testing.T) {
+	rt := &retryTransport{
+		base:      &retryAfterRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}, retryAfter: "3600"},
+		max:       2,
+		baseDelay: time.Millisecond,
+		maxDelay:  time.Second, // capped sleep would be ~1s; cancellation must beat it
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	start := time.Now()
+	_, err := rt.RoundTrip(req)
+	if err == nil {
+		t.Fatal("err = nil, want context deadline error")
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want cancellation to interrupt well before the capped ~1s sleep", elapsed)
+	}
+}
+
 func TestComputeBackoff(t *testing.T) {
 	maxDelay := 10 * time.Second
 	// rnd=0 -> sleep == delay/2 (lower bound); next == delay*2 capped.

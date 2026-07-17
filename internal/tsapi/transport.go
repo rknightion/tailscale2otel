@@ -64,8 +64,10 @@ type retryTransport struct {
 
 	// attemptTimeout bounds each individual HTTP attempt (connect + headers +
 	// body read), not the whole retried request. Zero disables it. Backoff
-	// sleeps are NOT bounded by it — they wait on the parent request context, so
-	// a long Retry-After is honored.
+	// sleeps are NOT bounded by it — they wait on the parent request context.
+	// A server-specified Retry-After is honored up to maxDelay (#206): a
+	// longer value is clamped rather than parking the request for the full
+	// duration, since most collectors share an app-lifetime parent context.
 	attemptTimeout time.Duration
 
 	// limiter, when non-nil, gates each attempt on a rate-limiter token. The wait
@@ -229,7 +231,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		sleep := jittered
 		if resp != nil {
 			if ra := retryAfter(resp.Header.Get("Retry-After")); ra > 0 {
-				sleep = ra // honor server backoff exactly; no jitter
+				sleep = min(ra, t.maxDelay) // honor server backoff exactly, capped at maxDelay (#206)
 			}
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 			_ = resp.Body.Close()
