@@ -68,6 +68,15 @@ func (a *App) buildStatus() statusdata.Status {
 	for _, sc := range cardSeries {
 		cardByName[sc.Metric] = sc.Count
 	}
+	cardLabels := a.aggregateLabelSnapshot() // nil-safe; empty when self-obs disabled
+	var cardPerMetric map[string][]int
+	if a.runtimeHist != nil {
+		cardPerMetric = a.runtimeHist.perMetricSeries()
+	}
+	cardThresholds := statusdata.CardinalityThresholds{
+		Warning:  a.cfg.Cardinality.WarningThreshold,
+		Critical: a.cfg.Cardinality.CriticalThreshold,
+	}
 	metrics := catalog.Metrics()
 	metricByName := make(map[string]metricdoc.Metric, len(metrics))
 	for _, m := range metrics {
@@ -100,7 +109,7 @@ func (a *App) buildStatus() statusdata.Status {
 		Dedup:         a.dedupInfo(),
 		Devices:       a.deviceRows(),
 		NodeDiscovery: a.nodeDiscovery(),
-		Cardinality:   cardinalityInfo(a.cfg.SelfObservability.Enabled, cardSeries, metricByName),
+		Cardinality:   cardinalityInfo(a.cfg.SelfObservability.Enabled, cardSeries, cardLabels, cardPerMetric, cardThresholds, metricByName),
 		Receivers: statusdata.ReceiversInfo{
 			Streaming: a.cfg.Streaming.Enabled,
 			Webhook:   a.cfg.Webhook.Enabled,
@@ -158,8 +167,9 @@ func (a *App) runtimeCollectorStatuses(rt *tailnetRuntime, now time.Time) []stat
 	for _, e := range entries {
 		name := e.Collector.Name()
 		cs := statusdata.CollectorStatus{
-			Name:        name,
-			IntervalSec: int64(e.Interval.Seconds()),
+			Name:           name,
+			IntervalSec:    int64(e.Interval.Seconds()),
+			FreshnessState: "none", // overridden below once a success is seen
 		}
 		// Attribute to the runtime in multi-tailnet mode so the combined list and
 		// health reasons disambiguate duplicate collector names (#116).
@@ -182,6 +192,10 @@ func (a *App) runtimeCollectorStatuses(rt *tailnetRuntime, now time.Time) []stat
 			cs.NextRunInSec = int64(d.Seconds())
 			cs.NextRunIn = humanDuration(d)
 			cs.Overdue = isOverdue(r.LastFinished, e.Interval, now)
+			if !r.LastSuccessAt.IsZero() {
+				cs.LastSuccessAt = r.LastSuccessAt.UTC().Format(rfc3339)
+			}
+			cs.FreshnessSec, cs.Freshness, cs.FreshnessState = freshnessState(r.LastSuccessAt, now, e.Interval)
 		}
 		if h, ok := hist[name]; ok {
 			cs.DurationMsSeries = h.DurationMs
@@ -256,21 +270,29 @@ func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
 const checkpointStuckMargin = 3
 
 // apiInfo builds the combined API-health section across every tailnet runtime.
+// The auth method shown is the primary runtime's (they share one auth model in
+// practice; the per-tailnet breakdown carries each runtime's own).
 func (a *App) apiInfo() statusdata.APIInfo {
 	var stats []*APIStats
 	for _, rt := range a.runtimes {
 		stats = append(stats, rt.apiStats)
 	}
-	return apiInfoFrom(stats...)
+	method := ""
+	if len(a.runtimes) > 0 {
+		method = a.runtimes[0].authMethod
+	}
+	return apiInfoFrom(method, stats...)
 }
 
 // runtimeAPIInfo builds one runtime's API-health section.
-func runtimeAPIInfo(rt *tailnetRuntime) statusdata.APIInfo { return apiInfoFrom(rt.apiStats) }
+func runtimeAPIInfo(rt *tailnetRuntime) statusdata.APIInfo {
+	return apiInfoFrom(rt.authMethod, rt.apiStats)
+}
 
 // apiInfoFrom merges the per-endpoint request stats from one or more APIStats
 // into a single section. The rate-limit summary is set only once a 429 has been
 // observed.
-func apiInfoFrom(stats ...*APIStats) statusdata.APIInfo {
+func apiInfoFrom(method string, stats ...*APIStats) statusdata.APIInfo {
 	var snaps []APIEndpointSnapshot
 	for _, st := range stats {
 		if st == nil {
@@ -280,6 +302,7 @@ func apiInfoFrom(stats ...*APIStats) statusdata.APIInfo {
 	}
 	info := statusdata.APIInfo{Endpoints: make([]statusdata.APIEndpoint, 0, len(snaps))}
 	var total429 int64
+	var totalCalls int64
 	var last429 time.Time
 	for _, s := range snaps {
 		ep := statusdata.APIEndpoint{
@@ -300,6 +323,7 @@ func apiInfoFrom(stats ...*APIStats) statusdata.APIInfo {
 		}
 		info.Endpoints = append(info.Endpoints, ep)
 		total429 += s.RateLimited
+		totalCalls += s.Requests
 		if s.Last429At.After(last429) {
 			last429 = s.Last429At
 		}
@@ -310,6 +334,11 @@ func apiInfoFrom(stats ...*APIStats) statusdata.APIInfo {
 			rl.LastSeen = last429.UTC().Format(rfc3339)
 		}
 		info.RateLimit = rl
+	}
+	info.Auth = statusdata.APIAuth{
+		Method:     method,
+		TotalCalls: totalCalls,
+		Total429:   total429,
 	}
 	return info
 }
@@ -465,25 +494,44 @@ func (a *App) nodeDiscovery() statusdata.NodeDiscovery {
 
 // cardinalityInfo builds the live cardinality section. Available is false when
 // self-obs is off or no interval has been reported yet, so the page shows the
-// right empty state rather than a misleading zero.
-func cardinalityInfo(selfObs bool, series []telemetry.SeriesCount, metricByName map[string]metricdoc.Metric) statusdata.CardinalityInfo {
+// right empty state rather than a misleading zero. labels and perMetric carry
+// the label-cardinality and growth inputs (empty when self-obs is off); th is
+// the configured warning/critical thresholds.
+func cardinalityInfo(selfObs bool, series []telemetry.SeriesCount, labels []telemetry.LabelStat, perMetric map[string][]int, th statusdata.CardinalityThresholds, metricByName map[string]metricdoc.Metric) statusdata.CardinalityInfo {
 	if !selfObs || len(series) == 0 {
-		return statusdata.CardinalityInfo{Available: false}
+		return statusdata.CardinalityInfo{Available: false, Thresholds: th}
 	}
-	info := statusdata.CardinalityInfo{Available: true, Series: make([]statusdata.SeriesRow, 0, len(series))}
+	info := statusdata.CardinalityInfo{
+		Available:    true,
+		Thresholds:   th,
+		TotalMetrics: len(series),
+		Series:       make([]statusdata.SeriesRow, 0, len(series)),
+	}
 	for _, sc := range series {
-		promName := ""
-		if m, ok := metricByName[sc.Metric]; ok {
-			promName = m.PromName()
-		}
+		level := cardSeriesLevel(sc.Count, th)
 		info.Total += sc.Count
 		info.Series = append(info.Series, statusdata.SeriesRow{
 			Metric:   sc.Metric,
-			PromName: promName,
+			PromName: promNameOf(sc.Metric, metricByName),
 			Count:    sc.Count,
 			Capped:   sc.Capped,
+			Level:    level,
 		})
+		if level != "" {
+			info.Alerts = append(info.Alerts, statusdata.CardinalityAlert{
+				Metric: sc.Metric, Count: sc.Count, Level: level,
+			})
+		}
 	}
+	// Alerts: critical before warning, then by count desc.
+	sort.Slice(info.Alerts, func(i, j int) bool {
+		if info.Alerts[i].Level != info.Alerts[j].Level {
+			return info.Alerts[i].Level == "critical" // critical first
+		}
+		return info.Alerts[i].Count > info.Alerts[j].Count
+	})
+	info.Labels = buildLabelRows(labels, metricByName)
+	info.Growth = buildGrowthRows(perMetric, metricByName)
 	return info
 }
 
@@ -585,6 +633,31 @@ func (a *App) enabledCollectorNames() []string {
 		}
 	}
 	return names
+}
+
+// freshnessState reports the age of a collector's last SUCCESSFUL run and
+// buckets it: "ok" (<= 2 intervals), "warning" (<= 5 intervals), "stale"
+// (beyond), or "none" when there has been no success yet. A non-positive
+// interval degrades to "ok" for any success (no meaningful staleness scale).
+func freshnessState(lastSuccess, now time.Time, interval time.Duration) (sec int64, human, state string) {
+	if lastSuccess.IsZero() {
+		return 0, "", "none"
+	}
+	age := now.Sub(lastSuccess)
+	if age < 0 {
+		age = 0
+	}
+	sec = int64(age.Seconds())
+	human = humanDuration(age)
+	switch {
+	case interval <= 0, age <= 2*interval:
+		state = "ok"
+	case age <= 5*interval:
+		state = "warning"
+	default:
+		state = "stale"
+	}
+	return sec, human, state
 }
 
 // humanDuration renders d compactly (e.g. "45s", "5m3s", "3h12m", "2d4h").
