@@ -284,6 +284,12 @@ config:
     # -- Emit the per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR);
     # the fleet exit/subnet count aggregates emit regardless.
     subnet_route_rollup: true
+    # -- Status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables).
+    warning_threshold: 2000
+    # -- Status-page cardinality view flags a metric critically at/above this count (>= warning_threshold; <= metric_limit when set; 0 disables).
+    critical_threshold: 8000
+    # -- Distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture).
+    label_value_sample_cap: 100
     flow:
       # -- Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N
       # *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so

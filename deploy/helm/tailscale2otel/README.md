@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.7.6](https://img.shields.io/badge/Version-0.7.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.8.0](https://img.shields.io/badge/Version-0.8.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -74,6 +74,7 @@ extraVolumeMounts:
 | config.admin.enabled | bool | `false` | Enable the admin probe server. |
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
 | config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
+| config.cardinality.critical_threshold | int | `8000` | Status-page cardinality view flags a metric critically at/above this count (>= warning_threshold; <= metric_limit when set; 0 disables). |
 | config.cardinality.derp_region_rollup | bool | `true` | Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector. |
 | config.cardinality.flow.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when node_dims is true, the src/dst node labels on flow METRICS. |
 | config.cardinality.flow.destination_port | bool | `false` | Add destination.port to flow METRICS (independent of source_port). |
@@ -83,6 +84,7 @@ extraVolumeMounts:
 | config.cardinality.flow.node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
 | config.cardinality.flow.rollup_top_n | int | `500` | Rollup only: busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500). |
 | config.cardinality.flow.source_port | bool | `false` | Add source.port to flow METRICS (independent of destination_port); ports are always on flow LOGS. |
+| config.cardinality.label_value_sample_cap | int | `100` | Distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture). |
 | config.cardinality.metric_limit | int | `10000` | Hard per-metric series cap (0/negative = unlimited). |
 | config.cardinality.per_entity.device | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
 | config.cardinality.per_entity.key | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
@@ -90,6 +92,7 @@ extraVolumeMounts:
 | config.cardinality.per_entity.user | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |
 | config.cardinality.per_entity.webhook | bool | `true` | Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count. |
 | config.cardinality.subnet_route_rollup | bool | `true` | Emit the per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); the fleet exit/subnet count aggregates emit regardless. |
+| config.cardinality.warning_threshold | int | `2000` | Status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables). |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
 | config.checkpoint.store | string | `"file"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |

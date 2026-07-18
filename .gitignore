@@ -44,3 +44,6 @@ todos.txt
 # (deploy/grafana/gen/build.py, deploy/alerts/gen/build_rules.py).
 __pycache__/
 *.py[cod]
+
+# Superpowers visual-companion scratch (brainstorming mockups)
+.superpowers/
