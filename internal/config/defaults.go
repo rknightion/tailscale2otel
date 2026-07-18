@@ -52,9 +52,12 @@ func Default() *Config {
 			},
 		},
 		Cardinality: CardinalityConfig{
-			MetricLimit:       10000,
-			DerpRegionRollup:  true,
-			SubnetRouteRollup: true,
+			MetricLimit:         10000,
+			DerpRegionRollup:    true,
+			SubnetRouteRollup:   true,
+			WarningThreshold:    2000,
+			CriticalThreshold:   8000,
+			LabelValueSampleCap: 100,
 			Flow: FlowCardinality{
 				MetricsMode:         "rollup",
 				RollupTopN:          500,

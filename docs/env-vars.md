@@ -78,6 +78,9 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CARDINALITY__METRIC_LIMIT` | `10000` | hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited) |
 | `TS2OTEL_CARDINALITY__DERP_REGION_ROLLUP` | `true` | emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) |
 | `TS2OTEL_CARDINALITY__SUBNET_ROUTE_ROLLUP` | `true` | emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless |
+| `TS2OTEL_CARDINALITY__WARNING_THRESHOLD` | `2000` | status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables) |
+| `TS2OTEL_CARDINALITY__CRITICAL_THRESHOLD` | `8000` | status-page cardinality view flags a metric critically at/above this count (must be >= warning_threshold; <= metric_limit when set; 0 disables) |
+| `TS2OTEL_CARDINALITY__LABEL_VALUE_SAMPLE_CAP` | `100` | distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture) |
 | `TS2OTEL_CARDINALITY__FLOW__METRICS_MODE` | `rollup` | rollup (bounded top-N, lowest cardinality) \| all (raw per-connection) \| both (≈2x series; summing double-counts) |
 | `TS2OTEL_CARDINALITY__FLOW__ROLLUP_TOP_N` | `500` | rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500) |
 | `TS2OTEL_CARDINALITY__FLOW__SOURCE_PORT` | `false` | add source.port to flow metrics (raw modes only) |

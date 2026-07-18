@@ -381,6 +381,9 @@ effect no matter whether logs arrive by poll or by stream.
 | `cardinality.metric_limit` | `10000` | Hard per-instrument series cap. Beyond this the OTLP SDK collapses extra series into `otel_metric_overflow` (silent loss of detail). Size it above your busiest flow-metric cardinality. `0` or negative = unlimited. |
 | `cardinality.derp_region_rollup` | `true` | Emit tailnet-wide per-DERP-region rollup gauges (`tailscale.derp.region.*`) from the devices collector. |
 | `cardinality.subnet_route_rollup` | `true` | Emit the per-CIDR `tailscale.subnet_routes.routers` redundancy gauge (one series per subnet CIDR) from the devices collector. The fleet exit/subnet count aggregates emit regardless. |
+| `cardinality.warning_threshold` | `2000` | The admin status page's cardinality view flags a source metric at/above this active-series count (self-observability only). `0` disables the warning level. |
+| `cardinality.critical_threshold` | `8000` | The status page flags a source metric critically at/above this active-series count. Must be `>=` `warning_threshold` when both are set. A value above `metric_limit` can never fire (a metric's count pins at `metric_limit`) and triggers a startup advisory. `0` disables the critical level. |
+| `cardinality.label_value_sample_cap` | `100` | Distinct values retained per `(metric, label)` by the self-observability cardinality tracker to power the status page's label-cardinality views. Beyond the cap the label is marked capped and its example values truncated (a memory guard for high-cardinality labels such as per-flow IPs). `0` disables label-value capture. |
 
 ### `cardinality.flow` — flow metric shaping
 

@@ -457,6 +457,19 @@ type CardinalityConfig struct {
 	Flow FlowCardinality `yaml:"flow"`
 	// PerEntity gates the per-entity gauges of the inventory collectors.
 	PerEntity PerEntityCardinality `yaml:"per_entity"`
+	// WarningThreshold and CriticalThreshold flag a source metric on the admin
+	// status page's cardinality view when its active-series count crosses them
+	// (self-observability only; 0 disables that level). When both are set,
+	// CriticalThreshold must be >= WarningThreshold, and when MetricLimit>0 both
+	// must be <= MetricLimit. Defaults 2000 / 8000.
+	WarningThreshold  int `yaml:"warning_threshold"`
+	CriticalThreshold int `yaml:"critical_threshold"`
+	// LabelValueSampleCap bounds how many distinct values per (metric, label) the
+	// self-observability cardinality tracker retains to power the label-cardinality
+	// views on the status page. Beyond the cap the label is marked capped and its
+	// example values truncated (a memory guard for genuinely high-cardinality
+	// labels such as per-flow IPs). 0 disables label-value capture. Default 100.
+	LabelValueSampleCap int `yaml:"label_value_sample_cap"`
 }
 
 // FlowCardinality shapes the flow-metric families and the attributes carried on

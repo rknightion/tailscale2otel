@@ -199,6 +199,15 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	if lim := c.Cardinality.MetricLimit; lim > 0 {
+		if warn, crit := c.Cardinality.WarningThreshold, c.Cardinality.CriticalThreshold; warn > lim || crit > lim {
+			w = append(w, fmt.Sprintf("cardinality warning_threshold/critical_threshold (%d/%d) exceed metric_limit %d: "+
+				"a metric's active-series count pins at metric_limit, so a threshold above it can never fire on the "+
+				"status page. Lower the thresholds to <= metric_limit for them to be meaningful.",
+				warn, crit, lim))
+		}
+	}
+
 	if c.Collectors.NodeMetrics.Enabled && c.Cardinality.MetricLimit <= 0 {
 		w = append(w, "collectors.node_metrics.enabled=true with cardinality.metric_limit unlimited "+
 			"(<=0): scraped label VALUES are controlled by the scraped nodes, so a compromised or "+
@@ -566,6 +575,18 @@ func (c *Config) Validate() error {
 	if c.Cardinality.Flow.RollupTopN < 0 {
 		return fmt.Errorf("cardinality.flow.rollup_top_n %d invalid: must be >= 0 (0 selects the default)", c.Cardinality.Flow.RollupTopN)
 	}
+	if c.Cardinality.LabelValueSampleCap < 0 {
+		return fmt.Errorf("cardinality.label_value_sample_cap %d invalid: must be >= 0 (0 disables label-value capture)", c.Cardinality.LabelValueSampleCap)
+	}
+	if w, cr := c.Cardinality.WarningThreshold, c.Cardinality.CriticalThreshold; w < 0 || cr < 0 {
+		return fmt.Errorf("cardinality warning_threshold/critical_threshold must be >= 0 (got %d/%d)", w, cr)
+	} else if w > 0 && cr > 0 && cr < w {
+		return fmt.Errorf("cardinality.critical_threshold %d invalid: must be >= warning_threshold %d", cr, w)
+	}
+	// The threshold-vs-metric_limit relationship is advisory (a threshold above
+	// the limit can never fire, since a metric's series pin at the limit) — see
+	// Warnings(). It is NOT a hard error, so lowering metric_limit never breaks an
+	// existing config that kept the default thresholds.
 
 	if c.Collectors.Devices.PostureLogMode != "" &&
 		!oneOf(c.Collectors.Devices.PostureLogMode, "changes", "always", "off") {

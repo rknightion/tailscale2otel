@@ -1372,3 +1372,41 @@ func TestValidate_WorkloadIdentity(t *testing.T) {
 		t.Errorf("tailnets[] entry missing client_id: want error naming the entry, got %v", err)
 	}
 }
+
+func TestValidateCardinalityThresholds(t *testing.T) {
+	// Critical below warning is rejected.
+	c := config.Default()
+	c.Cardinality.WarningThreshold = 5000
+	c.Cardinality.CriticalThreshold = 1000
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "critical_threshold") {
+		t.Errorf("critical < warning: want error naming critical_threshold, got %v", err)
+	}
+
+	// Negative label cap is rejected.
+	c = config.Default()
+	c.Cardinality.LabelValueSampleCap = -1
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "label_value_sample_cap") {
+		t.Errorf("negative label cap: want error, got %v", err)
+	}
+
+	// Threshold above a positive metric_limit is NOT a hard error (it must not
+	// break an existing config that lowered metric_limit) — it is advisory only.
+	c = config.Default()
+	c.Cardinality.MetricLimit = 1000
+	c.Cardinality.WarningThreshold = 500
+	c.Cardinality.CriticalThreshold = 2000 // > limit
+	if err := c.Validate(); err != nil {
+		t.Errorf("threshold above metric_limit should validate (warning only), got %v", err)
+	}
+	if warns := c.Warnings(); !slices.ContainsFunc(warns, func(s string) bool { return strings.Contains(s, "exceed metric_limit") }) {
+		t.Errorf("threshold above metric_limit: want an advisory warning, got %v", warns)
+	}
+
+	// All-zero (disabled) is valid.
+	c = config.Default()
+	c.Cardinality.WarningThreshold = 0
+	c.Cardinality.CriticalThreshold = 0
+	if err := c.Validate(); err != nil {
+		t.Errorf("all-zero thresholds should be valid, got %v", err)
+	}
+}

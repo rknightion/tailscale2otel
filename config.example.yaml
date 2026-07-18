@@ -123,6 +123,9 @@ cardinality:
   metric_limit: 10000                 # hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited)
   derp_region_rollup: true            # emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*)
   subnet_route_rollup: true           # emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless
+  warning_threshold: 2000             # status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables)
+  critical_threshold: 8000            # status-page cardinality view flags a metric critically at/above this count (must be >= warning_threshold; <= metric_limit when set; 0 disables)
+  label_value_sample_cap: 100         # distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture)
   flow:                               # shapes flow METRICS only — flow LOGS always carry full detail
     metrics_mode: rollup              # rollup (bounded top-N, lowest cardinality) | all (raw per-connection) | both (≈2x series; summing double-counts)
     rollup_top_n: 500                 # rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500)
