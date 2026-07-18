@@ -33,6 +33,50 @@ func (a *App) handleStatusJSON(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+// handleCardinalityJSON serves just the cardinality section of the status
+// snapshot as machine-readable JSON — the "export" affordance on the cardinality
+// tab. Read-only, GET-only.
+func (a *App) handleCardinalityJSON(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	writeIndentedJSON(w, a.buildStatus().Cardinality, a.logger, "encode cardinality json")
+}
+
+// handleConfigJSON serves the redacted configuration summary as JSON — the
+// "download" affordance on the config tab. Secret VALUES never appear (see
+// redactedConfigSummary). Read-only, GET-only.
+func (a *App) handleConfigJSON(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="tailscale2otel-config.json"`)
+	writeIndentedJSON(w, a.redactedConfigSummary(), a.logger, "encode config json")
+}
+
+// getOnly enforces GET (and HEAD) on a read-only endpoint, writing 405 otherwise.
+func getOnly(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+// writeIndentedJSON encodes v as indented JSON, logging (never panicking) on a
+// late encode error.
+func writeIndentedJSON(w http.ResponseWriter, v any, logger interface {
+	Error(string, ...any)
+}, logMsg string) {
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		logger.Error(logMsg, "error", err)
+	}
+}
+
 // handleRDNSPurge clears the reverse-DNS cache. It is the admin server's only
 // mutating endpoint, so it is POST-only and same-origin-guarded on top of the
 // shared admin auth gate (see requireAdminAuth). The response reports how many

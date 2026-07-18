@@ -210,6 +210,52 @@ func TestAdminServer_ReadyzReadyWithNoCollectors(t *testing.T) {
 	}
 }
 
+func TestAdminServer_CardinalityJSON(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/cardinality.json", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/cardinality.json = %d, want 200", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("content-type = %q, want application/json", ct)
+	}
+	var got statusdata.CardinalityInfo
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body does not round-trip into CardinalityInfo: %v", err)
+	}
+
+	// Non-GET is rejected.
+	req = httptest.NewRequest(http.MethodPost, "/api/cardinality.json", nil)
+	w = httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /api/cardinality.json = %d, want 405", w.Code)
+	}
+}
+
+func TestAdminServer_ConfigJSON(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config.json", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/config.json = %d, want 200", w.Code)
+	}
+	var got statusdata.ConfigSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body does not round-trip into ConfigSummary: %v", err)
+	}
+	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+		t.Errorf("content-disposition = %q, want an attachment", cd)
+	}
+}
+
 func TestAdminServer_PprofGatedByConfig(t *testing.T) {
 	t.Run("disabled -> 404", func(t *testing.T) {
 		a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
