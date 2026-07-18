@@ -59,6 +59,19 @@ type TailnetStatus struct {
 type APIInfo struct {
 	Endpoints []APIEndpoint `json:"endpoints"`
 	RateLimit *APIRateLimit `json:"rate_limit,omitempty"`
+	Auth      APIAuth       `json:"auth"`
+}
+
+// APIAuth summarizes how the client authenticates to the Tailscale API and the
+// aggregate request/throttle totals across endpoints. It never carries a
+// credential value. KeyExpiresAt/Warning are set only when known (API-key expiry
+// is not parsed today, so they are usually empty).
+type APIAuth struct {
+	Method       string `json:"method"` // "oauth" | "apikey" | "workload_identity" | ""
+	TotalCalls   int64  `json:"total_calls"`
+	Total429     int64  `json:"total_429"`
+	KeyExpiresAt string `json:"key_expires_at,omitempty"` // RFC3339 if known
+	Warning      string `json:"warning,omitempty"`
 }
 
 // APIEndpoint is one low-cardinality endpoint's request aggregates. LastError is
@@ -130,6 +143,14 @@ type CollectorStatus struct {
 	NextRunInSec int64  `json:"next_run_in_seconds"`
 	NextRunIn    string `json:"next_run_in,omitempty"`
 	Overdue      bool   `json:"overdue,omitempty"`
+	// LastSuccessAt is the finish time of the most recent SUCCESSFUL run (empty if
+	// never). FreshnessSec/Freshness are its age; FreshnessState buckets it into
+	// "ok"|"warning"|"stale" (by multiples of the interval) or "none" when the
+	// collector has never succeeded — the data-freshness column.
+	LastSuccessAt  string `json:"last_success_at,omitempty"`
+	FreshnessSec   int64  `json:"freshness_seconds"`
+	Freshness      string `json:"freshness,omitempty"`
+	FreshnessState string `json:"freshness_state,omitempty"`
 	// DurationMsSeries and OutcomeSeries are the recent-run history (oldest first,
 	// aligned) feeding the per-collector duration sparkline and outcome strip.
 	DurationMsSeries []int64 `json:"duration_ms_series,omitempty"`
@@ -236,14 +257,72 @@ type CardinalityInfo struct {
 	// TotalSeries is the recent trend of the total active-series count (oldest
 	// first), feeding the cardinality sparkline. Populated only when self-obs is on.
 	TotalSeries []int `json:"total_series,omitempty"`
+	// Labels is the high-cardinality-label breakdown (distinct values per label
+	// key, aggregated across metrics, sorted by total distinct desc).
+	Labels []LabelRow `json:"labels,omitempty"`
+	// Growth is the per-metric active-series growth over the retained history
+	// window, sorted by absolute change desc.
+	Growth []GrowthRow `json:"growth,omitempty"`
+	// Thresholds are the configured warning/critical series-count levels.
+	Thresholds CardinalityThresholds `json:"thresholds"`
+	// Alerts lists metrics whose count crossed a threshold (critical first).
+	Alerts []CardinalityAlert `json:"alerts,omitempty"`
+	// TotalMetrics is the number of source metrics currently emitting series.
+	TotalMetrics int `json:"total_metrics"`
 }
 
-// SeriesRow is the active-series count for one source metric.
+// SeriesRow is the active-series count for one source metric. Level is set when
+// the count crosses a configured threshold ("warning" | "critical"; "" = below).
 type SeriesRow struct {
 	Metric   string `json:"metric"`
 	PromName string `json:"prom_name"`
 	Count    int    `json:"count"`
 	Capped   bool   `json:"capped"`
+	Level    string `json:"level,omitempty"`
+}
+
+// LabelRow is one label key's distinct-value cardinality aggregated across every
+// metric that carries it. Metrics is the per-metric breakdown (with example
+// values). Capped is true when any contributing (metric,label) hit the cap.
+type LabelRow struct {
+	Label         string           `json:"label"`
+	TotalDistinct int              `json:"total_distinct"`
+	Capped        bool             `json:"capped"`
+	Metrics       []LabelMetricRow `json:"metrics"`
+}
+
+// LabelMetricRow is one metric's contribution to a label's cardinality.
+type LabelMetricRow struct {
+	Metric   string   `json:"metric"`
+	PromName string   `json:"prom_name"`
+	Distinct int      `json:"distinct"`
+	Capped   bool     `json:"capped"`
+	Examples []string `json:"examples,omitempty"`
+}
+
+// GrowthRow is one metric's active-series change over the retained history
+// window. DeltaPct is the percentage change from the oldest retained sample to
+// the current count (0 when the window has < 2 samples or started at 0).
+type GrowthRow struct {
+	Metric   string  `json:"metric"`
+	PromName string  `json:"prom_name"`
+	Current  int     `json:"current"`
+	DeltaPct float64 `json:"delta_pct"`
+	Series   []int   `json:"series,omitempty"`
+}
+
+// CardinalityThresholds are the configured warning/critical series-count levels
+// (0 = that level disabled).
+type CardinalityThresholds struct {
+	Warning  int `json:"warning"`
+	Critical int `json:"critical"`
+}
+
+// CardinalityAlert is one metric flagged for crossing a threshold.
+type CardinalityAlert struct {
+	Metric string `json:"metric"`
+	Count  int    `json:"count"`
+	Level  string `json:"level"` // "critical" | "warning"
 }
 
 // ReceiversInfo reports which optional ingestion receivers are enabled.
