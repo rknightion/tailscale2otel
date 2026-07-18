@@ -145,9 +145,9 @@ func TestStatusPage_HasRDNSSection(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		`id="rdns"`,         // the reverse-DNS section anchor
-		`id="rdnsPurgeBtn"`, // the purge control
-		"Reverse DNS",       // section heading text
+		`data-tab="inventory"`, // reverse-DNS now lives under the Inventory & Catalog tab
+		`id="rdnsPurgeBtn"`,    // the purge control
+		"Reverse DNS",          // section heading text
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("status HTML missing %q", want)

@@ -10,7 +10,31 @@
     --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
     --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
     --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  /* Light theme: applied when the OS prefers light and the user hasn't chosen,
+     or when the manual toggle stamps data-theme="light". The explicit
+     data-theme overrides always win over the media query. */
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+      --grid:#e6eaef;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+    --grid:#e6eaef;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
@@ -18,28 +42,30 @@
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
   code{font-family:var(--mono);font-size:12px;background:var(--panel2);
-    padding:1px 5px;border-radius:4px;color:#c9d1d9}
+    padding:1px 5px;border-radius:4px}
   header{padding:20px 24px;border-bottom:1px solid var(--line);
     display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
   header h1{margin:0;font-size:20px;font-weight:600}
   header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
   header .spacer{flex:1}
   main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
-  section{margin:26px 0}
-  section>h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
+  section{margin:0 0 26px}
+  section>h2,.sub-h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
     color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sub-h{margin:26px 0 12px}
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
   .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
   .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
   .card .sub{color:var(--muted);font-size:12px;margin-top:4px;font-family:var(--mono);
     overflow-wrap:anywhere}
+  .card.crit{border-color:var(--err)} .card.warn2{border-color:var(--warn)}
   .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;
     font-weight:600;line-height:1.6}
   .badge.ok{background:rgba(63,185,80,.16);color:var(--ok)}
-  .badge.err{background:rgba(248,81,73,.16);color:var(--err)}
-  .badge.warn{background:rgba(210,153,34,.16);color:var(--warn)}
-  .badge.pending{background:rgba(110,118,129,.18);color:var(--muted)}
+  .badge.err,.badge.critical,.badge.degraded{background:rgba(248,81,73,.16);color:var(--err)}
+  .badge.warn,.badge.warning{background:rgba(210,153,34,.16);color:var(--warn)}
+  .badge.pending,.badge.stale,.badge.none{background:rgba(110,118,129,.18);color:var(--muted)}
   table{width:100%;border-collapse:collapse;background:var(--panel);
     border:1px solid var(--line);border-radius:10px;overflow:hidden}
   th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);
@@ -62,10 +88,46 @@
   .muted{color:var(--muted)}
   .note{color:var(--muted);font-size:12px;margin-top:2px}
   .note.err{color:var(--err)}
-  /* Per-collector info affordance: a small ⓘ whose popover (purpose + emitted
-     metrics) is positioned with fixed coords by JS so the collectors table's
-     overflow:hidden can't clip it. The server-rendered no-JS fallback uses a
-     native title= tooltip on the same .collector-info span. */
+  footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
+  /* Tabs */
+  nav.tabs{position:sticky;top:0;z-index:5;display:flex;gap:4px;flex-wrap:wrap;
+    padding:8px 24px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .tab-btn{background:transparent;color:var(--muted);border:1px solid transparent;
+    border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;
+    font-weight:600;cursor:pointer;font-family:inherit}
+  .tab-btn:hover{color:var(--fg)}
+  .tab-btn.active{color:var(--fg);background:var(--panel);border-color:var(--line)}
+  section[data-tab]{display:none}
+  section[data-tab].active{display:block}
+  .rollup{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:12px 16px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:18px}
+  .rollup .rc{display:flex;flex-direction:column}
+  .rollup .rc .rv{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .rollup .rc .rk{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .reasons{padding:6px 24px;color:var(--warn);font-size:12px;font-family:var(--mono);
+    border-bottom:1px solid var(--line)}
+  #staleBanner{display:none;padding:8px 24px;background:rgba(210,153,34,.16);
+    color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
+  #staleBanner.show{display:block}
+  svg.spark{width:80px;height:22px;vertical-align:middle;display:inline-block}
+  /* Full charts */
+  .chart{width:100%;height:150px;display:block}
+  svg.spark.card{width:100%;height:36px;display:block;margin-top:8px}
+  .chart-wrap{position:relative}
+  .chart-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+  .chart-legend .lg{display:inline-flex;align-items:center;gap:5px}
+  .chart-legend .sw{width:10px;height:3px;border-radius:2px;display:inline-block}
+  .chart-tip{position:absolute;display:none;pointer-events:none;background:var(--panel2);
+    border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:11px;
+    font-family:var(--mono);white-space:nowrap;z-index:6;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .outcome{display:inline-flex;gap:2px;align-items:center}
+  .outcome i{width:5px;height:14px;border-radius:1px;background:var(--ok);display:inline-block}
+  .outcome i.f{background:var(--err)}
+  .controls{display:inline-flex;gap:10px;align-items:center}
+  button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.ctl:hover{border-color:var(--accent)}
+  /* Per-collector info affordance (see collectorInfo in JS). */
   .collector-info{position:relative;display:inline-block;margin-left:6px;
     color:var(--muted);font-size:12px;line-height:1;cursor:help;user-select:none}
   .collector-info:hover,.collector-info:focus{color:var(--accent);outline:none}
@@ -77,31 +139,23 @@
     text-align:left;cursor:auto}
   .collector-info:hover .cinfo-tip,.collector-info:focus .cinfo-tip{display:block}
   .cinfo-purpose{display:block;color:var(--fg);font-size:12px;line-height:1.5}
-  .cinfo-metrics{display:block;margin-top:8px;padding-top:8px;
-    border-top:1px solid var(--line)}
+  .cinfo-metrics{display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
   .cinfo-m{display:block;margin:7px 0}
   .cinfo-m code{font-size:11px}
-  .cinfo-d{display:block;color:var(--muted);font-size:11px;line-height:1.45;
-    margin-top:2px}
-  footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
-  nav.toc{position:sticky;top:0;z-index:5;display:flex;gap:16px;flex-wrap:wrap;
-    padding:10px 24px;background:rgba(15,20,25,.93);border-bottom:1px solid var(--line);
-    backdrop-filter:blur(4px);font-size:13px}
-  .reasons{padding:6px 24px;color:var(--warn);font-size:12px;font-family:var(--mono);
-    border-bottom:1px solid var(--line)}
-  #staleBanner{display:none;padding:8px 24px;background:rgba(210,153,34,.16);
-    color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
-  #staleBanner.show{display:block}
-  svg.spark{width:80px;height:22px;vertical-align:middle;display:inline-block}
-  svg.spark.card{width:100%;height:36px;display:block;margin-top:8px}
-  .outcome{display:inline-flex;gap:2px;align-items:center}
-  .outcome i{width:5px;height:14px;border-radius:1px;background:var(--ok);display:inline-block}
-  .outcome i.f{background:var(--err)}
-  .controls{display:inline-flex;gap:10px;align-items:center}
-  button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
-    border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
-  button.ctl:hover{border-color:var(--accent)}
+  .cinfo-d{display:block;color:var(--muted);font-size:11px;line-height:1.45;margin-top:2px}
+  .ex{font-family:var(--mono);font-size:11px;color:var(--muted)}
 </style>
+<script>
+  // Apply the persisted theme BEFORE first paint to avoid a flash of the wrong
+  // theme. Falls back silently to the prefers-color-scheme media query.
+  (function(){try{var t=localStorage.getItem('ts2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<noscript><style>
+  /* Without JS the tabs can't switch — show every section stacked and hide the
+     tab bar, preserving the static snapshot. */
+  section[data-tab]{display:block!important;margin-bottom:34px}
+  nav.tabs{display:none}
+</style></noscript>
 </head>
 <body>
 <header>
@@ -109,39 +163,51 @@
   <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}</span>
   {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
   <span class="spacer"></span>
+  <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
   <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
 </header>
 <div class="reasons" id="healthReasons"{{if not .HealthReasons}} style="display:none"{{end}}>{{range .HealthReasons}}{{.}} · {{end}}</div>
 <div id="staleBanner"></div>
-<nav class="toc">
-  <a href="#collectors">Collectors</a>
-  <a href="#api">API</a>
-  <a href="#cardinality">Cardinality</a>
-  <a href="#nodemetrics">Node metrics</a>
-  {{if .Devices}}<a href="#devices">Devices</a>{{end}}
-  <a href="#rdns">Reverse DNS</a>
-  <a href="#metrics">Metrics</a>
-  <a href="#logs">Logs</a>
-  <a href="#config">Config</a>
+<nav class="tabs" id="tabs">
+  <button class="tab-btn" data-target="overview">Overview</button>
+  <button class="tab-btn" data-target="collectors">Collectors</button>
+  <button class="tab-btn" data-target="api">API</button>
+  <button class="tab-btn" data-target="cardinality">Cardinality</button>
+  <button class="tab-btn" data-target="inventory">Inventory &amp; Catalog</button>
+  <button class="tab-btn" data-target="config">Config</button>
 </nav>
 <main>
 
-  <section>
+  <!-- ═══ OVERVIEW ═══ -->
+  <section data-tab="overview">
+    <div class="rollup" id="rollup">
+      <div class="rc"><span class="rv" id="ruHealth">{{.Health}}</span><span class="rk">health</span></div>
+      <div class="rc"><span class="rv" id="ruCollectors">—</span><span class="rk">collectors ok</span></div>
+      <div class="rc"><span class="rv" id="ruFailing">—</span><span class="rk">failing</span></div>
+      <div class="rc"><span class="rv" id="ruStale">—</span><span class="rk">stale</span></div>
+      <div class="rc"><span class="rv" id="ruExport">—</span><span class="rk">last export</span></div>
+      <div class="rc"><span class="rv" id="ruSeries">{{if .Cardinality.Available}}{{.Cardinality.Total}}{{else}}—{{end}}</span><span class="rk">active series</span></div>
+    </div>
     <div class="cards">
       <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="sub">since {{.Service.StartedAt}}</div></div>
       <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s</div></div>
       <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
       {{if .Provider}}<div class="card"><div class="k">Control plane</div><div class="v"><code>{{.Provider}}</code></div>{{if .Capabilities}}<div class="sub">{{range $i,$c := .Capabilities}}{{if $i}}, {{end}}{{$c}}{{end}}</div>{{end}}</div>{{end}}
       <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
-      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div><svg class="spark card" id="goroutinesSpark"></svg></div>
-      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div><svg class="spark card" id="heapSpark"></svg></div>
-      <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">—</div><div class="sub">cycles/sec</div><svg class="spark card" id="gcRateSpark"></svg></div>
+      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">—</div><div class="sub">cycles/sec</div></div>
     </div>
-  </section>
 
-  {{if gt (len .Tailnets) 1}}
-  <section id="tailnets">
-    <h2>Tailnets ({{len .Tailnets}})</h2>
+    <div class="sub-h">Runtime trend (~10 min)</div>
+    <div class="cards">
+      <div class="card"><div class="k">Goroutines</div><div class="chart-wrap"><svg class="chart" id="chGoroutines"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="chart-wrap"><svg class="chart" id="chHeap"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC"></svg><div class="chart-tip"></div></div></div>
+    </div>
+
+    {{if gt (len .Tailnets) 1}}
+    <div class="sub-h">Tailnets ({{len .Tailnets}})</div>
     <table>
       <thead><tr><th>Tailnet</th><th>Auth</th><th class="num">Devices</th><th class="num">Collectors</th><th class="num">Failing</th></tr></thead>
       <tbody>
@@ -156,14 +222,14 @@
       {{end}}
       </tbody>
     </table>
-    <p class="note">Per-tailnet detail is available in <a href="/api/status.json"><code>/api/status.json</code></a> under <code>tailnets[]</code>. The Collectors, Devices and API sections below show the combined view across all tailnets.</p>
+    <p class="note">Per-tailnet detail is in <a href="/api/status.json"><code>/api/status.json</code></a> under <code>tailnets[]</code>. The tabs show the combined view across all tailnets.</p>
+    {{end}}
   </section>
-  {{end}}
 
-  <section id="collectors">
-    <h2>Collectors</h2>
+  <!-- ═══ COLLECTORS ═══ -->
+  <section data-tab="collectors">
     <table>
-      <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Success</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th><th class="num">Duration</th><th>Recent</th><th>Last error</th></tr></thead>
+      <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Success</th><th>Freshness</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th><th class="num">Duration</th><th>Recent</th><th>Last error</th></tr></thead>
       <tbody id="collBody">
       {{range .Collectors}}
         <tr{{if and .HasRun (not .LastSuccess)}} class="bad"{{end}}>
@@ -171,6 +237,7 @@
           <td>{{if not .HasRun}}<span class="badge pending">pending</span>{{else if .LastSuccess}}<span class="badge ok">ok</span>{{else}}<span class="badge err">fail</span>{{end}}</td>
           <td class="num">{{.IntervalSec}}s</td>
           <td class="num">{{if .HasRun}}{{printf "%.0f" .SuccessRatePct}}%{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if eq .FreshnessState "none"}}<span class="badge none">never</span>{{else}}<span class="badge {{.FreshnessState}}">{{.Freshness}}</span>{{end}}</td>
           <td class="num">{{.Runs}}</td>
           <td class="num">{{.Failures}}{{if gt .ConsecutiveFailures 0}} <span class="muted">({{.ConsecutiveFailures}}×)</span>{{end}}</td>
           <td class="num">{{if .HasRun}}{{if le .NextRunInSec 0}}due{{else}}{{.NextRunIn}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
@@ -179,17 +246,42 @@
           <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="10" class="muted">No collectors enabled.</td></tr>
+        <tr><td colspan="11" class="muted">No collectors enabled.</td></tr>
       {{end}}
       </tbody>
     </table>
+
+    <div class="sub-h">Node-metrics discovery</div>
+    {{if .NodeDiscovery.Enabled}}
+      <details>
+        <summary>{{.NodeDiscovery.Active}} active target(s) · {{.NodeDiscovery.Static}} static, {{minus .NodeDiscovery.Active .NodeDiscovery.Static}} discovered
+          {{if .NodeDiscovery.LastOK}}<span class="badge ok">last discovery ok</span>{{else}}<span class="badge err">last discovery failed</span>{{end}}
+          {{if .NodeDiscovery.LastDiscovery}}<span class="muted" style="font-weight:400"> at {{.NodeDiscovery.LastDiscovery}}</span>{{end}}
+        </summary>
+        <table>
+          <thead><tr><th>Instance</th><th>URL</th><th>Source</th></tr></thead>
+          <tbody>
+          {{range .NodeDiscovery.Targets}}
+            <tr><td>{{if .Instance}}<code>{{.Instance}}</code>{{else}}<span class="muted">—</span>{{end}}</td><td class="mono">{{.URL}}</td><td>{{if eq .Source "discovered"}}<span class="badge ok">discovered</span>{{else}}<span class="badge pending">static</span>{{end}}</td></tr>
+          {{else}}
+            <tr><td colspan="3" class="muted">No active targets.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </details>
+    {{else}}
+      <p class="muted">Dynamic discovery is disabled. {{if gt .NodeDiscovery.Static 0}}Scraping {{.NodeDiscovery.Static}} static target(s).{{end}}</p>
+    {{end}}
   </section>
 
-  <section id="api">
-    <h2>API health</h2>
+  <!-- ═══ API ═══ -->
+  <section data-tab="api">
     <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px" id="apiAuthMethod">{{if .API.Auth.Method}}{{.API.Auth.Method}}{{else}}—{{end}}</div>{{if .API.Auth.Warning}}<div class="sub" style="color:var(--warn)" id="apiAuthWarn">{{.API.Auth.Warning}}</div>{{else}}<div class="sub" id="apiAuthWarn"></div>{{end}}</div>
+      <div class="card"><div class="k">Total API calls</div><div class="v" id="apiTotalCalls">{{.API.Auth.TotalCalls}}</div></div>
+      <div class="card"><div class="k">Throttle events (429)</div><div class="v" id="apiTotal429">{{.API.Auth.Total429}}</div></div>
       <div class="card" id="rateLimitCard"{{if not .API.RateLimit}} style="display:none"{{end}}>
-        <div class="k">Rate limited (429)</div>
+        <div class="k">Last rate limit</div>
         <div class="v" id="rlCount">{{with .API.RateLimit}}{{.Count}}{{end}}</div>
         <div class="sub">last <span id="rlLast">{{with .API.RateLimit}}{{.LastSeen}}{{end}}</span></div>
       </div>
@@ -217,81 +309,101 @@
     </div>
   </section>
 
-  <section id="cardinality">
-    <h2>Cardinality (active series, last export interval)</h2>
+  <!-- ═══ CARDINALITY ═══ -->
+  <section data-tab="cardinality">
     {{if .Cardinality.Available}}
       <div class="cards" style="margin-bottom:12px">
-        <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{len .Cardinality.Series}} metrics</div><svg class="spark card" id="cardSpark"></svg></div>
+        <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{.Cardinality.TotalMetrics}} metrics</div></div>
+        <div class="card{{if .Cardinality.Alerts}} warn2{{end}}"><div class="k">Threshold alerts</div><div class="v" id="cardAlertCount">{{len .Cardinality.Alerts}}</div><div class="sub">warn ≥ {{.Cardinality.Thresholds.Warning}} · crit ≥ {{.Cardinality.Thresholds.Critical}}</div></div>
+        <div class="card"><div class="k">Series trend (~10 min)</div><div class="chart-wrap"><svg class="chart" id="chCard" style="height:70px"></svg><div class="chart-tip"></div></div></div>
       </div>
+
+      {{if .Cardinality.Alerts}}
+      <div class="sub-h">Active alerts</div>
+      <table style="margin-bottom:8px"><tbody>
+        {{range .Cardinality.Alerts}}
+        <tr><td><span class="badge {{.Level}}">{{.Level}}</span></td><td><code>{{.Metric}}</code></td><td class="num">{{.Count}} series</td></tr>
+        {{end}}
+      </tbody></table>
+      {{end}}
+
+      <div class="sub-h">Top metrics by series</div>
       <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'cardTable')">
       <div class="scroll">
       <table id="cardTable">
         <thead><tr><th>Metric</th><th>Prometheus name</th><th class="num">Series</th></tr></thead>
         <tbody>
         {{range .Cardinality.Series}}
-          <tr><td><code>{{.Metric}}</code></td><td class="mono">{{.PromName}}</td><td class="num">{{.Count}}{{if .Capped}} <span class="badge warn" title="cap reached; true cardinality is at least this high">capped</span>{{end}}</td></tr>
+          <tr{{if eq .Level "critical"}} class="bad"{{end}}><td><code>{{.Metric}}</code>{{if .Level}} <span class="badge {{.Level}}">{{.Level}}</span>{{end}}</td><td class="mono">{{.PromName}}</td><td class="num">{{.Count}}{{if .Capped}} <span class="badge warn" title="cap reached; true cardinality is at least this high">capped</span>{{end}}</td></tr>
         {{end}}
         </tbody>
       </table>
       </div>
-    {{else}}
-      <p class="muted">{{if .Service.SelfObs}}Awaiting the first export interval…{{else}}Enable <code>self_observability</code> to surface live active-series cardinality.{{end}}</p>
-    {{end}}
-  </section>
 
-  <section id="nodemetrics">
-    <h2>Node-metrics discovery</h2>
-    {{if .NodeDiscovery.Enabled}}
-      <details>
-        <summary>{{.NodeDiscovery.Active}} active target(s) · {{.NodeDiscovery.Static}} static, {{minus .NodeDiscovery.Active .NodeDiscovery.Static}} discovered
-          {{if .NodeDiscovery.LastOK}}<span class="badge ok">last discovery ok</span>{{else}}<span class="badge err">last discovery failed</span>{{end}}
-          {{if .NodeDiscovery.LastDiscovery}}<span class="muted" style="font-weight:400"> at {{.NodeDiscovery.LastDiscovery}}</span>{{end}}
-        </summary>
-        <table>
-          <thead><tr><th>Instance</th><th>URL</th><th>Source</th></tr></thead>
-          <tbody>
-          {{range .NodeDiscovery.Targets}}
-            <tr><td>{{if .Instance}}<code>{{.Instance}}</code>{{else}}<span class="muted">—</span>{{end}}</td><td class="mono">{{.URL}}</td><td>{{if eq .Source "discovered"}}<span class="badge ok">discovered</span>{{else}}<span class="badge pending">static</span>{{end}}</td></tr>
-          {{else}}
-            <tr><td colspan="3" class="muted">No active targets.</td></tr>
-          {{end}}
-          </tbody>
-        </table>
-      </details>
-    {{else}}
-      <p class="muted">Dynamic discovery is disabled. {{if gt .NodeDiscovery.Static 0}}Scraping {{.NodeDiscovery.Static}} static target(s).{{end}}</p>
-    {{end}}
-  </section>
-
-  {{if .Devices}}
-  <section id="devices">
-    <h2>Devices ({{len .Devices}})</h2>
-    <details>
-      <summary>{{len .Devices}} device(s) in the enrichment cache</summary>
-      <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')" style="margin:12px 16px">
+      {{if .Cardinality.Labels}}
+      <div class="sub-h">High-cardinality labels</div>
       <div class="scroll">
-      <table id="devTable">
-        <thead><tr><th>Name</th><th>OS</th><th>User</th><th>Addresses</th><th>Tags</th><th>External</th></tr></thead>
+      <table id="labelTable">
+        <thead><tr><th>Label</th><th class="num">Distinct values</th><th>Top metrics (example values)</th></tr></thead>
         <tbody>
-        {{range .Devices}}
+        {{range .Cardinality.Labels}}
           <tr>
-            <td><code>{{if .Name}}{{.Name}}{{else}}{{.Hostname}}{{end}}</code></td>
-            <td>{{.OS}}{{if .OSVersion}} {{.OSVersion}}{{end}}</td>
-            <td>{{.User}}</td>
-            <td class="mono">{{range .Addrs}}{{.}} {{end}}</td>
-            <td class="mono">{{range .Tags}}<code>{{.}}</code> {{end}}</td>
-            <td>{{if .External}}<span class="badge warn">external</span>{{else}}<span class="badge pending">internal</span>{{end}}</td>
+            <td><code>{{.Label}}</code>{{if .Capped}} <span class="badge warn">capped</span>{{end}}</td>
+            <td class="num">{{.TotalDistinct}}</td>
+            <td>{{range $i,$m := .Metrics}}{{if $i}}<br>{{end}}<code>{{$m.Metric}}</code> <span class="muted">{{$m.Distinct}}{{if $m.Capped}}+{{end}}</span>{{if $m.Examples}} <span class="ex">{{range $j,$e := $m.Examples}}{{if $j}}, {{end}}{{$e}}{{end}}</span>{{end}}{{end}}</td>
           </tr>
         {{end}}
         </tbody>
       </table>
       </div>
-    </details>
-  </section>
-  {{end}}
+      {{end}}
 
-  <section id="rdns">
-    <h2>Reverse DNS (PTR) cache</h2>
+      {{if .Cardinality.Growth}}
+      <div class="sub-h">Growth (change over retained window)</div>
+      <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'growthTable')">
+      <div class="scroll">
+      <table id="growthTable">
+        <thead><tr><th>Metric</th><th class="num">Current</th><th class="num">Change</th></tr></thead>
+        <tbody>
+        {{range .Cardinality.Growth}}
+          <tr><td><code>{{.Metric}}</code></td><td class="num">{{.Current}}</td><td class="num">{{if gt .DeltaPct 0.0}}<span style="color:var(--warn)">+{{printf "%.0f" .DeltaPct}}%</span>{{else if lt .DeltaPct 0.0}}<span style="color:var(--ok)">{{printf "%.0f" .DeltaPct}}%</span>{{else}}<span class="muted">0%</span>{{end}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{end}}
+
+      <p class="note" style="margin-top:12px">Full export: <a href="/api/cardinality.json"><code>/api/cardinality.json</code></a></p>
+    {{else}}
+      <p class="muted">{{if .Service.SelfObs}}Awaiting the first export interval…{{else}}Enable <code>self_observability</code> to surface live active-series cardinality, high-cardinality labels, growth and threshold alerts.{{end}}</p>
+    {{end}}
+  </section>
+
+  <!-- ═══ INVENTORY & CATALOG ═══ -->
+  <section data-tab="inventory">
+    {{if .Devices}}
+    <div class="sub-h">Devices ({{len .Devices}})</div>
+    <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')">
+    <div class="scroll">
+    <table id="devTable">
+      <thead><tr><th>Name</th><th>OS</th><th>User</th><th>Addresses</th><th>Tags</th><th>External</th></tr></thead>
+      <tbody>
+      {{range .Devices}}
+        <tr>
+          <td><code>{{if .Name}}{{.Name}}{{else}}{{.Hostname}}{{end}}</code></td>
+          <td>{{.OS}}{{if .OSVersion}} {{.OSVersion}}{{end}}</td>
+          <td>{{.User}}</td>
+          <td class="mono">{{range .Addrs}}{{.}} {{end}}</td>
+          <td class="mono">{{range .Tags}}<code>{{.}}</code> {{end}}</td>
+          <td>{{if .External}}<span class="badge warn">external</span>{{else}}<span class="badge pending">internal</span>{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+
+    <div class="sub-h">Reverse DNS (PTR) cache</div>
     {{if .RDNS.Enabled}}
     <div class="cards">
       <div class="card"><div class="k">Entries</div><div class="v" id="rdnsSize">{{.RDNS.Size}}</div><div class="sub">of {{.RDNS.Capacity}} max</div></div>
@@ -308,10 +420,8 @@
     {{else}}
     <p class="muted">Reverse-DNS enrichment is disabled (<code>enrichment.reverse_dns.enabled=false</code>). External flow addresses stay bucketed as <code>external</code>; no PTR lookups are made.</p>
     {{end}}
-  </section>
 
-  <section id="metrics">
-    <h2>Metrics catalog ({{len .Metrics}})</h2>
+    <div class="sub-h">Metrics catalog ({{len .Metrics}})</div>
     <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'metricsTable')">
     <div class="scroll">
     <table id="metricsTable">
@@ -331,10 +441,8 @@
       </tbody>
     </table>
     </div>
-  </section>
 
-  <section id="logs">
-    <h2>Log events ({{len .LogEvents}})</h2>
+    <div class="sub-h">Log events ({{len .LogEvents}})</div>
     <input class="filter" type="text" placeholder="Filter log events…" oninput="filterTable(this,'logsTable')">
     <div class="scroll">
     <table id="logsTable">
@@ -353,8 +461,8 @@
     </div>
   </section>
 
-  <section id="config">
-    <h2>Configuration (secrets redacted)</h2>
+  <!-- ═══ CONFIG ═══ -->
+  <section data-tab="config">
     <div class="cards">
       <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
       <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px">{{.Config.AuthMethod}}</div></div>
@@ -377,6 +485,7 @@
         {{if .Dedup}}<tr><td>Dedup sets</td><td class="mono">{{range .Dedup}}{{.Name}} {{.Len}}/{{.Capacity}} &nbsp;{{end}}</td></tr>{{end}}
       </tbody>
     </table>
+    <p class="note" style="margin-top:12px">Download the redacted effective config: <a href="/api/config.json"><code>/api/config.json</code></a></p>
   </section>
 
 </main>
@@ -385,14 +494,54 @@
   <a href="/api/status.json">JSON</a> ·
   <span class="controls"><button class="ctl" id="pauseBtn">Pause</button> <a href="#" id="refreshNow">refresh now</a></span> ·
   updated <span id="updatedAgo">just now</span> ·
-  <noscript>static snapshot (enable JavaScript for live updates &amp; sparklines)</noscript>
+  <noscript>static snapshot (enable JavaScript for live updates &amp; charts)</noscript>
 </footer>
 <script>
 var SVGNS = 'http://www.w3.org/2000/svg';
 var lastOkMs = Date.now();
 var pollTimer = null, paused = false;
+var lastData = null;
 
-// Filter table rows by a case-insensitive substring of their text content.
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function showTab(id){
+  var secs = document.querySelectorAll('section[data-tab]');
+  var found = false;
+  for (var i=0;i<secs.length;i++){
+    var on = secs[i].getAttribute('data-tab')===id;
+    secs[i].classList.toggle('active', on);
+    if(on) found = true;
+  }
+  var btns = document.querySelectorAll('#tabs .tab-btn');
+  for (var j=0;j<btns.length;j++){
+    btns[j].classList.toggle('active', btns[j].getAttribute('data-target')===id);
+  }
+  if(found && location.hash!=='#'+id){ history.replaceState(null,'','#'+id); }
+  redrawCharts(); // charts need a laid-out (visible) container to size against
+}
+function initTabs(){
+  var btns = document.querySelectorAll('#tabs .tab-btn');
+  for (var i=0;i<btns.length;i++){
+    (function(b){ b.addEventListener('click', function(){ showTab(b.getAttribute('data-target')); }); })(btns[i]);
+  }
+  var initial = (location.hash||'').replace('#','');
+  var valid = document.querySelector('section[data-tab="'+initial+'"]');
+  showTab(valid ? initial : 'overview');
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────────────
+function currentTheme(){
+  var t = document.documentElement.getAttribute('data-theme');
+  if(t) return t;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+}
+function toggleTheme(){
+  var next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('ts2otel-theme', next); }catch(e){}
+  redrawCharts();
+}
+
+// ── Small helpers ─────────────────────────────────────────────────────────
 function filterTable(input, tableId){
   var q = input.value.toLowerCase();
   var rows = document.querySelectorAll('#'+tableId+' tbody tr');
@@ -400,22 +549,15 @@ function filterTable(input, tableId){
     rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
   }
 }
-
 function setText(id, v){ var e=document.getElementById(id); if(e!=null&&v!=null) e.textContent=v; }
-
 function el(tag, attrs, text){
   var e=document.createElement(tag);
   if(attrs){ for(var k in attrs){ if(attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]); } }
   if(text!=null) e.textContent=text;
   return e;
 }
-
-// relText renders an RFC3339 timestamp as a coarse "Nm ago" string.
-function relText(iso){
-  if(!iso) return '';
-  var t = Date.parse(iso); if(isNaN(t)) return iso;
-  return relMs(t);
-}
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#4493f8'; }
+function relText(iso){ if(!iso) return ''; var t=Date.parse(iso); if(isNaN(t)) return iso; return relMs(t); }
 function relMs(ms){
   var s = Math.round((Date.now()-ms)/1000); if(s<0) s=0;
   if(s<60) return s+'s ago';
@@ -424,8 +566,7 @@ function relMs(ms){
   return Math.floor(s/86400)+'d ago';
 }
 
-// drawSpark renders a min/max-normalized polyline into an inline <svg> from a
-// numeric array. Fewer than two points clears the svg (nothing to plot).
+// ── Sparklines (dense tables) ─────────────────────────────────────────────
 function drawSpark(svg, arr, color){
   if(!svg) return;
   while(svg.firstChild) svg.removeChild(svg.firstChild);
@@ -441,38 +582,111 @@ function drawSpark(svg, arr, color){
   svg.setAttribute('viewBox','0 0 '+W+' '+H);
   svg.setAttribute('preserveAspectRatio','none');
   var pl=document.createElementNS(SVGNS,'polyline');
-  pl.setAttribute('fill','none');
-  pl.setAttribute('stroke', color || 'var(--accent)');
-  pl.setAttribute('stroke-width','1.5');
-  pl.setAttribute('vector-effect','non-scaling-stroke');
+  pl.setAttribute('fill','none'); pl.setAttribute('stroke', color || cssVar('--accent'));
+  pl.setAttribute('stroke-width','1.5'); pl.setAttribute('vector-effect','non-scaling-stroke');
   pl.setAttribute('points', pts);
   svg.appendChild(pl);
 }
 function newSpark(){ var s=document.createElementNS(SVGNS,'svg'); s.setAttribute('class','spark'); return s; }
 
-// outcomeStrip renders the last <=24 run outcomes as red/green cells.
+// ── Full line chart (zero-dependency, axes + gridlines + hover) ───────────
+// Registry of chart configs so a theme change / tab show can redraw them all.
+var CHARTS = {};
+function registerChart(svgId, seriesFn, fmtFn){ CHARTS[svgId] = {seriesFn:seriesFn, fmt:fmtFn||function(v){return String(Math.round(v));}}; }
+function redrawCharts(){
+  for(var id in CHARTS){ if(CHARTS.hasOwnProperty(id)){
+    var c=CHARTS[id]; drawChart(id, c.seriesFn(lastData), c.fmt);
+  }}
+}
+// drawChart renders one or more series into the <svg id=svgId> with a value
+// axis, gridlines, an area under the first series, and a shared hover crosshair
+// whose tooltip reads out each series value at the cursor.
+function drawChart(svgId, series, fmt){
+  var svg=document.getElementById(svgId); if(!svg) return;
+  var wrap=svg.parentNode;
+  var tip=wrap ? wrap.querySelector('.chart-tip') : null;
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  series = (series||[]).filter(function(s){ return s.points && s.points.length; });
+  var rect=svg.getBoundingClientRect();
+  var W=Math.max(rect.width||300,120), H=Math.max(rect.height||150,50);
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('preserveAspectRatio','none');
+  var maxLen=0, mn=Infinity, mx=-Infinity;
+  series.forEach(function(s){ maxLen=Math.max(maxLen,s.points.length);
+    s.points.forEach(function(v){ if(v<mn)mn=v; if(v>mx)mx=v; }); });
+  if(!series.length || maxLen<2){
+    var t=document.createElementNS(SVGNS,'text'); t.setAttribute('x',8); t.setAttribute('y',H/2);
+    t.setAttribute('fill',cssVar('--muted')); t.setAttribute('font-size','11'); t.textContent='collecting…';
+    svg.appendChild(t); return;
+  }
+  if(mn===mx){ mx=mn+1; }
+  var padL=44, padR=8, padT=8, padB=16;
+  var plotW=W-padL-padR, plotH=H-padT-padB;
+  function xAt(i){ return padL + i*plotW/(maxLen-1); }
+  function yAt(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; }
+  // gridlines + y labels (min, mid, max)
+  [0,0.5,1].forEach(function(f){
+    var val=mn+(mx-mn)*f, y=yAt(val);
+    var ln=document.createElementNS(SVGNS,'line');
+    ln.setAttribute('x1',padL); ln.setAttribute('x2',W-padR); ln.setAttribute('y1',y); ln.setAttribute('y2',y);
+    ln.setAttribute('stroke',cssVar('--grid')); ln.setAttribute('stroke-width','1'); svg.appendChild(ln);
+    var tx=document.createElementNS(SVGNS,'text'); tx.setAttribute('x',4); tx.setAttribute('y',y+3);
+    tx.setAttribute('fill',cssVar('--muted')); tx.setAttribute('font-size','9');
+    tx.setAttribute('font-family','monospace'); tx.textContent=fmt(val); svg.appendChild(tx);
+  });
+  var colors=[cssVar('--accent'), cssVar('--ok'), cssVar('--warn')];
+  series.forEach(function(s, si){
+    var col=s.color||colors[si%colors.length];
+    var pts=s.points.map(function(v,i){ return xAt(i)+','+yAt(v); }).join(' ');
+    if(si===0){
+      var area=document.createElementNS(SVGNS,'polygon');
+      area.setAttribute('points', xAt(0)+','+(padT+plotH)+' '+pts+' '+xAt(s.points.length-1)+','+(padT+plotH));
+      area.setAttribute('fill', col); area.setAttribute('opacity','0.10'); svg.appendChild(area);
+    }
+    var pl=document.createElementNS(SVGNS,'polyline');
+    pl.setAttribute('fill','none'); pl.setAttribute('stroke',col); pl.setAttribute('stroke-width','1.5');
+    pl.setAttribute('points',pts); svg.appendChild(pl);
+  });
+  // hover crosshair + tooltip
+  if(tip){
+    var cross=document.createElementNS(SVGNS,'line');
+    cross.setAttribute('stroke',cssVar('--muted')); cross.setAttribute('stroke-width','1');
+    cross.setAttribute('stroke-dasharray','2 2'); cross.setAttribute('y1',padT); cross.setAttribute('y2',padT+plotH);
+    cross.style.display='none'; svg.appendChild(cross);
+    var over=document.createElementNS(SVGNS,'rect');
+    over.setAttribute('x',padL); over.setAttribute('y',padT); over.setAttribute('width',plotW); over.setAttribute('height',plotH);
+    over.setAttribute('fill','transparent'); svg.appendChild(over);
+    over.addEventListener('mousemove', function(ev){
+      var b=svg.getBoundingClientRect();
+      var rel=(ev.clientX-b.left)*(W/b.width);
+      var idx=Math.round((rel-padL)/plotW*(maxLen-1)); if(idx<0)idx=0; if(idx>=maxLen)idx=maxLen-1;
+      cross.setAttribute('x1',xAt(idx)); cross.setAttribute('x2',xAt(idx)); cross.style.display='';
+      var lines=series.map(function(s){ var v=s.points[idx]; return s.name+' '+(v==null?'—':fmt(v)); });
+      tip.textContent=lines.join('  ·  '); tip.style.display='block';
+      tip.style.left=Math.min(Math.max(xAt(idx)*(b.width/W)-tip.offsetWidth/2,0), b.width-tip.offsetWidth)+'px';
+      tip.style.top='2px';
+    });
+    over.addEventListener('mouseleave', function(){ cross.style.display='none'; tip.style.display='none'; });
+  }
+}
+
+// ── Collectors table ──────────────────────────────────────────────────────
 function outcomeStrip(arr){
   var span=el('span',{'class':'outcome'});
   if(!arr) return span;
   var start = arr.length>24 ? arr.length-24 : 0;
-  for(var i=start;i<arr.length;i++){
-    var dot=el('i'); if(!arr[i]) dot.className='f';
-    dot.title = arr[i] ? 'ok' : 'fail';
-    span.appendChild(dot);
-  }
+  for(var i=start;i<arr.length;i++){ var dot=el('i'); if(!arr[i]) dot.className='f'; dot.title=arr[i]?'ok':'fail'; span.appendChild(dot); }
   return span;
 }
-
 function statusBadge(c){
   if(!c.has_run) return el('span',{'class':'badge pending'},'pending');
   if(c.last_success) return el('span',{'class':'badge ok'},'ok');
   return el('span',{'class':'badge err'},'fail');
 }
-
-// collectorInfo builds the ⓘ affordance for a collector: a small icon whose
-// popover lists the collector's purpose and the metrics it emits. The popover is
-// position:fixed and placed on hover/focus so the table's overflow:hidden can't
-// clip it. Returns null when the collector carries no doc data.
+function freshBadge(c){
+  var st=c.freshness_state||'none';
+  if(st==='none') return el('span',{'class':'badge none'},'never');
+  return el('span',{'class':'badge '+st}, c.freshness||'—');
+}
 function collectorInfo(c){
   if(!c.description && !(c.metrics && c.metrics.length)) return null;
   var wrap=el('span',{'class':'collector-info','tabindex':'0','aria-label':'About '+c.name});
@@ -494,19 +708,16 @@ function collectorInfo(c){
     var r=wrap.getBoundingClientRect(), w=360, left=r.left, top=r.bottom;
     if(left+w > window.innerWidth-8) left=window.innerWidth-8-w;
     if(left<8) left=8;
-    tip.style.left=Math.round(left)+'px';
-    tip.style.top=Math.round(top)+'px';
+    tip.style.left=Math.round(left)+'px'; tip.style.top=Math.round(top)+'px';
   }
-  wrap.addEventListener('mouseenter', place);
-  wrap.addEventListener('focus', place);
+  wrap.addEventListener('mouseenter', place); wrap.addEventListener('focus', place);
   return wrap;
 }
-
 function rebuildCollectors(rows){
   var tb=document.getElementById('collBody'); if(!tb) return;
   tb.textContent='';
   if(!rows || !rows.length){
-    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'10','class':'muted'},'No collectors enabled.'));
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'11','class':'muted'},'No collectors enabled.'));
     tb.appendChild(tr0); return;
   }
   rows.forEach(function(c){
@@ -516,13 +727,13 @@ function rebuildCollectors(rows){
     var info=collectorInfo(c); if(info) nameTd.appendChild(info);
     if(c.checkpoint){
       var sub=el('div',{'class':'note'+(c.checkpoint.stuck?' err':'')});
-      sub.textContent='checkpoint lag '+c.checkpoint.lag+(c.checkpoint.stuck?' · stuck':'');
-      nameTd.appendChild(sub);
+      sub.textContent='checkpoint lag '+c.checkpoint.lag+(c.checkpoint.stuck?' · stuck':''); nameTd.appendChild(sub);
     }
     tr.appendChild(nameTd);
     var stTd=el('td'); stTd.appendChild(statusBadge(c)); tr.appendChild(stTd);
     tr.appendChild(el('td',{'class':'num'}, c.interval_seconds+'s'));
     tr.appendChild(el('td',{'class':'num'}, c.has_run ? Math.round(c.success_rate_pct)+'%' : '—'));
+    var frTd=el('td'); frTd.appendChild(freshBadge(c)); tr.appendChild(frTd);
     tr.appendChild(el('td',{'class':'num'}, String(c.runs)));
     tr.appendChild(el('td',{'class':'num'}, String(c.failures)+(c.consecutive_failures>0?' ('+c.consecutive_failures+'×)':'')));
     tr.appendChild(el('td',{'class':'num'}, c.has_run ? (c.next_run_in_seconds<=0?'due':c.next_run_in) : '—'));
@@ -538,6 +749,7 @@ function rebuildCollectors(rows){
   });
 }
 
+// ── API table ─────────────────────────────────────────────────────────────
 function rebuildAPI(info){
   var tb=document.getElementById('apiBody'); if(!tb) return;
   var eps = (info && info.endpoints) ? info.endpoints : [];
@@ -565,6 +777,12 @@ function rebuildAPI(info){
       tb.appendChild(tr);
     });
   }
+  if(info && info.auth){
+    setText('apiAuthMethod', info.auth.method || '—');
+    setText('apiTotalCalls', info.auth.total_calls!=null ? info.auth.total_calls : 0);
+    setText('apiTotal429', info.auth.total_429!=null ? info.auth.total_429 : 0);
+    setText('apiAuthWarn', info.auth.warning || '');
+  }
   var rl=document.getElementById('rateLimitCard');
   if(rl){
     if(info && info.rate_limit){
@@ -575,15 +793,30 @@ function rebuildAPI(info){
   }
 }
 
+// ── Overview roll-up ──────────────────────────────────────────────────────
+function updateRollup(d){
+  setText('ruHealth', d.health);
+  var ok=0, failing=0, stale=0;
+  (d.collectors||[]).forEach(function(c){
+    if(c.has_run && c.last_success) ok++;
+    if(c.has_run && !c.last_success) failing++;
+    if(c.freshness_state==='stale') stale++;
+  });
+  setText('ruCollectors', ok);
+  setText('ruFailing', failing);
+  setText('ruStale', stale);
+  if(d.cardinality) setText('ruSeries', d.cardinality.available ? d.cardinality.total : '—');
+  // Last export age = freshest collector success as a proxy for data flow.
+  var newest=0;
+  (d.collectors||[]).forEach(function(c){ if(c.last_success_at){ var t=Date.parse(c.last_success_at); if(!isNaN(t)&&t>newest) newest=t; } });
+  setText('ruExport', newest ? relMs(newest) : '—');
+}
+
 function updateSparks(d){
   if(d.runtime){
-    drawSpark(document.getElementById('goroutinesSpark'), d.runtime.goroutines_series);
-    drawSpark(document.getElementById('heapSpark'), d.runtime.heap_alloc_series);
-    drawSpark(document.getElementById('gcRateSpark'), d.runtime.gc_rate_series, 'var(--warn)');
     var gr=d.runtime.gc_rate_series;
     if(gr && gr.length) setText('gcRate', gr[gr.length-1].toFixed(2)+'/s');
   }
-  if(d.cardinality) drawSpark(document.getElementById('cardSpark'), d.cardinality.total_series);
 }
 
 function setHealth(d){
@@ -593,16 +826,11 @@ function setHealth(d){
     b.title=(d.health_reasons||[]).join('\n');
   }
   var rb=document.getElementById('healthReasons');
-  if(rb){
-    if(d.health_reasons && d.health_reasons.length){ rb.textContent=d.health_reasons.join(' · '); rb.style.display=''; }
-    else { rb.style.display='none'; }
-  }
+  if(rb){ if(d.health_reasons && d.health_reasons.length){ rb.textContent=d.health_reasons.join(' · '); rb.style.display=''; } else { rb.style.display='none'; } }
 }
-
 function setStale(on){
   var b=document.getElementById('staleBanner'); if(!b) return;
-  if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); }
-  else { b.className=''; }
+  if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); } else { b.className=''; }
 }
 
 function refresh(){
@@ -610,7 +838,7 @@ function refresh(){
     if(!r.ok) throw new Error('status '+r.status);
     return r.json();
   }).then(function(d){
-    lastOkMs=Date.now(); setStale(false);
+    lastData=d; lastOkMs=Date.now(); setStale(false);
     setText('uptime', d.service && d.service.uptime);
     setText('goroutines', d.runtime && d.runtime.goroutines);
     setText('heapAlloc', d.runtime && d.runtime.heap_alloc);
@@ -618,12 +846,14 @@ function refresh(){
     setText('cacheDevices', d.device_cache && d.device_cache.devices);
     setText('cacheAge', d.device_cache && d.device_cache.age);
     updateRDNS(d.reverse_dns);
-    if(d.cardinality) setText('cardTotal', d.cardinality.total);
+    if(d.cardinality){ setText('cardTotal', d.cardinality.total); setText('cardAlertCount', (d.cardinality.alerts||[]).length); }
     setText('generatedAt', d.generated_at);
     setHealth(d);
+    updateRollup(d);
     rebuildCollectors(d.collectors);
     rebuildAPI(d.api);
     updateSparks(d);
+    redrawCharts();
   }).catch(function(){ setStale(true); });
 }
 
@@ -661,9 +891,17 @@ function tickFreshness(){
 }
 
 (function init(){
+  registerChart('chGoroutines', function(d){ return d&&d.runtime ? [{name:'goroutines', points:d.runtime.goroutines_series||[]}] : []; });
+  registerChart('chHeap', function(d){ return d&&d.runtime ? [{name:'heap', points:(d.runtime.heap_alloc_series||[]).map(function(b){return b/1048576;})}] : []; }, function(v){ return v.toFixed(0)+'M'; });
+  registerChart('chGC', function(d){ return d&&d.runtime ? [{name:'gc/s', color:cssVar('--warn'), points:d.runtime.gc_rate_series||[]}] : []; }, function(v){ return v.toFixed(1); });
+  registerChart('chCard', function(d){ return d&&d.cardinality&&d.cardinality.available ? [{name:'series', points:d.cardinality.total_series||[]}] : []; });
+
+  initTabs();
+  var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click', toggleTheme);
   var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click', togglePause);
   var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); refresh(); });
   var pb=document.getElementById('rdnsPurgeBtn'); if(pb) pb.addEventListener('click', purgeRDNS);
+  window.addEventListener('resize', redrawCharts);
   refresh();
   startPolling();
   setInterval(tickFreshness, 1000);

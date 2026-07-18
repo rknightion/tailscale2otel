@@ -117,3 +117,77 @@ func TestRender_CollectorInfoTooltip(t *testing.T) {
 		}
 	}
 }
+
+// TestRender_TabbedStructure asserts the six tabs, the theme toggle, and the
+// noscript fallback are present.
+func TestRender_TabbedStructure(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`data-tab="overview"`, `data-tab="collectors"`, `data-tab="api"`,
+		`data-tab="cardinality"`, `data-tab="inventory"`, `data-tab="config"`,
+		`id="themeToggle"`, `id="tabs"`, "<noscript>", `data-theme`,
+		"function showTab", "function drawChart", "function toggleTheme",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("tabbed page missing %q", want)
+		}
+	}
+}
+
+// TestRender_NewPanels asserts the new data surfaces render: collector
+// freshness, the API auth panel, the cardinality suite (alerts, labels, growth)
+// and the config download link.
+func TestRender_NewPanels(t *testing.T) {
+	s := statusdata.Status{
+		Service: statusdata.ServiceInfo{Name: "tailscale2otel", SelfObs: true},
+		Collectors: []statusdata.CollectorStatus{{
+			Name: "devices", HasRun: true, LastSuccess: true, Runs: 3,
+			Freshness: "12s", FreshnessState: "ok", LastSuccessAt: "2026-01-01T00:00:00Z",
+		}},
+		API: statusdata.APIInfo{
+			Auth: statusdata.APIAuth{Method: "oauth", TotalCalls: 128, Total429: 2},
+		},
+		Cardinality: statusdata.CardinalityInfo{
+			Available: true, Total: 5000, TotalMetrics: 3,
+			Thresholds: statusdata.CardinalityThresholds{Warning: 2000, Critical: 8000},
+			Series:     []statusdata.SeriesRow{{Metric: "flow.io", Count: 3000, Level: "warning"}},
+			Alerts:     []statusdata.CardinalityAlert{{Metric: "flow.io", Count: 3000, Level: "warning"}},
+			Labels: []statusdata.LabelRow{{Label: "src.node", TotalDistinct: 42, Metrics: []statusdata.LabelMetricRow{
+				{Metric: "flow.io", Distinct: 42, Examples: []string{"laptop", "phone"}},
+			}}},
+			Growth: []statusdata.GrowthRow{{Metric: "flow.io", Current: 3000, DeltaPct: 50}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"Freshness", "12s", // freshness column
+		"Total API calls", "oauth", // api auth panel
+		"Active alerts", "High-cardinality labels", "src.node", "laptop", // cardinality suite
+		"Growth", "flow.io",
+		"/api/config.json", "/api/cardinality.json", // export links
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_CardinalityGatedOff asserts the cardinality tab shows the enable
+// prompt (not empty tables) when self-obs is off.
+func TestRender_CardinalityGatedOff(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{Service: statusdata.ServiceInfo{SelfObs: false}}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Enable <code>self_observability</code>") {
+		t.Error("cardinality tab should show the enable-self-obs prompt when off")
+	}
+}
