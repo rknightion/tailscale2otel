@@ -32,11 +32,11 @@ func TestStatusPage_HTMLRenders(t *testing.T) {
 		"<!DOCTYPE html>", serviceName, "vtest", "Collectors", "Metrics catalog",
 		`id="healthBadge"`, // at-a-glance health verdict in the header
 		`id="collBody"`,    // collectors table body that the poller live-rebuilds
-		`id="apiBody"`,        // API-health section table body
-		`data-tab="api"`,      // the API tab
-		`id="staleBanner"`,    // freshness indicator shown on poll failure
-		"drawSpark",           // inline-SVG sparkline renderer
-		"drawChart",           // full zero-dependency line chart
+		`id="apiBody"`,     // API-health section table body
+		`data-tab="api"`,   // the API tab
+		`id="staleBanner"`, // freshness indicator shown on poll failure
+		"drawSpark",        // inline-SVG sparkline renderer
+		"drawChart",        // full zero-dependency line chart
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("HTML missing %q", want)
