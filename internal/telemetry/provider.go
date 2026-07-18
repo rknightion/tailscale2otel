@@ -95,6 +95,10 @@ type Options struct {
 	// supplies the configured default (10000); the same value caps the
 	// self-observability series tracker so series.active pins exactly at the limit.
 	CardinalityLimit int
+	// CardinalityLabelValueCap bounds how many distinct VALUES per (metric,label)
+	// the self-observability tracker retains for the status page's label-cardinality
+	// views. 0 disables label-value capture. The app supplies the configured value.
+	CardinalityLabelValueCap int
 
 	// SelfObsEnabled turns on self-observability instrumentation, including the
 	// tailscale2otel.series.active cardinality tracker (nil/disabled otherwise).
@@ -325,7 +329,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 	var card *CardinalityTracker
 	if opts.SelfObsEnabled {
-		card = NewCardinalityTrackerWithCap(opts.CardinalityLimit)
+		card = NewCardinalityTrackerWithLimits(opts.CardinalityLimit, opts.CardinalityLabelValueCap)
 	}
 
 	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger, opts.PIIFilter, constAttrs)

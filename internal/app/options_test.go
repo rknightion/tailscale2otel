@@ -85,6 +85,19 @@ func TestTelemetryOptions_InstanceIDWired(t *testing.T) {
 	}
 }
 
+func TestTelemetryOptions_CardinalityCapsWired(t *testing.T) {
+	cfg := config.Default()
+	cfg.Cardinality.MetricLimit = 4242
+	cfg.Cardinality.LabelValueSampleCap = 37
+	opts := telemetryOptions(cfg, "v1")
+	if opts.CardinalityLimit != 4242 {
+		t.Errorf("CardinalityLimit = %d, want 4242", opts.CardinalityLimit)
+	}
+	if opts.CardinalityLabelValueCap != 37 {
+		t.Errorf("CardinalityLabelValueCap = %d, want 37", opts.CardinalityLabelValueCap)
+	}
+}
+
 func TestTelemetryOptions_GrafanaCloudBasicAuth(t *testing.T) {
 	cfg := config.Default()
 	cfg.OTLP.Protocol = "http"

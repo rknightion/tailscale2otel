@@ -352,3 +352,57 @@ func TestCardinalityTracker_SelfExclusionWholeFamily(t *testing.T) {
 		t.Fatalf("self-observed series.* family produced %+v, want no tracked series", s)
 	}
 }
+
+// TestCardinalityTracker_LabelSnapshot verifies bounded per-(metric,label)
+// distinct-value capture: distinct values are counted and sampled, the cap pins
+// the count and truncates examples, and Report resets the label state.
+func TestCardinalityTracker_LabelSnapshot(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTrackerWithLimits(10000, 2) // labelValueCap = 2
+
+	tr.Observe("m", telemetry.Attrs{"k": "a"})
+	tr.Observe("m", telemetry.Attrs{"k": "b"})
+	tr.Observe("m", telemetry.Attrs{"k": "c"}) // 3rd distinct -> capped at 2
+	tr.Report(rec.Emitter())
+
+	var ls *telemetry.LabelStat
+	got := tr.LabelSnapshot()
+	for i := range got {
+		if got[i].Metric == "m" && got[i].Label == "k" {
+			ls = &got[i]
+		}
+	}
+	if ls == nil {
+		t.Fatalf("no label stat for m/k in %+v", got)
+	}
+	if !ls.Capped || ls.Distinct != 2 {
+		t.Fatalf("want capped distinct=2, got %+v", *ls)
+	}
+	if len(ls.Examples) != 2 {
+		t.Fatalf("want 2 example values, got %v", ls.Examples)
+	}
+
+	// Report resets label state: a fresh interval with no observes is empty.
+	tr.Report(rec.Emitter())
+	if len(tr.LabelSnapshot()) != 0 {
+		t.Fatalf("labels not reset after Report: %+v", tr.LabelSnapshot())
+	}
+}
+
+func TestCardinalityTracker_LabelSnapshotNil(t *testing.T) {
+	var tr *telemetry.CardinalityTracker
+	if tr.LabelSnapshot() != nil {
+		t.Fatal("nil tracker LabelSnapshot must return nil")
+	}
+}
+
+// TestCardinalityTracker_LabelCaptureDisabled: a zero cap disables label capture.
+func TestCardinalityTracker_LabelCaptureDisabled(t *testing.T) {
+	rec := telemetrytest.New()
+	tr := telemetry.NewCardinalityTrackerWithLimits(10000, 0)
+	tr.Observe("m", telemetry.Attrs{"k": "a"})
+	tr.Report(rec.Emitter())
+	if got := tr.LabelSnapshot(); len(got) != 0 {
+		t.Fatalf("label capture should be disabled at cap=0, got %+v", got)
+	}
+}

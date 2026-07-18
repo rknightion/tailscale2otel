@@ -26,12 +26,28 @@ const (
 // series for that metric are not counted, bounding memory.
 const defaultSeriesCap = 10000
 
+// defaultLabelValueCap bounds the distinct VALUES retained per (metric,label)
+// for the status page's label-cardinality views. It is deliberately small: the
+// values are only needed as examples plus a distinct count, and an unbounded set
+// on a high-cardinality label (e.g. a per-flow IP) would defeat the point.
+const defaultLabelValueCap = 100
+
+// labelValueSet is the bounded distinct-value set for one (metric,label) within
+// the current export interval. capped records whether the per-label value cap
+// was hit so the reported distinct count can be pinned and examples truncated.
+type labelValueSet struct {
+	values map[string]struct{}
+	capped bool
+}
+
 // seriesSet is the distinct fingerprint set for one source metric within the
 // current export interval. capped records whether the per-metric cap was hit so
-// the reported value can be pinned at the cap.
+// the reported value can be pinned at the cap. labels holds the bounded distinct
+// VALUES seen per attribute key for that metric (nil when label capture is off).
 type seriesSet struct {
 	fps    map[uint64]struct{}
 	capped bool
+	labels map[string]*labelValueSet
 }
 
 // SeriesCount is the distinct active-series count for one source metric during
@@ -41,6 +57,17 @@ type SeriesCount struct {
 	Metric string
 	Count  int
 	Capped bool
+}
+
+// LabelStat is the distinct-value cardinality for one (metric, label) during the
+// last completed export interval. Distinct is pinned at the per-label value cap
+// when Capped is true, in which case Examples is a truncated sample.
+type LabelStat struct {
+	Metric   string
+	Label    string   // attribute key
+	Distinct int      // distinct values seen; pinned at the cap when Capped
+	Capped   bool     // the per-(metric,label) value cap was hit
+	Examples []string // sorted sample values (len == Distinct; truncated when Capped)
 }
 
 // CardinalityTracker counts the EXACT number of distinct attribute combinations
@@ -56,28 +83,48 @@ type CardinalityTracker struct {
 	mu              sync.Mutex
 	sets            map[string]*seriesSet
 	seriesCap       int           // per-source-metric distinct-series cap (pins the reported count)
+	labelValueCap   int           // per-(metric,label) distinct-VALUE cap (0 disables label capture)
 	configuredLimit int           // raw cardinality.metric_limit (<=0 means "unlimited"; suppresses series.limit/overflowing)
 	last            []SeriesCount // counts from the most recent Report; nil before the first
+	lastLabels      []LabelStat   // per-(metric,label) distinct values from the most recent Report; nil before the first
 }
 
 // NewCardinalityTracker returns an empty tracker using the package default
-// per-metric cap (defaultSeriesCap).
+// per-metric cap (defaultSeriesCap) and per-label value cap (defaultLabelValueCap).
 func NewCardinalityTracker() *CardinalityTracker {
-	return NewCardinalityTrackerWithCap(defaultSeriesCap)
+	return NewCardinalityTrackerWithLimits(defaultSeriesCap, defaultLabelValueCap)
 }
 
 // NewCardinalityTrackerWithCap returns an empty tracker that pins each source
-// metric's distinct-series count at seriesCap. Pass the configured OTLP
-// cardinality limit so tailscale2otel.series.active pins exactly when a metric
-// reaches the limit (and overflows into otel_metric_overflow). A non-positive
-// seriesCap (the "unlimited OTLP limit" case) falls back to defaultSeriesCap as a
-// memory guard so the tracker never grows unboundedly.
+// metric's distinct-series count at seriesCap, using the default per-label value
+// cap. Retained for callers that only tune the series cap.
 func NewCardinalityTrackerWithCap(seriesCap int) *CardinalityTracker {
+	return NewCardinalityTrackerWithLimits(seriesCap, defaultLabelValueCap)
+}
+
+// NewCardinalityTrackerWithLimits returns an empty tracker that pins each source
+// metric's distinct-series count at seriesCap and retains up to labelValueCap
+// distinct VALUES per (metric,label) for the status page's label-cardinality
+// views. Pass the configured OTLP cardinality limit as seriesCap so
+// tailscale2otel.series.active pins exactly when a metric reaches the limit (and
+// overflows into otel_metric_overflow). A non-positive seriesCap (the "unlimited
+// OTLP limit" case) falls back to defaultSeriesCap as a memory guard so the
+// tracker never grows unboundedly. A labelValueCap of 0 disables label-value
+// capture entirely (the label-cardinality views then show nothing).
+func NewCardinalityTrackerWithLimits(seriesCap, labelValueCap int) *CardinalityTracker {
 	configured := seriesCap
 	if seriesCap <= 0 {
 		seriesCap = defaultSeriesCap
 	}
-	return &CardinalityTracker{sets: map[string]*seriesSet{}, seriesCap: seriesCap, configuredLimit: configured}
+	if labelValueCap < 0 {
+		labelValueCap = 0
+	}
+	return &CardinalityTracker{
+		sets:            map[string]*seriesSet{},
+		seriesCap:       seriesCap,
+		labelValueCap:   labelValueCap,
+		configuredLimit: configured,
+	}
 }
 
 // Observe records one emitted data point for the source metric name with the
@@ -97,11 +144,51 @@ func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
 		s = &seriesSet{fps: make(map[uint64]struct{})}
 		t.sets[name] = s
 	}
+	// Label-value capture is independent of the per-metric series cap: even once a
+	// metric stops counting new series, its already-seen labels' value sets keep
+	// their samples. It is gated on labelValueCap>0 and short-circuits per key
+	// BEFORE rendering the value, so a saturated high-cardinality label costs
+	// almost nothing per point.
+	if t.labelValueCap > 0 {
+		t.observeLabels(s, attrs)
+	}
 	if len(s.fps) >= t.seriesCap {
 		s.capped = true
 		return
 	}
 	s.fps[fp] = struct{}{}
+}
+
+// observeLabels records the per-key distinct values for one data point. Called
+// under t.mu with labelValueCap>0. For each attribute key whose value set is
+// already capped it skips before rendering the value (the hot-path guard); only
+// a not-yet-capped key pays the valueString cost.
+func (t *CardinalityTracker) observeLabels(s *seriesSet, attrs Attrs) {
+	if len(attrs) == 0 {
+		return
+	}
+	if s.labels == nil {
+		s.labels = make(map[string]*labelValueSet, len(attrs))
+	}
+	for k, v := range attrs {
+		lv := s.labels[k]
+		if lv == nil {
+			lv = &labelValueSet{values: make(map[string]struct{})}
+			s.labels[k] = lv
+		}
+		if lv.capped {
+			continue // saturated: skip the value render entirely
+		}
+		val := valueString(v)
+		if _, ok := lv.values[val]; ok {
+			continue
+		}
+		if len(lv.values) >= t.labelValueCap {
+			lv.capped = true
+			continue
+		}
+		lv.values[val] = struct{}{}
+	}
 }
 
 // Report emits one tailscale2otel.series.active gauge per source metric observed
@@ -129,12 +216,28 @@ func (t *CardinalityTracker) Report(e Emitter) {
 	t.mu.Lock()
 	limit := t.configuredLimit
 	last := make([]SeriesCount, 0, len(t.sets))
+	var labels []LabelStat
 	for name, s := range t.sets {
 		last = append(last, SeriesCount{Metric: name, Count: len(s.fps), Capped: s.capped})
+		for key, lv := range s.labels {
+			labels = append(labels, labelStat(name, key, lv))
+		}
 	}
 	// Replace (rather than clear) so the next interval starts empty and metrics
-	// that stopped emitting are dropped.
+	// that stopped emitting are dropped. This resets label state too, since the
+	// value sets live inside seriesSet.
 	t.sets = map[string]*seriesSet{}
+	// Stable presentation order: highest distinct first, then metric, then label.
+	sort.Slice(labels, func(i, j int) bool {
+		if labels[i].Distinct != labels[j].Distinct {
+			return labels[i].Distinct > labels[j].Distinct
+		}
+		if labels[i].Metric != labels[j].Metric {
+			return labels[i].Metric < labels[j].Metric
+		}
+		return labels[i].Label < labels[j].Label
+	})
+	t.lastLabels = labels
 	// Stable, presentation-friendly order: highest cardinality first, then name.
 	// Retained for Snapshot; emission order is irrelevant.
 	sort.Slice(last, func(i, j int) bool {
@@ -165,6 +268,45 @@ func (t *CardinalityTracker) Report(e Emitter) {
 	}
 }
 
+// LabelSnapshot returns the per-(metric,label) distinct-value stats from the
+// last completed export interval, sorted by distinct desc then metric then
+// label. It returns nil before the first Report and is a no-op (nil) on a nil
+// receiver. The returned slice (and its Examples) is a copy the caller may
+// retain or mutate.
+func (t *CardinalityTracker) LabelSnapshot() []LabelStat {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.lastLabels == nil {
+		return nil
+	}
+	out := make([]LabelStat, len(t.lastLabels))
+	for i, ls := range t.lastLabels {
+		out[i] = ls
+		out[i].Examples = append([]string(nil), ls.Examples...)
+	}
+	return out
+}
+
+// labelStat snapshots one (metric,label) value set into a LabelStat with sorted
+// example values.
+func labelStat(metric, label string, lv *labelValueSet) LabelStat {
+	examples := make([]string, 0, len(lv.values))
+	for v := range lv.values {
+		examples = append(examples, v)
+	}
+	sort.Strings(examples)
+	return LabelStat{
+		Metric:   metric,
+		Label:    label,
+		Distinct: len(lv.values),
+		Capped:   lv.capped,
+		Examples: examples,
+	}
+}
+
 // Snapshot returns the per-source-metric active-series counts from the last
 // completed export interval (the most recent Report), sorted by count desc then
 // metric name. It returns nil before the first Report and is a no-op (nil) on a
@@ -181,6 +323,31 @@ func (t *CardinalityTracker) Snapshot() []SeriesCount {
 	out := make([]SeriesCount, len(t.last))
 	copy(out, t.last)
 	return out
+}
+
+// valueString renders an attribute value to the string form used as a distinct
+// label-value key. It mirrors the type handling of fingerprint so the two agree
+// on what counts as a distinct value. Unknown types render as "".
+func valueString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	case int:
+		return strconv.FormatInt(int64(t), 10)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	case float64:
+		return strconv.FormatFloat(t, 'g', -1, 64)
+	case []string:
+		return strings.Join(t, ",")
+	default:
+		return ""
+	}
 }
 
 // fingerprint computes a deterministic, low-allocation 64-bit hash of an
