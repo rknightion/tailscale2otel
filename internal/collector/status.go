@@ -20,8 +20,13 @@ type CollectorRun struct {
 	LastFinished time.Time     // wall-clock finish of the most recent run
 	LastDuration time.Duration // duration of the most recent run
 	LastSuccess  bool          // whether the most recent run succeeded
-	Failures     int64         // total failed runs over the process lifetime
-	LastError    string        // most recent run's error ("" when the last run succeeded)
+	// LastSuccessAt is the finish time of the most recent SUCCESSFUL run (zero
+	// before the first success). Unlike LastFinished it is not overwritten by a
+	// later failure, so the status page can show data-freshness (how stale the
+	// last good data is) independently of the last attempt.
+	LastSuccessAt time.Time
+	Failures      int64  // total failed runs over the process lifetime
+	LastError     string // most recent run's error ("" when the last run succeeded)
 	// ConsecutiveFailures is the length of the current unbroken run of failures
 	// ending at the most recent run. It resets to 0 on any success.
 	ConsecutiveFailures int64
@@ -80,6 +85,7 @@ func (t *StatusTracker) record(name string, started, finished time.Time, dur tim
 	r.LastSuccess = errStr == ""
 	if errStr == "" {
 		r.ConsecutiveFailures = 0
+		r.LastSuccessAt = finished
 	} else {
 		r.Failures++
 		r.ConsecutiveFailures++

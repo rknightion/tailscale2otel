@@ -35,6 +35,30 @@ func TestStatusTracker_RecordSuccessThenFailure(t *testing.T) {
 	}
 }
 
+func TestStatusTracker_LastSuccessAt(t *testing.T) {
+	tr := NewStatusTracker()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Before any success it is zero.
+	tr.record("devices", t0, t0.Add(time.Second), time.Second, "boom")
+	if got := tr.Snapshot()["devices"].LastSuccessAt; !got.IsZero() {
+		t.Fatalf("LastSuccessAt = %v, want zero before any success", got)
+	}
+
+	// A success sets it to that run's finish time.
+	okFinish := t0.Add(time.Minute)
+	tr.record("devices", t0.Add(time.Minute), okFinish, time.Second, "")
+	if got := tr.Snapshot()["devices"].LastSuccessAt; !got.Equal(okFinish) {
+		t.Fatalf("LastSuccessAt = %v, want %v", got, okFinish)
+	}
+
+	// A later failure must NOT overwrite it.
+	tr.record("devices", t0.Add(2*time.Minute), t0.Add(2*time.Minute+time.Second), time.Second, "boom")
+	if got := tr.Snapshot()["devices"].LastSuccessAt; !got.Equal(okFinish) {
+		t.Fatalf("LastSuccessAt = %v after failure, want it to stay at %v", got, okFinish)
+	}
+}
+
 func TestStatusTracker_SuccessClearsLastError(t *testing.T) {
 	tr := NewStatusTracker()
 	t0 := time.Now()
