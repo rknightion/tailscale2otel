@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v2/internal/ringbuf"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
 
 // samplerInterval is how often the in-process runtime/cardinality history is
@@ -25,6 +27,16 @@ type runtimeHistory struct {
 	gcRate     *ringbuf.Ring[float64] // GC cycles/sec between consecutive samples
 	cardTotal  *ringbuf.Ring[int]     // total active series (0 when self-obs is off)
 
+	n int // ring capacity, for lazily created per-metric rings
+
+	// cardMu guards the cardPerMetric MAP (create/read); the Ring values are
+	// internally mutex-guarded already. cardPerMetric holds the per-source-metric
+	// active-series trend feeding the cardinality growth view (empty when self-obs
+	// is off). The map is written only by the sampler goroutine and read by
+	// buildStatus from the HTTP handler, so the map access must be locked.
+	cardMu        sync.Mutex
+	cardPerMetric map[string]*ringbuf.Ring[int]
+
 	// lastNumGC/lastAt carry the previous sample's GC count and time so the rate
 	// can be differenced. They are touched only by the single sampler goroutine.
 	lastNumGC uint32
@@ -33,21 +45,36 @@ type runtimeHistory struct {
 
 func newRuntimeHistory(n int) *runtimeHistory {
 	return &runtimeHistory{
-		goroutines: ringbuf.New[int](n),
-		heapAlloc:  ringbuf.New[uint64](n),
-		gcRate:     ringbuf.New[float64](n),
-		cardTotal:  ringbuf.New[int](n),
+		goroutines:    ringbuf.New[int](n),
+		heapAlloc:     ringbuf.New[uint64](n),
+		gcRate:        ringbuf.New[float64](n),
+		cardTotal:     ringbuf.New[int](n),
+		n:             n,
+		cardPerMetric: map[string]*ringbuf.Ring[int]{},
 	}
+}
+
+// perMetricSeries returns each source metric's active-series history (oldest
+// first), keyed by metric name. Safe to call concurrently with the sampler.
+func (h *runtimeHistory) perMetricSeries() map[string][]int {
+	h.cardMu.Lock()
+	defer h.cardMu.Unlock()
+	out := make(map[string][]int, len(h.cardPerMetric))
+	for name, r := range h.cardPerMetric {
+		out[name] = r.Values()
+	}
+	return out
 }
 
 // sample appends one observation. The GC rate is the change in NumGC since the
 // previous sample divided by the elapsed seconds; the first sample (and any
 // NumGC decrease from a uint32 wrap) records 0 rather than a spurious value. It
 // is a standalone method so tests can drive it tick-by-tick.
-func (h *runtimeHistory) sample(now time.Time, rs runtimeStats, cardTotal int) {
+func (h *runtimeHistory) sample(now time.Time, rs runtimeStats, cardTotal int, perMetric map[string]int) {
 	h.goroutines.Add(rs.goroutines)
 	h.heapAlloc.Add(rs.heapAlloc)
 	h.cardTotal.Add(cardTotal)
+	h.samplePerMetric(perMetric)
 
 	var rate float64
 	if !h.lastAt.IsZero() {
@@ -58,6 +85,26 @@ func (h *runtimeHistory) sample(now time.Time, rs runtimeStats, cardTotal int) {
 	h.gcRate.Add(rate)
 	h.lastNumGC = rs.numGC
 	h.lastAt = now
+}
+
+// samplePerMetric appends one active-series observation per source metric,
+// lazily creating a ring for a metric first seen this tick. A metric absent this
+// tick keeps its prior samples (its series simply doesn't advance) — acceptable
+// for a short-window growth view. Called only by the sampler goroutine.
+func (h *runtimeHistory) samplePerMetric(perMetric map[string]int) {
+	if len(perMetric) == 0 {
+		return
+	}
+	h.cardMu.Lock()
+	defer h.cardMu.Unlock()
+	for name, count := range perMetric {
+		r := h.cardPerMetric[name]
+		if r == nil {
+			r = ringbuf.New[int](h.n)
+			h.cardPerMetric[name] = r
+		}
+		r.Add(count)
+	}
 }
 
 // cardinalityTotal sums the active-series counts across the process provider and
@@ -76,15 +123,32 @@ func (a *App) cardinalityTotal() int {
 	return total
 }
 
+// cardinalityPerMetric aggregates the per-source-metric active-series counts
+// across the process provider and every tailnet runtime (summing per metric),
+// for the sampler's per-metric growth history. Empty when self-obs is off.
+func (a *App) cardinalityPerMetric() map[string]int {
+	out := map[string]int{}
+	add := func(snaps []telemetry.SeriesCount) {
+		for _, sc := range snaps {
+			out[sc.Metric] += sc.Count
+		}
+	}
+	add(a.procCard.Snapshot())
+	for _, rt := range a.runtimes {
+		add(rt.card.Snapshot())
+	}
+	return out
+}
+
 // runSampler records one observation immediately and then on each interval until
 // ctx is canceled, mirroring runHeartbeat/runRuntimeReporter. read and cardTotal
 // are injectable for tests; production passes readRuntimeStats and the app's
 // cardinality total. A non-positive interval falls back to samplerInterval.
-func runSampler(ctx context.Context, h *runtimeHistory, interval time.Duration, read func() runtimeStats, cardTotal func() int) {
+func runSampler(ctx context.Context, h *runtimeHistory, interval time.Duration, read func() runtimeStats, cardTotal func() int, perMetric func() map[string]int) {
 	if interval <= 0 {
 		interval = samplerInterval
 	}
-	sample := func() { h.sample(time.Now(), read(), cardTotal()) }
+	sample := func() { h.sample(time.Now(), read(), cardTotal(), perMetric()) }
 	sample()
 	t := time.NewTicker(interval)
 	defer t.Stop()
