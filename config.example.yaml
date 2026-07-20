@@ -306,12 +306,12 @@ self_observability:
   enabled: true                       # emit tailscale2otel.up, api.requests, runtime metrics, etc.
   instance_id: ""                     # service.instance.id resource attr; empty => host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME
 
-# ── Admin HTTP server (OPTIONAL: probes + status page + pprof mount) ────────────
+# ── Admin HTTP server (ON by default: probes + status page + pprof mount) ───────
 # Bind to a loopback/tailnet address, not the public internet. /healthz and /readyz
 # are never authenticated so health checks keep working.
 admin:
-  enabled: false                      # run the admin HTTP server (probes + status page + optional pprof mount)
-  listen: ":9090"                     # serves /healthz, /readyz, and the status page
+  enabled: true                       # run the admin HTTP server (probes + status page + optional pprof mount)
+  listen: ":9091"                     # serves /healthz, /readyz, and the status page
   landing_page: true                  # serve the human status page at / and machine-readable /api/status.json
   auth:
     token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind)

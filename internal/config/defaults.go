@@ -207,8 +207,8 @@ func Default() *Config {
 			SamplerArg: 1.0,
 		},
 		Admin: AdminConfig{
-			Enabled:     false,
-			Listen:      ":9090",
+			Enabled:     true,
+			Listen:      ":9091",
 			LandingPage: true,
 		},
 		Prometheus: PrometheusConfig{

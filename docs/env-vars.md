@@ -200,8 +200,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PII_FILTER__FREE_TEXT_DETAILS` | `true` | audit old/new/details, target names, key descriptions, posture values |
 | `TS2OTEL_SELF_OBSERVABILITY__ENABLED` | `true` | emit tailscale2otel.up, api.requests, runtime metrics, etc. |
 | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` | `""` | service.instance.id resource attr; empty => host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME |
-| `TS2OTEL_ADMIN__ENABLED` | `false` | run the admin HTTP server (probes + status page + optional pprof mount) |
-| `TS2OTEL_ADMIN__LISTEN` | `:9090` | serves /healthz, /readyz, and the status page |
+| `TS2OTEL_ADMIN__ENABLED` | `true` | run the admin HTTP server (probes + status page + optional pprof mount) |
+| `TS2OTEL_ADMIN__LISTEN` | `:9091` | serves /healthz, /readyz, and the status page |
 | `TS2OTEL_ADMIN__LANDING_PAGE` | `true` | serve the human status page at / and machine-readable /api/status.json |
 | `TS2OTEL_ADMIN__AUTH__TOKEN` | `""` | gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind) |
 | `TS2OTEL_ADMIN__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |

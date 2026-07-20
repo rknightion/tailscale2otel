@@ -250,7 +250,7 @@ When `tracing.enabled` is set, a `TracerProvider` is also built in `app.New` and
 Tailscale API client, and receivers emit spans (one root span per scrape cycle, child spans per API
 request, one span per receiver request) over the same `otlp.*` endpoint.
 
-In addition, an admin HTTP server (default `:9090`) serves:
+In addition, an admin HTTP server (on by default, `:9091`) serves:
 
 - `/` — an HTML status page with live collector health, cardinality table, the metrics/log catalog,
   discovered node-metrics targets, and a redacted config view.

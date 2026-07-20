@@ -71,9 +71,9 @@ extraVolumeMounts:
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
 | config.admin.auth.token | string | `""` | Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled. |
-| config.admin.enabled | bool | `false` | Enable the admin probe server. |
+| config.admin.enabled | bool | `true` | Enable the admin probe server. |
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
-| config.admin.listen | string | `":9090"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
+| config.admin.listen | string | `":9091"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
 | config.cardinality.critical_threshold | int | `8000` | Status-page cardinality view flags a metric critically at/above this count (>= warning_threshold; <= metric_limit when set; 0 disables). |
 | config.cardinality.derp_region_rollup | bool | `true` | Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector. |
 | config.cardinality.flow.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when node_dims is true, the src/dst node labels on flow METRICS. |

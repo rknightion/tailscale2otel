@@ -156,6 +156,12 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if !cfg.Admin.LandingPage {
 		t.Errorf("Admin.LandingPage = false, want default true")
 	}
+	if !cfg.Admin.Enabled {
+		t.Errorf("Admin.Enabled = false, want default true")
+	}
+	if cfg.Admin.Listen != ":9091" {
+		t.Errorf("Admin.Listen = %q, want default :9091", cfg.Admin.Listen)
+	}
 }
 
 // TestProfilingDefaults pins the off-by-default continuous-profiling block:
@@ -200,8 +206,8 @@ admin:
 		t.Errorf("Admin.LandingPage = true, want false (explicit override of default true)")
 	}
 	// Sibling default untouched.
-	if cfg.Admin.Listen != ":9090" {
-		t.Errorf("Admin.Listen = %q, want default :9090 preserved", cfg.Admin.Listen)
+	if cfg.Admin.Listen != ":9091" {
+		t.Errorf("Admin.Listen = %q, want default :9091 preserved", cfg.Admin.Listen)
 	}
 }
 

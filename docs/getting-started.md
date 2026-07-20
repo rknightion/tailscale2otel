@@ -121,15 +121,14 @@ override the endpoint:
 `tailscale2otel_up` in Prometheus/Grafana) once the first export cycle completes successfully. Query
 for it in Grafana Explore — if it appears, the pipeline is working end-to-end.
 
-**Admin status page:** enable the admin server to get live visibility into collector health without
-querying the backend:
+**Admin status page:** the admin server is on by default, giving live visibility into collector
+health without querying the backend. Override the bind address (or disable it) if you need to:
 
 ```sh
--e TS2OTEL_ADMIN__ENABLED=true \
--e TS2OTEL_ADMIN__LISTEN=:9090
+-e TS2OTEL_ADMIN__LISTEN=:9091
 ```
 
-Then open `http://localhost:9090/` in a browser. The status page shows each collector's last-run
+Then open `http://localhost:9091/` in a browser. The status page shows each collector's last-run
 time, success or failure, active-series cardinality, the full metrics catalog, and a redacted
 config summary. The `/healthz` and `/readyz` endpoints are always available without authentication
 and are suitable for container health checks.

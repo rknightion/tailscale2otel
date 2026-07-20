@@ -25,6 +25,7 @@ func loadErr(t *testing.T, y string) error {
 // (oauth) produces no warning.
 func TestWarnings_APIKeyMethodAdvises(t *testing.T) {
 	c := config.Default()
+	c.Admin.Enabled = false // isolate: admin is on by default and its wildcard-bind advisory is unrelated here
 	if w := c.Warnings(); len(w) != 0 {
 		t.Fatalf("default (oauth) Warnings = %v, want none", w)
 	}
@@ -122,6 +123,7 @@ func TestWarnings_GrafanaCloudProfilesNeedsAuth(t *testing.T) {
 func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
 	// Disabled admin => no advisory.
 	c := config.Default()
+	c.Admin.Enabled = false
 	for _, w := range c.Warnings() {
 		if strings.Contains(w, "admin.auth.token") {
 			t.Fatalf("disabled admin should not warn about admin.auth.token; got %q", w)
@@ -130,7 +132,7 @@ func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
 
 	// Enabled, landing page on the default wildcard bind, no token => advisory.
 	c = config.Default()
-	c.Admin.Enabled = true // landing_page defaults true, listen defaults ":9090"
+	c.Admin.Enabled = true // landing_page defaults true, listen defaults ":9091"
 	w := strings.Join(c.Warnings(), "\n")
 	if !strings.Contains(w, "admin.auth.token") {
 		t.Fatalf("admin exposed on a wildcard bind without a token should advise admin.auth.token; got %q", w)
@@ -718,6 +720,7 @@ func TestValidateReverseDNSDisabledIgnoresBadServer(t *testing.T) {
 // can set acknowledge_cardinality=true to silence it.
 func TestWarnings_ReverseDNSCardinality(t *testing.T) {
 	c := config.Default()
+	c.Admin.Enabled = false // isolate: admin is on by default and its wildcard-bind advisory is unrelated here
 	if w := c.Warnings(); len(w) != 0 {
 		t.Fatalf("default Warnings = %v, want none", w)
 	}

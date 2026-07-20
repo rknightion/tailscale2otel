@@ -576,9 +576,9 @@ config:
   # nodes, redacted config) but NEVER secret values.
   admin:
     # -- Enable the admin probe server.
-    enabled: false
+    enabled: true
     # -- Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth.
-    listen: ":9090"
+    listen: ":9091"
     # -- Serve the human status page at / and machine-readable JSON at /api/status.json.
     landing_page: true
     auth:

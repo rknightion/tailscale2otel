@@ -87,7 +87,7 @@ func (c *Config) Warnings() []string {
 		w = append(w, "admin.landing_page is served on "+c.Admin.Listen+" without admin.auth.token: "+
 			"the status page exposes internal state (collectors, device names, config shape) to anyone "+
 			"who can reach the port. Set admin.auth.token, or bind admin.listen to a loopback/tailnet "+
-			"address (e.g. 127.0.0.1:9090).")
+			"address (e.g. 127.0.0.1:9091).")
 	}
 
 	// An enabled ingestion receiver with no credential accepts UNAUTHENTICATED
