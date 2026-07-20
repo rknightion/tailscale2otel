@@ -125,6 +125,7 @@ func (a *App) buildStatus() statusdata.Status {
 		LogEvents:   logRows(catalog.LogEvents()),
 		Config:      a.redactedConfigSummary(),
 		GeneratedAt: now.UTC().Format(rfc3339),
+		RefreshMs:   int(a.cfg.Admin.StatusRefreshInterval.D() / time.Millisecond),
 	}
 	if a.runtimeHist != nil {
 		s.Runtime.GoroutinesSeries = a.runtimeHist.goroutines.Values()

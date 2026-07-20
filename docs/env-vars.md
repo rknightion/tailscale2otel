@@ -203,6 +203,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ADMIN__ENABLED` | `true` | run the admin HTTP server (probes + status page + optional pprof mount) |
 | `TS2OTEL_ADMIN__LISTEN` | `:9091` | serves /healthz, /readyz, and the status page |
 | `TS2OTEL_ADMIN__LANDING_PAGE` | `true` | serve the human status page at / and machine-readable /api/status.json |
+| `TS2OTEL_ADMIN__STATUS_REFRESH_INTERVAL` | `5s` | how often the status page re-polls /api/status.json (1s freshness ticker is independent) |
 | `TS2OTEL_ADMIN__AUTH__TOKEN` | `""` | gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind) |
 | `TS2OTEL_ADMIN__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_ADMIN__TLS__CERT_FILE` | `""` | serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither) |

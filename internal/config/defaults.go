@@ -207,9 +207,10 @@ func Default() *Config {
 			SamplerArg: 1.0,
 		},
 		Admin: AdminConfig{
-			Enabled:     true,
-			Listen:      ":9091",
-			LandingPage: true,
+			Enabled:               true,
+			Listen:                ":9091",
+			LandingPage:           true,
+			StatusRefreshInterval: dur(5 * time.Second),
 		},
 		Prometheus: PrometheusConfig{
 			Enabled: false,

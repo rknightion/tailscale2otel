@@ -150,6 +150,7 @@
   // theme. Falls back silently to the prefers-color-scheme media query.
   (function(){try{var t=localStorage.getItem('ts2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
+<script>window.__refreshMs = {{if .RefreshMs}}{{.RefreshMs}}{{else}}5000{{end}};</script>
 <noscript><style>
   /* Without JS the tabs can't switch — show every section stacked and hide the
      tab bar, preserving the static snapshot. */
@@ -877,7 +878,7 @@ function purgeRDNS(){
     .catch(function(e){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purge failed: '+e.message; })
     .finally(function(){ if(btn) btn.disabled=false; });
 }
-function startPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=setInterval(refresh, 10000); }
+function startPolling(){ if(pollTimer) clearInterval(pollTimer); var ms=(window.__refreshMs>0?window.__refreshMs:5000); pollTimer=setInterval(refresh, ms); }
 function togglePause(){
   paused=!paused;
   var btn=document.getElementById('pauseBtn');

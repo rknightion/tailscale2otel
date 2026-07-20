@@ -37,6 +37,9 @@ type Status struct {
 	LogEvents     []LogRow          `json:"log_events"`
 	Config        ConfigSummary     `json:"config"`
 	GeneratedAt   string            `json:"generated_at"`
+	// RefreshMs is the client poll interval in milliseconds (admin.status_refresh_interval).
+	// The page falls back to 5000 when this is 0. The 1s freshness ticker is independent.
+	RefreshMs int `json:"refresh_ms,omitempty"`
 }
 
 // TailnetStatus is one tailnet's section of the status page: its identity, auth

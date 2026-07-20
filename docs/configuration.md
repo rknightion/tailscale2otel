@@ -771,6 +771,7 @@ internet.
 | `admin.enabled` | `true` | Run the admin server (`/healthz`, `/readyz`, and — unless disabled — the status page). |
 | `admin.listen` | `:9091` | Listen address. For defense-in-depth bind to loopback (`127.0.0.1:9091`) or a tailnet IP. |
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
+| `admin.status_refresh_interval` | `5s` | How often the status page's JS re-polls `/api/status.json` to patch the live view. The 1s freshness ticker is independent. |
 | `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. `/healthz` and `/readyz` are never gated. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
 | `admin.auth.token_file` | `""` | Read `admin.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `admin.tls.cert_file` | `""` | HTTPS certificate for the admin server. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |

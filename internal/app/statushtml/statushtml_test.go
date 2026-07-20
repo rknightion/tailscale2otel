@@ -118,6 +118,25 @@ func TestRender_CollectorInfoTooltip(t *testing.T) {
 	}
 }
 
+// TestRender_RefreshMs asserts the configurable refresh interval is rendered
+// into the page and the old hardcoded 10s poll is gone.
+func TestRender_RefreshMs(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{RefreshMs: 3000}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	// html/template's JS-context escaper space-pads numeric values, so match the
+	// value near the assignment rather than an exact "= 3000" spacing.
+	i := strings.Index(out, "__refreshMs")
+	if i < 0 || !strings.Contains(out[i:i+40], "3000") {
+		t.Fatalf("refresh interval 3000 not rendered into page")
+	}
+	if strings.Contains(out, "refresh, 10000)") {
+		t.Fatalf("hardcoded 10000 refresh still present")
+	}
+}
+
 // TestRender_TabbedStructure asserts the six tabs, the theme toggle, and the
 // noscript fallback are present.
 func TestRender_TabbedStructure(t *testing.T) {

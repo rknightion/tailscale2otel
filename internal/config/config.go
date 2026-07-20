@@ -91,6 +91,10 @@ type AdminConfig struct {
 	// LandingPage (default true) serves a human-readable landing page at "/" and
 	// a machine-readable "/api/status.json" on the admin server.
 	LandingPage bool `yaml:"landing_page"`
+	// StatusRefreshInterval is how often the landing page's JS re-polls
+	// /api/status.json to patch the live view. Default 5s (fleet standard). The
+	// page's 1s freshness ticker is independent of this.
+	StatusRefreshInterval Duration `yaml:"status_refresh_interval"`
 	// Auth optionally gates the status page and pprof behind a shared secret.
 	Auth AdminAuth `yaml:"auth"`
 	// TLS optionally serves the admin listener over HTTPS instead of plain HTTP.

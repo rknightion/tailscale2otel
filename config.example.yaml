@@ -313,6 +313,7 @@ admin:
   enabled: true                       # run the admin HTTP server (probes + status page + optional pprof mount)
   listen: ":9091"                     # serves /healthz, /readyz, and the status page
   landing_page: true                  # serve the human status page at / and machine-readable /api/status.json
+  status_refresh_interval: 5s         # how often the status page re-polls /api/status.json (1s freshness ticker is independent)
   auth:
     token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty = open status page (WARN on a wildcard bind)
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
