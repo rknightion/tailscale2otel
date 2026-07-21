@@ -6,9 +6,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v2/internal/config"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
@@ -94,6 +96,59 @@ func TestStatusJSON_Shape(t *testing.T) {
 	case healthHealthy, healthDegraded, healthStarting:
 	default:
 		t.Errorf("health = %q, want one of healthy/degraded/starting", got.Health)
+	}
+}
+
+// TestStatusJSON_ThroughputAndFleetFields asserts the throughput and
+// collector-fleet sections are present in the served JSON under their exact
+// field names — the page's chart registrations read these keys, so a rename
+// silently blanks the charts.
+func TestStatusJSON_ThroughputAndFleetFields(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	// One sample so the trend series carry data rather than a bare null.
+	a.runtimeHist.sample(time.Now(), samplerTick{
+		emit:  telemetry.EmitStats{MetricPoints: 3, LogRecords: 1},
+		fleet: fleetStats{active: 1, failing: 0, meanDurationMs: 12},
+	})
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/status.json = %d, want 200", w.Code)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode status json: %v", err)
+	}
+	for section, fields := range map[string][]string{
+		"throughput": {
+			"metric_points", "log_records",
+			"metric_points_per_sec", "log_records_per_sec",
+			"metric_points_per_sec_series", "log_records_per_sec_series",
+		},
+		"fleet": {
+			"active", "failing", "mean_duration_ms",
+			"failing_series", "mean_duration_ms_series",
+		},
+	} {
+		body, ok := raw[section]
+		if !ok {
+			t.Errorf("status json missing %q section", section)
+			continue
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Errorf("decode %q section: %v", section, err)
+			continue
+		}
+		for _, f := range fields {
+			if _, ok := got[f]; !ok {
+				t.Errorf("status json %s missing field %q", section, f)
+			}
+		}
 	}
 }
 

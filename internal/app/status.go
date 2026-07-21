@@ -120,6 +120,8 @@ func (a *App) buildStatus() statusdata.Status {
 			PyroscopeServer:  a.cfg.Profiling.Pyroscope.ServerAddress,
 		},
 		Runtime:     runtimeInfo(),
+		Throughput:  throughputInfo(a.emitStats()),
+		Fleet:       fleetInfo(a.collectorFleet()),
 		API:         a.apiInfo(),
 		Metrics:     metricRows(metrics, cardByName),
 		LogEvents:   logRows(catalog.LogEvents()),
@@ -131,6 +133,14 @@ func (a *App) buildStatus() statusdata.Status {
 		s.Runtime.GoroutinesSeries = a.runtimeHist.goroutines.Values()
 		s.Runtime.HeapAllocSeries = a.runtimeHist.heapAlloc.Values()
 		s.Runtime.GCRateSeries = a.runtimeHist.gcRate.Values()
+		// Rates are only defined BETWEEN samples, so the headline per-second values
+		// are the newest sample rather than anything recomputed here.
+		s.Throughput.MetricPointsPerSecSeries = a.runtimeHist.metricRate.Values()
+		s.Throughput.LogRecordsPerSecSeries = a.runtimeHist.logRate.Values()
+		s.Throughput.MetricPointsPerSec = lastFloat(s.Throughput.MetricPointsPerSecSeries)
+		s.Throughput.LogRecordsPerSec = lastFloat(s.Throughput.LogRecordsPerSecSeries)
+		s.Fleet.FailingSeries = a.runtimeHist.failing.Values()
+		s.Fleet.MeanDurationMsSeries = a.runtimeHist.runDurMs.Values()
 		// The cardinality trend is meaningful only with self-obs on (otherwise the
 		// total is a flat zero), matching the gating of the cardinality section.
 		if a.cfg.SelfObservability.Enabled {
@@ -567,6 +577,35 @@ func logRows(events []metricdoc.LogEvent) []statusdata.LogRow {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// throughputInfo carries the cumulative emit-boundary totals onto the status
+// snapshot. The per-second values and their trend series are filled in from the
+// sampler rings by buildStatus (a rate needs two samples; a single cumulative
+// total is not one).
+func throughputInfo(e telemetry.EmitStats) statusdata.ThroughputInfo {
+	return statusdata.ThroughputInfo{
+		MetricPoints: e.MetricPoints,
+		LogRecords:   e.LogRecords,
+	}
+}
+
+// fleetInfo carries the live collector-fleet aggregate onto the status snapshot;
+// buildStatus adds the sampled trend series.
+func fleetInfo(f fleetStats) statusdata.FleetInfo {
+	return statusdata.FleetInfo{
+		Active:         f.active,
+		Failing:        f.failing,
+		MeanDurationMs: f.meanDurationMs,
+	}
+}
+
+// lastFloat returns the newest value of a trend series, or 0 when it is empty.
+func lastFloat(series []float64) float64 {
+	if len(series) == 0 {
+		return 0
+	}
+	return series[len(series)-1]
 }
 
 func runtimeInfo() statusdata.RuntimeInfo {

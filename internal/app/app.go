@@ -475,10 +475,16 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}
 
-	// Short-term runtime/cardinality history for the admin status page's
-	// sparklines. Introspection-only (no OTLP), so it runs regardless of
+	// Short-term runtime/cardinality/throughput/fleet history for the admin status
+	// page's sparklines. Introspection-only (no OTLP), so it runs regardless of
 	// self-observability — the status page is useful even with self-obs off.
-	go runSampler(ctx, a.runtimeHist, samplerInterval, readRuntimeStats, a.cardinalityTotal, a.cardinalityPerMetric)
+	go runSampler(ctx, a.runtimeHist, samplerInterval, samplerSources{
+		read:      readRuntimeStats,
+		cardTotal: a.cardinalityTotal,
+		perMetric: a.cardinalityPerMetric,
+		emit:      a.emitStats,
+		fleet:     a.collectorFleet,
+	})
 
 	// Version-check loops: gated on their own feature flags (independent of
 	// self_observability.enabled — an operator can want update alerts with

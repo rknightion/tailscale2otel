@@ -207,6 +207,19 @@
       <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC"></svg><div class="chart-tip"></div></div></div>
     </div>
 
+    <div class="sub-h">Throughput &amp; fleet trend (~10 min)</div>
+    <div class="cards">
+      <div class="card"><div class="k">Metric points/sec</div><div class="v" id="emitMetricRate">{{printf "%.1f" .Throughput.MetricPointsPerSec}}</div><div class="sub">{{.Throughput.MetricPoints}} emitted</div></div>
+      <div class="card"><div class="k">Log records/sec</div><div class="v" id="emitLogRate">{{printf "%.1f" .Throughput.LogRecordsPerSec}}</div><div class="sub">{{.Throughput.LogRecords}} emitted</div></div>
+      <div class="card"><div class="k">Collectors active</div><div class="v" id="fleetActive">{{.Fleet.Active}}</div><div class="sub">failing <span id="fleetFailing">{{.Fleet.Failing}}</span></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="v" id="fleetMeanDur">{{printf "%.0f" .Fleet.MeanDurationMs}}ms</div><div class="sub">across all collectors</div></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Emitted throughput</div><div class="chart-wrap"><svg class="chart" id="chEmit"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Collectors failing</div><div class="chart-wrap"><svg class="chart" id="chFailing"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="chart-wrap"><svg class="chart" id="chDuration"></svg><div class="chart-tip"></div></div></div>
+    </div>
+
     {{if gt (len .Tailnets) 1}}
     <div class="sub-h">Tailnets ({{len .Tailnets}})</div>
     <table>
@@ -818,6 +831,15 @@ function updateSparks(d){
     var gr=d.runtime.gc_rate_series;
     if(gr && gr.length) setText('gcRate', gr[gr.length-1].toFixed(2)+'/s');
   }
+  if(d.throughput){
+    setText('emitMetricRate', (d.throughput.metric_points_per_sec||0).toFixed(1));
+    setText('emitLogRate', (d.throughput.log_records_per_sec||0).toFixed(1));
+  }
+  if(d.fleet){
+    setText('fleetActive', d.fleet.active);
+    setText('fleetFailing', d.fleet.failing);
+    setText('fleetMeanDur', (d.fleet.mean_duration_ms||0).toFixed(0)+'ms');
+  }
 }
 
 function setHealth(d){
@@ -896,6 +918,12 @@ function tickFreshness(){
   registerChart('chHeap', function(d){ return d&&d.runtime ? [{name:'heap', points:(d.runtime.heap_alloc_series||[]).map(function(b){return b/1048576;})}] : []; }, function(v){ return v.toFixed(0)+'M'; });
   registerChart('chGC', function(d){ return d&&d.runtime ? [{name:'gc/s', color:cssVar('--warn'), points:d.runtime.gc_rate_series||[]}] : []; }, function(v){ return v.toFixed(1); });
   registerChart('chCard', function(d){ return d&&d.cardinality&&d.cardinality.available ? [{name:'series', points:d.cardinality.total_series||[]}] : []; });
+  registerChart('chEmit', function(d){ return d&&d.throughput ? [
+    {name:'metric pts/s', points:d.throughput.metric_points_per_sec_series||[]},
+    {name:'log recs/s', color:cssVar('--ok'), points:d.throughput.log_records_per_sec_series||[]}] : []; },
+    function(v){ return v.toFixed(1); });
+  registerChart('chFailing', function(d){ return d&&d.fleet ? [{name:'failing', color:cssVar('--warn'), points:d.fleet.failing_series||[]}] : []; });
+  registerChart('chDuration', function(d){ return d&&d.fleet ? [{name:'mean', points:d.fleet.mean_duration_ms_series||[]}] : []; }, function(v){ return v.toFixed(0)+'ms'; });
 
   initTabs();
   var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click', toggleTheme);

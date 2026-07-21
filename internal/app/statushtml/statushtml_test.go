@@ -199,6 +199,49 @@ func TestRender_NewPanels(t *testing.T) {
 	}
 }
 
+// TestRender_ThroughputAndFleetTrend asserts the throughput/fleet trend section
+// renders on the Overview tab: its heading, the three chart canvases, the stat
+// cards, and the JS chart registrations that read the JSON fields.
+func TestRender_ThroughputAndFleetTrend(t *testing.T) {
+	s := statusdata.Status{
+		Throughput: statusdata.ThroughputInfo{
+			MetricPoints: 1200, LogRecords: 340,
+			MetricPointsPerSec: 12.5, LogRecordsPerSec: 3.5,
+			MetricPointsPerSecSeries: []float64{10, 12.5},
+			LogRecordsPerSecSeries:   []float64{3, 3.5},
+		},
+		Fleet: statusdata.FleetInfo{
+			Active: 7, Failing: 1, MeanDurationMs: 84,
+			FailingSeries:        []int{0, 1},
+			MeanDurationMsSeries: []float64{70, 84},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"Throughput &amp; fleet trend (~10 min)",           // the new sub-heading
+		`id="chEmit"`, `id="chFailing"`, `id="chDuration"`, // the three charts
+		`id="emitMetricRate"`, `id="emitLogRate"`, // throughput stat cards
+		`id="fleetActive"`, `id="fleetFailing"`, `id="fleetMeanDur"`, // fleet stat cards
+		"metric_points_per_sec_series", "log_records_per_sec_series", // JS reads these
+		"failing_series", "mean_duration_ms_series",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+	// The new section belongs on Overview, immediately after the runtime trend.
+	runtime := strings.Index(out, "Runtime trend (~10 min)")
+	tp := strings.Index(out, "Throughput &amp; fleet trend (~10 min)")
+	tailnets := strings.Index(out, `data-tab="collectors"`)
+	if runtime < 0 || tp < runtime || (tailnets > 0 && tp > tailnets) {
+		t.Errorf("throughput section is not on the overview tab after the runtime trend (runtime=%d throughput=%d collectors=%d)", runtime, tp, tailnets)
+	}
+}
+
 // TestRender_CardinalityGatedOff asserts the cardinality tab shows the enable
 // prompt (not empty tables) when self-obs is off.
 func TestRender_CardinalityGatedOff(t *testing.T) {

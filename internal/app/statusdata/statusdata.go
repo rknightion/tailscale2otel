@@ -32,6 +32,8 @@ type Status struct {
 	Receivers     ReceiversInfo     `json:"receivers"`
 	Profiling     ProfilingInfo     `json:"profiling"`
 	Runtime       RuntimeInfo       `json:"runtime"`
+	Throughput    ThroughputInfo    `json:"throughput"`
+	Fleet         FleetInfo         `json:"fleet"`
 	API           APIInfo           `json:"api"`
 	Metrics       []MetricRow       `json:"metrics"`
 	LogEvents     []LogRow          `json:"log_events"`
@@ -352,6 +354,35 @@ type RuntimeInfo struct {
 	GoroutinesSeries []int     `json:"goroutines_series,omitempty"`
 	HeapAllocSeries  []uint64  `json:"heap_alloc_series,omitempty"`
 	GCRateSeries     []float64 `json:"gc_rate_series,omitempty"`
+}
+
+// ThroughputInfo is the volume of telemetry produced at the EMIT boundary — what
+// the collectors handed to the emitter, before batching or export. MetricPoints
+// and LogRecords are cumulative since process start; the *PerSec values are the
+// most recent sampler interval's rate (0 until two samples exist), and the
+// series are the retained rate trend (oldest first) feeding the throughput chart.
+type ThroughputInfo struct {
+	MetricPoints uint64 `json:"metric_points"`
+	LogRecords   uint64 `json:"log_records"`
+
+	MetricPointsPerSec float64 `json:"metric_points_per_sec"`
+	LogRecordsPerSec   float64 `json:"log_records_per_sec"`
+
+	MetricPointsPerSecSeries []float64 `json:"metric_points_per_sec_series"`
+	LogRecordsPerSecSeries   []float64 `json:"log_records_per_sec_series"`
+}
+
+// FleetInfo is the collector-fleet aggregate across every tailnet runtime.
+// Active/Failing/MeanDurationMs are live at snapshot time (collectors that have
+// never run are excluded from all three); the series are the retained trend
+// (oldest first) feeding the fleet charts.
+type FleetInfo struct {
+	Active         int     `json:"active"`
+	Failing        int     `json:"failing"`
+	MeanDurationMs float64 `json:"mean_duration_ms"`
+
+	FailingSeries        []int     `json:"failing_series"`
+	MeanDurationMsSeries []float64 `json:"mean_duration_ms_series"`
 }
 
 // MetricRow is one entry of the emitted-metrics catalog table. Series is the

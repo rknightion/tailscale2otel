@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v2/internal/collector"
 	"github.com/rknightion/tailscale2otel/v2/internal/ringbuf"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
@@ -27,6 +28,15 @@ type runtimeHistory struct {
 	gcRate     *ringbuf.Ring[float64] // GC cycles/sec between consecutive samples
 	cardTotal  *ringbuf.Ring[int]     // total active series (0 when self-obs is off)
 
+	// Emit-boundary throughput, differenced from the cumulative emitter counters
+	// between consecutive samples (see telemetry.EmitStats).
+	metricRate *ringbuf.Ring[float64] // metric data points/sec
+	logRate    *ringbuf.Ring[float64] // log records/sec
+
+	// Collector-fleet aggregate across every tailnet runtime.
+	failing  *ringbuf.Ring[int]     // collectors whose last run failed
+	runDurMs *ringbuf.Ring[float64] // mean last-run duration, milliseconds
+
 	n int // ring capacity, for lazily created per-metric rings
 
 	// cardMu guards the cardPerMetric MAP (create/read); the Ring values are
@@ -37,10 +47,34 @@ type runtimeHistory struct {
 	cardMu        sync.Mutex
 	cardPerMetric map[string]*ringbuf.Ring[int]
 
-	// lastNumGC/lastAt carry the previous sample's GC count and time so the rate
-	// can be differenced. They are touched only by the single sampler goroutine.
+	// lastNumGC/lastEmit/lastAt carry the previous sample's GC count, emit totals
+	// and time so the rates can be differenced. lastAt is the single "have a prior
+	// sample" signal for every rate series, so they all start at 0 on the first
+	// tick rather than reporting a cumulative total as a rate. They are touched
+	// only by the single sampler goroutine.
 	lastNumGC uint32
+	lastEmit  telemetry.EmitStats
 	lastAt    time.Time
+}
+
+// fleetStats is the collector-fleet aggregate for one sampler tick: how many
+// collectors have run at all, how many failed their most recent run, and the
+// mean of those most-recent run durations in milliseconds. Collectors that have
+// never run contribute to none of the three.
+type fleetStats struct {
+	active         int
+	failing        int
+	meanDurationMs float64
+}
+
+// samplerTick is one pass of observations, read from the process in a single
+// sweep so every ring advances against the same instant.
+type samplerTick struct {
+	rs        runtimeStats
+	cardTotal int
+	perMetric map[string]int
+	emit      telemetry.EmitStats
+	fleet     fleetStats
 }
 
 func newRuntimeHistory(n int) *runtimeHistory {
@@ -49,6 +83,10 @@ func newRuntimeHistory(n int) *runtimeHistory {
 		heapAlloc:     ringbuf.New[uint64](n),
 		gcRate:        ringbuf.New[float64](n),
 		cardTotal:     ringbuf.New[int](n),
+		metricRate:    ringbuf.New[float64](n),
+		logRate:       ringbuf.New[float64](n),
+		failing:       ringbuf.New[int](n),
+		runDurMs:      ringbuf.New[float64](n),
 		n:             n,
 		cardPerMetric: map[string]*ringbuf.Ring[int]{},
 	}
@@ -66,25 +104,70 @@ func (h *runtimeHistory) perMetricSeries() map[string][]int {
 	return out
 }
 
-// sample appends one observation. The GC rate is the change in NumGC since the
-// previous sample divided by the elapsed seconds; the first sample (and any
-// NumGC decrease from a uint32 wrap) records 0 rather than a spurious value. It
-// is a standalone method so tests can drive it tick-by-tick.
-func (h *runtimeHistory) sample(now time.Time, rs runtimeStats, cardTotal int, perMetric map[string]int) {
-	h.goroutines.Add(rs.goroutines)
-	h.heapAlloc.Add(rs.heapAlloc)
-	h.cardTotal.Add(cardTotal)
-	h.samplePerMetric(perMetric)
+// sample appends one observation. The GC and emit-throughput rates are the
+// change since the previous sample divided by the elapsed seconds; the first
+// sample (and any counter decrease — a NumGC uint32 wrap, or a counter that
+// somehow went backwards) records 0 rather than a spurious value, so a
+// cumulative total is never mistaken for a rate. It is a standalone method so
+// tests can drive it tick-by-tick.
+func (h *runtimeHistory) sample(now time.Time, t samplerTick) {
+	h.goroutines.Add(t.rs.goroutines)
+	h.heapAlloc.Add(t.rs.heapAlloc)
+	h.cardTotal.Add(t.cardTotal)
+	h.samplePerMetric(t.perMetric)
+	h.failing.Add(t.fleet.failing)
+	h.runDurMs.Add(t.fleet.meanDurationMs)
 
-	var rate float64
+	var dt float64
 	if !h.lastAt.IsZero() {
-		if dt := now.Sub(h.lastAt).Seconds(); dt > 0 && rs.numGC >= h.lastNumGC {
-			rate = float64(rs.numGC-h.lastNumGC) / dt
+		dt = now.Sub(h.lastAt).Seconds()
+	}
+	var gcRate float64
+	if dt > 0 && t.rs.numGC >= h.lastNumGC {
+		gcRate = float64(t.rs.numGC-h.lastNumGC) / dt
+	}
+	h.gcRate.Add(gcRate)
+	h.metricRate.Add(perSecond(t.emit.MetricPoints, h.lastEmit.MetricPoints, dt))
+	h.logRate.Add(perSecond(t.emit.LogRecords, h.lastEmit.LogRecords, dt))
+
+	h.lastNumGC = t.rs.numGC
+	h.lastEmit = t.emit
+	h.lastAt = now
+}
+
+// perSecond differences two cumulative totals over dt seconds. A non-positive dt
+// (no prior sample, or two samples at the same instant) or a total that went
+// backwards yields 0.
+func perSecond(cur, prev uint64, dt float64) float64 {
+	if dt <= 0 || cur < prev {
+		return 0
+	}
+	return float64(cur-prev) / dt
+}
+
+// fleetAggregate reduces one or more collector status-tracker snapshots (one per
+// tailnet runtime) to the fleet-wide aggregate. Collectors that have never run
+// are excluded entirely: they are neither healthy nor failing, and they have no
+// duration to average.
+func fleetAggregate(snaps ...map[string]collector.CollectorRun) fleetStats {
+	var fs fleetStats
+	var totalMs float64
+	for _, snap := range snaps {
+		for _, r := range snap {
+			if r.Runs == 0 {
+				continue
+			}
+			fs.active++
+			if !r.LastSuccess {
+				fs.failing++
+			}
+			totalMs += float64(r.LastDuration.Microseconds()) / 1000
 		}
 	}
-	h.gcRate.Add(rate)
-	h.lastNumGC = rs.numGC
-	h.lastAt = now
+	if fs.active > 0 {
+		fs.meanDurationMs = totalMs / float64(fs.active)
+	}
+	return fs
 }
 
 // samplePerMetric appends one active-series observation per source metric,
@@ -140,15 +223,87 @@ func (a *App) cardinalityPerMetric() map[string]int {
 	return out
 }
 
+// emitStats sums the emit-boundary counters across every distinct Emitter in the
+// process (the process provider's plus each tailnet runtime's). Emitters are
+// deduplicated by identity because a Headscale runtime shares the process
+// emitter — counting both would double the reported throughput. An Emitter that
+// does not count (a test double) contributes nothing.
+func (a *App) emitStats() telemetry.EmitStats {
+	var out telemetry.EmitStats
+	seen := make(map[telemetry.EmitCounter]struct{}, len(a.runtimes)+1)
+	add := func(e telemetry.Emitter) {
+		c, ok := e.(telemetry.EmitCounter)
+		if !ok {
+			return
+		}
+		if _, dup := seen[c]; dup {
+			return
+		}
+		seen[c] = struct{}{}
+		s := c.EmitStats()
+		out.MetricPoints += s.MetricPoints
+		out.LogRecords += s.LogRecords
+	}
+	add(a.procEmitter)
+	for _, rt := range a.runtimes {
+		add(rt.emitter)
+	}
+	return out
+}
+
+// collectorFleet aggregates every runtime's collector status tracker into the
+// fleet-wide view sampled on each tick and shown on the status page.
+func (a *App) collectorFleet() fleetStats {
+	snaps := make([]map[string]collector.CollectorRun, 0, len(a.runtimes))
+	for _, rt := range a.runtimes {
+		snaps = append(snaps, rt.status.Snapshot())
+	}
+	return fleetAggregate(snaps...)
+}
+
+// samplerSources are the injectable readers the sampler polls each tick.
+// Production wires them to the process (runtime stats) and the app's aggregate
+// accessors; tests supply whichever subset they exercise — a nil reader simply
+// contributes a zero value.
+type samplerSources struct {
+	read      func() runtimeStats
+	cardTotal func() int
+	perMetric func() map[string]int
+	emit      func() telemetry.EmitStats
+	fleet     func() fleetStats
+}
+
+// tick reads every source once, so all rings advance against one consistent
+// observation.
+func (s samplerSources) tick() samplerTick {
+	var t samplerTick
+	if s.read != nil {
+		t.rs = s.read()
+	}
+	if s.cardTotal != nil {
+		t.cardTotal = s.cardTotal()
+	}
+	if s.perMetric != nil {
+		t.perMetric = s.perMetric()
+	}
+	if s.emit != nil {
+		t.emit = s.emit()
+	}
+	if s.fleet != nil {
+		t.fleet = s.fleet()
+	}
+	return t
+}
+
 // runSampler records one observation immediately and then on each interval until
-// ctx is canceled, mirroring runHeartbeat/runRuntimeReporter. read and cardTotal
-// are injectable for tests; production passes readRuntimeStats and the app's
-// cardinality total. A non-positive interval falls back to samplerInterval.
-func runSampler(ctx context.Context, h *runtimeHistory, interval time.Duration, read func() runtimeStats, cardTotal func() int, perMetric func() map[string]int) {
+// ctx is canceled, mirroring runHeartbeat/runRuntimeReporter. The sources are
+// injectable for tests; production passes readRuntimeStats and the app's
+// aggregate accessors. A non-positive interval falls back to samplerInterval.
+func runSampler(ctx context.Context, h *runtimeHistory, interval time.Duration, src samplerSources) {
 	if interval <= 0 {
 		interval = samplerInterval
 	}
-	sample := func() { h.sample(time.Now(), read(), cardTotal(), perMetric()) }
+	sample := func() { h.sample(time.Now(), src.tick()) }
 	sample()
 	t := time.NewTicker(interval)
 	defer t.Stop()

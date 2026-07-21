@@ -53,6 +53,14 @@ type otelEmitter struct {
 	collisionCount   atomic.Int64
 	collisionSatOnce sync.Once
 
+	// emittedPoints/emittedLogs are the emit-boundary throughput counters read by
+	// EmitStats (see emit_counting.go). They are plain atomic adds — no lock, no
+	// allocation — so they stay on the hot path unconditionally, independent of
+	// self-observability. A point is counted where it is actually recorded, i.e.
+	// after any PII identity suppression has had its say.
+	emittedPoints atomic.Uint64
+	emittedLogs   atomic.Uint64
+
 	mu          sync.Mutex
 	counters    map[string]metric.Float64Counter
 	gauges      map[string]metric.Float64Gauge
@@ -134,6 +142,7 @@ func (e *otelEmitter) Counter(name, unit, desc string, add float64, attrs Attrs)
 	}
 	e.mu.Unlock()
 	e.card.Observe(name, attrs)
+	e.emittedPoints.Add(1)
 	if c != nil {
 		c.Add(context.Background(), add, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
@@ -157,6 +166,7 @@ func (e *otelEmitter) Gauge(name, unit, desc string, value float64, attrs Attrs)
 	}
 	e.mu.Unlock()
 	e.card.Observe(name, attrs)
+	e.emittedPoints.Add(1)
 	if g != nil {
 		g.Record(context.Background(), value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
@@ -193,6 +203,7 @@ func (e *otelEmitter) GaugeSnapshot(name, unit, desc string, points []GaugePoint
 		e.card.Observe(name, attrs)
 		resolved = append(resolved, obsPoint{value: p.Value, kvs: e.buildAttrs(name, attrs)})
 	}
+	e.emittedPoints.Add(uint64(len(resolved)))
 
 	e.mu.Lock()
 	og, ok := e.observables[name]
@@ -243,6 +254,7 @@ func (e *otelEmitter) UpDownCounter(name, unit, desc string, value float64, attr
 	}
 	e.mu.Unlock()
 	e.card.Observe(name, attrs)
+	e.emittedPoints.Add(1)
 	if u != nil {
 		u.Add(context.Background(), value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
@@ -268,6 +280,7 @@ func (e *otelEmitter) HistogramCtx(ctx context.Context, name, unit, desc string,
 	}
 	e.mu.Unlock()
 	e.card.Observe(name, attrs)
+	e.emittedPoints.Add(1)
 	if h != nil {
 		h.Record(ctx, value, metric.WithAttributes(e.buildAttrs(name, attrs)...))
 	}
@@ -295,6 +308,7 @@ func (e *otelEmitter) LogEvent(ev Event) {
 	if len(e.constAttrs) > 0 {
 		r.AddAttributes(constAttrsToLogKV(e.constAttrs)...)
 	}
+	e.emittedLogs.Add(1)
 	e.logger.Emit(context.Background(), r)
 }
 
