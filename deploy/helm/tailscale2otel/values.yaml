@@ -502,6 +502,10 @@ config:
     auto_configure: false
     # -- Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed).
     max_body_bytes: 0
+    # -- How many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their
+    # sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is
+    # roughly this x max_body_bytes, so raise it together with resources.limits.memory.
+    max_concurrent_requests: 0
 
   # Optional webhook receiver for real-time Tailscale events.
   # Secret: set via TS2OTEL_WEBHOOK__SECRET (secret).

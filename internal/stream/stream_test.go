@@ -51,6 +51,14 @@ const (
 
 const testToken = "s3cr3t-token"
 
+// loopbackListen is the bind address the untokened tests declare. The receiver
+// fails closed: with no token configured it serves only when bound to loopback,
+// so a test that exercises the no-token path has to say where it is bound. These
+// tests really ARE loopback (httptest drives the handler in-process), so this
+// states the truth rather than working around the gate — an untokened,
+// network-reachable receiver is refused, and TestInsecureOpen_* covers that.
+const loopbackListen = "127.0.0.1:0"
+
 // newServer builds a Server wired to a Recorder, returning both. The processors
 // are the real shared ones (a populated cache so node resolution succeeds).
 func newServer(t *testing.T, opts stream.Options) (*stream.Server, *telemetrytest.Recorder) {
@@ -209,7 +217,7 @@ const realHECStreamBody = `{"time":1780500776.773,"event":{"nodeId":"n0001CNTRL"
 // or audit record, classified and routed. (Characterization: the parser already
 // unwraps "event" and reads successive JSON values, which the capture confirms.)
 func TestEnvelope_RealTailscaleHEC(t *testing.T) {
-	s, rec := newServer(t, stream.Options{}) // no token here; auth is covered separately
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen}) // no token here; auth is covered separately
 	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(realHECStreamBody))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.Code)
@@ -411,7 +419,7 @@ func assertTimeNear(t *testing.T, got, want time.Time, tol time.Duration) {
 // bears the event's real occurrence time instead of falling back to the ingest
 // (observed) time. realHECStreamBody's audit object has "time":1780500887.356.
 func TestStream_AuditEventTimeFromHECEnvelope(t *testing.T) {
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(realHECStreamBody))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.Code)
@@ -426,7 +434,7 @@ func TestStream_AuditEventTimeFromHECEnvelope(t *testing.T) {
 // time must NOT override it. captureAuditRecord has eventTime 2026-06-02T19:00:05Z;
 // the surrounding HEC envelope advertises a different time (1780500887.356).
 func TestStream_AuditInnerEventTimeWinsOverEnvelope(t *testing.T) {
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 	body := `{"time":1780500887.356,"event":` + captureAuditRecord + `,"fields":{"recorded":"2026-06-03T15:34:47.809040387Z"}}`
 	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
 	if resp.Code != http.StatusOK {
@@ -444,7 +452,7 @@ func TestStream_AuditInnerEventTimeWinsOverEnvelope(t *testing.T) {
 // HEC envelope has NO "time" but does carry "fields.recorded" (RFC3339, the
 // publisher's record time), an inner-eventTime-less audit record uses that.
 func TestStream_AuditEventTimeFallsBackToFieldsRecorded(t *testing.T) {
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 	body := `{"event":{"eventGroupID":"g9","origin":"CONFIG_API","actor":{"id":"u1","loginName":"a@example.com"},"target":{"id":"k1","type":"OAUTH_ACCESS_TOKEN"},"action":"CREATE"},"fields":{"recorded":"2026-06-03T15:34:47.809040387Z"}}`
 	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
 	if resp.Code != http.StatusOK {
@@ -464,7 +472,7 @@ func TestStream_AuditEventTimeFallsBackToFieldsRecorded(t *testing.T) {
 // both shapes, so an inner-eventTime-less audit record inside a timestamped logs
 // batch must still receive the envelope time (not fall back to ingest time).
 func TestStream_AuditEventTimeFromLogsWrapperEnvelope(t *testing.T) {
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 	inner := `{"eventGroupID":"g7","origin":"CONFIG_API","actor":{"id":"u1","loginName":"a@example.com"},"target":{"id":"k1","type":"OAUTH_ACCESS_TOKEN"},"action":"CREATE"}`
 	body := `{"time":1780500887.356,"logs":[` + inner + `]}`
 	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
@@ -492,7 +500,7 @@ const concatenatedCorruptedBody = realHECStreamBody +
 // rather than treating the truncation as delivered. This deliberately replaces the
 // earlier valid-prefix salvage (#96), which ACKed the partial batch with a 200.
 func TestEnvelope_ConcatenatedCorruptionRejectsBatch(t *testing.T) {
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(concatenatedCorruptedBody))
 	if w.Code != http.StatusBadRequest {
@@ -522,7 +530,7 @@ func TestEnvelope_ConcatenatedCorruptionIsLogged(t *testing.T) {
 	flowProc := flowlog.NewProcessor(cache, flowlog.Options{})
 	auditProc := audit.NewProcessor()
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
-	s := stream.New(stream.Options{}, flowProc, auditProc, rec.Emitter(), logger)
+	s := stream.New(stream.Options{Listen: loopbackListen}, flowProc, auditProc, rec.Emitter(), logger)
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(concatenatedCorruptedBody))
 	if w.Code != http.StatusBadRequest {
@@ -905,7 +913,7 @@ func TestHandler_WrongMethodAndPath(t *testing.T) {
 
 func TestHandler_NoTokenConfiguredSkipsAuth(t *testing.T) {
 	// With an empty Token, no auth header is required.
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", http.Header{}, strings.NewReader(hecFlowBody))
 	if w.Code != http.StatusOK {
@@ -1036,7 +1044,7 @@ func TestHandleCallsIngestHook(t *testing.T) {
 //   - leaves tailscale.stream.inflight at 0 (the +1 on entry and -1 on return
 //     cancel out after the handler returns).
 func TestHandler_InflightAndDuration(t *testing.T) {
-	s, rec := newServer(t, stream.Options{})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen})
 
 	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil,
 		strings.NewReader(realHECStreamBody))
@@ -1087,7 +1095,7 @@ func TestStreamHandle_EmitsSpan(t *testing.T) {
 	flowProc := flowlog.NewProcessor(cache, flowlog.Options{})
 	auditProc := audit.NewProcessor()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := stream.New(stream.Options{}, flowProc, auditProc, rec.Emitter(), logger, stream.WithTracer(tp.Tracer("test")))
+	s := stream.New(stream.Options{Listen: loopbackListen}, flowProc, auditProc, rec.Emitter(), logger, stream.WithTracer(tp.Tracer("test")))
 
 	// A bare "{}"+empty envelope body: parse will fail (no records), resulting in a
 	// 400. The span must still be emitted — the defer fires regardless of exit path.

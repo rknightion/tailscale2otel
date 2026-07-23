@@ -262,7 +262,7 @@ streaming:
   enabled: false                      # run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream)
   listen: ":8088"                     # bind address for the Splunk-HEC-compatible receiver
   path: /services/collector/event     # HEC endpoint path Tailscale POSTs to
-  token: ""                           # shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty = unauthenticated (WARN)
+  token: ""                           # shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty on a NON-loopback listen = every request REFUSED with 403 (empty is allowed only on a loopback bind)
   token_file: ""                      # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   public_url: ""                      # externally reachable receiver URL; REQUIRED only when auto_configure: true
   tls:
@@ -271,6 +271,7 @@ streaming:
   decompress: auto                    # auto | gzip | zstd | none — request body decompression
   auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope
   max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413)
+  max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
 
 # ── Webhook receiver (OPTIONAL: real-time Tailscale events) ─────────────────────
 webhook:

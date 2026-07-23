@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.8.0](https://img.shields.io/badge/Version-0.8.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.9.0](https://img.shields.io/badge/Version-0.9.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
 
@@ -207,6 +207,7 @@ extraVolumeMounts:
 | config.streaming.enabled | bool | `false` | Enable the HEC-style streaming receiver. |
 | config.streaming.listen | string | `":8088"` | Address the receiver binds (host:port). |
 | config.streaming.max_body_bytes | int | `0` | Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed). |
+| config.streaming.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.streaming.path | string | `"/services/collector/event"` | HTTP path the receiver serves (the Splunk-HEC event endpoint). |
 | config.streaming.public_url | string | `""` | Externally reachable receiver URL; REQUIRED when auto_configure: true. |
 | config.streaming.tls.cert_file | string | `""` | TLS certificate file; set with key_file to serve the receiver over HTTPS. |

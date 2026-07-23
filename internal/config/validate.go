@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v2/internal/listenaddr"
 )
 
 // oneOf reports whether v equals one of the allowed values.
@@ -91,15 +93,13 @@ func (c *Config) Warnings() []string {
 	}
 
 	// An enabled ingestion receiver with no credential accepts UNAUTHENTICATED
-	// input. The webhook receiver skips HMAC verification entirely when
+	// input. The webhook receiver still skips HMAC verification entirely when
 	// webhook.secret is empty (internal/webhook: an empty Secret bypasses verify),
-	// and the HEC streaming receiver disables token auth when streaming.token is
-	// empty (internal/stream: an empty token authorizes every request). Either lets
-	// anyone who can reach the port post forged events. A credential left empty —
-	// whether unset in the file or via a mistyped TS2OTEL_* env var name — lands
-	// here, so flag it rather than fail open quietly. (Unlike pprof, these are not
-	// hard-errored: a trusted-network or
-	// local-testing deployment behind an authenticating proxy is a legitimate use.)
+	// so anyone who can reach the port can post forged events. A credential left
+	// empty — whether unset in the file or via a mistyped TS2OTEL_* env var name —
+	// lands here, so flag it rather than fail open quietly. (Unlike pprof, this is
+	// not hard-errored: a trusted-network or local-testing deployment behind an
+	// authenticating proxy is a legitimate use.)
 	if c.Webhook.Enabled && c.Webhook.Secret == "" {
 		w = append(w, "webhook.enabled=true with an empty webhook.secret: HMAC signature "+
 			"verification is SKIPPED, so anyone who can reach "+c.Webhook.Listen+" can post "+
@@ -107,12 +107,26 @@ func (c *Config) Warnings() []string {
 			"types). Set webhook.secret (e.g. TS2OTEL_WEBHOOK__SECRET — check the env var name), "+
 			"or only run the receiver behind an authenticating proxy on a trusted network.")
 	}
+	// The HEC streaming receiver no longer fails OPEN on an empty token (#228): on
+	// a network-reachable bind it now REFUSES every request with 403 rather than
+	// accepting forged flow/audit records. That turns a silent security hole into
+	// a loud functional one, so the warning has to tell the operator ingestion is
+	// broken, not merely unauthenticated. A loopback bind stays open — only the
+	// local host can reach it — and is the supported credential-free setup.
 	if c.Streaming.Enabled && c.Streaming.Token == "" {
-		w = append(w, "streaming.enabled=true with an empty streaming.token: the HEC receiver "+
-			"authenticates NO requests, so anyone who can reach "+c.Streaming.Listen+" can inject "+
-			"arbitrary flow/audit records. Set streaming.token (e.g. TS2OTEL_STREAMING__TOKEN — "+
-			"check the env var name), or only run the receiver behind an authenticating "+
-			"proxy on a trusted network.")
+		if listenaddr.IsLoopback(c.Streaming.Listen) {
+			w = append(w, "streaming.enabled=true with an empty streaming.token on the loopback "+
+				"bind "+c.Streaming.Listen+": the HEC receiver authenticates no requests. Only the "+
+				"local host can reach it, so this is accepted, but any local process can inject "+
+				"arbitrary flow/audit records. Set streaming.token (e.g. TS2OTEL_STREAMING__TOKEN) "+
+				"if that matters.")
+		} else {
+			w = append(w, "streaming.enabled=true with an empty streaming.token on the "+
+				"network-reachable bind "+c.Streaming.Listen+": the HEC receiver REFUSES every "+
+				"request with HTTP 403, so NO logs will be ingested. Set streaming.token (e.g. "+
+				"TS2OTEL_STREAMING__TOKEN — check the env var name), or bind streaming.listen to "+
+				"loopback and put an authenticating proxy in front.")
+		}
 	}
 
 	// Grafana Cloud Profiles authenticates Pyroscope pushes with HTTP basic auth

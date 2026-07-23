@@ -224,7 +224,10 @@ func (a *App) buildReceivers() {
 			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
 			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
 			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
-			OnIngest:     ingest,
+			// Aggregate admission control (#209): MaxBodyBytes bounds one body,
+			// this bounds how many are buffered at once.
+			MaxConcurrentRequests: a.cfg.Streaming.MaxConcurrentRequests,
+			OnIngest:              ingest,
 		}, rt.flowProc, rt.auditProc, rt.emitter, withComponent(a.logger, appcatalog.ComponentStream),
 			stream.WithTracer(a.tracer))
 	}

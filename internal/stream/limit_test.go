@@ -15,7 +15,7 @@ const reasonTooLarge = "too_large"
 // configured cap is rejected with 413 and a visible too_large rejection counter,
 // and is never parsed/processed.
 func TestMaxBodyBytes_UncompressedTooLargeRejected(t *testing.T) {
-	s, rec := newServer(t, stream.Options{MaxBodyBytes: 16})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen, MaxBodyBytes: 16})
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil,
 		strings.NewReader(strings.Repeat("x", 100)))
@@ -36,7 +36,7 @@ func TestMaxBodyBytes_UncompressedTooLargeRejected(t *testing.T) {
 // OOM the receiver.
 func TestMaxBodyBytes_GzipBombRejected(t *testing.T) {
 	const cap = 64 * 1024
-	s, rec := newServer(t, stream.Options{MaxBodyBytes: cap})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen, MaxBodyBytes: cap})
 
 	gz := gzipBytes(t, bytes.Repeat([]byte("a"), 1<<20)) // 1 MiB -> ~1 KiB gzip
 	if len(gz) >= cap {
@@ -58,7 +58,7 @@ func TestMaxBodyBytes_GzipBombRejected(t *testing.T) {
 // TestMaxBodyBytes_UnderLimitNotTooLarge confirms a body under the cap is read
 // normally; an unparsable one fails as "unparsable", not "too_large".
 func TestMaxBodyBytes_UnderLimitNotTooLarge(t *testing.T) {
-	s, rec := newServer(t, stream.Options{MaxBodyBytes: 100})
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen, MaxBodyBytes: 100})
 
 	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil,
 		strings.NewReader("not json"))

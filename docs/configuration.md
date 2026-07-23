@@ -656,10 +656,27 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.decompress` | `auto` | Request-body decompression: `auto` \| `gzip` \| `zstd` \| `none`. |
 | `streaming.auto_configure` | `false` | On startup, PUT this receiver as a Splunk-HEC log-streaming sink. **Requires `enabled: true`, `public_url`, and an OAuth client with the `log_streaming` scope.** |
 | `streaming.max_body_bytes` | `0` | Cap on the **decompressed** request body. `0` selects a 64 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413. |
+| `streaming.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**. `max_body_bytes` caps one body; this caps their sum, so N simultaneous in-limit POSTs cannot exceed the process memory budget. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1`. Raise it only alongside the container/process memory limit — worst-case buffering is roughly this × `max_body_bytes`. |
 
 > **Validation:** `auto_configure: true` errors at startup unless both `streaming.enabled: true` and
 > a non-empty `streaming.public_url` are set. Running the poller and this receiver for the same log
 > type triggers a dual-ingestion **WARN**.
+
+> **The receiver fails closed without a token.** An empty `streaming.token` is accepted only when
+> `streaming.listen` is a **loopback** address (`127.0.0.1`, `::1`, `localhost`). On any other bind —
+> including the `:8088` default and any tailnet address — every request is refused with **HTTP 403**
+> and `rejected{reason=auth_required}`, and a loud `ERROR` is logged at startup. An unauthenticated
+> receiver on a reachable port lets anyone inject arbitrary flow/audit records, so it is refused
+> rather than silently accepted. A tailnet address counts as reachable: every peer on the tailnet can
+> connect to it. To run without a token, bind to loopback and put an authenticating proxy in front.
+
+> **Resource limits.** Three internal, non-configurable caps bound what one request can cost, on top
+> of `max_body_bytes` and `max_concurrent_requests`: at most **500,000 records** per request (a body of
+> concatenated tiny objects would otherwise amplify ~50× into multi-GB of allocation — rejected with
+> HTTP 413 + `rejected{reason=too_many_records}`); envelope unwrapping is bounded to **4 levels** of
+> nesting (deeper wrappers are skipped and counted, the batch still succeeds); and a **30s** handler
+> response deadline as defence in depth. The record and depth caps are the load-bearing controls — the
+> deadline bounds the response, not the work.
 
 > **Batch delivery is all-or-nothing.** The receiver parses and type-checks a whole POST before routing
 > a single record, so a request is never acknowledged `200` after silently dropping part of its payload.

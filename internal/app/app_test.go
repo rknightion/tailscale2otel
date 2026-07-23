@@ -446,6 +446,10 @@ func TestPollStreamCrossDedup_FlowDeduplicates(t *testing.T) {
 	cfg.Cardinality.Flow.MetricsMode = "all"
 	cfg.Streaming.Enabled = true
 	cfg.Streaming.Path = "/services/collector/event"
+	// The receiver fails closed on a network-reachable bind with no token (#228),
+	// and config.Default() is the wildcard ":8088". This test drives the handler
+	// over httptest — i.e. loopback in reality — so declare that explicitly.
+	cfg.Streaming.Listen = "127.0.0.1:0"
 	rec := telemetrytest.New()
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
 
@@ -497,6 +501,10 @@ func TestPollStreamCrossDedup_AuditDeduplicates(t *testing.T) {
 	cfg.Tailscale.Tailnet = "example.com"
 	cfg.Streaming.Enabled = true
 	cfg.Streaming.Path = "/services/collector/event"
+	// The receiver fails closed on a network-reachable bind with no token (#228),
+	// and config.Default() is the wildcard ":8088". This test drives the handler
+	// over httptest — i.e. loopback in reality — so declare that explicitly.
+	cfg.Streaming.Listen = "127.0.0.1:0"
 	rec := telemetrytest.New()
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
 

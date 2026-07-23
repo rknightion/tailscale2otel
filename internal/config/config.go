@@ -760,6 +760,13 @@ type StreamingConfig struct {
 	// rejected with 413 + rejected{reason=too_large} so a huge or zip-bomb body
 	// cannot OOM the receiver. 0 selects a 64 MiB default; negative disables it.
 	MaxBodyBytes int64 `yaml:"max_body_bytes"`
+	// MaxConcurrentRequests bounds how many requests may buffer a body at once,
+	// so N simultaneous in-limit POSTs cannot sum past the process memory budget
+	// (#209). MaxBodyBytes caps ONE body; this caps their sum. An over-limit POST
+	// is rejected with 503 + Retry-After + rejected{reason=overloaded}. 0 selects
+	// a default of 4; negative disables the limit. Raise it only alongside the
+	// process memory limit: the worst case is roughly this times max_body_bytes.
+	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
 }
 
 // StreamingTLS configures TLS for the streaming receiver.

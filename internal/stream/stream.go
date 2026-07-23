@@ -101,6 +101,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v2/internal/audit"
 	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
 )
@@ -187,6 +188,20 @@ const (
 	// request body can fail to reach a processor.
 	reasonUnclassified = "unclassified"
 	reasonUnwrapDrop   = "unwrap_drop"
+
+	// reasonAuthRequired, reasonTooManyRecords and reasonOverloaded are the
+	// resource/exposure guards on MetricRejected. reasonAuthRequired = the
+	// receiver is network-reachable with no token configured, so it refuses to
+	// ingest at all (fail closed); reasonTooManyRecords = the body carried more
+	// record objects than maxRecordsPerRequest (#229); reasonOverloaded = the
+	// aggregate admission budget was full (#209).
+	//
+	// An over-deep envelope (#228) deliberately has NO reason of its own here: it
+	// is a bounded, forward-compatible per-record DROP counted as
+	// skipped{reason=unwrap_drop}, not a request-level rejection.
+	reasonAuthRequired   = "auth_required"
+	reasonTooManyRecords = "too_many_records"
+	reasonOverloaded     = "overloaded"
 )
 
 // defaultPath is the Splunk-HEC event endpoint path used when Options.Path is
@@ -202,6 +217,48 @@ const defaultMaxBodyBytes = 64 << 20 // 64 MiB
 
 // errBodyTooLarge is returned by readAllLimited when the body exceeds the cap.
 var errBodyTooLarge = errors.New("stream: request body exceeds max size")
+
+// maxRecordsPerRequest caps how many record objects one request may yield (#229).
+//
+// The decompressed-byte cap alone does NOT bound memory here, because bytes
+// amplify into objects: a 64 MiB body of concatenated `{}` yields ~33M
+// json.RawMessage values plus a parallel []extractedRecord, several GB of
+// transient allocation from a body that is comfortably inside the byte limit.
+// The count is what has to be bounded, so this cap sits alongside MaxBodyBytes
+// rather than replacing it. 500k records is ~3 orders of magnitude above the
+// largest batch observed from the real TailscaleLogStreamPublisher (~73), so it
+// cannot bite a legitimate sender.
+const maxRecordsPerRequest = 500_000
+
+// errTooManyRecords is returned by extractRecords when a body would yield more
+// than maxRecordsPerRequest records. The handler maps it to 413 +
+// rejected{reason=too_many_records}, matching how the byte cap is surfaced.
+var errTooManyRecords = errors.New("stream: request exceeds max record count")
+
+// maxUnwrapDepth bounds envelope-unwrapping recursion (#228). The documented
+// shapes nest at most a couple of levels ({"logs":[{"event":<record>}]} is two),
+// so 4 leaves headroom for a future wrapper while refusing the adversarial case:
+// a highly-compressible body nested thousands of levels deep, which used to be
+// re-scanned once per level. Beyond the cap the value is DROPPED (counted as
+// skipped{reason=unwrap_drop}), never treated as corruption.
+const maxUnwrapDepth = 4
+
+// handlerProcessDeadline bounds how long the receiver will spend on one request
+// before answering (#228). See withProcessDeadline for what this does and does
+// not buy.
+const handlerProcessDeadline = 30 * time.Second
+
+// defaultMaxConcurrentRequests is the aggregate admission budget used when
+// Options.MaxConcurrentRequests is 0 (#209): at most this many handlers may be
+// buffering a request body at once, so worst-case buffered memory is bounded by
+// MaxConcurrentRequests * MaxBodyBytes rather than by how many senders show up.
+const defaultMaxConcurrentRequests = 4
+
+// admissionWait is how long a request will wait for an admission slot before
+// being refused. Long enough to absorb a normal burst (bodies parse in
+// milliseconds), short enough that a queue cannot itself become the backlog the
+// budget exists to prevent.
+const admissionWait = 250 * time.Millisecond
 
 // Options configures a Server.
 type Options struct {
@@ -224,6 +281,9 @@ type Options struct {
 	// a huge or zip-bomb POST cannot OOM the receiver. 0 selects a 64 MiB default;
 	// a negative value disables the cap.
 	MaxBodyBytes int64
+	// MaxConcurrentRequests bounds handlers buffering a body simultaneously.
+	// 0 selects defaultMaxConcurrentRequests; negative disables the limit.
+	MaxConcurrentRequests int
 	// OnIngest, when non-nil, is called with ("stream", signal, records, bytes)
 	// after a successful parse: once per non-empty signal (records>0, bytes=0) and
 	// once for the decompressed body size (records=0, bytes=len(raw)). Supplied by
@@ -241,6 +301,15 @@ type Server struct {
 	tlsKey     string
 	listen     string
 	maxBody    int64
+
+	// admit is the aggregate admission semaphore (#209): a buffered channel whose
+	// capacity is the number of handlers allowed to buffer a body at once. nil
+	// when the limit is disabled.
+	admit chan struct{}
+	// insecureOpen records that the receiver has NO token AND is bound somewhere
+	// other hosts can reach, i.e. it would ingest unauthenticated data from the
+	// network. The handler refuses every request in that state (fail closed).
+	insecureOpen bool
 
 	flowProc  *flowlog.Processor
 	auditProc *audit.Processor
@@ -269,6 +338,14 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 	if maxBody == 0 {
 		maxBody = defaultMaxBodyBytes
 	}
+	maxConcurrent := opts.MaxConcurrentRequests
+	if maxConcurrent == 0 {
+		maxConcurrent = defaultMaxConcurrentRequests
+	}
+	var admit chan struct{}
+	if maxConcurrent > 0 {
+		admit = make(chan struct{}, maxConcurrent)
+	}
 	s := &Server{
 		path:       path,
 		token:      opts.Token,
@@ -277,11 +354,20 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		tlsKey:     opts.TLSKeyFile,
 		listen:     opts.Listen,
 		maxBody:    maxBody,
-		flowProc:   flowProc,
-		auditProc:  auditProc,
-		emitter:    e,
-		logger:     logger,
-		onIngest:   opts.OnIngest,
+		admit:      admit,
+		// Fail closed: with no token, only a loopback bind is safe, because a
+		// loopback listener is unreachable from any other host. Everything else —
+		// a wildcard bind, a LAN address, a tailnet (100.64/10) address, or an
+		// unparseable value — is treated as network-reachable, so an operator who
+		// forgets streaming.token gets a refusal rather than an open ingest
+		// endpoint. listenaddr.IsLoopback itself fails closed on anything it
+		// cannot classify.
+		insecureOpen: opts.Token == "" && !listenaddr.IsLoopback(opts.Listen),
+		flowProc:     flowProc,
+		auditProc:    auditProc,
+		emitter:      e,
+		logger:       logger,
+		onIngest:     opts.OnIngest,
 	}
 	for _, o := range options {
 		o(s)
@@ -294,7 +380,47 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.path, s.handle)
-	return mux
+	// Wrapped here rather than in Run so httptest-driven callers get the same
+	// bound as a real listener.
+	return withProcessDeadline(mux, handlerProcessDeadline)
+}
+
+// withProcessDeadline bounds how long the receiver takes to ANSWER a request.
+//
+// Be precise about what this buys: http.TimeoutHandler cannot preempt a
+// CPU-bound goroutine. When the deadline elapses it writes a 503 to the client
+// and abandons the in-flight handler, which keeps running to completion. It
+// therefore bounds the RESPONSE, not the work. The real bounds on the work are
+// the unwrap depth cap (maxUnwrapDepth) and the record cap
+// (maxRecordsPerRequest); this is defense in depth for anything they miss, not
+// the fix for #228.
+func withProcessDeadline(h http.Handler, d time.Duration) http.Handler {
+	return http.TimeoutHandler(h, d, `{"text":"request processing deadline exceeded","code":503}`)
+}
+
+// acquire takes an admission slot (#209), returning a release func. It tries a
+// non-blocking take first (the steady state), then waits up to admissionWait for
+// a slot, giving up early if the client goes away. ok=false means the receiver
+// is at capacity and the caller must refuse the request.
+func (s *Server) acquire(ctx context.Context) (release func(), ok bool) {
+	if s.admit == nil {
+		return func() {}, true
+	}
+	select {
+	case s.admit <- struct{}{}:
+		return func() { <-s.admit }, true
+	default:
+	}
+	timer := time.NewTimer(admissionWait)
+	defer timer.Stop()
+	select {
+	case s.admit <- struct{}{}:
+		return func() { <-s.admit }, true
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	}
 }
 
 // handle implements the receiver's request lifecycle: method/auth checks, body
@@ -331,6 +457,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fail closed BEFORE any body is read: with no token configured and a
+	// network-reachable bind, this endpoint would accept unauthenticated flow and
+	// audit records from anyone who can route to it. Refuse outright and name both
+	// remedies, rather than ingesting attacker-supplied telemetry.
+	if s.insecureOpen {
+		span.SetStatus(codes.Error, "auth required")
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+			telemetry.Attrs{attrReason: reasonAuthRequired})
+		s.writeError(w, http.StatusForbidden,
+			"streaming receiver refuses unauthenticated requests: set streaming.token, or bind streaming.listen to a loopback address")
+		return
+	}
+
 	if !s.authorized(r) {
 		span.SetStatus(codes.Error, "unauthorized")
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
@@ -338,6 +477,23 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusUnauthorized, "invalid or missing token")
 		return
 	}
+
+	// Aggregate admission control (#209): the per-request byte cap bounds ONE
+	// body, not the sum of every body in flight. Take a slot before buffering
+	// anything so worst-case buffered memory is capped at
+	// MaxConcurrentRequests * MaxBodyBytes regardless of how many senders arrive
+	// at once. Released via defer on every exit path below.
+	release, admitted := s.acquire(r.Context())
+	if !admitted {
+		span.SetStatus(codes.Error, "overloaded")
+		s.logger.Warn("stream: refusing request, receiver at capacity", "max_concurrent_requests", cap(s.admit))
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+			telemetry.Attrs{attrReason: reasonOverloaded})
+		w.Header().Set("Retry-After", "1")
+		s.writeError(w, http.StatusServiceUnavailable, "receiver at capacity, retry shortly")
+		return
+	}
+	defer release()
 
 	raw, err := s.readBody(r)
 	if err != nil {
@@ -359,6 +515,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	records, outcome, err := extractRecords(raw)
 	if err != nil {
+		// #229: too many record objects for one request. Surfaced like the byte cap
+		// (413 + a dedicated reason) because it is the same class of failure — the
+		// request is refused for its size, not for being malformed.
+		if errors.Is(err, errTooManyRecords) {
+			span.SetStatus(codes.Error, "too many records")
+			s.logger.Warn("stream: request exceeds max record count", "limit_records", maxRecordsPerRequest)
+			s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+				telemetry.Attrs{attrReason: reasonTooManyRecords})
+			s.writeError(w, http.StatusRequestEntityTooLarge, "too many records in body")
+			return
+		}
 		span.SetStatus(codes.Error, "could not parse body")
 		s.logger.Warn("stream: parsing body failed", "error", err)
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
@@ -711,6 +878,11 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 			}
 			break
 		}
+		// #229: checked BEFORE the append, so `values` never grows past the cap —
+		// the slice itself is the amplification this bounds.
+		if len(values) >= maxRecordsPerRequest {
+			return nil, extractOutcome{}, errTooManyRecords
+		}
 		values = append(values, v)
 	}
 
@@ -727,6 +899,12 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 				continue
 			}
 			if json.Valid([]byte(line)) {
+				// #229 again: the line-scan path grows the same slice, so it needs
+				// the same pre-append cap. Without it the cap is bypassed by simply
+				// prefixing the body with a non-JSON line.
+				if len(values) >= maxRecordsPerRequest {
+					return nil, extractOutcome{}, errTooManyRecords
+				}
 				values = append(values, json.RawMessage(line))
 			} else {
 				// A structurally-invalid line alongside valid ones: the batch is
@@ -741,19 +919,49 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	}
 
 	// Unwrap each top-level value into record objects, propagating each HEC
-	// envelope's time down to the record(s) it carries. unwrapDropped tallies
-	// values dropped along the way (#67) — a non-object value encountered while
-	// unwrapping, before classify() ever runs.
+	// envelope's time down to the record(s) it carries. st.dropped tallies values
+	// dropped along the way (#67) — a non-object value, or one nested past
+	// maxUnwrapDepth, encountered while unwrapping before classify() ever runs.
+	// st.remaining is the #229 record budget: one wrapper can carry far more
+	// records than there are top-level values (a single {"logs":[...]} batch), so
+	// the budget is threaded INTO the walk rather than checked after it.
 	var out []extractedRecord
-	var unwrapDropped int
+	st := unwrapState{remaining: maxRecordsPerRequest}
 	for _, v := range values {
-		out = append(out, unwrap(v, time.Time{}, &unwrapDropped)...)
+		out = append(out, unwrap(v, time.Time{}, 0, &st)...)
+		if st.overflow {
+			return nil, extractOutcome{}, errTooManyRecords
+		}
 	}
 	if len(out) == 0 {
 		return nil, extractOutcome{}, errors.New("no records after unwrapping")
 	}
-	outcome.unwrapDropped = unwrapDropped
+	outcome.unwrapDropped = st.dropped
 	return out, outcome, nil
+}
+
+// unwrapState carries the mutable counters threaded through the recursive
+// envelope walk: the #67 drop tally and the #229 record budget.
+type unwrapState struct {
+	// dropped counts values the walk discarded (a non-object value, or nesting
+	// past maxUnwrapDepth). Surfaced as skipped{reason=unwrap_drop}.
+	dropped int
+	// remaining is how many more records may be produced before
+	// maxRecordsPerRequest is exceeded.
+	remaining int
+	// overflow is set once the budget is exhausted; extractRecords turns it into
+	// errTooManyRecords.
+	overflow bool
+}
+
+// take reserves budget for one record, reporting whether it was available.
+func (st *unwrapState) take() bool {
+	if st.remaining <= 0 {
+		st.overflow = true
+		return false
+	}
+	st.remaining--
+	return true
 }
 
 // envelope captures the optional HEC ("event") and Tailscale ("logs") wrappers
@@ -773,31 +981,46 @@ type envelope struct {
 // with the wrapper's own "time"/"fields.recorded"; a Tailscale {"logs": [...]}
 // wrapper yields its elements; any other object is itself a record.
 //
-// dropped is incremented once per non-object value encountered along the way
-// (a scalar/null HEC "event", a bare scalar at top level, or a malformed
-// nested array) — the #67 unwrap-stage drop count, distinct from a
-// classify()-stage kindUnknown result in the caller.
-func unwrap(v json.RawMessage, inherited time.Time, dropped *int) []extractedRecord {
+// st.dropped is incremented once per value discarded along the way: a non-object
+// value (a scalar/null HEC "event", a bare scalar at top level, or a malformed
+// nested array), or a value nested deeper than maxUnwrapDepth. Both are the #67
+// unwrap-stage drop count, distinct from a classify()-stage kindUnknown result in
+// the caller. st.remaining is the #229 record budget.
+//
+// depth is the current nesting level, 0 at the top. Past maxUnwrapDepth the value
+// is dropped (#228): the documented envelope shapes nest at most a couple of
+// levels, and unbounded recursion here means re-scanning most of the body once per
+// level, which turns a small compressed body into minutes of CPU. The drop is
+// deliberately forward-compatible — over-deep nesting is an unrecognized shape,
+// not evidence the batch is corrupt, so it must not fail the whole request.
+func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) []extractedRecord {
+	if depth > maxUnwrapDepth {
+		st.dropped++
+		return nil
+	}
 	trimmed := bytes.TrimSpace(v)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		// Not a JSON object (e.g. an array or scalar at top level); ignore.
 		if len(trimmed) > 0 && trimmed[0] == '[' {
 			// A bare JSON array of records.
 			var arr []json.RawMessage
-			if err := json.Unmarshal(trimmed, &arr); err == nil {
+			if err := decodeOnce(trimmed, &arr); err == nil {
 				var out []extractedRecord
 				for _, e := range arr {
-					out = append(out, unwrap(e, inherited, dropped)...)
+					out = append(out, unwrap(e, inherited, depth+1, st)...)
+					if st.overflow {
+						return out
+					}
 				}
 				return out
 			}
 		}
-		*dropped++
+		st.dropped++
 		return nil
 	}
 
 	var env envelope
-	if err := json.Unmarshal(trimmed, &env); err == nil {
+	if err := decodeOnce(trimmed, &env); err == nil {
 		// A HEC/batch wrapper's "time"/"fields.recorded" sibling is the event
 		// time; prefer it over an inherited time when propagating down to the
 		// record(s) it carries. Applied to BOTH the {"logs":[...]} and {"event":...}
@@ -809,16 +1032,40 @@ func unwrap(v json.RawMessage, inherited time.Time, dropped *int) []extractedRec
 		if len(env.Logs) > 0 {
 			out := make([]extractedRecord, 0, len(env.Logs))
 			for _, e := range env.Logs {
-				out = append(out, unwrap(e, t, dropped)...)
+				out = append(out, unwrap(e, t, depth+1, st)...)
+				if st.overflow {
+					return out
+				}
 			}
 			return out
 		}
 		if len(bytes.TrimSpace(env.Event)) > 0 {
-			return unwrap(env.Event, t, dropped)
+			return unwrap(env.Event, t, depth+1, st)
 		}
 	}
 	// Plain record object.
+	if !st.take() {
+		return nil
+	}
 	return []extractedRecord{{raw: trimmed, envTime: inherited}}
+}
+
+// decodeOnce decodes the single JSON value in data into out.
+//
+// It reads through a json.Decoder rather than calling json.Unmarshal so each
+// level of the envelope walk consumes exactly the one value it is unwrapping and
+// stops there, instead of requiring (and therefore scanning) the whole slice as a
+// single value. Every `data` this walk sees is already exactly one value, so on
+// today's inputs the two are equivalent in work done — measured, the decoder form
+// is if anything marginally slower, because it copies through an internal buffer.
+//
+// Be clear about what actually fixes #228, then: it is maxUnwrapDepth. Bounding
+// the recursion is what turns O(depth x bodySize) into a small constant number of
+// passes. This form is the shape that stays correct if the walk ever has to read
+// a value out of a larger buffer; it is not itself the performance fix, and it
+// should not be described as one.
+func decodeOnce(data []byte, out any) error {
+	return json.NewDecoder(bytes.NewReader(data)).Decode(out)
 }
 
 // envelopeTime extracts the event time from a HEC envelope, preferring the
@@ -893,6 +1140,13 @@ func (s *Server) writeError(w http.ResponseWriter, status int, text string) {
 // Run binds Options.Listen and serves the handler until ctx is canceled, then
 // performs a graceful shutdown. It serves HTTPS when both TLS files are set.
 func (s *Server) Run(ctx context.Context) error {
+	if s.insecureOpen {
+		// Logged once, loudly, at startup: the handler refuses every request in
+		// this state, and an operator staring at 403s deserves to find the reason
+		// in the logs rather than in the source.
+		s.logger.Error("stream: receiver is network-reachable with no streaming.token configured; ALL requests will be refused with 403. Set streaming.token, or bind streaming.listen to a loopback address.",
+			"listen", s.listen)
+	}
 	srv := &http.Server{
 		Addr:              s.listen,
 		Handler:           s.Handler(),

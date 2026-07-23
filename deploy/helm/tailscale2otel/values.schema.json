@@ -605,6 +605,9 @@
                         "max_body_bytes": {
                             "type": "integer"
                         },
+                        "max_concurrent_requests": {
+                            "type": "integer"
+                        },
                         "path": {
                             "type": "string"
                         },
