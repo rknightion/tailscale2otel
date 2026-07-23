@@ -248,6 +248,35 @@ const maxUnwrapDepth = 4
 // not buy.
 const handlerProcessDeadline = 30 * time.Second
 
+// Listener timeouts. readHeaderTimeout and writeTimeout are load-bearing as a
+// PAIR — see writeTimeoutFor — so they live together rather than inline in Run.
+const (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+	// writeGrace is the slack left for actually writing the deadline's 503 after
+	// the worst-case moment it can fire.
+	writeGrace = 10 * time.Second
+)
+
+// writeTimeoutFor returns the listener write deadline that lets the process
+// deadline's 503 actually reach the client (#232).
+//
+// The two clocks do not start together. http.Server arms the write deadline when
+// a request's headers START arriving; http.TimeoutHandler arms its own when
+// ServeHTTP is ENTERED, which is up to readHeaderTimeout later. So the deadline
+// can fire as late as readHeaderTimeout+d on the connection's clock, and a write
+// window merely equal to d (the pre-#232 30s/30s pairing) is always closed first
+// — the client got a dropped connection instead of a diagnosable 503.
+//
+// Deriving the value rather than writing a second constant is the point: the two
+// numbers look independently reasonable, so a future tidy-up could re-align them
+// and silently reintroduce #232. TestServerTimeouts_WriteWindowOutlastsProcessDeadline
+// pins the invariant.
+func writeTimeoutFor(d time.Duration) time.Duration {
+	return readHeaderTimeout + d + writeGrace
+}
+
 // defaultMaxConcurrentRequests is the aggregate admission budget used when
 // Options.MaxConcurrentRequests is 0 (#209): at most this many handlers may be
 // buffering a request body at once, so worst-case buffered memory is bounded by
@@ -310,6 +339,10 @@ type Server struct {
 	// other hosts can reach, i.e. it would ingest unauthenticated data from the
 	// network. The handler refuses every request in that state (fail closed).
 	insecureOpen bool
+	// processDeadline is handlerProcessDeadline in production. It is a field only
+	// so tests can drive the deadline/write-window interaction (#232) in
+	// milliseconds instead of waiting out the real 30s budget.
+	processDeadline time.Duration
 
 	flowProc  *flowlog.Processor
 	auditProc *audit.Processor
@@ -362,12 +395,13 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		// forgets streaming.token gets a refusal rather than an open ingest
 		// endpoint. listenaddr.IsLoopback itself fails closed on anything it
 		// cannot classify.
-		insecureOpen: opts.Token == "" && !listenaddr.IsLoopback(opts.Listen),
-		flowProc:     flowProc,
-		auditProc:    auditProc,
-		emitter:      e,
-		logger:       logger,
-		onIngest:     opts.OnIngest,
+		insecureOpen:    opts.Token == "" && !listenaddr.IsLoopback(opts.Listen),
+		processDeadline: handlerProcessDeadline,
+		flowProc:        flowProc,
+		auditProc:       auditProc,
+		emitter:         e,
+		logger:          logger,
+		onIngest:        opts.OnIngest,
 	}
 	for _, o := range options {
 		o(s)
@@ -382,7 +416,34 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(s.path, s.handle)
 	// Wrapped here rather than in Run so httptest-driven callers get the same
 	// bound as a real listener.
-	return withProcessDeadline(mux, handlerProcessDeadline)
+	d := s.processDeadline
+	if d <= 0 {
+		// A zero-value Server (constructed literally rather than via New) would
+		// otherwise get a 0 deadline, which TimeoutHandler treats as "expire
+		// immediately" and would 503 every request.
+		d = handlerProcessDeadline
+	}
+	return withProcessDeadline(mux, d)
+}
+
+// httpServer builds the listener's http.Server. Split out of Run so the timeout
+// set is constructed in exactly one place and can be asserted directly (#232) —
+// the write window has to be derived from the process deadline, and a second
+// hand-written copy of these values in a test would not catch them drifting.
+func (s *Server) httpServer() *http.Server {
+	d := s.processDeadline
+	if d <= 0 {
+		d = handlerProcessDeadline
+	}
+	return &http.Server{
+		Addr:              s.listen,
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		// Derived, never a bare constant: see writeTimeoutFor (#232).
+		WriteTimeout: writeTimeoutFor(d),
+		IdleTimeout:  idleTimeout,
+	}
 }
 
 // withProcessDeadline bounds how long the receiver takes to ANSWER a request.
@@ -1147,14 +1208,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.logger.Error("stream: receiver is network-reachable with no streaming.token configured; ALL requests will be refused with 403. Set streaming.token, or bind streaming.listen to a loopback address.",
 			"listen", s.listen)
 	}
-	srv := &http.Server{
-		Addr:              s.listen,
-		Handler:           s.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	srv := s.httpServer()
 
 	errCh := make(chan error, 1)
 	go func() {
