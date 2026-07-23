@@ -268,10 +268,11 @@ Splunk-HEC sink on startup instead of configuring the stream by hand. It is off 
 > Note: Tailscale does not publicly document the exact HEC payload envelope; the receiver parses
 > defensively and the envelope should be confirmed by capturing a live stream in your environment.
 
-> Security: an empty `webhook.secret` skips HMAC verification and an empty `streaming.token` disables
-> receiver auth. Set these via `TS2OTEL_WEBHOOK__SECRET` and `TS2OTEL_STREAMING__TOKEN` — an env var
-> that is not set resolves to empty and silently disables auth, so double-check the variable names
-> (a typo is logged at startup as a WARN). `streaming.auto_configure` overwrites the tailnet's
+> Security: an empty `webhook.secret` skips HMAC verification, so unauthenticated POSTs are accepted.
+> An empty `streaming.token` instead fails closed — on a non-loopback `streaming.listen` the HEC
+> receiver refuses every request with 403, so the symptom is missing logs rather than forged ones.
+> Set these via `TS2OTEL_WEBHOOK__SECRET` and `TS2OTEL_STREAMING__TOKEN` — an env var that is not set
+> resolves to empty, so double-check the variable names (a typo is logged at startup as a WARN). `streaming.auto_configure` overwrites the tailnet's
 > existing log-streaming sink. The exported flow/audit telemetry also carries IPs, ports, device
 > names, and user identities. See [`SECURITY.md`](SECURITY.md) for the full data-handling and
 > receiver-auth notes.

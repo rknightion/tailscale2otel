@@ -92,7 +92,10 @@ noted in `config.example.yaml`):
 
 - Leaving `webhook.secret` empty **skips HMAC verification entirely** —
   unauthenticated POSTs are accepted.
-- Leaving `streaming.token` empty **disables receiver authentication**.
+- Leaving `streaming.token` empty is **refused rather than accepted** on a
+  network-reachable bind: the HEC receiver answers every request with HTTP 403 and logs an
+  ERROR at startup. It stays open only on a loopback `streaming.listen`. This fails closed,
+  so a missing token costs you ingestion, not silent acceptance of forged records.
 - Leaving `prometheus.auth.token` empty **serves `/metrics` unauthenticated** — every
   series, including device hostnames, flow identifiers, and the tailnet name, to anyone
   who can reach the port (`prometheus.listen`, default `:2112`). A startup warning fires

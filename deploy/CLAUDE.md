@@ -68,10 +68,12 @@ Bump `Chart.yaml` `version` on any chart change; `appVersion` tracks the app ver
 The chart intentionally ships **no `Service`**. tailscale2otel is a singleton poller whose normal
 traffic is **outbound only** (it polls the Tailscale API and pushes OTLP); nothing needs to reach it
 in the default deployment. Every inbound listener — `admin` (probes/status), `prometheus` (`/metrics`),
-`streaming` (HEC receiver), `webhook` — is **opt-in and off by default**, and the streaming/webhook
-receivers fail *open* (unauthenticated) when their token/secret is empty. A default Service that
-exposed those ports would risk publishing an unauthenticated receiver, so the safe default is to expose
-nothing. Liveness/readiness use the admin port directly (no Service needed). Operators who enable a
+`streaming` (HEC receiver), `webhook` — is **opt-in and off by default**. The `webhook` receiver still
+fails *open* (an empty `webhook.secret` skips HMAC verification), and `prometheus` serves every series
+unauthenticated when `prometheus.auth.token` is empty. The `streaming` receiver and the `admin` status
+page now fail *closed* on a non-loopback bind with no credential (403), but a Service that exposed
+the webhook or Prometheus port would still risk publishing an unauthenticated endpoint, so the safe
+default is to expose nothing. Liveness/readiness use the admin port directly (no Service needed). Operators who enable a
 listener should expose **only that one** via their own `Service`/`Ingress`/`ServiceMonitor` (and set
 the matching `*.auth.token` / `*.secret`). A future opt-in, per-listener `service.enabled` block could
 be added if demand warrants — but it must default off and never map a receiver port without its

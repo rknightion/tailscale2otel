@@ -33,7 +33,7 @@ streaming:
   enabled: true
   listen: ":8088"                    # bind address for the receiver
   path: /services/collector/event    # HEC endpoint path (Tailscale POSTs here)
-  token: ""                          # set via TS2OTEL_STREAMING__TOKEN (empty = unauthenticated, WARN)
+  token: ""                          # set via TS2OTEL_STREAMING__TOKEN (empty on a non-loopback listen = every request REFUSED with 403)
   public_url: ""                     # externally reachable URL; required only when auto_configure: true
   tls:
     cert_file: ""                    # HTTPS cert (Tailscale requires HTTPS; `tailscale cert` works for private endpoints)
@@ -99,8 +99,8 @@ webhook:
 
 ## Security notes
 
-!!! danger "Empty credentials silently disable auth"
-    Both receivers use **opt-in authentication**: an empty `streaming.token` disables HEC receiver authentication, and an empty `webhook.secret` skips HMAC verification entirely — unauthenticated POSTs are then accepted. Always set these when exposing a receiver, especially on a wildcard bind or without TLS.
+!!! danger "An empty webhook secret silently disables auth; an empty streaming token breaks ingestion"
+    The two receivers behave differently. An empty `webhook.secret` **skips HMAC verification entirely**, so unauthenticated POSTs are accepted — set it before exposing the webhook. An empty `streaming.token` **fails closed** instead: on any non-loopback `streaming.listen` the HEC receiver refuses every request with HTTP 403 and logs an ERROR at startup, so the symptom is "no logs arriving", not silent acceptance of forged records. An empty token is honoured only on a loopback bind.
 
     These values are set most safely via environment variables (`TS2OTEL_STREAMING__TOKEN`, `TS2OTEL_WEBHOOK__SECRET`). A mistyped variable name (e.g. `TS2OTEL_WEBHOOK__SECRT`) leaves the value empty rather than failing loudly — the startup log WARNs on any `TS2OTEL_*` variable that matches no config key, so double-check that the credentials are actually set.
 

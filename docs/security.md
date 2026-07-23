@@ -94,7 +94,12 @@ it (these behaviours are also noted in
 
 - Leaving `webhook.secret` empty **skips HMAC verification entirely** — unauthenticated
   POSTs are accepted.
-- Leaving `streaming.token` empty **disables receiver authentication**.
+- Leaving `streaming.token` empty is **refused rather than accepted** on a network-reachable
+  bind: the HEC receiver answers every request with HTTP 403 and logs an ERROR at startup. It
+  stays open only on a loopback `streaming.listen`. This fails closed, so a missing token
+  costs you ingestion, not silent acceptance of forged records.
+- Leaving `admin.auth.token` empty likewise **refuses** the status page and its JSON APIs with
+  HTTP 403 on any non-loopback `admin.listen` (`/healthz` and `/readyz` stay open).
 
 !!! danger "Always set credentials before exposing a receiver"
     Always set these when exposing a receiver, especially on a wildcard/all-interfaces bind
