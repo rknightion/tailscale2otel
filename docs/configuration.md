@@ -789,14 +789,27 @@ internet.
 | `admin.listen` | `:9091` | Listen address. For defense-in-depth bind to loopback (`127.0.0.1:9091`) or a tailnet IP. |
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
 | `admin.status_refresh_interval` | `5s` | How often the status page's JS re-polls `/api/status.json` to patch the live view. The 1s freshness ticker is independent. |
-| `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. `/healthz` and `/readyz` are never gated. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
+| `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. When **empty**, the status page and JSON APIs are served only on a **loopback** `admin.listen`; on any other bind they are refused with HTTP 403 (see below). `/healthz` and `/readyz` are never gated either way. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
 | `admin.auth.token_file` | `""` | Read `admin.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `admin.tls.cert_file` | `""` | HTTPS certificate for the admin server. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |
 | `admin.tls.key_file` | `""` | HTTPS key for `admin.tls.cert_file`. Both paths must exist and be readable at startup. |
 
-> **WARN (advisory):** if `landing_page` is served on a wildcard (all-interfaces) bind with no
-> `admin.auth.token`, a startup warning fires — the page exposes internal state to anyone who can
-> reach the port. Set a token or bind to loopback/tailnet.
+> **The status page fails closed.** With no `admin.auth.token`, the landing page and every JSON API
+> (`/`, `/api/status.json`, `/api/cardinality.json`, `/api/config.json`, `/api/rdns/purge`) are served
+> only when `admin.listen` is a **loopback** address. On any other bind they are refused with **HTTP
+> 403** (no `WWW-Authenticate` challenge — this is misconfiguration, not a missing credential, and a
+> 401 would make browsers prompt for a password that does not exist), a startup **WARN** fires, and
+> each refusal is counted with `reason=auth_required`.
+>
+> This matters because `/api/status.json` otherwise discloses, with no credential, every observed
+> device's name, hostname, OS version, user, addresses and tags — across **all** tailnets in
+> multi-tailnet/MSP mode — plus the OTLP endpoint, the TLS-insecure flag and the enabled collectors.
+> A tailnet address counts as reachable, not loopback: every peer on the tailnet can connect to it.
+>
+> `/healthz` and `/readyz` are registered outside the auth wrapper and stay open on every bind, so
+> container and Kubernetes probes are unaffected. Defaults are unchanged (`admin.listen: ":9091"`) —
+> an existing deployment still starts; only the data-bearing endpoints go dark until you set a token
+> or move to loopback.
 
 ---
 

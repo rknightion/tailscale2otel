@@ -15,7 +15,8 @@ import (
 )
 
 func TestStatusPage_HTMLRenders(t *testing.T) {
-	cfg := config.Default() // landing_page defaults to true
+	cfg := config.Default()             // landing_page defaults to true
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
@@ -47,7 +48,9 @@ func TestStatusPage_HTMLRenders(t *testing.T) {
 }
 
 func TestStatusPage_UnknownPath404(t *testing.T) {
-	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
@@ -60,6 +63,7 @@ func TestStatusPage_UnknownPath404(t *testing.T) {
 
 func TestStatusJSON_Shape(t *testing.T) {
 	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
@@ -104,7 +108,9 @@ func TestStatusJSON_Shape(t *testing.T) {
 // field names — the page's chart registrations read these keys, so a rename
 // silently blanks the charts.
 func TestStatusJSON_ThroughputAndFleetFields(t *testing.T) {
-	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	// One sample so the trend series carry data rather than a bare null.
 	a.runtimeHist.sample(time.Now(), samplerTick{
 		emit:  telemetry.EmitStats{MetricPoints: 3, LogRecords: 1},
@@ -154,6 +160,7 @@ func TestStatusJSON_ThroughputAndFleetFields(t *testing.T) {
 
 func TestStatusPage_RedactsSecrets(t *testing.T) {
 	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 	cfg.Tailscale.Auth.APIKey = "tskey-SECRETAPIKEY"
 	cfg.Tailscale.Auth.OAuth.ClientSecret = "SECRETOAUTH"
 	cfg.OTLP.GrafanaCloud.Token = "SECRETGCTOKEN"
@@ -267,7 +274,9 @@ func TestAdminServer_ReadyzReadyWithNoCollectors(t *testing.T) {
 }
 
 func TestAdminServer_CardinalityJSON(t *testing.T) {
-	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/cardinality.json", nil)
@@ -294,7 +303,9 @@ func TestAdminServer_CardinalityJSON(t *testing.T) {
 }
 
 func TestAdminServer_ConfigJSON(t *testing.T) {
-	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config.json", nil)
@@ -314,7 +325,9 @@ func TestAdminServer_ConfigJSON(t *testing.T) {
 
 func TestAdminServer_PprofGatedByConfig(t *testing.T) {
 	t.Run("disabled -> 404", func(t *testing.T) {
-		a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+		cfg := config.Default()
+		cfg.Admin.Listen = "127.0.0.1:9091" // loopback: reach handleIndex's 404, not the auth gate (#227)
+		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 		srv := a.buildAdminServer()
 		req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
 		w := httptest.NewRecorder()
@@ -325,6 +338,7 @@ func TestAdminServer_PprofGatedByConfig(t *testing.T) {
 	})
 	t.Run("enabled -> 200", func(t *testing.T) {
 		cfg := config.Default()
+		cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 		cfg.Profiling.Pprof.Enabled = true
 		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 		srv := a.buildAdminServer()

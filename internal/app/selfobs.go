@@ -79,6 +79,10 @@ const (
 	attrReason               = "reason"
 	reasonMissingCredentials = "missing_credentials"
 	reasonBadCredentials     = "bad_credentials"
+	// reasonAuthRequired marks a rejection caused by admin.auth.token being
+	// unset on a non-loopback bind (#227) — misconfiguration, not a bad or
+	// missing credential presented by the caller.
+	reasonAuthRequired = "auth_required"
 )
 
 // emitAdminAuthRejected records one tailscale2otel.admin.auth.rejected increment

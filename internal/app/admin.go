@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v2/internal/listenaddr"
 )
 
 // registerProbes registers the liveness (/healthz) and readiness (/readyz)
@@ -61,16 +62,38 @@ func adminAuthorized(r *http.Request, token string) bool {
 }
 
 // requireAdminAuth wraps next so it is reachable only with the configured admin
-// token. When no token is configured it returns next unchanged: the status page
-// is opt-in (Warnings advises configuring a token on an exposed bind), and pprof
-// cannot reach an untokened wrapper because Validate requires a token whenever
-// pprof is enabled. On failure it sends a Basic-auth challenge so browsers
-// prompt, records the rejection, and returns 401. The /healthz and /readyz
-// probes are registered separately and never wrapped.
+// token. When no token is configured it fails CLOSED unless the admin listener
+// is bound to loopback (#227): a wildcard/tailnet bind with no token would
+// otherwise disclose the full device inventory (and config shape) to any host
+// that can reach the port. A loopback bind stays usable without a credential —
+// only the local host can reach it, so that is the deliberate escape hatch.
+// pprof cannot reach the untokened branch at all: Validate requires a token
+// whenever pprof is enabled, regardless of bind. On an auth failure (wrong bind,
+// wrong/missing credential) it records the rejection reason and responds:
+//   - no token configured, non-loopback bind: 403 plain text naming both
+//     remedies (set admin.auth.token, or bind admin.listen to loopback). No
+//     WWW-Authenticate challenge — this is misconfiguration, not a missing
+//     credential, and a 401 would make a browser prompt for a password that
+//     does not exist.
+//   - token configured but the caller's credential is wrong/absent: 401 with a
+//     Basic-auth challenge, as before.
+//
+// The /healthz and /readyz probes are registered separately and never wrapped.
 func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 	token := a.cfg.Admin.Auth.Token.Reveal()
 	if token == "" {
-		return next
+		if listenaddr.IsLoopback(a.cfg.Admin.Listen) {
+			return next
+		}
+		return func(w http.ResponseWriter, r *http.Request) {
+			a.adminAuthRejected(reasonAuthRequired)
+			a.logger.Warn("admin request rejected: no admin.auth.token configured on a network-reachable bind",
+				"reason", reasonAuthRequired, "path", r.URL.Path, "listen", a.cfg.Admin.Listen,
+				"remedy", "set admin.auth.token, or bind admin.listen to loopback (127.0.0.1 or localhost)")
+			http.Error(w,
+				"admin access refused: set admin.auth.token, or bind admin.listen to loopback (127.0.0.1 or localhost)",
+				http.StatusForbidden)
+		}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !adminAuthorized(r, token) {

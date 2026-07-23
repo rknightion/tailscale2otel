@@ -75,12 +75,78 @@ func TestAdminAuth_StatusPageRejectsWrongToken(t *testing.T) {
 	}
 }
 
-func TestAdminAuth_NoTokenStaysOpen(t *testing.T) {
-	// Default config has no token: the status page is opt-in and stays open.
-	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+func TestAdminAuth_DefaultConfigNoTokenIsRejected(t *testing.T) {
+	// Default config binds the wildcard :9091 with no token: this must now fail
+	// closed (#227) rather than serve the status page to any network peer.
+	cfg := config.Default()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+	for _, path := range []string{"/", "/api/status.json"} {
+		w := do(srv, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusForbidden {
+			t.Errorf("GET %s on default config (no token, wildcard bind) = %d, want 403", path, w.Code)
+		}
+		// This is misconfiguration, not a missing credential: no Basic challenge,
+		// so a browser does not prompt for a password that does not exist.
+		if got := w.Header().Get("WWW-Authenticate"); got != "" {
+			t.Errorf("GET %s set WWW-Authenticate=%q, want none (403, not 401)", path, got)
+		}
+	}
+}
+
+func TestAdminAuth_ProbesStayOpenWhenAuthRequired(t *testing.T) {
+	// Even when the status page/API is fail-closed for lack of a token, the
+	// probes registered outside requireAdminAuth must stay open (never gated).
+	// /healthz is unconditional; /readyz reflects real startup/receiver state
+	// (#57) so a fresh test app may report unready, but never 401/403.
+	cfg := config.Default()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	w := do(srv, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("GET /healthz on default config = %d, want 200 (never gated)", w.Code)
+	}
+
+	w = do(srv, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code == http.StatusForbidden || w.Code == http.StatusUnauthorized {
+		t.Errorf("GET /readyz on default config = %d, want NOT 401/403 (probes are never auth-gated)", w.Code)
+	}
+}
+
+func TestAdminAuth_LoopbackBindNoTokenStaysOpen(t *testing.T) {
+	// A loopback bind with no token is the deliberate escape hatch: only the
+	// local host can reach it, so it stays usable without a credential.
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091"
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 	if w := do(srv, httptest.NewRequest(http.MethodGet, "/", nil)); w.Code != http.StatusOK {
-		t.Errorf("GET / with no token configured = %d, want 200 (opt-in)", w.Code)
+		t.Errorf("GET / on loopback bind with no token = %d, want 200 (opt-in escape hatch)", w.Code)
+	}
+}
+
+func TestAdminAuth_NoTokenRejectionEmitsMetric(t *testing.T) {
+	rec := telemetrytest.New()
+	cfg := config.Default() // self-observability defaults on; wildcard bind, no token
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+	srv := a.buildAdminServer()
+
+	do(srv, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	pts := rec.MetricPoints("tailscale2otel.admin.auth.rejected")
+	if len(pts) == 0 {
+		t.Fatal("expected tailscale2otel.admin.auth.rejected to be emitted when no token is configured on a non-loopback bind")
+	}
+	var total float64
+	for _, p := range pts {
+		total += p.Value
+		if p.Attrs["reason"] != "auth_required" {
+			t.Errorf("reason = %q, want auth_required", p.Attrs["reason"])
+		}
+	}
+	if total != 1 {
+		t.Errorf("rejected total = %v, want 1", total)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 func rdnsTestApp(t *testing.T) *App {
 	t.Helper()
 	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 	cfg.Tailscale.Tailnet = "example.com"
 	cfg.Enrichment.ReverseDNS.Enabled = true
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
@@ -111,7 +112,9 @@ func TestRDNSPurge_RejectsCrossOrigin(t *testing.T) {
 
 func TestRDNSPurge_DisabledReportsNotEnabled(t *testing.T) {
 	// Default config has reverse_dns disabled, so a.rdnsCache is nil.
-	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/rdns/purge", nil)

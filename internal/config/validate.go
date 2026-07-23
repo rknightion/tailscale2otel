@@ -80,16 +80,19 @@ func (c *Config) Warnings() []string {
 	}
 
 	// The admin status page (/ and /api/status.json) exposes internal state
-	// (collectors, device names, the config shape). When it is served on a
-	// wildcard (all-interfaces) bind with no admin.auth.token, anyone who can
-	// reach the port can read it. Steer the operator toward a token or a
-	// restricted (loopback/tailnet) bind. pprof is handled more strictly in
+	// (collectors, device names, the config shape). On a network-reachable bind
+	// with no admin.auth.token it no longer serves that to anyone who asks (#227):
+	// the handler now REFUSES with 403. Warn so the operator knows the page is
+	// dark and why, rather than discovering it via a 403 in a browser. Note this
+	// fires on any non-loopback bind, not just a wildcard one — a tailnet address
+	// is reachable by every peer on the tailnet. pprof is handled more strictly in
 	// Validate (it errors rather than warns).
-	if c.Admin.Enabled && c.Admin.LandingPage && c.Admin.Auth.Token == "" && isWildcardListen(c.Admin.Listen) {
-		w = append(w, "admin.landing_page is served on "+c.Admin.Listen+" without admin.auth.token: "+
-			"the status page exposes internal state (collectors, device names, config shape) to anyone "+
-			"who can reach the port. Set admin.auth.token, or bind admin.listen to a loopback/tailnet "+
-			"address (e.g. 127.0.0.1:9091).")
+	if c.Admin.Enabled && c.Admin.LandingPage && c.Admin.Auth.Token == "" && !listenaddr.IsLoopback(c.Admin.Listen) {
+		w = append(w, "admin.landing_page is served on the network-reachable bind "+c.Admin.Listen+
+			" without admin.auth.token: the status page and its JSON APIs are REFUSED with HTTP 403 "+
+			"(they would otherwise expose collectors, device names and the config shape to anyone who "+
+			"can reach the port). /healthz and /readyz are unaffected. Set admin.auth.token, or bind "+
+			"admin.listen to loopback (e.g. 127.0.0.1:9091).")
 	}
 
 	// An enabled ingestion receiver with no credential accepts UNAUTHENTICATED
