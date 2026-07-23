@@ -312,6 +312,12 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		if err != nil {
 			return nil, fmt.Errorf("trace exporter: %w", err)
 		}
+		// Spans obey the same PII contract as metrics and logs (#212). This has to
+		// wrap the EXPORTER rather than run as a span processor: OnStart is too
+		// early (attributes are set afterwards) and OnEnd gets an immutable
+		// snapshot — see the piiSpanExporter doc comment in trace.go. A no-op
+		// filter (no category disabled) returns traceExp unchanged.
+		traceExp = newPIISpanExporter(traceExp, opts.PIIFilter)
 		tpOpts := []sdktrace.TracerProviderOption{
 			sdktrace.WithResource(logRes),
 			sdktrace.WithBatcher(traceExp),

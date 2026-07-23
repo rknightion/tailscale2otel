@@ -27,6 +27,13 @@ var keyCategory = map[string]Category{
 	"tailscale.key.owner":              CatUserIDs,         // #165: key owner userId on per-key gauges + keys.by_owner
 	"value":                            CatFreeTextDetails,
 	"tailscale.acl.rule":               CatFreeTextDetails, // J-B1 risky-rule src/dst contents
+
+	// Span-only keys (#212). Spans go through the same policy as metrics and logs
+	// via telemetry.piiSpanExporter, so these must be classified here too.
+	"url.full":             CatEndpointPaths,   // full request URL: carries the tailnet name + device id
+	"tailscale.endpoint":   CatEndpointPaths,   // elided endpoint label (same class as the "endpoint" metric attr)
+	"exception.message":    CatFreeTextDetails, // RecordError: sanitized error text, may embed identifiers
+	"exception.stacktrace": CatFreeTextDetails, // RecordError(WithStackTrace): file paths
 }
 
 // ipValueKeys are keys whose VALUE is an IP that must be range-classified. For mixed
@@ -113,6 +120,23 @@ var nonIdentifier = map[string]bool{
 	"tailscale.health.type": true, // #171: tailscaled health-message type (code-defined enum)
 	"tailscale.path":        true, // #171: folded traffic path (direct|derp|peer_relay|other)
 	"tailscale.drop.reason": true, // #171: bounded drop-reason admit-set (acl|error|other)
+
+	// Span-only keys (#212) — see the span block in keyCategory above for the
+	// identifier-bearing ones. Everything here is a method, a count, a duration or
+	// a code-defined enum.
+	"server.address":               true, // control-plane API host (api.tailscale.com), not a tailnet identifier
+	"http.request.method":          true, // GET/POST/…
+	"http.request.resend_count":    true, // numeric retry count
+	"http.request.body.size":       true, // numeric byte count (stream + webhook receivers)
+	"tailscale.rate_limit.wait_ms": true, // numeric limiter wait
+	"tailscale2otel.provider":      true, // control plane: tailscale|headscale (const span/metric attr)
+	"tailscale.stream.flows":       true, // numeric record counts on the receiver span
+	"tailscale.stream.audits":      true,
+	"tailscale.stream.skipped":     true,
+	"tailscale.webhook.events":     true, // numeric event count on the webhook span
+	"exception.type":               true, // Go error type name recorded by RecordError
+	"attempt":                      true, // retry span-event: numeric attempt index
+	"sleep_ms":                     true, // retry span-event: numeric backoff
 }
 
 // categoryForIPClass maps an ipClass to the toggle category.

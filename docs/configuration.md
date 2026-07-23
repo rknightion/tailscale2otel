@@ -718,10 +718,23 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 ## `pii_filter` — PII / identifier redaction
 
 Runtime opt-out toggles for each identifier category. All 13 categories default to **`true`**
-(identifiers are emitted as-is). Set a category to `false` to drop those identifiers from metrics
-and logs at collection time. Gauges whose only meaningful identity is a redacted category are
-suppressed entirely. Categories are independent — you can redact external IPs while keeping
+(identifiers are emitted as-is). Set a category to `false` to drop those identifiers from metrics,
+logs **and traces** at collection time. Gauges whose only meaningful identity is a redacted category
+are suppressed entirely. Categories are independent — you can redact external IPs while keeping
 Tailscale IPs, for example.
+
+> **Traces are covered by the same policy** (since #212). Span attributes whose key maps to a
+> disabled category are dropped before export, and redacted values are additionally scrubbed from the
+> span **status description** and from **span-event** attributes — which is what keeps a full API URL
+> out of `exception.message` when a request fails. Concretely, `endpoint_paths: false` removes
+> `url.full` and `tailscale.endpoint` from API spans, and `hostnames: false` removes `host.name`.
+> When no category is disabled the filter is not installed at all, so the default configuration pays
+> nothing and exported spans are byte-identical.
+>
+> Two things traces do **not** filter: **span names** are safe by construction rather than by policy
+> (`endpointLabel` already strips the tailnet segment and elides variable ID segments before the name
+> is built), and **resource attributes** go through the separate existing resource gate. If you add a
+> span name that interpolates an identifier, this filter will not catch it.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -734,7 +747,7 @@ Tailscale IPs, for example.
 | `pii_filter.internal_ips` | `true` | RFC 1918 / ULA / link-local addresses (non-Tailscale private ranges). |
 | `pii_filter.external_ips` | `true` | Public/routable (non-private) IP addresses. |
 | `pii_filter.service_addrs` | `true` | VIP service names from the Tailscale Services collector. |
-| `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability spans and metrics. |
+| `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability metrics and spans. The path embeds the tailnet name and device IDs, so `false` drops `url.full` and `tailscale.endpoint` from exported spans and scrubs the URL out of span status descriptions and error events. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
 | `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical — they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |
 | `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. |
