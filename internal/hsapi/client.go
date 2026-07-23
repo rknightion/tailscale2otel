@@ -6,7 +6,6 @@ package hsapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,7 +53,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("headscale GET %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return decodeJSONLimited(resp.Body, maxResponseBytes, out)
 }
 
 // Nodes lists all nodes (GET /api/v1/node).

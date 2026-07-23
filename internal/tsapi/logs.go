@@ -2,7 +2,6 @@ package tsapi
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -55,5 +54,5 @@ func (c *Client) getJSON(ctx context.Context, urlStr string, out any) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<14))
 		return &StatusError{Method: http.MethodGet, URL: urlStr, Code: resp.StatusCode, Body: string(body)}
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return decodeJSONLimited(resp.Body, maxResponseBytes, out)
 }
