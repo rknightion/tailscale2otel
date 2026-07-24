@@ -91,14 +91,27 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 |---|---|---|---|
 | `TailnetLockErrors` | warning | ✅ on | a device has a tailnet-lock error (e.g. unsigned node) |
 | `AuditConfigChangeWARN` (Loki) | warning | ✅ on | a `tailscale.config.audit` log was emitted at WARN (change carried an error) |
-| `DeviceKeysExpiring7d` | warning | ✅ on | one or more device node keys expire within **7 days** (baseline warning tier below `DeviceKeyExpiringCritical`) |
-| `DeviceKeyExpiringCritical` | critical | ✅ on | a device node key expires within **48h** (critical tier above the 7-day warning) |
+| `DeviceKeysExpiring7d` | warning | ✅ on | one or more device node keys expire within **7 days** — tagged **and** untagged; the only tier covering untagged devices |
+| `DeviceKeyExpiringCritical` | critical | ✅ on | a **tagged** device's node key expires within **48h** (`tailscale_tags!=""`). Untagged/user-owned devices are excluded by design — see the note below |
 | `AuthKeysExpiring7d` | warning | ✅ on | one or more auth/API keys expire within **7 days** (baseline warning tier below `AuthKeyExpiringCritical`) |
 | `AuthKeyExpiringCritical` | critical | ✅ on | an auth/API key expires within **48h** |
 | `PostureAutoUpdateCoverageLow` | warning | ✅ on | < 80% of devices have client auto-update enabled |
 | `PostureEncryptionCoverageLow` | warning | ⏸ off | < 80% of devices report an encrypted state store |
 | `DevicesNeedingUpdate` | info | ⏸ off | > 5 devices have a client update available |
 | `TailnetContactUnverified` | warning | ✅ on | a tailnet contact is unverified (security notices may not be delivered) |
+
+> **Why `DeviceKeyExpiringCritical` only pages on tagged devices.** Node-key expiry is
+> real either way — a Tailscale node key does **not** silently auto-renew, and the
+> device drops off the tailnet at expiry until someone completes an interactive
+> re-auth. What differs is who is there to do it. An untagged, user-owned device
+> warns its signed-in user in the client (and Tailscale emails them); re-authing is
+> routine, self-service, and recurs every key lifetime — not worth a page. A **tagged**
+> device is typically headless: nobody sees the prompt, so expiry becomes an outage.
+> Tailscale also disables key expiry on tagged devices by default, and the
+> `tailscale.device.key.expiry` gauge is only emitted when key expiry is *enabled*
+> (`internal/collector/devices/devices.go`) — so a tagged device with a live expiry
+> series has had expiry explicitly re-enabled, which makes it the high-signal case.
+> Untagged devices remain covered by the warning-tier `DeviceKeysExpiring7d`.
 
 ### `tailscale2otel-integrations` — integration & delivery health
 

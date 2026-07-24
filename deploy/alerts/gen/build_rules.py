@@ -392,13 +392,23 @@ def groups():
               "A tailscale.config.audit log was emitted at WARN (the change carried an error) in the last "
               "10m. Inspect the Configuration audit row on the Security & Audit tab.",
               ds=LOKI, domain="security", paused=False),
-        alert("ts2o-device-key-expiring-critical", "Device key expiring (<48h)",
-              "max by (host_name, host_id, tailscale_user) (tailscale_device_key_expiry_seconds) - time()",
+        alert("ts2o-device-key-expiring-critical", "Tagged device key expiring (<48h)",
+              "max by (host_name, host_id, tailscale_user, tailscale_tags) "
+              "(tailscale_device_key_expiry_seconds{tailscale_tags!=\"\"}) - time()",
               "within_range", [0, 172800], "1h", "critical",
-              "Device node key for {{ $labels.host_name }} expires in <48h",
-              "The Tailscale node key for {{ $labels.host_name }} (user {{ $labels.tailscale_user }}) "
-              "expires within 48h. When it expires the device drops off the tailnet until re-authed. "
-              "Critical tier on top of the 7-day DeviceKeyExpiringSoon warning.",
+              "Tagged device node key for {{ $labels.host_name }} expires in <48h",
+              "The Tailscale node key for the TAGGED device {{ $labels.host_name }} "
+              "(tags {{ $labels.tailscale_tags }}) expires within 48h. When it expires the device drops "
+              "off the tailnet until re-authed, and a tagged node is typically headless/unattended — "
+              "nobody is sitting in front of it to answer the client's reauth prompt, so this needs a "
+              "human to go and re-auth it. Deliberately restricted to tagged devices: Tailscale disables "
+              "key expiry on tagged devices by default, so a tagged device with a live expiry has had it "
+              "re-enabled explicitly and is a real impending outage. UNTAGGED (user-owned) devices are "
+              "excluded on purpose — there the Tailscale client warns the signed-in user and the fix is "
+              "an interactive browser reauth, which is routine rather than pageable; they are covered by "
+              "the warning-tier DeviceKeysExpiring7d instead. Note the underlying gauge is only emitted "
+              "for devices WITHOUT key expiry disabled, so devices in the normal tagged default state "
+              "never produce a series at all.",
               domain="security", paused=False),
         alert("ts2o-auth-key-expiring-critical", "Auth/API key expiring (<48h)",
               "max by (tailscale_key_id, tailscale_key_type, tailscale_key_description) "
@@ -461,7 +471,10 @@ def groups():
               "drop off the tailnet until re-authed. Computed from the per-device key-expiry gauge "
               "(expiry - now within (0, 7d]), so it clears after a key is rotated. Mirrors the "
               "ts2o-rec-keys-expiring-7d recording rule (NOT the cumulative key-expiry histogram buckets, "
-              "which only grow and latch). Warning tier below ts2o-device-key-expiring-critical (48h).",
+              "which only grow and latch). Counts BOTH tagged and untagged devices — this is the only "
+              "tier that covers untagged (user-owned) devices, whose reauth is an interactive prompt to "
+              "the signed-in user and so is deliberately not pageable; the critical 48h tier "
+              "(ts2o-device-key-expiring-critical) is restricted to tagged devices.",
               domain="security", paused=False),
         alert("ts2o-device-attribute-expiring-14d", "Device posture attribute expiring (<14d)",
               "count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and "
