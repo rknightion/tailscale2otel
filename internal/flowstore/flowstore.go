@@ -1,0 +1,629 @@
+// Package flowstore retains recent flow activity in aggregate so the admin
+// flow view can render a tailnet's traffic without a metrics backend in the
+// loop.
+//
+// It is deliberately NOT a second telemetry pipeline. The OTLP path stays the
+// system of record; this holds a bounded, recent, pre-aggregated view for
+// interactive use. Three properties follow from that and must be preserved:
+//
+//   - It never blocks or fails the emit path. Record takes a short lock, does a
+//     handful of map writes, and returns. There is no I/O, no backpressure, and
+//     no error to propagate — an overflowing store drops into an "__other__"
+//     bucket and counts the drop rather than slowing the caller.
+//   - It is bounded in every dimension. The stream receiver is a potentially
+//     unauthenticated ingress, so a flood of unique flow keys must not grow the
+//     store without limit. Every map has an insert-time cap, mirroring the
+//     approach already taken in internal/flowlog/rollup.go.
+//   - It aggregates on the way in, at one-minute resolution. Individual
+//     connections are not retained; a query re-buckets the minutes it needs, so
+//     a wide window costs no extra storage and needs no coarser tier.
+package flowstore
+
+import (
+	"sort"
+	"sync"
+	"time"
+)
+
+// Resolution is the fixed bucket width. Everything is aggregated to the minute
+// on the way in; queries re-bucket upward from there. One minute matches the
+// finest interval a flow record can meaningfully describe (observed capture
+// windows average ~5s but are reported far less regularly) and keeps a day of
+// history to 1440 buckets.
+const Resolution = time.Minute
+
+// Insert-time caps, applied per bucket. These bound peak memory between
+// evictions; anything beyond a cap folds into Other so totals stay exact. They
+// sit far above any legitimate per-minute volume on a real tailnet.
+const (
+	MaxPairsPerBucket = 4000
+	MaxNodesPerBucket = 2000
+	MaxPortsPerBucket = 2000
+	MaxLabelsPerKind  = 500
+)
+
+// Other is the key that overflow folds into, in every dimension. It is
+// deliberately the same sentinel the flow-metric rollup uses, so an operator
+// sees one consistent "everything else" label across the metric and the UI.
+const Other = "__other__"
+
+// Counts is the measured quantity in every dimension of the store. Transmit and
+// receive are kept separate throughout: both are real, independently measured
+// values on this data, and collapsing them loses information.
+type Counts struct {
+	TxBytes int64 `json:"tx_bytes"`
+	RxBytes int64 `json:"rx_bytes"`
+	TxPkts  int64 `json:"tx_packets"`
+	RxPkts  int64 `json:"rx_packets"`
+	Flows   int64 `json:"flows"`
+}
+
+// Bytes is the total volume in both directions.
+func (c Counts) Bytes() int64 { return c.TxBytes + c.RxBytes }
+
+func (c *Counts) add(o Counts) {
+	c.TxBytes += o.TxBytes
+	c.RxBytes += o.RxBytes
+	c.TxPkts += o.TxPkts
+	c.RxPkts += o.RxPkts
+	c.Flows += o.Flows
+}
+
+// Observation is one connection's contribution to the store, as the flow
+// processor already has it: identity resolved, transport named, counters
+// summed. Empty string means "the record did not carry this" — the store
+// preserves that distinction rather than substituting a placeholder, so an
+// absent flow endpoint stays absent in the UI too.
+type Observation struct {
+	// Time is when the traffic occurred (the flow window start), not when the
+	// record was captured.
+	Time        time.Time
+	TrafficType string
+	Transport   string
+	SrcNode     string
+	DstNode     string
+	DstPort     string
+	DstService  string
+	SrcUser     string
+	DstUser     string
+	SrcTags     string
+	DstTags     string
+	SrcOS       string
+	DstOS       string
+	Counts      Counts
+}
+
+// PairKey identifies one directed node-to-node relationship within a traffic
+// type. Direction is preserved: src and dst are not normalised into an
+// unordered pair, because on this data a flow is reported once, by one node,
+// and the direction it reports is real information.
+type PairKey struct {
+	Src         string `json:"src"`
+	Dst         string `json:"dst"`
+	TrafficType string `json:"traffic_type"`
+}
+
+// PortKey identifies a destination service endpoint.
+type PortKey struct {
+	Port      string `json:"port"`
+	Transport string `json:"transport"`
+	Service   string `json:"service"`
+}
+
+// bucket is one minute of aggregated activity.
+type bucket struct {
+	start time.Time
+	total Counts
+
+	pairs map[PairKey]*Counts
+	nodes map[string]*nodeCounts
+	ports map[PortKey]*Counts
+
+	transports   map[string]*Counts
+	trafficTypes map[string]*Counts
+	users        map[string]*Counts
+	tags         map[string]*Counts
+	oses         map[string]*Counts
+
+	// dropped counts observations whose keys overflowed a cap and were folded
+	// into Other. Surfaced so the UI can say so rather than silently implying
+	// complete coverage.
+	dropped int64
+}
+
+// nodeCounts splits a node's activity by role, so the UI can distinguish what a
+// device sent from what it received without inferring it from pair direction.
+type nodeCounts struct {
+	Sent     Counts
+	Received Counts
+}
+
+func newBucket(start time.Time) *bucket {
+	return &bucket{
+		start:        start,
+		pairs:        map[PairKey]*Counts{},
+		nodes:        map[string]*nodeCounts{},
+		ports:        map[PortKey]*Counts{},
+		transports:   map[string]*Counts{},
+		trafficTypes: map[string]*Counts{},
+		users:        map[string]*Counts{},
+		tags:         map[string]*Counts{},
+		oses:         map[string]*Counts{},
+	}
+}
+
+// addLabel accumulates into a bounded label map, folding overflow into Other.
+// An empty key is skipped entirely: "not carried" is not a label value.
+func addLabel(m map[string]*Counts, key string, c Counts, cap int) bool {
+	if key == "" {
+		return false
+	}
+	e, ok := m[key]
+	if !ok {
+		if len(m) >= cap {
+			key = Other
+			e, ok = m[key]
+		}
+		if !ok {
+			e = &Counts{}
+			m[key] = e
+		}
+	}
+	e.add(c)
+	return true
+}
+
+func (b *bucket) record(o Observation) {
+	b.total.add(o.Counts)
+
+	// Pairs. An observation missing either endpoint still contributes to totals
+	// and to every other dimension, but cannot form an edge in the topology.
+	if o.SrcNode != "" && o.DstNode != "" {
+		k := PairKey{Src: o.SrcNode, Dst: o.DstNode, TrafficType: o.TrafficType}
+		e, ok := b.pairs[k]
+		if !ok {
+			if len(b.pairs) >= MaxPairsPerBucket {
+				k = PairKey{Src: Other, Dst: Other, TrafficType: o.TrafficType}
+				b.dropped++
+				e, ok = b.pairs[k]
+			}
+			if !ok {
+				e = &Counts{}
+				b.pairs[k] = e
+			}
+		}
+		e.add(o.Counts)
+	}
+
+	b.addNode(o.SrcNode, o.Counts, true)
+	b.addNode(o.DstNode, o.Counts, false)
+
+	if o.DstPort != "" {
+		k := PortKey{Port: o.DstPort, Transport: o.Transport, Service: o.DstService}
+		e, ok := b.ports[k]
+		if !ok {
+			if len(b.ports) >= MaxPortsPerBucket {
+				k = PortKey{Port: Other, Transport: o.Transport}
+				b.dropped++
+				e, ok = b.ports[k]
+			}
+			if !ok {
+				e = &Counts{}
+				b.ports[k] = e
+			}
+		}
+		e.add(o.Counts)
+	}
+
+	addLabel(b.transports, o.Transport, o.Counts, MaxLabelsPerKind)
+	addLabel(b.trafficTypes, o.TrafficType, o.Counts, MaxLabelsPerKind)
+	addLabel(b.users, o.SrcUser, o.Counts, MaxLabelsPerKind)
+	if o.DstUser != o.SrcUser {
+		addLabel(b.users, o.DstUser, o.Counts, MaxLabelsPerKind)
+	}
+	addLabel(b.tags, o.SrcTags, o.Counts, MaxLabelsPerKind)
+	if o.DstTags != o.SrcTags {
+		addLabel(b.tags, o.DstTags, o.Counts, MaxLabelsPerKind)
+	}
+	addLabel(b.oses, o.SrcOS, o.Counts, MaxLabelsPerKind)
+	if o.DstOS != o.SrcOS {
+		addLabel(b.oses, o.DstOS, o.Counts, MaxLabelsPerKind)
+	}
+}
+
+// addNode accumulates a node's role-split activity. The sender's transmit is
+// the receiver's receive, so the counters are mirrored per role rather than
+// copied — a node's "received" total is what its peers sent to it.
+func (b *bucket) addNode(name string, c Counts, sending bool) {
+	if name == "" {
+		return
+	}
+	e, ok := b.nodes[name]
+	if !ok {
+		if len(b.nodes) >= MaxNodesPerBucket {
+			name = Other
+			b.dropped++
+			e, ok = b.nodes[name]
+		}
+		if !ok {
+			e = &nodeCounts{}
+			b.nodes[name] = e
+		}
+	}
+	if sending {
+		e.Sent.add(c)
+	} else {
+		e.Received.add(Counts{
+			TxBytes: c.RxBytes, RxBytes: c.TxBytes,
+			TxPkts: c.RxPkts, RxPkts: c.TxPkts,
+			Flows: c.Flows,
+		})
+	}
+}
+
+// Memory is an in-memory ring of per-minute buckets. It is the default store:
+// no disk, no configuration, bounded by construction, and lost on restart —
+// which is acceptable because the OTLP backend, not this, is the system of
+// record. Safe for concurrent use.
+type Memory struct {
+	mu       sync.Mutex
+	buckets  map[int64]*bucket
+	capacity int
+	now      func() time.Time
+
+	recorded int64
+	dropped  int64
+}
+
+// NewMemory returns a store retaining at most capacity one-minute buckets.
+// A non-positive capacity selects six hours.
+func NewMemory(capacity int) *Memory {
+	if capacity <= 0 {
+		capacity = int((6 * time.Hour) / Resolution)
+	}
+	return &Memory{
+		buckets:  map[int64]*bucket{},
+		capacity: capacity,
+		now:      time.Now,
+	}
+}
+
+// bucketKey is the minute-aligned Unix timestamp a time falls in.
+func bucketKey(t time.Time) int64 {
+	return t.UTC().Truncate(Resolution).Unix()
+}
+
+// Record accumulates one observation. Observations with no timestamp are
+// stamped with the current time: a record we cannot place in time is still real
+// traffic, and dropping it would understate totals.
+func (m *Memory) Record(o Observation) {
+	if o.Time.IsZero() {
+		o.Time = m.now()
+	}
+	key := bucketKey(o.Time)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b, ok := m.buckets[key]
+	if !ok {
+		b = newBucket(time.Unix(key, 0).UTC())
+		m.buckets[key] = b
+		m.evictLocked()
+	}
+	before := b.dropped
+	b.record(o)
+	m.recorded++
+	m.dropped += b.dropped - before
+}
+
+// evictLocked drops the oldest buckets until the ring is within capacity.
+func (m *Memory) evictLocked() {
+	for len(m.buckets) > m.capacity {
+		var oldest int64
+		first := true
+		for k := range m.buckets {
+			if first || k < oldest {
+				oldest, first = k, false
+			}
+		}
+		delete(m.buckets, oldest)
+	}
+}
+
+// Range is the time span a query covers or a result describes.
+type Range struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
+}
+
+// Query selects a window and the shape of the result.
+type Query struct {
+	// Start/End bound the window. A zero End means "now"; a zero Start means
+	// "everything retained".
+	Start, End time.Time
+	// Step is the timeline resolution. Values below Resolution, or that would
+	// produce more than MaxPoints, are raised to fit.
+	Step time.Duration
+	// TopN bounds each ranked list. Non-positive selects 20.
+	TopN int
+}
+
+// MaxPoints caps timeline length so a wide window cannot produce an unbounded
+// series. The step is raised until the window fits.
+const MaxPoints = 720
+
+// Point is one timeline sample.
+type Point struct {
+	Time   time.Time `json:"time"`
+	Counts Counts    `json:"counts"`
+}
+
+// PairStat, NodeStat, PortStat and LabelStat are the ranked outputs. Each is
+// sorted by total bytes descending, then by key for a stable order when volumes
+// tie — without the tiebreak, equal-volume rows would reshuffle between polls.
+type PairStat struct {
+	PairKey
+	Counts Counts `json:"counts"`
+}
+
+// NodeStat is one device's activity, split by role.
+type NodeStat struct {
+	Node     string `json:"node"`
+	Sent     Counts `json:"sent"`
+	Received Counts `json:"received"`
+}
+
+// Bytes is the node's total volume in both roles.
+func (n NodeStat) Bytes() int64 { return n.Sent.Bytes() + n.Received.Bytes() }
+
+// PortStat is one destination endpoint's activity.
+type PortStat struct {
+	PortKey
+	Counts Counts `json:"counts"`
+}
+
+// LabelStat is one value of a single-dimension breakdown.
+type LabelStat struct {
+	Label  string `json:"label"`
+	Counts Counts `json:"counts"`
+}
+
+// Result is a complete answer to a Query.
+type Result struct {
+	Window       Range       `json:"window"`
+	Step         string      `json:"step"`
+	Totals       Counts      `json:"totals"`
+	Series       []Point     `json:"series"`
+	Pairs        []PairStat  `json:"pairs"`
+	Nodes        []NodeStat  `json:"nodes"`
+	Ports        []PortStat  `json:"ports"`
+	Transports   []LabelStat `json:"transports"`
+	TrafficTypes []LabelStat `json:"traffic_types"`
+	Users        []LabelStat `json:"users"`
+	Tags         []LabelStat `json:"tags"`
+	OSes         []LabelStat `json:"oses"`
+	// Truncated reports observations folded into Other because a cap was hit, so
+	// the UI can say coverage is partial instead of implying it is complete.
+	Truncated int64 `json:"truncated"`
+}
+
+// Query aggregates the retained buckets overlapping the window.
+func (m *Memory) Query(q Query) Result {
+	end := q.End
+	if end.IsZero() {
+		end = m.now()
+	}
+	topN := q.TopN
+	if topN <= 0 {
+		topN = 20
+	}
+	step := q.Step
+	if step < Resolution {
+		step = Resolution
+	}
+	if !q.Start.IsZero() {
+		for span := end.Sub(q.Start); span/step > MaxPoints; span = end.Sub(q.Start) {
+			step *= 2
+		}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	res := Result{
+		Window: Range{Start: q.Start, End: end},
+		Step:   step.String(),
+	}
+
+	pairs := map[PairKey]*Counts{}
+	nodes := map[string]*nodeCounts{}
+	ports := map[PortKey]*Counts{}
+	transports, trafficTypes := map[string]*Counts{}, map[string]*Counts{}
+	users, tags, oses := map[string]*Counts{}, map[string]*Counts{}, map[string]*Counts{}
+	series := map[int64]*Counts{}
+
+	var earliest, latest time.Time
+	for _, b := range m.buckets {
+		if !q.Start.IsZero() && b.start.Before(q.Start) {
+			continue
+		}
+		if b.start.After(end) {
+			continue
+		}
+		if earliest.IsZero() || b.start.Before(earliest) {
+			earliest = b.start
+		}
+		if b.start.After(latest) {
+			latest = b.start
+		}
+
+		res.Totals.add(b.total)
+		res.Truncated += b.dropped
+
+		slot := b.start.Truncate(step).Unix()
+		e, ok := series[slot]
+		if !ok {
+			e = &Counts{}
+			series[slot] = e
+		}
+		e.add(b.total)
+
+		mergeInto(pairs, b.pairs)
+		mergeInto(ports, b.ports)
+		mergeInto(transports, b.transports)
+		mergeInto(trafficTypes, b.trafficTypes)
+		mergeInto(users, b.users)
+		mergeInto(tags, b.tags)
+		mergeInto(oses, b.oses)
+		for k, v := range b.nodes {
+			n, ok := nodes[k]
+			if !ok {
+				n = &nodeCounts{}
+				nodes[k] = n
+			}
+			n.Sent.add(v.Sent)
+			n.Received.add(v.Received)
+		}
+	}
+
+	// Report the window actually covered, so the UI shows the retained span
+	// rather than a requested one the store cannot satisfy.
+	if res.Window.Start.IsZero() {
+		res.Window.Start = earliest
+	}
+	if !latest.IsZero() && latest.Add(Resolution).Before(res.Window.End) {
+		res.Window.End = latest.Add(Resolution)
+	}
+
+	res.Series = buildSeries(series)
+	res.Pairs = topPairs(pairs, topN)
+	res.Nodes = topNodes(nodes, topN)
+	res.Ports = topPorts(ports, topN)
+	res.Transports = topLabels(transports, topN)
+	res.TrafficTypes = topLabels(trafficTypes, topN)
+	res.Users = topLabels(users, topN)
+	res.Tags = topLabels(tags, topN)
+	res.OSes = topLabels(oses, topN)
+	return res
+}
+
+// mergeInto accumulates src into dst, allocating destination entries as needed.
+func mergeInto[K comparable](dst, src map[K]*Counts) {
+	for k, v := range src {
+		e, ok := dst[k]
+		if !ok {
+			e = &Counts{}
+			dst[k] = e
+		}
+		e.add(*v)
+	}
+}
+
+func buildSeries(m map[int64]*Counts) []Point {
+	out := make([]Point, 0, len(m))
+	for ts, c := range m {
+		out = append(out, Point{Time: time.Unix(ts, 0).UTC(), Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Time.Before(out[j].Time) })
+	return out
+}
+
+func topPairs(m map[PairKey]*Counts, n int) []PairStat {
+	out := make([]PairStat, 0, len(m))
+	for k, c := range m {
+		out = append(out, PairStat{PairKey: k, Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Counts.Bytes(), out[j].Counts.Bytes(); a != b {
+			return a > b
+		}
+		if out[i].Src != out[j].Src {
+			return out[i].Src < out[j].Src
+		}
+		if out[i].Dst != out[j].Dst {
+			return out[i].Dst < out[j].Dst
+		}
+		return out[i].TrafficType < out[j].TrafficType
+	})
+	return truncate(out, n)
+}
+
+func topNodes(m map[string]*nodeCounts, n int) []NodeStat {
+	out := make([]NodeStat, 0, len(m))
+	for k, c := range m {
+		out = append(out, NodeStat{Node: k, Sent: c.Sent, Received: c.Received})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Bytes(), out[j].Bytes(); a != b {
+			return a > b
+		}
+		return out[i].Node < out[j].Node
+	})
+	return truncate(out, n)
+}
+
+func topPorts(m map[PortKey]*Counts, n int) []PortStat {
+	out := make([]PortStat, 0, len(m))
+	for k, c := range m {
+		out = append(out, PortStat{PortKey: k, Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Counts.Bytes(), out[j].Counts.Bytes(); a != b {
+			return a > b
+		}
+		if out[i].Port != out[j].Port {
+			return out[i].Port < out[j].Port
+		}
+		return out[i].Transport < out[j].Transport
+	})
+	return truncate(out, n)
+}
+
+func topLabels(m map[string]*Counts, n int) []LabelStat {
+	out := make([]LabelStat, 0, len(m))
+	for k, c := range m {
+		out = append(out, LabelStat{Label: k, Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Counts.Bytes(), out[j].Counts.Bytes(); a != b {
+			return a > b
+		}
+		return out[i].Label < out[j].Label
+	})
+	return truncate(out, n)
+}
+
+func truncate[T any](s []T, n int) []T {
+	if n > 0 && len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// Stats describes the store's own state, for the admin status surface.
+type Stats struct {
+	Buckets      int       `json:"buckets"`
+	Capacity     int       `json:"capacity"`
+	Observations int64     `json:"observations"`
+	Truncated    int64     `json:"truncated"`
+	Earliest     time.Time `json:"earliest"`
+	Latest       time.Time `json:"latest"`
+}
+
+// Stats returns the store's current state.
+func (m *Memory) Stats() Stats {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	s := Stats{Buckets: len(m.buckets), Capacity: m.capacity, Observations: m.recorded, Truncated: m.dropped}
+	for _, b := range m.buckets {
+		if s.Earliest.IsZero() || b.start.Before(s.Earliest) {
+			s.Earliest = b.start
+		}
+		if b.start.After(s.Latest) {
+			s.Latest = b.start
+		}
+	}
+	return s
+}
