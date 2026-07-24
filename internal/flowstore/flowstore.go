@@ -131,10 +131,15 @@ type Observation struct {
 	// are kept only in the bounded recent-connection ring, never in the minute
 	// buckets — an address is far too high-cardinality to aggregate on, but the
 	// exact tuple is what makes a flow list useful.
-	SrcAddr    string
-	DstAddr    string
-	SrcNode    string
-	DstNode    string
+	SrcAddr string
+	DstAddr string
+	SrcNode string
+	DstNode string
+	// DstPort is empty for a protocol that has no ports, not "0". Tailscale
+	// writes ":0" on the wire wherever the addr:port shape demands a port and
+	// there is none, and the processor reads that as absent when it decodes the
+	// record (flowlog.splitEndpoint), so the empty-string convention above covers
+	// this case like any other. The raw endpoint is still in DstAddr verbatim.
 	DstPort    string
 	DstService string
 	SrcUser    string
@@ -561,11 +566,12 @@ func (b *bucket) addUnexplained(o Observation) {
 		Src:       endpointIdentity(o.SrcTags, o.SrcUser, o.SrcNode, o.SrcAddr),
 		Dst:       endpointIdentity(o.DstTags, o.DstUser, o.DstNode, o.DstAddr),
 		Transport: o.Transport,
-		// Tailscale writes ":0" for the destination of a protocol that has no
-		// ports — every one of 3,427 ICMP entries in a live capture. Carrying it
-		// through would render "icmp/0", which is not a port and not a rule anyone
-		// could write.
-		Port: portOrNone(o.DstPort),
+		// A protocol with no ports arrives here with no port, so the relationship
+		// reads "icmp" rather than "icmp/0" — which is not a port and not a rule
+		// anyone could write. That normalisation used to happen on this line;
+		// it now happens once where the record is decoded (flowlog.splitEndpoint),
+		// which is why an Observation can no longer carry a zero port at all.
+		Port: o.DstPort,
 	}
 	e, ok := b.unexplained[k]
 	if !ok {
@@ -609,14 +615,6 @@ func endpointIdentity(tags, user, node, addrPort string) string {
 		return node
 	}
 	return Unidentified
-}
-
-// portOrNone reads "0" as "this protocol has no ports". See addUnexplained.
-func portOrNone(port string) string {
-	if port == "0" {
-		return ""
-	}
-	return port
 }
 
 // addrHost strips the port from an "addr:port" endpoint, yielding "" when there

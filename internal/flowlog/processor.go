@@ -344,8 +344,8 @@ func connDedupKey(fl FlowLog, cc ConnectionCounts) string {
 // gated through budget so the volume guard never suppresses metrics.
 func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, e telemetry.Emitter, budget *logBudget) {
 	transport := transportName(cc.Proto)
-	srcAddr, srcPort := splitHostPort(cc.Src)
-	dstAddr, dstPort := splitHostPort(cc.Dst)
+	srcAddr, srcPort := splitEndpoint(cc.Src)
+	dstAddr, dstPort := splitEndpoint(cc.Dst)
 	netType := networkType(srcAddr)
 	// An endpoint the record does not carry is structurally ABSENT, not a failed
 	// lookup, so it resolves to "" and every attribute derived from it is omitted
@@ -386,10 +386,13 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 				metricAttrs[semconv.AttrDstNode] = dstNode
 			}
 		}
-		if p.srcPort && cc.Src != "" {
+		// Gated on the PORT, not on the endpoint: a portless protocol carries an
+		// endpoint and no port, so keying off the endpoint would put an empty label
+		// on the series instead of leaving the dimension off it.
+		if p.srcPort && srcPort != "" {
 			metricAttrs[semconv.SourcePort] = srcPort
 		}
-		if p.dstPort && cc.Dst != "" {
+		if p.dstPort && dstPort != "" {
 			metricAttrs[semconv.DestinationPort] = dstPort
 		}
 		// dst.service is the bounded stand-in for the destination port and is
@@ -780,12 +783,19 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 	// describe a 5-tuple that was never in the data.
 	if cc.Src != "" {
 		attrs[semconv.SourceAddress] = srcAddr
-		attrs[semconv.SourcePort] = srcPort
+		// A protocol with no ports, and every physical entry's source, carry the
+		// endpoint without one. The address is what the wire said and stays; the
+		// port is omitted rather than logged as a zero that reads like a port.
+		if srcPort != "" {
+			attrs[semconv.SourcePort] = srcPort
+		}
 		attrs[semconv.AttrSrcNode] = srcNode
 	}
 	if cc.Dst != "" {
 		attrs[semconv.DestinationAddress] = dstAddr
-		attrs[semconv.DestinationPort] = dstPort
+		if dstPort != "" {
+			attrs[semconv.DestinationPort] = dstPort
+		}
 		// A destination the record carried but that names no device — the DERP
 		// marker — keeps its address here and gets no node. The log is the
 		// full-fidelity record of what the wire said, and the wire said an
@@ -966,6 +976,36 @@ func splitHostPort(s string) (host, port string) {
 		return s, ""
 	}
 	return h, p
+}
+
+// splitEndpoint splits a flow record's "addr:port" into the two things the rest
+// of the processor derives attributes from, reading Tailscale's ":0" as the
+// absent port it is.
+//
+// ":0" is written wherever the addr:port shape demands a port and the thing
+// being described has none, and a live capture says it happens in exactly two
+// places: a portless protocol (ICMP, TSMP) writes it on BOTH ends every time —
+// 1,884/1,884 and 1,340/1,340 entries — and every physical entry writes it on
+// its SOURCE (46,193/46,193), where the underlay reports the peer's overlay
+// identity rather than a socket. It is never a real port: 0 cannot be a TCP/UDP
+// endpoint, and no tcp/udp entry carried it on either end (0/71,253).
+//
+// Reading it as absent here rather than at each reader is what makes the
+// distinction hold everywhere at once, because "" is already the convention for
+// a field the record did not carry — exit traffic has been exercising it since
+// the beginning. The alternative, passing "0" on, is a claim: destination.port=0
+// says a port was contacted, an entry in the ports table says a service was, and
+// the unique-port gauge counts one that does not exist.
+//
+// The ADDRESS is untouched, here and everywhere downstream. The record really
+// carried an endpoint, so the log and the flow view still show it verbatim; what
+// is dropped is only the port that was never there.
+func splitEndpoint(s string) (host, port string) {
+	host, port = splitHostPort(s)
+	if port == "0" {
+		port = ""
+	}
+	return host, port
 }
 
 // protoNames maps IANA protocol numbers the API returns to their lowercase

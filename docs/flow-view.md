@@ -173,8 +173,8 @@ Two things make it worth reading rather than dismissing as an odd protocol numbe
   1,978,983 packets and matched none of them while the API reported the flow continuously. Chasing the
   packets is a dead end; the flow log is the only place they are visible.
 
-TSMP has no ports, so these connections carry `:0` — Tailscale's placeholder for a protocol that has
-none, not a connection to port zero.
+TSMP has no ports, so a `tsmp` connection shows none — see
+[protocols with no ports](#protocols-with-no-ports) below.
 
 ### Rules that permitted nothing
 
@@ -280,6 +280,23 @@ breakdown.
 endpoints' identity, so names resolve even with the devices collector disabled; the collector still
 gives better coverage for devices that have not appeared in a flow yet.
 
+### Protocols with no ports
+
+ICMP and TSMP have no ports, and Tailscale still has to fill the `addr:port` shape it reports every
+endpoint in, so it writes **`:0`** on both ends. That is a placeholder, not a port: port 0 cannot be a
+TCP or UDP endpoint, and over 3 hours of a live tailnet no `tcp`/`udp` connection carried it on either
+end (0 of 71,253) while every portless one did (3,224 of 3,224).
+
+The view reads it as the absent port it is. A connection over one of these protocols therefore shows
+**no destination port and no destination service**, contributes nothing to the destination-services
+section, and is not counted as a distinct port by `tailscale.network.unique.dst_ports`. Its addresses
+are untouched — the record really carried those — and its bytes count toward the totals and every
+other breakdown, so nothing goes missing; what is dropped is a number that was never a port.
+
+The same applies to the *source* port of every physical connection. The underlay reports the peer's
+overlay address as its source, which is an identity rather than a socket, so it too arrives as `:0`
+and is read as absent.
+
 ## Every ingestion path feeds it
 
 The polling collector, the streaming receiver and the object-store reader share one flow processor, so
@@ -307,7 +324,8 @@ only — its `path` and `derp_region`.
 
 `result.ports` is `{port, transport, service, counts}` per destination endpoint, from the **overlay**
 traffic types only — a physical entry's port is a WireGuard underlay port, or a DERP region ID on a
-relayed path, and neither is a service. Its counts therefore sum to less than `result.totals`.
+relayed path, and neither is a service. A [portless protocol](#protocols-with-no-ports) contributes
+nothing either, having no port to report. Its counts therefore sum to less than `result.totals`.
 
 Path quality is three more fields on `result`:
 

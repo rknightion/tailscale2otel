@@ -309,22 +309,3 @@ func TestUnexplained_KeepsTheSentinelWhenNothingElseIsKnown(t *testing.T) {
 		t.Errorf("unexplained = %+v, want the sentinel retained", res.Unexplained)
 	}
 }
-
-// Tailscale writes ":0" for the destination of a protocol that has no ports —
-// every one of 3,427 ICMP entries in a live capture. Carrying that into the
-// relationship would render as "icmp/0", which is not a port and not a rule
-// anyone could write.
-func TestUnexplained_PortlessProtocolsCarryNoPort(t *testing.T) {
-	m := flowstore.NewMemory(0)
-	o := evaluated(flowstore.VerdictNoRule, -1, false)
-	o.Transport, o.DstPort = "icmp", "0"
-	m.Record(o)
-
-	res := query(m)
-	if len(res.Unexplained) != 1 {
-		t.Fatalf("unexplained = %+v, want 1", res.Unexplained)
-	}
-	if got := res.Unexplained[0].Port; got != "" {
-		t.Errorf("port = %q, want empty — :0 means the protocol has no ports", got)
-	}
-}
