@@ -103,8 +103,11 @@ func TestProcessNumericProtoTransport(t *testing.T) {
 	for _, f := range flows {
 		got[f.Attrs[semconv.NetworkTransport]] = true
 	}
-	// 6->tcp, 17->udp, 1->icmp, 99->"99" (no IANA name), absent->unknown.
-	for _, want := range []string{"tcp", "udp", "icmp", "99", "unknown"} {
+	// 6->tcp, 17->udp, 1->icmp, 99->tsmp, absent->unknown. The fixture's proto-99
+	// entry is a real one — 10 packets of 27 bytes each, which is the shape of a
+	// tailscaled rejection notice — and it read as a bare "99" until protoNames
+	// learned the name. See TestProcess_NamesTheProtocolOnEveryTransport.
+	for _, want := range []string{"tcp", "udp", "icmp", "tsmp", "unknown"} {
 		if !got[want] {
 			t.Fatalf("missing transport %q in flows; got %v", want, got)
 		}
@@ -116,8 +119,8 @@ func TestProcessNumericProtoTransport(t *testing.T) {
 // poll via the same Processor). Values outside the IANA protocol-number range
 // (0-255) must clamp to "unknown" instead of echoing the raw wire integer,
 // which would otherwise mint unbounded transport cardinality. In-range but
-// unrecognized numbers (e.g. 99, see TestProcessNumericProtoTransport) keep
-// their existing decimal-string behavior — that space is already bounded to
+// unrecognized numbers (e.g. 253, see TestProcess_NamesTheProtocolOnEveryTransport)
+// keep their existing decimal-string behavior — that space is already bounded to
 // at most 256 distinct values.
 func TestProcessOutOfRangeProtoClampsTransport(t *testing.T) {
 	cases := []struct {

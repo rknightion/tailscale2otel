@@ -970,6 +970,17 @@ func splitHostPort(s string) (host, port string) {
 
 // protoNames maps IANA protocol numbers the API returns to their lowercase
 // transport names.
+//
+// 99 is the one entry that is not an IANA name. IANA reserves it for "any
+// private encryption scheme", and Tailscale uses it for TSMP — its own ICMP-ish
+// protocol, carried only between nodes inside the WireGuard tunnel, that
+// communicates why something failed. Nothing else can put a 99 on the wire here,
+// because tailscaled neither accepts these from the host stack nor sends them to
+// it, so naming it tsmp is exact rather than a guess — and it is the more useful
+// of the two names by a wide margin. See docs/flow-view.md: a TSMP flow is a
+// REJECTION notice, so its source is the node that dropped something and its
+// destination is the node whose traffic was dropped. That makes it the fastest
+// way to read an ACL denial off the page, and unreadable as a bare "99".
 var protoNames = map[int]string{
 	1:   "icmp",
 	2:   "igmp",
@@ -980,6 +991,7 @@ var protoNames = map[int]string{
 	51:  "ah",
 	58:  "ipv6-icmp",
 	89:  "ospf",
+	99:  "tsmp",
 	132: "sctp",
 }
 

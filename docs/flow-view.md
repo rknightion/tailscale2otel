@@ -154,6 +154,28 @@ That aggregation is what makes the output usable. On a live tailnet, 9,786 indiv
 connections were **three relationships**, all involving one tag talking to two LAN addresses behind a
 subnet router.
 
+### `tsmp` — Tailscale reporting its own rejections
+
+A connection whose transport reads `tsmp` is not traffic anybody sent. TSMP is Tailscale's own
+ICMP-ish protocol — IP protocol 99, which IANA reserves for "any private encryption scheme" — carried
+only between nodes inside the WireGuard tunnel, and it exists to say **why something failed**: an ACL
+drop, a refused connection, no route.
+
+Two things make it worth reading rather than dismissing as an odd protocol number:
+
+- **The source is the node that did the rejecting.** A `tsmp` flow travels in the opposite direction to
+  the traffic it is about, so it names the end that dropped something *and* the end whose traffic was
+  dropped. That is independent corroboration of a **not explained** verdict, arriving from the other
+  side of the connection.
+- **It never appears in a packet capture.** tailscaled neither accepts these from the host network
+  stack nor sends them to it, so `tcpdump` will not show them on any interface — including the
+  Tailscale one. On a live tailnet a 60-second capture of the sending host's LAN interface took in
+  1,978,983 packets and matched none of them while the API reported the flow continuously. Chasing the
+  packets is a dead end; the flow log is the only place they are visible.
+
+TSMP has no ports, so these connections carry `:0` — Tailscale's placeholder for a protocol that has
+none, not a connection to port zero.
+
 ### Rules that permitted nothing
 
 The other half: which rules never covered anything in the window. **The window is stated on the list,
