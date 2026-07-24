@@ -3,6 +3,14 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.13.0: BREAKING — removes config.cardinality.flow.destination_service. tailscale.dst.service is
+# now emitted unconditionally on BOTH flow metric families; it was already ungated on the rollup
+# families, so the toggle only ever governed the raw ones and the same dimension appeared or vanished
+# with metrics_mode. An existing `destination_service:` under `config:` is silently ignored (the app
+# ignores unknown YAML keys); a stale TS2OTEL_CARDINALITY__FLOW__DESTINATION_SERVICE env var raises
+# the unknown-variable advisory at startup. Also documents the metrics_mode precondition on
+# source_port/destination_port (inert under the default rollup) and the node_dims requirement on
+# identity_dims.
 # 0.12.0: re-sync `config:` with the app's config surface — it had drifted 42 keys behind
 # config.Default(). Adds collectors.oauth_apps, collectors.node_metrics.discovery.* and its
 # max_samples/max_response_bytes caps, admin.tls.*, admin.status_refresh_interval,
@@ -52,7 +60,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.12.0
+version: 0.13.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "2.0.2"
 home: https://m7kni.io/tailscale2otel/

@@ -43,13 +43,13 @@ func FuzzProcessorProcessAll(f *testing.F) {
 		// carrying it across inputs would make a failure depend on execution order.
 		rec := telemetrytest.New()
 		p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{
-			LogMode:                   "per_connection",
-			IncludeSourcePort:         true,
-			IncludeDestinationPort:    true,
-			IncludeDestinationService: true,
-			NodeDims:                  true,
-			FlowMetricsMode:           "both",
-			ExitNodeAttribution:       true,
+			LogMode:                "per_connection",
+			IncludeSourcePort:      true,
+			IncludeDestinationPort: true,
+			NodeDims:               true,
+			IdentityDims:           true,
+			FlowMetricsMode:        "both",
+			ExitNodeAttribution:    true,
 		})
 		p.ProcessAll(resp, rec.Emitter())
 		p.FlushRollup(rec.Emitter())

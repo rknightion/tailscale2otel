@@ -75,11 +75,33 @@ const (
 	// label). The value set is code-defined in tailscaled, not attacker
 	// free text, so it is passed through as-is (no folding).
 	AttrHealthType = "tailscale.health.type"
-	// AttrPath is the data-plane path a node's curated throughput/packet counters
-	// (tailscale.node.io / .packets) were carried over. The scraped tailscaled
-	// `path` label (direct_ipv4|direct_ipv6|derp|peer_relay_ipv4|peer_relay_ipv6)
-	// is folded to the bounded set below to halve series cardinality.
+	// AttrPath is the data-plane path traffic was carried over. It appears on two
+	// independent surfaces that deliberately share one vocabulary (the bounded set
+	// below), so a single query spans both:
+	//
+	//   - the curated node-metrics counters (tailscale.node.io / .packets), where
+	//     the scraped tailscaled `path` label
+	//     (direct_ipv4|direct_ipv6|derp|peer_relay_ipv4|peer_relay_ipv6) is folded
+	//     to that set to halve series cardinality;
+	//   - the flow metrics, where it is read off the underlay endpoint of a
+	//     physicalTraffic entry (see flowlog.classifyPath). Flow records cannot
+	//     distinguish a peer relay from a direct endpoint, so that surface emits
+	//     only PathDirect and PathDERP — a strict subset, never PathPeerRelay.
+	//
+	// Only physical traffic has a path at all; the overlay traffic types describe
+	// what the tailnet carried rather than how, and carry the attribute not at all.
 	AttrPath = "tailscale.path"
+	// AttrDERPRegionID is the NUMERIC DERP region a relayed flow was carried
+	// through, read from the port field beside the 127.3.3.40 relay marker. Present
+	// only when AttrPath is PathDERP; a direct path omits it entirely rather than
+	// carrying a sentinel.
+	//
+	// Deliberately NOT the same attribute as tailscale.derp.region on the devices
+	// collector's latency metrics: that one is keyed by region NAME ("Frankfurt"),
+	// because the devices API reports names. The two cannot be joined — the API
+	// exposes no DERP map (it 404s), so there is nothing to translate an ID into a
+	// name with. Sharing one attribute key would put two vocabularies under it.
+	AttrDERPRegionID = "tailscale.derp.region_id"
 	// AttrDropReason is why a packet was dropped on the curated
 	// tailscale.node.packets.dropped counter (from the scraped `reason` label),
 	// folded to a bounded admit-set (unrecognized -> DropReasonOther) since

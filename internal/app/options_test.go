@@ -222,10 +222,11 @@ func TestFlowOptions_RollupMode(t *testing.T) {
 }
 
 func TestFlowOptions_PortToggles(t *testing.T) {
-	// Defaults: every metric port/service toggle off.
-	if def := flowOptions(config.Default()); def.IncludeSourcePort || def.IncludeDestinationPort || def.IncludeDestinationService {
-		t.Fatalf("defaults = src %v / dst %v / service %v, want all false",
-			def.IncludeSourcePort, def.IncludeDestinationPort, def.IncludeDestinationService)
+	// Defaults: every metric port toggle off. dst.service is no longer a toggle —
+	// it is always on, on both metric families.
+	if def := flowOptions(config.Default()); def.IncludeSourcePort || def.IncludeDestinationPort {
+		t.Fatalf("defaults = src %v / dst %v, want both false",
+			def.IncludeSourcePort, def.IncludeDestinationPort)
 	}
 
 	// Both granular toggles on => both ports (the explicit replacement for the
@@ -249,12 +250,6 @@ func TestFlowOptions_PortToggles(t *testing.T) {
 		t.Fatalf("cardinality.flow.destination_port=true => src %v / dst %v, want false/true", got.IncludeSourcePort, got.IncludeDestinationPort)
 	}
 
-	// Service toggle maps through.
-	svc := config.Default()
-	svc.Cardinality.Flow.DestinationService = true
-	if got := flowOptions(svc); !got.IncludeDestinationService {
-		t.Fatal("cardinality.flow.destination_service=true => IncludeDestinationService false, want true")
-	}
 }
 
 func TestTSAPIOptionsForResolvedTailnet(t *testing.T) {

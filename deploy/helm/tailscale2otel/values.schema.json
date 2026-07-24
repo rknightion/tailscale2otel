@@ -65,9 +65,6 @@
                                 "destination_port": {
                                     "type": "boolean"
                                 },
-                                "destination_service": {
-                                    "type": "boolean"
-                                },
                                 "exit_node_attribution": {
                                     "type": "boolean"
                                 },

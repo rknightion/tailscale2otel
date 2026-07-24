@@ -517,10 +517,6 @@ type FlowCardinality struct {
 	// to flow METRICS (both default false; flow LOGS always carry both ports).
 	SourcePort      bool `yaml:"source_port"`
 	DestinationPort bool `yaml:"destination_port"`
-	// DestinationService adds tailscale.dst.service (the IANA service name for the
-	// destination port+transport, e.g. tcp/443 -> "https") to flow METRICS as a
-	// bounded, low-cardinality stand-in for the destination port. Default false.
-	DestinationService bool `yaml:"destination_service"`
 	// NodeDims (default true) includes the src/dst device names on flow metrics.
 	NodeDims bool `yaml:"node_dims"`
 	// IdentityDims adds the per-flow endpoint identity — tailscale.{src,dst}.user,

@@ -39,13 +39,33 @@ const (
 // rollupKey is the bounded dimension set of a *.rollup series — the low-card
 // stand-ins for a flow, deliberately WITHOUT L4 ports. srcNode/dstNode are empty
 // when flow node dimensions are off; dstService is empty when the destination
-// port maps to no known IANA service.
+// port maps to no known IANA service; path/derpRegion are empty for every traffic
+// type except physical (and derpRegion only for a relayed physical path).
+//
+// The identity fields are empty unless identity dimensions are on. They cost
+// almost nothing on top of the node dimensions because identity is a property of
+// the NODE, not of the flow: user/tags/os are functionally dependent on
+// srcNode/dstNode, so with node dimensions on this widens the label set without
+// multiplying the series count. With node dimensions OFF it would be the
+// opposite — identity would become the only distinguishing dimension and would
+// reintroduce most of the cardinality that turning nodes off removes — so
+// newRollupAccumulator refuses to carry it in that case.
 type rollupKey struct {
 	transport   string
 	trafficType string
 	srcNode     string
 	dstNode     string
 	dstService  string
+	path        string
+	derpRegion  string
+	identity    identityKey
+}
+
+// identityKey is the node-derived identity half of a rollupKey, split out so the
+// __other__ fold can zero it in one assignment.
+type identityKey struct {
+	srcUser, srcTags, srcOS string
+	dstUser, dstTags, dstOS string
 }
 
 // rollupEntry accumulates a flow's bytes and packets (both directions) for one
@@ -68,8 +88,9 @@ func (e *rollupEntry) add(o *rollupEntry) {
 // gauges, then resets. All methods are safe for concurrent use and are no-ops on
 // a nil receiver.
 type rollupAccumulator struct {
-	topN  int
-	nodes bool
+	topN     int
+	nodes    bool
+	identity bool
 
 	mu       sync.Mutex
 	entries  map[rollupKey]*rollupEntry
@@ -80,39 +101,106 @@ type rollupAccumulator struct {
 // newRollupAccumulator returns an accumulator keeping the busiest topN node pairs
 // per flush. nodes mirrors cardinality.flow.node_dims: when false the rollup carries no node
 // dimensions and the per-source-node unique gauges are suppressed.
-func newRollupAccumulator(topN int, nodes bool) *rollupAccumulator {
+//
+// identity mirrors cardinality.flow.identity_dims, but is forced off when nodes
+// is off. Identity is node-derived, so without the node dimensions it stops being
+// a free widening of an existing series and becomes the sole dimension splitting
+// the rollup — exactly the cardinality an operator turning node_dims off is
+// trying to shed. Silently honoring it there would make node_dims a lever that
+// does not lower cardinality.
+func newRollupAccumulator(topN int, nodes, identity bool) *rollupAccumulator {
 	if topN <= 0 {
 		topN = defaultRollupTopN
 	}
 	return &rollupAccumulator{
 		topN:     topN,
 		nodes:    nodes,
+		identity: identity && nodes,
 		entries:  map[rollupKey]*rollupEntry{},
 		dstPeers: map[string]map[string]struct{}{},
 		dstPorts: map[string]map[string]struct{}{},
 	}
 }
 
-// record adds one connection's tx/rx bytes and packets under the bounded rollup
-// key. srcNode/dstNode are dropped from the key when node dimensions are off.
-func (a *rollupAccumulator) record(transport, trafficType, srcNode, dstNode, dstService string, txBytes, rxBytes, txPkts, rxPkts float64) {
-	k := rollupKey{transport: transport, trafficType: trafficType, dstService: dstService}
-	if a.nodes {
-		k.srcNode = srcNode
-		k.dstNode = dstNode
+// wantsIdentity reports whether the accumulator will key on identity, so the
+// caller can skip resolving node blocks it would then discard. Safe on a nil
+// receiver, like every other method here.
+func (a *rollupAccumulator) wantsIdentity() bool {
+	return a != nil && a.identity
+}
+
+// rollupDims is the full dimension set one connection offers the accumulator,
+// before the node/identity gates decide what actually enters the key. It is a
+// struct rather than a parameter list because the gates need to read fields
+// selectively in three places (key, otherKey, observeUnique).
+type rollupDims struct {
+	transport   string
+	trafficType string
+	srcNode     string
+	dstNode     string
+	dstService  string
+	path        string
+	derpRegion  string
+	identity    identityKey
+}
+
+// key builds the accumulator key for one connection, applying the node and
+// identity gates.
+func (a *rollupAccumulator) key(d rollupDims) rollupKey {
+	k := rollupKey{
+		transport:   d.transport,
+		trafficType: d.trafficType,
+		dstService:  d.dstService,
+		path:        d.path,
+		derpRegion:  d.derpRegion,
 	}
+	if a.nodes {
+		k.srcNode = d.srcNode
+		k.dstNode = d.dstNode
+	}
+	if a.identity {
+		k.identity = d.identity
+	}
+	return k
+}
+
+// otherKey builds the folded remainder key for one connection: the node
+// dimensions collapse to __other__ and identity drops out entirely.
+//
+// Identity is dropped rather than set to __other__ because the remainder has no
+// single identity to report — the fold is by definition many nodes, and many
+// users. An __other__ user would read as a real principal. Dropping it is also
+// what keeps the fold's key space bounded, which is the invariant the insert-time
+// cap exists to protect.
+func (a *rollupAccumulator) otherKey(d rollupDims) rollupKey {
+	k := rollupKey{
+		transport:   d.transport,
+		trafficType: d.trafficType,
+		dstService:  d.dstService,
+		path:        d.path,
+		derpRegion:  d.derpRegion,
+	}
+	if a.nodes {
+		k.srcNode = semconv.RollupOther
+		k.dstNode = semconv.RollupOther
+	}
+	return k
+}
+
+// record adds one connection's tx/rx bytes and packets under the bounded rollup
+// key. srcNode/dstNode are dropped from the key when node dimensions are off, and
+// identity when identity dimensions are off.
+func (a *rollupAccumulator) record(d rollupDims, txBytes, rxBytes, txPkts, rxPkts float64) {
+	k := a.key(d)
 	a.mu.Lock()
 	e := a.entries[k]
 	if e == nil && len(a.entries) >= maxRollupKeys {
 		// Live map full: fold this new key into the per-group __other__ remainder
 		// instead of growing without bound between flushes. Mirrors flushCounters'
 		// node collapse, so group totals stay exact; the __other__ key space is
-		// itself bounded (transport/traffic_type/dst_service come from fixed tables).
-		k = rollupKey{transport: transport, trafficType: trafficType, dstService: dstService}
-		if a.nodes {
-			k.srcNode = semconv.RollupOther
-			k.dstNode = semconv.RollupOther
-		}
+		// itself bounded — transport/traffic_type/dst_service/path come from fixed
+		// tables, and identity is dropped with the node dimensions it derives from.
+		k = a.otherKey(d)
 		e = a.entries[k]
 	}
 	if e == nil {
@@ -219,11 +307,14 @@ func (a *rollupAccumulator) flushCounters(e telemetry.Emitter, entries map[rollu
 		return
 	}
 
-	// Fold the remainder, collapsing only the node dimensions.
-	type otherGroup struct{ transport, trafficType, dstService string }
+	// Fold the remainder, collapsing the node dimensions and the identity that
+	// derives from them. Everything left in the group key comes from a fixed
+	// table, so the folded key space stays bounded however many distinct nodes,
+	// users or tags the tailnet has.
+	type otherGroup struct{ transport, trafficType, dstService, path, derpRegion string }
 	other := map[otherGroup]*rollupEntry{}
 	for _, ke := range ks[cut:] {
-		g := otherGroup{ke.key.transport, ke.key.trafficType, ke.key.dstService}
+		g := otherGroup{ke.key.transport, ke.key.trafficType, ke.key.dstService, ke.key.path, ke.key.derpRegion}
 		o := other[g]
 		if o == nil {
 			o = &rollupEntry{}
@@ -232,7 +323,13 @@ func (a *rollupAccumulator) flushCounters(e telemetry.Emitter, entries map[rollu
 		o.add(ke.entry)
 	}
 	for g, o := range other {
-		k := rollupKey{transport: g.transport, trafficType: g.trafficType, dstService: g.dstService}
+		k := rollupKey{
+			transport:   g.transport,
+			trafficType: g.trafficType,
+			dstService:  g.dstService,
+			path:        g.path,
+			derpRegion:  g.derpRegion,
+		}
 		if a.nodes {
 			k.srcNode = semconv.RollupOther
 			k.dstNode = semconv.RollupOther
@@ -288,21 +385,51 @@ func (k rollupKey) attrs() telemetry.Attrs {
 	if k.dstService != "" {
 		a[semconv.AttrDstService] = k.dstService
 	}
+	addPathAttrs(a, k.path, k.derpRegion)
+	setIfNotEmpty(a, semconv.AttrSrcUser, k.identity.srcUser)
+	setIfNotEmpty(a, semconv.AttrSrcTags, k.identity.srcTags)
+	setIfNotEmpty(a, semconv.AttrSrcOS, k.identity.srcOS)
+	setIfNotEmpty(a, semconv.AttrDstUser, k.identity.dstUser)
+	setIfNotEmpty(a, semconv.AttrDstTags, k.identity.dstTags)
+	setIfNotEmpty(a, semconv.AttrDstOS, k.identity.dstOS)
 	return a
 }
 
-// lessRollupKey is a total order over rollup keys for deterministic tie-breaking.
-func lessRollupKey(a, b rollupKey) bool {
-	switch {
-	case a.transport != b.transport:
-		return a.transport < b.transport
-	case a.trafficType != b.trafficType:
-		return a.trafficType < b.trafficType
-	case a.srcNode != b.srcNode:
-		return a.srcNode < b.srcNode
-	case a.dstNode != b.dstNode:
-		return a.dstNode < b.dstNode
-	default:
-		return a.dstService < b.dstService
+// setIfNotEmpty assigns v under key only when v is non-empty, so an identity
+// field the record did not carry stays absent rather than becoming an empty
+// label. Absent and empty read differently on a metric: absent says the record
+// carried nothing, empty says it carried a blank value.
+func setIfNotEmpty(a telemetry.Attrs, key, v string) {
+	if v != "" {
+		a[key] = v
 	}
+}
+
+// lessRollupKey is a total order over rollup keys for deterministic tie-breaking.
+//
+// It must cover EVERY field of rollupKey. A field left out makes two distinct
+// keys compare equal, and sort.Slice is not stable, so top-N membership would
+// shift between flushes purely on map-iteration order — a series would blink in
+// and out while its traffic was unchanged.
+func lessRollupKey(a, b rollupKey) bool {
+	for _, p := range [...][2]string{
+		{a.transport, b.transport},
+		{a.trafficType, b.trafficType},
+		{a.srcNode, b.srcNode},
+		{a.dstNode, b.dstNode},
+		{a.dstService, b.dstService},
+		{a.path, b.path},
+		{a.derpRegion, b.derpRegion},
+		{a.identity.srcUser, b.identity.srcUser},
+		{a.identity.srcTags, b.identity.srcTags},
+		{a.identity.srcOS, b.identity.srcOS},
+		{a.identity.dstUser, b.identity.dstUser},
+		{a.identity.dstTags, b.identity.dstTags},
+		{a.identity.dstOS, b.identity.dstOS},
+	} {
+		if p[0] != p[1] {
+			return p[0] < p[1]
+		}
+	}
+	return false
 }

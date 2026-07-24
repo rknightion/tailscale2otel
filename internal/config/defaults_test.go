@@ -80,10 +80,10 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Cardinality.Flow.RollupTopN != 500 {
 		t.Errorf("Cardinality.Flow.RollupTopN = %d, want default 500", cfg.Cardinality.Flow.RollupTopN)
 	}
-	// Flow metric port/service toggles default off (ports stay off metrics by default).
-	if cfg.Cardinality.Flow.SourcePort || cfg.Cardinality.Flow.DestinationPort || cfg.Cardinality.Flow.DestinationService {
-		t.Errorf("Cardinality flow toggles = src %v / dst %v / service %v, want all default false",
-			cfg.Cardinality.Flow.SourcePort, cfg.Cardinality.Flow.DestinationPort, cfg.Cardinality.Flow.DestinationService)
+	// Flow metric port toggles default off (ports stay off metrics by default).
+	if cfg.Cardinality.Flow.SourcePort || cfg.Cardinality.Flow.DestinationPort {
+		t.Errorf("Cardinality flow toggles = src %v / dst %v, want both default false",
+			cfg.Cardinality.Flow.SourcePort, cfg.Cardinality.Flow.DestinationPort)
 	}
 	if !cfg.Collectors.Devices.Enabled {
 		t.Errorf("Devices.Enabled = false, want default true")

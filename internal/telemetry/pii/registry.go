@@ -96,6 +96,11 @@ var nonIdentifier = map[string]bool{
 	"tailscale.user.role": true, "tailscale.user.status": true, "tailscale.user.type": true,
 	"tailscale.user_invite.role": true, "tailscale.user_invite.accepted": true,
 	"tailscale.authorized": true, "tailscale.external": true, "tailscale.derp.region": true,
+	// The numeric DERP region a relayed flow was carried through. Tailscale's DERP
+	// relays are shared public infrastructure, so the ID names a piece of their
+	// estate, not anything about this tailnet — the same non-identifier reasoning
+	// as tailscale.derp.region above, which is the region NAME from a different API.
+	"tailscale.derp.region_id": true,
 	"tailscale.derp.preferred": true, "tailscale.device_invite.accepted": true,
 	"tailscale.device_invite.allow_exit_node": true, "tailscale.device_invite.multi_use": true,
 	"tailscale.client_version": true, "tailscale.tag": true, "tailscale.connectivity.capability": true,

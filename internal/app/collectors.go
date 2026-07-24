@@ -32,10 +32,9 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		LogMode: cfg.Collectors.Flowlogs.LogMode,
 		// cardinality.flow.source_port / cardinality.flow.destination_port independently add source.port /
 		// destination.port to the raw flow metric families (both default off).
-		IncludeSourcePort:         cfg.Cardinality.Flow.SourcePort,
-		IncludeDestinationPort:    cfg.Cardinality.Flow.DestinationPort,
-		IncludeDestinationService: cfg.Cardinality.Flow.DestinationService,
-		NodeDims:                  cfg.Cardinality.Flow.NodeDims,
+		IncludeSourcePort:      cfg.Cardinality.Flow.SourcePort,
+		IncludeDestinationPort: cfg.Cardinality.Flow.DestinationPort,
+		NodeDims:               cfg.Cardinality.Flow.NodeDims,
 		// cardinality.flow.identity_dims (default off) adds the per-flow user/tags/os
 		// carried in the record's own srcNode/dstNodes blocks to flow METRICS. Flow
 		// LOGS carry them regardless.

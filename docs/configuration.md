@@ -389,17 +389,37 @@ effect no matter whether logs arrive by poll or by stream.
 
 These knobs affect flow **metrics** only. Flow **logs** always carry full detail regardless.
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `cardinality.flow.metrics_mode` | `rollup` | Which flow metric families to emit. `rollup` — bounded top-N `*.rollup` families (lowest cardinality; adds per-source-node `tailscale.network.unique.*` gauges). `all` — per-connection raw families shaped by the toggles below. `both` — emit both (≈2× series; summing them double-counts — a startup WARN fires). |
-| `cardinality.flow.rollup_top_n` | `500` | Number of busiest source/destination node pairs kept when `metrics_mode` is `rollup` or `both`; the rest fold into `__other__`. `0` selects the default (500). |
-| `cardinality.flow.source_port` | `false` | Add `source.port` to flow **metrics** (raw families only). Ports are always present on flow **logs**. On = higher cardinality. |
-| `cardinality.flow.destination_port` | `false` | Add `destination.port` to flow **metrics** (raw families only). On = higher cardinality. |
-| `cardinality.flow.destination_service` | `false` | Add `tailscale.dst.service` (the IANA name for the destination port+transport, e.g. `tcp/443`→`https`) to flow **metrics** — a bounded, low-cardinality stand-in for the destination port. |
-| `cardinality.flow.node_dims` | `true` | Include `tailscale.src.node`/`tailscale.dst.node` device names on flow metrics. |
-| `cardinality.flow.identity_dims` | `false` | Include the per-flow endpoint identity — `tailscale.{src,dst}.user`, `.tags` and `.os` — on flow **metrics**. Sourced from the `srcNode`/`dstNodes` blocks the control plane embeds in every flow record, so it costs no extra API call. Cardinality is low (bounded by user, tag and OS counts, all well below device count), but `user` is an email address, so it is off by default. Flow **logs** carry these attributes regardless of this setting. PII filtering still applies: `tailscale.{src,dst}.user` is classified as an email. |
-| `cardinality.flow.collapse_external` | `true` | Bucket unresolved/off-tailnet IPs as `external`/`unknown` instead of the raw address. Off = one series per distinct external IP. |
-| `cardinality.flow.exit_node_attribution` | `true` | Emit the bounded `tailscale.exit_node.io`/`tailscale.exit_node.packets` counters attributing exit traffic to the relaying node (bounded by exit-node count). Independent of `metrics_mode`. |
+!!! warning "`metrics_mode` gates the port toggles"
+    `source_port` and `destination_port` apply **only to the raw families**, so under the default
+    `metrics_mode: rollup` they are inert — setting one to `true` changes nothing and reports no
+    error. The **Applies to** column below says which mode each knob needs. If a dimension you
+    configured is missing from your metrics, check `metrics_mode` first.
+
+| Key | Default | Applies to | Description |
+|-----|---------|------------|-------------|
+| `cardinality.flow.metrics_mode` | `rollup` | — | Which flow metric families to emit. `rollup` — bounded top-N `*.rollup` families (lowest cardinality; adds per-source-node `tailscale.network.unique.*` gauges). `all` — per-connection raw families shaped by the toggles below. `both` — emit both (≈2× series; summing them double-counts — a startup WARN fires). |
+| `cardinality.flow.rollup_top_n` | `500` | `rollup`, `both` | Number of busiest source/destination node pairs kept per flush; the rest fold into `__other__`. `0` selects the default (500). |
+| `cardinality.flow.source_port` | `false` | `all`, `both` | Add `source.port` to flow **metrics**. **Inert under `rollup`.** Ports are always present on flow **logs**. The single most expensive knob here — ephemeral source ports are effectively unbounded. |
+| `cardinality.flow.destination_port` | `false` | `all`, `both` | Add `destination.port` to flow **metrics**. **Inert under `rollup`**, where `tailscale.dst.service` is the bounded stand-in. |
+| `cardinality.flow.node_dims` | `true` | all modes | Include `tailscale.src.node`/`tailscale.dst.node` device names on flow metrics — *who talked to whom*. Off keeps totals accurate but drops the per-peer breakdown, and suppresses the `tailscale.network.unique.*` gauges (they are keyed by source node, so emitting them would reintroduce exactly the cardinality this removes). |
+| `cardinality.flow.identity_dims` | `false` | all modes | Include the per-flow endpoint identity — `tailscale.{src,dst}.user`, `.tags` and `.os` — on flow **metrics**. Sourced from the `srcNode`/`dstNodes` blocks the control plane embeds in every flow record, so it costs no extra API call. Identity is a property of the **node**, so with `node_dims` on it widens the label set without multiplying the series count. **Requires `node_dims`** and is ignored without it: identity would otherwise become the only dimension splitting the metric, reintroducing the cardinality that turning `node_dims` off is meant to shed. Off by default because `user` is an email address. Flow **logs** carry these attributes regardless. PII filtering still applies: `tailscale.{src,dst}.user` is classified as an email. On the `*.rollup` families the `__other__` remainder drops identity — the fold is many nodes, so it has no single user to report. |
+| `cardinality.flow.collapse_external` | `true` | all modes | Bucket unresolved/off-tailnet IPs as `external`/`unknown` instead of the raw address. Off = one series per distinct external IP. |
+| `cardinality.flow.exit_node_attribution` | `true` | all modes | Emit the bounded `tailscale.exit_node.io`/`tailscale.exit_node.packets` counters attributing exit traffic to the relaying node (bounded by exit-node count). Independent of `metrics_mode`. |
+
+**Always on, no toggle.** Two dimensions are emitted on both metric families unconditionally, because
+each has a fixed, small value space:
+
+- `tailscale.dst.service` — the IANA service name for the destination port and transport
+  (`tcp/443` → `https`), from an embedded copy of the IANA registry. It is the bounded stand-in for
+  the destination port: you can ask "how much HTTPS ran between these two nodes" without ephemeral
+  ports splitting the series. Ports that map to no registered name omit the attribute entirely.
+- `tailscale.path` — how the two nodes actually reached each other, read off the underlay endpoint:
+  `direct` or `derp`. A relayed connection additionally carries `tailscale.derp.region_id`, the
+  numeric region from the relay marker. Both appear on **physical traffic only**; the overlay traffic
+  types describe what the tailnet carried rather than how, so they carry no path rather than one that
+  would read as `direct`. `tailscale.derp.region_id` is **not** joinable with `tailscale.derp.region`
+  on the device latency metrics — that one is a region *name*, this is a numeric *ID*, and the API
+  exposes no DERP map to translate between them.
 
 ### `cardinality.per_entity` — per-entity gauge gates
 

@@ -56,18 +56,16 @@ type Options struct {
 	// both ports regardless of these toggles.
 	IncludeSourcePort      bool
 	IncludeDestinationPort bool
-	// IncludeDestinationService adds tailscale.dst.service (the IANA service name
-	// for the destination port+transport) to METRIC attributes. It is a bounded,
-	// low-cardinality stand-in for the destination port. Flow LOGS always carry it
-	// when the port maps to a known service, regardless of this toggle.
-	IncludeDestinationService bool
 	// NodeDims adds tailscale.src.node/tailscale.dst.node to metric attributes.
 	NodeDims bool
 	// IdentityDims adds the per-flow endpoint identity (user, tags, OS) to METRIC
-	// attributes. Flow LOGS always carry it when the record supplies it,
-	// regardless of this toggle. Off by default: the values are low-cardinality
-	// but PII-adjacent, so they stay off the default metric surface exactly as
-	// ports and destination service do.
+	// attributes, on the raw AND rollup families. Flow LOGS always carry it when
+	// the record supplies it, regardless of this toggle. Off by default: the
+	// values are low-cardinality but PII-adjacent, so they stay off the default
+	// metric surface exactly as the ports do.
+	//
+	// Identity is node-derived, so it is only honored when NodeDims is on — see
+	// newRollupAccumulator.
 	IdentityDims bool
 	// KeepExternalAddrs, when true, resolves an unrecognized address to its raw
 	// host (IP) instead of collapsing it to "external"/"unknown". The zero value
@@ -146,7 +144,6 @@ type Processor struct {
 	mode         string
 	srcPort      bool
 	dstPort      bool
-	dstService   bool
 	nodes        bool
 	keepExternal bool
 	identity     bool
@@ -183,7 +180,6 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		mode:         flowMode,
 		srcPort:      opts.IncludeSourcePort,
 		dstPort:      opts.IncludeDestinationPort,
-		dstService:   opts.IncludeDestinationService,
 		nodes:        opts.NodeDims,
 		keepExternal: opts.KeepExternalAddrs,
 		identity:     opts.IdentityDims,
@@ -195,7 +191,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		policy:       opts.Policy,
 	}
 	if flowMode == flowModeRollup || flowMode == flowModeBoth {
-		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims)
+		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims, opts.IdentityDims)
 	}
 	return p
 }
@@ -362,6 +358,11 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	srcNode := p.resolveEndpoint(cc.Src, srcAddr)
 	dstNode := p.resolveEndpoint(cc.Dst, dstAddr)
 	dstService := serviceName(transport, dstPort)
+	// How the two nodes actually reached each other, read off the underlay
+	// endpoint. Computed once here and shared by the raw metrics, the rollup and
+	// the flow store, so the classification runs once per connection.
+	storePath, derpRegion := classifyPath(trafficType, dstAddr, dstPort)
+	metricPath := metricPathValue(storePath)
 
 	// Raw per-connection io/packets families (all/both mode). In rollup mode the
 	// bounded *.rollup families are emitted by FlushRollup from the accumulator
@@ -386,9 +387,14 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		if p.dstPort && cc.Dst != "" {
 			metricAttrs[semconv.DestinationPort] = dstPort
 		}
-		if p.dstService && dstService != "" {
+		// dst.service is the bounded stand-in for the destination port and is
+		// emitted unconditionally, matching the rollup families (which have always
+		// carried it ungated). It is the one L4-derived dimension whose value space
+		// is a fixed registry rather than the ephemeral port range.
+		if dstService != "" {
 			metricAttrs[semconv.AttrDstService] = dstService
 		}
+		addPathAttrs(metricAttrs, metricPath, derpRegion)
 		if p.identity {
 			addIdentityAttrs(metricAttrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
 		}
@@ -411,7 +417,21 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	// rollup deliberately carries no L4 ports — they stay in the flow logs and in
 	// the per-source-node unique gauges.
 	if p.rollup != nil {
-		p.rollup.record(transport, trafficType, srcNode, dstNode, dstService,
+		d := rollupDims{
+			transport:   transport,
+			trafficType: trafficType,
+			srcNode:     srcNode,
+			dstNode:     dstNode,
+			dstService:  dstService,
+			path:        metricPath,
+			derpRegion:  derpRegion,
+		}
+		// Resolving the node blocks is only worth it when the accumulator will
+		// actually key on identity — refByAddr walks the record's embedded blocks.
+		if p.rollup.wantsIdentity() {
+			d.identity = identityOf(flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+		}
+		p.rollup.record(d,
 			float64(cc.TxBytes), float64(cc.RxBytes), float64(cc.TxPkts), float64(cc.RxPkts))
 		// A destination that does not exist is not a distinct peer: counting it
 		// would add exactly one phantom peer per source node to the unique gauge.
@@ -534,6 +554,29 @@ func classifyPath(trafficType, dstAddr, dstPort string) (path, region string) {
 	return flowstore.PathDirectIPv4, ""
 }
 
+// metricPathValue folds a store path onto the tailscale.path metric vocabulary.
+//
+// The store keeps the IP-version split (direct_ipv4 / direct_ipv6) because the
+// /flows view has the room for it and an operator reading one tailnet wants it.
+// The metric surface deliberately does not: semconv.AttrPath already carries the
+// FOLDED set on the node-metrics counters, where direct_ipv4/direct_ipv6 collapse
+// to semconv.PathDirect. Emitting the unfolded values here would put two
+// vocabularies under one attribute key, so `sum by (tailscale_path)` across the
+// two families would report `direct` and `direct_ipv4` as unrelated paths.
+//
+// An empty store path (overlay traffic, or physical traffic with no endpoint)
+// stays empty, and the caller omits the attribute entirely.
+func metricPathValue(storePath string) string {
+	switch storePath {
+	case flowstore.PathDERP:
+		return semconv.PathDERP
+	case flowstore.PathDirectIPv4, flowstore.PathDirectIPv6:
+		return semconv.PathDirect
+	default:
+		return ""
+	}
+}
+
 // joinTags renders a node block's tags the way every other surface does. An
 // empty list yields an empty string, which the store reads as "untagged".
 func joinTags(tags []string) string {
@@ -623,6 +666,36 @@ func parsePort(s string) (uint16, bool) {
 		return 0, false
 	}
 	return uint16(v), true
+}
+
+// identityOf collects the node-derived identity of both endpoints into the
+// rollup's key half. It mirrors addIdentityAttrs, which builds the same values
+// as loose attributes for the raw families and the logs; both omit a field the
+// node block does not carry, so an absent field never becomes an empty label.
+func identityOf(src, dst *NodeRef) identityKey {
+	var k identityKey
+	if src != nil {
+		k.srcUser, k.srcTags, k.srcOS = src.User, joinTags(src.Tags), src.OS
+	}
+	if dst != nil {
+		k.dstUser, k.dstTags, k.dstOS = dst.User, joinTags(dst.Tags), dst.OS
+	}
+	return k
+}
+
+// addPathAttrs adds the underlay-path dimensions to a metric attribute set.
+// Both are omitted when absent rather than filled with a sentinel: overlay
+// traffic has no path at all, and a direct path has no DERP region. Folding
+// either into a placeholder would put "we cannot tell" in the same bucket an
+// operator reads as a real answer.
+func addPathAttrs(attrs telemetry.Attrs, path, derpRegion string) {
+	if path == "" {
+		return
+	}
+	attrs[semconv.AttrPath] = path
+	if derpRegion != "" {
+		attrs[semconv.AttrDERPRegionID] = derpRegion
+	}
 }
 
 // addIdentityAttrs adds the per-flow endpoint identity (user, tags, OS) carried

@@ -83,11 +83,10 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CARDINALITY__LABEL_VALUE_SAMPLE_CAP` | `100` | distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture) |
 | `TS2OTEL_CARDINALITY__FLOW__METRICS_MODE` | `rollup` | rollup (bounded top-N, lowest cardinality) \| all (raw per-connection) \| both (≈2x series; summing double-counts) |
 | `TS2OTEL_CARDINALITY__FLOW__ROLLUP_TOP_N` | `500` | rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500) |
-| `TS2OTEL_CARDINALITY__FLOW__SOURCE_PORT` | `false` | add source.port to flow metrics (raw modes only) |
-| `TS2OTEL_CARDINALITY__FLOW__DESTINATION_PORT` | `false` | add destination.port to flow metrics (raw modes only) |
-| `TS2OTEL_CARDINALITY__FLOW__DESTINATION_SERVICE` | `false` | add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics |
-| `TS2OTEL_CARDINALITY__FLOW__NODE_DIMS` | `true` | include src/dst device names on flow metrics |
-| `TS2OTEL_CARDINALITY__FLOW__IDENTITY_DIMS` | `false` | add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics (flow LOGS always carry them) |
+| `TS2OTEL_CARDINALITY__FLOW__SOURCE_PORT` | `false` | add source.port to flow metrics. INERT under metrics_mode: rollup (raw modes only) — and the most expensive knob here, ephemeral ports are unbounded |
+| `TS2OTEL_CARDINALITY__FLOW__DESTINATION_PORT` | `false` | add destination.port to flow metrics. INERT under metrics_mode: rollup (raw modes only); dst.service below is the bounded stand-in and is always on |
+| `TS2OTEL_CARDINALITY__FLOW__NODE_DIMS` | `true` | include src/dst device names on flow metrics (who talked to whom); off keeps totals but drops the per-peer breakdown and suppresses the unique.* gauges |
+| `TS2OTEL_CARDINALITY__FLOW__IDENTITY_DIMS` | `false` | add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics, on BOTH families. REQUIRES node_dims (identity is node-derived, so without it identity becomes the only splitting dimension); flow LOGS always carry them |
 | `TS2OTEL_CARDINALITY__FLOW__COLLAPSE_EXTERNAL` | `true` | bucket unresolved IPs as external/unknown (keeps cardinality bounded) |
 | `TS2OTEL_CARDINALITY__FLOW__EXIT_NODE_ATTRIBUTION` | `true` | emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__DEVICE` | `true` | per-device gauges (online/last_seen/key_expiry/derp/routes) |

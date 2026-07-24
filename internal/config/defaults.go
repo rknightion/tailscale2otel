@@ -63,7 +63,6 @@ func Default() *Config {
 				RollupTopN:          500,
 				SourcePort:          false,
 				DestinationPort:     false,
-				DestinationService:  false,
 				NodeDims:            true,
 				CollapseExternal:    true,
 				ExitNodeAttribution: true,

@@ -44,11 +44,13 @@ var (
 		Name:        MetricIO,
 		Unit:        semconv.UnitBytes,
 		Instrument:  metricdoc.Counter,
-		Description: "Bytes transferred on the tailnet, by direction, transport, traffic type, and source/destination node.",
+		Description: "Bytes transferred on the tailnet, by direction, transport, traffic type, and source/destination node. Emitted when `cardinality.flow.metrics_mode` is `all` or `both` — under the default `rollup` the bounded network.io.rollup family is emitted instead, and the `cardinality.flow.source_port`/`destination_port`/`identity_dims` toggles have no effect at all. `tailscale.path` (`direct`/`derp`) and, on a relayed connection, the numeric `tailscale.derp.region_id` are carried on **physical** traffic only — the overlay traffic types describe what the tailnet carried, not how, so they carry no path at all rather than one that reads as `direct`. `tailscale.derp.region_id` is NOT joinable with `tailscale.derp.region` on the device latency metrics: that one is a region NAME, this is the numeric ID the flow record supplies, and the API exposes no DERP map to translate between them. The endpoint identity attributes (`tailscale.{src,dst}.{user,tags,os}`) are **gated** by `cardinality.flow.identity_dims` (default off) and additionally require `cardinality.flow.node_dims`, since identity is node-derived.",
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.SourcePort, semconv.DestinationPort,
-			semconv.AttrDstService,
+			semconv.AttrDstService, semconv.AttrPath, semconv.AttrDERPRegionID,
+			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
+			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
 		},
 		Group: groupNetwork,
 	}
@@ -60,7 +62,9 @@ var (
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.SourcePort, semconv.DestinationPort,
-			semconv.AttrDstService,
+			semconv.AttrDstService, semconv.AttrPath, semconv.AttrDERPRegionID,
+			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
+			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
 		},
 		Group: groupNetwork,
 	}
@@ -84,10 +88,13 @@ var (
 		Name:        MetricIORollup,
 		Unit:        semconv.UnitBytes,
 		Instrument:  metricdoc.Counter,
-		Description: "Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node=\"__other__\" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow.metrics_mode is rollup or both (the default).",
+		Description: "Bytes transferred on the tailnet, bounded top-N rollup: the busiest source/destination node pairs by total bytes are kept per flush and the remainder is folded into a tailscale.src.node/tailscale.dst.node=\"__other__\" series per transport, traffic type, and destination service, so totals are preserved. Carries no L4 ports. Emitted when cardinality.flow.metrics_mode is rollup or both (the default). The `__other__` fold drops the endpoint identity with the node dimensions it derives from: the remainder is many nodes and so has no single user to report. `tailscale.path` (`direct`/`derp`) and, on a relayed connection, the numeric `tailscale.derp.region_id` are carried on **physical** traffic only — the overlay traffic types describe what the tailnet carried, not how, so they carry no path at all rather than one that reads as `direct`. `tailscale.derp.region_id` is NOT joinable with `tailscale.derp.region` on the device latency metrics: that one is a region NAME, this is the numeric ID the flow record supplies, and the API exposes no DERP map to translate between them. The endpoint identity attributes (`tailscale.{src,dst}.{user,tags,os}`) are **gated** by `cardinality.flow.identity_dims` (default off) and additionally require `cardinality.flow.node_dims`, since identity is node-derived.",
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService,
+			semconv.AttrPath, semconv.AttrDERPRegionID,
+			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
+			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
 		},
 		Group: groupNetwork,
 	}
@@ -99,6 +106,9 @@ var (
 		Attributes: []string{
 			semconv.NetworkIODirection, semconv.NetworkTransport, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService,
+			semconv.AttrPath, semconv.AttrDERPRegionID,
+			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
+			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
 		},
 		Group: groupNetwork,
 	}

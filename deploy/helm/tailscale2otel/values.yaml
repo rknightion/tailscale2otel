@@ -338,13 +338,17 @@ config:
       metrics_mode: rollup
       # -- Rollup only: busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500).
       rollup_top_n: 500
-      # -- Add source.port to flow METRICS (independent of destination_port); ports are always on flow LOGS.
+      # -- Add source.port to flow METRICS. INERT under metrics_mode: rollup (raw families only), and
+      # the most expensive knob in this block — ephemeral source ports are effectively unbounded.
+      # Ports are always present on flow LOGS regardless.
       source_port: false
-      # -- Add destination.port to flow METRICS (independent of source_port).
+      # -- Add destination.port to flow METRICS. INERT under metrics_mode: rollup, where
+      # tailscale.dst.service is the bounded stand-in (and is always emitted, no toggle).
       destination_port: false
-      # -- Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS.
-      destination_service: false
-      # -- Include src/dst device names as dimensions on flow metrics.
+      # -- Include tailscale.src.node/tailscale.dst.node on flow metrics — who talked to whom. Off
+      # keeps totals accurate but drops the per-peer breakdown, and suppresses the
+      # tailscale.network.unique.* gauges (keyed by source node, so they would reintroduce exactly the
+      # cardinality this removes). The single biggest cardinality lever here.
       node_dims: true
       # -- Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and,
       # when node_dims is true, the src/dst node labels on flow METRICS.
@@ -353,10 +357,13 @@ config:
       # relaying node (bounded by exit-node count); independent of metrics_mode.
       exit_node_attribution: true
       # -- Add the per-flow endpoint identity — tailscale.{src,dst}.user, .tags and .os — to flow
-      # METRICS. Read from the node blocks the control plane embeds in each flow record, so it costs
-      # no extra API call, and cardinality is bounded by user/tag/OS counts (well under device count).
-      # Off by default only because `user` is an email address; pii_filter.emails still applies.
-      # Flow LOGS carry these attributes regardless of this setting.
+      # METRICS, on the raw AND rollup families. Read from the node blocks the control plane embeds in
+      # each flow record, so it costs no extra API call. Identity is a property of the NODE, so with
+      # node_dims on this widens the label set without multiplying the series count. REQUIRES
+      # node_dims and is ignored without it, since identity would then be the only dimension
+      # splitting the metric. On the rollup families the __other__ remainder drops identity: the fold
+      # is many nodes, so it has no single user to report. Off by default only because `user` is an
+      # email address; pii_filter.emails still applies. Flow LOGS carry these regardless.
       identity_dims: false
     per_entity:
       # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the

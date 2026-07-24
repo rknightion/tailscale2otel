@@ -171,9 +171,9 @@ func TestLoadNestedValues(t *testing.T) {
 	if cfg.Cardinality.Flow.NodeDims {
 		t.Errorf("Cardinality.Flow.NodeDims = true, want false")
 	}
-	if !cfg.Cardinality.Flow.SourcePort || !cfg.Cardinality.Flow.DestinationPort || !cfg.Cardinality.Flow.DestinationService {
-		t.Errorf("Cardinality flow toggles = src %v / dst %v / service %v, want all true",
-			cfg.Cardinality.Flow.SourcePort, cfg.Cardinality.Flow.DestinationPort, cfg.Cardinality.Flow.DestinationService)
+	if !cfg.Cardinality.Flow.SourcePort || !cfg.Cardinality.Flow.DestinationPort {
+		t.Errorf("Cardinality flow toggles = src %v / dst %v, want both true",
+			cfg.Cardinality.Flow.SourcePort, cfg.Cardinality.Flow.DestinationPort)
 	}
 
 	// Collectors struct with per-collector fields.

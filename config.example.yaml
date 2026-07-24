@@ -129,11 +129,10 @@ cardinality:
   flow:                               # shapes flow METRICS only — flow LOGS always carry full detail
     metrics_mode: rollup              # rollup (bounded top-N, lowest cardinality) | all (raw per-connection) | both (≈2x series; summing double-counts)
     rollup_top_n: 500                 # rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500)
-    source_port: false                # add source.port to flow metrics (raw modes only)
-    destination_port: false           # add destination.port to flow metrics (raw modes only)
-    destination_service: false        # add tailscale.dst.service (IANA name, e.g. tcp/443->https) to flow metrics
-    node_dims: true                   # include src/dst device names on flow metrics
-    identity_dims: false              # add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics (flow LOGS always carry them)
+    source_port: false                # add source.port to flow metrics. INERT under metrics_mode: rollup (raw modes only) — and the most expensive knob here, ephemeral ports are unbounded
+    destination_port: false           # add destination.port to flow metrics. INERT under metrics_mode: rollup (raw modes only); dst.service below is the bounded stand-in and is always on
+    node_dims: true                   # include src/dst device names on flow metrics (who talked to whom); off keeps totals but drops the per-peer breakdown and suppresses the unique.* gauges
+    identity_dims: false              # add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics, on BOTH families. REQUIRES node_dims (identity is node-derived, so without it identity becomes the only splitting dimension); flow LOGS always carry them
     collapse_external: true           # bucket unresolved IPs as external/unknown (keeps cardinality bounded)
     exit_node_attribution: true       # emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count)
   per_entity:                         # emit one gauge series per entity (true) or only the aggregate *.count (false)

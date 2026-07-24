@@ -637,22 +637,29 @@ func TestProcessDestinationServiceOnLogs(t *testing.T) {
 	}
 }
 
-func TestProcessDestinationServiceMetricsGated(t *testing.T) {
-	// Off by default: no dst.service on metrics.
-	recOff := telemetrytest.New()
-	flowlog.NewProcessor(cacheWith(t), flowlog.Options{}).Process(httpsFlow(), recOff.Emitter())
-	for _, pt := range recOff.MetricPoints(flowlog.MetricIO) {
-		if _, ok := pt.Attrs[semconv.AttrDstService]; ok {
-			t.Fatalf("dst.service present on metrics by default: %+v", pt.Attrs)
-		}
+// TestProcessDestinationServiceAlwaysOnMetrics pins that dst.service needs no
+// toggle on either metric family.
+//
+// It used to be gated on the raw families while the rollup families carried it
+// unconditionally, so the same dimension appeared or vanished depending on
+// metrics_mode. dst.service is the bounded stand-in for the destination port —
+// its value space is a fixed IANA registry, not the ephemeral port range — so
+// gating it bought little and the asymmetry cost more than it saved.
+func TestProcessDestinationServiceAlwaysOnMetrics(t *testing.T) {
+	raw := telemetrytest.New()
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{FlowMetricsMode: "all"}).Process(httpsFlow(), raw.Emitter())
+	tx := findPoint(t, raw.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if tx.Attrs[semconv.AttrDstService] != "https" {
+		t.Fatalf("raw io dst.service = %q, want https with no toggle set", tx.Attrs[semconv.AttrDstService])
 	}
 
-	// On: dst.service on the io metric points.
-	recOn := telemetrytest.New()
-	flowlog.NewProcessor(cacheWith(t), flowlog.Options{IncludeDestinationService: true}).Process(httpsFlow(), recOn.Emitter())
-	tx := findPoint(t, recOn.MetricPoints(flowlog.MetricIO), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
-	if tx.Attrs[semconv.AttrDstService] != "https" {
-		t.Fatalf("io dst.service = %q, want https", tx.Attrs[semconv.AttrDstService])
+	roll := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{FlowMetricsMode: "rollup", NodeDims: true})
+	p.Process(httpsFlow(), roll.Emitter())
+	p.FlushRollup(roll.Emitter())
+	rtx := findPoint(t, roll.MetricPoints(flowlog.MetricIORollup), map[string]string{semconv.NetworkIODirection: semconv.DirectionTransmit})
+	if rtx.Attrs[semconv.AttrDstService] != "https" {
+		t.Fatalf("io.rollup dst.service = %q, want https", rtx.Attrs[semconv.AttrDstService])
 	}
 }
 
@@ -660,7 +667,7 @@ func TestProcessDestinationServiceUnmappedOmitted(t *testing.T) {
 	// virtualTCPFlow's destination port (51820) is not a registered service, so
 	// dst.service is omitted entirely even with the metric toggle on.
 	rec := telemetrytest.New()
-	flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: "per_connection", IncludeDestinationService: true}).Process(virtualTCPFlow(), rec.Emitter())
+	flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: "per_connection", FlowMetricsMode: "all"}).Process(virtualTCPFlow(), rec.Emitter())
 	for _, pt := range rec.MetricPoints(flowlog.MetricIO) {
 		if _, ok := pt.Attrs[semconv.AttrDstService]; ok {
 			t.Fatalf("dst.service present for unmapped port on metrics: %+v", pt.Attrs)
