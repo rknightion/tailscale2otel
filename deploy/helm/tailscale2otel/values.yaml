@@ -192,6 +192,9 @@ config:
     url: ""
     # -- Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value.
     api_key: ""
+    # -- Read headscale.api_key from this path instead of an inline value (mounted-Secret style).
+    # Set the value or the file, not both; the file's content is whitespace-trimmed.
+    api_key_file: ""
     http:
       # -- Per-request timeout for Headscale API calls (the only http knob applied in v1).
       timeout: 30s
@@ -208,19 +211,38 @@ config:
     # TS2OTEL_TAILSCALE__TAILNET env var (set via secret above).
     tailnet: "-"
     auth:
-      # -- Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped
-      # tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the
-      # exporter logs a WARN when apikey is selected.
+      # -- Auth method: oauth (recommended) | apikey | workload_identity. Prefer an OAuth client
+      # (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is
+      # user-tied, and the exporter logs a WARN when apikey is selected. workload_identity is the
+      # keyless OIDC exchange — no stored secret at all, ideal for a Kubernetes ServiceAccount token.
       method: oauth
       oauth:
         # -- OAuth client ID. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID (secret).
         client_id: ""
         # -- OAuth client secret. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET (secret).
         client_secret: ""
+        # -- Read the OAuth client secret from this path instead of an inline value. Point it at a
+        # projected Secret volume to keep the credential out of the pod's environment entirely.
+        # Set the value or the file, not both; the file's content is whitespace-trimmed.
+        client_secret_file: ""
         # -- OAuth scopes to request. "all:read" covers every read-only collector.
         scopes: ["all:read"]
       # -- API key, used only when method: apikey. Set via TS2OTEL_TAILSCALE__AUTH__APIKEY (secret).
       apikey: ""
+      # -- Read tailscale.auth.apikey from this path instead of an inline value.
+      # Set the value or the file, not both; the file's content is whitespace-trimmed.
+      apikey_file: ""
+      # Keyless OIDC token exchange, used only when method: workload_identity. Pair a projected
+      # ServiceAccount token volume with a federated OAuth client in the Tailscale admin console
+      # and the deployment holds no long-lived Tailscale credential at all.
+      workload_identity:
+        # -- Federated OAuth client ID from the Tailscale admin console. Required for this method.
+        client_id: ""
+        # -- Path to the OIDC ID token exchanged for a Tailscale access token. In Kubernetes this
+        # is a projected ServiceAccount token, e.g.
+        # /var/run/secrets/tokens/tailscale. Re-read on every exchange, so
+        # kubelet rotation is picked up without a restart.
+        id_token_file: ""
     http:
       # -- Per-request HTTP timeout for Tailscale API calls.
       timeout: 30s
@@ -248,11 +270,20 @@ config:
       # -- Grafana Cloud OTLP token paired with instance_id.
       # Set via TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN (secret).
       token: ""
+      # -- Read the Grafana Cloud token from this path instead of an inline value.
+      # Set the value or the file, not both; the file's content is whitespace-trimmed.
+      token_file: ""
     # -- Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend).
     headers: {}
     tls:
-      # -- Skip TLS certificate verification (insecure; for local/testing only).
+      # -- Disable transport security ENTIRELY (plaintext) — this is NOT a certificate-verification
+      # skip, see insecure_skip_verify for that. The Authorization header built from grafana_cloud
+      # rides on whatever transport this selects, so `true` puts that credential on the wire
+      # unencrypted. Only ever for a trusted in-cluster Collector, never across an untrusted network.
       insecure: false
+      # -- Keep TLS on but skip server-certificate verification (self-signed / private-CA gateways,
+      # testing only). Distinct from `insecure` above; prefer ca_file in production.
+      insecure_skip_verify: false
       # -- Path to a CA bundle to verify the server certificate.
       ca_file: ""
       # -- Client certificate for mutual TLS.
@@ -321,6 +352,12 @@ config:
       # -- Emit the bounded tailscale.exit_node.io/packets counters attributing exit traffic to the
       # relaying node (bounded by exit-node count); independent of metrics_mode.
       exit_node_attribution: true
+      # -- Add the per-flow endpoint identity — tailscale.{src,dst}.user, .tags and .os — to flow
+      # METRICS. Read from the node blocks the control plane embeds in each flow record, so it costs
+      # no extra API call, and cardinality is bounded by user/tag/OS counts (well under device count).
+      # Off by default only because `user` is an email address; pii_filter.emails still applies.
+      # Flow LOGS carry these attributes regardless of this setting.
+      identity_dims: false
     per_entity:
       # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
       # aggregate tailscale.devices.count rollup.
@@ -349,6 +386,10 @@ config:
       collect_connectivity: true
       # -- Emit per-device posture attributes as log records (gated; requires posture identity on).
       collect_posture: false
+      # -- How the tailscale.device.posture log behaves when collect_posture is on: changes (full
+      # dump on the first scrape, then deltas only) | always (every scrape) | off (suppress the log;
+      # the posture gauge metric is still emitted). `always` on a large fleet is a lot of log volume.
+      posture_log_mode: changes
       # -- Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API
       # call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read).
       # Emits tailscale.device_invites.count; per-device fetch failures are non-fatal.
@@ -412,11 +453,18 @@ config:
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200
-        # NOTE: S3 credentials are NOT set here — they would land in the ConfigMap. Leave them
-        # unset to use the ambient chain (environment, then IRSA/web identity via a
-        # service-account annotation, then an EC2 instance profile), which is the right answer
-        # on EKS; or set the TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__* keys under `secret:`
-        # for a MinIO/Ceph bucket with no role to assume.
+        # NOTE: LEAVE THE THREE CREDENTIAL KEYS BELOW EMPTY. Anything set here is rendered into
+        # the ConfigMap, which is readable by anyone with namespace get access. Empty selects the
+        # ambient chain (environment, then IRSA/web identity via a service-account annotation, then
+        # an EC2 instance profile) — the right answer on EKS. For a MinIO/Ceph bucket with no role
+        # to assume, set the TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__* keys under `secret:`
+        # instead; the env layer overrides this file.
+        # -- Static S3 access key ID. Set via the TS2OTEL_* secret, not here.
+        access_key_id: ""
+        # -- Static S3 secret access key. Set via the TS2OTEL_* secret, not here.
+        secret_access_key: ""
+        # -- Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here.
+        session_token: ""
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true
@@ -480,6 +528,12 @@ config:
       enabled: true
       # -- Poll interval.
       interval: 600s
+    oauth_apps:
+      # -- Enable the OAuth-application inventory collector (count, per-app scope/node-attribute
+      # gauges). Alpha API — idles silently, with no error, on tailnets that do not have it.
+      enabled: true
+      # -- Poll interval.
+      interval: 300s
     services:
       # -- Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts).
       enabled: true
@@ -506,6 +560,46 @@ config:
       metric_deny: []
       # -- Label keys stripped from every forwarded series (the instance label is never dropped).
       drop_labels: []
+      # -- Cap on the response body read from one target per scrape, in bytes (4 MiB). Bounds
+      # memory: an over-cap body fails that one scrape rather than buffering unbounded.
+      max_response_bytes: 4194304
+      # -- Cap on samples parsed from one target per scrape. Bounds cardinality: an over-cap
+      # target fails that one scrape rather than forwarding the whole set. Must be > 0 when enabled.
+      max_samples: 50000
+      # Discover scrape targets from the Tailscale devices API instead of (or alongside) the
+      # static `targets` list above. Discovered targets are unioned with the static ones,
+      # deduped by URL with static winning, on this block's own interval.
+      discovery:
+        # -- Turn on dynamic target discovery.
+        enabled: false
+        # -- How often the devices API is polled for targets (independent of the scrape interval).
+        interval: 300s
+        # -- Cap on discovered targets per refresh.
+        max_targets: 1000
+        # -- Metrics-endpoint scheme applied to each discovered device: http | https.
+        scheme: http
+        # -- Metrics port on each device (tailscaled's default is 5252).
+        port: 5252
+        # -- Metrics path on each device.
+        path: /metrics
+        # -- Only devices currently connected to the control plane.
+        online_only: true
+        # -- Skip shared/external devices.
+        exclude_external: true
+        # -- If non-empty, only devices carrying one of these tags, e.g. ["tag:server"].
+        include_tags: []
+        # -- Devices carrying any of these tags are skipped (wins over include_tags).
+        exclude_tags: []
+        # -- Preferred address family: ipv4 | ipv6 (falls back to the other).
+        address_order: ipv4
+        # -- Source of the node-identity label: name (MagicDNS short name — unique per tailnet and
+        # human-friendly, the default) | address (Tailscale host:port, always unique) | hostname
+        # (OS hostname — NOT unique; collisions are auto-suffixed with the address plus a WARN).
+        instance_source: name
+        # -- Attach host.name/host.id so scraped series join with tailscale.device.* metrics.
+        include_host_labels: true
+        # -- Attach the tailscale.tags label to scraped series.
+        include_tags_label: true
 
   checkpoint:
     # -- Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does
@@ -528,6 +622,9 @@ config:
     path: "/services/collector/event"
     # -- Expected as 'Authorization: Splunk <token>'. Set via TS2OTEL_STREAMING__TOKEN (secret).
     token: ""
+    # -- Read streaming.token from this path instead of an inline value (mounted-Secret style).
+    # Set the value or the file, not both; the file's content is whitespace-trimmed.
+    token_file: ""
     # -- Externally reachable receiver URL; REQUIRED when auto_configure: true.
     public_url: ""
     tls:
@@ -560,6 +657,17 @@ config:
     # -- HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs).
     # Set via TS2OTEL_WEBHOOK__SECRET (secret).
     secret: ""
+    # -- Read webhook.secret from this path instead of an inline value (mounted-Secret style).
+    # Set the value or the file, not both; the file's content is whitespace-trimmed.
+    secret_file: ""
+    # -- Allowed clock skew in BOTH directions on the signed timestamp: a request older than
+    # now-tolerance or newer than now+tolerance is rejected. The two-sided check matters because a
+    # correctly signed but future-dated request would otherwise stay replayable. 0 disables the
+    # timestamp check entirely.
+    tolerance: 5m
+    # -- Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited
+    # (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body.
+    max_body_bytes: 0
     # -- Best-effort: drop a webhook event already counted via the audit logs (off by default).
     dedup_audit_events: false
 
@@ -615,6 +723,15 @@ config:
       # -- Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>").
       # Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret).
       token: ""
+      # -- Read prometheus.auth.token from this path instead of an inline value (mounted-Secret
+      # style). Set the value or the file, not both; the file's content is whitespace-trimmed.
+      token_file: ""
+    tls:
+      # -- HTTPS certificate for the Prometheus endpoint. Set together with key_file
+      # (both-or-neither); leaving both empty serves plain HTTP.
+      cert_file: ""
+      # -- HTTPS private key paired with cert_file. Both paths must exist and be readable at startup.
+      key_file: ""
 
   # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
   # The page exposes operational metadata (collector health, cardinality, discovered
@@ -629,6 +746,20 @@ config:
     auth:
       # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled.
       token: ""
+      # -- Read admin.auth.token from this path instead of an inline value (mounted-Secret style).
+      # Set the value or the file, not both; the file's content is whitespace-trimmed.
+      token_file: ""
+    tls:
+      # -- HTTPS certificate for the admin server. Set together with key_file (both-or-neither);
+      # leaving both empty serves plain HTTP. NOTE: this chart's liveness/readiness probes set no
+      # httpGet.scheme, so they speak HTTP — serving the admin server over HTTPS breaks them until
+      # you patch the probes to scheme: HTTPS.
+      cert_file: ""
+      # -- HTTPS private key paired with cert_file. Both paths must exist and be readable at startup.
+      key_file: ""
+    # -- How often the status page's JS re-polls /api/status.json to patch the live view.
+    # The page's 1s freshness ticker is independent of this.
+    status_refresh_interval: 5s
 
   # Built-in flow view, served at /flows on the admin server: a bounded in-memory
   # picture of recent traffic (topology, timeline, top talkers, recent connections)
@@ -657,16 +788,23 @@ config:
       basic_auth_user: ""
       # -- Basic-auth password (Grafana Cloud: an access policy token with profiles:write). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD (secret).
       basic_auth_password: ""
+      # -- Read the Pyroscope basic-auth password from this path instead of an inline value
+      # (mounted-Secret style). Set the value or the file, not both; content is whitespace-trimmed.
+      basic_auth_password_file: ""
       # -- X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud).
       tenant_id: ""
       # -- How often profiles are flushed to the server.
       upload_rate: 60s
       # -- Extra static labels merged onto every profile, e.g. { env: prod }.
       tags: {}
-    # -- runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull.
-    mutex_profile_fraction: 0
-    # -- runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull.
-    block_profile_rate: 0
+    # -- runtime.SetMutexProfileFraction; samples 1/N mutex-contention events for both push and
+    # pull. On by default, but APPLIED ONLY when pprof or pyroscope is enabled, so it costs a
+    # non-profiling pod nothing. 0 drops the mutex profile.
+    mutex_profile_fraction: 5
+    # -- runtime.SetBlockProfileRate in nanoseconds; records blocking events averaging at least
+    # this long (100us) for both push and pull. Same on-by-default/applied-only-when-enabled rule
+    # as mutex_profile_fraction. 0 drops the block profile.
+    block_profile_rate: 100000
 
   # -- OTEL traces pillar (spans for the exporter's own work). OFF by default;
   # reuses otlp.* for the endpoint/protocol/headers/TLS.

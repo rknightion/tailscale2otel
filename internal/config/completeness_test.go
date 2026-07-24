@@ -102,6 +102,58 @@ func TestExampleConfigCoversEveryKey(t *testing.T) {
 	}
 }
 
+// TestHelmValuesCoverEveryKey guards the Helm chart's `config:` block against the
+// same drift TestExampleConfigCoversEveryKey guards config.example.yaml against.
+// The chart renders `.Values.config | toYaml` verbatim as config.yaml (see
+// _helpers.tpl "tailscale2otel.config"), and values.yaml declares itself "the FULL
+// application config ... kept in sync with config.example.yaml" — so a field added
+// to the struct but never written into values.yaml silently leaves chart users
+// without a documented knob (values.schema.json and the chart README are both
+// generated FROM values.yaml, so the omission propagates into every artifact).
+//
+// Nothing else catches this: the schema sets no additionalProperties, so an
+// omitted key is not rejected at install time, it is merely undiscoverable.
+func TestHelmValuesCoverEveryKey(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "deploy", "helm", "tailscale2otel", "values.yaml"))
+	if err != nil {
+		t.Fatalf("read chart values: %v", err)
+	}
+	var values struct {
+		Config map[string]any `yaml:"config"`
+	}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		t.Fatalf("unmarshal chart values: %v", err)
+	}
+	cfg, err := yaml.Marshal(values.Config)
+	if err != nil {
+		t.Fatalf("re-marshal chart config block: %v", err)
+	}
+	want := defaultKeySet(t)
+	got := flattenYAMLKeys(t, cfg)
+
+	var missing, extra []string
+	for k := range want {
+		if !got[k] {
+			missing = append(missing, k)
+		}
+	}
+	for k := range got {
+		if !want[k] {
+			extra = append(extra, k)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) > 0 {
+		t.Errorf("deploy/helm/tailscale2otel/values.yaml config: is missing %d key(s) defined by config.Default() — add them so the chart exposes every field:\n  %s",
+			len(missing), strings.Join(missing, "\n  "))
+	}
+	if len(extra) > 0 {
+		t.Errorf("deploy/helm/tailscale2otel/values.yaml config: has %d key(s) not in config.Default() — the chart would render an unknown key into config.yaml:\n  %s",
+			len(extra), strings.Join(extra, "\n  "))
+	}
+}
+
 // TestDocsConfigurationMentionsEveryKey is a best-effort guard that every
 // configuration key is described somewhere in docs/configuration.md. A key
 // counts as documented if its full dotted path appears in the prose, OR its leaf

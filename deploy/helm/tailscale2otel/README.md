@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.11.0](https://img.shields.io/badge/Version-0.11.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.12.0](https://img.shields.io/badge/Version-0.12.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -71,15 +71,20 @@ extraVolumeMounts:
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
 | config.admin.auth.token | string | `""` | Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled. |
+| config.admin.auth.token_file | string | `""` | Read admin.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.admin.enabled | bool | `true` | Enable the admin probe server. |
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
 | config.admin.listen | string | `":9091"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
+| config.admin.status_refresh_interval | string | `"5s"` | How often the status page's JS re-polls /api/status.json to patch the live view. The page's 1s freshness ticker is independent of this. |
+| config.admin.tls.cert_file | string | `""` | HTTPS certificate for the admin server. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. NOTE: this chart's liveness/readiness probes set no httpGet.scheme, so they speak HTTP — serving the admin server over HTTPS breaks them until you patch the probes to scheme: HTTPS. |
+| config.admin.tls.key_file | string | `""` | HTTPS private key paired with cert_file. Both paths must exist and be readable at startup. |
 | config.cardinality.critical_threshold | int | `8000` | Status-page cardinality view flags a metric critically at/above this count (>= warning_threshold; <= metric_limit when set; 0 disables). |
 | config.cardinality.derp_region_rollup | bool | `true` | Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector. |
 | config.cardinality.flow.collapse_external | bool | `true` | Bucket unresolved IPs as external/unknown to cap cardinality. Affects flow LOGS and, when node_dims is true, the src/dst node labels on flow METRICS. |
 | config.cardinality.flow.destination_port | bool | `false` | Add destination.port to flow METRICS (independent of source_port). |
 | config.cardinality.flow.destination_service | bool | `false` | Add tailscale.dst.service (IANA service name, e.g. tcp/443->https) to flow METRICS — a bounded stand-in for destination.port; always on flow LOGS. |
 | config.cardinality.flow.exit_node_attribution | bool | `true` | Emit the bounded tailscale.exit_node.io/packets counters attributing exit traffic to the relaying node (bounded by exit-node count); independent of metrics_mode. |
+| config.cardinality.flow.identity_dims | bool | `false` | Add the per-flow endpoint identity — tailscale.{src,dst}.user, .tags and .os — to flow METRICS. Read from the node blocks the control plane embeds in each flow record, so it costs no extra API call, and cardinality is bounded by user/tag/OS counts (well under device count). Off by default only because `user` is an email address; pii_filter.emails still applies. Flow LOGS carry these attributes regardless of this setting. |
 | config.cardinality.flow.metrics_mode | string | `"rollup"` | Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection tailscale.network.io/packets shaped by the toggles below. both = emit both (~2x series; summing double-counts). |
 | config.cardinality.flow.node_dims | bool | `true` | Include src/dst device names as dimensions on flow metrics. |
 | config.cardinality.flow.rollup_top_n | int | `500` | Rollup only: busiest src/dst node pairs kept per flush; the rest fold into __other__. 0 = default (500). |
@@ -113,6 +118,7 @@ extraVolumeMounts:
 | config.collectors.devices.collect_tag_rollup | bool | `true` | Emit the tailscale.devices.by_tag distribution gauge (one series per ACL tag). false keeps the other fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry). |
 | config.collectors.devices.enabled | bool | `true` | Enable the devices collector (device.online/last_seen/key_expiry/update_available). |
 | config.collectors.devices.interval | string | `"60s"` | Poll interval. |
+| config.collectors.devices.posture_log_mode | string | `"changes"` | How the tailscale.device.posture log behaves when collect_posture is on: changes (full dump on the first scrape, then deltas only) | always (every scrape) | off (suppress the log; the posture gauge metric is still emitted). `always` on a large fleet is a lot of log volume. |
 | config.collectors.devices.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
 | config.collectors.dns.interval | string | `"600s"` | Poll interval. |
@@ -123,6 +129,7 @@ extraVolumeMounts:
 | config.collectors.flowlogs.log_mode | string | `"per_connection"` | Flow-log verbosity: per_connection | per_record | off (off = metrics only, no logs). |
 | config.collectors.flowlogs.max_log_records_per_window | int | `0` | Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into tailscale.network.flow.logs_dropped; METRICS are never capped, only logs. |
 | config.collectors.flowlogs.max_window | string | `"1h"` | Maximum width of a single poll window (caps catch-up after downtime). |
+| config.collectors.flowlogs.objectstore.access_key_id | string | `""` | Static S3 access key ID. Set via the TS2OTEL_* secret, not here. |
 | config.collectors.flowlogs.objectstore.bucket | string | `""` | Bucket Tailscale exports into. REQUIRED when source is objectstore. |
 | config.collectors.flowlogs.objectstore.endpoint | string | `""` | Service URL of the S3-compatible store holding Tailscale's flow-log export, e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when source is objectstore; never derived from the region, because a non-AWS implementation would be derived wrong. Leave "" for any other source. |
 | config.collectors.flowlogs.objectstore.initial_lookback | string | `"6h"` | Cold-start reach-back, so a first run against a long history does not ingest all of it. |
@@ -132,19 +139,39 @@ extraVolumeMounts:
 | config.collectors.flowlogs.objectstore.path_style | bool | `false` | Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>. Required by most non-AWS implementations; getting it backwards is a DNS failure. |
 | config.collectors.flowlogs.objectstore.prefix | string | `""` | The export's root within the bucket, above the YYYY/MM/DD partitions. |
 | config.collectors.flowlogs.objectstore.region | string | `""` | Bucket region. REQUIRED when source is objectstore: it is part of the request signature, so a wrong value fails every request with HTTP 403. |
+| config.collectors.flowlogs.objectstore.secret_access_key | string | `""` | Static S3 secret access key. Set via the TS2OTEL_* secret, not here. |
+| config.collectors.flowlogs.objectstore.session_token | string | `""` | Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here. |
 | config.collectors.flowlogs.source | string | `"poll"` | Ingestion source: poll | stream | objectstore | both. PICK ONE method per log type: `both` runs poll AND the `streaming` receiver and risks double-counting — cross-source de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter logs a WARN at startup when streaming is enabled while this collector still polls or reads the export bucket. Set `stream` (not poll/both) when config.streaming.enabled is true; set `objectstore` and fill in the objectstore block below to read Tailscale's S3 export instead of calling the API. |
 | config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
 | config.collectors.keys.interval | string | `"300s"` | Poll interval. |
 | config.collectors.log_stream.enabled | bool | `true` | Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error) when no SIEM sink is configured for a log type. |
 | config.collectors.log_stream.interval | string | `"600s"` | Poll interval. |
+| config.collectors.node_metrics.discovery.address_order | string | `"ipv4"` | Preferred address family: ipv4 | ipv6 (falls back to the other). |
+| config.collectors.node_metrics.discovery.enabled | bool | `false` | Turn on dynamic target discovery. |
+| config.collectors.node_metrics.discovery.exclude_external | bool | `true` | Skip shared/external devices. |
+| config.collectors.node_metrics.discovery.exclude_tags | list | `[]` | Devices carrying any of these tags are skipped (wins over include_tags). |
+| config.collectors.node_metrics.discovery.include_host_labels | bool | `true` | Attach host.name/host.id so scraped series join with tailscale.device.* metrics. |
+| config.collectors.node_metrics.discovery.include_tags | list | `[]` | If non-empty, only devices carrying one of these tags, e.g. ["tag:server"]. |
+| config.collectors.node_metrics.discovery.include_tags_label | bool | `true` | Attach the tailscale.tags label to scraped series. |
+| config.collectors.node_metrics.discovery.instance_source | string | `"name"` | Source of the node-identity label: name (MagicDNS short name — unique per tailnet and human-friendly, the default) | address (Tailscale host:port, always unique) | hostname (OS hostname — NOT unique; collisions are auto-suffixed with the address plus a WARN). |
+| config.collectors.node_metrics.discovery.interval | string | `"300s"` | How often the devices API is polled for targets (independent of the scrape interval). |
+| config.collectors.node_metrics.discovery.max_targets | int | `1000` | Cap on discovered targets per refresh. |
+| config.collectors.node_metrics.discovery.online_only | bool | `true` | Only devices currently connected to the control plane. |
+| config.collectors.node_metrics.discovery.path | string | `"/metrics"` | Metrics path on each device. |
+| config.collectors.node_metrics.discovery.port | int | `5252` | Metrics port on each device (tailscaled's default is 5252). |
+| config.collectors.node_metrics.discovery.scheme | string | `"http"` | Metrics-endpoint scheme applied to each discovered device: http | https. |
 | config.collectors.node_metrics.drop_labels | list | `[]` | Label keys stripped from every forwarded series (the instance label is never dropped). |
 | config.collectors.node_metrics.enabled | bool | `false` | Enable the node-metrics scraper. Requires at least one entry in `targets`. |
 | config.collectors.node_metrics.interval | string | `"60s"` | Scrape interval for every target. |
+| config.collectors.node_metrics.max_response_bytes | int | `4194304` | Cap on the response body read from one target per scrape, in bytes (4 MiB). Bounds memory: an over-cap body fails that one scrape rather than buffering unbounded. |
+| config.collectors.node_metrics.max_samples | int | `50000` | Cap on samples parsed from one target per scrape. Bounds cardinality: an over-cap target fails that one scrape rather than forwarding the whole set. Must be > 0 when enabled. |
 | config.collectors.node_metrics.metric_allow | list | `[]` | Passthrough allow-list: anchored regex on the forwarded metric NAME; if non-empty, only matching names are forwarded. |
 | config.collectors.node_metrics.metric_deny | list | `[]` | Passthrough deny-list: anchored regex; names matching any are dropped (after metric_allow). |
 | config.collectors.node_metrics.targets | list | `[]` | List of scrape targets. Each: {url, instance, labels{}, bearer_token, bearer_token_file, headers{}, tls{insecure,ca_file,cert_file,key_file}}. The "instance" label is the node identity. |
 | config.collectors.node_metrics.timeout | string | `"10s"` | Per-scrape HTTP timeout. |
+| config.collectors.oauth_apps.enabled | bool | `true` | Enable the OAuth-application inventory collector (count, per-app scope/node-attribute gauges). Alpha API — idles silently, with no error, on tailnets that do not have it. |
+| config.collectors.oauth_apps.interval | string | `"300s"` | Poll interval. |
 | config.collectors.posture_integrations.enabled | bool | `true` | Enable the device-posture-integration collector (MDM/EDR matched counts + last_sync staleness). |
 | config.collectors.posture_integrations.interval | string | `"600s"` | Poll interval. |
 | config.collectors.services.collect_hosts | bool | `false` | Also collect per-service backing-host detail (approval/configured state) — one extra API call per service (N+1). Off by default. |
@@ -167,6 +194,7 @@ extraVolumeMounts:
 | config.flows.enabled | bool | `true` | Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page. |
 | config.flows.retention | string | `"6h"` | How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store. |
 | config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
+| config.headscale.api_key_file | string | `""` | Read headscale.api_key from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.headscale.http.rate_limit | int | `0` |  |
 | config.headscale.http.retry.base_delay | string | `"0s"` |  |
 | config.headscale.http.retry.max_attempts | int | `0` |  |
@@ -177,12 +205,14 @@ extraVolumeMounts:
 | config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
 | config.otlp.grafana_cloud.instance_id | string | `""` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret). |
 | config.otlp.grafana_cloud.token | string | `""` | Grafana Cloud OTLP token paired with instance_id. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN (secret). |
+| config.otlp.grafana_cloud.token_file | string | `""` | Read the Grafana Cloud token from this path instead of an inline value. Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.otlp.headers | object | `{}` | Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend). |
 | config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed (the metric export interval). |
 | config.otlp.protocol | string | `"http"` | Export protocol: http | grpc | stdout (stdout = local debug). |
 | config.otlp.tls.ca_file | string | `""` | Path to a CA bundle to verify the server certificate. |
 | config.otlp.tls.cert_file | string | `""` | Client certificate for mutual TLS. |
-| config.otlp.tls.insecure | bool | `false` | Skip TLS certificate verification (insecure; for local/testing only). |
+| config.otlp.tls.insecure | bool | `false` | Disable transport security ENTIRELY (plaintext) — this is NOT a certificate-verification skip, see insecure_skip_verify for that. The Authorization header built from grafana_cloud rides on whatever transport this selects, so `true` puts that credential on the wire unencrypted. Only ever for a trusted in-cluster Collector, never across an untrusted network. |
+| config.otlp.tls.insecure_skip_verify | bool | `false` | Keep TLS on but skip server-certificate verification (self-signed / private-CA gateways, testing only). Distinct from `insecure` above; prefer ca_file in production. |
 | config.otlp.tls.key_file | string | `""` | Client private key for mutual TLS. |
 | config.pii_filter.emails | bool | `true` | Emit user/actor login names (often emails). |
 | config.pii_filter.endpoint_paths | bool | `true` | Emit Tailscale API endpoint paths (self-obs). |
@@ -197,10 +227,11 @@ extraVolumeMounts:
 | config.pii_filter.tailscale_ips | bool | `true` | Emit Tailscale-range addresses (100.64.0.0/10, fd7a:115c:a1e0::/48). |
 | config.pii_filter.user_display_names | bool | `true` | Emit actor display (human) names. |
 | config.pii_filter.user_ids | bool | `true` | Emit numeric/opaque user IDs (user.id). |
-| config.profiling.block_profile_rate | int | `0` | runtime.SetBlockProfileRate (nanoseconds); >0 enables block profiling for both push and pull. |
-| config.profiling.mutex_profile_fraction | int | `0` | runtime.SetMutexProfileFraction; >0 enables mutex profiling for both push and pull. |
+| config.profiling.block_profile_rate | int | `100000` | runtime.SetBlockProfileRate in nanoseconds; records blocking events averaging at least this long (100us) for both push and pull. Same on-by-default/applied-only-when-enabled rule as mutex_profile_fraction. 0 drops the block profile. |
+| config.profiling.mutex_profile_fraction | int | `5` | runtime.SetMutexProfileFraction; samples 1/N mutex-contention events for both push and pull. On by default, but APPLIED ONLY when pprof or pyroscope is enabled, so it costs a non-profiling pod nothing. 0 drops the mutex profile. |
 | config.profiling.pprof.enabled | bool | `false` | Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. Requires admin.enabled + admin.auth.token. |
 | config.profiling.pyroscope.basic_auth_password | string | `""` | Basic-auth password (Grafana Cloud: an access policy token with profiles:write). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD (secret). |
+| config.profiling.pyroscope.basic_auth_password_file | string | `""` | Read the Pyroscope basic-auth password from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; content is whitespace-trimmed. |
 | config.profiling.pyroscope.basic_auth_user | string | `""` | Basic-auth user (Grafana Cloud: the profiles instance ID). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER (secret). |
 | config.profiling.pyroscope.enabled | bool | `false` | Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK). |
 | config.profiling.pyroscope.server_address | string | `""` | Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled. |
@@ -208,8 +239,11 @@ extraVolumeMounts:
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
 | config.profiling.pyroscope.upload_rate | string | `"60s"` | How often profiles are flushed to the server. |
 | config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
+| config.prometheus.auth.token_file | string | `""` | Read prometheus.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
 | config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |
+| config.prometheus.tls.cert_file | string | `""` | HTTPS certificate for the Prometheus endpoint. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. |
+| config.prometheus.tls.key_file | string | `""` | HTTPS private key paired with cert_file. Both paths must exist and be readable at startup. |
 | config.provider | string | `"tailscale"` | Control-plane backend: tailscale (default) | headscale. Under headscale only the devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable. |
 | config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |
 | config.self_observability.instance_id | string | `""` | service.instance.id resource attribute; empty falls back to the pod/host name. Override with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API). |
@@ -224,12 +258,17 @@ extraVolumeMounts:
 | config.streaming.tls.cert_file | string | `""` | TLS certificate file; set with key_file to serve the receiver over HTTPS. |
 | config.streaming.tls.key_file | string | `""` | TLS private key file paired with cert_file. |
 | config.streaming.token | string | `""` | Expected as 'Authorization: Splunk <token>'. Set via TS2OTEL_STREAMING__TOKEN (secret). |
+| config.streaming.token_file | string | `""` | Read streaming.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.tailnets | list | `[]` | Multi-tailnet / MSP list. Optional; mutually exclusive with an explicit tailscale.tailnet (leave it "-" when using this). Each entry observes one tailnet and is self-contained (its own name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode. Default empty (single tailnet from the tailscale block below). When this list is non-empty the chart renders the whole config.yaml into a dedicated Secret (<fullname>-config) instead of a ConfigMap, so the inline per-tailnet credentials never land in a ConfigMap readable by namespace viewers. |
 | config.tailscale.auth.apikey | string | `""` | API key, used only when method: apikey. Set via TS2OTEL_TAILSCALE__AUTH__APIKEY (secret). |
-| config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey. Prefer an OAuth client (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the exporter logs a WARN when apikey is selected. |
+| config.tailscale.auth.apikey_file | string | `""` | Read tailscale.auth.apikey from this path instead of an inline value. Set the value or the file, not both; the file's content is whitespace-trimmed. |
+| config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey | workload_identity. Prefer an OAuth client (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the exporter logs a WARN when apikey is selected. workload_identity is the keyless OIDC exchange — no stored secret at all, ideal for a Kubernetes ServiceAccount token. |
 | config.tailscale.auth.oauth.client_id | string | `""` | OAuth client ID. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID (secret). |
 | config.tailscale.auth.oauth.client_secret | string | `""` | OAuth client secret. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET (secret). |
+| config.tailscale.auth.oauth.client_secret_file | string | `""` | Read the OAuth client secret from this path instead of an inline value. Point it at a projected Secret volume to keep the credential out of the pod's environment entirely. Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.tailscale.auth.oauth.scopes | list | `["all:read"]` | OAuth scopes to request. "all:read" covers every read-only collector. |
+| config.tailscale.auth.workload_identity.client_id | string | `""` | Federated OAuth client ID from the Tailscale admin console. Required for this method. |
+| config.tailscale.auth.workload_identity.id_token_file | string | `""` | Path to the OIDC ID token exchanged for a Tailscale access token. In Kubernetes this is a projected ServiceAccount token, e.g. /var/run/secrets/tokens/tailscale. Re-read on every exchange, so kubelet rotation is picked up without a restart. |
 | config.tailscale.http.rate_limit | int | `0` | Global requests/sec across all collectors (0 = unlimited). |
 | config.tailscale.http.retry.base_delay | string | `"500ms"` | Initial backoff delay; doubles each retry up to max_delay. |
 | config.tailscale.http.retry.max_attempts | int | `4` | Max attempts per request (incl. the first) before giving up. |
@@ -248,8 +287,11 @@ extraVolumeMounts:
 | config.webhook.dedup_audit_events | bool | `false` | Best-effort: drop a webhook event already counted via the audit logs (off by default). |
 | config.webhook.enabled | bool | `false` | Enable the webhook receiver. |
 | config.webhook.listen | string | `":8089"` | Address the receiver binds (host:port). |
+| config.webhook.max_body_bytes | int | `0` | Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body. |
 | config.webhook.path | string | `"/tailscale/webhook"` | HTTP path the receiver serves. |
 | config.webhook.secret | string | `""` | HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs). Set via TS2OTEL_WEBHOOK__SECRET (secret). |
+| config.webhook.secret_file | string | `""` | Read webhook.secret from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
+| config.webhook.tolerance | string | `"5m"` | Allowed clock skew in BOTH directions on the signed timestamp: a request older than now-tolerance or newer than now+tolerance is rejected. The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable. 0 disables the timestamp check entirely. |
 | existingSecret | string | `""` | Name of a pre-created Secret exposing the TS2OTEL_* env keys. When set, no Secret is rendered. |
 | extraVolumeMounts | list | `[]` | Extra volume mounts appended to the main container's volumeMounts, as-is. Paired with extraVolumes above by name. |
 | extraVolumes | list | `[]` | Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding TLS cert/key material for config.streaming.tls, since readOnlyRootFilesystem leaves no other place to put arbitrary files). Paired with extraVolumeMounts below by volume name. See the chart README for a worked TLS-cert example. |

@@ -16,6 +16,9 @@
                             "properties": {
                                 "token": {
                                     "type": "string"
+                                },
+                                "token_file": {
+                                    "type": "string"
                                 }
                             }
                         },
@@ -27,6 +30,20 @@
                         },
                         "listen": {
                             "type": "string"
+                        },
+                        "status_refresh_interval": {
+                            "type": "string"
+                        },
+                        "tls": {
+                            "type": "object",
+                            "properties": {
+                                "cert_file": {
+                                    "type": "string"
+                                },
+                                "key_file": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 },
@@ -52,6 +69,9 @@
                                     "type": "boolean"
                                 },
                                 "exit_node_attribution": {
+                                    "type": "boolean"
+                                },
+                                "identity_dims": {
                                     "type": "boolean"
                                 },
                                 "metrics_mode": {
@@ -191,6 +211,9 @@
                                 "interval": {
                                     "type": "string"
                                 },
+                                "posture_log_mode": {
+                                    "type": "string"
+                                },
                                 "tag_rollup_limit": {
                                     "type": "integer"
                                 }
@@ -234,6 +257,9 @@
                                 "objectstore": {
                                     "type": "object",
                                     "properties": {
+                                        "access_key_id": {
+                                            "type": "string"
+                                        },
                                         "bucket": {
                                             "type": "string"
                                         },
@@ -259,6 +285,12 @@
                                             "type": "string"
                                         },
                                         "region": {
+                                            "type": "string"
+                                        },
+                                        "secret_access_key": {
+                                            "type": "string"
+                                        },
+                                        "session_token": {
                                             "type": "string"
                                         }
                                     }
@@ -296,6 +328,53 @@
                         "node_metrics": {
                             "type": "object",
                             "properties": {
+                                "discovery": {
+                                    "type": "object",
+                                    "properties": {
+                                        "address_order": {
+                                            "type": "string"
+                                        },
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "exclude_external": {
+                                            "type": "boolean"
+                                        },
+                                        "exclude_tags": {
+                                            "type": "array"
+                                        },
+                                        "include_host_labels": {
+                                            "type": "boolean"
+                                        },
+                                        "include_tags": {
+                                            "type": "array"
+                                        },
+                                        "include_tags_label": {
+                                            "type": "boolean"
+                                        },
+                                        "instance_source": {
+                                            "type": "string"
+                                        },
+                                        "interval": {
+                                            "type": "string"
+                                        },
+                                        "max_targets": {
+                                            "type": "integer"
+                                        },
+                                        "online_only": {
+                                            "type": "boolean"
+                                        },
+                                        "path": {
+                                            "type": "string"
+                                        },
+                                        "port": {
+                                            "type": "integer"
+                                        },
+                                        "scheme": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
                                 "drop_labels": {
                                     "type": "array"
                                 },
@@ -304,6 +383,12 @@
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "max_response_bytes": {
+                                    "type": "integer"
+                                },
+                                "max_samples": {
+                                    "type": "integer"
                                 },
                                 "metric_allow": {
                                     "type": "array"
@@ -315,6 +400,17 @@
                                     "type": "array"
                                 },
                                 "timeout": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "oauth_apps": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
                                     "type": "string"
                                 }
                             }
@@ -430,6 +526,9 @@
                         "api_key": {
                             "type": "string"
                         },
+                        "api_key_file": {
+                            "type": "string"
+                        },
                         "http": {
                             "type": "object",
                             "properties": {
@@ -477,6 +576,9 @@
                                 },
                                 "token": {
                                     "type": "string"
+                                },
+                                "token_file": {
+                                    "type": "string"
                                 }
                             }
                         },
@@ -499,6 +601,9 @@
                                     "type": "string"
                                 },
                                 "insecure": {
+                                    "type": "boolean"
+                                },
+                                "insecure_skip_verify": {
                                     "type": "boolean"
                                 },
                                 "key_file": {
@@ -575,6 +680,9 @@
                                 "basic_auth_password": {
                                     "type": "string"
                                 },
+                                "basic_auth_password_file": {
+                                    "type": "string"
+                                },
                                 "basic_auth_user": {
                                     "type": "string"
                                 },
@@ -605,6 +713,9 @@
                             "properties": {
                                 "token": {
                                     "type": "string"
+                                },
+                                "token_file": {
+                                    "type": "string"
                                 }
                             }
                         },
@@ -613,6 +724,17 @@
                         },
                         "listen": {
                             "type": "string"
+                        },
+                        "tls": {
+                            "type": "object",
+                            "properties": {
+                                "cert_file": {
+                                    "type": "string"
+                                },
+                                "key_file": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 },
@@ -670,6 +792,9 @@
                         },
                         "token": {
                             "type": "string"
+                        },
+                        "token_file": {
+                            "type": "string"
                         }
                     }
                 },
@@ -685,6 +810,9 @@
                                 "apikey": {
                                     "type": "string"
                                 },
+                                "apikey_file": {
+                                    "type": "string"
+                                },
                                 "method": {
                                     "type": "string"
                                 },
@@ -697,11 +825,25 @@
                                         "client_secret": {
                                             "type": "string"
                                         },
+                                        "client_secret_file": {
+                                            "type": "string"
+                                        },
                                         "scopes": {
                                             "type": "array",
                                             "items": {
                                                 "type": "string"
                                             }
+                                        }
+                                    }
+                                },
+                                "workload_identity": {
+                                    "type": "object",
+                                    "properties": {
+                                        "client_id": {
+                                            "type": "string"
+                                        },
+                                        "id_token_file": {
+                                            "type": "string"
                                         }
                                     }
                                 }
@@ -793,10 +935,19 @@
                         "listen": {
                             "type": "string"
                         },
+                        "max_body_bytes": {
+                            "type": "integer"
+                        },
                         "path": {
                             "type": "string"
                         },
                         "secret": {
+                            "type": "string"
+                        },
+                        "secret_file": {
+                            "type": "string"
+                        },
+                        "tolerance": {
                             "type": "string"
                         }
                     }

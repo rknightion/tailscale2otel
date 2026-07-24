@@ -3,6 +3,17 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.12.0: re-sync `config:` with the app's config surface — it had drifted 42 keys behind
+# config.Default(). Adds collectors.oauth_apps, collectors.node_metrics.discovery.* and its
+# max_samples/max_response_bytes caps, admin.tls.*, admin.status_refresh_interval,
+# prometheus.tls.*, webhook.tolerance/max_body_bytes, cardinality.flow.identity_dims,
+# collectors.devices.posture_log_mode, otlp.tls.insecure_skip_verify,
+# tailscale.auth.workload_identity.* (keyless OIDC) and every *_file secret-from-path variant.
+# Corrects two stale values that contradicted the app: profiling.mutex_profile_fraction 0->5 and
+# block_profile_rate 0->100000 (the app defaulted contention profiling ON in app 2.0.0; the chart
+# was silently disabling it), and fixes the otlp.tls.insecure description, which described a
+# certificate-verification skip when the flag disables TLS entirely. A new Go guard test
+# (TestHelmValuesCoverEveryKey) now fails CI if this block drifts from config.Default() again.
 # 0.9.1: correct the long-stale appVersion (was 0.1.0, tracked nothing) and add
 # artifacthub.io/* annotations + icon so the OCI chart renders properly on Artifact Hub.
 # 0.7.6: add podSecurityContext.fsGroup (65532, OnRootMismatch) so the opt-in PVC
@@ -41,7 +52,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.11.0
+version: 0.12.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "2.0.2"
 home: https://m7kni.io/tailscale2otel/
