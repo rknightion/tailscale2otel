@@ -20,6 +20,7 @@
 package flowstore
 
 import (
+	"net"
 	"slices"
 	"sort"
 	"strings"
@@ -47,7 +48,25 @@ const (
 	// the control plane, not from us. The cap sits far above any real tailnet's
 	// tag/user/OS pairing count.
 	MaxMatrixCellsPerBucket = 2000
+	// MaxUnexplainedPerBucket bounds the unexplained-relationship aggregate. It
+	// is the one policy dimension an adversary can grow: the stream ingress can
+	// mint unique addresses, and an address no rule names is by construction a
+	// relationship nothing explains.
+	MaxUnexplainedPerBucket = 500
+	// MaxRulesPerBucket bounds the per-rule exercise counts. Unlike every other
+	// cap this one cannot be reached by traffic: the keys are indexes into the
+	// tailnet's OWN compiled policy, so the dimension is bounded by how many
+	// rules an operator wrote. It exists so the package's "bounded in every
+	// dimension" promise holds without an argument attached.
+	MaxRulesPerBucket = 1000
 )
+
+// Unidentified names an endpoint of an unexplained relationship that carries no
+// identity at all — the record supplied none, or the PII filter removed all of
+// it. Unlike the breakdowns, where an absent value simply occupies no label, a
+// relationship needs both ends named or the counts would not add up to the
+// verdict totals beside them.
+const Unidentified = "unidentified"
 
 // MaxRecent is the size of the raw-connection ring. It is bounded by COUNT, not
 // by time: the ring is the only unaggregated thing the store holds, so it is
@@ -162,6 +181,24 @@ type MatrixKey struct {
 	Dst string `json:"dst"`
 }
 
+// UnexplainedKey is one directed relationship the policy did not explain, at the
+// granularity a rule would be written at: who talked to whom, over what.
+// Aggregating to this shape is what turns thousands of individually unexplained
+// connections into the handful of relationships actually behind them — on a live
+// capture, 9,786 connections collapsed to three.
+type UnexplainedKey struct {
+	// Src and Dst name each endpoint by the most useful thing known about it —
+	// its tags, then its owner, then its device name, then its bare address —
+	// falling back to Unidentified. That is the order an operator would write a
+	// rule in.
+	Src string `json:"src"`
+	Dst string `json:"dst"`
+	// Transport and Port describe what was carried, so the relationship reads as
+	// the grant that would cover it rather than as a bare pair of names.
+	Transport string `json:"transport"`
+	Port      string `json:"port,omitempty"`
+}
+
 // PortKey identifies a destination service endpoint.
 type PortKey struct {
 	Port      string `json:"port"`
@@ -191,6 +228,14 @@ type bucket struct {
 	userMatrix map[MatrixKey]*Counts
 	osMatrix   map[MatrixKey]*Counts
 
+	// Policy reconciliation. verdicts is how the policy read the window's
+	// traffic; unexplained is the relationships behind the no_rule share; rules
+	// counts what each rule actually permitted, which is the only way to answer
+	// which rules were never exercised.
+	verdicts    map[string]*Counts
+	unexplained map[UnexplainedKey]*Counts
+	rules       map[int]*Counts
+
 	// dropped counts observations whose keys overflowed a cap and were folded
 	// into Other. Surfaced so the UI can say so rather than silently implying
 	// complete coverage.
@@ -218,6 +263,9 @@ func newBucket(start time.Time) *bucket {
 		tagMatrix:    map[MatrixKey]*Counts{},
 		userMatrix:   map[MatrixKey]*Counts{},
 		osMatrix:     map[MatrixKey]*Counts{},
+		verdicts:     map[string]*Counts{},
+		unexplained:  map[UnexplainedKey]*Counts{},
+		rules:        map[int]*Counts{},
 	}
 }
 
@@ -317,6 +365,100 @@ func (b *bucket) record(o Observation) {
 	b.addMatrix(b.tagMatrix, srcTags, dstTags, o.Counts)
 	b.addMatrix(b.userMatrix, oneOrNone(o.SrcUser), oneOrNone(o.DstUser), o.Counts)
 	b.addMatrix(b.osMatrix, oneOrNone(o.SrcOS), oneOrNone(o.DstOS), o.Counts)
+
+	b.recordPolicy(o)
+}
+
+// recordPolicy accumulates the policy reconciliation dimensions. An observation
+// with no verdict was never evaluated — no policy has been collected, or the
+// traffic is not policy-governed — and takes no part in any of them, so a
+// tailnet whose ACL has not arrived shows an empty section rather than one
+// claiming its entire traffic is undecidable. The early return also keeps three
+// map lookups per connection off the emit path in that case, which is the
+// default one until an ACL is first collected.
+func (b *bucket) recordPolicy(o Observation) {
+	if o.Verdict == "" {
+		return
+	}
+
+	verdict := o.Verdict
+	if verdict == VerdictPermitted && o.Reversed {
+		verdict = VerdictPermittedReverse
+	}
+	addLabel(b.verdicts, verdict, o.Counts, MaxLabelsPerKind)
+
+	switch {
+	case o.Verdict == VerdictPermitted && o.Rule >= 0:
+		// Only a rule that PERMITTED something has been exercised, and only a
+		// permitted verdict carries a meaningful rule index — Rule is otherwise
+		// -1, or the zero value of an observation nothing evaluated.
+		e, ok := b.rules[o.Rule]
+		if !ok {
+			if len(b.rules) >= MaxRulesPerBucket {
+				b.dropped++
+				return
+			}
+			e = &Counts{}
+			b.rules[o.Rule] = e
+		}
+		e.add(o.Counts)
+	case o.Verdict == VerdictNoRule:
+		// Only a DEFINITE "no rule covers this" is a finding. An undetermined
+		// verdict means the policy could not be applied, and reporting that as
+		// unexplained is precisely the confident-false-alarm the evaluator's
+		// three-valued matching exists to prevent.
+		b.addUnexplained(o)
+	}
+}
+
+// addUnexplained accumulates one unexplained connection into its relationship.
+func (b *bucket) addUnexplained(o Observation) {
+	k := UnexplainedKey{
+		Src:       endpointIdentity(o.SrcTags, o.SrcUser, o.SrcNode, o.SrcAddr),
+		Dst:       endpointIdentity(o.DstTags, o.DstUser, o.DstNode, o.DstAddr),
+		Transport: o.Transport,
+		Port:      o.DstPort,
+	}
+	e, ok := b.unexplained[k]
+	if !ok {
+		if len(b.unexplained) >= MaxUnexplainedPerBucket {
+			k = UnexplainedKey{Src: Other, Dst: Other, Transport: o.Transport}
+			b.dropped++
+			e, ok = b.unexplained[k]
+		}
+		if !ok {
+			e = &Counts{}
+			b.unexplained[k] = e
+		}
+	}
+	e.add(o.Counts)
+}
+
+// endpointIdentity names one end of an unexplained relationship, preferring what
+// the endpoint IS over where it is: its tags, then its owner, then its device
+// name, then its bare address. That is the order a rule would be written in, and
+// it is what made a live capture's 9,786 unexplained connections legible as
+// three relationships.
+//
+// Every input has already been through the PII filter, so an endpoint the
+// operator chose not to expose arrives here empty and is named Unidentified
+// rather than being dropped — dropping it would leave the relationship counts
+// short of the verdict totals displayed beside them.
+func endpointIdentity(tags, user, node, addrPort string) string {
+	switch {
+	case tags != "":
+		return tags
+	case user != "":
+		return user
+	case node != "":
+		return node
+	case addrPort != "":
+		if host, _, err := net.SplitHostPort(addrPort); err == nil {
+			return host
+		}
+		return addrPort
+	}
+	return Unidentified
 }
 
 // addMatrix accumulates the cross product of src and dst into m, folding
@@ -445,7 +587,13 @@ type Recent struct {
 	DstTags string `json:"dst_tags,omitempty"`
 	SrcOS   string `json:"src_os,omitempty"`
 	DstOS   string `json:"dst_os,omitempty"`
-	Counts  Counts `json:"counts"`
+	// The policy's reading of this one connection, so the list an operator drills
+	// into after seeing a relationship in the aggregate can show which
+	// connections were unexplained and which rule covered the rest.
+	Verdict  string `json:"verdict,omitempty"`
+	Reversed bool   `json:"reversed,omitempty"`
+	Rule     int    `json:"rule"`
+	Counts   Counts `json:"counts"`
 }
 
 // NewMemory returns a store retaining at most capacity one-minute buckets.
@@ -512,6 +660,9 @@ func (m *Memory) recordRecentLocked(o Observation) {
 		DstTags:     o.DstTags,
 		SrcOS:       o.SrcOS,
 		DstOS:       o.DstOS,
+		Verdict:     o.Verdict,
+		Reversed:    o.Reversed,
+		Rule:        o.Rule,
 		Counts:      o.Counts,
 	}
 	m.next = (m.next + 1) % len(m.recent)
@@ -623,6 +774,20 @@ type LabelStat struct {
 	Counts Counts `json:"counts"`
 }
 
+// UnexplainedStat is one relationship the policy did not explain.
+type UnexplainedStat struct {
+	UnexplainedKey
+	Counts Counts `json:"counts"`
+}
+
+// RuleStat is how much traffic one policy rule permitted. Rule indexes the
+// compiled policy's rule list; a rule absent from the result permitted nothing
+// in the window, which is the whole point of reporting it.
+type RuleStat struct {
+	Rule   int    `json:"rule"`
+	Counts Counts `json:"counts"`
+}
+
 // Result is a complete answer to a Query.
 type Result struct {
 	Window       Range       `json:"window"`
@@ -643,6 +808,16 @@ type Result struct {
 	TagMatrix  []MatrixCell `json:"tag_matrix"`
 	UserMatrix []MatrixCell `json:"user_matrix"`
 	OSMatrix   []MatrixCell `json:"os_matrix"`
+	// Policy reconciliation over the window. Verdicts is how the policy read the
+	// traffic; Unexplained is the relationships behind the no_rule share, ranked
+	// by volume; Rules is what each rule permitted, from which the caller derives
+	// the rules that permitted nothing.
+	//
+	// All three are empty when no policy was in force, which a caller must
+	// distinguish from a policy that explained everything.
+	Verdicts    []LabelStat       `json:"verdicts"`
+	Unexplained []UnexplainedStat `json:"unexplained"`
+	Rules       []RuleStat        `json:"rules"`
 	// Truncated reports observations folded into Other because a cap was hit, so
 	// the UI can say coverage is partial instead of implying it is complete.
 	Truncated int64 `json:"truncated"`
@@ -682,6 +857,9 @@ func (m *Memory) Query(q Query) Result {
 	transports, trafficTypes := map[string]*Counts{}, map[string]*Counts{}
 	users, tags, oses := map[string]*Counts{}, map[string]*Counts{}, map[string]*Counts{}
 	tagMatrix, userMatrix, osMatrix := map[MatrixKey]*Counts{}, map[MatrixKey]*Counts{}, map[MatrixKey]*Counts{}
+	verdicts := map[string]*Counts{}
+	unexplained := map[UnexplainedKey]*Counts{}
+	rules := map[int]*Counts{}
 	series := map[int64]*Counts{}
 
 	var earliest, latest time.Time
@@ -720,6 +898,9 @@ func (m *Memory) Query(q Query) Result {
 		mergeInto(tagMatrix, b.tagMatrix)
 		mergeInto(userMatrix, b.userMatrix)
 		mergeInto(osMatrix, b.osMatrix)
+		mergeInto(verdicts, b.verdicts)
+		mergeInto(unexplained, b.unexplained)
+		mergeInto(rules, b.rules)
 		for k, v := range b.nodes {
 			n, ok := nodes[k]
 			if !ok {
@@ -752,7 +933,45 @@ func (m *Memory) Query(q Query) Result {
 	res.TagMatrix = topMatrix(tagMatrix)
 	res.UserMatrix = topMatrix(userMatrix)
 	res.OSMatrix = topMatrix(osMatrix)
+	res.Verdicts = topLabels(verdicts, topN)
+	res.Unexplained = topUnexplained(unexplained, topN)
+	res.Rules = allRules(rules)
 	return res
+}
+
+func topUnexplained(m map[UnexplainedKey]*Counts, n int) []UnexplainedStat {
+	out := make([]UnexplainedStat, 0, len(m))
+	for k, c := range m {
+		out = append(out, UnexplainedStat{UnexplainedKey: k, Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Counts.Bytes(), out[j].Counts.Bytes(); a != b {
+			return a > b
+		}
+		if out[i].Src != out[j].Src {
+			return out[i].Src < out[j].Src
+		}
+		if out[i].Dst != out[j].Dst {
+			return out[i].Dst < out[j].Dst
+		}
+		if out[i].Transport != out[j].Transport {
+			return out[i].Transport < out[j].Transport
+		}
+		return out[i].Port < out[j].Port
+	})
+	return truncate(out, n)
+}
+
+// allRules returns every exercised rule, unranked by volume and unbounded by
+// TopN: the caller subtracts this from the policy's rule list to find what was
+// never exercised, and a truncated list would report live rules as dead.
+func allRules(m map[int]*Counts) []RuleStat {
+	out := make([]RuleStat, 0, len(m))
+	for k, c := range m {
+		out = append(out, RuleStat{Rule: k, Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Rule < out[j].Rule })
+	return out
 }
 
 // mergeInto accumulates src into dst, allocating destination entries as needed.
