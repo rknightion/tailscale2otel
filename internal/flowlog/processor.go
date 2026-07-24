@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
@@ -60,6 +61,12 @@ type Options struct {
 	IncludeDestinationService bool
 	// NodeDims adds tailscale.src.node/tailscale.dst.node to metric attributes.
 	NodeDims bool
+	// IdentityDims adds the per-flow endpoint identity (user, tags, OS) to METRIC
+	// attributes. Flow LOGS always carry it when the record supplies it,
+	// regardless of this toggle. Off by default: the values are low-cardinality
+	// but PII-adjacent, so they stay off the default metric surface exactly as
+	// ports and destination service do.
+	IdentityDims bool
 	// KeepExternalAddrs, when true, resolves an unrecognized address to its raw
 	// host (IP) instead of collapsing it to "external"/"unknown". The zero value
 	// (false) preserves the collapsing behavior.
@@ -110,6 +117,7 @@ type Processor struct {
 	dstService   bool
 	nodes        bool
 	keepExternal bool
+	identity     bool
 	rdns         rdns.Resolver
 	dedup        *dedup.Set
 	maxLogs      int
@@ -140,6 +148,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		dstService:   opts.IncludeDestinationService,
 		nodes:        opts.NodeDims,
 		keepExternal: opts.KeepExternalAddrs,
+		identity:     opts.IdentityDims,
 		rdns:         opts.RDNS,
 		dedup:        opts.Dedup,
 		maxLogs:      opts.MaxLogRecordsPerWindow,
@@ -227,6 +236,14 @@ func (p *Processor) FlushRollup(e telemetry.Emitter) {
 // caller owns the budget (one per ProcessAll window, or one per standalone
 // Process call) and is responsible for flushing the dropped count.
 func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget) {
+	// Seed the cache from the identity the record embeds BEFORE resolving any of
+	// its connections, so a record enriches itself even when the devices
+	// collector is disabled or has not yet run. Additive only — devices-collector
+	// entries are never overwritten (see enrich.UpsertFromFlow).
+	if p.cache != nil {
+		p.cache.UpsertFromFlow(flow.nodeRefs())
+	}
+
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
 		{semconv.TrafficSubnet, flow.SubnetTraffic},
@@ -320,6 +337,9 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		if p.dstService && dstService != "" {
 			metricAttrs[semconv.AttrDstService] = dstService
 		}
+		if p.identity {
+			addIdentityAttrs(metricAttrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+		}
 
 		// MetricIO (bytes): transmit + receive. Name/unit/description come from the
 		// catalog (catalog.go) so they cannot drift from the generated docs.
@@ -369,6 +389,30 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	}
 }
 
+// addIdentityAttrs adds the per-flow endpoint identity (user, tags, OS) carried
+// by the record's embedded srcNode/dstNodes blocks. Each attribute is omitted
+// when the corresponding ref is absent or does not carry that field — the
+// fields genuinely vary per node, so an absent attribute is the honest
+// encoding. Tags are joined with "," in record order.
+func addIdentityAttrs(attrs telemetry.Attrs, src, dst *NodeRef) {
+	add := func(ref *NodeRef, userKey, tagsKey, osKey string) {
+		if ref == nil {
+			return
+		}
+		if ref.User != "" {
+			attrs[userKey] = ref.User
+		}
+		if len(ref.Tags) > 0 {
+			attrs[tagsKey] = strings.Join(ref.Tags, ",")
+		}
+		if ref.OS != "" {
+			attrs[osKey] = ref.OS
+		}
+	}
+	add(src, semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS)
+	add(dst, semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS)
+}
+
 // dirAttrs clones base and adds the network.io.direction attribute. Cloning
 // keeps each emitted point's attribute set independent and avoids mutating the
 // shared base map.
@@ -405,6 +449,9 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	addFlowWindow(attrs, flow)
+	// Logs carry full detail by design, so identity is unconditional here — the
+	// IdentityDims toggle governs the metric surface only.
+	addIdentityAttrs(attrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
 	e.LogEvent(telemetry.Event{
 		Name:              docFlowLog.Name,
 		Body:              body,

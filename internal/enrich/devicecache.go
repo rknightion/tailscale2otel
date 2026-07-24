@@ -28,6 +28,12 @@ type DeviceMeta struct {
 	// discovery's online_only filter needs this when sourcing targets from the
 	// cache instead of its own DevicesRich() call (#85).
 	Online bool
+	// FromFlow marks an entry derived from the node identity embedded in a flow
+	// log record rather than from the devices collector. Flow records carry a
+	// strict subset of the device fields, so such an entry is a gap-filler: it is
+	// never allowed to overwrite a devices-collector entry. Set by UpsertFromFlow;
+	// callers do not set it themselves.
+	FromFlow bool
 }
 
 // DeviceCache maps Tailscale addresses and node IDs to device metadata.
@@ -88,6 +94,48 @@ func (c *DeviceCache) Replace(metas []DeviceMeta) {
 	c.byNode = byNode
 	c.updated = now
 	c.mu.Unlock()
+}
+
+// UpsertFromFlow folds device identity observed inside flow log records into
+// the cache, so flow enrichment keeps working when the devices collector is
+// disabled, rate-limited, or has not yet completed its first poll. Every flow
+// record embeds its endpoints' identity, so this is data we already receive.
+//
+// It is strictly additive and never degrades what the devices collector knows:
+// an existing entry that did NOT come from a flow record is left untouched,
+// because flow records carry a subset of the device fields (no device ID, no OS
+// version, no online state). An earlier flow-derived entry may be refined by a
+// later one. Entries with no NodeID are skipped — they cannot be looked up and
+// would only create an empty-keyed entry.
+//
+// A subsequent Replace by the devices collector is a full swap and drops
+// flow-derived entries; the next flow record re-adds any still in use, which is
+// what keeps a stale entry from shadowing a device the collector has dropped.
+func (c *DeviceCache) UpsertFromFlow(metas []DeviceMeta) {
+	if len(metas) == 0 {
+		return
+	}
+	now := c.now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range metas {
+		m := metas[i]
+		if m.NodeID == "" {
+			continue
+		}
+		if existing, ok := c.byNode[m.NodeID]; ok && !existing.FromFlow {
+			continue // devices-collector data is authoritative
+		}
+		m.FromFlow = true
+		c.byNode[m.NodeID] = &m
+		for _, a := range m.Addrs {
+			if existing, ok := c.byAddr[a]; ok && !existing.FromFlow {
+				continue
+			}
+			c.byAddr[a] = &m
+		}
+	}
+	c.updated = now
 }
 
 // ReplaceServices atomically swaps the cached Tailscale Service (VIP service)

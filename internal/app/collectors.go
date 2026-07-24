@@ -36,6 +36,10 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		IncludeDestinationPort:    cfg.Cardinality.Flow.DestinationPort,
 		IncludeDestinationService: cfg.Cardinality.Flow.DestinationService,
 		NodeDims:                  cfg.Cardinality.Flow.NodeDims,
+		// cardinality.flow.identity_dims (default off) adds the per-flow user/tags/os
+		// carried in the record's own srcNode/dstNodes blocks to flow METRICS. Flow
+		// LOGS carry them regardless.
+		IdentityDims: cfg.Cardinality.Flow.IdentityDims,
 		// cardinality.flow.collapse_external=true (the default) buckets unresolved/external addresses
 		// as external/unknown; false preserves the raw IP. This affects BOTH flow LOGS
 		// and, when cardinality.flow.node_dims is true, the flow METRIC attrs tailscale.src.node /

@@ -3,6 +3,8 @@ package pii
 // keyCategory maps a fixed-meaning attribute key to its category.
 var keyCategory = map[string]Category{
 	"tailscale.user":                   CatEmails,
+	"tailscale.src.user":               CatEmails, // flow endpoint identity, from the record's srcNode block
+	"tailscale.dst.user":               CatEmails, // flow endpoint identity, from the record's dstNodes block
 	"user.name":                        CatEmails, // audit actor + device-invite acceptor + users collector login
 	"user.full_name":                   CatUserDisplayNames,
 	"user.id":                          CatUserIDs,
@@ -107,6 +109,12 @@ var nonIdentifier = map[string]bool{
 	// Flow capture-window bounds: RFC3339 timestamps describing when traffic was
 	// observed. They identify a time range, never a person or a device.
 	"tailscale.flow.window.start": true, "tailscale.flow.window.end": true,
+	// Flow endpoint tags and OS. Tags are operator-assigned role labels
+	// ("tag:servers") and OS is a platform name — neither identifies a person or
+	// a specific device. The matching .user keys ARE identifiers and are
+	// classified as CatEmails above.
+	"tailscale.src.tags": true, "tailscale.dst.tags": true,
+	"tailscale.src.os": true, "tailscale.dst.os": true,
 	"go.version": true, "version": true, "http.response.status_code": true, "attribute": true,
 	"tailscale.key.id": true, "tailscale.posture.integration": true,
 	"tailscale.webhook_endpoint.id": true, "tailscale.audit.event_group_id": true,

@@ -145,6 +145,8 @@ var (
 			semconv.NetworkTransport, semconv.NetworkType, semconv.AttrTrafficType,
 			semconv.AttrSrcNode, semconv.AttrDstNode, semconv.AttrDstService, semconv.AttrNodeID, attrNodeHostname,
 			semconv.AttrFlowWindowStart, semconv.AttrFlowWindowEnd,
+			semconv.AttrSrcUser, semconv.AttrDstUser, semconv.AttrSrcTags, semconv.AttrDstTags,
+			semconv.AttrSrcOS, semconv.AttrDstOS,
 			"tailscale.connections", // per_record summary only
 			"tailscale.tx.bytes", "tailscale.rx.bytes", "tailscale.tx.packets", "tailscale.rx.packets",
 		},

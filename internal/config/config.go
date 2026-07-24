@@ -505,6 +505,13 @@ type FlowCardinality struct {
 	DestinationService bool `yaml:"destination_service"`
 	// NodeDims (default true) includes the src/dst device names on flow metrics.
 	NodeDims bool `yaml:"node_dims"`
+	// IdentityDims adds the per-flow endpoint identity — tailscale.{src,dst}.user,
+	// .tags and .os, taken from the srcNode/dstNodes blocks the control plane
+	// embeds in each flow record — to flow METRICS. Default false; flow LOGS
+	// always carry it. The values are low-cardinality (bounded by user, tag and OS
+	// counts, all far below device count) but user is an email address, so it
+	// stays off the default metric surface. PII filtering still applies.
+	IdentityDims bool `yaml:"identity_dims"`
 	// CollapseExternal (default true) buckets unresolved IPs as external/unknown.
 	CollapseExternal bool `yaml:"collapse_external"`
 	// ExitNodeAttribution (default true) emits the bounded

@@ -50,6 +50,16 @@ const (
 	// entirely when the record carries no window.
 	AttrFlowWindowStart = "tailscale.flow.window.start"
 	AttrFlowWindowEnd   = "tailscale.flow.window.end"
+	// Per-flow endpoint identity, taken from the srcNode/dstNodes blocks the
+	// control plane embeds in each flow record. Tags are joined with "," in the
+	// order the record lists them. Each is omitted when the record does not carry
+	// it — they vary per node (srcNode has no os; tag-owned nodes have no user).
+	AttrSrcUser = "tailscale.src.user"
+	AttrDstUser = "tailscale.dst.user"
+	AttrSrcTags = "tailscale.src.tags"
+	AttrDstTags = "tailscale.dst.tags"
+	AttrSrcOS   = "tailscale.src.os"
+	AttrDstOS   = "tailscale.dst.os"
 	// AttrExitNode is the short hostname (or nodeId fallback) of the exit node
 	// that relayed a flow's exit traffic; carried on tailscale.exit_node.io/packets.
 	AttrExitNode  = "tailscale.exit_node"
