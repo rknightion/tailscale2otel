@@ -1,5 +1,61 @@
 # Changelog
 
+## [3.0.0](https://github.com/rknightion/tailscale2otel/compare/v2.0.2...v3.0.0) (2026-07-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **admin:** with an empty admin.auth.token, the admin status page and its JSON APIs (/, /api/status.json, /api/cardinality.json, /api/config.json, /api/rdns/purge) now return HTTP 403 on any non-loopback admin.listen instead of serving unauthenticated. The default listen is the wildcard :9091, so a default deployment is affected. Set admin.auth.token (e.g. TS2OTEL_ADMIN__AUTH__TOKEN) or bind admin.listen to loopback. The process still starts, and /healthz and /readyz remain open on every bind, so container and Kubernetes probes are unaffected.
+* **stream:** an enabled streaming receiver with an empty streaming.token on a non-loopback streaming.listen now refuses every request with HTTP 403 instead of accepting unauthenticated POSTs. Log ingestion stops until streaming.token is set (e.g. TS2OTEL_STREAMING__TOKEN) or the listener is moved to a loopback address. The default listen is the wildcard :8088, so a receiver previously running without a token is affected. A loud ERROR naming both remedies is logged at startup.
+* **config:** a config with a polling flowlogs/auditlogs max_window that is positive and <= interval now fails startup validation instead of only warning.
+* **nodemetrics:** two node_metrics static targets resolving to the same effective identity (same normalized URL and instance label) now fail config validation instead of being silently double-scraped.
+* **stream:** a corrupt or partially undecodable stream batch is now rejected with a 4xx (sender retries) instead of being partially ingested and acknowledged 200. The valid-prefix salvage behaviour is removed.
+* **helm:** Helm installs/upgrades with replicaCount != 1 now fail rendering instead of deploying multiple pollers.
+
+### Features
+
+* **admin:** emitted-throughput and collector-fleet trend charts ([a1c1fe9](https://github.com/rknightion/tailscale2otel/commit/a1c1fe973f44c8227d012bc41fc77beb0d6c40e9)), closes [#223](https://github.com/rknightion/tailscale2otel/issues/223)
+* **admin:** enable admin server by default on :9091 ([730d467](https://github.com/rknightion/tailscale2otel/commit/730d4678b0cbc3910b8c20b13b8f939c0a380609))
+* **app:** add read-only cardinality and config JSON export endpoints ([30d0672](https://github.com/rknightion/tailscale2otel/commit/30d0672131576cbcff6db80d9da34488d2781458))
+* **app:** build cardinality suite, collector freshness and API auth panels ([372627f](https://github.com/rknightion/tailscale2otel/commit/372627f59c29cf9eabddf08a9d7de54b0409f848))
+* **app:** extend status DTO for cardinality suite, freshness and API auth ([71449f3](https://github.com/rknightion/tailscale2otel/commit/71449f346ffdd0c458c8167957437fa45a17da4d))
+* **app:** retain per-metric active-series history for cardinality growth view ([d072aac](https://github.com/rknightion/tailscale2otel/commit/d072aaccfa50a69629ebaf6c86281d0a48b1bd89))
+* **collector:** track last successful run time for status freshness ([13f60e4](https://github.com/rknightion/tailscale2otel/commit/13f60e420111802a9a7404300401fbb6c29a0607))
+* **config:** add cardinality warning/critical thresholds and label-value sample cap ([00b0a65](https://github.com/rknightion/tailscale2otel/commit/00b0a65d116f42f685fd623d198bf71309dc4523))
+* **config:** reject positive max_window &lt;= interval for polling log collectors ([376b47d](https://github.com/rknightion/tailscale2otel/commit/376b47dbeaf0374331005f98475625a964a5ff70)), closes [#202](https://github.com/rknightion/tailscale2otel/issues/202)
+* **console:** configurable status-page refresh interval (default 5s) ([9b13a84](https://github.com/rknightion/tailscale2otel/commit/9b13a845d610ef82ebc23918d4c1d06bacc788c4)), closes [#215](https://github.com/rknightion/tailscale2otel/issues/215)
+* **deploy:** expose cardinality threshold + label-cap knobs in Helm chart ([5991d21](https://github.com/rknightion/tailscale2otel/commit/5991d21195ace8cb0a554728e208f8c02778d882)), closes [#208](https://github.com/rknightion/tailscale2otel/issues/208)
+* **pyroscope:** collect all profile types by default incl. goroutine-leak ([fec8915](https://github.com/rknightion/tailscale2otel/commit/fec891504e081d32919b5adc935a637dbe0f7e9f)), closes [#185](https://github.com/rknightion/tailscale2otel/issues/185)
+* **stream:** make HEC batch delivery atomic instead of ACKing partial loss ([cfa330a](https://github.com/rknightion/tailscale2otel/commit/cfa330a33d2959e101a02ae0f2342a72e8c729eb)), closes [#201](https://github.com/rknightion/tailscale2otel/issues/201)
+* **telemetry:** capture bounded per-label distinct values and plumb the cap from config ([c301413](https://github.com/rknightion/tailscale2otel/commit/c301413e5e7cbccfd4cb34c741555aae303708aa))
+* **ui:** tabbed layout, light/dark theme, real charts, cardinality suite ([55cc1e6](https://github.com/rknightion/tailscale2otel/commit/55cc1e6b41886046d1291e31b9570528fafe37f8)), closes [#208](https://github.com/rknightion/tailscale2otel/issues/208)
+
+
+### Bug Fixes
+
+* **admin:** record the fail-closed status page as a breaking change ([5656149](https://github.com/rknightion/tailscale2otel/commit/5656149cbe863c3def450155d85b8fb3dfb4abca))
+* **admin:** refuse the status page on a network-reachable bind with no token ([effb816](https://github.com/rknightion/tailscale2otel/commit/effb816987ef9bb06f297c66aec350166f9c66a2)), closes [#227](https://github.com/rknightion/tailscale2otel/issues/227)
+* **api:** bound successful JSON responses before decoding ([054ee09](https://github.com/rknightion/tailscale2otel/commit/054ee098720073a93037d3b0debc06556b0a8cca)), closes [#210](https://github.com/rknightion/tailscale2otel/issues/210) [#211](https://github.com/rknightion/tailscale2otel/issues/211)
+* **deps:** update github.com/tailscale/hujson digest to 10d7940 ([#213](https://github.com/rknightion/tailscale2otel/issues/213)) ([2a278df](https://github.com/rknightion/tailscale2otel/commit/2a278dfb1b325f1bb94dfe324718491ffb4a7972))
+* **deps:** update github.com/tailscale/hujson digest to 78b5b16 ([#225](https://github.com/rknightion/tailscale2otel/issues/225)) ([e38676c](https://github.com/rknightion/tailscale2otel/commit/e38676cb3fdb7f6f9d40a3d8404c4cc0f1c317c4))
+* **deps:** update module github.com/klauspost/compress to v1.19.1 ([#216](https://github.com/rknightion/tailscale2otel/issues/216)) ([c8fe2f4](https://github.com/rknightion/tailscale2otel/commit/c8fe2f42d15f126787e5a9e7e00f0720190e26de))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.0 ([#217](https://github.com/rknightion/tailscale2otel/issues/217)) ([a22617a](https://github.com/rknightion/tailscale2otel/commit/a22617ab613de83060ce2beb0c65a0a5f3eb6400))
+* **deps:** update module github.com/rknightion/tailscale2otel/v2 to v2.0.2 ([#188](https://github.com/rknightion/tailscale2otel/issues/188)) ([9325849](https://github.com/rknightion/tailscale2otel/commit/9325849e8b1fceaadc2f07648b9aed878d3073eb))
+* **deps:** update module google.golang.org/grpc to v1.82.1 ([#192](https://github.com/rknightion/tailscale2otel/issues/192)) ([6d9c74d](https://github.com/rknightion/tailscale2otel/commit/6d9c74d42ebfc8431269c904fe7b08bcc133829d))
+* **helm:** reject any replicaCount other than 1 ([93cb2d5](https://github.com/rknightion/tailscale2otel/commit/93cb2d58d01f3c1812eb7ef82aefe1ae86e6150d)), closes [#203](https://github.com/rknightion/tailscale2otel/issues/203)
+* **nodemetrics:** key delta baselines by source series, not post-drop labels ([b3217f6](https://github.com/rknightion/tailscale2otel/commit/b3217f68c36169f69ac2180a46461d17d76807b5)), closes [#199](https://github.com/rknightion/tailscale2otel/issues/199)
+* **pii:** classify host:port IP values before falling back to hostnames ([a206df4](https://github.com/rknightion/tailscale2otel/commit/a206df4ad9d6af4203011955170b92b35e7d1dee)), closes [#198](https://github.com/rknightion/tailscale2otel/issues/198)
+* **stream:** bound record count, unwrap depth and concurrent bodies; fail closed without a token ([992d7f6](https://github.com/rknightion/tailscale2otel/commit/992d7f6a0573b87940d435fb1c5cfaf89887f626)), closes [#209](https://github.com/rknightion/tailscale2otel/issues/209) [#228](https://github.com/rknightion/tailscale2otel/issues/228) [#229](https://github.com/rknightion/tailscale2otel/issues/229)
+* **stream:** derive the listener write window from the process deadline ([f8dab4b](https://github.com/rknightion/tailscale2otel/commit/f8dab4bda1ab6e6eea5082d2d6a3984cb0fda3ba)), closes [#232](https://github.com/rknightion/tailscale2otel/issues/232)
+* **stream:** record fail-closed receiver auth as a breaking change ([cd90397](https://github.com/rknightion/tailscale2otel/commit/cd9039748f9a3c24719659346db9b097dc349172))
+* **telemetry:** apply the PII filter to span attributes ([0550813](https://github.com/rknightion/tailscale2otel/commit/05508138a17d3b0fdd85395ba1e2bc75ecc19566)), closes [#212](https://github.com/rknightion/tailscale2otel/issues/212)
+* **telemetry:** drop service.version from the metrics resource ([#187](https://github.com/rknightion/tailscale2otel/issues/187)) ([1658133](https://github.com/rknightion/tailscale2otel/commit/1658133eb90c4089920aec195f4c20e9dfc85309))
+* **telemetry:** give telemetry pipelines independent shutdown budgets ([c7f4f1e](https://github.com/rknightion/tailscale2otel/commit/c7f4f1e6262e50ffc48efc661e54426dd755975e)), closes [#204](https://github.com/rknightion/tailscale2otel/issues/204)
+* **telemetry:** redact PII from log bodies, not only attributes ([5441abf](https://github.com/rknightion/tailscale2otel/commit/5441abf0d349955e51627cffd51bb226772d7887)), closes [#197](https://github.com/rknightion/tailscale2otel/issues/197)
+* **tsapi:** bound OAuth/workload-identity token fetches through the body read ([4d5afa1](https://github.com/rknightion/tailscale2otel/commit/4d5afa1a7ce3b6c0718829c4ce0cb62d87d363c3)), closes [#200](https://github.com/rknightion/tailscale2otel/issues/200)
+* **tsapi:** cap Retry-After backoff at the configured max_delay ([d581993](https://github.com/rknightion/tailscale2otel/commit/d5819931c9ca9a352b0f3ad98038aed2ac3ae7d2)), closes [#206](https://github.com/rknightion/tailscale2otel/issues/206)
+* **webhook:** reject signed timestamps too far in the future ([94774c7](https://github.com/rknightion/tailscale2otel/commit/94774c755abfac6d879d3c39cef1f6800407cf67)), closes [#205](https://github.com/rknightion/tailscale2otel/issues/205)
+
 ## [2.0.2](https://github.com/rknightion/tailscale2otel/compare/v2.0.1...v2.0.2) (2026-07-14)
 
 
