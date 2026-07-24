@@ -59,6 +59,11 @@ const (
 	// rules an operator wrote. It exists so the package's "bounded in every
 	// dimension" promise holds without an argument attached.
 	MaxRulesPerBucket = 1000
+	// MaxPeerPathsPerBucket bounds the per-peer underlay-path split. A real
+	// tailnet's peer count is its device count, but the peer here is named from a
+	// record the stream ingress can mint, so it gets the same insert-time cap as
+	// every other dimension.
+	MaxPeerPathsPerBucket = 2000
 )
 
 // Unidentified names an endpoint of an unexplained relationship that carries no
@@ -153,8 +158,16 @@ type Observation struct {
 	Reversed bool
 	// Rule indexes the policy's rule list. Read only when Verdict is
 	// VerdictPermitted; -1 whenever nothing matched.
-	Rule   int
-	Counts Counts
+	Rule int
+	// Path is how the two nodes actually reached each other on the wire:
+	// PathDirectIPv4, PathDirectIPv6 or PathDERP. Only physical traffic — the
+	// WireGuard underlay — has one, so it is empty on every overlay connection.
+	// It is also empty for a physical entry carrying no underlay endpoint, which
+	// says nothing about the path rather than saying it was direct.
+	Path string
+	// DERPRegion is the relay's region ID, set only when Path is PathDERP.
+	DERPRegion string
+	Counts     Counts
 }
 
 // The verdict vocabulary, which is also the JSON API's. It mirrors the
@@ -171,6 +184,22 @@ const (
 	// for connections matched in their establishing direction. The processor
 	// never writes it; the breakdown folds Verdict and Reversed into it.
 	VerdictPermittedReverse = "permitted_reverse"
+)
+
+// The underlay-path vocabulary, held here for the same reason as the verdict
+// vocabulary: this is where the labels are aggregated, and the package stays a
+// leaf that knows nothing about how they were derived.
+//
+// The values match the raw `path` label tailscaled exports on its own throughput
+// counters, so an operator running the node-metrics collector sees one vocabulary
+// across both surfaces. Tailscale's newer peer-relay paths are NOT distinguished
+// here: a flow record reports the endpoint a peer was reached at, and a peer
+// relay is indistinguishable from a direct endpoint in that field. Claiming
+// otherwise would be a guess.
+const (
+	PathDirectIPv4 = "direct_ipv4"
+	PathDirectIPv6 = "direct_ipv6"
+	PathDERP       = "derp"
 )
 
 // PairKey identifies one directed node-to-node relationship within a traffic
@@ -207,6 +236,15 @@ type UnexplainedKey struct {
 	// the grant that would cover it rather than as a bare pair of names.
 	Transport string `json:"transport"`
 	Port      string `json:"port,omitempty"`
+}
+
+// peerPathKey is one peer and one way of reaching it. Splitting per path rather
+// than storing a direct/relayed pair keeps the bucket a plain Counts map like
+// every other dimension, and lets the query fold the two direct families
+// together without the store deciding what "direct" means.
+type peerPathKey struct {
+	peer string
+	path string
 }
 
 // PortKey identifies a destination service endpoint.
@@ -246,6 +284,14 @@ type bucket struct {
 	unexplained map[UnexplainedKey]*Counts
 	rules       map[int]*Counts
 
+	// Underlay path quality, from physical traffic only. paths is the overall
+	// direct-vs-relayed split; derpRegions is which relays carried the relayed
+	// share; peerPaths is the same split per peer, which is the form that names
+	// the device to go and look at.
+	paths       map[string]*Counts
+	derpRegions map[string]*Counts
+	peerPaths   map[peerPathKey]*Counts
+
 	// dropped counts observations whose keys overflowed a cap and were folded
 	// into Other. Surfaced so the UI can say so rather than silently implying
 	// complete coverage.
@@ -276,6 +322,9 @@ func newBucket(start time.Time) *bucket {
 		verdicts:     map[string]*Counts{},
 		unexplained:  map[UnexplainedKey]*Counts{},
 		rules:        map[int]*Counts{},
+		paths:        map[string]*Counts{},
+		derpRegions:  map[string]*Counts{},
+		peerPaths:    map[peerPathKey]*Counts{},
 	}
 }
 
@@ -377,6 +426,57 @@ func (b *bucket) record(o Observation) {
 	b.addMatrix(b.osMatrix, oneOrNone(o.SrcOS), oneOrNone(o.DstOS), o.Counts)
 
 	b.recordPolicy(o)
+	b.recordPath(o)
+}
+
+// recordPath accumulates the underlay path dimensions. Only physical traffic
+// carries a path, so everything else returns immediately — which is most of the
+// emit path's traffic, and keeps three map lookups off it.
+func (b *bucket) recordPath(o Observation) {
+	if o.Path == "" {
+		return
+	}
+	addLabel(b.paths, o.Path, o.Counts, MaxLabelsPerKind)
+	// A relayed connection whose region was unreadable still counts as relayed
+	// above; it simply names no relay here.
+	if o.Path == PathDERP {
+		addLabel(b.derpRegions, o.DERPRegion, o.Counts, MaxLabelsPerKind)
+	}
+
+	k := peerPathKey{peer: peerIdentity(o.SrcNode, o.SrcAddr), path: o.Path}
+	e, ok := b.peerPaths[k]
+	if !ok {
+		if len(b.peerPaths) >= MaxPeerPathsPerBucket {
+			k = peerPathKey{peer: Other, path: o.Path}
+			b.dropped++
+			e, ok = b.peerPaths[k]
+		}
+		if !ok {
+			e = &Counts{}
+			b.peerPaths[k] = e
+		}
+	}
+	e.add(o.Counts)
+}
+
+// peerIdentity names the far end of an underlay connection.
+//
+// Unlike endpointIdentity, this deliberately does NOT prefer tags or owner: the
+// per-peer table exists to name the ONE device to go and look at, and keying it
+// on a tag would merge every tagged server into a single row answering a
+// different question. Device name, then bare address, then the sentinel — which
+// at least says the peer was not resolvable — then Unidentified.
+func peerIdentity(node, addrPort string) string {
+	if node != "" && node != external && node != unknown {
+		return node
+	}
+	if host := addrHost(addrPort); host != "" {
+		return host
+	}
+	if node != "" {
+		return node
+	}
+	return Unidentified
 }
 
 // recordPolicy accumulates the policy reconciliation dimensions. An observation
@@ -629,7 +729,11 @@ type Recent struct {
 	Verdict  string `json:"verdict,omitempty"`
 	Reversed bool   `json:"reversed,omitempty"`
 	Rule     int    `json:"rule"`
-	Counts   Counts `json:"counts"`
+	// How this one connection was carried, on physical traffic only, so the list
+	// behind a relayed peer shows which of its connections were the relayed ones.
+	Path       string `json:"path,omitempty"`
+	DERPRegion string `json:"derp_region,omitempty"`
+	Counts     Counts `json:"counts"`
 }
 
 // NewMemory returns a store retaining at most capacity one-minute buckets.
@@ -699,6 +803,8 @@ func (m *Memory) recordRecentLocked(o Observation) {
 		Verdict:     o.Verdict,
 		Reversed:    o.Reversed,
 		Rule:        o.Rule,
+		Path:        o.Path,
+		DERPRegion:  o.DERPRegion,
 		Counts:      o.Counts,
 	}
 	m.next = (m.next + 1) % len(m.recent)
@@ -824,6 +930,17 @@ type RuleStat struct {
 	Counts Counts `json:"counts"`
 }
 
+// PeerPathStat is how one peer was reached over the window: how much of the
+// underlay traffic to it went directly, and how much had to be relayed through
+// DERP. The two IPv4 and IPv6 direct families are folded together — an operator
+// asking this question wants to know whether a peer is being relayed, and the
+// per-family split is in Paths for anyone who wants it.
+type PeerPathStat struct {
+	Peer    string `json:"peer"`
+	Direct  Counts `json:"direct"`
+	Relayed Counts `json:"relayed"`
+}
+
 // Result is a complete answer to a Query.
 type Result struct {
 	Window       Range       `json:"window"`
@@ -854,6 +971,14 @@ type Result struct {
 	Verdicts    []LabelStat       `json:"verdicts"`
 	Unexplained []UnexplainedStat `json:"unexplained"`
 	Rules       []RuleStat        `json:"rules"`
+	// Underlay path quality over the window, from physical traffic only. Paths is
+	// the overall split, DERPRegions is which relays carried the relayed share,
+	// and PeerPaths is the same split per peer, ranked so the relayed ones come
+	// first. All three are empty when the tailnet reports no physical traffic,
+	// which is the case whenever flow logs are collected without it.
+	Paths       []LabelStat    `json:"paths"`
+	DERPRegions []LabelStat    `json:"derp_regions"`
+	PeerPaths   []PeerPathStat `json:"peer_paths"`
 	// Truncated reports observations folded into Other because a cap was hit, so
 	// the UI can say coverage is partial instead of implying it is complete.
 	Truncated int64 `json:"truncated"`
@@ -896,6 +1021,8 @@ func (m *Memory) Query(q Query) Result {
 	verdicts := map[string]*Counts{}
 	unexplained := map[UnexplainedKey]*Counts{}
 	rules := map[int]*Counts{}
+	paths, derpRegions := map[string]*Counts{}, map[string]*Counts{}
+	peerPaths := map[peerPathKey]*Counts{}
 	series := map[int64]*Counts{}
 
 	var earliest, latest time.Time
@@ -937,6 +1064,9 @@ func (m *Memory) Query(q Query) Result {
 		mergeInto(verdicts, b.verdicts)
 		mergeInto(unexplained, b.unexplained)
 		mergeInto(rules, b.rules)
+		mergeInto(paths, b.paths)
+		mergeInto(derpRegions, b.derpRegions)
+		mergeInto(peerPaths, b.peerPaths)
 		for k, v := range b.nodes {
 			n, ok := nodes[k]
 			if !ok {
@@ -972,7 +1102,46 @@ func (m *Memory) Query(q Query) Result {
 	res.Verdicts = topLabels(verdicts, topN)
 	res.Unexplained = topUnexplained(unexplained, topN)
 	res.Rules = allRules(rules)
+	res.Paths = topLabels(paths, topN)
+	res.DERPRegions = topLabels(derpRegions, topN)
+	res.PeerPaths = topPeerPaths(peerPaths, topN)
 	return res
+}
+
+// topPeerPaths folds the per-peer, per-path counts into one row per peer.
+//
+// Ranking is by RELAYED volume first, deliberately. A peer moving gigabytes
+// directly is working correctly; a peer being relayed is the thing an operator
+// would act on, and ranking by total volume alone would bury it under the peers
+// that are fine.
+func topPeerPaths(m map[peerPathKey]*Counts, n int) []PeerPathStat {
+	byPeer := make(map[string]*PeerPathStat, len(m))
+	for k, c := range m {
+		e, ok := byPeer[k.peer]
+		if !ok {
+			e = &PeerPathStat{Peer: k.peer}
+			byPeer[k.peer] = e
+		}
+		if k.path == PathDERP {
+			e.Relayed.add(*c)
+		} else {
+			e.Direct.add(*c)
+		}
+	}
+	out := make([]PeerPathStat, 0, len(byPeer))
+	for _, e := range byPeer {
+		out = append(out, *e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Relayed.Bytes(), out[j].Relayed.Bytes(); a != b {
+			return a > b
+		}
+		if a, b := out[i].Direct.Bytes(), out[j].Direct.Bytes(); a != b {
+			return a > b
+		}
+		return out[i].Peer < out[j].Peer
+	})
+	return truncate(out, n)
 }
 
 func topUnexplained(m map[UnexplainedKey]*Counts, n int) []UnexplainedStat {

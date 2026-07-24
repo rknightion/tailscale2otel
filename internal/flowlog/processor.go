@@ -499,7 +499,39 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 	if dstRef != nil {
 		o.DstUser, o.DstTags, o.DstOS = dstRef.User, joinTags(dstRef.Tags), dstRef.OS
 	}
+	o.Path, o.DERPRegion = classifyPath(trafficType, dstAddr, dstPort)
 	return o
+}
+
+// derpMarker is the loopback address Tailscale writes as a physical destination
+// when a peer was reached through a DERP relay rather than directly. It is a
+// marker, not a routable endpoint, and the value in the PORT field beside it is
+// the relay's region ID.
+const derpMarker = "127.3.3.40"
+
+// classifyPath reads how two nodes actually reached each other off one physical
+// connection's underlay endpoint.
+//
+// Only physicalTraffic carries this. The overlay traffic types describe what the
+// tailnet carried, not how, so they get no path at all — and neither does a
+// physical entry with no endpoint, since "we cannot tell" must not be folded into
+// the direct column an operator would read as good news.
+//
+// This deliberately does not depend on the record's proto field: it is 0 on every
+// one of 44,825 physical entries in a live capture.
+func classifyPath(trafficType, dstAddr, dstPort string) (path, region string) {
+	if trafficType != semconv.TrafficPhysical || dstAddr == "" {
+		return "", ""
+	}
+	if dstAddr == derpMarker {
+		// A marker with an unreadable region is still a relayed path. Demoting it
+		// to direct would understate relaying, which is the number being asked for.
+		return flowstore.PathDERP, dstPort
+	}
+	if strings.Contains(dstAddr, ":") {
+		return flowstore.PathDirectIPv6, ""
+	}
+	return flowstore.PathDirectIPv4, ""
 }
 
 // joinTags renders a node block's tags the way every other surface does. An
