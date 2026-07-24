@@ -75,8 +75,17 @@ func TestDumpFlowsJSON(t *testing.T) {
 				conn(1, "100.64.0.1:0", "100.64.0.3:0", 64, 64),               // icmp, unexplained
 				conn(6, "100.64.0.1:46000", "100.64.0.2:443", 700, 900),       // svc: rule -> undecidable
 			},
-			ExitTraffic:     []flowlog.ConnectionCounts{conn(6, "100.64.0.1:0", "", 300000, 1200000)},
-			PhysicalTraffic: []flowlog.ConnectionCounts{conn(17, "100.64.0.1:41641", "100.64.0.3:41641", 40000, 40000)},
+			ExitTraffic: []flowlog.ConnectionCounts{conn(6, "100.64.0.1:0", "", 300000, 1200000)},
+			// The underlay, in all three shapes: a peer reached directly over each
+			// IP family, and one that had to be relayed through DERP region 8.
+			// Physical src is the PEER's overlay address and dst is the endpoint it
+			// was reached at, which is what the path classification reads.
+			PhysicalTraffic: []flowlog.ConnectionCounts{
+				conn(0, "100.64.0.2:0", "10.0.0.5:41641", 40000, 40000),
+				conn(0, "100.64.0.2:0", "[2001:db8::5]:41641", 9000, 9000),
+				conn(0, "100.64.0.3:0", "127.3.3.40:8", 148, 96),
+				conn(0, "100.64.0.3:0", "10.0.0.3:59879", 500, 500),
+			},
 		}, rec.Emitter())
 	}
 

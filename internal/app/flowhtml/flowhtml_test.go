@@ -164,6 +164,55 @@ func TestRender_UnexercisedRulesStateTheirWindow(t *testing.T) {
 	}
 }
 
+// The path section's numbers only mean something if the page says what they
+// count. Relayed CONNECTIONS and relayed BYTES differ by two orders of magnitude
+// on real data — 11.6% of connections but 0.4% of bytes — because DERP carries
+// the handshakes while bulk traffic goes direct. A reader who takes one figure
+// for the other draws the opposite conclusion.
+func TestRender_PathSectionSaysWhatItCounts(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`id="pathStrip"`,
+		`id="tblPeerPaths"`,
+		`id="derpRegions"`,
+		"connections, not bytes",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the path section is missing %q", want)
+		}
+	}
+}
+
+// Region IDs are all Tailscale's API exposes — the DERP map endpoint is not
+// served. Inventing names for them would be a guess an operator could act on, so
+// the page shows the ID and says why.
+func TestRender_DoesNotInventDERPRegionNames(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, "does not expose") {
+		t.Error("the page does not explain why DERP regions are shown as IDs")
+	}
+	// A handful of the real region names, none of which we can justify printing.
+	for _, name := range []string{"London", "Frankfurt", "Amsterdam", "Nuremberg"} {
+		if strings.Contains(out, name) {
+			t.Errorf("the page names DERP region %q; no API supplies that mapping", name)
+		}
+	}
+}
+
+// A peer reached over DERP is slower, not compromised. The section reports a
+// property of the network, and must not read as a problem with the device.
+func TestRender_PathSectionIsNotAlarming(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, "Relaying is not a failure") {
+		t.Error("the path section does not say that a relayed peer is working, only slower")
+	}
+	for _, bad := range []string{"degraded peer", "bad peer", "broken peer"} {
+		if strings.Contains(strings.ToLower(out), bad) {
+			t.Errorf("the path section calls a relayed peer %q", bad)
+		}
+	}
+}
+
 // "Undecidable" is not "unexplained", and the page must say so where an operator
 // reads it, not only in the Go doc comments.
 func TestRender_ExplainsTheUndecidableVerdict(t *testing.T) {

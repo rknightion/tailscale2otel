@@ -334,6 +334,25 @@
   </div>
 </section>
 
+<section class="grid2">
+  <div>
+    <h2>How peers are reached
+      <span class="hint">the underlay path, by connections, not bytes</span>
+    </h2>
+    <div class="panel">
+      <div class="vstrip" id="pathStrip"></div>
+      <div class="vlegend" id="pathLegend"></div>
+      <div class="vlegend" id="derpRegions"></div>
+      <div class="coverage" id="pathNote"></div>
+    </div>
+  </div>
+  <div>
+    <h2>Peers being relayed <span class="hint" id="peerPathCount"></span></h2>
+    <div id="tblPeerPaths"></div>
+    <div class="coverage" id="peerPathNote"></div>
+  </div>
+</section>
+
 <section>
   <h2>Recent connections <span class="hint" id="flowCount"></span></h2>
   <div class="controls" style="margin-bottom:10px">
@@ -502,6 +521,7 @@ function render(d){
   renderPorts(d);
   renderMatrix(d);
   renderPolicy(d);
+  renderPathQuality(d);
   renderFlows(d);
 
   // Nothing retained yet: say so rather than claiming to cover a zero window.
@@ -1386,6 +1406,140 @@ function renderUnexercised(d, pol){
     : "";
 }
 
+// ------------------------------------------------------- path quality
+//
+// How two nodes actually reached each other, read off the underlay endpoint of
+// each physical connection. This is the one thing here a dedicated flow
+// visualiser cannot show, because it needs the marker to be recognised for what
+// it is rather than treated as an ordinary destination.
+//
+// Everything in this section counts CONNECTIONS. Relayed connections and relayed
+// bytes are wildly different figures on real data — 11.6% of connections but
+// 0.4% of bytes on a live tailnet — because DERP carries the handshakes and
+// keepalives while bulk transfer goes direct. The per-peer table shows both so
+// neither number can be mistaken for the other.
+var PATHS = [
+  {key:"direct_ipv4", text:"direct IPv4", colour:"var(--ok)",
+   note:"The two nodes reached each other directly over IPv4."},
+  {key:"direct_ipv6", text:"direct IPv6", colour:"var(--accent)",
+   note:"The two nodes reached each other directly over IPv6."},
+  {key:"derp", text:"relayed", colour:"var(--warn)",
+   note:"The connection went through a DERP relay. Slower and Tailscale-hosted, but still end-to-end encrypted."}
+];
+
+function pathText(p){
+  for (var i = 0; i < PATHS.length; i++){
+    if (PATHS[i].key === p) return PATHS[i].text;
+  }
+  return p || "";
+}
+
+function renderPathQuality(d){
+  var counts = {}, total = 0;
+  (d.result.paths || []).forEach(function(p){
+    counts[p.label] = (p.counts && p.counts.flows) || 0;
+    total += counts[p.label];
+  });
+
+  renderPathStrip(counts, total);
+  renderDERPRegions(d, counts.derp || 0);
+  renderPeerPaths(d, total);
+}
+
+function renderPathStrip(counts, total){
+  var strip = el("pathStrip"), legend = el("pathLegend");
+  clear(strip); clear(legend);
+  if (!total) return;
+
+  PATHS.forEach(function(p){
+    var n = counts[p.key] || 0;
+    if (n){
+      var seg = document.createElement("div");
+      seg.style.background = p.colour;
+      seg.style.width = (100 * n / total) + "%";
+      seg.title = p.text + ": " + fmtNum(n) + " connections";
+      strip.appendChild(seg);
+    }
+    var item = document.createElement("span");
+    item.title = p.note;
+    var sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = p.colour;
+    var b = document.createElement("b");
+    b.textContent = fmtNum(n);
+    item.appendChild(sw);
+    item.appendChild(b);
+    item.appendChild(document.createTextNode(" " + p.text
+      + " (" + Math.round(100 * n / total) + "%)"));
+    legend.appendChild(item);
+  });
+}
+
+// renderDERPRegions lists the relays that carried the relayed share, by ID.
+// Tailscale's API does not serve its DERP map, so the ID is genuinely all that
+// is knowable here — a built-in name table would go stale silently and mislabel
+// a region an operator was about to act on.
+function renderDERPRegions(d, relayed){
+  var host = el("derpRegions");
+  clear(host);
+  if (!relayed) return;
+
+  (d.result.derp_regions || []).forEach(function(r){
+    var item = document.createElement("span");
+    item.title = "DERP region " + r.label + " carried " + fmtNum(r.counts.flows)
+      + " relayed connections (" + fmtBytes(bytes(r.counts)) + ")";
+    var b = document.createElement("b");
+    b.textContent = fmtNum(r.counts.flows);
+    item.appendChild(b);
+    item.appendChild(document.createTextNode(" via region " + label(r.label)));
+    host.appendChild(item);
+  });
+}
+
+function renderPeerPaths(d, total){
+  var peers = d.result.peer_paths || [];
+  var relayedPeers = peers.filter(function(p){ return p.relayed.flows > 0; });
+
+  el("peerPathCount").textContent = total
+    ? relayedPeers.length + " of " + peers.length + (peers.length === 1 ? " peer" : " peers")
+    : "";
+
+  // Two of these columns count connections and one counts bytes, and they are
+  // routinely an order of magnitude apart — so each header says which.
+  buildTable(el("tblPeerPaths"), [
+    {text:"Peer"}, {text:"Relayed conns", num:true}, {text:"Direct conns", num:true},
+    {text:"Relayed bytes", num:true}, {text:"Relayed share", num:true}
+  ], relayedPeers.map(function(p){
+    var conns = p.relayed.flows + p.direct.flows;
+    return {cells: [
+      {text: label(p.peer), cls:"mono"},
+      {text: fmtNum(p.relayed.flows), cls:"num"},
+      {text: fmtNum(p.direct.flows), cls:"num"},
+      {text: fmtBytes(bytes(p.relayed)), cls:"num"},
+      {text: conns ? Math.round(100 * p.relayed.flows / conns) + "%" : "—", cls:"num"}
+    ]};
+  }), total
+    ? "every peer was reached directly in this window"
+    : "no underlay traffic in this window");
+
+  el("pathNote").innerHTML = total
+    ? "Read off each physical connection&rsquo;s underlay endpoint: Tailscale writes a loopback "
+      + "marker in place of an address when a peer had to be relayed, and the DERP region&rsquo;s ID "
+      + "in place of the port. The API <b>does not expose</b> the mapping from that ID to a region "
+      + "name, so the ID is what is shown."
+    : "<b>No underlay traffic in this window.</b> Path quality is read from <code>physicalTraffic</code>, "
+      + "which describes the encrypted transport between endpoints rather than the tailnet "
+      + "connections carried over it.";
+
+  el("peerPathNote").innerHTML = relayedPeers.length
+    ? "<b>Relaying is not a failure.</b> A relayed peer is connected and encrypted end to end; it is "
+      + "simply going the long way, so it will show higher latency and lower throughput. The usual "
+      + "causes are a hard NAT, blocked UDP, or no route between the two networks. The counts here "
+      + "are <b>connections</b> — relayed bytes are usually a far smaller share, because handshakes "
+      + "and keepalives relay while bulk transfer finds a direct path."
+    : "";
+}
+
 // humanSpan describes the covered window in the terms an operator asked for,
 // which is what makes the unexercised list interpretable at all.
 function humanSpan(startISO, endISO){
@@ -1437,7 +1591,7 @@ function renderFlows(d){
     // actually looks for a connection.
     return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport,
             f.traffic_type, f.src_user, f.dst_user, f.src_tags, f.dst_tags, f.src_os, f.dst_os,
-            verdictText(f.verdict, f.reversed)]
+            verdictText(f.verdict, f.reversed), pathText(f.path)]
       .some(function(v){ return v && v.toLowerCase().indexOf(q) >= 0; });
   });
   el("flowCount").textContent = rows.length === all.length
@@ -1450,7 +1604,10 @@ function renderFlows(d){
   ], rows.map(function(f){
     var pill = document.createElement("span");
     pill.className = "pill " + f.traffic_type;
-    pill.textContent = f.traffic_type;
+    // Underlay rows say how they were carried: that is the only thing that
+    // distinguishes one physical connection from another on this list.
+    pill.textContent = f.path ? f.traffic_type + " · " + pathText(f.path) : f.traffic_type;
+    if (f.path === "derp" && f.derp_region) pill.title = "via DERP region " + f.derp_region;
     // An unevaluated connection shows an em dash, not a verdict: no policy was
     // collected, or this is underlay traffic no policy describes.
     var verdict = document.createElement("span");

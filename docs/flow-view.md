@@ -40,9 +40,13 @@ relationship. See [what the matrix can and cannot show](#what-the-identity-matri
 **Policy reconciliation.** What the tailnet's own ACL says about the traffic above — see
 [reading the policy section](#reading-the-policy-section), which is worth reading before acting on it.
 
-**Recent connections.** The newest individual connections, with their raw endpoints and the policy's
-reading of each one, filterable by device, address, port, service, protocol or verdict. The aggregates
-cannot answer "what exactly was that", so a bounded number of raw connections are kept alongside them.
+**Path quality.** Whether each peer was reached directly or had to be relayed through DERP, and which
+relay carried it — see [reading the path section](#reading-the-path-section).
+
+**Recent connections.** The newest individual connections, with their raw endpoints, the policy's
+reading of each one and how each underlay connection was carried, filterable by device, address, port,
+service, protocol, verdict or path. The aggregates cannot answer "what exactly was that", so a bounded
+number of raw connections are kept alongside them.
 
 ## Enabling it
 
@@ -180,6 +184,45 @@ Reconciliation reads the identity the flow record carried — the same identity 
 shows, and for the same reason (see [Privacy](#privacy)). An endpoint the record carried nothing
 identifying for appears as `unidentified`.
 
+## Reading the path section
+
+Tailscale connects two nodes directly when it can and falls back to relaying through a **DERP** server
+when it cannot. Both are end-to-end encrypted; a relayed path is simply slower and lower throughput,
+because the traffic goes via Tailscale's infrastructure instead of straight between the two machines.
+
+This is read from `physicalTraffic` — the WireGuard underlay, which reports the endpoint each peer was
+actually reached at. Three values:
+
+| Path | Meaning |
+|---|---|
+| `direct_ipv4` | The two nodes reached each other directly over IPv4. |
+| `direct_ipv6` | The two nodes reached each other directly over IPv6. |
+| `derp` | The connection was relayed. Tailscale writes the loopback marker `127.3.3.40` in place of an endpoint address, and the DERP **region ID** in place of the port. |
+
+**The counts are connections, not bytes**, and the two are usually far apart. On a live tailnet 11.6%
+of underlay connections were relayed but only 0.4% of the bytes: handshakes and keepalives relay while
+bulk transfer finds a direct path. The per-peer table shows both so neither can be read as the other.
+
+**Regions are shown as IDs.** Tailscale's API does not serve its DERP map, so there is no supported
+source for the ID-to-name mapping. A built-in name table would go stale silently and mislabel a region
+you were about to act on, so the raw ID is what is shown. Tailscale's own published DERP map is where
+to look one up.
+
+**A peer being relayed is a lead, not a fault.** The usual causes are a hard NAT in front of one of the
+two nodes, UDP blocked on the path, or genuinely no route between the two networks. Start with
+`tailscale netcheck` on the relayed peer.
+
+Two things this deliberately does not claim:
+
+- **Peer-relay paths are not distinguished from direct ones.** A flow record reports the endpoint a
+  peer was reached at, and a Tailscale peer relay looks like an ordinary endpoint in that field.
+- **A physical connection with no endpoint gets no path at all**, rather than being counted as direct.
+  "We cannot tell" must not read as good news.
+
+Note also that the peer here is named by its **device name** only — never by its tags, unlike the
+unexplained-relationship list. The question is which machine to go and look at, and a row keyed on
+`tag:servers` would merge every tagged server into one.
+
 ## Limits worth knowing
 
 **Memory is bounded, and coverage is honest about it.** Everything is aggregated to one-minute
@@ -223,7 +266,24 @@ right, behind the same auth.
 Alongside the ranked lists, `result` carries `tag_matrix`, `user_matrix` and `os_matrix` — each an
 array of `{src, dst, counts}` cells ranked by bytes and capped at 400. Entries in `recent` carry the
 endpoint identity (`src_user`, `src_tags`, `src_os` and their `dst_` counterparts) as well as the raw
-addresses, plus that connection's own `verdict`, `reversed` and `rule`.
+addresses, plus that connection's own `verdict`, `reversed` and `rule`, and — on underlay connections
+only — its `path` and `derp_region`.
+
+Path quality is three more fields on `result`:
+
+| Field | Contents |
+|---|---|
+| `result.paths` | Connection counts per path: `direct_ipv4`, `direct_ipv6`, `derp`. Empty when the window held no underlay traffic. |
+| `result.derp_regions` | `{label, counts}` per DERP **region ID**, for the relayed share only. |
+| `result.peer_paths` | `{peer, direct, relayed}` per peer, ranked with the relayed ones first. `direct` folds both IP families. |
+
+```console
+$ # Which peers are being relayed, and how much of their traffic.
+$ curl -sH "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:9091/api/flows.json?window=6h&recent=0' \
+  | jq -r '.result.peer_paths[] | select(.relayed.flows > 0)
+           | "\(.peer)  \(.relayed.flows)/\(.relayed.flows + .direct.flows) conns relayed"'
+```
 
 Policy reconciliation spans two places. `result` carries what the policy *said* about the window:
 
