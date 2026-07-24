@@ -129,7 +129,27 @@
   .bar .bt{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
   .bar .bf{height:100%;background:var(--accent);border-radius:4px}
   .bar .bv{color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+  /* Identity matrix */
+  .matrix{overflow:auto;padding:12px}
+  .matrix table{border:0;background:transparent;width:auto;border-radius:0}
+  .matrix th,.matrix td{border:0;padding:2px;background:transparent}
+  .matrix th{font-family:var(--mono);font-weight:400;font-size:11px;color:var(--muted);
+    white-space:nowrap;position:static}
+  .matrix th.rowh{text-align:right;padding-right:9px;max-width:190px;overflow:hidden;
+    text-overflow:ellipsis}
+  .matrix th.colh{writing-mode:vertical-rl;transform:rotate(180deg);height:104px;
+    vertical-align:bottom;max-height:104px;overflow:hidden}
+  .matrix th.corner{font-size:10px;text-align:right;vertical-align:bottom;padding-right:9px}
+  .cell{min-width:52px;height:26px;border-radius:4px;display:flex;align-items:center;
+    justify-content:center;font-size:10px;font-family:var(--mono);cursor:pointer;
+    background:var(--panel2);color:var(--muted);user-select:none}
+  .cell.hot{color:#fff}
+  .cell.sel{outline:2px solid var(--fg);outline-offset:-2px}
+  .cell.zero{cursor:default;opacity:.35}
+  .coverage{color:var(--muted);font-size:12px;padding:0 12px 11px}
+  .coverage b{color:var(--fg);font-weight:600}
   /* Flow list */
+  .ident{display:block;color:var(--muted);font-size:11px;margin-top:2px}
   #flowList{max-height:460px;overflow:auto}
   #flowList table{border:0;border-radius:0}
   #flowList th{position:sticky;top:0;z-index:1}
@@ -225,7 +245,7 @@
     <div class="panel bars" id="barsTransports"></div>
   </div>
   <div>
-    <h2>Operating system</h2>
+    <h2>Operating system <span class="hint">destination side only</span></h2>
     <div class="panel bars" id="barsOSes"></div>
   </div>
 </section>
@@ -253,6 +273,28 @@
   <div>
     <h2>Tags</h2>
     <div class="panel bars" id="barsTags"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Who talks to whom
+    <span class="hint">a cell is one direction &middot; click to filter the connection list</span>
+  </h2>
+  <div class="controls" style="margin-bottom:10px">
+    <label>By</label>
+    <!-- No operating-system matrix: flow records carry `os` on the destination
+         endpoint only (0 of 18,702 source nodes in a live capture), so an OS
+         matrix could only ever be empty. -->
+    <div class="seg" id="matrixSeg">
+      <button data-kind="tag" aria-pressed="true">Tag</button>
+      <button data-kind="user">User</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="ctl" id="matrixClear" style="display:none">clear cell filter</button>
+  </div>
+  <div class="panel">
+    <div class="matrix" id="matrix"></div>
+    <div class="coverage" id="matrixCoverage"></div>
   </div>
 </section>
 
@@ -329,6 +371,23 @@ function fmtClock(iso){
 
 function bytes(c){ return (c && (c.tx_bytes + c.rx_bytes)) || 0; }
 
+// fmtShort is fmtBytes for a matrix cell, where there is room for four
+// characters and not one more.
+function fmtShort(n){
+  n = n || 0;
+  if (n < 1000) return String(n);
+  var u = ["K","M","G","T","P"], i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return (n < 10 ? n.toFixed(1) : Math.round(n)) + u[i];
+}
+
+// Tags travel as the comma-joined set the record carried, so membership is a
+// list test, not a string compare — "tag:prod" must not match "tag:production".
+function hasTag(joined, tag){
+  if (!joined) return false;
+  return joined.split(",").some(function(t){ return t.trim() === tag; });
+}
+
 // OTHER is the sentinel the store folds overflow into; it is a bucket, not a
 // device, so it is never drawn as a topology vertex.
 var OTHER = "__other__";
@@ -343,6 +402,8 @@ var state = {
   tailnet: TAILNET,
   end: null,          // null == follow the newest data
   selected: null,     // a device name, or null
+  matrixKind: "tag",  // which identity matrix is on screen
+  cell: null,         // {src, dst} from a clicked matrix cell, or null
   filter: "",
   data: null,
   timer: null,
@@ -402,6 +463,7 @@ function render(d){
   renderNodes(d);
   renderPairs(d);
   renderPorts(d);
+  renderMatrix(d);
   renderFlows(d);
 
   // Nothing retained yet: say so rather than claiming to cover a zero window.
@@ -952,13 +1014,204 @@ function renderPorts(d){
   ], rows, "no destination ports in this window");
 }
 
+// ---------------------------------------------------------------- matrix
+
+// Axis length is a readability bound, not a data bound: a grid wider than this
+// cannot be read, and the server has already ranked the cells by volume. What is
+// left out is stated rather than silently dropped.
+var MATRIX_AXIS = 14;
+
+// A cell needs the identity on BOTH endpoints. On live data tags carry on both
+// ends of ~70% of node pairings and users on ~1% (a tagged machine has no user),
+// which is why the tag matrix leads and the user one is offered rather than
+// promoted. There is no OS matrix: the API supplies `os` on destinations only.
+var MATRIX_KINDS = {
+  tag: {
+    field:"tag_matrix", noun:"tags",
+    // Why traffic falls outside the grid differs per kind, and getting it the
+    // wrong way round would send an operator looking in the wrong place.
+    rest:"exit traffic, and devices owned by a person rather than a tag",
+    blank:"no flow in this window had tags on both endpoints"
+  },
+  user: {
+    field:"user_matrix", noun:"users",
+    rest:"tag-owned devices, which have no user at all, and exit traffic",
+    blank:"no flow in this window had a user on both endpoints — tag-owned devices carry no user, so a machine-to-machine tailnet shows nothing here"
+  }
+};
+
+function renderMatrix(d){
+  var kind = MATRIX_KINDS[state.matrixKind];
+  var host = el("matrix");
+  clear(host);
+  var all = d.result[kind.field] || [];
+
+  // Rank the axes by their own totals so the busiest identities sit top-left.
+  var srcTot = {}, dstTot = {}, byKey = {}, shown = 0;
+  all.forEach(function(c){
+    srcTot[c.src] = (srcTot[c.src] || 0) + bytes(c.counts);
+    dstTot[c.dst] = (dstTot[c.dst] || 0) + bytes(c.counts);
+    byKey[c.src + " " + c.dst] = c;
+    shown += bytes(c.counts);
+  });
+  var rows = Object.keys(srcTot).sort(function(a, b){ return srcTot[b] - srcTot[a] || (a < b ? -1 : 1); });
+  var cols = Object.keys(dstTot).sort(function(a, b){ return dstTot[b] - dstTot[a] || (a < b ? -1 : 1); });
+  var moreRows = Math.max(0, rows.length - MATRIX_AXIS);
+  var moreCols = Math.max(0, cols.length - MATRIX_AXIS);
+  rows = rows.slice(0, MATRIX_AXIS);
+  cols = cols.slice(0, MATRIX_AXIS);
+
+  renderCoverage(d, shown, kind, moreRows, moreCols);
+
+  if (!rows.length){
+    var e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = kind.blank;
+    host.appendChild(e);
+    return;
+  }
+
+  var maxV = 1;
+  rows.forEach(function(r){
+    cols.forEach(function(c){
+      var cell = byKey[r + " " + c];
+      if (cell) maxV = Math.max(maxV, bytes(cell.counts));
+    });
+  });
+
+  var tbl = document.createElement("table");
+  var thead = document.createElement("thead");
+  var htr = document.createElement("tr");
+  var corner = document.createElement("th");
+  corner.className = "corner";
+  corner.textContent = "from ↓ / to →";
+  htr.appendChild(corner);
+  cols.forEach(function(c){
+    var th = document.createElement("th");
+    th.className = "colh";
+    th.textContent = label(c);
+    th.title = label(c);
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  tbl.appendChild(thead);
+
+  var tbody = document.createElement("tbody");
+  rows.forEach(function(r){
+    var tr = document.createElement("tr");
+    var rh = document.createElement("th");
+    rh.className = "rowh";
+    rh.textContent = label(r);
+    rh.title = label(r);
+    tr.appendChild(rh);
+    cols.forEach(function(c){
+      var td = document.createElement("td");
+      var cell = byKey[r + " " + c];
+      var v = cell ? bytes(cell.counts) : 0;
+      var div = document.createElement("div");
+      var picked = state.cell && state.cell.src === r && state.cell.dst === c;
+      div.className = "cell" + (v ? "" : " zero") + (picked ? " sel" : "");
+      if (v){
+        // Square-root scaling: a linear ramp makes everything but the single
+        // busiest cell look empty on real traffic, which is heavily skewed.
+        var f = Math.sqrt(v / maxV);
+        div.style.background = "color-mix(in srgb, var(--accent) " + Math.round(12 + 88 * f) + "%, var(--panel2))";
+        if (f > 0.55) div.classList.add("hot");
+        div.textContent = fmtShort(v);
+        div.title = label(r) + " → " + label(c) + "\n" + fmtBytes(v)
+          + "  (" + fmtNum(cell.counts.flows) + " conns)";
+        div.addEventListener("click", function(){ pickCell(r, c); });
+      } else {
+        div.textContent = "·";
+      }
+      td.appendChild(div);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  host.appendChild(tbl);
+}
+
+// renderCoverage states what share of the window's traffic the matrix accounts
+// for. A flow with no identity on both endpoints occupies no cell, so without
+// this the grid would quietly imply it describes everything.
+function renderCoverage(d, shown, kind, moreRows, moreCols){
+  var total = bytes(d.result.totals);
+  var parts = [];
+  if (total > 0){
+    var pct = Math.round(100 * shown / total);
+    parts.push("Covers <b>" + pct + "%</b> of traffic in this window ("
+      + fmtBytes(shown) + " of " + fmtBytes(total) + "). The remainder involves at least one endpoint "
+      + "carrying no " + kind.noun + ": " + kind.rest + ".");
+  }
+  if (moreRows || moreCols){
+    parts.push("Showing the busiest " + MATRIX_AXIS + " of each axis; "
+      + (moreRows ? moreRows + " more sources" : "")
+      + (moreRows && moreCols ? " and " : "")
+      + (moreCols ? moreCols + " more destinations" : "") + " are not drawn.");
+  }
+  el("matrixCoverage").innerHTML = parts.join(" ");
+}
+
+function pickCell(src, dst){
+  var same = state.cell && state.cell.src === src && state.cell.dst === dst;
+  state.cell = same ? null : {src: src, dst: dst};
+  el("matrixClear").style.display = state.cell ? "" : "none";
+  if (state.data){ renderMatrix(state.data); renderFlows(state.data); }
+}
+
+// matchesCell tests one retained connection against the selected matrix cell,
+// using the same kind the grid is showing.
+function matchesCell(f){
+  if (!state.cell) return true;
+  var s = state.cell.src, d = state.cell.dst;
+  switch (state.matrixKind){
+    case "tag":  return hasTag(f.src_tags, s) && hasTag(f.dst_tags, d);
+    case "user": return f.src_user === s && f.dst_user === d;
+    case "os":   return f.src_os === s && f.dst_os === d;
+  }
+  return true;
+}
+
+// identityOf renders the identity a connection carried, for the second line of
+// an endpoint cell. Absent fields are simply not mentioned.
+// endpointCell renders one side of a connection: the device and address on the
+// first line, whatever identity the record carried on a second, muted one. An
+// absent endpoint is an em dash — exit traffic genuinely has no destination, and
+// showing a made-up one would be worse than showing nothing.
+function endpointCell(node, addr, user, tags, os){
+  var wrap = document.createElement("span");
+  wrap.appendChild(document.createTextNode((node || "—") + (addr ? "  " + addr : "")));
+  var ident = identityOf(user, tags, os);
+  if (ident){
+    var s = document.createElement("span");
+    s.className = "ident";
+    s.textContent = ident;
+    wrap.appendChild(s);
+  }
+  return wrap;
+}
+
+function identityOf(user, tags, os){
+  var bits = [];
+  if (user) bits.push(user);
+  if (tags) bits.push(tags);
+  if (os) bits.push(os);
+  return bits.join(" · ");
+}
+
 function renderFlows(d){
   var q = state.filter.toLowerCase();
   var all = d.recent || [];
   var rows = all.filter(function(f){
     if (state.selected && f.src_node !== state.selected && f.dst_node !== state.selected) return false;
+    if (!matchesCell(f)) return false;
     if (!q) return true;
-    return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport, f.traffic_type]
+    // Identity is searchable too: "rob@" or "tag:servers" is how an operator
+    // actually looks for a connection.
+    return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport,
+            f.traffic_type, f.src_user, f.dst_user, f.src_tags, f.dst_tags, f.src_os, f.dst_os]
       .some(function(v){ return v && v.toLowerCase().indexOf(q) >= 0; });
   });
   el("flowCount").textContent = rows.length === all.length
@@ -977,15 +1230,17 @@ function renderFlows(d){
     return {
       cells: [
         {text: fmtTime(f.time), cls:"mono"},
-        {text: (f.src_node || "—") + (f.src_addr ? "  " + f.src_addr : ""), cls:"mono"},
-        {text: (f.dst_node || "—") + (f.dst_addr ? "  " + f.dst_addr : ""), cls:"mono"},
+        {node: endpointCell(f.src_node, f.src_addr, f.src_user, f.src_tags, f.src_os), cls:"mono"},
+        {node: endpointCell(f.dst_node, f.dst_addr, f.dst_user, f.dst_tags, f.dst_os), cls:"mono"},
         {text: f.dst_service || "—", cls:"mono"},
         {node: pill},
         {text: fmtBytes(f.counts.tx_bytes), cls:"num"},
         {text: fmtBytes(f.counts.rx_bytes), cls:"num"}
       ]
     };
-  }), state.filter || state.selected ? "nothing matches the current filter" : "no connections retained yet");
+  }), state.filter || state.selected || state.cell
+    ? "nothing matches the current filter"
+    : "no connections retained yet");
 }
 
 // ------------------------------------------------------------------- wiring
@@ -1017,6 +1272,25 @@ function init(){
       setLive(true);
       poll();
     });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("#matrixSeg button"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#matrixSeg button"), function(o){
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+      state.matrixKind = b.getAttribute("data-kind");
+      // A cell identifies a pair within ONE kind; carrying it across kinds would
+      // filter on values that do not exist there.
+      state.cell = null;
+      el("matrixClear").style.display = "none";
+      if (state.data){ renderMatrix(state.data); renderFlows(state.data); }
+    });
+  });
+  el("matrixClear").addEventListener("click", function(){
+    state.cell = null;
+    this.style.display = "none";
+    if (state.data){ renderMatrix(state.data); renderFlows(state.data); }
   });
 
   el("topSel").addEventListener("change", function(){

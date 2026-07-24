@@ -20,7 +20,9 @@
 package flowstore
 
 import (
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,6 +42,11 @@ const (
 	MaxNodesPerBucket = 2000
 	MaxPortsPerBucket = 2000
 	MaxLabelsPerKind  = 500
+	// MaxMatrixCellsPerBucket bounds each identity matrix. A matrix is a CROSS
+	// PRODUCT, so it is the dimension most able to blow up — and tags come from
+	// the control plane, not from us. The cap sits far above any real tailnet's
+	// tag/user/OS pairing count.
+	MaxMatrixCellsPerBucket = 2000
 )
 
 // MaxRecent is the size of the raw-connection ring. It is bounded by COUNT, not
@@ -115,6 +122,14 @@ type PairKey struct {
 	TrafficType string `json:"traffic_type"`
 }
 
+// MatrixKey is one directed identity-to-identity relationship: which tag, user
+// or operating system talked to which. Direction is preserved for the same
+// reason it is on PairKey — a flow is reported once, by one node.
+type MatrixKey struct {
+	Src string `json:"src"`
+	Dst string `json:"dst"`
+}
+
 // PortKey identifies a destination service endpoint.
 type PortKey struct {
 	Port      string `json:"port"`
@@ -136,6 +151,13 @@ type bucket struct {
 	users        map[string]*Counts
 	tags         map[string]*Counts
 	oses         map[string]*Counts
+
+	// Identity matrices: who talked to whom, by tag, by user, by operating
+	// system. Separate from the breakdowns above, which answer "how much of
+	// each" rather than "what to what".
+	tagMatrix  map[MatrixKey]*Counts
+	userMatrix map[MatrixKey]*Counts
+	osMatrix   map[MatrixKey]*Counts
 
 	// dropped counts observations whose keys overflowed a cap and were folded
 	// into Other. Surfaced so the UI can say so rather than silently implying
@@ -161,6 +183,9 @@ func newBucket(start time.Time) *bucket {
 		users:        map[string]*Counts{},
 		tags:         map[string]*Counts{},
 		oses:         map[string]*Counts{},
+		tagMatrix:    map[MatrixKey]*Counts{},
+		userMatrix:   map[MatrixKey]*Counts{},
+		osMatrix:     map[MatrixKey]*Counts{},
 	}
 }
 
@@ -233,14 +258,86 @@ func (b *bucket) record(o Observation) {
 	if o.DstUser != o.SrcUser {
 		addLabel(b.users, o.DstUser, o.Counts, MaxLabelsPerKind)
 	}
-	addLabel(b.tags, o.SrcTags, o.Counts, MaxLabelsPerKind)
-	if o.DstTags != o.SrcTags {
-		addLabel(b.tags, o.DstTags, o.Counts, MaxLabelsPerKind)
-	}
 	addLabel(b.oses, o.SrcOS, o.Counts, MaxLabelsPerKind)
 	if o.DstOS != o.SrcOS {
 		addLabel(b.oses, o.DstOS, o.Counts, MaxLabelsPerKind)
 	}
+
+	// Tags are a SET per endpoint, so the breakdown is per individual tag: a
+	// device tagged "tag:servers,tag:prod" must be visible under both, not under
+	// a joined label that matches nothing an operator would search for. A tag on
+	// both endpoints describes one flow, so it counts once.
+	srcTags, dstTags := splitTags(o.SrcTags), splitTags(o.DstTags)
+	for _, tag := range srcTags {
+		addLabel(b.tags, tag, o.Counts, MaxLabelsPerKind)
+	}
+	for _, tag := range dstTags {
+		if !slices.Contains(srcTags, tag) {
+			addLabel(b.tags, tag, o.Counts, MaxLabelsPerKind)
+		}
+	}
+
+	// Matrices. Each is the cross product of the two endpoints' values for that
+	// kind, so it answers "what talks to what" rather than "how much of each".
+	// A flow whose endpoints do not BOTH carry the kind occupies no cell — it is
+	// not a relationship we observed, and inventing one would make the page's
+	// coverage statement wrong.
+	b.addMatrix(b.tagMatrix, srcTags, dstTags, o.Counts)
+	b.addMatrix(b.userMatrix, oneOrNone(o.SrcUser), oneOrNone(o.DstUser), o.Counts)
+	b.addMatrix(b.osMatrix, oneOrNone(o.SrcOS), oneOrNone(o.DstOS), o.Counts)
+}
+
+// addMatrix accumulates the cross product of src and dst into m, folding
+// overflow into a single Other cell. Unlike the one-dimensional breakdowns the
+// diagonal is kept: a device talking to another device with the same owner or
+// tag is a real, common, and interesting relationship.
+func (b *bucket) addMatrix(m map[MatrixKey]*Counts, src, dst []string, c Counts) {
+	for _, s := range src {
+		for _, d := range dst {
+			k := MatrixKey{Src: s, Dst: d}
+			e, ok := m[k]
+			if !ok {
+				if len(m) >= MaxMatrixCellsPerBucket {
+					k = MatrixKey{Src: Other, Dst: Other}
+					b.dropped++
+					e, ok = m[k]
+				}
+				if !ok {
+					e = &Counts{}
+					m[k] = e
+				}
+			}
+			e.add(c)
+		}
+	}
+}
+
+// oneOrNone adapts a single-valued identity field to the slice the matrix takes.
+// An absent value yields no entries, which is what keeps the flow out of the
+// matrix entirely.
+func oneOrNone(v string) []string {
+	if v == "" {
+		return nil
+	}
+	return []string{v}
+}
+
+// splitTags splits the comma-joined tag set a flow record carries into
+// individual tags, tolerating the whitespace and empty entries that a
+// hand-edited ACL produces. Returns nil for an absent set, so callers get "no
+// tags" rather than one empty tag.
+func splitTags(joined string) []string {
+	if joined == "" {
+		return nil
+	}
+	parts := strings.Split(joined, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // addNode accumulates a node's role-split activity. The sender's transmit is
@@ -307,7 +404,16 @@ type Recent struct {
 	SrcNode     string    `json:"src_node,omitempty"`
 	DstNode     string    `json:"dst_node,omitempty"`
 	DstService  string    `json:"dst_service,omitempty"`
-	Counts      Counts    `json:"counts"`
+	// Endpoint identity, so the connection list can answer "what did this user's
+	// devices actually do" — a question no aggregate can. Omitted when the record
+	// did not carry it, or when pii_filter removed it upstream.
+	SrcUser string `json:"src_user,omitempty"`
+	DstUser string `json:"dst_user,omitempty"`
+	SrcTags string `json:"src_tags,omitempty"`
+	DstTags string `json:"dst_tags,omitempty"`
+	SrcOS   string `json:"src_os,omitempty"`
+	DstOS   string `json:"dst_os,omitempty"`
+	Counts  Counts `json:"counts"`
 }
 
 // NewMemory returns a store retaining at most capacity one-minute buckets.
@@ -368,6 +474,12 @@ func (m *Memory) recordRecentLocked(o Observation) {
 		SrcNode:     o.SrcNode,
 		DstNode:     o.DstNode,
 		DstService:  o.DstService,
+		SrcUser:     o.SrcUser,
+		DstUser:     o.DstUser,
+		SrcTags:     o.SrcTags,
+		DstTags:     o.DstTags,
+		SrcOS:       o.SrcOS,
+		DstOS:       o.DstOS,
 		Counts:      o.Counts,
 	}
 	m.next = (m.next + 1) % len(m.recent)
@@ -462,6 +574,17 @@ type PortStat struct {
 	Counts Counts `json:"counts"`
 }
 
+// MatrixCell is one cell of an identity matrix.
+type MatrixCell struct {
+	MatrixKey
+	Counts Counts `json:"counts"`
+}
+
+// MaxMatrixCellsReturned bounds a matrix in the response. A grid an operator can
+// read is far smaller than this; the cap exists so a pathological tailnet cannot
+// turn one request into a multi-megabyte body.
+const MaxMatrixCellsReturned = 400
+
 // LabelStat is one value of a single-dimension breakdown.
 type LabelStat struct {
 	Label  string `json:"label"`
@@ -482,6 +605,12 @@ type Result struct {
 	Users        []LabelStat `json:"users"`
 	Tags         []LabelStat `json:"tags"`
 	OSes         []LabelStat `json:"oses"`
+	// The identity matrices: which tag/user/OS talked to which. Ranked by bytes
+	// and capped at MaxMatrixCellsReturned, so a wide matrix degrades to its
+	// busiest corner rather than to an unbounded response.
+	TagMatrix  []MatrixCell `json:"tag_matrix"`
+	UserMatrix []MatrixCell `json:"user_matrix"`
+	OSMatrix   []MatrixCell `json:"os_matrix"`
 	// Truncated reports observations folded into Other because a cap was hit, so
 	// the UI can say coverage is partial instead of implying it is complete.
 	Truncated int64 `json:"truncated"`
@@ -520,6 +649,7 @@ func (m *Memory) Query(q Query) Result {
 	ports := map[PortKey]*Counts{}
 	transports, trafficTypes := map[string]*Counts{}, map[string]*Counts{}
 	users, tags, oses := map[string]*Counts{}, map[string]*Counts{}, map[string]*Counts{}
+	tagMatrix, userMatrix, osMatrix := map[MatrixKey]*Counts{}, map[MatrixKey]*Counts{}, map[MatrixKey]*Counts{}
 	series := map[int64]*Counts{}
 
 	var earliest, latest time.Time
@@ -555,6 +685,9 @@ func (m *Memory) Query(q Query) Result {
 		mergeInto(users, b.users)
 		mergeInto(tags, b.tags)
 		mergeInto(oses, b.oses)
+		mergeInto(tagMatrix, b.tagMatrix)
+		mergeInto(userMatrix, b.userMatrix)
+		mergeInto(osMatrix, b.osMatrix)
 		for k, v := range b.nodes {
 			n, ok := nodes[k]
 			if !ok {
@@ -584,6 +717,9 @@ func (m *Memory) Query(q Query) Result {
 	res.Users = topLabels(users, topN)
 	res.Tags = topLabels(tags, topN)
 	res.OSes = topLabels(oses, topN)
+	res.TagMatrix = topMatrix(tagMatrix)
+	res.UserMatrix = topMatrix(userMatrix)
+	res.OSMatrix = topMatrix(osMatrix)
 	return res
 }
 
@@ -657,6 +793,23 @@ func topPorts(m map[PortKey]*Counts, n int) []PortStat {
 		return out[i].Transport < out[j].Transport
 	})
 	return truncate(out, n)
+}
+
+func topMatrix(m map[MatrixKey]*Counts) []MatrixCell {
+	out := make([]MatrixCell, 0, len(m))
+	for k, c := range m {
+		out = append(out, MatrixCell{MatrixKey: k, Counts: *c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := out[i].Counts.Bytes(), out[j].Counts.Bytes(); a != b {
+			return a > b
+		}
+		if out[i].Src != out[j].Src {
+			return out[i].Src < out[j].Src
+		}
+		return out[i].Dst < out[j].Dst
+	})
+	return truncate(out, MaxMatrixCellsReturned)
 }
 
 func topLabels(m map[string]*Counts, n int) []LabelStat {

@@ -30,7 +30,12 @@ from what it received rather than inferring it from edge direction.
 registered.
 
 **Identity.** Traffic by user, by tag, and by operating system, taken from the node metadata each flow
-record carries.
+record carries. Tags break down **individually**, so a device tagged `tag:servers,tag:prod` is counted
+under both rather than under a joined label that matches nothing you would search for.
+
+**Who talks to whom.** A tag-to-tag (or user-to-user) matrix: rows are the sending identity, columns
+the receiving one, shaded by volume. Click a cell to filter the connection list to exactly that
+relationship. See [what the matrix can and cannot show](#what-the-identity-matrix-can-show) below.
 
 **Recent connections.** The newest individual connections, with their raw endpoints, filterable by
 device, address, port, service or protocol. The aggregates cannot answer "what exactly was that", so a
@@ -81,6 +86,26 @@ category off removes it from the view as well as from your telemetry:
 | `tailscale_ips: false` | The recent-connections list loses its raw endpoints; ports and services stay. |
 | `external_ips: false` | External addresses are dropped from the connection list. |
 
+## What the identity matrix can show
+
+A matrix cell needs the identity on **both** endpoints, and Tailscale's flow records do not carry all
+three fields on both sides. Measured against a live 3-hour capture (18,702 records, 34,680 source →
+destination node pairings):
+
+| matrix | both endpoints carry it | usable? |
+|---|---|---|
+| **Tag → tag** | 24,154 pairings (**70%**) | Yes — this is the one to reach for. |
+| **User → user** | 241 pairings (**1%**) | Rarely. A tag-owned device has no user at all, so a machine-to-machine tailnet shows almost nothing. |
+| **OS → OS** | 0 | **No.** Not offered. |
+
+**There is no OS matrix, deliberately.** `srcNode` never carries `os` — zero times in 18,702 records —
+while `dstNodes` entries do. An OS matrix could therefore only ever be empty, so the page does not
+offer one. For the same reason the **Operating system** breakdown is labelled *destination side only*:
+it describes what traffic was sent **to**, not what sent it.
+
+The page states the matrix's coverage as a percentage of the window's traffic, so a low number reads as
+"most of this traffic has no tags on both ends" rather than as missing data.
+
 ## Limits worth knowing
 
 **Memory is bounded, and coverage is honest about it.** Everything is aggregated to one-minute
@@ -121,9 +146,19 @@ right, behind the same auth.
 | `recent` | `200` | Raw connections returned. Capped at 1000; `0` omits them. |
 | `tailnet` | first | Which tailnet to report on. An unknown name is a 404, never another tailnet's data. |
 
+Alongside the ranked lists, `result` carries `tag_matrix`, `user_matrix` and `os_matrix` — each an
+array of `{src, dst, counts}` cells ranked by bytes and capped at 400. Entries in `recent` carry the
+endpoint identity (`src_user`, `src_tags`, `src_os` and their `dst_` counterparts) as well as the raw
+addresses.
+
 ```console
 $ curl -sH "Authorization: Bearer $TOKEN" \
     'http://127.0.0.1:9091/api/flows.json?window=15m&top=5&recent=0' | jq '.result.totals'
+
+$ # Which tags talk to which, busiest first.
+$ curl -sH "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:9091/api/flows.json?window=6h&recent=0' \
+  | jq -r '.result.tag_matrix[] | "\(.src) -> \(.dst)  \(.counts.tx_bytes + .counts.rx_bytes)"'
 ```
 
 ## What it is not
