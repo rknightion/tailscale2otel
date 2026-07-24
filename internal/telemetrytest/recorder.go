@@ -45,7 +45,10 @@ type LogRecord struct {
 	EventName    string    // the OTLP LogRecord EventName field (native, log v0.20.0+)
 	Severity     int       // OTEL log severity value
 	Timestamp    time.Time // the LogRecord Timestamp (zero when the emitter left it unset)
-	Attrs        map[string]string
+	// ObservedTimestamp is the LogRecord ObservedTimestamp (when the event was
+	// seen, as opposed to when it happened). Zero when the emitter left it unset.
+	ObservedTimestamp time.Time
+	Attrs             map[string]string
 }
 
 // Recorder wires a telemetry.Emitter to in-memory readers.
@@ -240,12 +243,13 @@ func flattenLogRecord(rec sdklog.Record) LogRecord {
 		return true
 	})
 	return LogRecord{
-		Body:         rec.Body().AsString(),
-		SeverityText: rec.SeverityText(),
-		EventName:    rec.EventName(),
-		Severity:     int(rec.Severity()),
-		Timestamp:    rec.Timestamp(),
-		Attrs:        attrs,
+		Body:              rec.Body().AsString(),
+		SeverityText:      rec.SeverityText(),
+		EventName:         rec.EventName(),
+		Severity:          int(rec.Severity()),
+		Timestamp:         rec.Timestamp(),
+		ObservedTimestamp: rec.ObservedTimestamp(),
+		Attrs:             attrs,
 	}
 }
 

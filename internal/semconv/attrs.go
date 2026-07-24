@@ -44,6 +44,12 @@ const (
 	// and transport (e.g. tcp/443 -> "https"). Port-inferred, not DPI-confirmed.
 	AttrDstService = "tailscale.dst.service"
 	AttrNodeID     = "tailscale.node.id"
+	// AttrFlowWindowStart and AttrFlowWindowEnd bound the capture window a flow
+	// record describes, as RFC3339Nano strings. The record's log Timestamp is the
+	// window start, so the end is not otherwise recoverable; both are omitted
+	// entirely when the record carries no window.
+	AttrFlowWindowStart = "tailscale.flow.window.start"
+	AttrFlowWindowEnd   = "tailscale.flow.window.end"
 	// AttrExitNode is the short hostname (or nodeId fallback) of the exit node
 	// that relayed a flow's exit traffic; carried on tailscale.exit_node.io/packets.
 	AttrExitNode  = "tailscale.exit_node"

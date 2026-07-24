@@ -41,7 +41,13 @@ type Event struct {
 	Body      string // human-readable summary
 	Severity  Severity
 	Timestamp time.Time // event time; zero means "now"
-	Attrs     Attrs
+	// ObservedTimestamp is when the event was SEEN, as distinct from when it
+	// happened (Timestamp). Set it whenever the source distinguishes the two —
+	// Tailscale flow records carry a capture time (logged) that trails the traffic
+	// window (start/end) by a variable amount, so collapsing them onto one field
+	// loses real information. Zero leaves the SDK to stamp it at emit time.
+	ObservedTimestamp time.Time
+	Attrs             Attrs
 	// BodyPII lists the PII categories a STANDALONE free-text Body belongs to (a
 	// raw upstream error, a webhook message). When any listed category is disabled
 	// the emitter replaces the whole body, since such a body is not reconstructable

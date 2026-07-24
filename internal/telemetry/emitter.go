@@ -296,6 +296,9 @@ func (e *otelEmitter) LogEvent(ev Event) {
 	if !ev.Timestamp.IsZero() {
 		r.SetTimestamp(ev.Timestamp)
 	}
+	if !ev.ObservedTimestamp.IsZero() {
+		r.SetObservedTimestamp(ev.ObservedTimestamp)
+	}
 	r.SetSeverity(toLogSeverity(ev.Severity))
 	r.SetSeverityText(ev.Severity.String())
 	r.SetBody(log.StringValue(body))

@@ -404,12 +404,14 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 		attrs[semconv.AttrDstService] = dstService
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
+	addFlowWindow(attrs, flow)
 	e.LogEvent(telemetry.Event{
-		Name:      docFlowLog.Name,
-		Body:      body,
-		Severity:  telemetry.SeverityInfo,
-		Timestamp: logTimestamp(flow),
-		Attrs:     attrs,
+		Name:              docFlowLog.Name,
+		Body:              body,
+		Severity:          telemetry.SeverityInfo,
+		Timestamp:         logTimestamp(flow),
+		ObservedTimestamp: observedTimestamp(flow),
+		Attrs:             attrs,
 	})
 }
 
@@ -425,12 +427,14 @@ func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txP
 		"tailscale.rx.packets":  rxPkts,
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
+	addFlowWindow(attrs, flow)
 	e.LogEvent(telemetry.Event{
-		Name:      docFlowLog.Name,
-		Body:      body,
-		Severity:  telemetry.SeverityInfo,
-		Timestamp: logTimestamp(flow),
-		Attrs:     attrs,
+		Name:              docFlowLog.Name,
+		Body:              body,
+		Severity:          telemetry.SeverityInfo,
+		Timestamp:         logTimestamp(flow),
+		ObservedTimestamp: observedTimestamp(flow),
+		Attrs:             attrs,
 	})
 }
 
@@ -490,12 +494,40 @@ func (p *Processor) resolve(addrPort, host string) string {
 	return name
 }
 
-// logTimestamp prefers the record's logged time, falling back to its window end.
+// logTimestamp is when the traffic HAPPENED: the start of the record's capture
+// window, falling back to the window end and finally to the capture time.
+//
+// It is deliberately not the record's logged time. logged is when the control
+// plane captured the record, which trails the traffic by a variable amount — a
+// live 3h capture measured a mean lag of 7.5s and a maximum of 852s. Using it as
+// the event time misplaces every flow log on the time axis by an amount no
+// downstream consumer can correct. logged is carried separately as the log
+// record's ObservedTimestamp (see observedTimestamp), which is exactly the
+// distinction OTEL models.
 func logTimestamp(flow FlowLog) time.Time {
-	if !flow.Logged.IsZero() {
-		return flow.Logged
+	if !flow.Start.IsZero() {
+		return flow.Start
 	}
-	return flow.End
+	if !flow.End.IsZero() {
+		return flow.End
+	}
+	return flow.Logged
+}
+
+// observedTimestamp is when the record was SEEN — the control plane's capture
+// time. Zero when the record carries none, leaving the SDK to stamp it.
+func observedTimestamp(flow FlowLog) time.Time { return flow.Logged }
+
+// addFlowWindow adds the capture-window bounds to attrs, omitting either bound
+// that the record does not carry. The window is not recoverable from the log
+// timestamp alone once start and end differ.
+func addFlowWindow(attrs telemetry.Attrs, flow FlowLog) {
+	if !flow.Start.IsZero() {
+		attrs[semconv.AttrFlowWindowStart] = flow.Start.UTC().Format(time.RFC3339Nano)
+	}
+	if !flow.End.IsZero() {
+		attrs[semconv.AttrFlowWindowEnd] = flow.End.UTC().Format(time.RFC3339Nano)
+	}
 }
 
 // serviceName maps a transport name and destination port string to its IANA
