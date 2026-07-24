@@ -175,6 +175,20 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > records actually supply. The same omission applies to any traffic type with an absent endpoint;
 > `virtual`, `subnet` and `physical` records carry both endpoints in practice.
 
+> **A relayed connection has no destination node.** When `tailscale_path` is `derp`, Tailscale
+> reported the loopback marker `127.3.3.40` in place of an endpoint address and the DERP **region
+> ID** in place of the port. That is infrastructure, not a peer, so `tailscale_dst_node` and
+> `tailscale_dst_service` are **omitted** on those series rather than naming a device that was never
+> a destination (or an IANA service that was never contacted). The relay is described by
+> `tailscale_path=derp` and `tailscale_derp_region_id`, which is what it actually is. **The
+> counterparty is not lost:** on `physical` traffic `src` is the peer's overlay address, so the node
+> you want is `tailscale_src_node`, unaffected. For the same reason a relayed connection is not
+> counted in `tailscale.network.unique.dst_peers`/`dst_ports` — a marker is not a distinct peer, and
+> a region ID is not a port. **Totals are unchanged**: only labels are dropped, never data points.
+> The flow **log** keeps the raw `destination_address`/`destination_port` (it is the full-fidelity
+> record of what the wire said) and omits only `tailscale_dst_node`; the `/flows` page does the same,
+> showing a dash where the device name would be.
+
 <!-- BEGIN GENERATED: metrics groups="Network / flow" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|

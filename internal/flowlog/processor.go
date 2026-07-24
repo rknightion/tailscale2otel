@@ -356,13 +356,18 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	// Use tailscale.exit_node.io/packets to measure exit traffic; they attribute
 	// by reporting node, the only dimension exit records actually supply.
 	srcNode := p.resolveEndpoint(cc.Src, srcAddr)
-	dstNode := p.resolveEndpoint(cc.Dst, dstAddr)
-	dstService := serviceName(transport, dstPort)
 	// How the two nodes actually reached each other, read off the underlay
 	// endpoint. Computed once here and shared by the raw metrics, the rollup and
 	// the flow store, so the classification runs once per connection.
 	storePath, derpRegion := classifyPath(trafficType, dstAddr, dstPort)
 	metricPath := metricPathValue(storePath)
+	// A relayed physical entry's destination is the DERP marker, not a peer, so
+	// it yields neither a node nor a service — see relayedDestination.
+	dstNode, dstService := "", ""
+	if !relayedDestination(storePath) {
+		dstNode = p.resolveEndpoint(cc.Dst, dstAddr)
+		dstService = serviceName(transport, dstPort)
+	}
 
 	// Raw per-connection io/packets families (all/both mode). In rollup mode the
 	// bounded *.rollup families are emitted by FlushRollup from the accumulator
@@ -553,6 +558,30 @@ func classifyPath(trafficType, dstAddr, dstPort string) (path, region string) {
 	}
 	return flowstore.PathDirectIPv4, ""
 }
+
+// relayedDestination reports whether a connection's destination is the DERP
+// marker rather than a peer, and so carries no destination NAME of any kind.
+//
+// The marker is an endpoint the record genuinely carried, so the raw address and
+// port are kept everywhere they were kept before — on the flow log, on the flow
+// store, and under destination.port when that dimension is on. What it does not
+// carry is a peer: 127.3.3.40 is not a device, and the value beside it is a DERP
+// region ID, not a port. So the two dimensions that NAME something —
+// tailscale.dst.node (a device) and tailscale.dst.service (an IANA service) —
+// would both be inventions rather than readings, and are omitted the same way
+// this processor omits every endpoint the record does not really carry.
+//
+// dst.service is the dormant half of that: physical entries report proto 0 on
+// live data, so transportName yields "unknown", portservice.LookupName matches
+// no registered transport and the region never reaches the registry. Should
+// Tailscale start populating proto, region 22 would map through tcp/22 and mint
+// "ssh" on a connection that contacted no SSH service — which is why this gate
+// does not rely on that measurement holding.
+//
+// The counterparty is not lost by any of this. On a physical entry src is the
+// PEER's overlay address and dst is the endpoint it was reached at, so the node
+// an operator wants is on the src side, where it stays.
+func relayedDestination(storePath string) bool { return storePath == flowstore.PathDERP }
 
 // metricPathValue folds a store path onto the tailscale.path metric vocabulary.
 //
@@ -757,7 +786,13 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 	if cc.Dst != "" {
 		attrs[semconv.DestinationAddress] = dstAddr
 		attrs[semconv.DestinationPort] = dstPort
-		attrs[semconv.AttrDstNode] = dstNode
+		// A destination the record carried but that names no device — the DERP
+		// marker — keeps its address here and gets no node. The log is the
+		// full-fidelity record of what the wire said, and the wire said an
+		// endpoint, not a peer.
+		if dstNode != "" {
+			attrs[semconv.AttrDstNode] = dstNode
+		}
 	}
 	// Logs always carry the mapped destination service when the port is known
 	// (independent of the metric toggle); omit it entirely otherwise.

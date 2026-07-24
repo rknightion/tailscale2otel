@@ -199,6 +199,11 @@ actually reached at. Three values:
 | `direct_ipv6` | The two nodes reached each other directly over IPv6. |
 | `derp` | The connection was relayed. Tailscale writes the loopback marker `127.3.3.40` in place of an endpoint address, and the DERP **region ID** in place of the port. |
 
+**The marker is never shown as a device.** A relayed connection's destination is that loopback
+marker, so the connection list shows a dash where the destination device name would be and keeps the
+raw `127.3.3.40:<region>` beside it. The peer is on the *source* side of a physical record — that is
+how the API reports it — so it is still named there, and the per-peer table below is keyed on it.
+
 **The counts are connections, not bytes**, and the two are usually far apart. On a live tailnet 11.6%
 of underlay connections were relayed but only 0.4% of the bytes: handshakes and keepalives relay while
 bulk transfer finds a direct path. The per-peer table shows both so neither can be read as the other.
