@@ -165,6 +165,16 @@ exporter health.
 Aggregated, low-cardinality counters derived from flow logs and audit logs. The full-fidelity
 per-connection detail is emitted as **log records** (see [Log events](#log-events)).
 
+> **Exit traffic carries no destination — and often no source.** Records with `traffic_type=exit`
+> report byte and packet counts against the *reporting* node only. A live capture found no `dst` on
+> any exit entry, and no `src` on roughly half of them; none carried a protocol number either (so
+> `network.transport` is `unknown`). Attributes derived from an absent endpoint are **omitted**
+> rather than filled with `unknown` — a missing `tailscale.dst.node` means the data never had one,
+> not that a lookup failed. To measure exit traffic use **`tailscale.exit_node.io`** and
+> **`tailscale.exit_node.packets`**, which attribute by relaying node: the only dimension exit
+> records actually supply. The same omission applies to any traffic type with an absent endpoint;
+> `virtual`, `subnet` and `physical` records carry both endpoints in practice.
+
 <!-- BEGIN GENERATED: metrics groups="Network / flow" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|

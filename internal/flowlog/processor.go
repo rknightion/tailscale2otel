@@ -311,8 +311,16 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	srcAddr, srcPort := splitHostPort(cc.Src)
 	dstAddr, dstPort := splitHostPort(cc.Dst)
 	netType := networkType(srcAddr)
-	srcNode := p.resolve(cc.Src, srcAddr)
-	dstNode := p.resolve(cc.Dst, dstAddr)
+	// An endpoint the record does not carry is structurally ABSENT, not a failed
+	// lookup, so it resolves to "" and every attribute derived from it is omitted
+	// rather than filled with the "unknown" sentinel. Exit traffic is the case
+	// that forces this: in a live capture all 504 exitTraffic entries carried no
+	// dst and 234 carried no src, so resolving them produced dst_node="unknown"
+	// on 100% of exit series — a label claiming a lookup that was never possible.
+	// Use tailscale.exit_node.io/packets to measure exit traffic; they attribute
+	// by reporting node, the only dimension exit records actually supply.
+	srcNode := p.resolveEndpoint(cc.Src, srcAddr)
+	dstNode := p.resolveEndpoint(cc.Dst, dstAddr)
 	dstService := serviceName(transport, dstPort)
 
 	// Raw per-connection io/packets families (all/both mode). In rollup mode the
@@ -325,13 +333,17 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 			semconv.AttrTrafficType:  trafficType,
 		}
 		if p.nodes {
-			metricAttrs[semconv.AttrSrcNode] = srcNode
-			metricAttrs[semconv.AttrDstNode] = dstNode
+			if srcNode != "" {
+				metricAttrs[semconv.AttrSrcNode] = srcNode
+			}
+			if dstNode != "" {
+				metricAttrs[semconv.AttrDstNode] = dstNode
+			}
 		}
-		if p.srcPort {
+		if p.srcPort && cc.Src != "" {
 			metricAttrs[semconv.SourcePort] = srcPort
 		}
-		if p.dstPort {
+		if p.dstPort && cc.Dst != "" {
 			metricAttrs[semconv.DestinationPort] = dstPort
 		}
 		if p.dstService && dstService != "" {
@@ -361,7 +373,11 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	if p.rollup != nil {
 		p.rollup.record(transport, trafficType, srcNode, dstNode, dstService,
 			float64(cc.TxBytes), float64(cc.RxBytes), float64(cc.TxPkts), float64(cc.RxPkts))
-		p.rollup.observeUnique(srcNode, dstNode, dstPort)
+		// A destination that does not exist is not a distinct peer: counting it
+		// would add exactly one phantom peer per source node to the unique gauge.
+		if dstNode != "" {
+			p.rollup.observeUnique(srcNode, dstNode, dstPort)
+		}
 	}
 
 	// MetricFlows: one flow observed (low cardinality; emitted in every mode).
@@ -427,20 +443,28 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, e telemetry.Emitter) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
-		semconv.SourceAddress:      srcAddr,
-		semconv.SourcePort:         srcPort,
-		semconv.DestinationAddress: dstAddr,
-		semconv.DestinationPort:    dstPort,
-		semconv.NetworkTransport:   transport,
-		semconv.NetworkType:        netType,
-		semconv.AttrTrafficType:    trafficType,
-		semconv.AttrSrcNode:        srcNode,
-		semconv.AttrDstNode:        dstNode,
-		semconv.AttrNodeID:         flow.NodeID,
-		"tailscale.tx.bytes":       cc.TxBytes,
-		"tailscale.rx.bytes":       cc.RxBytes,
-		"tailscale.tx.packets":     cc.TxPkts,
-		"tailscale.rx.packets":     cc.RxPkts,
+		semconv.NetworkTransport: transport,
+		semconv.NetworkType:      netType,
+		semconv.AttrTrafficType:  trafficType,
+		semconv.AttrNodeID:       flow.NodeID,
+		"tailscale.tx.bytes":     cc.TxBytes,
+		"tailscale.rx.bytes":     cc.RxBytes,
+		"tailscale.tx.packets":   cc.TxPkts,
+		"tailscale.rx.packets":   cc.RxPkts,
+	}
+	// Endpoint attributes only for endpoints the record actually carries — see
+	// resolveEndpoint. Exit records carry no destination at all, and half carry
+	// no source; emitting empty addresses and "unknown" nodes for them would
+	// describe a 5-tuple that was never in the data.
+	if cc.Src != "" {
+		attrs[semconv.SourceAddress] = srcAddr
+		attrs[semconv.SourcePort] = srcPort
+		attrs[semconv.AttrSrcNode] = srcNode
+	}
+	if cc.Dst != "" {
+		attrs[semconv.DestinationAddress] = dstAddr
+		attrs[semconv.DestinationPort] = dstPort
+		attrs[semconv.AttrDstNode] = dstNode
 	}
 	// Logs always carry the mapped destination service when the port is known
 	// (independent of the metric toggle); omit it entirely otherwise.
@@ -510,6 +534,16 @@ func (p *Processor) addNodeHostname(attrs telemetry.Attrs, nodeID string) {
 	if meta, ok := p.cache.LookupNode(nodeID); ok && meta.Hostname != "" {
 		attrs[attrNodeHostname] = meta.Hostname
 	}
+}
+
+// resolveEndpoint resolves an endpoint the record may not carry at all. An
+// empty addrPort yields "", which callers treat as "omit every attribute
+// derived from this endpoint". A present endpoint resolves exactly as before.
+func (p *Processor) resolveEndpoint(addrPort, host string) string {
+	if addrPort == "" {
+		return ""
+	}
+	return p.resolve(addrPort, host)
 }
 
 // resolve maps an "addr:port" to a device hostname via the cache. A nil cache

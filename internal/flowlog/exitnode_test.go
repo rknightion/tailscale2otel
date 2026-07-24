@@ -10,6 +10,13 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
+// Exit-traffic fixtures here use the shape real records take: a src that is the
+// exit node's own tailnet address on port 0 (or no src at all), and never a dst.
+// A live 3h capture found no dst on any of 504 exitTraffic entries and no src on
+// 234 of them. Do not "fix" these into full 5-tuples — the earlier fully
+// populated fixtures are what let a fabricated dst_node="unknown" ship. See
+// exitshape_test.go for the assertions that pin the absent-endpoint handling.
+
 // seedNode populates the device cache with a node whose hostname is known, so
 // exitNodeLabel resolves it from the NodeID.
 func seedNode(t *testing.T, cache *enrich.DeviceCache, nodeID, hostname string) {
@@ -48,7 +55,7 @@ func TestProcess_ExitNodeAttribution(t *testing.T) {
 	rec := telemetrytest.New()
 
 	flow := flowlog.FlowLog{NodeID: "n1", ExitTraffic: []flowlog.ConnectionCounts{
-		{Src: "100.64.0.1:1234", Dst: "1.1.1.1:443", Proto: 6, TxBytes: 100, RxBytes: 900, TxPkts: 1, RxPkts: 2},
+		{Src: "100.64.0.1:0", TxBytes: 100, RxBytes: 900, TxPkts: 1, RxPkts: 2},
 	}}
 	p.Process(flow, rec.Emitter())
 
@@ -111,7 +118,7 @@ func TestProcess_ExitNodeAttribution_GatedOff(t *testing.T) {
 	rec := telemetrytest.New()
 
 	flow := flowlog.FlowLog{NodeID: "n1", ExitTraffic: []flowlog.ConnectionCounts{
-		{Src: "a:1", Dst: "b:2", Proto: 6, TxBytes: 5},
+		{Src: "100.64.0.1:0", TxBytes: 5},
 	}}
 	p.Process(flow, rec.Emitter())
 
@@ -127,7 +134,7 @@ func TestProcess_ExitNodeAttribution_NilCacheFallsBackToNodeID(t *testing.T) {
 	rec := telemetrytest.New()
 
 	flow := flowlog.FlowLog{NodeID: "n42", ExitTraffic: []flowlog.ConnectionCounts{
-		{Src: "1.1.1.1:1", Dst: "2.2.2.2:443", Proto: 6, TxBytes: 50},
+		{Src: "100.64.0.1:0", TxBytes: 50},
 	}}
 	p.Process(flow, rec.Emitter())
 
@@ -146,7 +153,7 @@ func TestProcess_ExitNodeAttribution_EmptyNodeIDFallsBackToUnknown(t *testing.T)
 	rec := telemetrytest.New()
 
 	flow := flowlog.FlowLog{NodeID: "", ExitTraffic: []flowlog.ConnectionCounts{
-		{Src: "1.1.1.1:1", Dst: "2.2.2.2:443", Proto: 6, TxBytes: 10},
+		{TxBytes: 10},
 	}}
 	p.Process(flow, rec.Emitter())
 
@@ -168,7 +175,7 @@ func TestProcess_ExitNodeAttribution_CacheMissFallsBackToNodeID(t *testing.T) {
 	rec := telemetrytest.New()
 
 	flow := flowlog.FlowLog{NodeID: "n99", ExitTraffic: []flowlog.ConnectionCounts{
-		{Src: "1.1.1.1:1", Dst: "2.2.2.2:80", Proto: 6, TxBytes: 20},
+		{Src: "100.64.0.1:0", TxBytes: 20},
 	}}
 	p.Process(flow, rec.Emitter())
 
