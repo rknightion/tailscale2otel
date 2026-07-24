@@ -106,4 +106,18 @@ webhook:
 
 **TLS.** Tailscale requires HTTPS for the log-streaming sink. Use `streaming.tls.cert_file` and `streaming.tls.key_file` to serve the HEC receiver over HTTPS. A certificate obtained via `tailscale cert` works well for private tailnet endpoints.
 
-**Data sensitivity.** Flow logs and audit logs carry source/destination IP addresses and ports, device names, and user identities. See [Configuration](configuration.md) for the `cardinality.*` knobs that shape which fields appear on flow metrics, and `SECURITY.md` for the full data-handling notes.
+**Data sensitivity.** Flow logs and audit logs carry source/destination IP addresses and ports, device names, and user identities. See [Configuration](configuration.md) for the `cardinality.*` knobs that shape which fields appear on flow metrics, [Security](security.md) for the PII-redaction categories, and [`SECURITY.md` on GitHub](https://github.com/rknightion/tailscale2otel/blob/main/SECURITY.md) for the full data-handling and vulnerability-reporting notes.
+
+## Receiver source
+
+Both receivers are small, self-contained packages if you want to check the parsing or verification
+behaviour yourself:
+
+- [`internal/stream`](https://github.com/rknightion/tailscale2otel/tree/main/internal/stream) — the Splunk-HEC-compatible log-streaming receiver
+- [`internal/webhook`](https://github.com/rknightion/tailscale2otel/tree/main/internal/webhook) — HMAC-verified webhook receiver
+- [`internal/dedup`](https://github.com/rknightion/tailscale2otel/tree/main/internal/dedup) — the cross-source de-duplication failsafe
+
+Tailscale does not publicly document the exact HEC payload envelope, so the receiver parses
+defensively. If you capture an envelope that fails to decode, please
+[open an issue](https://github.com/rknightion/tailscale2otel/issues/new) — that is how the decoder
+gets better.

@@ -250,3 +250,21 @@ surfaced as live gauges so you can alert without scraping logs.
 **Diagnosis.** Query `tailscale2otel_config_warnings_ratio` (count of advisory warnings) and
 `tailscale2otel_config_valid_ratio` (`0` when `Validate()` failed). Both are emitted each export
 cycle. The admin status page also renders the redacted config and any warnings.
+
+---
+
+## Still stuck?
+
+Nothing here matching your symptom is worth reporting — undiagnosable failure modes are bugs in this
+page as much as in the code.
+
+- **[Search existing issues](https://github.com/rknightion/tailscale2otel/issues)** — someone may have
+  hit it already.
+- **[Open a new issue](https://github.com/rknightion/tailscale2otel/issues/new)** — include the
+  startup log (it lists validation errors, advisory warnings, and any unrecognised `TS2OTEL_*`
+  variables), the output of `tailscale2otel -validate -config <file>`, and the version from
+  `tailscale2otel -version`.
+- **[Check the latest release notes](https://github.com/rknightion/tailscale2otel/releases/latest)** —
+  the behaviour may have changed since your build.
+
+Please redact tailnet names, device names, and IP addresses from anything you paste.

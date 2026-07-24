@@ -1,16 +1,16 @@
 # tailscale2otel
 
-![Version: 0.9.0](https://img.shields.io/badge/Version-0.9.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.9.1](https://img.shields.io/badge/Version-0.9.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
-Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
+Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
-**Homepage:** <https://github.com/rknightion/tailscale2otel>
+**Homepage:** <https://m7kni.io/tailscale2otel/>
 
 ## Maintainers
 
 | Name | Email | Url |
 | ---- | ------ | --- |
-| rknightion |  |  |
+| rknightion |  | <https://github.com/rknightion> |
 
 ## Source Code
 

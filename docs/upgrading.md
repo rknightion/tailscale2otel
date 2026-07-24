@@ -185,3 +185,23 @@ now set out of the box.
 Outbound Tailscale API requests now send a `tailscale2otel/<version>` User-Agent.
 
 **Action:** only relevant if you filter Tailscale admin/API logs by User-Agent.
+
+## Version references
+
+This page covers the notable migrations. For the full, per-release detail:
+
+- **[Releases on GitHub](https://github.com/rknightion/tailscale2otel/releases)** — every version,
+  with its notes and downloadable binaries.
+- **[CHANGELOG.md](https://github.com/rknightion/tailscale2otel/blob/main/CHANGELOG.md)** — the
+  complete generated changelog (also mirrored at [Changelog](changelog.md)).
+- **[Compare any two versions](https://github.com/rknightion/tailscale2otel/compare)** — useful when
+  jumping several releases at once.
+
+Container images are tagged per release at
+[`ghcr.io/rknightion/tailscale2otel`](https://github.com/rknightion/tailscale2otel/pkgs/container/tailscale2otel),
+and the Helm chart at
+[`ghcr.io/rknightion/charts/tailscale2otel`](https://github.com/rknightion/tailscale2otel/pkgs/container/charts%2Ftailscale2otel).
+Pin a tag rather than tracking `latest` if you want controlled upgrades.
+
+If an upgrade breaks something not documented here, please
+[open an issue](https://github.com/rknightion/tailscale2otel/issues/new).

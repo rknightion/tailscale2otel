@@ -678,3 +678,23 @@ Per-connection flow records to a specific destination node:
 ```logql
 {service_name="tailscale2otel"} | event_name="tailscale.network.flow" | tailscale_dst_node="my-host"
 ```
+
+---
+
+## Where these definitions come from
+
+This page is **generated from the telemetry catalog in the code**, so it cannot drift from what the
+binary actually emits — CI fails the build if the two disagree.
+
+- [`tools/metricscatalog`](https://github.com/rknightion/tailscale2otel/tree/main/tools/metricscatalog) — the generator that writes this page
+- [`internal/catalog`](https://github.com/rknightion/tailscale2otel/tree/main/internal/catalog) — the metric and log-event descriptors themselves
+- [`internal/semconv`](https://github.com/rknightion/tailscale2otel/tree/main/internal/semconv) — attribute-name constants
+- [`deploy/grafana`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/grafana) — dashboards built on these signals
+- [`deploy/alerts`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/alerts) — shipped Prometheus and Grafana alert rules
+
+The running exporter also serves this same catalog live on its admin status page, alongside the
+active-series cardinality for the last export interval.
+
+Spotted a signal that is wrong, missing, or badly named?
+[Open an issue](https://github.com/rknightion/tailscale2otel/issues/new) — metric naming is a
+one-way door once dashboards depend on it, so corrections are genuinely welcome.

@@ -1,8 +1,10 @@
 apiVersion: v2
 name: tailscale2otel
-description: Poll the Tailscale API and export OpenTelemetry metrics + logs (OTLP). Optimized for Grafana Cloud.
+description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.9.1: correct the long-stale appVersion (was 0.1.0, tracked nothing) and add
+# artifacthub.io/* annotations + icon so the OCI chart renders properly on Artifact Hub.
 # 0.7.6: add podSecurityContext.fsGroup (65532, OnRootMismatch) so the opt-in PVC
 # persistence path is reliably writable regardless of the CSI driver's default
 # ownership; add extraVolumes/extraVolumeMounts so operators can mount arbitrary
@@ -39,17 +41,44 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.9.0
+version: 0.9.1
 # Tracks the tailscale2otel app version this chart defaults to.
-appVersion: "0.1.0"
-home: https://github.com/rknightion/tailscale2otel
+appVersion: "2.0.2"
+home: https://m7kni.io/tailscale2otel/
+icon: https://m7kni.io/tailscale2otel/assets/logo.png
 sources:
   - https://github.com/rknightion/tailscale2otel
 keywords:
   - tailscale
+  - headscale
   - opentelemetry
   - otlp
+  - otel
+  - prometheus
+  - prometheus-exporter
   - observability
+  - monitoring
+  - grafana
   - grafana-cloud
+  - flow-logs
+  - audit-logs
+  - network-monitoring
 maintainers:
   - name: rknightion
+    url: https://github.com/rknightion
+annotations:
+  artifacthub.io/category: monitoring-logging
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://m7kni.io/tailscale2otel/
+    - name: source
+      url: https://github.com/rknightion/tailscale2otel
+    - name: Metrics catalog
+      url: https://m7kni.io/tailscale2otel/metrics/
+    - name: Configuration reference
+      url: https://m7kni.io/tailscale2otel/configuration/
+  artifacthub.io/maintainers: |
+    - name: rknightion
+      email: rob@rob-knight.com

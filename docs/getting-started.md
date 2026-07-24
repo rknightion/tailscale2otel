@@ -159,3 +159,15 @@ all the tuning knobs.
   persistent checkpoint volumes.
 - [Configuration](configuration.md) — the complete key-by-key reference, including log streaming,
   the webhook receiver, cardinality controls, and node-metrics scraping.
+- [Dashboards](dashboards.md) — import the shipped Grafana dashboards and see the data you just
+  started collecting.
+
+## Get help
+
+If something here did not work, the fastest routes are the
+[troubleshooting guide](troubleshooting.md) or the project's
+[GitHub issue tracker](https://github.com/rknightion/tailscale2otel/issues).
+
+- [Source code and README](https://github.com/rknightion/tailscale2otel)
+- [Latest release and changelog](https://github.com/rknightion/tailscale2otel/releases/latest)
+- [`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) — the annotated starter config

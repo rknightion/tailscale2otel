@@ -304,3 +304,17 @@ token leaves it open.
 
 See [Configuration](configuration.md) for the full config reference and [Metrics](metrics.md) for
 every emitted signal.
+
+## Read the source
+
+Every package above is browsable on GitHub — the composition root in
+[`internal/app`](https://github.com/rknightion/tailscale2otel/tree/main/internal/app) is the best
+place to start, since it wires all of the rest together:
+
+- [`internal/collector`](https://github.com/rknightion/tailscale2otel/tree/main/internal/collector) — scheduler, registry, and one package per source
+- [`internal/telemetry`](https://github.com/rknightion/tailscale2otel/tree/main/internal/telemetry) — the OTEL facade
+- [`internal/tsapi`](https://github.com/rknightion/tailscale2otel/tree/main/internal/tsapi) — Tailscale API client
+- [`internal/provider`](https://github.com/rknightion/tailscale2otel/tree/main/internal/provider) — Tailscale/Headscale control-plane abstraction
+
+Corrections and questions are welcome via
+[GitHub issues](https://github.com/rknightion/tailscale2otel/issues).
