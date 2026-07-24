@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 func TestEmitExportDelta(t *testing.T) {

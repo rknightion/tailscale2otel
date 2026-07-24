@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
 )
 
 // Attrs is a set of attributes attached to a metric data point or log record.

@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v2/internal/portservice"
-	"github.com/rknightion/tailscale2otel/v2/internal/rdns"
-	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/portservice"
+	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 // Exported metric names emitted by the processor.

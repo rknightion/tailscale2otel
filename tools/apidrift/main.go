@@ -15,8 +15,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/oas"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v3/internal/oas"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi/contract"
 )
 
 func main() {

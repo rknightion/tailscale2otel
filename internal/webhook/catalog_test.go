@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v2/internal/webhook"
+	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/webhook"
 )
 
 const catTestSecret = "tskey-webhook-catalog-test-secret"

@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 )
 
 // Flow log records embed the identity of both endpoints. Folding that into the

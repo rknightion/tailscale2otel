@@ -7,8 +7,8 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 type fakeAPI struct {

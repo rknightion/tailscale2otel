@@ -41,10 +41,10 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v2/internal/s3"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/s3"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 const (

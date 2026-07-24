@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 )
 
 // Bounds on flows.retention. The floor is one bucket; the ceiling reflects that

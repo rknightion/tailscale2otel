@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/ringbuf"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/ringbuf"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 // apiLatencyHistoryLen is the number of recent request latencies retained per

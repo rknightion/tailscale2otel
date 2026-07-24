@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/v2/internal/config"
-	"github.com/rknightion/tailscale2otel/v2/internal/hsapi"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 const serviceName = "tailscale2otel"

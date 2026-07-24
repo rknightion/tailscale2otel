@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v2/internal/config"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 // emitConfigHealth records the config.warnings and config.valid gauges for the

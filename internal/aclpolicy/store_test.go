@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
 )
 
 const twoRuleDoc = `{"grants": [

@@ -20,11 +20,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 // Compile-time assertions.

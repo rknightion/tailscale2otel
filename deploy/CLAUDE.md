@@ -112,6 +112,21 @@ profiles instance ID and `basic_auth_password` = a `profiles:write` access-polic
     `publish.yml` with an empty `release_tag`, publishing a `:main`-ish snapshot image + chart.
     This replaces the old, now-deleted `main-publish.yml`.
   **There is no manual tagging** — never `git tag`/push a `v*` tag by hand.
+- **A MAJOR bump needs the module path moved first — release-please will NOT do it.**
+  `release-type: go` updates the manifest and changelog and nothing else, but Go requires a module
+  released at v2+ to have a path ending `/vN`. Tagging a major against a stale path fails the
+  GoReleaser `binaries` job (it proxies the tagged module under `gomod.proxy: true`), which is
+  exactly how **v2.0.0 shipped with no archives, checksums, signatures or SBOMs** — image, chart and
+  notices published fine, and re-running could not help because the *tag* carried the wrong path
+  (#174). Run **`scripts/bump-module-major.sh`** (no argument infers the target from the manifest)
+  and land it on `main` **before** merging the release PR; it rewrites every import across all four
+  modules, fixes the tool modules' `require`/`replace`, runs `go mod tidy` everywhere, and leaves
+  `CHANGELOG.md` alone (past releases really did ship under the old path).
+  `TestModulePathMatchesReleaseVersion` (`internal/config`) is the backstop: the release PR is what
+  bumps `.release-please-manifest.json`, so on that branch the manifest reads the new major while
+  `go.mod` still reads the old one and the test fails **there** — on the one PR that must not merge
+  unnoticed — instead of after the tag is cut. It tolerates the module leading the last release by
+  exactly one major, which is the normal state between the pre-bump and the release.
 - `cosign-installer` is pinned to `@v4.1.2` (no moving `v4` tag exists) and installs `cosign-release: v3.0.6`.
 
 GoReleaser config is `/.goreleaser.yaml`; CI's `goreleaser-snapshot` job (`ci.yml`) runs

@@ -12,7 +12,7 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 // Kind identifies the control-plane backend.

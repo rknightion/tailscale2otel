@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector/devices"
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/devices"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 func byRegion(pts []telemetrytest.MetricPoint) map[string]float64 {

@@ -48,10 +48,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
 )
 
 // requestDurationBucketsSeconds are the explicit histogram bucket boundaries

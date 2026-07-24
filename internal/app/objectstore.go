@@ -3,10 +3,10 @@ package app
 import (
 	"fmt"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v2/internal/config"
-	"github.com/rknightion/tailscale2otel/v2/internal/s3"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/s3"
 )
 
 // objectStoreSource reports whether flow logs are ingested from Tailscale's

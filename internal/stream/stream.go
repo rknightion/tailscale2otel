@@ -99,11 +99,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/audit"
-	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v2/internal/listenaddr"
-	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/audit"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 // receiverPropagator extracts W3C TraceContext from incoming request headers.

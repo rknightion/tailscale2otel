@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
 )
 
 // dir is the identity directory a real tailnet supplies from the users

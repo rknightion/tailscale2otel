@@ -8,7 +8,7 @@ import (
 
 	"github.com/grafana/pyroscope-go"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
 )
 
 // goroutineLeakAvailable reports whether the runtime exposes the goroutineleak

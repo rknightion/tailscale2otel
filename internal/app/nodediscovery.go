@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/v2/internal/config"
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 // nodeDiscoveryAPI is the subset of the Tailscale API the node-metrics

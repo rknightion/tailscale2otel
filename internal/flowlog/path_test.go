@@ -3,9 +3,9 @@ package flowlog_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 // physicalRecord builds a record whose single physicalTraffic entry reports one

@@ -8,8 +8,8 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector/acl"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/acl"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 // collectDoc runs the collector over an inline HuJSON doc and returns the recorder.

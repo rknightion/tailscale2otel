@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 )
 
 // tagged returns an observation between two tagged endpoints. Tags arrive as the

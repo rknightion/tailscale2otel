@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 func TestProvider_StdoutFlushesMetricOnShutdown(t *testing.T) {

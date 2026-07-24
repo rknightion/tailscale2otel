@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/oas"
+	"github.com/rknightion/tailscale2otel/v3/internal/oas"
 )
 
 // opJSON wraps device-item properties into a full listTailnetDevices spec.

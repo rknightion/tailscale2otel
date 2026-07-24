@@ -11,11 +11,11 @@ import (
 
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/config"
-	"github.com/rknightion/tailscale2otel/v2/internal/provider"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/provider"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 // TestWithComponent locks the per-subsystem log tag contract: the key must be

@@ -13,7 +13,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
 )
 
 // newTraceExporter builds the span exporter for the configured protocol,

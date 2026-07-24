@@ -14,12 +14,12 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v2/internal/s3"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/s3"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 // now is the fixed instant every test runs at, so cursor arithmetic never

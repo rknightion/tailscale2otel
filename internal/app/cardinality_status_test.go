@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v2/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 func TestFreshnessState(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 )
 
 // NetworkResponse is the GET /tailnet/{tailnet}/logging/network response body.

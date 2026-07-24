@@ -3,10 +3,10 @@ package flowlog_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 // The two shapes real exit traffic actually takes. In a live 3h capture all 504

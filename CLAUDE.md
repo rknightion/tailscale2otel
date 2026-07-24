@@ -99,7 +99,7 @@ machine.
 
 ## Module / package layout
 
-Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v2`) plus three
+Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v3`) plus three
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
 are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
 `tools/apidrift`).
@@ -222,3 +222,8 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   real/production tailnet.
 - **Conventional Commits:** commit messages follow `type(scope): subject` (see `git log`); Renovate and
   release tooling assume it.
+- **A breaking change (`!`) that cuts a new MAJOR needs the Go module path moved first.** release-please
+  does not maintain it, and a major tagged against a stale `/vN` path fails the GoReleaser binaries job
+  (this really happened at v2.0.0 — #174). Run `scripts/bump-module-major.sh` and land it on `main`
+  before merging the release PR; `TestModulePathMatchesReleaseVersion` fails the release PR if you
+  forget. See `deploy/CLAUDE.md`.

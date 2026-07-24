@@ -4,7 +4,7 @@
 // package can share the shapes without either importing the other.
 package flowsdata
 
-import "github.com/rknightion/tailscale2otel/v2/internal/flowstore"
+import "github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 
 // Response is one answer from /api/flows.json. Everything the page draws comes
 // from here, so the page can be a static shell that polls.

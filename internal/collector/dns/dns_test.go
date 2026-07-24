@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/collector"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v2/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 )
 
 // fakeAPI implements the narrow dns api interface for tests.

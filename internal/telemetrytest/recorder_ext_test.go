@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 // TestRecorderHistogram verifies the Recorder surfaces histogram data points
