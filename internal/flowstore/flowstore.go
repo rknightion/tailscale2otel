@@ -202,6 +202,13 @@ const (
 	PathDERP       = "derp"
 )
 
+// TrafficPhysical is the one traffic type this package has to know by name:
+// it is the WireGuard underlay, and several dimensions are scoped to it or away
+// from it. Held here rather than imported for the same leaf reason as the two
+// vocabularies above; the value matches semconv.TrafficPhysical, which is where
+// the emitted telemetry gets it from.
+const TrafficPhysical = "physical"
+
 // PairKey identifies one directed node-to-node relationship within a traffic
 // type. Direction is preserved: src and dst are not normalised into an
 // unordered pair, because on this data a flow is reported once, by one node,
@@ -374,22 +381,7 @@ func (b *bucket) record(o Observation) {
 	b.addNode(o.SrcNode, o.Counts, true)
 	b.addNode(o.DstNode, o.Counts, false)
 
-	if o.DstPort != "" {
-		k := PortKey{Port: o.DstPort, Transport: o.Transport, Service: o.DstService}
-		e, ok := b.ports[k]
-		if !ok {
-			if len(b.ports) >= MaxPortsPerBucket {
-				k = PortKey{Port: Other, Transport: o.Transport}
-				b.dropped++
-				e, ok = b.ports[k]
-			}
-			if !ok {
-				e = &Counts{}
-				b.ports[k] = e
-			}
-		}
-		e.add(o.Counts)
-	}
+	b.recordPorts(o)
 
 	addLabel(b.transports, o.Transport, o.Counts, MaxLabelsPerKind)
 	addLabel(b.trafficTypes, o.TrafficType, o.Counts, MaxLabelsPerKind)
@@ -427,6 +419,48 @@ func (b *bucket) record(o Observation) {
 
 	b.recordPolicy(o)
 	b.recordPath(o)
+}
+
+// recordPorts accumulates the destination-service dimension, from OVERLAY
+// traffic only. It is the mirror of recordPath: the underlay says HOW two nodes
+// reached each other, the overlay says WHAT was contacted, and the two are
+// complementary views rather than the same view counted twice.
+//
+// A physical entry's destination is a WireGuard endpoint, so its port is the
+// ephemeral one the peer happened to be listening on — and on a relayed path it
+// is not a port at all, but the DERP region ID Tailscale writes where a port
+// would go. Neither names a service, so neither belongs in a table read as "what
+// was contacted". On a live tailnet the underlay supplied 50.8% of the section's
+// bytes and both of its top two rows (two ephemeral ports, 6.7 GB each) before
+// this gate.
+//
+// It also leaves the section's cap to the traffic the section is for. Ephemeral
+// ports are unbounded by nature — a fresh one per connection — so underlay churn
+// alone could exhaust MaxPortsPerBucket and fold the real services into Other,
+// leaving the page reporting partial coverage of a table it could have covered
+// completely.
+//
+// Nothing is lost by this. The underlay endpoint is still on the connection list
+// verbatim, its path is in the path section, and its bytes count toward the
+// totals and every other breakdown.
+func (b *bucket) recordPorts(o Observation) {
+	if o.DstPort == "" || o.TrafficType == TrafficPhysical {
+		return
+	}
+	k := PortKey{Port: o.DstPort, Transport: o.Transport, Service: o.DstService}
+	e, ok := b.ports[k]
+	if !ok {
+		if len(b.ports) >= MaxPortsPerBucket {
+			k = PortKey{Port: Other, Transport: o.Transport}
+			b.dropped++
+			e, ok = b.ports[k]
+		}
+		if !ok {
+			e = &Counts{}
+			b.ports[k] = e
+		}
+	}
+	e.add(o.Counts)
 }
 
 // recordPath accumulates the underlay path dimensions. Only physical traffic

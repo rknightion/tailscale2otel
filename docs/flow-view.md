@@ -27,7 +27,7 @@ to go back to live.
 from what it received rather than inferring it from edge direction.
 
 **Destination services.** What is being talked *to*, resolved to IANA service names where the port is
-registered.
+registered. Overlay traffic only — see [what the services section counts](#limits-worth-knowing).
 
 **Identity.** Traffic by user, by tag, and by operating system, taken from the node metadata each flow
 record carries. Tags break down **individually**, so a device tagged `tag:servers,tag:prod` is counted
@@ -245,6 +245,15 @@ it, not a gap in decoding. Those connections count toward totals and show a dash
 would be, rather than a fabricated endpoint. Use the `tailscale.exit_node.*` metrics to measure exit
 traffic, which attribute by the relaying node.
 
+**The destination-services section counts overlay traffic only.** A physical connection describes the
+WireGuard underlay — *how* two nodes reached each other — so its destination port is the ephemeral one
+the peer happened to be listening on, and on a relayed path it is not a port at all but the DERP region
+ID written where a port would go. Neither names a service, so neither is counted here; on a live
+tailnet the underlay was half the section's bytes and both of its top two rows. Nothing is hidden by
+this: the underlay endpoint is on the connection list verbatim, its direct-versus-relayed split is the
+[path section](#reading-the-path-section), and its bytes count toward the totals and every other
+breakdown.
+
 **Device names need the `devices` collector or the record's own metadata.** Flow records embed their
 endpoints' identity, so names resolve even with the devices collector disabled; the collector still
 gives better coverage for devices that have not appeared in a flow yet.
@@ -273,6 +282,10 @@ array of `{src, dst, counts}` cells ranked by bytes and capped at 400. Entries i
 endpoint identity (`src_user`, `src_tags`, `src_os` and their `dst_` counterparts) as well as the raw
 addresses, plus that connection's own `verdict`, `reversed` and `rule`, and — on underlay connections
 only — its `path` and `derp_region`.
+
+`result.ports` is `{port, transport, service, counts}` per destination endpoint, from the **overlay**
+traffic types only — a physical entry's port is a WireGuard underlay port, or a DERP region ID on a
+relayed path, and neither is a service. Its counts therefore sum to less than `result.totals`.
 
 Path quality is three more fields on `result`:
 

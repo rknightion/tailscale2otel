@@ -194,3 +194,37 @@ func TestProcess_NoStoreConfigured(t *testing.T) {
 		t.Error("no flow metrics emitted without a store configured")
 	}
 }
+
+// The processor and the store agree on the traffic-type vocabulary through two
+// separate constants — semconv.TrafficPhysical on the way out, and
+// flowstore.TrafficPhysical on the way in, where it decides which dimensions the
+// underlay feeds. Nothing else pins them to each other, and a divergence would
+// not fail to compile: it would silently put ephemeral WireGuard ports and DERP
+// region IDs back in a table headed "destination services".
+//
+// So this drives the REAL store, end to end, rather than the fake the other
+// tests use.
+func TestProcess_UnderlayPortsNeverReachTheServicesTable(t *testing.T) {
+	m := flowstore.NewMemory(0)
+	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{Store: m})
+	rec := telemetrytest.New()
+
+	flow := physicalRecord("127.3.3.40:8") // relayed: the port field holds the region
+	flow.PhysicalTraffic = append(flow.PhysicalTraffic, flowlog.ConnectionCounts{
+		Src: "100.119.137.81:0", Dst: "81.187.237.31:41641", TxBytes: 90, TxPkts: 1,
+	}) // direct: the port field holds an ephemeral underlay port
+	flow.Start = time.Date(2026, 7, 24, 9, 30, 0, 0, time.UTC)
+	p.Process(flow, rec.Emitter())
+
+	res := m.Query(flowstore.Query{Start: flow.Start.Add(-time.Hour), End: flow.Start.Add(time.Hour)})
+	if len(res.Ports) != 0 {
+		t.Errorf("ports = %+v, want none — both entries are underlay endpoints", res.Ports)
+	}
+	if want := int64(238); res.Totals.Bytes() != want {
+		t.Errorf("total bytes = %d, want %d — the underlay still counts everywhere else",
+			res.Totals.Bytes(), want)
+	}
+	if len(res.Paths) != 2 {
+		t.Errorf("paths = %+v, want the direct and relayed split the underlay is read for", res.Paths)
+	}
+}
