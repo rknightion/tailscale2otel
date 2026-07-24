@@ -11,6 +11,7 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
+	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector"
 	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
@@ -57,10 +58,23 @@ type Collector struct {
 	interval     time.Duration
 	perEntity    bool
 	activityData bool
+	directory    DirectorySink
+}
+
+// DirectorySink receives the login-to-role directory each collect, so the ACL
+// evaluator can resolve autogroup:owner and autogroup:admin. It is the narrow
+// slice of aclpolicy.Store this collector needs.
+type DirectorySink interface {
+	SetDirectory(aclpolicy.Directory) error
 }
 
 // Option configures optional Collector behavior.
 type Option func(*Collector)
+
+// WithDirectorySink publishes the collected login-to-role directory to sink.
+func WithDirectorySink(sink DirectorySink) Option {
+	return func(c *Collector) { c.directory = sink }
+}
 
 // WithPerEntity controls whether the per-user gauges (devices, connected,
 // last_seen) are emitted. The default is true; false (cardinality.per_entity.user)
@@ -117,7 +131,11 @@ type inviteKey struct {
 	accepted bool
 }
 
-// Collect fetches the current users and emits the inventory metrics.
+// Collect fetches the current users and emits the inventory metrics. It also
+// publishes the login-to-role directory when a sink is configured; a compile
+// failure there is deliberately not returned, because the ACL evaluator is a
+// side consumer and must never fail the users collect. The failure is retained
+// by the sink and surfaced on the status page instead.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	us, err := c.api.Users(ctx)
 	if err != nil {
@@ -125,8 +143,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	counts := make(map[comboKey]int)
+	roles := make(map[string]string, len(us))
 	for i := range us {
 		u := us[i]
+		roles[u.LoginName] = string(u.Role)
 
 		k := comboKey{
 			role:   string(u.Role),
@@ -193,6 +213,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				attrInviteRole:     k.role,
 				attrInviteAccepted: strconv.FormatBool(k.accepted),
 			})
+	}
+
+	if c.directory != nil {
+		// A recompile failure is swallowed on purpose: the ACL evaluator is a
+		// side consumer of this collector and must never turn a policy problem
+		// into a users-collector failure. The sink retains the error for the
+		// status page.
+		_ = c.directory.SetDirectory(aclpolicy.Directory{Roles: roles})
 	}
 
 	return nil

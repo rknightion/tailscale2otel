@@ -20,6 +20,24 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
 
+// twoTailnetFlowApp builds an App fanned out over two tailnets with the flow
+// view enabled, exercising the addRuntime path New() uses in multi-tailnet mode.
+func twoTailnetFlowApp(t *testing.T) *App {
+	t.Helper()
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091"
+	cfg.Flows.Enabled = true
+	a := newAppShell(cfg, "vtest", nil, telemetrytest.New().Emitter(),
+		tracenoop.NewTracerProvider().Tracer("test"),
+		func(context.Context) error { return nil }, collector.NewMemoryStore())
+	a.buildProcessDeps()
+	a.addRuntime("one.example.com", telemetrytest.New().Emitter(), nil, nil,
+		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")), true)
+	a.addRuntime("two.example.com", telemetrytest.New().Emitter(), nil, nil,
+		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")), true)
+	return a
+}
+
 // flowsTestApp builds an App with the flow view enabled on a loopback admin
 // bind (which stays reachable with no token — #227).
 func flowsTestApp(t *testing.T, tune func(*config.Config)) *App {
@@ -316,17 +334,7 @@ func TestFlowsPage_RendersSelfContainedHTML(t *testing.T) {
 // Multi-tailnet keeps one store per tailnet: node names are only unique within a
 // tailnet, so a shared store would merge two different devices into one vertex.
 func TestFlowStore_IsPerTailnet(t *testing.T) {
-	cfg := config.Default()
-	cfg.Admin.Listen = "127.0.0.1:9091"
-	cfg.Flows.Enabled = true
-	a := newAppShell(cfg, "vtest", nil, telemetrytest.New().Emitter(),
-		tracenoop.NewTracerProvider().Tracer("test"),
-		func(context.Context) error { return nil }, collector.NewMemoryStore())
-	a.buildProcessDeps()
-	a.addRuntime("one.example.com", telemetrytest.New().Emitter(), nil, nil,
-		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")), true)
-	a.addRuntime("two.example.com", telemetrytest.New().Emitter(), nil, nil,
-		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")), true)
+	a := twoTailnetFlowApp(t)
 
 	if len(a.runtimes) != 2 {
 		t.Fatalf("runtimes = %d, want 2", len(a.runtimes))

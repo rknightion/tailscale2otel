@@ -64,15 +64,38 @@ type Collector struct {
 	lastETag    string
 	haveETag    bool
 	lastChanged time.Time
+
+	// policy, when set, receives the raw document so the flow view can
+	// reconcile observed traffic against it.
+	policy PolicySink
 }
 
 // New returns an ACL collector. A non-positive interval resolves to the default
 // (600s) via DefaultInterval. A nil now defaults to time.Now.
-func New(a api, interval time.Duration, now func() time.Time) *Collector {
+func New(a api, interval time.Duration, now func() time.Time, opts ...Option) *Collector {
 	if now == nil {
 		now = time.Now
 	}
-	return &Collector{api: a, interval: interval, now: now}
+	c := &Collector{api: a, interval: interval, now: now}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
+}
+
+// PolicySink receives the raw HuJSON policy document each collect, so the flow
+// view can reconcile observed traffic against it. It is the narrow slice of
+// aclpolicy.Store this collector needs.
+type PolicySink interface {
+	SetDocument([]byte) error
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithPolicySink publishes the collected policy document to sink.
+func WithPolicySink(sink PolicySink) Option {
+	return func(c *Collector) { c.policy = sink }
 }
 
 // Name returns the stable collector identifier.
@@ -107,6 +130,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// Trivial presence/size signal: bytes of the raw HuJSON policy document.
 	e.Gauge(docACLSize.Name, docACLSize.Unit, docACLSize.Description,
 		float64(len(raw.HuJSON)), nil)
+
+	if c.policy != nil {
+		// A compile failure is swallowed on purpose: the evaluator is a side
+		// consumer and a malformed policy must not fail the acl collect, which
+		// still has useful signals to emit. The sink retains the error and keeps
+		// serving the last policy that compiled; the status page reports it.
+		_ = c.policy.SetDocument([]byte(raw.HuJSON))
+	}
 
 	// Per-section counts and risk scores both need the policy parsed. Parse
 	// once. If parsing fails (malformed document) both are skipped, but size

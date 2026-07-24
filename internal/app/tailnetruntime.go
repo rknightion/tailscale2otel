@@ -5,6 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v2/internal/audit"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
@@ -42,7 +43,11 @@ type tailnetRuntime struct {
 	// process-wide: a device name is unique only within its tailnet, so a shared
 	// store would merge two different machines into one vertex of the topology.
 	// Nil when the view is disabled or unreachable (see newFlowStore).
-	flowStore   *flowstore.Memory
+	flowStore *flowstore.Memory
+	// policy holds this tailnet's compiled ACL, fed by the acl and users
+	// collectors and read by the flow processor. Nil when the flow view is off:
+	// its only consumer is the reconciliation the view renders.
+	policy      *aclpolicy.Store
 	auditProc   *audit.Processor
 	flowDedup   *dedup.Set
 	auditDedup  *dedup.Set
@@ -118,6 +123,9 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	if rt.flowStore = newFlowStore(cfg); rt.flowStore != nil {
 		fopts.Store = rt.flowStore
 		fopts.StorePII = piiCategories(cfg.PIIFilter)
+		// Policy reconciliation rides along with the flow view; the acl and users
+		// collectors fill this in as they run (see registerCollectors).
+		rt.policy = &aclpolicy.Store{}
 	}
 	rt.flowProc = flowlog.NewProcessor(rt.cache, fopts)
 

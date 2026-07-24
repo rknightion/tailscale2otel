@@ -140,6 +140,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		if cfg.Provider == "headscale" {
 			userOpts = append(userOpts, users.WithActivityData(false))
 		}
+		// The ACL evaluator needs to know which login holds which tailnet role,
+		// which only this collector reports. Without it every autogroup over
+		// people is undecidable rather than silently false.
+		if rt.policy != nil {
+			userOpts = append(userOpts, users.WithDirectorySink(rt.policy))
+		}
 		rt.registry.Register(users.New(cp.Client, c.Users.Interval.D(), userOpts...), c.Users.Interval.D())
 	}
 	if c.Keys.Enabled && cp.Supports("keys") {
@@ -150,7 +156,11 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(settings.New(rt.client, c.Settings.Interval.D()), c.Settings.Interval.D())
 	}
 	if c.Acl.Enabled && cp.Supports("acl") {
-		rt.registry.Register(acl.New(cp.Client, c.Acl.Interval.D(), nil), c.Acl.Interval.D())
+		var aclOpts []acl.Option
+		if rt.policy != nil {
+			aclOpts = append(aclOpts, acl.WithPolicySink(rt.policy))
+		}
+		rt.registry.Register(acl.New(cp.Client, c.Acl.Interval.D(), nil, aclOpts...), c.Acl.Interval.D())
 	}
 	if c.Dns.Enabled && cp.Supports("dns") {
 		rt.registry.Register(dns.New(rt.client, c.Dns.Interval.D()), c.Dns.Interval.D())
