@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v2/internal/app/flowhtml"
 	"github.com/rknightion/tailscale2otel/v2/internal/app/flowsdata"
 	"github.com/rknightion/tailscale2otel/v2/internal/app/statusdata"
@@ -146,6 +147,7 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 			TopN:  topN,
 		}),
 		Recent:      rt.flowStore.Recent(recent),
+		Policy:      policyInfo(rt.policy),
 		GeneratedAt: now.Format(time.RFC3339),
 	}
 	// The page iterates Recent unconditionally, and a nil slice marshals to null.
@@ -153,6 +155,36 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 		resp.Recent = []flowstore.Recent{}
 	}
 	writeIndentedJSON(w, resp, a.logger, "encode flows json")
+}
+
+// policyInfo describes the policy this tailnet's traffic was reconciled
+// against. It reports the rules themselves; what the policy SAID about the
+// traffic lives in the store's aggregates.
+//
+// Rules are always sent in full — the list is a tailnet's own ACL, so tens of
+// entries, and truncating it would report a live rule as one that permitted
+// nothing.
+func policyInfo(s *aclpolicy.Store) flowsdata.PolicyInfo {
+	// Always an array, never null: the page and every jq one-liner in the docs
+	// iterate it unconditionally.
+	info := flowsdata.PolicyInfo{Rules: []flowsdata.PolicyRule{}}
+	if s == nil {
+		return info
+	}
+	if err := s.Err(); err != nil {
+		info.Error = err.Error()
+	}
+	p := s.Policy()
+	if p == nil {
+		return info
+	}
+	info.Available = true
+	rules := p.Rules()
+	info.Rules = make([]flowsdata.PolicyRule, 0, len(rules))
+	for i, r := range rules {
+		info.Rules = append(info.Rules, flowsdata.PolicyRule{Index: i, Kind: r.Kind, Source: r.Source})
+	}
+	return info
 }
 
 // handleFlowsPage renders the /flows shell. It carries no traffic data — the

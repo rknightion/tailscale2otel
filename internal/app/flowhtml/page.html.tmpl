@@ -148,6 +148,18 @@
   .cell.zero{cursor:default;opacity:.35}
   .coverage{color:var(--muted);font-size:12px;padding:0 12px 11px}
   .coverage b{color:var(--fg);font-weight:600}
+  /* Policy reconciliation */
+  .vstrip{display:flex;height:12px;border-radius:6px;overflow:hidden;
+    margin:13px 12px 10px;background:var(--panel2)}
+  .vstrip>div{height:100%;min-width:2px}
+  .vlegend{display:flex;flex-wrap:wrap;gap:16px;padding:0 12px 11px;font-size:12px;color:var(--muted)}
+  .vlegend>span{display:flex;align-items:center;gap:6px;cursor:help}
+  .vlegend .sw{width:9px;height:9px;border-radius:2px;flex:none}
+  .vlegend b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+  .rulesrc{font-family:var(--mono);font-size:11px;overflow-wrap:anywhere}
+  .verdict{font-size:11px;font-family:var(--mono);white-space:nowrap}
+  .verdict.permitted{color:var(--ok)} .verdict.permitted_reverse{color:var(--accent)}
+  .verdict.no_rule{color:var(--warn)} .verdict.undetermined{color:var(--muted)}
   /* Flow list */
   .ident{display:block;color:var(--muted);font-size:11px;margin-top:2px}
   #flowList{max-height:460px;overflow:auto}
@@ -295,6 +307,30 @@
   <div class="panel">
     <div class="matrix" id="matrix"></div>
     <div class="coverage" id="matrixCoverage"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Policy reconciliation
+    <span class="hint">what the tailnet&rsquo;s ACL says about the traffic above</span>
+  </h2>
+  <div class="panel">
+    <div class="vstrip" id="policyStrip"></div>
+    <div class="vlegend" id="policyLegend"></div>
+    <div class="coverage" id="policyNote"></div>
+  </div>
+</section>
+
+<section class="grid2">
+  <div>
+    <h2>Traffic no rule explains <span class="hint" id="unexplainedCount"></span></h2>
+    <div id="tblUnexplained"></div>
+    <div class="coverage" id="unexplainedNote"></div>
+  </div>
+  <div>
+    <h2>Rules that permitted nothing <span class="hint" id="unexercisedWindow"></span></h2>
+    <div id="tblUnexercised"></div>
+    <div class="coverage" id="unexercisedNote"></div>
   </div>
 </section>
 
@@ -464,6 +500,7 @@ function render(d){
   renderPairs(d);
   renderPorts(d);
   renderMatrix(d);
+  renderPolicy(d);
   renderFlows(d);
 
   // Nothing retained yet: say so rather than claiming to cover a zero window.
@@ -1180,6 +1217,193 @@ function matchesCell(f){
 // first line, whatever identity the record carried on a second, muted one. An
 // absent endpoint is an em dash — exit traffic genuinely has no destination, and
 // showing a made-up one would be worse than showing nothing.
+// ------------------------------------------------------- policy reconciliation
+
+// The four states a connection can be in, in the order they are stacked. Return
+// traffic is deliberately its own band and NOT an alarm colour: flow logs report
+// both halves of a connection while a policy governs only the half it was
+// established in, so on real traffic this band is large (37% of connections on a
+// live capture) and entirely normal.
+//
+// "undetermined" is likewise not a finding. It means the policy could not be
+// applied, and presenting it as anything else is what would turn this section
+// from a diagnostic into a generator of confident false alarms.
+var VERDICTS = [
+  {key:"permitted", text:"permitted", colour:"var(--ok)",
+   note:"A rule covers this in the direction it was observed."},
+  {key:"permitted_reverse", text:"return traffic", colour:"var(--accent)",
+   note:"The half of the connection that established it is covered by a rule. Flow logs report both halves; a policy governs only one. This is normal."},
+  {key:"no_rule", text:"not explained", colour:"var(--warn)",
+   note:"No rule covers this in either direction, as this evaluator reads the policy."},
+  {key:"undetermined", text:"undecidable", colour:"var(--muted)",
+   note:"The policy could not be applied here — an undeclared group, a VIP service, or an endpoint carrying no identity. Never a finding."}
+];
+
+function verdictText(v, reversed){
+  if (!v) return "";
+  var key = (v === "permitted" && reversed) ? "permitted_reverse" : v;
+  for (var i = 0; i < VERDICTS.length; i++){
+    if (VERDICTS[i].key === key) return VERDICTS[i].text;
+  }
+  return key;
+}
+
+function verdictKey(v, reversed){
+  return (v === "permitted" && reversed) ? "permitted_reverse" : (v || "");
+}
+
+function renderPolicy(d){
+  var pol = d.policy || {};
+  var counts = {}, evaluated = 0;
+  (d.result.verdicts || []).forEach(function(v){
+    counts[v.label] = (v.counts && v.counts.flows) || 0;
+    evaluated += counts[v.label];
+  });
+
+  renderVerdictStrip(counts, evaluated);
+  renderPolicyNote(pol, evaluated);
+  renderUnexplained(d);
+  renderUnexercised(d, pol);
+}
+
+function renderVerdictStrip(counts, evaluated){
+  var strip = el("policyStrip"), legend = el("policyLegend");
+  clear(strip); clear(legend);
+  if (!evaluated) return;
+
+  VERDICTS.forEach(function(v){
+    var n = counts[v.key] || 0;
+    if (n){
+      var seg = document.createElement("div");
+      seg.style.background = v.colour;
+      seg.style.width = (100 * n / evaluated) + "%";
+      seg.title = v.text + ": " + fmtNum(n) + " connections";
+      strip.appendChild(seg);
+    }
+    var item = document.createElement("span");
+    item.title = v.note;
+    var sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = v.colour;
+    var b = document.createElement("b");
+    b.textContent = fmtNum(n);
+    item.appendChild(sw);
+    item.appendChild(b);
+    item.appendChild(document.createTextNode(" " + v.text
+      + " (" + Math.round(100 * n / evaluated) + "%)"));
+    legend.appendChild(item);
+  });
+}
+
+// renderPolicyNote is the section's honesty statement. Which one applies matters:
+// "no policy collected" and "the policy explained everything" look identical
+// from the outside, and reporting the first as the second is a clean bill of
+// health for a check that never ran.
+function renderPolicyNote(pol, evaluated){
+  var note = el("policyNote"), parts = [];
+  if (pol.error){
+    parts.push("The collected policy could not be compiled: <b>" + esc(pol.error) + "</b>."
+      + (pol.available ? " Reconciliation is still running against the last policy that did compile."
+                       : " Nothing below has been reconciled."));
+  }
+  if (!pol.available){
+    if (!pol.error){
+      parts.push("<b>No policy has been collected yet</b>, so nothing here has been checked against one. "
+        + "The ACL arrives from the <code>acl</code> collector; if it is disabled, this section stays empty.");
+    }
+  } else if (!evaluated){
+    parts.push("<b>No policy-governed traffic in this window.</b> Physical (underlay) traffic is not "
+      + "reconciled — it is the encrypted transport between endpoints, not a connection a policy describes.");
+  } else {
+    parts.push("Every policy-governed connection in this window was checked against the tailnet&rsquo;s "
+      + pol.rules.length + " rules. <b>This is a diagnostic, not an audit.</b> Tailscale itself carried "
+      + "all of this traffic, so anything reported below is a lead to look into — most often a subnet "
+      + "router or a VIP service whose semantics this reading does not fully capture — rather than "
+      + "something that got through.");
+  }
+  note.innerHTML = parts.join(" ");
+}
+
+function renderUnexplained(d){
+  var rows = (d.result.unexplained || []).map(function(u){
+    return {
+      cells: [
+        {text: label(u.src), cls:"mono"},
+        {text: label(u.dst), cls:"mono"},
+        {text: u.port ? u.transport + "/" + u.port : u.transport, cls:"mono"},
+        {text: fmtBytes(bytes(u.counts)), cls:"num"},
+        {text: fmtNum(u.counts.flows), cls:"num"}
+      ]
+    };
+  });
+  var pol = d.policy || {};
+  el("unexplainedCount").textContent = rows.length
+    ? rows.length + (rows.length === 1 ? " relationship" : " relationships")
+    : "";
+  buildTable(el("tblUnexplained"), [
+    {text:"Source"}, {text:"Destination"}, {text:"Over"},
+    {text:"Bytes", num:true}, {text:"Conns", num:true}
+  ], rows, pol.available
+    ? "every policy-governed connection in this window matched a rule"
+    : "no policy collected — nothing has been checked");
+
+  el("unexplainedNote").innerHTML = rows.length
+    ? "These relationships matched no rule in either direction. Endpoints are named by their "
+      + "tags, then their owner, then their device name, then their address — the order a rule "
+      + "would be written in. Aggregating by relationship is what makes this legible: on a live "
+      + "tailnet, thousands of individually unexplained connections were three relationships."
+    : "";
+}
+
+function renderUnexercised(d, pol){
+  var exercised = {};
+  (d.result.rules || []).forEach(function(r){ exercised[r.rule] = r.counts; });
+  var idle = (pol.rules || []).filter(function(r){ return !exercised[r.index]; });
+
+  var win = d.result.window || {};
+  var span = isZeroTime(win.start) ? state.window : humanSpan(win.start, win.end);
+  el("unexercisedWindow").textContent = pol.available
+    ? idle.length + " of " + pol.rules.length + " over " + span
+    : "";
+
+  buildTable(el("tblUnexercised"), [
+    {text:"#"}, {text:"Kind"}, {text:"Rule"}
+  ], idle.map(function(r){
+    return {cells: [
+      {text: String(r.index), cls:"num"},
+      {text: r.kind, cls:"mono"},
+      {text: r.source, cls:"rulesrc"}
+    ]};
+  }), pol.available
+    ? "every rule permitted something in this window"
+    : "no policy collected — nothing has been checked");
+
+  el("unexercisedNote").innerHTML = idle.length
+    ? "<b>Idle is not dead.</b> These rules permitted nothing in the <b>" + esc(span) + "</b> shown — "
+      + "NTP, ICMP and break-glass access legitimately go hours without firing. Widen the window "
+      + "before concluding a rule is unused."
+    : "";
+}
+
+// humanSpan describes the covered window in the terms an operator asked for,
+// which is what makes the unexercised list interpretable at all.
+function humanSpan(startISO, endISO){
+  var mins = Math.round((new Date(endISO) - new Date(startISO)) / 60000);
+  if (!isFinite(mins) || mins <= 0) return state.window;
+  if (mins < 90) return mins + " min";
+  var hrs = mins / 60;
+  return (hrs < 10 ? hrs.toFixed(1) : String(Math.round(hrs))) + "h";
+}
+
+// esc makes a value safe for the few places this page builds markup as a string
+// rather than as nodes. Everything it guards is server-side data, but a policy
+// document and a compile error are both operator-authored text.
+function esc(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+
 function endpointCell(node, addr, user, tags, os){
   var wrap = document.createElement("span");
   wrap.appendChild(document.createTextNode((node || "—") + (addr ? "  " + addr : "")));
@@ -1211,7 +1435,8 @@ function renderFlows(d){
     // Identity is searchable too: "rob@" or "tag:servers" is how an operator
     // actually looks for a connection.
     return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport,
-            f.traffic_type, f.src_user, f.dst_user, f.src_tags, f.dst_tags, f.src_os, f.dst_os]
+            f.traffic_type, f.src_user, f.dst_user, f.src_tags, f.dst_tags, f.src_os, f.dst_os,
+            verdictText(f.verdict, f.reversed)]
       .some(function(v){ return v && v.toLowerCase().indexOf(q) >= 0; });
   });
   el("flowCount").textContent = rows.length === all.length
@@ -1220,11 +1445,17 @@ function renderFlows(d){
 
   buildTable(el("flowList"), [
     {text:"Time"}, {text:"Source"}, {text:"Destination"}, {text:"Service"},
-    {text:"Type"}, {text:"Tx", num:true}, {text:"Rx", num:true}
+    {text:"Type"}, {text:"Policy"}, {text:"Tx", num:true}, {text:"Rx", num:true}
   ], rows.map(function(f){
     var pill = document.createElement("span");
     pill.className = "pill " + f.traffic_type;
     pill.textContent = f.traffic_type;
+    // An unevaluated connection shows an em dash, not a verdict: no policy was
+    // collected, or this is underlay traffic no policy describes.
+    var verdict = document.createElement("span");
+    verdict.className = "verdict " + verdictKey(f.verdict, f.reversed);
+    verdict.textContent = verdictText(f.verdict, f.reversed) || "—";
+    if (f.verdict === "permitted") verdict.title = "rule #" + f.rule;
     // An absent endpoint is shown as an em dash, never as a made-up address:
     // exit records genuinely carry no destination.
     return {
@@ -1234,6 +1465,7 @@ function renderFlows(d){
         {node: endpointCell(f.dst_node, f.dst_addr, f.dst_user, f.dst_tags, f.dst_os), cls:"mono"},
         {text: f.dst_service || "—", cls:"mono"},
         {node: pill},
+        {node: verdict},
         {text: fmtBytes(f.counts.tx_bytes), cls:"num"},
         {text: fmtBytes(f.counts.rx_bytes), cls:"num"}
       ]

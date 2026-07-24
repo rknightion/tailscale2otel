@@ -124,8 +124,12 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 		fopts.Store = rt.flowStore
 		fopts.StorePII = piiCategories(cfg.PIIFilter)
 		// Policy reconciliation rides along with the flow view; the acl and users
-		// collectors fill this in as they run (see registerCollectors).
+		// collectors fill this in as they run (see registerCollectors), and the
+		// processor reads it per connection. Until the first ACL lands it holds no
+		// policy, which the processor reads as "do not evaluate" rather than as
+		// "nothing is permitted".
 		rt.policy = &aclpolicy.Store{}
+		fopts.Policy = rt.policy
 	}
 	rt.flowProc = flowlog.NewProcessor(rt.cache, fopts)
 

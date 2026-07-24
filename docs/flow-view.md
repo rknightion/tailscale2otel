@@ -37,9 +37,12 @@ under both rather than under a joined label that matches nothing you would searc
 the receiving one, shaded by volume. Click a cell to filter the connection list to exactly that
 relationship. See [what the matrix can and cannot show](#what-the-identity-matrix-can-show) below.
 
-**Recent connections.** The newest individual connections, with their raw endpoints, filterable by
-device, address, port, service or protocol. The aggregates cannot answer "what exactly was that", so a
-bounded number of raw connections are kept alongside them.
+**Policy reconciliation.** What the tailnet's own ACL says about the traffic above — see
+[reading the policy section](#reading-the-policy-section), which is worth reading before acting on it.
+
+**Recent connections.** The newest individual connections, with their raw endpoints and the policy's
+reading of each one, filterable by device, address, port, service, protocol or verdict. The aggregates
+cannot answer "what exactly was that", so a bounded number of raw connections are kept alongside them.
 
 ## Enabling it
 
@@ -106,6 +109,73 @@ it describes what traffic was sent **to**, not what sent it.
 The page states the matrix's coverage as a percentage of the window's traffic, so a low number reads as
 "most of this traffic has no tags on both ends" rather than as missing data.
 
+## Reading the policy section
+
+Every policy-governed connection is checked against the tailnet's ACL as this evaluator reads it, as
+the connection is processed. The ACL comes from the `acl` collector and the tailnet roles from the
+`users` collector; with either disabled the section degrades rather than guessing.
+
+**This is a diagnostic, not an audit.** Tailscale carried every connection shown, so it permitted every
+connection shown. Anything the section reports is a lead to look into — most often a subnet router or a
+VIP service whose semantics this reading does not fully capture — not traffic that got through.
+
+### The four verdicts
+
+| Verdict | Meaning |
+|---|---|
+| **permitted** | A rule covers the connection in the direction it was observed. |
+| **return traffic** | The half of the connection that *established* it is covered. Flow logs report both halves; a policy governs only one. On a live tailnet this was **37% of all connections** — it is normal, not a finding. |
+| **not explained** | No rule covers it in either direction, as this evaluator reads the policy. |
+| **undecidable** | The policy could not be applied here. Never a finding — see below. |
+
+**"Undecidable" is not "unexplained".** A selector match is yes, no, or *unknown*, and a connection is
+reported as unexplained only when **every** rule definitively fails. An undeclared `group:`, a `svc:`
+VIP service, or an endpoint carrying no identity all make a rule undecidable, and the section says so
+rather than counting it against you. Collapsing unknown into "no" is what would turn this into a
+generator of confident false alarms.
+
+### Traffic no rule explains
+
+Unexplained connections are aggregated into **relationships**: source identity, destination identity,
+transport and destination port — the shape a grant would be written in. Each endpoint is named by the
+most useful thing known about it: its tags, then its owner, then its device name, then its address.
+
+That aggregation is what makes the output usable. On a live tailnet, 9,786 individually unexplained
+connections were **three relationships**, all involving one tag talking to two LAN addresses behind a
+subnet router.
+
+### Rules that permitted nothing
+
+The other half: which rules never covered anything in the window. **The window is stated on the list,
+and it is the whole point** — a rule can be entirely healthy and idle. NTP, ICMP and break-glass access
+routinely go hours without firing; on a live tailnet 9 of 19 rules were idle over three hours and
+almost all of them legitimately so. Widen the window before concluding a rule is dead.
+
+### What the evaluator covers
+
+Selector families: `*`, `tag:`, named users, `group:`, `ipset:`,
+`autogroup:{owner,admin,member,self,internet}`, host aliases, IP literals and CIDRs. Port specs: `*`,
+bare ports (tcp+udp), `proto:port`, `proto:*` and ranges. Both `grants` (the current syntax) and the
+legacy `acls` accept entries.
+
+Known limits, which the section reports honestly rather than guessing around:
+
+- **`svc:` (VIP services) is undecidable.** Resolving one needs a mapping this evaluator does not have.
+- **`autogroup:admin` includes the Owner.** A modelling choice, not something the API states.
+- **Only `accept` rules are evaluated.** `ssh`, `nodeAttrs`, `postures` and `autoApprovers` govern
+  other things entirely.
+- **`physicalTraffic` is not evaluated.** It is the WireGuard underlay, not a connection a policy
+  describes; those connections show no verdict at all.
+- **Exit traffic** carries no destination, so it is evaluated only against `autogroup:internet`.
+- **`ip: ["*"]` covers every protocol**, including ICMP — it is a wildcard over protocol as well as
+  port. A *bare* port number is what implies tcp/udp only.
+
+Reconciliation reads the identity the flow record carried, before `pii_filter` runs over it. The filter
+governs what the process discloses, and a verdict discloses nothing about an endpoint; deriving it from
+redacted input would quietly turn a privacy setting into wrong findings. What the page *says about* an
+unexplained relationship still comes from the filtered fields, so an endpoint you have chosen not to
+expose appears as `unidentified`.
+
 ## Limits worth knowing
 
 **Memory is bounded, and coverage is honest about it.** Everything is aggregated to one-minute
@@ -149,7 +219,30 @@ right, behind the same auth.
 Alongside the ranked lists, `result` carries `tag_matrix`, `user_matrix` and `os_matrix` — each an
 array of `{src, dst, counts}` cells ranked by bytes and capped at 400. Entries in `recent` carry the
 endpoint identity (`src_user`, `src_tags`, `src_os` and their `dst_` counterparts) as well as the raw
-addresses.
+addresses, plus that connection's own `verdict`, `reversed` and `rule`.
+
+Policy reconciliation spans two places. `result` carries what the policy *said* about the window:
+
+| Field | Contents |
+|---|---|
+| `result.verdicts` | Connection counts per verdict: `permitted`, `permitted_reverse`, `no_rule`, `undetermined`. Empty when no policy was in force — which is **not** the same as everything being permitted. |
+| `result.unexplained` | `{src, dst, transport, port, counts}` relationships nothing explained, ranked by bytes. |
+| `result.rules` | `{rule, counts}` per rule index that permitted something. Complete and unranked, so subtracting it from `policy.rules` gives the rules that permitted nothing. |
+
+and `policy` carries what the policy *is*: `available`, an optional compile `error`, and `rules` as
+`{index, kind, source}` in document order. `index` is the key `result.rules` joins on.
+
+```console
+$ # Relationships the policy does not explain, busiest first.
+$ curl -sH "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:9091/api/flows.json?window=6h&recent=0' \
+  | jq -r '.result.unexplained[] | "\(.src) -> \(.dst)  \(.transport)/\(.port // "-")  \(.counts.flows) conns"'
+
+$ # Rules that permitted nothing in the window.
+$ curl -sH "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:9091/api/flows.json?window=6h&recent=0' \
+  | jq -r '[.result.rules[].rule] as $used | .policy.rules[] | select(.index | IN($used[]) | not) | .source'
+```
 
 ```console
 $ curl -sH "Authorization: Bearer $TOKEN" \

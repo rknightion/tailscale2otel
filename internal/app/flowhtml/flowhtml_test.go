@@ -130,3 +130,48 @@ func TestRender_ZeroPage(t *testing.T) {
 		t.Error("missing the refresh-interval fallback")
 	}
 }
+
+// The policy section is a DIAGNOSTIC. The live data cannot distinguish a real
+// gap in a policy from a subtlety this reading of it misses — subnet routers are
+// the usual culprit — and Tailscale itself carried every connection the section
+// reports. Language implying otherwise is the one thing that would make the
+// feature actively harmful, so it is asserted rather than left to review.
+func TestRender_PolicySectionIsNeverAccusatory(t *testing.T) {
+	out := strings.ToLower(render(t, samplePage()))
+	for _, bad := range []string{"violation", "violate", "breach", "unauthorized", "leak"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("the page uses %q; the policy section reports leads, not findings", bad)
+		}
+	}
+	for _, want := range []string{
+		"diagnostic, not an audit",
+		"idle is not dead",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the page is missing the caveat %q", want)
+		}
+	}
+}
+
+// An unexercised list is meaningless without the window it covers: several rules
+// on a real tailnet legitimately go hours without firing.
+func TestRender_UnexercisedRulesStateTheirWindow(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{`id="unexercisedWindow"`, "Widen the window"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the unexercised-rules list does not state its window (%q missing)", want)
+		}
+	}
+}
+
+// "Undecidable" is not "unexplained", and the page must say so where an operator
+// reads it, not only in the Go doc comments.
+func TestRender_ExplainsTheUndecidableVerdict(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, "Never a finding.") {
+		t.Error("the undecidable verdict is not explained as a non-finding")
+	}
+	if !strings.Contains(out, "No policy has been collected yet") {
+		t.Error("the page cannot distinguish an uncollected policy from a clean one")
+	}
+}

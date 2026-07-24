@@ -269,3 +269,62 @@ func itoa(i int) string {
 	}
 	return string(b)
 }
+
+// "external" and "unknown" are what the processor collapses an address it cannot
+// resolve to. They are sentinels, not names, and naming a relationship with one
+// throws away the only actionable thing about it — a live tailnet's entire
+// unexplained residue was traffic to two LAN addresses behind a subnet router,
+// which no device name covers.
+func TestUnexplained_PrefersAnAddressToACollapseSentinel(t *testing.T) {
+	for _, sentinel := range []string{"external", "unknown"} {
+		t.Run(sentinel, func(t *testing.T) {
+			m := flowstore.NewMemory(0)
+			o := evaluated(flowstore.VerdictNoRule, -1, false)
+			o.SrcNode, o.SrcAddr = "web", "100.64.0.1:41000"
+			o.DstNode, o.DstAddr = sentinel, "10.0.0.254:53"
+			m.Record(o)
+
+			res := query(m)
+			if len(res.Unexplained) != 1 {
+				t.Fatalf("unexplained = %+v, want 1", res.Unexplained)
+			}
+			if got := res.Unexplained[0].Dst; got != "10.0.0.254" {
+				t.Errorf("dst = %q, want the address — %q says nothing an operator can act on", got, sentinel)
+			}
+		})
+	}
+}
+
+// The sentinel is only unhelpful when something better exists. With no address
+// it is still the most that is known, and replacing it with "unidentified" would
+// lose the fact that the endpoint was outside the tailnet.
+func TestUnexplained_KeepsTheSentinelWhenNothingElseIsKnown(t *testing.T) {
+	m := flowstore.NewMemory(0)
+	o := evaluated(flowstore.VerdictNoRule, -1, false)
+	o.DstNode, o.DstAddr = "external", ""
+	m.Record(o)
+
+	res := query(m)
+	if len(res.Unexplained) != 1 || res.Unexplained[0].Dst != "external" {
+		t.Errorf("unexplained = %+v, want the sentinel retained", res.Unexplained)
+	}
+}
+
+// Tailscale writes ":0" for the destination of a protocol that has no ports —
+// every one of 3,427 ICMP entries in a live capture. Carrying that into the
+// relationship would render as "icmp/0", which is not a port and not a rule
+// anyone could write.
+func TestUnexplained_PortlessProtocolsCarryNoPort(t *testing.T) {
+	m := flowstore.NewMemory(0)
+	o := evaluated(flowstore.VerdictNoRule, -1, false)
+	o.Transport, o.DstPort = "icmp", "0"
+	m.Record(o)
+
+	res := query(m)
+	if len(res.Unexplained) != 1 {
+		t.Fatalf("unexplained = %+v, want 1", res.Unexplained)
+	}
+	if got := res.Unexplained[0].Port; got != "" {
+		t.Errorf("port = %q, want empty — :0 means the protocol has no ports", got)
+	}
+}

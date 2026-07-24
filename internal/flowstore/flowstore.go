@@ -68,6 +68,16 @@ const (
 // verdict totals beside them.
 const Unidentified = "unidentified"
 
+// The names the flow processor collapses an unresolvable endpoint to. They are
+// sentinels, not device names, so a relationship prefers the raw address over
+// either — a live tailnet's entire unexplained residue was traffic to two LAN
+// addresses behind a subnet router, and "external → external" would have hidden
+// exactly the thing worth acting on.
+const (
+	external = "external"
+	unknown  = "unknown"
+)
+
 // MaxRecent is the size of the raw-connection ring. It is bounded by COUNT, not
 // by time: the ring is the only unaggregated thing the store holds, so it is
 // what a flood on the stream ingress would grow, and a time bound would not
@@ -417,7 +427,11 @@ func (b *bucket) addUnexplained(o Observation) {
 		Src:       endpointIdentity(o.SrcTags, o.SrcUser, o.SrcNode, o.SrcAddr),
 		Dst:       endpointIdentity(o.DstTags, o.DstUser, o.DstNode, o.DstAddr),
 		Transport: o.Transport,
-		Port:      o.DstPort,
+		// Tailscale writes ":0" for the destination of a protocol that has no
+		// ports — every one of 3,427 ICMP entries in a live capture. Carrying it
+		// through would render "icmp/0", which is not a port and not a rule anyone
+		// could write.
+		Port: portOrNone(o.DstPort),
 	}
 	e, ok := b.unexplained[k]
 	if !ok {
@@ -450,15 +464,38 @@ func endpointIdentity(tags, user, node, addrPort string) string {
 		return tags
 	case user != "":
 		return user
-	case node != "":
+	case node != "" && node != external && node != unknown:
 		return node
-	case addrPort != "":
-		if host, _, err := net.SplitHostPort(addrPort); err == nil {
-			return host
-		}
-		return addrPort
+	}
+	if host := addrHost(addrPort); host != "" {
+		return host
+	}
+	// No address either. A collapse sentinel is still the most that is known —
+	// it says the endpoint was outside the tailnet, which "unidentified" does not.
+	if node != "" {
+		return node
 	}
 	return Unidentified
+}
+
+// portOrNone reads "0" as "this protocol has no ports". See addUnexplained.
+func portOrNone(port string) string {
+	if port == "0" {
+		return ""
+	}
+	return port
+}
+
+// addrHost strips the port from an "addr:port" endpoint, yielding "" when there
+// is nothing to strip it from.
+func addrHost(addrPort string) string {
+	if addrPort == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(addrPort); err == nil {
+		return host
+	}
+	return addrPort
 }
 
 // addMatrix accumulates the cross product of src and dst into m, folding
