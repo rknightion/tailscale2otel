@@ -61,6 +61,7 @@ type Config struct {
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
 	PIIFilter         PIIFilterConfig         `yaml:"pii_filter"`
 	Admin             AdminConfig             `yaml:"admin"`
+	Flows             FlowsConfig             `yaml:"flows"`
 	Prometheus        PrometheusConfig        `yaml:"prometheus"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 	Tracing           TracingConfig           `yaml:"tracing"`
@@ -120,6 +121,23 @@ type AdminAuth struct {
 	// file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.
 	TokenFile string `yaml:"token_file"`
+}
+
+// FlowsConfig configures the built-in flow view served at /flows on the admin
+// server. It keeps a bounded, pre-aggregated picture of recent traffic IN MEMORY
+// so an operator can explore their tailnet without a metrics backend in the
+// loop. Nothing here changes what is exported over OTLP — the backend remains
+// the system of record, and the store is lost on restart.
+type FlowsConfig struct {
+	// Enabled (default true) builds the store and serves /flows. Its only
+	// consumer is the admin page, so turning the page off makes the store dead
+	// weight; Warnings() says so.
+	Enabled bool `yaml:"enabled"`
+	// Retention is how far back the view can see, as a count of one-minute
+	// buckets. Memory scales with it (and, in multi-tailnet mode, with the number
+	// of tailnets, since each keeps its own store). Bounded to [1m, 24h]: this is
+	// an in-memory ring, not a database.
+	Retention Duration `yaml:"retention"`
 }
 
 // PrometheusConfig configures the optional Prometheus pull endpoint (GET /metrics)

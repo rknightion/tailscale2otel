@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.ServiceName}} — flows</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234493f8'/%3E%3C/svg%3E">
+<style>
+  /* Shared palette with the status page so the two read as one surface. */
+  :root{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
+    --tx:#4493f8; --rx:#3fb950;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+      --grid:#e6eaef; --tx:#0969da; --rx:#1a7f37;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+    --grid:#e6eaef; --tx:#0969da; --rx:#1a7f37;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37; --tx:#4493f8; --rx:#3fb950;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+  header{padding:16px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:19px;font-weight:600}
+  header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
+  header .spacer{flex:1}
+  main{max-width:1320px;margin:0 auto;padding:18px 24px 60px}
+  section{margin:0 0 24px}
+  section>h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:0 0 10px;font-weight:600;display:flex;align-items:baseline;gap:10px}
+  section>h2 .hint{text-transform:none;letter-spacing:normal;font-weight:400;font-size:12px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:5px}
+  .card .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card .sub{color:var(--muted);font-size:12px;margin-top:3px;font-family:var(--mono);overflow-wrap:anywhere}
+  .card.warn2{border-color:var(--warn)}
+  /* Controls */
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;
+    padding:11px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .controls label{color:var(--muted);font-size:12px}
+  button.ctl,select.ctl,input.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer}
+  input.ctl{cursor:text}
+  button.ctl:hover,select.ctl:hover{border-color:var(--accent)}
+  button.ctl[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg button{background:var(--panel2);color:var(--fg);border:0;border-right:1px solid var(--line);
+    padding:4px 11px;font-size:12px;font-family:inherit;cursor:pointer}
+  .seg button:last-child{border-right:0}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+  .spacer{flex:1}
+  /* Banners */
+  .banner{display:none;padding:8px 24px;font-size:13px;border-bottom:1px solid var(--line)}
+  .banner.show{display:block}
+  #errBanner{background:rgba(248,81,73,.16);color:var(--err)}
+  #truncBanner{background:rgba(210,153,34,.16);color:var(--warn)}
+  /* Tables */
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{text-align:left;padding:7px 11px;border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums;vertical-align:top}
+  th{color:var(--muted);font-size:12px;font-weight:600;background:var(--panel2)}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  td.mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+  tbody tr.pick{cursor:pointer}
+  tbody tr.pick:hover{background:var(--panel2)}
+  tbody tr.sel{background:rgba(68,147,248,.12)}
+  .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:18px}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px}
+  /* Charts */
+  svg{display:block}
+  .chart{width:100%;height:150px}
+  .chart-wrap{position:relative;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:5px}
+  .legend .lg{display:inline-flex;align-items:center;gap:5px}
+  .legend .sw{width:10px;height:3px;border-radius:2px;display:inline-block}
+  .tip{position:fixed;display:none;pointer-events:none;background:var(--panel2);
+    border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:11px;
+    font-family:var(--mono);white-space:pre;z-index:40;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+  /* Topology */
+  #topoWrap{position:relative;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden}
+  #topo{width:100%;height:460px;cursor:grab;touch-action:none}
+  #topo.drag{cursor:grabbing}
+  #topo .edge{stroke:var(--muted);stroke-opacity:.35;fill:none}
+  #topo .edge.hi{stroke:var(--accent);stroke-opacity:.9}
+  #topo .edge.dim{stroke-opacity:.06}
+  #topo .node{fill:var(--accent);stroke:var(--panel);stroke-width:1.5}
+  #topo .node.sel{stroke:var(--fg);stroke-width:2.5}
+  #topo .node.dim{opacity:.2}
+  #topo .node.ext{fill:var(--pending)}
+  #topo .lbl{fill:var(--fg);font-size:10px;font-family:var(--mono);pointer-events:none;
+    paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round}
+  #topo .lbl.dim{opacity:.18}
+  .topo-note{position:absolute;right:10px;bottom:8px;color:var(--muted);font-size:11px;
+    pointer-events:none}
+  /* Breakdown bars */
+  .bars{padding:4px 0}
+  .bar{display:grid;grid-template-columns:minmax(84px,26%) 1fr auto;gap:9px;align-items:center;
+    padding:4px 12px;font-size:12px}
+  .bar .bn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)}
+  .bar .bt{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .bar .bf{height:100%;background:var(--accent);border-radius:4px}
+  .bar .bv{color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+  /* Flow list */
+  #flowList{max-height:460px;overflow:auto}
+  #flowList table{border:0;border-radius:0}
+  #flowList th{position:sticky;top:0;z-index:1}
+  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;
+    background:var(--panel2);color:var(--muted);font-family:var(--mono)}
+  .pill.virtual{color:var(--accent)} .pill.subnet{color:var(--ok)}
+  .pill.exit{color:var(--warn)} .pill.physical{color:var(--muted)}
+  .filtered{color:var(--accent);font-size:12px}
+  .foot{color:var(--muted);font-size:12px;margin-top:26px;text-align:center}
+  <!-- Without JS nothing on this page can be drawn; say so rather than showing an empty frame. -->
+</style>
+<noscript><style>
+  main>section{display:none}
+  #noJS{display:block!important}
+</style></noscript>
+<script>
+  // Apply the persisted theme BEFORE first paint. Shares the status page's key so
+  // the two surfaces agree.
+  (function(){try{var t=localStorage.getItem('ts2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+</head>
+<body>
+<header>
+  <h1>{{.ServiceName}} <span style="color:var(--muted);font-weight:400">flows</span></h1>
+  <span class="ver">{{.Version}}</span>
+  <span class="ver">retention {{.Retention}}</span>
+  <span class="spacer"></span>
+  <a href="/">status &rarr;</a>
+  <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">&#9686;</button>
+</header>
+<div class="banner" id="errBanner"></div>
+<div class="banner" id="truncBanner"></div>
+
+<main>
+<p id="noJS" style="display:none" class="empty">
+  This view is drawn in the browser from <code>/api/flows.json</code>. With JavaScript disabled,
+  query that endpoint directly — it returns the same data as JSON.
+</p>
+
+<div class="controls">
+  <label for="winSel">Window</label>
+  <div class="seg" id="winSeg">
+    <button data-win="15m">15m</button>
+    <button data-win="1h" aria-pressed="true">1h</button>
+    <button data-win="6h">6h</button>
+    <button data-win="24h">24h</button>
+  </div>
+  <span id="tailnetWrap" style="display:none">
+    <label for="tnSel">Tailnet</label>
+    <select class="ctl" id="tnSel"></select>
+  </span>
+  <label for="topSel">Top</label>
+  <select class="ctl" id="topSel">
+    <option>10</option><option selected>20</option><option>50</option><option>100</option>
+  </select>
+  <button class="ctl" id="liveBtn" aria-pressed="true" title="Follow the newest data">&#9679; live</button>
+  <button class="ctl" id="nowBtn" style="display:none" title="Return to the newest data">jump to now</button>
+  <span class="spacer"></span>
+  <span class="ver" id="covered"></span>
+  <button class="ctl" id="refreshBtn" title="Fetch now">refresh</button>
+</div>
+
+<section>
+  <div class="cards" id="cards"></div>
+</section>
+
+<section>
+  <h2>Traffic over time <span class="hint">drag on the chart to zoom into a span &middot; double-click to reset</span></h2>
+  <div class="chart-wrap">
+    <svg class="chart" id="timeline" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span class="lg"><i class="sw" style="background:var(--tx)"></i>transmitted</span>
+      <span class="lg"><i class="sw" style="background:var(--rx)"></i>received</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Topology <span class="hint" id="topoHint"></span></h2>
+  <div id="topoWrap">
+    <svg id="topo"></svg>
+    <div class="topo-note">drag a device to reposition &middot; click to filter &middot; click empty space to clear</div>
+  </div>
+</section>
+
+<section class="grid3">
+  <div>
+    <h2>Traffic type</h2>
+    <div class="panel bars" id="barsTrafficTypes"></div>
+  </div>
+  <div>
+    <h2>Transport</h2>
+    <div class="panel bars" id="barsTransports"></div>
+  </div>
+  <div>
+    <h2>Operating system</h2>
+    <div class="panel bars" id="barsOSes"></div>
+  </div>
+</section>
+
+<section class="grid2">
+  <div>
+    <h2>Top devices</h2>
+    <div id="tblNodes"></div>
+  </div>
+  <div>
+    <h2>Top conversations</h2>
+    <div id="tblPairs"></div>
+  </div>
+</section>
+
+<section class="grid3">
+  <div>
+    <h2>Destination services</h2>
+    <div id="tblPorts"></div>
+  </div>
+  <div>
+    <h2>Users</h2>
+    <div class="panel bars" id="barsUsers"></div>
+  </div>
+  <div>
+    <h2>Tags</h2>
+    <div class="panel bars" id="barsTags"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Recent connections <span class="hint" id="flowCount"></span></h2>
+  <div class="controls" style="margin-bottom:10px">
+    <input class="ctl" id="flowFilter" type="search" placeholder="filter by device, address, port, service or protocol" style="flex:1;min-width:240px">
+    <button class="ctl" id="flowClear">clear</button>
+  </div>
+  <div class="panel" id="flowList"></div>
+</section>
+
+<p class="foot">
+  Aggregated in memory over the last {{.Retention}} and lost on restart — the OTLP backend remains the
+  system of record. Identity shown here obeys <code>pii_filter</code>.
+</p>
+</main>
+
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+var TAILNETS = {{.Tailnets}};
+var TAILNET  = {{.Tailnet}};
+var REFRESH_MS = {{if .RefreshMs}}{{.RefreshMs}}{{else}}5000{{end}};
+var SVGNS = "http://www.w3.org/2000/svg";
+
+// ---------------------------------------------------------------- utilities
+
+function el(id){ return document.getElementById(id); }
+
+function svgEl(name, attrs){
+  var n = document.createElementNS(SVGNS, name);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+  return n;
+}
+
+function clear(node){ while (node.firstChild) node.removeChild(node.firstChild); }
+
+// fmtBytes uses binary units, matching how an operator reads a link's capacity.
+function fmtBytes(n){
+  n = n || 0;
+  if (n < 1024) return n + " B";
+  var u = ["KiB","MiB","GiB","TiB","PiB"], i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return (n < 10 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.round(n)) + " " + u[i];
+}
+
+function fmtNum(n){
+  n = n || 0;
+  if (n < 1000) return String(n);
+  if (n < 1e6) return (n/1e3).toFixed(n < 1e4 ? 1 : 0) + "k";
+  if (n < 1e9) return (n/1e6).toFixed(n < 1e7 ? 1 : 0) + "M";
+  return (n/1e9).toFixed(1) + "G";
+}
+
+// Go's zero time marshals as year 1. It means "never" — an empty store, a window
+// nothing has landed in — so it must never be formatted as a date in antiquity.
+function isZeroTime(iso){ return !iso || String(iso).indexOf("0001-01-01") === 0; }
+
+function fmtTime(iso){
+  if (isZeroTime(iso)) return "—";
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+}
+
+function fmtClock(iso){
+  if (isZeroTime(iso)) return "—";
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+}
+
+function bytes(c){ return (c && (c.tx_bytes + c.rx_bytes)) || 0; }
+
+// OTHER is the sentinel the store folds overflow into; it is a bucket, not a
+// device, so it is never drawn as a topology vertex.
+var OTHER = "__other__";
+
+function label(name){ return name === OTHER ? "other (truncated)" : name; }
+
+// ------------------------------------------------------------------- state
+
+var state = {
+  window: "1h",
+  top: 20,
+  tailnet: TAILNET,
+  end: null,          // null == follow the newest data
+  selected: null,     // a device name, or null
+  filter: "",
+  data: null,
+  timer: null,
+  positions: {}       // topology layout, kept across polls so it does not jump
+};
+
+// ------------------------------------------------------------------ fetching
+
+function query(){
+  var p = new URLSearchParams();
+  p.set("window", state.window);
+  p.set("top", String(state.top));
+  if (state.tailnet) p.set("tailnet", state.tailnet);
+  if (state.end) p.set("end", state.end);
+  return "/api/flows.json?" + p.toString();
+}
+
+function poll(){
+  fetch(query(), {headers:{"Accept":"application/json"}, credentials:"same-origin"})
+    .then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(d){
+      banner("errBanner", "");
+      state.data = d;
+      render(d);
+    })
+    .catch(function(e){
+      banner("errBanner", "Could not load flow data: " + e.message + ". Retrying.");
+    });
+}
+
+function banner(id, msg){
+  var b = el(id);
+  b.textContent = msg;
+  b.classList.toggle("show", !!msg);
+}
+
+function schedule(){
+  if (state.timer) clearInterval(state.timer);
+  // Paused (a span is pinned) means no polling: the answer cannot change.
+  if (!state.end) state.timer = setInterval(poll, Math.max(1000, REFRESH_MS));
+}
+
+// ------------------------------------------------------------------ rendering
+
+function render(d){
+  renderCards(d);
+  renderTimeline(d);
+  renderTopology(d);
+  renderBars("barsTrafficTypes", d.result.traffic_types);
+  renderBars("barsTransports", d.result.transports);
+  renderBars("barsOSes", d.result.oses);
+  renderBars("barsUsers", d.result.users);
+  renderBars("barsTags", d.result.tags);
+  renderNodes(d);
+  renderPairs(d);
+  renderPorts(d);
+  renderFlows(d);
+
+  // Nothing retained yet: say so rather than claiming to cover a zero window.
+  var w = d.result.window || {};
+  el("covered").textContent = isZeroTime(w.start)
+    ? "nothing retained yet"
+    : "covering " + fmtClock(w.start) + " → " + fmtClock(w.end);
+
+  var t = d.result.truncated || 0;
+  banner("truncBanner", t
+    ? "Coverage is partial: " + fmtNum(t) + " observations exceeded a per-minute cap and were folded into “other”. "
+      + "Totals remain exact; the ranked lists and the graph do not show every distinct key."
+    : "");
+}
+
+function renderCards(d){
+  var t = d.result.totals || {}, s = d.stats || {};
+  var nodes = (d.result.nodes || []).length;
+  var cards = [
+    {k:"Traffic", v:fmtBytes(bytes(t)),
+     sub:"tx " + fmtBytes(t.tx_bytes) + " · rx " + fmtBytes(t.rx_bytes)},
+    {k:"Packets", v:fmtNum((t.tx_packets||0) + (t.rx_packets||0)),
+     sub:"tx " + fmtNum(t.tx_packets) + " · rx " + fmtNum(t.rx_packets)},
+    {k:"Connections", v:fmtNum(t.flows), sub:"in the selected window"},
+    {k:"Devices seen", v:String(nodes), sub:"top " + state.top + " shown"},
+    {k:"Conversations", v:String((d.result.pairs||[]).length), sub:"directed device pairs"},
+    {k:"Retained", v:fmtNum(s.buckets) + " min", sub:"of " + fmtNum(s.capacity) + " · " + fmtNum(s.observations) + " observations"}
+  ];
+  var c = el("cards");
+  clear(c);
+  cards.forEach(function(x){
+    var div = document.createElement("div");
+    div.className = "card";
+    var k = document.createElement("div"); k.className = "k"; k.textContent = x.k;
+    var v = document.createElement("div"); v.className = "v"; v.textContent = x.v;
+    var s2 = document.createElement("div"); s2.className = "sub"; s2.textContent = x.sub;
+    div.appendChild(k); div.appendChild(v); div.appendChild(s2);
+    c.appendChild(div);
+  });
+}
+
+// ---------------------------------------------------------------- timeline
+
+var timelineGeom = null; // {x0,x1,t0,t1} for translating a drag back to a time
+
+function renderTimeline(d){
+  var svg = el("timeline");
+  clear(svg);
+  var pts = d.result.series || [];
+  var W = svg.clientWidth || 900, H = svg.clientHeight || 150;
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  if (!pts.length){
+    svg.appendChild(svgEl("text", {x:W/2, y:H/2, "text-anchor":"middle", fill:"var(--muted)",
+      "font-size":"12"})).textContent = "no traffic recorded in this window";
+    timelineGeom = null;
+    return;
+  }
+
+  var padL = 4, padR = 4, padT = 8, padB = 16;
+  var t0 = new Date(pts[0].time).getTime();
+  var t1 = new Date(pts[pts.length-1].time).getTime();
+  if (t1 <= t0) t1 = t0 + 60000;
+  var maxV = 1;
+  pts.forEach(function(p){ maxV = Math.max(maxV, p.counts.tx_bytes||0, p.counts.rx_bytes||0); });
+
+  var x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
+  timelineGeom = {x0:x0, x1:x1, t0:t0, t1:t1};
+  function X(t){ return x0 + (x1-x0) * ((t - t0) / (t1 - t0)); }
+  function Y(v){ return y1 - (y1-y0) * (v / maxV); }
+
+  // Horizontal guides, three of them: enough to read a magnitude, few enough to
+  // stay out of the way.
+  [0.25, 0.5, 0.75].forEach(function(f){
+    svg.appendChild(svgEl("line", {x1:x0, x2:x1, y1:Y(maxV*f), y2:Y(maxV*f),
+      stroke:"var(--grid)", "stroke-width":"1"}));
+  });
+
+  function area(key, colour){
+    var dparts = ["M " + X(t0) + " " + y1];
+    pts.forEach(function(p){ dparts.push("L " + X(new Date(p.time).getTime()) + " " + Y(p.counts[key]||0)); });
+    dparts.push("L " + X(t1) + " " + y1, "Z");
+    svg.appendChild(svgEl("path", {d:dparts.join(" "), fill:colour, "fill-opacity":"0.14"}));
+    var line = ["M"];
+    pts.forEach(function(p, i){
+      line.push((i ? "L " : "") + X(new Date(p.time).getTime()) + " " + Y(p.counts[key]||0));
+    });
+    svg.appendChild(svgEl("path", {d:line.join(" "), fill:"none", stroke:colour, "stroke-width":"1.6"}));
+  }
+  area("rx_bytes", "var(--rx)");
+  area("tx_bytes", "var(--tx)");
+
+  svg.appendChild(svgEl("line", {x1:x0, x2:x1, y1:y1, y2:y1, stroke:"var(--line)", "stroke-width":"1"}));
+  var lo = svgEl("text", {x:x0, y:H-4, fill:"var(--muted)", "font-size":"10"});
+  lo.textContent = fmtTime(pts[0].time);
+  svg.appendChild(lo);
+  var hi = svgEl("text", {x:x1, y:H-4, fill:"var(--muted)", "font-size":"10", "text-anchor":"end"});
+  hi.textContent = fmtTime(pts[pts.length-1].time);
+  svg.appendChild(hi);
+
+  var sel = svgEl("rect", {x:0, y:y0, width:0, height:y1-y0, fill:"var(--accent)",
+    "fill-opacity":"0.18", stroke:"var(--accent)", "stroke-width":"1", visibility:"hidden"});
+  svg.appendChild(sel);
+  wireBrush(svg, sel, pts, y0, y1);
+}
+
+// wireBrush turns a horizontal drag on the timeline into a pinned span. The
+// selection is expressed as (end, window), which is exactly what the API takes.
+function wireBrush(svg, sel, pts, y0, y1){
+  var dragging = false, ax = 0;
+
+  function localX(ev){
+    var r = svg.getBoundingClientRect();
+    var vb = svg.viewBox.baseVal;
+    return (ev.clientX - r.left) * (vb.width / r.width);
+  }
+  function timeAt(x){
+    if (!timelineGeom) return null;
+    var g = timelineGeom;
+    var f = Math.min(1, Math.max(0, (x - g.x0) / (g.x1 - g.x0)));
+    return g.t0 + f * (g.t1 - g.t0);
+  }
+
+  svg.addEventListener("pointerdown", function(ev){
+    if (!timelineGeom) return;
+    dragging = true; ax = localX(ev);
+    sel.setAttribute("x", ax); sel.setAttribute("width", 0);
+    sel.setAttribute("visibility", "visible");
+    svg.setPointerCapture(ev.pointerId);
+  });
+  svg.addEventListener("pointermove", function(ev){
+    if (!dragging) return;
+    var x = localX(ev);
+    sel.setAttribute("x", Math.min(ax, x));
+    sel.setAttribute("width", Math.abs(x - ax));
+  });
+  svg.addEventListener("pointerup", function(ev){
+    if (!dragging) return;
+    dragging = false;
+    sel.setAttribute("visibility", "hidden");
+    var bx = localX(ev);
+    var lo = timeAt(Math.min(ax, bx)), hi = timeAt(Math.max(ax, bx));
+    if (lo === null || hi === null) return;
+    var span = Math.round((hi - lo) / 1000);
+    // A click, not a drag: ignore rather than pinning a zero-width window.
+    if (span < 60) return;
+    state.end = new Date(hi).toISOString();
+    state.window = span + "s";
+    setLive(false);
+    poll();
+  });
+  svg.addEventListener("dblclick", function(){ resetWindow(); });
+}
+
+function resetWindow(){
+  state.end = null;
+  state.window = currentPreset();
+  setLive(true);
+  poll();
+}
+
+function currentPreset(){
+  var b = document.querySelector('#winSeg button[aria-pressed="true"]');
+  return b ? b.getAttribute("data-win") : "1h";
+}
+
+function setLive(live){
+  el("liveBtn").setAttribute("aria-pressed", live ? "true" : "false");
+  el("liveBtn").textContent = live ? "● live" : "⏸ pinned";
+  el("nowBtn").style.display = live ? "none" : "";
+  schedule();
+}
+
+// ---------------------------------------------------------------- topology
+
+// A small force-directed layout. Repulsion is O(n²), but n is the top-N device
+// count (<=200), so a tick is trivial. Positions persist across polls in
+// state.positions so a refresh does not reshuffle the picture under the cursor.
+var topoSim = null;
+
+function renderTopology(d){
+  var svg = el("topo");
+  clear(svg);
+  var W = svg.clientWidth || 900, H = svg.clientHeight || 460;
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+  var nodeStats = (d.result.nodes || []).filter(function(n){ return n.node !== OTHER; });
+  var known = {};
+  nodeStats.forEach(function(n){ known[n.node] = n; });
+  var edges = (d.result.pairs || []).filter(function(p){
+    return p.src !== OTHER && p.dst !== OTHER && known[p.src] && known[p.dst];
+  });
+
+  el("topoHint").textContent = nodeStats.length
+    ? nodeStats.length + " devices · " + edges.length + " conversations"
+    : "";
+
+  if (!nodeStats.length){
+    var t = svgEl("text", {x:W/2, y:H/2, "text-anchor":"middle", fill:"var(--muted)", "font-size":"13"});
+    t.textContent = "no device-to-device traffic in this window";
+    svg.appendChild(t);
+    topoSim = null;
+    return;
+  }
+
+  var maxBytes = 1;
+  nodeStats.forEach(function(n){ maxBytes = Math.max(maxBytes, bytes(n.sent) + bytes(n.received)); });
+  var maxEdge = 1;
+  edges.forEach(function(e){ maxEdge = Math.max(maxEdge, bytes(e.counts)); });
+
+  // Seed positions on a circle so the first tick has something to relax, and
+  // reuse any position we already had for a device.
+  var nodes = nodeStats.map(function(n, i){
+    var prev = state.positions[n.node];
+    var a = (i / nodeStats.length) * Math.PI * 2;
+    return {
+      id: n.node,
+      stat: n,
+      total: bytes(n.sent) + bytes(n.received),
+      x: prev ? prev.x : W/2 + Math.cos(a) * Math.min(W, H) * 0.32,
+      y: prev ? prev.y : H/2 + Math.sin(a) * Math.min(W, H) * 0.32,
+      vx: 0, vy: 0, fixed: false
+    };
+  });
+  var byId = {};
+  nodes.forEach(function(n){ byId[n.id] = n; });
+  var links = edges.map(function(e){
+    return {s: byId[e.src], t: byId[e.dst], w: bytes(e.counts), pair: e};
+  });
+
+  var gEdges = svgEl("g", {});
+  var gNodes = svgEl("g", {});
+  var gLabels = svgEl("g", {});
+  svg.appendChild(gEdges); svg.appendChild(gNodes); svg.appendChild(gLabels);
+
+  links.forEach(function(l){
+    l.el = svgEl("line", {class:"edge",
+      "stroke-width": (1 + 4 * Math.sqrt(l.w / maxEdge)).toFixed(2)});
+    l.el.addEventListener("mouseenter", function(ev){
+      showTip(ev, l.pair.src + " → " + l.pair.dst + "\n" + l.pair.traffic_type + "\n"
+        + fmtBytes(bytes(l.pair.counts)) + "  (" + fmtNum(l.pair.counts.flows) + " conns)");
+    });
+    l.el.addEventListener("mouseleave", hideTip);
+    gEdges.appendChild(l.el);
+  });
+
+  nodes.forEach(function(n){
+    n.r = 4 + 12 * Math.sqrt(n.total / maxBytes);
+    n.el = svgEl("circle", {class:"node", r:n.r.toFixed(1)});
+    // "external" and "unknown" are collapsed buckets from the enrichment layer,
+    // not devices; colouring them apart stops them reading as one busy machine.
+    if (n.id === "external" || n.id === "unknown") n.el.setAttribute("class", "node ext");
+    n.lbl = svgEl("text", {class:"lbl", "text-anchor":"middle"});
+    n.lbl.textContent = n.id.length > 22 ? n.id.slice(0, 21) + "…" : n.id;
+    n.el.addEventListener("mouseenter", function(ev){
+      showTip(ev, n.id + "\nsent " + fmtBytes(bytes(n.stat.sent))
+        + "\nreceived " + fmtBytes(bytes(n.stat.received)));
+    });
+    n.el.addEventListener("mouseleave", hideTip);
+    n.el.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      select(state.selected === n.id ? null : n.id);
+    });
+    attachDrag(svg, n);
+    gNodes.appendChild(n.el);
+    gLabels.appendChild(n.lbl);
+  });
+
+  svg.addEventListener("click", function(){ select(null); });
+
+  topoSim = {svg:svg, W:W, H:H, nodes:nodes, links:links, alpha:1};
+  runSim();
+  applySelection();
+}
+
+function attachDrag(svg, n){
+  var moved = false;
+  n.el.addEventListener("pointerdown", function(ev){
+    ev.stopPropagation();
+    moved = false;
+    n.fixed = true;
+    svg.classList.add("drag");
+    n.el.setPointerCapture(ev.pointerId);
+    function move(e2){
+      moved = true;
+      var r = svg.getBoundingClientRect();
+      var vb = svg.viewBox.baseVal;
+      n.x = (e2.clientX - r.left) * (vb.width / r.width);
+      n.y = (e2.clientY - r.top) * (vb.height / r.height);
+      n.vx = n.vy = 0;
+      if (topoSim) { topoSim.alpha = Math.max(topoSim.alpha, 0.3); runSim(); }
+    }
+    function up(e2){
+      n.el.releasePointerCapture(e2.pointerId);
+      svg.classList.remove("drag");
+      n.el.removeEventListener("pointermove", move);
+      n.el.removeEventListener("pointerup", up);
+      // A drag that never moved is a click; leave the node free again.
+      if (!moved) n.fixed = false;
+    }
+    n.el.addEventListener("pointermove", move);
+    n.el.addEventListener("pointerup", up);
+  });
+}
+
+var simRAF = null;
+function runSim(){
+  if (simRAF) return;
+  function step(){
+    simRAF = null;
+    if (!topoSim) return;
+    for (var i = 0; i < 3; i++) tick(topoSim);
+    paint(topoSim);
+    topoSim.alpha *= 0.97;
+    if (topoSim.alpha > 0.02) simRAF = requestAnimationFrame(step);
+    else rememberPositions();
+  }
+  simRAF = requestAnimationFrame(step);
+}
+
+function tick(sim){
+  var n = sim.nodes, cx = sim.W/2, cy = sim.H/2, k = sim.alpha;
+  // Repulsion.
+  for (var i = 0; i < n.length; i++){
+    for (var j = i+1; j < n.length; j++){
+      var a = n[i], b = n[j];
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var d2 = dx*dx + dy*dy;
+      if (d2 < 0.01){ dx = (Math.random()-0.5); dy = (Math.random()-0.5); d2 = 0.01; }
+      var d = Math.sqrt(d2);
+      var minSep = a.r + b.r + 14;
+      var f = (2600 + (d < minSep ? 9000 : 0)) / d2;
+      var fx = (dx/d) * f * k, fy = (dy/d) * f * k;
+      a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
+    }
+  }
+  // Springs. A heavier conversation pulls its endpoints closer together.
+  sim.links.forEach(function(l){
+    var dx = l.t.x - l.s.x, dy = l.t.y - l.s.y;
+    var d = Math.sqrt(dx*dx + dy*dy) || 0.01;
+    var rest = 120;
+    var f = (d - rest) * 0.012 * k;
+    var fx = (dx/d) * f, fy = (dy/d) * f;
+    l.s.vx += fx; l.s.vy += fy; l.t.vx -= fx; l.t.vy -= fy;
+  });
+  // Centering + integrate.
+  n.forEach(function(p){
+    p.vx += (cx - p.x) * 0.004 * k;
+    p.vy += (cy - p.y) * 0.004 * k;
+    if (p.fixed){ p.vx = p.vy = 0; return; }
+    p.vx *= 0.82; p.vy *= 0.82;
+    p.x += p.vx; p.y += p.vy;
+    var m = p.r + 6;
+    p.x = Math.min(sim.W - m, Math.max(m, p.x));
+    p.y = Math.min(sim.H - m, Math.max(m, p.y));
+  });
+}
+
+function paint(sim){
+  sim.links.forEach(function(l){
+    l.el.setAttribute("x1", l.s.x.toFixed(1)); l.el.setAttribute("y1", l.s.y.toFixed(1));
+    l.el.setAttribute("x2", l.t.x.toFixed(1)); l.el.setAttribute("y2", l.t.y.toFixed(1));
+  });
+  sim.nodes.forEach(function(p){
+    p.el.setAttribute("cx", p.x.toFixed(1)); p.el.setAttribute("cy", p.y.toFixed(1));
+    p.lbl.setAttribute("x", p.x.toFixed(1));
+    p.lbl.setAttribute("y", (p.y + p.r + 11).toFixed(1));
+  });
+}
+
+function rememberPositions(){
+  if (!topoSim) return;
+  topoSim.nodes.forEach(function(p){ state.positions[p.id] = {x:p.x, y:p.y}; });
+}
+
+// select filters the whole page to one device: the graph dims everything not
+// adjacent to it, and the tables drop rows it is not part of.
+function select(name){
+  state.selected = name;
+  applySelection();
+  if (state.data) {
+    renderNodes(state.data);
+    renderPairs(state.data);
+    renderFlows(state.data);
+  }
+}
+
+function applySelection(){
+  var sel = state.selected;
+  if (!topoSim) return;
+  var adjacent = {};
+  if (sel){
+    adjacent[sel] = true;
+    topoSim.links.forEach(function(l){
+      if (l.s.id === sel) adjacent[l.t.id] = true;
+      if (l.t.id === sel) adjacent[l.s.id] = true;
+    });
+  }
+  topoSim.nodes.forEach(function(p){
+    var base = (p.id === "external" || p.id === "unknown") ? "node ext" : "node";
+    if (!sel) { p.el.setAttribute("class", base); p.lbl.setAttribute("class", "lbl"); return; }
+    p.el.setAttribute("class", base + (p.id === sel ? " sel" : (adjacent[p.id] ? "" : " dim")));
+    p.lbl.setAttribute("class", "lbl" + (adjacent[p.id] ? "" : " dim"));
+  });
+  topoSim.links.forEach(function(l){
+    if (!sel) { l.el.setAttribute("class", "edge"); return; }
+    var touches = l.s.id === sel || l.t.id === sel;
+    l.el.setAttribute("class", "edge" + (touches ? " hi" : " dim"));
+  });
+}
+
+// -------------------------------------------------------------------- tips
+
+function showTip(ev, text){
+  var t = el("tip");
+  t.textContent = text;
+  t.style.display = "block";
+  t.style.left = Math.min(window.innerWidth - t.offsetWidth - 10, ev.clientX + 12) + "px";
+  t.style.top  = Math.min(window.innerHeight - t.offsetHeight - 10, ev.clientY + 12) + "px";
+}
+function hideTip(){ el("tip").style.display = "none"; }
+
+// ------------------------------------------------------------------- bars
+
+function renderBars(id, rows){
+  var host = el(id);
+  clear(host);
+  rows = (rows || []).slice(0, 10);
+  if (!rows.length){
+    var e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = "not carried in this window";
+    host.appendChild(e);
+    return;
+  }
+  var maxV = 1;
+  rows.forEach(function(r){ maxV = Math.max(maxV, bytes(r.counts)); });
+  rows.forEach(function(r){
+    var row = document.createElement("div");
+    row.className = "bar";
+    var n = document.createElement("div"); n.className = "bn";
+    n.textContent = label(r.label); n.title = label(r.label);
+    var t = document.createElement("div"); t.className = "bt";
+    var f = document.createElement("div"); f.className = "bf";
+    f.style.width = Math.max(2, 100 * bytes(r.counts) / maxV) + "%";
+    t.appendChild(f);
+    var v = document.createElement("div"); v.className = "bv";
+    v.textContent = fmtBytes(bytes(r.counts));
+    row.appendChild(n); row.appendChild(t); row.appendChild(v);
+    host.appendChild(row);
+  });
+}
+
+// ------------------------------------------------------------------ tables
+
+function buildTable(host, headers, rows, emptyMsg){
+  clear(host);
+  if (!rows.length){
+    var e = document.createElement("div");
+    e.className = "empty panel";
+    e.textContent = emptyMsg;
+    host.appendChild(e);
+    return;
+  }
+  var tbl = document.createElement("table");
+  var thead = document.createElement("thead");
+  var htr = document.createElement("tr");
+  headers.forEach(function(h){
+    var th = document.createElement("th");
+    th.textContent = h.text;
+    if (h.num) th.style.textAlign = "right";
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  tbl.appendChild(thead);
+  var tbody = document.createElement("tbody");
+  rows.forEach(function(r){
+    var tr = document.createElement("tr");
+    if (r.pick){
+      tr.className = "pick" + (r.selected ? " sel" : "");
+      tr.addEventListener("click", r.pick);
+    }
+    r.cells.forEach(function(c){
+      var td = document.createElement("td");
+      if (c.cls) td.className = c.cls;
+      if (c.node) td.appendChild(c.node); else td.textContent = c.text;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  host.appendChild(tbl);
+}
+
+function renderNodes(d){
+  var rows = (d.result.nodes || []).filter(function(n){
+    return !state.selected || n.node === state.selected;
+  }).map(function(n){
+    return {
+      pick: function(){ select(state.selected === n.node ? null : n.node); },
+      selected: state.selected === n.node,
+      cells: [
+        {text: label(n.node), cls:"mono"},
+        {text: fmtBytes(bytes(n.sent)), cls:"num"},
+        {text: fmtBytes(bytes(n.received)), cls:"num"},
+        {text: fmtNum((n.sent.flows||0) + (n.received.flows||0)), cls:"num"}
+      ]
+    };
+  });
+  buildTable(el("tblNodes"), [
+    {text:"Device"}, {text:"Sent", num:true}, {text:"Received", num:true}, {text:"Conns", num:true}
+  ], rows, "no device traffic in this window");
+}
+
+function renderPairs(d){
+  var rows = (d.result.pairs || []).filter(function(p){
+    return !state.selected || p.src === state.selected || p.dst === state.selected;
+  }).map(function(p){
+    var pill = document.createElement("span");
+    pill.className = "pill " + p.traffic_type;
+    pill.textContent = p.traffic_type;
+    return {
+      cells: [
+        {text: label(p.src), cls:"mono"},
+        {text: label(p.dst), cls:"mono"},
+        {node: pill},
+        {text: fmtBytes(bytes(p.counts)), cls:"num"},
+        {text: fmtNum(p.counts.flows), cls:"num"}
+      ]
+    };
+  });
+  buildTable(el("tblPairs"), [
+    {text:"Source"}, {text:"Destination"}, {text:"Type"}, {text:"Bytes", num:true}, {text:"Conns", num:true}
+  ], rows, "no conversations in this window");
+}
+
+function renderPorts(d){
+  var rows = (d.result.ports || []).map(function(p){
+    return {
+      cells: [
+        {text: (p.service ? p.service : label(p.port)), cls:"mono"},
+        {text: p.port === OTHER ? "—" : p.port + "/" + p.transport, cls:"mono"},
+        {text: fmtBytes(bytes(p.counts)), cls:"num"}
+      ]
+    };
+  });
+  buildTable(el("tblPorts"), [
+    {text:"Service"}, {text:"Port"}, {text:"Bytes", num:true}
+  ], rows, "no destination ports in this window");
+}
+
+function renderFlows(d){
+  var q = state.filter.toLowerCase();
+  var all = d.recent || [];
+  var rows = all.filter(function(f){
+    if (state.selected && f.src_node !== state.selected && f.dst_node !== state.selected) return false;
+    if (!q) return true;
+    return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport, f.traffic_type]
+      .some(function(v){ return v && v.toLowerCase().indexOf(q) >= 0; });
+  });
+  el("flowCount").textContent = rows.length === all.length
+    ? all.length + " retained"
+    : rows.length + " of " + all.length + " retained";
+
+  buildTable(el("flowList"), [
+    {text:"Time"}, {text:"Source"}, {text:"Destination"}, {text:"Service"},
+    {text:"Type"}, {text:"Tx", num:true}, {text:"Rx", num:true}
+  ], rows.map(function(f){
+    var pill = document.createElement("span");
+    pill.className = "pill " + f.traffic_type;
+    pill.textContent = f.traffic_type;
+    // An absent endpoint is shown as an em dash, never as a made-up address:
+    // exit records genuinely carry no destination.
+    return {
+      cells: [
+        {text: fmtTime(f.time), cls:"mono"},
+        {text: (f.src_node || "—") + (f.src_addr ? "  " + f.src_addr : ""), cls:"mono"},
+        {text: (f.dst_node || "—") + (f.dst_addr ? "  " + f.dst_addr : ""), cls:"mono"},
+        {text: f.dst_service || "—", cls:"mono"},
+        {node: pill},
+        {text: fmtBytes(f.counts.tx_bytes), cls:"num"},
+        {text: fmtBytes(f.counts.rx_bytes), cls:"num"}
+      ]
+    };
+  }), state.filter || state.selected ? "nothing matches the current filter" : "no connections retained yet");
+}
+
+// ------------------------------------------------------------------- wiring
+
+function toggleTheme(){
+  var cur = document.documentElement.getAttribute("data-theme");
+  if (!cur) cur = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  var next = cur === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("ts2otel-theme", next); } catch(e){}
+  if (state.data) render(state.data);
+}
+
+function init(){
+  el("themeToggle").addEventListener("click", toggleTheme);
+  el("refreshBtn").addEventListener("click", poll);
+  el("liveBtn").addEventListener("click", function(){
+    if (state.end) resetWindow();
+  });
+  el("nowBtn").addEventListener("click", resetWindow);
+
+  Array.prototype.forEach.call(document.querySelectorAll("#winSeg button"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#winSeg button"), function(o){
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+      state.window = b.getAttribute("data-win");
+      state.end = null;
+      setLive(true);
+      poll();
+    });
+  });
+
+  el("topSel").addEventListener("change", function(){
+    state.top = parseInt(this.value, 10) || 20;
+    state.positions = {}; // a different top-N is a different graph
+    poll();
+  });
+
+  if (TAILNETS && TAILNETS.length > 1){
+    el("tailnetWrap").style.display = "";
+    TAILNETS.forEach(function(n){
+      var o = document.createElement("option");
+      o.value = n; o.textContent = n;
+      if (n === state.tailnet) o.selected = true;
+      el("tnSel").appendChild(o);
+    });
+    el("tnSel").addEventListener("change", function(){
+      state.tailnet = this.value;
+      state.positions = {};
+      state.selected = null;
+      poll();
+    });
+  }
+
+  var filter = el("flowFilter");
+  filter.addEventListener("input", function(){
+    state.filter = this.value;
+    if (state.data) renderFlows(state.data);
+  });
+  el("flowClear").addEventListener("click", function(){
+    filter.value = ""; state.filter = "";
+    if (state.data) renderFlows(state.data);
+  });
+
+  // Re-lay-out on resize: the SVGs are sized in CSS pixels, so their viewBox has
+  // to follow the element rather than the other way round.
+  var resizeTimer = null;
+  window.addEventListener("resize", function(){
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){
+      if (state.data){ renderTimeline(state.data); renderTopology(state.data); }
+    }, 200);
+  });
+
+  setLive(true);
+  poll();
+}
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+else init();
+</script>
+</body>
+</html>

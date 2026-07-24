@@ -29,6 +29,7 @@ type Status struct {
 	Devices       []DeviceRow       `json:"devices"`
 	NodeDiscovery NodeDiscovery     `json:"node_discovery"`
 	Cardinality   CardinalityInfo   `json:"cardinality"`
+	Flows         FlowStoreInfo     `json:"flow_store"`
 	Receivers     ReceiversInfo     `json:"receivers"`
 	Profiling     ProfilingInfo     `json:"profiling"`
 	Runtime       RuntimeInfo       `json:"runtime"`
@@ -214,6 +215,25 @@ type RDNSInfo struct {
 	Overflows      int64   `json:"overflows"`
 	HitRatePct     float64 `json:"hit_rate_pct"`
 	LastPurge      string  `json:"last_purge,omitempty"` // RFC3339
+}
+
+// FlowStoreInfo is the built-in flow view's store, combined across every
+// observed tailnet (each keeps its own, but an operator cares about one number
+// for the process). It exists on the status page so the memory the view costs,
+// and any coverage it had to give up, are visible next to everything else —
+// rather than only on /flows, which an operator with a problem may not open.
+type FlowStoreInfo struct {
+	Enabled bool `json:"enabled"`
+	// Buckets currently held, of Capacity one-minute slots per tailnet.
+	Buckets  int `json:"buckets"`
+	Capacity int `json:"capacity"`
+	// Observations recorded and Truncated folded into "__other__" by a cap.
+	Observations int64 `json:"observations"`
+	Truncated    int64 `json:"truncated"`
+	// Retention is the configured window; Covered is what is actually held,
+	// which is shorter until the ring fills. Empty when nothing is retained.
+	Retention string `json:"retention"`
+	Covered   string `json:"covered,omitempty"`
 }
 
 // DedupInfo is one cross-source de-duplication set's occupancy.

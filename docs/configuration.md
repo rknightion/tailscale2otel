@@ -827,6 +827,33 @@ internet.
 
 ---
 
+## `flows` — built-in flow view
+
+Keeps a bounded, pre-aggregated picture of recent tailnet traffic **in memory** and serves it at
+`/flows` on the admin server: a topology graph, a timeline, top talkers/pairs/ports, identity
+breakdowns and a recent-connection list. It is a convenience view, not a second telemetry pipeline —
+OTLP remains the system of record, and the store is lost on restart.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `flows.enabled` | `true` | Build the store and serve `/flows`. Requires `admin.enabled` **and** `admin.landing_page`; with either off the store is not built at all and a startup advisory says so. |
+| `flows.retention` | `6h` | How far back `/flows` can see, as a ring of one-minute buckets. Must be between `1m` and `24h` — this sizes process memory, not a database. |
+
+Notes:
+
+- **Both ingestion paths feed it.** The poll collector and the streaming receiver share one flow
+  processor, so the view is complete regardless of `collectors.flowlogs.source`.
+- **It obeys `pii_filter`.** The store sits behind the OTLP redactor, so it applies the same policy
+  itself: disabling `pii_filter.emails` removes users from the view, `pii_filter.hostnames` removes
+  device names, `pii_filter.tailscale_ips` removes the raw endpoints from the connection list.
+- **It is bounded in every dimension.** Per-minute caps fold overflow into `__other__` and the page
+  reports the truncation rather than implying complete coverage. Memory scales with `retention`, and
+  in multi-tailnet mode each tailnet keeps its own store.
+- **It never slows ingestion.** Recording is a short lock and a handful of map writes; there is no
+  I/O and no backpressure onto the export path.
+
+---
+
 ## `prometheus` — Prometheus pull endpoint
 
 An opt-in, off-by-default `GET /metrics` endpoint on a **dedicated listener** (`prometheus.listen`,

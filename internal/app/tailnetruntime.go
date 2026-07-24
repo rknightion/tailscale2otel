@@ -12,6 +12,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v2/internal/provider"
 	"github.com/rknightion/tailscale2otel/v2/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v2/internal/release"
@@ -37,6 +38,11 @@ type tailnetRuntime struct {
 	status      *collector.StatusTracker
 	apiStats    *APIStats
 	flowProc    *flowlog.Processor
+	// flowStore backs the /flows view for THIS tailnet. One per runtime, not one
+	// process-wide: a device name is unique only within its tailnet, so a shared
+	// store would merge two different machines into one vertex of the topology.
+	// Nil when the view is disabled or unreachable (see newFlowStore).
+	flowStore   *flowstore.Memory
 	auditProc   *audit.Processor
 	flowDedup   *dedup.Set
 	auditDedup  *dedup.Set
@@ -47,6 +53,17 @@ type tailnetRuntime struct {
 	authMethod     string
 	apiKeySet      bool
 	oauthSecretSet bool
+}
+
+// runtimeName is a runtime's display and lookup name. It is empty on the
+// single-runtime assembly seam (and until New() resolves a "-" placeholder), so
+// it falls back to the configured tailnet — the status page and the flow view
+// must agree on what to call a tailnet, or a selector value stops matching.
+func (a *App) runtimeName(rt *tailnetRuntime) string {
+	if rt.name != "" {
+		return rt.name
+	}
+	return a.cfg.Tailscale.Tailnet
 }
 
 // runtimeDeps carries the process-level dependencies a runtime needs at build
@@ -95,6 +112,12 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	fopts.Dedup = rt.flowDedup
 	if d.rdnsCache != nil {
 		fopts.RDNS = d.rdnsCache
+	}
+	// The store is fed from the processor, so both ingestion paths (poll and the
+	// stream receiver, which share this processor) populate the flow view.
+	if rt.flowStore = newFlowStore(cfg); rt.flowStore != nil {
+		fopts.Store = rt.flowStore
+		fopts.StorePII = piiCategories(cfg.PIIFilter)
 	}
 	rt.flowProc = flowlog.NewProcessor(rt.cache, fopts)
 

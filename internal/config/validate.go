@@ -13,6 +13,13 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/listenaddr"
 )
 
+// Bounds on flows.retention. The floor is one bucket; the ceiling reflects that
+// this is a process-memory ring, not durable storage.
+const (
+	minFlowsRetention = time.Minute
+	maxFlowsRetention = 24 * time.Hour
+)
+
 // oneOf reports whether v equals one of the allowed values.
 func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
@@ -87,6 +94,16 @@ func (c *Config) Warnings() []string {
 	// fires on any non-loopback bind, not just a wildcard one — a tailnet address
 	// is reachable by every peer on the tailnet. pprof is handled more strictly in
 	// Validate (it errors rather than warns).
+	// The flow store's only consumer is the /flows page on the admin server. The
+	// app declines to build the store at all when that surface is off — so this
+	// is "your setting does nothing", not "you are leaking memory".
+	if c.Flows.Enabled && (!c.Admin.Enabled || !c.Admin.LandingPage) {
+		w = append(w, "flows.enabled=true has no effect: /flows is served by the admin "+
+			"landing page, which is disabled (admin.enabled / admin.landing_page). The flow "+
+			"store is not built, so no traffic history is retained. Enable the admin page to "+
+			"use the flow view.")
+	}
+
 	if c.Admin.Enabled && c.Admin.LandingPage && c.Admin.Auth.Token == "" && !listenaddr.IsLoopback(c.Admin.Listen) {
 		w = append(w, "admin.landing_page is served on the network-reachable bind "+c.Admin.Listen+
 			" without admin.auth.token: the status page and its JSON APIs are REFUSED with HTTP 403 "+
@@ -455,6 +472,17 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s and %s both bind %q: each enabled HTTP listener needs its own "+
 					"address (only one wins the net.Listen race; the other dies silently)", a.name, b.name, a.addr)
 			}
+		}
+	}
+	// flows.retention sizes an in-memory ring of one-minute buckets, so a bad
+	// value is a memory fault rather than a slow query. Below a minute the ring
+	// cannot hold a single bucket; beyond a day it is the wrong storage for the
+	// job. Unchecked when the view is off — the store is never built.
+	if c.Flows.Enabled {
+		if d := c.Flows.Retention.D(); d < minFlowsRetention || d > maxFlowsRetention {
+			return fmt.Errorf("flows.retention must be between %v and %v (got %v): it sizes an "+
+				"in-memory ring of one-minute buckets, not a database",
+				minFlowsRetention, maxFlowsRetention, d)
 		}
 	}
 	// admin.tls / prometheus.tls: both-or-neither, and any configured file must

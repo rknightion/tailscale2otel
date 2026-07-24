@@ -26,6 +26,7 @@ func loadErr(t *testing.T, y string) error {
 func TestWarnings_APIKeyMethodAdvises(t *testing.T) {
 	c := config.Default()
 	c.Admin.Enabled = false // isolate: admin is on by default and its wildcard-bind advisory is unrelated here
+	c.Flows.Enabled = false // ...and turning admin off makes the flow view unreachable, which is its own advisory
 	if w := c.Warnings(); len(w) != 0 {
 		t.Fatalf("default (oauth) Warnings = %v, want none", w)
 	}
@@ -721,6 +722,7 @@ func TestValidateReverseDNSDisabledIgnoresBadServer(t *testing.T) {
 func TestWarnings_ReverseDNSCardinality(t *testing.T) {
 	c := config.Default()
 	c.Admin.Enabled = false // isolate: admin is on by default and its wildcard-bind advisory is unrelated here
+	c.Flows.Enabled = false // ...and turning admin off makes the flow view unreachable, which is its own advisory
 	if w := c.Warnings(); len(w) != 0 {
 		t.Fatalf("default Warnings = %v, want none", w)
 	}

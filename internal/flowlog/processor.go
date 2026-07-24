@@ -11,10 +11,12 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v2/internal/portservice"
 	"github.com/rknightion/tailscale2otel/v2/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // Exported metric names emitted by the processor.
@@ -97,12 +99,28 @@ type Options struct {
 	// rollup/both mode; the remainder folds into an __other__ series. A value <= 0
 	// selects a default.
 	RollupTopN int
+	// Store, when non-nil, receives one Observation per processed connection for
+	// the admin flow view. It is fed from inside the same path that emits the
+	// metrics — after de-duplication, so it sees each connection exactly once —
+	// and its Record must never block or fail (see the flowstore package doc).
+	Store Recorder
+	// StorePII gates which identifiers reach Store. The store sits BEHIND the
+	// emitter's redactor, so without this the admin page would show identifiers
+	// the operator has switched off for telemetry. A nil map disables nothing.
+	StorePII pii.Categories
 	// ExitNodeAttribution emits the bounded tailscale.exit_node.io/packets
 	// counters that attribute exit traffic to the reporting (exit) node. Default
 	// on at the config layer. Independent of FlowMetricsMode — the cardinality is
 	// intrinsically bounded by exit-node count, so it is emitted directly (not via
 	// the rollup accumulator) in every mode.
 	ExitNodeAttribution bool
+}
+
+// Recorder receives one observation per processed connection. It is the narrow
+// view of the flow store the processor needs, so tests can fake it without
+// standing up the real one.
+type Recorder interface {
+	Record(flowstore.Observation)
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
@@ -126,6 +144,11 @@ type Processor struct {
 	rollup *rollupAccumulator
 	// exitNode enables per-exit-node IO/packets attribution (Options.ExitNodeAttribution).
 	exitNode bool
+	// store receives one observation per connection for the admin flow view; nil
+	// when the view is disabled. storeRedact applies the PII policy to what
+	// reaches it, and is nil when nothing is disabled (the fast path).
+	store       Recorder
+	storeRedact *pii.Redactor
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -153,6 +176,10 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		dedup:        opts.Dedup,
 		maxLogs:      opts.MaxLogRecordsPerWindow,
 		exitNode:     opts.ExitNodeAttribution,
+		store:        opts.Store,
+	}
+	if opts.Store != nil {
+		p.storeRedact = pii.New(opts.StorePII)
 	}
 	if flowMode == flowModeRollup || flowMode == flowModeBoth {
 		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims)
@@ -400,9 +427,85 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 			float64(cc.RxPkts), dirAttrs(ioAttrs, semconv.DirectionReceive))
 	}
 
+	// Feed the admin flow view. This is the same connection the metrics above
+	// describe, so it is fed from inside the dedup-guarded path and never from a
+	// second traversal.
+	if p.store != nil {
+		p.store.Record(p.observation(flow, trafficType, cc, transport, srcAddr, dstAddr, srcNode, dstNode, dstPort, dstService))
+	}
+
 	if p.logMode == logPerConnection && budget.allow() {
 		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, e)
 	}
+}
+
+// observation builds the flow-store view of one connection.
+//
+// Everything in it that could identify a person or a device passes through the
+// SAME redactor the emitter applies to telemetry, because the store sits behind
+// the emitter and would otherwise let the admin page display an identifier the
+// operator switched off in pii_filter. A redacted field becomes empty, which the
+// store already interprets as "the record did not carry this" — so it degrades
+// into the absent-endpoint handling that already exists rather than needing a
+// second notion of missing.
+func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionCounts,
+	transport, srcAddr, dstAddr, srcNode, dstNode, dstPort, dstService string,
+) flowstore.Observation {
+	// The endpoints are classified by their bare address (that is what the
+	// redactor knows how to grade), but retained with their ports.
+	ident := telemetry.Attrs{}
+	if srcNode != "" {
+		ident[semconv.AttrSrcNode] = srcNode
+	}
+	if dstNode != "" {
+		ident[semconv.AttrDstNode] = dstNode
+	}
+	if cc.Src != "" {
+		ident[semconv.SourceAddress] = srcAddr
+	}
+	if cc.Dst != "" {
+		ident[semconv.DestinationAddress] = dstAddr
+	}
+	addIdentityAttrs(ident, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+	kept := telemetry.Attrs(p.storeRedact.Merge(ident))
+
+	o := flowstore.Observation{
+		Time:        logTimestamp(flow),
+		TrafficType: trafficType,
+		Transport:   transport,
+		DstPort:     dstPort,
+		DstService:  dstService,
+		SrcNode:     attrString(kept, semconv.AttrSrcNode),
+		DstNode:     attrString(kept, semconv.AttrDstNode),
+		SrcUser:     attrString(kept, semconv.AttrSrcUser),
+		DstUser:     attrString(kept, semconv.AttrDstUser),
+		SrcTags:     attrString(kept, semconv.AttrSrcTags),
+		DstTags:     attrString(kept, semconv.AttrDstTags),
+		SrcOS:       attrString(kept, semconv.AttrSrcOS),
+		DstOS:       attrString(kept, semconv.AttrDstOS),
+		Counts: flowstore.Counts{
+			TxBytes: cc.TxBytes,
+			RxBytes: cc.RxBytes,
+			TxPkts:  cc.TxPkts,
+			RxPkts:  cc.RxPkts,
+			Flows:   1,
+		},
+	}
+	// Keep the full "addr:port" only when the address itself survived redaction.
+	if attrString(kept, semconv.SourceAddress) != "" {
+		o.SrcAddr = cc.Src
+	}
+	if attrString(kept, semconv.DestinationAddress) != "" {
+		o.DstAddr = cc.Dst
+	}
+	return o
+}
+
+// attrString reads a string attribute, yielding "" when the key was redacted
+// away or never present.
+func attrString(attrs telemetry.Attrs, key string) string {
+	s, _ := attrs[key].(string)
+	return s
 }
 
 // addIdentityAttrs adds the per-flow endpoint identity (user, tags, OS) carried

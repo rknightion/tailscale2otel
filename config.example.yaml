@@ -323,6 +323,11 @@ admin:
     cert_file: ""                     # serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)
     key_file: ""                      # HTTPS key for admin.tls.cert_file
 
+# ── Built-in flow view (served at /flows on the admin server) ──────────────────
+flows:
+  enabled: true                       # keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise)
+  retention: 6h                       # how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record
+
 # ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
 prometheus:
   enabled: false                      # run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push

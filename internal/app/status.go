@@ -110,6 +110,7 @@ func (a *App) buildStatus() statusdata.Status {
 		Devices:       a.deviceRows(),
 		NodeDiscovery: a.nodeDiscovery(),
 		Cardinality:   cardinalityInfo(a.cfg.SelfObservability.Enabled, cardSeries, cardLabels, cardPerMetric, cardThresholds, metricByName),
+		Flows:         a.flowStoreInfo(),
 		Receivers: statusdata.ReceiversInfo{
 			Streaming: a.cfg.Streaming.Enabled,
 			Webhook:   a.cfg.Webhook.Enabled,
@@ -248,10 +249,7 @@ func (a *App) tailnetSummary() string {
 func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
 	out := make([]statusdata.TailnetStatus, 0, len(a.runtimes))
 	for _, rt := range a.runtimes {
-		name := rt.name
-		if name == "" {
-			name = a.cfg.Tailscale.Tailnet
-		}
+		name := a.runtimeName(rt)
 		cols := a.runtimeCollectorStatuses(rt, now)
 		failing := 0
 		for _, cs := range cols {

@@ -139,6 +139,13 @@ func (a *App) buildAdminServer() *http.Server {
 		mux.HandleFunc("/api/cardinality.json", a.requireAdminAuth(a.handleCardinalityJSON))
 		mux.HandleFunc("/api/config.json", a.requireAdminAuth(a.handleConfigJSON))
 		mux.HandleFunc("/api/rdns/purge", a.requireAdminAuth(a.handleRDNSPurge))
+		// The flow view is registered only when a store is actually being fed, so
+		// a disabled view 404s rather than serving an empty result that reads as
+		// "no traffic".
+		if a.flowsEnabled() {
+			mux.HandleFunc("/flows", a.requireAdminAuth(a.handleFlowsPage))
+			mux.HandleFunc("/api/flows.json", a.requireAdminAuth(a.handleFlowsJSON))
+		}
 	}
 	if a.cfg.Profiling.Pprof.Enabled {
 		registerPprof(mux, a.requireAdminAuth)

@@ -212,6 +212,13 @@ func Default() *Config {
 			LandingPage:           true,
 			StatusRefreshInterval: dur(5 * time.Second),
 		},
+		Flows: FlowsConfig{
+			Enabled: true,
+			// Six hours of one-minute buckets (360). Long enough to cover a shift and
+			// see a diurnal shape, short enough that the ring stays small on a real
+			// tailnet.
+			Retention: dur(6 * time.Hour),
+		},
 		Prometheus: PrometheusConfig{
 			Enabled: false,
 			Listen:  ":2112",

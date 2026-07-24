@@ -381,6 +381,17 @@
                         }
                     }
                 },
+                "flows": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "retention": {
+                            "type": "string"
+                        }
+                    }
+                },
                 "headscale": {
                     "type": "object",
                     "properties": {

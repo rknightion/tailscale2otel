@@ -589,6 +589,16 @@ config:
       # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled.
       token: ""
 
+  # Built-in flow view, served at /flows on the admin server: a bounded in-memory
+  # picture of recent traffic (topology, timeline, top talkers, recent connections)
+  # that needs no metrics backend. It changes nothing about what is exported over
+  # OTLP, and the store is lost on restart. Requires admin.enabled + admin.landing_page.
+  flows:
+    # -- Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page.
+    enabled: true
+    # -- How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store.
+    retention: 6h
+
   # Optional continuous/on-demand profiling. Everything here is OFF by default and
   # carries no Tailscale data. The pprof handlers mount on the admin server, so
   # profiling.pprof.enabled requires admin.enabled: true AND admin.auth.token

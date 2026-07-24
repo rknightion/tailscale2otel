@@ -155,6 +155,8 @@ extraVolumeMounts:
 | config.enrichment.reverse_dns.negative_ttl | string | `"5m"` | How long a failed lookup is remembered (suppresses retries). |
 | config.enrichment.reverse_dns.server | string | `""` | Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver. |
 | config.enrichment.reverse_dns.timeout | string | `"2s"` | Per-lookup timeout. |
+| config.flows.enabled | bool | `true` | Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page. |
+| config.flows.retention | string | `"6h"` | How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store. |
 | config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
 | config.headscale.http.rate_limit | int | `0` |  |
 | config.headscale.http.retry.base_delay | string | `"0s"` |  |

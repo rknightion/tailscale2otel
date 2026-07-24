@@ -14,6 +14,7 @@ nav = [
       { Configuration = "configuration.md" }
     ] },
   { Guides = [
+      { "Flow View" = "flow-view.md" },
       { "Node Metrics" = "node-metrics.md" },
       { "Streaming & Webhooks" = "streaming-webhooks.md" },
       { Dashboards = "dashboards.md" },

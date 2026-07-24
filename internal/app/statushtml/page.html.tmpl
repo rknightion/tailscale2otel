@@ -164,6 +164,7 @@
   <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}</span>
   {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
   <span class="spacer"></span>
+  {{if .Flows.Enabled}}<a href="/flows" title="Explore this tailnet's traffic">flows &rarr;</a>{{end}}
   <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
   <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
 </header>
@@ -415,6 +416,22 @@
       </tbody>
     </table>
     </div>
+    {{end}}
+
+    <div class="sub-h">Flow view store</div>
+    {{if .Flows.Enabled}}
+    <div class="cards">
+      <div class="card"><div class="k">Retained</div><div class="v" id="flowBuckets">{{.Flows.Buckets}}</div><div class="sub">of {{.Flows.Capacity}} one-minute buckets per tailnet</div></div>
+      <div class="card"><div class="k">Coverage</div><div class="v" style="font-size:16px" id="flowCovered">{{if .Flows.Covered}}{{.Flows.Covered}}{{else}}nothing yet{{end}}</div><div class="sub">retention {{.Flows.Retention}}</div></div>
+      <div class="card"><div class="k">Observations</div><div class="v" id="flowObservations">{{.Flows.Observations}}</div><div class="sub">connections recorded since start</div></div>
+      <div class="card{{if .Flows.Truncated}} warn2{{end}}"><div class="k">Truncated</div><div class="v" id="flowTruncated">{{.Flows.Truncated}}</div><div class="sub">{{if .Flows.Truncated}}folded into __other__ — ranked lists are partial{{else}}every key fits within the per-minute caps{{end}}</div></div>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <a class="ctl" href="/flows" style="display:inline-block">Open the flow view &rarr;</a>
+      <span class="muted">Topology, timeline, top talkers and recent connections — drawn from this store, in memory only.</span>
+    </div>
+    {{else}}
+    <p class="muted">The built-in flow view is disabled (<code>flows.enabled=false</code>, or the admin landing page is off). No traffic history is retained in memory; flow telemetry still exports over OTLP as usual.</p>
     {{end}}
 
     <div class="sub-h">Reverse DNS (PTR) cache</div>

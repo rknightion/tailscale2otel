@@ -42,6 +42,12 @@ const (
 	MaxLabelsPerKind  = 500
 )
 
+// MaxRecent is the size of the raw-connection ring. It is bounded by COUNT, not
+// by time: the ring is the only unaggregated thing the store holds, so it is
+// what a flood on the stream ingress would grow, and a time bound would not
+// bound it. At roughly 200 bytes per entry this is well under a megabyte.
+const MaxRecent = 2000
+
 // Other is the key that overflow folds into, in every dimension. It is
 // deliberately the same sentinel the flow-metric rollup uses, so an operator
 // sees one consistent "everything else" label across the metric and the UI.
@@ -80,17 +86,23 @@ type Observation struct {
 	Time        time.Time
 	TrafficType string
 	Transport   string
-	SrcNode     string
-	DstNode     string
-	DstPort     string
-	DstService  string
-	SrcUser     string
-	DstUser     string
-	SrcTags     string
-	DstTags     string
-	SrcOS       string
-	DstOS       string
-	Counts      Counts
+	// SrcAddr/DstAddr are the raw "addr:port" endpoints the record carried. They
+	// are kept only in the bounded recent-connection ring, never in the minute
+	// buckets — an address is far too high-cardinality to aggregate on, but the
+	// exact tuple is what makes a flow list useful.
+	SrcAddr    string
+	DstAddr    string
+	SrcNode    string
+	DstNode    string
+	DstPort    string
+	DstService string
+	SrcUser    string
+	DstUser    string
+	SrcTags    string
+	DstTags    string
+	SrcOS      string
+	DstOS      string
+	Counts     Counts
 }
 
 // PairKey identifies one directed node-to-node relationship within a traffic
@@ -271,8 +283,31 @@ type Memory struct {
 	capacity int
 	now      func() time.Time
 
+	// recent is a fixed-size circular buffer of the newest raw connections.
+	// next is where the following write lands; filled counts how much of the
+	// buffer is live before it first wraps.
+	recent []Recent
+	next   int
+	filled int
+
 	recorded int64
 	dropped  int64
+}
+
+// Recent is one raw connection, retained verbatim. The minute buckets answer
+// "how much"; these answer "what exactly" — which tuple, between which devices,
+// when. They cannot be reconstructed from the aggregates, which is why a bounded
+// number are kept alongside them.
+type Recent struct {
+	Time        time.Time `json:"time"`
+	TrafficType string    `json:"traffic_type"`
+	Transport   string    `json:"transport"`
+	SrcAddr     string    `json:"src_addr,omitempty"`
+	DstAddr     string    `json:"dst_addr,omitempty"`
+	SrcNode     string    `json:"src_node,omitempty"`
+	DstNode     string    `json:"dst_node,omitempty"`
+	DstService  string    `json:"dst_service,omitempty"`
+	Counts      Counts    `json:"counts"`
 }
 
 // NewMemory returns a store retaining at most capacity one-minute buckets.
@@ -284,6 +319,7 @@ func NewMemory(capacity int) *Memory {
 	return &Memory{
 		buckets:  map[int64]*bucket{},
 		capacity: capacity,
+		recent:   make([]Recent, MaxRecent),
 		now:      time.Now,
 	}
 }
@@ -313,8 +349,51 @@ func (m *Memory) Record(o Observation) {
 	}
 	before := b.dropped
 	b.record(o)
+	m.recordRecentLocked(o)
 	m.recorded++
 	m.dropped += b.dropped - before
+}
+
+// recordRecentLocked appends o to the raw-connection ring, overwriting the
+// oldest entry once it is full. Overwriting is not a drop — the ring is a
+// deliberate window on the newest activity, not a sample of everything — so it
+// does not count toward Truncated.
+func (m *Memory) recordRecentLocked(o Observation) {
+	m.recent[m.next] = Recent{
+		Time:        o.Time,
+		TrafficType: o.TrafficType,
+		Transport:   o.Transport,
+		SrcAddr:     o.SrcAddr,
+		DstAddr:     o.DstAddr,
+		SrcNode:     o.SrcNode,
+		DstNode:     o.DstNode,
+		DstService:  o.DstService,
+		Counts:      o.Counts,
+	}
+	m.next = (m.next + 1) % len(m.recent)
+	m.filled = min(m.filled+1, len(m.recent))
+}
+
+// Recent returns up to limit of the most recently recorded connections, newest
+// first. A non-positive limit returns nothing rather than everything: the caller
+// is always a UI page size, and defaulting an unset one to "all" is the wrong
+// direction to fail in.
+func (m *Memory) Recent(limit int) []Recent {
+	if limit <= 0 {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	limit = min(limit, m.filled)
+	out := make([]Recent, 0, limit)
+	// Walk backwards from the most recent write, wrapping at the start.
+	for i := range limit {
+		idx := (m.next - 1 - i + len(m.recent)) % len(m.recent)
+		out = append(out, m.recent[idx])
+	}
+	return out
 }
 
 // evictLocked drops the oldest buckets until the ring is within capacity.
