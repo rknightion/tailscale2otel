@@ -109,8 +109,40 @@ type Observation struct {
 	DstTags    string
 	SrcOS      string
 	DstOS      string
-	Counts     Counts
+	// Verdict is the network policy's reading of this connection:
+	// VerdictPermitted, VerdictNoRule or VerdictUndetermined. Empty means the
+	// connection was NOT evaluated — no policy has been collected yet, or the
+	// traffic is not policy-governed. That is deliberately distinct from
+	// VerdictUndetermined, where a policy was applied and could not decide; a
+	// store that conflated them would report "we cannot tell" for traffic
+	// nothing ever looked at.
+	Verdict string
+	// Reversed reports that the rule matched the connection's establishing
+	// direction rather than the direction observed. Return traffic is normal and
+	// expected — it accounted for 37% of connections on a live capture — so the
+	// distinction is presentational, not a finding.
+	Reversed bool
+	// Rule indexes the policy's rule list. Read only when Verdict is
+	// VerdictPermitted; -1 whenever nothing matched.
+	Rule   int
+	Counts Counts
 }
+
+// The verdict vocabulary, which is also the JSON API's. It mirrors the
+// evaluator's naming, but the store deliberately does not import the evaluator:
+// this package stays a leaf that knows nothing about policy syntax, and holds
+// only the label.
+const (
+	VerdictPermitted = "permitted"
+	VerdictNoRule    = "no_rule"
+	// VerdictUndetermined is "a policy was applied and could not decide", which
+	// is never a finding.
+	VerdictUndetermined = "undetermined"
+	// VerdictPermittedReverse is a presentation-only split of VerdictPermitted
+	// for connections matched in their establishing direction. The processor
+	// never writes it; the breakdown folds Verdict and Reversed into it.
+	VerdictPermittedReverse = "permitted_reverse"
+)
 
 // PairKey identifies one directed node-to-node relationship within a traffic
 // type. Direction is preserved: src and dst are not normalised into an

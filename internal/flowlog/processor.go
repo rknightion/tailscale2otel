@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v2/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v2/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
@@ -108,6 +109,14 @@ type Options struct {
 	// emitter's redactor, so without this the admin page would show identifiers
 	// the operator has switched off for telemetry. A nil map disables nothing.
 	StorePII pii.Categories
+	// Policy, when non-nil, supplies the tailnet's compiled network policy, and
+	// every policy-governed connection is reconciled against it as it is
+	// processed. The verdict rides on the Observation, so it has no effect
+	// without Store. Reconciliation happens here rather than at query time
+	// because the store retains only aggregates plus a bounded recent ring:
+	// evaluating on the way in is what makes a verdict cover the whole retention
+	// window.
+	Policy PolicySource
 	// ExitNodeAttribution emits the bounded tailscale.exit_node.io/packets
 	// counters that attribute exit traffic to the reporting (exit) node. Default
 	// on at the config layer. Independent of FlowMetricsMode — the cardinality is
@@ -121,6 +130,16 @@ type Options struct {
 // standing up the real one.
 type Recorder interface {
 	Record(flowstore.Observation)
+}
+
+// PolicySource supplies the current compiled network policy. *aclpolicy.Store
+// satisfies it, and is what the app wires in.
+//
+// A nil return means no policy has been collected yet, which the processor
+// treats as "do not evaluate" — never as "nothing is permitted". Reads happen
+// once per connection on the emit path, so an implementation must not block.
+type PolicySource interface {
+	Policy() *aclpolicy.Policy
 }
 
 // Processor converts Tailscale flow logs into OTEL metrics and log records. It
@@ -149,6 +168,9 @@ type Processor struct {
 	// reaches it, and is nil when nothing is disabled (the fast path).
 	store       Recorder
 	storeRedact *pii.Redactor
+	// policy supplies the compiled network policy each connection is reconciled
+	// against; nil when reconciliation is off.
+	policy PolicySource
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -177,6 +199,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		maxLogs:      opts.MaxLogRecordsPerWindow,
 		exitNode:     opts.ExitNodeAttribution,
 		store:        opts.Store,
+		policy:       opts.Policy,
 	}
 	if opts.Store != nil {
 		p.storeRedact = pii.New(opts.StorePII)
@@ -431,7 +454,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	// describe, so it is fed from inside the dedup-guarded path and never from a
 	// second traversal.
 	if p.store != nil {
-		p.store.Record(p.observation(flow, trafficType, cc, transport, srcAddr, dstAddr, srcNode, dstNode, dstPort, dstService))
+		p.store.Record(p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService))
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
@@ -449,8 +472,13 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 // into the absent-endpoint handling that already exists rather than needing a
 // second notion of missing.
 func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionCounts,
-	transport, srcAddr, dstAddr, srcNode, dstNode, dstPort, dstService string,
+	transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string,
 ) flowstore.Observation {
+	// Resolved once and used for both the identity attributes and the policy
+	// evaluation below: refByAddr walks the record's embedded node blocks, so a
+	// second lookup per endpoint would be pure repeated work on the emit path.
+	srcRef, dstRef := flow.refByAddr(srcAddr), flow.refByAddr(dstAddr)
+
 	// The endpoints are classified by their bare address (that is what the
 	// redactor knows how to grade), but retained with their ports.
 	ident := telemetry.Attrs{}
@@ -466,8 +494,10 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 	if cc.Dst != "" {
 		ident[semconv.DestinationAddress] = dstAddr
 	}
-	addIdentityAttrs(ident, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+	addIdentityAttrs(ident, srcRef, dstRef)
 	kept := telemetry.Attrs(p.storeRedact.Merge(ident))
+
+	verdict, rule, reversed := p.reconcile(trafficType, transport, srcRef, dstRef, srcAddr, srcPort, dstAddr, dstPort)
 
 	o := flowstore.Observation{
 		Time:        logTimestamp(flow),
@@ -483,6 +513,9 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 		DstTags:     attrString(kept, semconv.AttrDstTags),
 		SrcOS:       attrString(kept, semconv.AttrSrcOS),
 		DstOS:       attrString(kept, semconv.AttrDstOS),
+		Verdict:     verdict,
+		Rule:        rule,
+		Reversed:    reversed,
 		Counts: flowstore.Counts{
 			TxBytes: cc.TxBytes,
 			RxBytes: cc.RxBytes,
@@ -499,6 +532,88 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 		o.DstAddr = cc.Dst
 	}
 	return o
+}
+
+// reconcile decides what the tailnet's network policy says about one
+// connection. It returns an empty verdict when there is nothing to decide from:
+// reconciliation is off, no policy has been collected yet, or the traffic is
+// not policy-governed. That is deliberately not "undetermined", which means a
+// policy WAS applied and could not decide.
+//
+// It runs once per connection on the emit path, so it neither allocates nor
+// blocks: the policy is read through an atomic pointer, and the compiled
+// Policy is immutable and evaluated in place.
+//
+// Note it evaluates the identity the record CARRIED, before the PII filter runs
+// over it. The filter governs what the process discloses; a verdict discloses
+// nothing about an endpoint, and deriving it from redacted input would silently
+// turn an operator's privacy setting into wrong security findings. What the
+// page can say ABOUT an unexplained connection still comes from the redacted
+// fields.
+func (p *Processor) reconcile(trafficType, transport string, srcRef, dstRef *NodeRef,
+	srcAddr, srcPort, dstAddr, dstPort string,
+) (verdict string, rule int, reversed bool) {
+	if p.policy == nil {
+		return "", -1, false
+	}
+	// physicalTraffic is the WireGuard underlay — the encrypted path between two
+	// endpoints, not the tailnet connection a policy describes. Reconciling it
+	// would report every peer-to-peer path as unexplained.
+	if trafficType == semconv.TrafficPhysical {
+		return "", -1, false
+	}
+	pol := p.policy.Policy()
+	if pol == nil {
+		return "", -1, false
+	}
+
+	c := aclpolicy.Conn{
+		Src:    policyEndpoint(srcRef, srcAddr),
+		Dst:    policyEndpoint(dstRef, dstAddr),
+		Proto:  transport,
+		IsExit: trafficType == semconv.TrafficExit,
+	}
+	// BOTH ports matter. A record carrying only the destination port reverses
+	// into one carrying none, which makes every port-specific rule undecidable
+	// against return traffic — and return traffic was 37% of a live capture.
+	c.DstPort, c.HasPort = parsePort(dstPort)
+	c.SrcPort, c.HasSrcPort = parsePort(srcPort)
+
+	res := pol.Evaluate(c)
+	return res.Verdict.String(), res.Rule, res.Reversed
+}
+
+// policyEndpoint builds the evaluator's view of one endpoint. The tag slice is
+// the one the record decoded, not a copy: it is read-only from here on, and
+// copying it per connection is the kind of cost that has no business on the
+// emit path.
+func policyEndpoint(ref *NodeRef, addr string) aclpolicy.Endpoint {
+	ep := aclpolicy.Endpoint{}
+	if ref != nil {
+		ep.User = ref.User
+		ep.Tags = ref.Tags
+	}
+	if addr != "" {
+		if a, err := netip.ParseAddr(addr); err == nil {
+			ep.Addr = a
+		}
+	}
+	return ep
+}
+
+// parsePort reads the port half of an endpoint. A record that carried no port —
+// ICMP, and the exit records that carry no destination at all — yields false,
+// which the evaluator reads as "this cannot be decided against a rule naming
+// specific ports" rather than as port zero.
+func parsePort(s string) (uint16, bool) {
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseUint(s, 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return uint16(v), true
 }
 
 // attrString reads a string attribute, yielding "" when the key was redacted
