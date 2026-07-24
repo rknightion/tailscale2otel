@@ -106,13 +106,25 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_TAG_ROLLUP` | `true` | emit tailscale.devices.by_tag (one series per ACL tag); false keeps the other fleet-hygiene aggregates |
 | `TS2OTEL_COLLECTORS__DEVICES__TAG_ROLLUP_LIMIT` | `50` | cap distinct tag series on by_tag; busiest N kept, rest fold into tag="__other__" (0/negative = unlimited) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__ENABLED` | `true` | network flow logs -> traffic counters + per-connection logs |
-| `TS2OTEL_COLLECTORS__FLOWLOGS__SOURCE` | `poll` | poll (this exporter PULLS) \| stream (Tailscale PUSHES to the streaming receiver) \| both (discouraged: double-counts) |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__SOURCE` | `poll` | poll (this exporter PULLS) \| stream (Tailscale PUSHES to the streaming receiver) \| objectstore (read Tailscale's S3 export) \| both (discouraged: double-counts) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL` | `60s` | poll only — how often a window is polled |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__LAG` | `120s` | poll only — query only up to now-lag so late-arriving records aren't missed |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__INITIAL_LOOKBACK` | `5m` | poll only — cold-start reach-back when there is no checkpoint yet |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__MAX_WINDOW` | `1h` | poll only — cap one tick's window so a long outage catches up over several ticks |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__LOG_MODE` | `per_connection` | per_connection \| per_record \| off — log detail level (applies to poll AND stream) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__MAX_LOG_RECORDS_PER_WINDOW` | `0` | cap flow LOG records per window (0 = unlimited); excess -> tailscale.network.flow.logs_dropped (metrics are never capped) |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region) |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__BUCKET` | `""` | required — the bucket Tailscale exports into |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID` | `""` | SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then EC2 instance profile |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY` | `""` | SET VIA ENV ONLY |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN` | `""` | SET VIA ENV ONLY — temporary credentials only |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INTERVAL` | `60s` | how often the bucket is listed |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__ENABLED` | `true` | configuration/audit events -> event logs + a counter |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__SOURCE` | `poll` | poll \| stream \| both (see flowlogs) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__INTERVAL` | `60s` | poll only |

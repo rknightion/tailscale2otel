@@ -109,3 +109,54 @@ func TestFileStore_MissingFileStartsEmpty(t *testing.T) {
 		t.Fatal("fresh file store returned a checkpoint, want none")
 	}
 }
+
+// Namespaced is what keeps two tailnets' object-store cursors apart when they
+// share one checkpoint file. Without it each would read the other's cursor and
+// skip the other's ground.
+func TestNamespaced_IsolatesAndStrips(t *testing.T) {
+	base := collector.NewMemoryStore()
+	one := collector.Namespaced(base, "one.example.com")
+	two := collector.Namespaced(base, "two.example.com")
+
+	at := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	if err := one.Set("cursor", at); err != nil {
+		t.Fatal(err)
+	}
+	if err := two.Set("cursor", at.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := one.Get("cursor")
+	if !ok || !got.Equal(at) {
+		t.Errorf("one's cursor = %v/%v, want %v", got, ok, at)
+	}
+	if _, ok := two.Get("nothing"); ok {
+		t.Error("a key that was never set resolved")
+	}
+
+	// Keys are stripped of the prefix and scoped to the namespace, so a caller
+	// enumerating its own state never sees another tailnet's.
+	if keys := one.Keys(); len(keys) != 1 || keys[0] != "cursor" {
+		t.Errorf("one's keys = %v, want just [cursor]", keys)
+	}
+	// The underlying store holds both, distinctly.
+	if len(base.Keys()) != 2 {
+		t.Errorf("base keys = %v, want both namespaces", base.Keys())
+	}
+
+	if err := one.Delete("cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := two.Get("cursor"); !ok {
+		t.Error("deleting one namespace's key removed the other's")
+	}
+}
+
+// An empty namespace is a pass-through, so a single-tailnet deployment's keys
+// stay bare and keep resolving across an upgrade.
+func TestNamespaced_EmptyIsAPassThrough(t *testing.T) {
+	base := collector.NewMemoryStore()
+	if got := collector.Namespaced(base, ""); got != base {
+		t.Error("an empty namespace wrapped the store; existing keys would stop resolving")
+	}
+}

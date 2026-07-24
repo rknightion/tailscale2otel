@@ -459,6 +459,27 @@ Health/throughput counters for the optional HEC log-stream receiver and the webh
 | `tailscale.webhook.request.duration` | `s` | histogram | `tailscale_webhook_request_duration_seconds` | — | Wall-clock duration of webhook receiver HTTP request handling, in seconds. |
 <!-- END GENERATED -->
 
+### Object-store ingestion (`tailscale2otel.objectstore.*`)
+
+The third flow-log ingestion path: the export Tailscale writes into an S3-compatible bucket
+(`collectors.flowlogs.source: objectstore`). The flow records themselves emit the same
+`tailscale.network.flow.*` signals every other path does — these describe the **ingestion**, which is
+the part that is otherwise invisible.
+
+Watch `tailscale2otel_objectstore_backlog`: it is the number of objects listed but not yet ingested at
+the end of the last cycle. A sustained non-zero value means the bucket is being written faster than
+`max_objects` allows it to be read, and ingestion is falling behind.
+
+<!-- BEGIN GENERATED: metrics groups="Object-store ingestion" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale2otel.objectstore.backlog` | `1` | gauge | `tailscale2otel_objectstore_backlog_ratio` | — | Objects listed but not yet ingested at the end of the last cycle. Zero means ingestion is caught up with the bucket. |
+| `tailscale2otel.objectstore.bytes` | `By` | counter | `tailscale2otel_objectstore_bytes_bytes_total` | — | Compressed bytes fetched from the flow-log export bucket, as reported by the object listing. |
+| `tailscale2otel.objectstore.objects` | `1` | counter | `tailscale2otel_objectstore_objects_total` | — | Objects successfully ingested from the flow-log export bucket. |
+| `tailscale2otel.objectstore.records` | `1` | counter | `tailscale2otel_objectstore_records_total` | — | Flow-log records decoded from ingested objects. Compare against the flow metrics to see what de-duplication removed. |
+| `tailscale2otel.objectstore.skipped` | `1` | counter | `tailscale2otel_objectstore_skipped_total` | `reason` | Objects or lines not ingested, by reason. A sustained non-zero `per_cycle_budget` means the per-cycle object cap is holding ingestion behind the bucket. |
+<!-- END GENERATED -->
+
 ### Node metrics scraper (`tailscale.node.*` + forwarded series)
 
 The scraper emits one curated metric — the per-target health gauge below — and otherwise forwards

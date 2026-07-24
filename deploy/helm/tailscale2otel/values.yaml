@@ -128,6 +128,15 @@ secret:
   TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ""
   # -- Grafana Cloud OTLP token (the password for OTLP basic auth).
   TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN: ""
+  # -- S3 access key for the flow-log export bucket. Set ONLY when
+  # config.collectors.flowlogs.source=objectstore AND the bucket has no role to assume (MinIO,
+  # Ceph). On EKS leave these empty and annotate the service account for IRSA instead.
+  TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID: ""
+  # -- S3 secret key paired with the access key above.
+  TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY: ""
+  # -- S3 session token. Temporary credentials only; usually unnecessary, since the ambient
+  # chain refreshes its own.
+  TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN: ""
   # -- HEC token the streaming receiver expects ("Authorization: Splunk <token>").
   # Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op.
   TS2OTEL_STREAMING__TOKEN: ""
@@ -356,11 +365,13 @@ config:
     flowlogs:
       # -- Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs).
       enabled: true
-      # -- Ingestion source: poll | stream | both. PICK ONE method per log type: `both`
-      # runs poll AND the `streaming` receiver and risks double-counting — cross-source
-      # de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter logs a WARN
-      # at startup when streaming is enabled while this collector still polls. Set `stream`
-      # (not poll/both) when config.streaming.enabled is true.
+      # -- Ingestion source: poll | stream | objectstore | both. PICK ONE method per log
+      # type: `both` runs poll AND the `streaming` receiver and risks double-counting —
+      # cross-source de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter
+      # logs a WARN at startup when streaming is enabled while this collector still polls or
+      # reads the export bucket. Set `stream` (not poll/both) when config.streaming.enabled is
+      # true; set `objectstore` and fill in the objectstore block below to read Tailscale's
+      # S3 export instead of calling the API.
       source: poll
       # -- Poll interval.
       interval: 60s
@@ -376,6 +387,36 @@ config:
       # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
       # tailscale.network.flow.logs_dropped; METRICS are never capped, only logs.
       max_log_records_per_window: 0
+      objectstore:
+        # -- Service URL of the S3-compatible store holding Tailscale's flow-log export, e.g.
+        # https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when source is
+        # objectstore; never derived from the region, because a non-AWS implementation would be
+        # derived wrong. Leave "" for any other source.
+        endpoint: ""
+        # -- Bucket region. REQUIRED when source is objectstore: it is part of the request
+        # signature, so a wrong value fails every request with HTTP 403.
+        region: ""
+        # -- Bucket Tailscale exports into. REQUIRED when source is objectstore.
+        bucket: ""
+        # -- The export's root within the bucket, above the YYYY/MM/DD partitions.
+        prefix: ""
+        # -- Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>.
+        # Required by most non-AWS implementations; getting it backwards is a DNS failure.
+        path_style: false
+        # -- How often the bucket is listed.
+        interval: 60s
+        # -- How far back past the cursor each listing reaches, so an object that arrived late is
+        # still found. Keep it >= interval, or an object landing between two cycles can be missed.
+        lookback: 1h
+        # -- Cold-start reach-back, so a first run against a long history does not ingest all of it.
+        initial_lookback: 6h
+        # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
+        max_objects: 200
+        # NOTE: S3 credentials are NOT set here — they would land in the ConfigMap. Leave them
+        # unset to use the ambient chain (environment, then IRSA/web identity via a
+        # service-account annotation, then an EC2 instance profile), which is the right answer
+        # on EKS; or set the TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__* keys under `secret:`
+        # for a MinIO/Ceph bucket with no role to assume.
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true

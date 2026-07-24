@@ -21,6 +21,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/oauthapps"
+	"github.com/rknightion/tailscale2otel/v2/internal/collector/objectstore"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/v2/internal/collector/settings"
@@ -54,6 +55,7 @@ var metricSources = []func() []metricdoc.Metric{
 	services.Catalog,
 	flowlogs.Catalog,
 	nodemetrics.Catalog,
+	objectstore.Catalog,
 	flowlog.Catalog,
 	audit.Catalog,
 	rdns.Catalog,

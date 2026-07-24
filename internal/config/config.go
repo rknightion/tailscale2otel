@@ -639,6 +639,47 @@ type FlowlogsCollector struct {
 	// unlimited). Excess is counted into tailscale.network.flow.logs_dropped;
 	// metrics are never capped.
 	MaxLogRecordsPerWindow int `yaml:"max_log_records_per_window"`
+	// ObjectStore configures the objectstore ingestion path. It applies only
+	// when source includes "objectstore".
+	ObjectStore ObjectStoreConfig `yaml:"objectstore"`
+}
+
+// ObjectStoreConfig points the objectstore ingestion path at the S3-compatible
+// bucket Tailscale exports network flow logs into.
+//
+// Credentials are deliberately last-resort here: leave them empty and the
+// ambient chain is used (the environment, then IRSA/web identity, then an EC2
+// instance profile), which is what a container deployment should rely on. Set
+// them ONLY via TS2OTEL_* environment variables, never in YAML.
+type ObjectStoreConfig struct {
+	// Endpoint is the service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a
+	// MinIO/Ceph address. There is no region-to-endpoint guessing: the non-AWS
+	// implementations this supports would all be guessed wrong.
+	Endpoint string `yaml:"endpoint"`
+	Region   string `yaml:"region"`
+	Bucket   string `yaml:"bucket"`
+	// Prefix is the export's root within the bucket, above the YYYY/MM/DD
+	// partitions.
+	Prefix string `yaml:"prefix"`
+	// PathStyle addresses the bucket as <endpoint>/<bucket>/<key> rather than
+	// <bucket>.<endpoint>/<key>. Required by most non-AWS implementations.
+	PathStyle bool `yaml:"path_style"`
+	// Static credentials. Env only.
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	SessionToken    string `yaml:"session_token"`
+	// Interval is how often the bucket is listed.
+	Interval Duration `yaml:"interval"`
+	// Lookback is how far back past the cursor each listing reaches, so an
+	// object that arrived late is still found. The ingested-object guard is what
+	// keeps the overlap from re-ingesting.
+	Lookback Duration `yaml:"lookback"`
+	// InitialLookback bounds a cold start against a bucket holding a long
+	// history.
+	InitialLookback Duration `yaml:"initial_lookback"`
+	// MaxObjects bounds one cycle's work. Exceeding it is not an error: the
+	// remainder is counted, logged and picked up next cycle.
+	MaxObjects int `yaml:"max_objects"`
 }
 
 // AuditlogsCollector configures the configuration/audit-events collector. Source

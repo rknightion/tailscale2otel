@@ -168,13 +168,26 @@ collectors:
     tag_rollup_limit: 50              # cap distinct tag series on by_tag; busiest N kept, rest fold into tag="__other__" (0/negative = unlimited)
   flowlogs:                           # network flow logs -> traffic counters + per-connection logs
     enabled: true
-    source: poll                      # poll (this exporter PULLS) | stream (Tailscale PUSHES to the streaming receiver) | both (discouraged: double-counts)
+    source: poll                      # poll (this exporter PULLS) | stream (Tailscale PUSHES to the streaming receiver) | objectstore (read Tailscale's S3 export) | both (discouraged: double-counts)
     interval: 60s                     # poll only — how often a window is polled
     lag: 120s                         # poll only — query only up to now-lag so late-arriving records aren't missed
     initial_lookback: 5m              # poll only — cold-start reach-back when there is no checkpoint yet
     max_window: 1h                    # poll only — cap one tick's window so a long outage catches up over several ticks
     log_mode: per_connection          # per_connection | per_record | off — log detail level (applies to poll AND stream)
     max_log_records_per_window: 0     # cap flow LOG records per window (0 = unlimited); excess -> tailscale.network.flow.logs_dropped (metrics are never capped)
+    objectstore:                      # source: objectstore only — read the flow-log export Tailscale writes to an S3-compatible bucket
+      endpoint: ""                    # required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)
+      region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
+      bucket: ""                      # required — the bucket Tailscale exports into
+      prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions
+      path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
+      access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then EC2 instance profile
+      secret_access_key: ""           # SET VIA ENV ONLY
+      session_token: ""               # SET VIA ENV ONLY — temporary credentials only
+      interval: 60s                   # how often the bucket is listed
+      lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it
+      max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
   auditlogs:                          # configuration/audit events -> event logs + a counter
     enabled: true
     source: poll                      # poll | stream | both (see flowlogs)

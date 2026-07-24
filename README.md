@@ -58,9 +58,9 @@ cardinality control that makes flow logs survivable on a metrics backend.
   (with expiry), tailnet settings, DNS, ACL policy (scored for structural risk: wildcards,
   unrestricted rules, auto-approvers, SSH wildcards), device posture / MDM integrations, Tailscale
   Services, webhook endpoints, contacts, log-stream delivery health, and OAuth apps.
-- **Three ingestion paths into one pipeline** — poll the API, receive Tailscale's log stream on a
-  built-in Splunk-HEC-compatible receiver, or take real-time HMAC-verified webhooks. All three feed
-  the same processors.
+- **Four ingestion paths into one pipeline** — poll the API, receive Tailscale's log stream on a
+  built-in Splunk-HEC-compatible receiver, read Tailscale's flow-log export straight out of an
+  S3-compatible bucket, or take real-time HMAC-verified webhooks. All four feed the same processors.
 - **Multi-tailnet / MSP mode** — one process observing N tailnets, each with its own credentials, and
   `tailscale.tailnet` as a real label on every signal (no `target_info` join required).
 - **PII redaction on by default** — 13 opt-out categories covering emails, user IDs, hostnames, IPs,
@@ -155,11 +155,12 @@ auto-disable and a reduced set (devices, users, keys, ACL, node-metrics) runs.
 **Device enrichment depends on the `devices` collector** — flow/audit IP→name resolution silently
 degrades to `unknown`/`external` without it.
 
-### Logs: poll *or* stream, pick one
+### Logs: poll, stream *or* object store — pick one
 
-`flowlogs` and `auditlogs` each take a `source` of `poll` (default), `stream`, or `both`. **Pick
-exactly one method per log type** — `both` risks double-counting, cross-source de-dup is only a
-best-effort failsafe, and the exporter WARNs at startup when it sees this.
+`flowlogs` takes a `source` of `poll` (default), `stream`, `objectstore` or `both`; `auditlogs` takes
+the first three of those. **Pick exactly one method per log type** — running two risks
+double-counting, cross-source de-dup is only a best-effort failsafe, and the exporter WARNs at startup
+when it sees this.
 
 ```yaml
 # Poll: tailscale2otel pulls on a schedule (interval/lag/initial_lookback/max_window apply).
@@ -167,6 +168,13 @@ flowlogs: { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookb
 
 # Stream: Tailscale pushes to the built-in HEC receiver (the window fields are ignored).
 flowlogs: { enabled: true, source: stream, log_mode: per_connection }
+
+# Object store: read the export Tailscale writes to S3. No API quota, and the only practical way
+# to backfill a long history. Credentials come from the ambient chain (env, IRSA, instance profile).
+flowlogs:
+  enabled: true
+  source: objectstore
+  objectstore: { endpoint: https://s3.eu-west-2.amazonaws.com, region: eu-west-2, bucket: my-flow-logs }
 ```
 
 Checkpoints persist how far each *polled* collector has read so restarts resume without gaps. Details

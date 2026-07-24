@@ -487,13 +487,60 @@ Network flow logs → aggregated traffic counters + per-connection flow logs.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `collectors.flowlogs.enabled` | `true` | Whether flow logs are collected. |
-| `collectors.flowlogs.source` | `poll` | `poll` \| `stream` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs-auditlogs-only). |
+| `collectors.flowlogs.source` | `poll` | `poll` \| `stream` \| `objectstore` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs-auditlogs-only) and [`objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source). |
 | `collectors.flowlogs.interval` | `60s` | Poll cadence (poll only). |
 | `collectors.flowlogs.lag` | `120s` | Tail-safety margin; query up to `now − lag` (poll only). Flow logs have a noticeable tail, hence the larger default than audit. |
 | `collectors.flowlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
 | `collectors.flowlogs.max_window` | `1h` | Catch-up cap for one tick (poll only). |
 | `collectors.flowlogs.log_mode` | `per_connection` | Flow-log detail. One of `per_connection` (one log per 5-tuple), `per_record` (one summary log per node window), or `off` (no flow logs, metrics only). |
 | `collectors.flowlogs.max_log_records_per_window` | `0` | Cap on flow LOG records emitted (`0` = unlimited). Excess is counted into `tailscale.network.flow.logs_dropped`. Metrics are never capped. |
+
+#### `collectors.flowlogs.objectstore` — the S3 export as an ingestion source
+
+Tailscale can export network flow logs to an S3-compatible bucket. Reading that export is the third
+ingestion path (`collectors.flowlogs.source: objectstore`), and the cheapest one for a large tailnet:
+the objects are immutable, already batched, and cost no API quota. It is also the only practical way
+to backfill a long history.
+
+The records in the bucket are the **same** records the API returns, so they go through the same
+processor and produce the same signals. That is also why running `objectstore` alongside `poll` or the
+stream receiver double-counts — pick one, exactly as for the other sources.
+
+Every field below applies **only** when `source: objectstore`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `collectors.flowlogs.objectstore.endpoint` | `""` | **Required.** Service URL, e.g. `https://s3.eu-west-2.amazonaws.com`, or a MinIO/Ceph address. Deliberately not derived from the region: a non-AWS implementation would be derived wrong. |
+| `collectors.flowlogs.objectstore.region` | `""` | **Required.** Part of the request signature, so a wrong or missing value fails every request with HTTP 403 rather than degrading quietly. |
+| `collectors.flowlogs.objectstore.bucket` | `""` | **Required.** The bucket Tailscale exports into. |
+| `collectors.flowlogs.objectstore.prefix` | `""` | The export's root within the bucket, above the `YYYY/MM/DD` partitions. |
+| `collectors.flowlogs.objectstore.path_style` | `false` | Address as `<endpoint>/<bucket>/<key>` rather than `<bucket>.<endpoint>/<key>`. Required by most non-AWS implementations. Getting it backwards shows up as a DNS failure, not an HTTP error. |
+| `collectors.flowlogs.objectstore.access_key_id` | `""` | Static credential. **Set via `TS2OTEL_*` env only.** Leave empty to use the ambient chain (below). |
+| `collectors.flowlogs.objectstore.secret_access_key` | `""` | Static credential. **Env only.** |
+| `collectors.flowlogs.objectstore.session_token` | `""` | Static credential, temporary sessions only. **Env only.** |
+| `collectors.flowlogs.objectstore.interval` | `60s` | How often the bucket is listed. |
+| `collectors.flowlogs.objectstore.lookback` | `1h` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Setting it below `interval` is warned about: the overlap would be smaller than the gap between listings, so an object landing between two cycles could be missed. |
+| `collectors.flowlogs.objectstore.initial_lookback` | `6h` | Cold-start reach-back, so a first run against a bucket holding months of exports does not try to ingest all of it. |
+| `collectors.flowlogs.objectstore.max_objects` | `200` | Objects ingested per cycle. Exceeding it is not an error: the remainder is counted into `tailscale2otel.objectstore.skipped{reason="per_cycle_budget"}`, logged at WARN, reported by the `tailscale2otel.objectstore.backlog` gauge, and picked up next cycle. |
+
+**Credentials.** Leave the three static fields empty and the ambient chain is used, in this order:
+the environment (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`), then **web
+identity** (`AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE` — this is IRSA on EKS), then the **EC2
+instance profile** via IMDSv2. Set `AWS_EC2_METADATA_DISABLED=true` off EC2 to skip the last probe,
+which otherwise costs a connection timeout on every refresh. Temporary credentials are refreshed
+5 minutes before expiry.
+
+The shared config file (`~/.aws/credentials`, `AWS_PROFILE`, SSO login) is **not** supported. It is a
+developer-laptop convenience; static environment credentials cover the same ground in one variable,
+and container deployments use a role. This is a deliberate omission, not a gap — see
+[#238](https://github.com/rknightion/tailscale2otel/issues/238) for the reasoning and the binary-size
+measurement behind it.
+
+**Exactly-once.** A durable cursor records the newest object ingested; a durable set of recently
+ingested object keys makes the backwards overlap free; and the processor's own connection-level
+de-duplication, shared with the poll and stream paths, sits underneath both. All three survive a
+restart except the last, which does not need to.
+
 
 ### `collectors.auditlogs`
 

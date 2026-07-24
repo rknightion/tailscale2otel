@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -165,6 +166,42 @@ func keysOf(m map[string]time.Time) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
+	}
+	return out
+}
+
+// Namespaced returns a view of store whose keys are all prefixed with ns+"/".
+//
+// The scheduler namespaces the checkpoints it owns itself (see
+// WithCheckpointNamespace); this is for a collector that keeps its OWN keys in
+// the shared store — in multi-tailnet mode two tailnets would otherwise share
+// one set of cursors and each skip the other's ground. An empty ns is a
+// pass-through, so single-tailnet keys stay bare and continue to resolve across
+// an upgrade.
+func Namespaced(store CheckpointStore, ns string) CheckpointStore {
+	if ns == "" {
+		return store
+	}
+	return namespaced{store: store, prefix: ns + "/"}
+}
+
+type namespaced struct {
+	store  CheckpointStore
+	prefix string
+}
+
+func (n namespaced) Get(name string) (time.Time, bool)  { return n.store.Get(n.prefix + name) }
+func (n namespaced) Set(name string, t time.Time) error { return n.store.Set(n.prefix+name, t) }
+func (n namespaced) Delete(name string) error           { return n.store.Delete(n.prefix + name) }
+
+// Keys returns only this namespace's keys, with the prefix stripped, so a caller
+// enumerating its own state never sees another tailnet's.
+func (n namespaced) Keys() []string {
+	var out []string
+	for _, k := range n.store.Keys() {
+		if rest, ok := strings.CutPrefix(k, n.prefix); ok {
+			out = append(out, rest)
+		}
 	}
 	return out
 }

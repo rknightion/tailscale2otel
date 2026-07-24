@@ -210,11 +210,23 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), ingest)
 		rt.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
 	} else if c.Flowlogs.Enabled && cp.Supports("flowlogs") {
-		// Stream-only (source: stream): the poller isn't registered, so the
+		// Stream-only or objectstore-only: the poller isn't registered, so the
 		// tailscale.feature.enabled health gauge it normally emits would be missing.
 		// Register a lightweight probe that reports it independently of ingestion.
 		fp := flowlogs.NewFeatureProbe(flowFeatureCheck(rt.client), c.Flowlogs.Interval.D())
 		rt.registry.Register(fp, fp.DefaultInterval())
+	}
+	if c.Flowlogs.Enabled && objectStoreSource(c.Flowlogs.Source) {
+		if oc, err := newObjectStoreCollector(rt, d, ingest); err != nil {
+			// Not fatal: the rest of the exporter is still useful, and a bucket
+			// that cannot be reached at startup is usually a credential or
+			// endpoint problem an operator fixes without a restart being the
+			// only recovery. Validation has already rejected the cases that are
+			// certainly wrong.
+			d.logger.Error("objectstore flow-log ingestion is not running", "error", err)
+		} else {
+			rt.registry.Register(oc, c.Flowlogs.ObjectStore.Interval.D())
+		}
 	}
 	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), ingest)

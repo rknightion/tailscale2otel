@@ -100,6 +100,12 @@ func Default() *Config {
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(1 * time.Hour),
 				LogMode:         "per_connection",
+				ObjectStore: ObjectStoreConfig{
+					Interval:        dur(60 * time.Second),
+					Lookback:        dur(1 * time.Hour),
+					InitialLookback: dur(6 * time.Hour),
+					MaxObjects:      200,
+				},
 			},
 			Auditlogs: AuditlogsCollector{
 				Enabled:         true,

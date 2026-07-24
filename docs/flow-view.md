@@ -244,11 +244,11 @@ traffic, which attribute by the relaying node.
 endpoints' identity, so names resolve even with the devices collector disabled; the collector still
 gives better coverage for devices that have not appeared in a flow yet.
 
-## Both ingestion paths feed it
+## Every ingestion path feeds it
 
-The polling collector and the streaming receiver share one flow processor, so the view is complete
-regardless of `collectors.flowlogs.source`. Cross-source de-duplication applies here exactly as it does
-to the metrics, so a window delivered twice is counted once.
+The polling collector, the streaming receiver and the object-store reader share one flow processor, so
+the view is complete regardless of `collectors.flowlogs.source`. Cross-source de-duplication applies
+here exactly as it does to the metrics, so a window delivered twice is counted once.
 
 ## The JSON API
 

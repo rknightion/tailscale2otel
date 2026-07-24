@@ -231,6 +231,38 @@
                                 "max_window": {
                                     "type": "string"
                                 },
+                                "objectstore": {
+                                    "type": "object",
+                                    "properties": {
+                                        "bucket": {
+                                            "type": "string"
+                                        },
+                                        "endpoint": {
+                                            "type": "string"
+                                        },
+                                        "initial_lookback": {
+                                            "type": "string"
+                                        },
+                                        "interval": {
+                                            "type": "string"
+                                        },
+                                        "lookback": {
+                                            "type": "string"
+                                        },
+                                        "max_objects": {
+                                            "type": "integer"
+                                        },
+                                        "path_style": {
+                                            "type": "boolean"
+                                        },
+                                        "prefix": {
+                                            "type": "string"
+                                        },
+                                        "region": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
                                 "source": {
                                     "type": "string"
                                 }
@@ -901,6 +933,15 @@
             "type": "object",
             "properties": {
                 "TS2OTEL_ADMIN__AUTH__TOKEN": {
+                    "type": "string"
+                },
+                "TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID": {
+                    "type": "string"
+                },
+                "TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY": {
+                    "type": "string"
+                },
+                "TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN": {
                     "type": "string"
                 },
                 "TS2OTEL_HEADSCALE__API_KEY": {

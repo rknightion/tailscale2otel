@@ -68,6 +68,25 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	// The same one-method-per-log-type rule applies to the export bucket, and it
+	// is easier to get wrong here: the bucket holds the SAME records the API
+	// returns, so a deployment that adds objectstore ingestion without turning
+	// off the poller counts every connection twice.
+	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) && c.Streaming.Enabled {
+		w = append(w, "collectors.flowlogs.source=objectstore with streaming.enabled=true: "+
+			"flow logs can arrive from BOTH the export bucket and the stream receiver and be "+
+			"double-counted. The bucket holds the same records the receiver does. Cross-source "+
+			"de-duplication is a best-effort FAILSAFE, not a guarantee: choose ONE.")
+	}
+	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) &&
+		c.Collectors.Flowlogs.ObjectStore.Lookback.D() > 0 &&
+		c.Collectors.Flowlogs.ObjectStore.Lookback.D() < c.Collectors.Flowlogs.ObjectStore.Interval.D() {
+		w = append(w, fmt.Sprintf("collectors.flowlogs.objectstore.lookback (%v) is shorter than its "+
+			"interval (%v): the overlap that catches a late-arriving object is smaller than the gap "+
+			"between listings, so an object that lands between two cycles can be missed entirely.",
+			c.Collectors.Flowlogs.ObjectStore.Lookback.D(), c.Collectors.Flowlogs.ObjectStore.Interval.D()))
+	}
+
 	// With the tailnet distinguisher dropped, per-tailnet Prometheus series become
 	// byte-identical and collapse on the pull path (the handler serves 200 via
 	// first-wins rather than 500 — see #103). Flag the silent per-tailnet data loss.
@@ -309,11 +328,15 @@ func isWildcardListen(addr string) bool {
 }
 
 // pollsSource reports whether a window collector with the given source value
-// runs the poller (as opposed to relying solely on the stream receiver). It
-// mirrors app.pollSource; an empty source defaults to polling.
+// runs the poller (as opposed to relying solely on the stream receiver or the
+// object store). It mirrors app.pollSource; an empty source defaults to polling.
 func pollsSource(s string) bool {
 	return s == "" || s == "poll" || s == "both"
 }
+
+// objectStoreSource reports whether flow logs are ingested from the export
+// bucket. It mirrors app.objectStoreSource.
+func objectStoreSource(s string) bool { return s == "objectstore" }
 
 // validateReceiverPath checks that a non-empty HTTP receiver path is a rooted
 // absolute path with no whitespace, so it can be registered with
@@ -568,8 +591,16 @@ func (c *Config) Validate() error {
 			c.Collectors.Auditlogs.MaxWindow.D(), c.Collectors.Auditlogs.Interval.D()},
 	}
 	for _, col := range logCollectors {
-		if col.source != "" && !oneOf(col.source, "poll", "stream", "both") {
-			return fmt.Errorf("collectors.%s.source %q invalid: must be one of poll, stream, both", col.name, col.source)
+		// Only flowlogs has an export bucket; audit logs are not exported to
+		// object storage, so accepting the value there would configure a path
+		// that silently collects nothing.
+		valid := []string{"poll", "stream", "both"}
+		if col.name == "flowlogs" {
+			valid = append(valid, "objectstore")
+		}
+		if col.source != "" && !oneOf(col.source, valid...) {
+			return fmt.Errorf("collectors.%s.source %q invalid: must be one of %s",
+				col.name, col.source, strings.Join(valid, ", "))
 		}
 		if !col.enabled {
 			continue
@@ -585,6 +616,31 @@ func (c *Config) Validate() error {
 					"otherwise there is no ingestion path and %s are silently never collected", col.name, col.name)
 			}
 		}
+		// (b) The object-store path needs a bucket to read, and pointing at one
+		// that does not exist would look like a tailnet with no traffic.
+		if objectStoreSource(col.source) {
+			os := c.Collectors.Flowlogs.ObjectStore
+			switch {
+			case os.Bucket == "":
+				return fmt.Errorf("collectors.%s.source=objectstore requires "+
+					"collectors.flowlogs.objectstore.bucket — without it there is no ingestion "+
+					"path and flow logs are silently never collected", col.name)
+			case os.Endpoint == "":
+				return fmt.Errorf("collectors.%s.source=objectstore requires "+
+					"collectors.flowlogs.objectstore.endpoint (e.g. https://s3.eu-west-2.amazonaws.com); "+
+					"it is not derived from the region, because a non-AWS implementation would be "+
+					"derived wrong", col.name)
+			case os.Region == "":
+				return fmt.Errorf("collectors.%s.source=objectstore requires "+
+					"collectors.flowlogs.objectstore.region — it is part of the request signature, "+
+					"so a wrong or missing value fails every request with HTTP 403", col.name)
+			case os.MaxObjects < 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_objects must be >= 0 (got %d)", os.MaxObjects)
+			case os.Interval.D() < 0 || os.Lookback.D() < 0 || os.InitialLookback.D() < 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore interval/lookback/initial_lookback must be >= 0")
+			}
+		}
+
 		// (c)/(d) Window timing applies only to the polling path.
 		if pollsSource(col.source) {
 			if col.initialLookback <= 0 {
