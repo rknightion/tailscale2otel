@@ -191,27 +191,24 @@ func TestProcess_NoPolicyConfigured(t *testing.T) {
 }
 
 // The PII filter governs what the process DISCLOSES, not what it may reason
-// about. Evaluation runs on the identity the record carried, so switching off a
-// category changes what the page shows about a connection without silently
-// changing the verdict it reports for it.
+// about. Since #241 nothing on this path is redacted at all, but the emitter's
+// filter still runs alongside it — and a verdict derived from what the EMITTER
+// was allowed to say would turn a privacy setting into wrong security findings.
 func TestProcess_PolicyUnaffectedByPIIRedaction(t *testing.T) {
 	fs := &fakeStore{}
 	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{
-		Store:    fs,
-		StorePII: pii.Categories{pii.CatTailscaleIPs: false, pii.CatEmails: false, pii.CatHostnames: false},
-		Policy:   policyStore(t, testPolicy),
+		Store:  fs,
+		Policy: policyStore(t, testPolicy),
 	})
-	rec := telemetrytest.New()
+	rec := telemetrytest.NewWithPII(pii.Categories{
+		pii.CatTailscaleIPs: false, pii.CatEmails: false, pii.CatHostnames: false,
+	})
 
 	p.Process(decodeLiveRecord(t), rec.Emitter())
 
 	o := only(t, fs)
 	if o.Verdict != "permitted" || !o.Reversed {
 		t.Errorf("Verdict/Reversed = %q/%v, want permitted/true — redaction changed the verdict", o.Verdict, o.Reversed)
-	}
-	// The identity itself is still redacted out of what the page will show.
-	if o.SrcAddr != "" || o.DstUser != "" || o.SrcNode != "" {
-		t.Errorf("redacted identity leaked into the observation: %+v", o)
 	}
 }
 

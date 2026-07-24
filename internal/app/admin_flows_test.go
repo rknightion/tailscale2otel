@@ -124,6 +124,42 @@ func TestFlowsJSON_ServesWhatTheProcessorRecorded(t *testing.T) {
 	}
 }
 
+// pii_filter governs the telemetry this process EXPORTS. /flows is local,
+// admin-authenticated introspection that never crosses a process boundary, so it
+// shows what the record carried — an operator who has switched a category off for
+// their backend still sees their own tailnet in full here (#241).
+func TestFlowsJSON_IdentityIsNotFilteredByPIIFilter(t *testing.T) {
+	a := flowsTestApp(t, func(c *config.Config) {
+		// Every category that could touch a flow endpoint, off.
+		c.PIIFilter.Emails = false
+		c.PIIFilter.Hostnames = false
+		c.PIIFilter.TailscaleIPs = false
+		c.PIIFilter.UserDisplayNames = false
+		c.PIIFilter.NodeIDs = false
+	})
+	seedFlows(t, a)
+
+	_, got := getFlows(t, a, "")
+	if len(got.Recent) != 1 {
+		t.Fatalf("recent = %+v, want 1 connection", got.Recent)
+	}
+	r := got.Recent[0]
+	if r.DstUser != "rob@example.com" {
+		t.Errorf("recent dst user = %q, want it shown in full", r.DstUser)
+	}
+	if r.SrcNode != "camden" || r.DstNode != "mbp16" {
+		t.Errorf("recent nodes = %q -> %q, want them shown in full", r.SrcNode, r.DstNode)
+	}
+	if r.SrcAddr != "100.64.0.1:52000" || r.DstAddr != "100.64.0.2:443" {
+		t.Errorf("recent endpoints = %q -> %q, want them shown in full", r.SrcAddr, r.DstAddr)
+	}
+	// The aggregates are keyed off the same identity, so a filtered view would
+	// also collapse the topology graph into unnamed endpoints.
+	if len(got.Result.Pairs) != 1 || got.Result.Pairs[0].Src != "camden" {
+		t.Errorf("pairs = %+v, want the named pair", got.Result.Pairs)
+	}
+}
+
 // The window and page sizes come from the URL, so they are attacker-adjacent
 // even behind the admin gate: they must clamp rather than allocate whatever is
 // asked for.

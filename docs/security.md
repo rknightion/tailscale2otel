@@ -101,6 +101,13 @@ it (these behaviours are also noted in
 - Leaving `admin.auth.token` empty likewise **refuses** the status page and its JSON APIs with
   HTTP 403 on any non-loopback `admin.listen` (`/healthz` and `/readyz` stay open).
 
+!!! warning "The flow view is not covered by `pii_filter`"
+    [`/flows`](flow-view.md) shows device names, addresses and users **in full**. `pii_filter`
+    governs the telemetry this process exports, not what an authenticated administrator may look
+    at locally, and the flow store never leaves the process. The **admin token is the only thing
+    protecting that data** — if the set of people holding it is wider than the set who may see
+    your users' email addresses, narrow the token rather than the filter.
+
 !!! danger "Always set credentials before exposing a receiver"
     Always set these when exposing a receiver, especially on a wildcard/all-interfaces bind
     or without TLS. Tailscale requires HTTPS for the streaming sink; a `tailscale cert`

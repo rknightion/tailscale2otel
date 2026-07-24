@@ -62,8 +62,8 @@ const (
 )
 
 // Unidentified names an endpoint of an unexplained relationship that carries no
-// identity at all — the record supplied none, or the PII filter removed all of
-// it. Unlike the breakdowns, where an absent value simply occupies no label, a
+// identity at all: the record supplied no tags, no user, no resolved name and no
+// address. Unlike the breakdowns, where an absent value simply occupies no label, a
 // relationship needs both ends named or the counts would not add up to the
 // verdict totals beside them.
 const Unidentified = "unidentified"
@@ -454,10 +454,9 @@ func (b *bucket) addUnexplained(o Observation) {
 // it is what made a live capture's 9,786 unexplained connections legible as
 // three relationships.
 //
-// Every input has already been through the PII filter, so an endpoint the
-// operator chose not to expose arrives here empty and is named Unidentified
-// rather than being dropped — dropping it would leave the relationship counts
-// short of the verdict totals displayed beside them.
+// An endpoint that carries none of them is named Unidentified rather than
+// dropped — dropping it would leave the relationship counts short of the verdict
+// totals displayed beside them.
 func endpointIdentity(tags, user, node, addrPort string) string {
 	switch {
 	case tags != "":
@@ -617,7 +616,7 @@ type Recent struct {
 	DstService  string    `json:"dst_service,omitempty"`
 	// Endpoint identity, so the connection list can answer "what did this user's
 	// devices actually do" — a question no aggregate can. Omitted when the record
-	// did not carry it, or when pii_filter removed it upstream.
+	// did not carry it.
 	SrcUser string `json:"src_user,omitempty"`
 	DstUser string `json:"dst_user,omitempty"`
 	SrcTags string `json:"src_tags,omitempty"`

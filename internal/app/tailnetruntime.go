@@ -122,7 +122,10 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	// stream receiver, which share this processor) populate the flow view.
 	if rt.flowStore = newFlowStore(cfg); rt.flowStore != nil {
 		fopts.Store = rt.flowStore
-		fopts.StorePII = piiCategories(cfg.PIIFilter)
+		// No PII filtering on the way in: pii_filter governs the telemetry this
+		// process exports, and the store is local, in-memory and readable only
+		// through the admin-authenticated /flows surface (#241).
+		//
 		// Policy reconciliation rides along with the flow view; the acl and users
 		// collectors fill this in as they run (see registerCollectors), and the
 		// processor reads it per connection. Until the first ACL lands it holds no

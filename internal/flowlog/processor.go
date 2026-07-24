@@ -17,7 +17,6 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 )
 
 // Exported metric names emitted by the processor.
@@ -105,10 +104,6 @@ type Options struct {
 	// metrics — after de-duplication, so it sees each connection exactly once —
 	// and its Record must never block or fail (see the flowstore package doc).
 	Store Recorder
-	// StorePII gates which identifiers reach Store. The store sits BEHIND the
-	// emitter's redactor, so without this the admin page would show identifiers
-	// the operator has switched off for telemetry. A nil map disables nothing.
-	StorePII pii.Categories
 	// Policy, when non-nil, supplies the tailnet's compiled network policy, and
 	// every policy-governed connection is reconciled against it as it is
 	// processed. The verdict rides on the Observation, so it has no effect
@@ -164,10 +159,8 @@ type Processor struct {
 	// exitNode enables per-exit-node IO/packets attribution (Options.ExitNodeAttribution).
 	exitNode bool
 	// store receives one observation per connection for the admin flow view; nil
-	// when the view is disabled. storeRedact applies the PII policy to what
-	// reaches it, and is nil when nothing is disabled (the fast path).
-	store       Recorder
-	storeRedact *pii.Redactor
+	// when the view is disabled.
+	store Recorder
 	// policy supplies the compiled network policy each connection is reconciled
 	// against; nil when reconciliation is off.
 	policy PolicySource
@@ -200,9 +193,6 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		exitNode:     opts.ExitNodeAttribution,
 		store:        opts.Store,
 		policy:       opts.Policy,
-	}
-	if opts.Store != nil {
-		p.storeRedact = pii.New(opts.StorePII)
 	}
 	if flowMode == flowModeRollup || flowMode == flowModeBoth {
 		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims)
@@ -464,38 +454,19 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 
 // observation builds the flow-store view of one connection.
 //
-// Everything in it that could identify a person or a device passes through the
-// SAME redactor the emitter applies to telemetry, because the store sits behind
-// the emitter and would otherwise let the admin page display an identifier the
-// operator switched off in pii_filter. A redacted field becomes empty, which the
-// store already interprets as "the record did not carry this" — so it degrades
-// into the absent-endpoint handling that already exists rather than needing a
-// second notion of missing.
+// It carries the identity the record carried, unfiltered. pii_filter governs the
+// telemetry this process EXPORTS — what reaches a third-party backend. The store
+// is in memory, never leaves the process, and is readable only through the
+// admin-authenticated /flows surface, so an operator who has narrowed what they
+// send onward still sees their own tailnet in full here (#241). An empty field
+// therefore means one thing only: the record did not carry it.
 func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionCounts,
 	transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string,
 ) flowstore.Observation {
-	// Resolved once and used for both the identity attributes and the policy
+	// Resolved once and used for both the identity fields and the policy
 	// evaluation below: refByAddr walks the record's embedded node blocks, so a
 	// second lookup per endpoint would be pure repeated work on the emit path.
 	srcRef, dstRef := flow.refByAddr(srcAddr), flow.refByAddr(dstAddr)
-
-	// The endpoints are classified by their bare address (that is what the
-	// redactor knows how to grade), but retained with their ports.
-	ident := telemetry.Attrs{}
-	if srcNode != "" {
-		ident[semconv.AttrSrcNode] = srcNode
-	}
-	if dstNode != "" {
-		ident[semconv.AttrDstNode] = dstNode
-	}
-	if cc.Src != "" {
-		ident[semconv.SourceAddress] = srcAddr
-	}
-	if cc.Dst != "" {
-		ident[semconv.DestinationAddress] = dstAddr
-	}
-	addIdentityAttrs(ident, srcRef, dstRef)
-	kept := telemetry.Attrs(p.storeRedact.Merge(ident))
 
 	verdict, rule, reversed := p.reconcile(trafficType, transport, srcRef, dstRef, srcAddr, srcPort, dstAddr, dstPort)
 
@@ -503,19 +474,17 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 		Time:        logTimestamp(flow),
 		TrafficType: trafficType,
 		Transport:   transport,
-		DstPort:     dstPort,
-		DstService:  dstService,
-		SrcNode:     attrString(kept, semconv.AttrSrcNode),
-		DstNode:     attrString(kept, semconv.AttrDstNode),
-		SrcUser:     attrString(kept, semconv.AttrSrcUser),
-		DstUser:     attrString(kept, semconv.AttrDstUser),
-		SrcTags:     attrString(kept, semconv.AttrSrcTags),
-		DstTags:     attrString(kept, semconv.AttrDstTags),
-		SrcOS:       attrString(kept, semconv.AttrSrcOS),
-		DstOS:       attrString(kept, semconv.AttrDstOS),
-		Verdict:     verdict,
-		Rule:        rule,
-		Reversed:    reversed,
+		// The endpoints keep their ports; the nodes are the already-resolved
+		// names, empty for an endpoint the record did not carry at all.
+		SrcAddr:    cc.Src,
+		DstAddr:    cc.Dst,
+		DstPort:    dstPort,
+		DstService: dstService,
+		SrcNode:    srcNode,
+		DstNode:    dstNode,
+		Verdict:    verdict,
+		Rule:       rule,
+		Reversed:   reversed,
 		Counts: flowstore.Counts{
 			TxBytes: cc.TxBytes,
 			RxBytes: cc.RxBytes,
@@ -524,14 +493,22 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 			Flows:   1,
 		},
 	}
-	// Keep the full "addr:port" only when the address itself survived redaction.
-	if attrString(kept, semconv.SourceAddress) != "" {
-		o.SrcAddr = cc.Src
+	if srcRef != nil {
+		o.SrcUser, o.SrcTags, o.SrcOS = srcRef.User, joinTags(srcRef.Tags), srcRef.OS
 	}
-	if attrString(kept, semconv.DestinationAddress) != "" {
-		o.DstAddr = cc.Dst
+	if dstRef != nil {
+		o.DstUser, o.DstTags, o.DstOS = dstRef.User, joinTags(dstRef.Tags), dstRef.OS
 	}
 	return o
+}
+
+// joinTags renders a node block's tags the way every other surface does. An
+// empty list yields an empty string, which the store reads as "untagged".
+func joinTags(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return strings.Join(tags, ",")
 }
 
 // reconcile decides what the tailnet's network policy says about one
@@ -616,13 +593,6 @@ func parsePort(s string) (uint16, bool) {
 	return uint16(v), true
 }
 
-// attrString reads a string attribute, yielding "" when the key was redacted
-// away or never present.
-func attrString(attrs telemetry.Attrs, key string) string {
-	s, _ := attrs[key].(string)
-	return s
-}
-
 // addIdentityAttrs adds the per-flow endpoint identity (user, tags, OS) carried
 // by the record's embedded srcNode/dstNodes blocks. Each attribute is omitted
 // when the corresponding ref is absent or does not carry that field — the
@@ -636,8 +606,8 @@ func addIdentityAttrs(attrs telemetry.Attrs, src, dst *NodeRef) {
 		if ref.User != "" {
 			attrs[userKey] = ref.User
 		}
-		if len(ref.Tags) > 0 {
-			attrs[tagsKey] = strings.Join(ref.Tags, ",")
+		if tags := joinTags(ref.Tags); tags != "" {
+			attrs[tagsKey] = tags
 		}
 		if ref.OS != "" {
 			attrs[osKey] = ref.OS

@@ -73,21 +73,27 @@ exceptions:
 - With no token, both are served only on a **loopback** `admin.listen`. On any other bind they are
   refused with HTTP 403 — the same fail-closed behaviour as the status page.
 
-This matters more here than elsewhere: the page shows device names, addresses, and (unless you have
-turned it off) the user each device belongs to.
+This matters more here than elsewhere: the page shows device names, addresses, and the user each
+device belongs to, unfiltered — see [Privacy](#privacy).
 
 ## Privacy
 
-The store sits behind the OTLP redactor rather than in front of it, so it applies your
-[`pii_filter`](configuration.md#pii_filter-pii-identifier-redaction) policy **itself**. Switching a
-category off removes it from the view as well as from your telemetry:
+**`/flows` shows what the flow record carried, in full.
+[`pii_filter`](configuration.md#pii_filter-pii-identifier-redaction) does not apply to it.**
 
-| `pii_filter` key | Effect on `/flows` |
-|---|---|
-| `emails: false` | The users breakdown empties; no user is attached to any flow. |
-| `hostnames: false` | Device names disappear; the topology graph has nothing left to draw. |
-| `tailscale_ips: false` | The recent-connections list loses its raw endpoints; ports and services stay. |
-| `external_ips: false` | External addresses are dropped from the connection list. |
+That filter governs the telemetry this process **exports** — what reaches your OTLP backend, and
+whoever can read it. The flow store is a different thing: in memory, never written anywhere, never
+sent anywhere, and readable only through the admin-authenticated surface above. Narrowing what you
+send onward is not a request to be blinded to your own tailnet, so `emails: false` still leaves the
+users breakdown populated here, and `hostnames: false` still leaves the topology graph drawn.
+
+The consequence to be aware of: **the admin token is what protects this data**, on its own. Anyone
+you hand it to can see every device name, address and user the control plane reported, whatever your
+`pii_filter` says. If that is wider than you want, the answer is the token, not the filter.
+
+> **This changed.** The view previously applied `pii_filter`, so an operator who had switched a
+> category off for their backend found it missing here too. See the changelog entry for the release
+> that carries it.
 
 ## What the identity matrix can show
 
@@ -170,11 +176,9 @@ Known limits, which the section reports honestly rather than guessing around:
 - **`ip: ["*"]` covers every protocol**, including ICMP — it is a wildcard over protocol as well as
   port. A *bare* port number is what implies tcp/udp only.
 
-Reconciliation reads the identity the flow record carried, before `pii_filter` runs over it. The filter
-governs what the process discloses, and a verdict discloses nothing about an endpoint; deriving it from
-redacted input would quietly turn a privacy setting into wrong findings. What the page *says about* an
-unexplained relationship still comes from the filtered fields, so an endpoint you have chosen not to
-expose appears as `unidentified`.
+Reconciliation reads the identity the flow record carried — the same identity the rest of the page
+shows, and for the same reason (see [Privacy](#privacy)). An endpoint the record carried nothing
+identifying for appears as `unidentified`.
 
 ## Limits worth knowing
 

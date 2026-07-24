@@ -756,6 +756,11 @@ Tailscale IPs, for example.
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
 > category to `false` simply omits that class of identifier from emitted telemetry entirely.
 
+> **Scope: exported telemetry only.** These toggles do not apply to the admin server's own
+> surfaces. In particular the [flow view](flow-view.md) shows device names, addresses and users in
+> full regardless of what is set here — it is local, in-memory introspection behind the admin
+> token, not something the process sends anywhere.
+
 > **`host:port` values are classified by their address, not their string shape.** Some IP-valued
 > attributes — notably the node-metrics identity default `tailscale.node` — can appear as `host:port`
 > (`100.64.0.1:5252`) or bracketed IPv6 (`[fd7a:115c:a1e0::1]:5252`). These are classified by the

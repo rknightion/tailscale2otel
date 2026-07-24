@@ -8,6 +8,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v2/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v2/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v2/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v2/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v2/internal/telemetrytest"
 )
@@ -86,75 +87,57 @@ func TestProcess_StoreCarriesEndpointIdentity(t *testing.T) {
 	}
 }
 
-// The store bypasses the emitter, so it bypasses the emitter's PII redaction
-// too. It must apply the same policy itself, or switching a category off would
-// hide an identifier from the backend while leaving it on the admin page.
-func TestProcess_StoreHonoursPIIFilter(t *testing.T) {
-	tests := []struct {
-		name  string
-		cats  pii.Categories
-		check func(*testing.T, flowstore.Observation)
-	}{
-		{
-			name: "emails off drops the user, keeps everything else",
-			cats: pii.Categories{pii.CatEmails: false},
-			check: func(t *testing.T, o flowstore.Observation) {
-				if o.DstUser != "" {
-					t.Errorf("DstUser = %q, want empty with emails disabled", o.DstUser)
-				}
-				if o.DstNode == "" || o.DstOS == "" || o.SrcTags == "" {
-					t.Errorf("non-email identity was collaterally dropped: %+v", o)
-				}
-			},
-		},
-		{
-			name: "hostnames off drops the resolved node names",
-			cats: pii.Categories{pii.CatHostnames: false},
-			check: func(t *testing.T, o flowstore.Observation) {
-				if o.SrcNode != "" || o.DstNode != "" {
-					t.Errorf("nodes = %q/%q, want both empty with hostnames disabled", o.SrcNode, o.DstNode)
-				}
-				if o.DstUser == "" {
-					t.Errorf("DstUser was collaterally dropped: %+v", o)
-				}
-			},
-		},
-		{
-			name: "tailscale ips off drops the raw endpoints",
-			cats: pii.Categories{pii.CatTailscaleIPs: false},
-			check: func(t *testing.T, o flowstore.Observation) {
-				if o.SrcAddr != "" || o.DstAddr != "" {
-					t.Errorf("raw endpoints = %q/%q, want both empty", o.SrcAddr, o.DstAddr)
-				}
-				// The port is not the address and stays: it is what the ports table
-				// ranks, and it identifies a service, not a device.
-				if o.DstPort != "51820" {
-					t.Errorf("DstPort = %q, want it retained", o.DstPort)
-				}
-			},
-		},
-		{
-			name: "everything enabled leaves the observation intact",
-			cats: pii.Categories{},
-			check: func(t *testing.T, o flowstore.Observation) {
-				if o.SrcNode == "" || o.DstUser == "" || o.SrcAddr == "" {
-					t.Errorf("observation was redacted with no category disabled: %+v", o)
-				}
-			},
-		},
+// The two paths out of one connection are governed by different rules, and this
+// is where they part company (#241).
+//
+// pii_filter controls what this process EXPORTS: the emitter redacts, so a
+// category switched off never reaches the backend. The flow store is local,
+// in-memory, and readable only through the admin-authenticated /flows surface,
+// so it keeps what the record carried — an operator who has narrowed what they
+// send onward has not asked to be blinded to their own tailnet.
+//
+// One processor, one record, one emitter with every identifying category
+// disabled: the emitted telemetry loses the identity, the observation keeps it.
+func TestProcess_StoreShowsIdentityTheEmitterRedacts(t *testing.T) {
+	p, fs := storeProcessor(t, flowlog.Options{})
+	rec := telemetrytest.NewWithPII(pii.Categories{
+		pii.CatEmails:       false,
+		pii.CatHostnames:    false,
+		pii.CatTailscaleIPs: false,
+	})
+
+	p.Process(decodeLiveRecord(t), rec.Emitter())
+
+	// The exported side, still filtered.
+	recs := rec.LogRecords()
+	if len(recs) != 1 {
+		t.Fatalf("got %d log records, want 1", len(recs))
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			p, fs := storeProcessor(t, flowlog.Options{StorePII: tc.cats})
-			rec := telemetrytest.New()
+	for _, key := range []string{
+		semconv.AttrDstUser, semconv.AttrSrcNode, semconv.AttrDstNode,
+		semconv.SourceAddress, semconv.DestinationAddress,
+	} {
+		if got, ok := recs[0].Attrs[key]; ok {
+			t.Errorf("emitted %s = %v, want it redacted out of exported telemetry", key, got)
+		}
+	}
 
-			p.Process(decodeLiveRecord(t), rec.Emitter())
-
-			if len(fs.got) != 1 {
-				t.Fatalf("store received %d observations, want 1", len(fs.got))
-			}
-			tc.check(t, fs.got[0])
-		})
+	// The local side, in full.
+	if len(fs.got) != 1 {
+		t.Fatalf("store received %d observations, want 1", len(fs.got))
+	}
+	o := fs.got[0]
+	if o.DstUser != "rob@example.com" {
+		t.Errorf("DstUser = %q, want it shown to the admin in full", o.DstUser)
+	}
+	if o.SrcNode != "camden" || o.DstNode != "mbp16" {
+		t.Errorf("nodes = %q/%q, want camden/mbp16", o.SrcNode, o.DstNode)
+	}
+	if o.SrcAddr != "100.64.0.1:443" || o.DstAddr != "100.64.0.2:51820" {
+		t.Errorf("raw endpoints = %q/%q, want both kept", o.SrcAddr, o.DstAddr)
+	}
+	if o.SrcTags != "tag:servers,tag:sshrecorder" || o.DstOS != "macOS" {
+		t.Errorf("tags/os = %q/%q, want both kept", o.SrcTags, o.DstOS)
 	}
 }
 
