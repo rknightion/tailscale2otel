@@ -11,13 +11,23 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/jsonbudget"
 )
+
+// maxDrainBytes caps the post-request body drain (see getJSON).
+const maxDrainBytes = 64 << 10
 
 // Options configures the Headscale client.
 type Options struct {
 	URL     string        // control-plane base URL, e.g. https://hs.example.org
 	APIKey  string        // Bearer token
 	Timeout time.Duration // per-request timeout (0 = no client timeout)
+
+	// MaxResponseBytes bounds a single successful JSON response body before it
+	// is decoded. Zero uses defaultMaxResponseBytes. See limit.go for the sizing
+	// evidence and the tuning constraint.
+	MaxResponseBytes int64
 }
 
 // Client talks to a Headscale server.
@@ -25,16 +35,30 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+
+	// maxResponseBytes is the response decode byte budget, resolved once in
+	// NewClient (#488).
+	maxResponseBytes int64
 }
 
 // NewClient builds a Headscale client from opts.
 func NewClient(opts Options) *Client {
+	maxBytes := opts.MaxResponseBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxResponseBytes
+	}
 	return &Client{
-		baseURL: strings.TrimRight(opts.URL, "/"),
-		apiKey:  opts.APIKey,
-		http:    &http.Client{Timeout: opts.Timeout},
+		baseURL:          strings.TrimRight(opts.URL, "/"),
+		apiKey:           opts.APIKey,
+		http:             &http.Client{Timeout: opts.Timeout},
+		maxResponseBytes: maxBytes,
 	}
 }
+
+// budget is the decode budget applied to every endpoint. Headscale exposes only
+// snapshot resources, so there is a single tier (unlike tsapi's snapshot/log
+// split).
+func (c *Client) budget() jsonbudget.Budget { return budgetOf(c.maxResponseBytes) }
 
 // getJSON performs an authenticated GET of path and decodes JSON into out.
 func (c *Client) getJSON(ctx context.Context, path string, out any) error {
@@ -48,12 +72,25 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+	// Drain a BOUNDED remainder before closing so the connection stays reusable.
+	// The bound is the point: after a budget violation (or a truncated non-200
+	// read) the rest of the body may be endless, and an unbounded drain would
+	// keep pulling it until the client timeout — 30s of wasted bandwidth per poll
+	// on a body already rejected. 64 KiB comfortably covers a real leftover.
+	defer func() { _, _ = io.CopyN(io.Discard, resp.Body, maxDrainBytes); _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("headscale GET %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	return decodeJSONLimited(resp.Body, maxResponseBytes, out)
+	budget := c.budget()
+	// Content-Length, when the upstream declares one, lets an over-budget body be
+	// rejected before a single byte of it is read. It is advisory (absent on a
+	// chunked response, where ContentLength is -1), so the streaming budget below
+	// remains the real control.
+	if resp.ContentLength > budget.MaxBytes {
+		return budget.ByteCeilingError()
+	}
+	return jsonbudget.Decode(resp.Body, budget, out)
 }
 
 // Nodes lists all nodes (GET /api/v1/node).

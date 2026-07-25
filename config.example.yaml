@@ -35,6 +35,12 @@ headscale:
       base_delay: 0s
       max_delay: 0s
     rate_limit: 0
+  max_response_bytes: 4194304         # cap (4 MiB) on ONE Headscale API response body before decoding; ~5800 nodes at ~715 B each — raise it (and the container memory limit) on a bigger deployment, these endpoints are not paginated
+# The budget bounds the exporter's peak decode memory. Decoding costs SEVERAL TIMES
+# the wire size, so keep it well under the deployment's memory limit (Helm default:
+# 256Mi). The structural budgets (nesting depth 64, single string 4 MiB, array
+# elements 500000) are fixed in code and shared with the Tailscale client — no real
+# Headscale response comes close to them.
 # Tip: to scrape Headscale's own SERVER metrics (the control plane, default :9090 —
 # NOT a per-node tailscaled :5252 endpoint), add it as a static node_metrics target:
 #   node_metrics:

@@ -30,6 +30,15 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
   `InitialLookback` (cold start) and `MaxWindow` (cap a long catch-up). The Tailscale window is
   **inclusive on both ends**, so boundary records repeat across ticks — window collectors hold a bounded
   `dedup.Set` to suppress the overlap.
+- **The atomic write lives in `atomicfile.go`, not `checkpoint.go`** — `writeFileAtomic` stages through
+  an `os.CreateTemp` file (`O_CREATE|O_EXCL`, randomized name, in the destination directory so the
+  rename stays same-filesystem), fsyncs the file then the parent directory, and cleans up only the file
+  that call created. Do not "simplify" it back to a predictable `<path>.tmp`: that path could be
+  pre-placed as a symlink and followed, and two concurrent savers sharing one name lose a checkpoint
+  outright (#471). `NewFileStore` sweeps staging files older than `stagingFileMaxAge` (1 hour) that a
+  hard kill orphaned (#491) — writer and sweeper derive names from the one `stagingNameBounds` helper,
+  so they cannot drift apart. The sweep is `Lstat`-based and never follows a symlink; `writeAndSync`
+  and `readDirForSweep` are package vars purely so tests can inject failures.
 - `selfobs.go` emits the framework `tailscale2otel.scrape.*` metrics (duration, success, errors, last
   timestamp), tagged with the `tailscale.collector` attribute, after every tick — classifying errors
   as `panic`/`timeout`/`error`.

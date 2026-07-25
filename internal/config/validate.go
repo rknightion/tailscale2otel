@@ -49,6 +49,7 @@ func (c *Config) Warnings() []string {
 	}{
 		{"tailscale.max_response_bytes", c.Tailscale.MaxResponseBytes},
 		{"tailscale.max_log_response_bytes", c.Tailscale.MaxLogResponseBytes},
+		{"headscale.max_response_bytes", c.Headscale.MaxResponseBytes},
 	} {
 		if b.val > budgetAdvisoryBytes {
 			w = append(w, fmt.Sprintf("%s=%d bytes: decoding a JSON body costs several times its wire "+
@@ -454,6 +455,13 @@ func (c *Config) Validate() error {
 		}
 		if c.Headscale.APIKey == "" {
 			return fmt.Errorf("headscale.api_key: required when provider=headscale (set TS2OTEL_HEADSCALE__API_KEY)")
+		}
+		// Response decode budget (#488). Zero/negative would mean "no body may be
+		// decoded at all", which silently breaks every collector, so reject it here
+		// rather than at the first poll.
+		if c.Headscale.MaxResponseBytes <= 0 {
+			return fmt.Errorf("headscale.max_response_bytes must be > 0 (bytes); it caps a single " +
+				"Headscale API response body before decoding")
 		}
 	}
 

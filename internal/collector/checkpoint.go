@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -75,8 +77,15 @@ type fileStore struct {
 
 // NewFileStore returns a file-backed checkpoint store, loading any existing
 // checkpoints from path. A missing file is not an error (starts empty).
+//
+// Opening the store is also where the staging-file sweep runs (#491): this is
+// the only place a file-backed store comes into existence, the app builds one
+// exactly once per process at startup (internal/app.checkpointStore), and it
+// happens before this store has written anything, so the sweep can never race a
+// save of its own. Its outcome does not gate the store — see sweepStagingFiles.
 func NewFileStore(path string) (CheckpointStore, error) {
 	fs := &fileStore{path: path, m: map[string]time.Time{}}
+	sweepStagingFiles(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -92,6 +101,24 @@ func NewFileStore(path string) (CheckpointStore, error) {
 		}
 	}
 	return fs, nil
+}
+
+// sweepStagingFiles reclaims staging files orphaned by a previous hard kill and
+// logs what happened. It returns nothing on purpose: an unreadable or
+// unwritable checkpoint directory must not block startup, matching how the rest
+// of the checkpoint path degrades (an unwritable directory already falls back
+// to in-memory checkpoints rather than failing). Worst case the leaked files
+// stay leaked, which is exactly today's behavior.
+func sweepStagingFiles(path string) {
+	removed, err := sweepStaleStagingFiles(path)
+	if err != nil {
+		slog.Default().Warn("could not sweep stale checkpoint staging files; any files left by a previous hard kill will remain",
+			"dir", filepath.Dir(path), "error", err)
+	}
+	if removed > 0 {
+		slog.Default().Info("removed stale checkpoint staging files left behind by a previous hard kill",
+			"dir", filepath.Dir(path), "removed", removed, "older_than", stagingFileMaxAge)
+	}
 }
 
 func (s *fileStore) Get(name string) (time.Time, bool) {

@@ -106,7 +106,7 @@ func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
 	if failed {
 		errAttrs := telemetry.Attrs{
 			semconv.AttrCollector: res.collector,
-			"error.type":          scrapeErrorType(res.err, res.panicked),
+			semconv.AttrErrorType: scrapeErrorType(res.err, res.panicked),
 		}
 		e.Counter(docScrapeErrors.Name, docScrapeErrors.Unit, docScrapeErrors.Description, 1, errAttrs)
 	}

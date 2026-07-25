@@ -66,7 +66,7 @@ func (c *Client) getJSONBudgeted(ctx context.Context, urlStr string, budget deco
 	// chunked response, where ContentLength is -1), so the streaming budget below
 	// remains the real control.
 	if resp.ContentLength > budget.MaxBytes {
-		return &BudgetError{Limit: BudgetLimitBytes, Max: budget.MaxBytes, ConfigKey: budget.ConfigKey, sentinel: ErrResponseTooLarge}
+		return budget.ByteCeilingError()
 	}
 	return decodeJSONBudgeted(resp.Body, budget, out)
 }

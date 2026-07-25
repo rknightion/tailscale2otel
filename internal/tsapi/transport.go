@@ -68,9 +68,11 @@ type RequestInfo struct {
 	Err          string // transport error text, "" when an HTTP response was received
 }
 
-// retryTransport retries 429 and 5xx responses (and transport errors) with
-// exponential backoff, honoring Retry-After. Safe for the idempotent, bodyless
-// GETs used by this package.
+// retryTransport retries 429 and 5xx responses, and transport errors that
+// classifyTransportError judges retryable, with exponential backoff, honoring
+// Retry-After. A terminal transport error — most importantly a token endpoint
+// answering 401/403 — costs exactly one attempt (#489). Safe for the
+// idempotent, bodyless GETs used by this package. See retryableOutcome.
 type retryTransport struct {
 	base      http.RoundTripper
 	max       int
@@ -253,7 +255,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			attemptReq.Body = body
 		}
 		resp, err = t.base.RoundTrip(attemptReq)
-		retryable := err != nil || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+		retryable := retryableOutcome(resp, err)
 		if !retryable || attempt >= t.max {
 			t.logFinal(req, resp, err, attempt)
 			if cancel != nil {
@@ -297,6 +299,40 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		delay = next
 	}
+}
+
+// retryableOutcome decides whether one attempt's outcome is worth another try.
+//
+// HTTP responses keep the original rule unchanged (#489): 429 and 5xx are
+// transient, every other status is final. The retry loop never second-guesses a
+// status the server actually returned.
+//
+// Transport errors — no HTTP response at all — defer to classifyTransportError's
+// Retryable judgement instead of the old "err != nil, so retry" blanket. That
+// blanket meant an OAuth token fetch rejected with 401/403 (wrong client
+// credentials, revoked client) was retried max_attempts times with full backoff
+// on every collector tick, even though the transport already knew the failure
+// was terminal and said so in the error_retryable log field (#489). Only errors
+// the classifier judges terminal stop early:
+//
+//   - oauth_* with a non-429, sub-500 token-endpoint status, or an RFC 6749
+//     error code — the endpoint rejected the grant; a replay is rejected too.
+//   - redirect_refused — the redirect policy's verdict (#466/#467) is a pure
+//     function of the response, so retrying reproduces it exactly.
+//   - canceled — the parent context is gone. This already cost exactly one
+//     attempt (the backoff select fires on spanCtx.Done() immediately); the
+//     only change is that the misleading "retrying" DEBUG record is gone.
+//
+// Everything transient stays retryable: network errors, timeouts (including the
+// per-attempt deadline from attemptTimeout), and 429/5xx from the token
+// endpoint. An error the classifier cannot place falls through to the network
+// class, which is retryable — unrecognized means "might be transient", never
+// "terminal".
+func retryableOutcome(resp *http.Response, err error) bool {
+	if err != nil {
+		return classifyTransportError(err).Retryable
+	}
+	return resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
 }
 
 // observe finalizes the span for a completed logical request (sets attributes,
@@ -399,10 +435,14 @@ const maxDiagnosticMessage = 200
 // stable class, the token-endpoint status when there was one, a retryability
 // judgement, and a message safe to log at any level (#468).
 //
-// Retryable is a CLASSIFICATION, not the retry loop's decision — retryTransport
-// still retries on its own status/error rule (any transport error is retried).
-// It is reported so an operator reading a retry log can tell "this will not
-// improve by trying again" (a 401 from the token endpoint) from "transient".
+// Retryable is AUTHORITATIVE for the retry loop's transport-error path as of
+// #489: retryTransport asks retryableOutcome, which returns this field verbatim
+// whenever there is no HTTP response, so a 401 from the token endpoint stops
+// after one attempt instead of burning max_attempts of backoff per collector
+// tick. It is still reported as the error_retryable log field so an operator
+// reading a log can tell "this will not improve by trying again" from
+// "transient" — the field and the behavior can no longer disagree. HTTP
+// responses do NOT consult it (429/5xx retry, everything else is final).
 type transportDiagnostic struct {
 	Class     string
 	Status    int

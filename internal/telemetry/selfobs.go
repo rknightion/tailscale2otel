@@ -41,10 +41,10 @@ func InstallExportErrorHandler(e Emitter, logger *slog.Logger) (restore func()) 
 			return
 		}
 		if logger != nil {
-			logger.Warn("OTLP export failed", "error.type", errorType(err), "error", err)
+			logger.Warn("OTLP export failed", semconv.AttrErrorType, errorType(err), "error", err)
 		}
 		e.Counter(docExportFailures.Name, docExportFailures.Unit, docExportFailures.Description, 1, Attrs{
-			"error.type": errorType(err),
+			semconv.AttrErrorType: errorType(err),
 		})
 	}))
 	return func() { otel.SetErrorHandler(prev) }

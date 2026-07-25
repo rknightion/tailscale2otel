@@ -1,8 +1,9 @@
 package tsapi
 
 import (
-	"errors"
 	"io"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/jsonbudget"
 )
 
 // Byte budgets for a single successful (2xx) Tailscale API JSON response body,
@@ -33,25 +34,14 @@ const (
 	defaultMaxLogResponseBytes = 32 << 20 // 32 MiB — bulk log pulls (flow logs, audit logs)
 )
 
-// Structural decode budgets. These are NOT operator-tunable: they exist to stop
-// a degenerate-but-syntactically-valid body from forcing a large allocation long
-// before the byte ceiling is reached, and every one of them is orders of
-// magnitude above anything the real API emits.
-//
-//   - maxDecodeDepth: the deepest live payload measured is the rich device list
-//     at 7 levels (.capture/devices-rich-live-20260713.json); 64 is ~9x that and
-//     bounds a `[[[[...` nesting bomb.
-//   - maxDecodeStringBytes: the largest realistic single string is an audit
-//     old/new value carrying a whole tailnet policy file; 4 MiB is far past any
-//     hand-written ACL. Live captures top out at 645 bytes.
-//   - maxDecodeArrayElements: bounds the cheapest attack per byte — `[0,0,0,…]`
-//     is 2 bytes per element on the wire but ~16 bytes per element decoded, so
-//     without this a 32 MiB body expands to a ~256 MiB slice. 500,000 is ~40x
-//     the ~12,000 flow-log records the byte budget allows.
+// Structural decode budgets. These are NOT operator-tunable and are shared with
+// internal/hsapi via internal/jsonbudget — see that package for the per-limit
+// sizing evidence. maxDecodeArrayElements at 500,000 is ~40x the ~12,000
+// flow-log records the byte budget allows.
 const (
-	maxDecodeDepth         = 64
-	maxDecodeStringBytes   = 4 << 20 // 4 MiB
-	maxDecodeArrayElements = 500_000
+	maxDecodeDepth         = jsonbudget.DefaultMaxDepth
+	maxDecodeStringBytes   = jsonbudget.DefaultMaxStringBytes
+	maxDecodeArrayElements = jsonbudget.DefaultMaxArrayElements
 )
 
 // Config keys behind the two byte budgets, quoted back in BudgetError so an
@@ -64,7 +54,11 @@ const (
 // ErrResponseTooLarge is returned when a successful response body exceeds the
 // endpoint's byte budget. Callers can errors.Is against it to distinguish
 // "upstream sent too much" from an ordinary malformed-JSON decode error.
-var ErrResponseTooLarge = errors.New("tsapi: response body exceeds maximum allowed size")
+//
+// It is the shared jsonbudget sentinel, so errors.Is keeps working unchanged for
+// every existing caller; the *BudgetError wrapping it still names "tsapi" and
+// the config key to raise.
+var ErrResponseTooLarge = jsonbudget.ErrTooLarge
 
 // ErrResponseTooComplex is returned when a successful response body stays under
 // its byte budget but violates a structural budget (nesting depth, single-string
@@ -72,7 +66,7 @@ var ErrResponseTooLarge = errors.New("tsapi: response body exceeds maximum allow
 // because the remedy differs: a too-large body may just be a big tailnet
 // (raise the key named in the error), whereas a too-complex one is not shaped
 // like anything the Tailscale API emits.
-var ErrResponseTooComplex = errors.New("tsapi: response JSON exceeds structural decode budget")
+var ErrResponseTooComplex = jsonbudget.ErrTooComplex
 
 // decodeJSONLimited decodes a single JSON value from r into out under the
 // default structural budgets and an explicit byte ceiling. It is the

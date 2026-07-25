@@ -105,3 +105,76 @@ func TestWarningsFlagsOversizedDecodeBudget(t *testing.T) {
 		}
 	}
 }
+
+// ── headscale.max_response_bytes (#488) ─────────────────────────────────────────
+// The Headscale client had the same post-hoc decode cap tsapi did, hard-coded at
+// 32 MiB. It follows the tailscale.max_response_bytes precedent exactly:
+// fleet-wide, validated > 0, advisory above 64 MiB, settable from the
+// environment as TS2OTEL_HEADSCALE__MAX_RESPONSE_BYTES.
+
+func TestDefaultHeadscaleDecodeBudget(t *testing.T) {
+	c := config.Default()
+	if got, want := c.Headscale.MaxResponseBytes, int64(4<<20); got != want {
+		t.Fatalf("headscale.max_response_bytes default = %d, want %d", got, want)
+	}
+}
+
+func TestValidateRejectsNonPositiveHeadscaleDecodeBudget(t *testing.T) {
+	for _, v := range []int64{0, -1} {
+		c := config.Default()
+		c.Provider = "headscale"
+		c.Headscale.URL = "https://headscale.example.org"
+		c.Headscale.APIKey = "k"
+		c.Headscale.MaxResponseBytes = v
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), "headscale.max_response_bytes") {
+			t.Fatalf("MaxResponseBytes=%d: Validate() = %v, want an error naming headscale.max_response_bytes", v, err)
+		}
+	}
+}
+
+// A non-positive value is only rejected under provider: headscale, mirroring how
+// the tailscale budgets are only checked under provider: tailscale — an unused
+// block must not block startup.
+func TestValidateIgnoresHeadscaleDecodeBudgetUnderTailscaleProvider(t *testing.T) {
+	c := config.Default()
+	c.Tailscale.Auth.Method = "apikey"
+	c.Tailscale.Auth.APIKey = "k"
+	c.Headscale.MaxResponseBytes = 0
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v, want nil (headscale block unused under provider: tailscale)", err)
+	}
+}
+
+func TestWarningsFlagsOversizedHeadscaleDecodeBudget(t *testing.T) {
+	c := config.Default()
+	c.Provider = "headscale"
+	c.Headscale.URL = "https://headscale.example.org"
+	c.Headscale.APIKey = "k"
+	c.Headscale.MaxResponseBytes = 512 << 20
+	var found bool
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "headscale.max_response_bytes") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Warnings() = %v, want an advisory about headscale.max_response_bytes", c.Warnings())
+	}
+	for _, w := range config.Default().Warnings() {
+		if strings.Contains(w, "headscale.max_response_bytes") {
+			t.Fatalf("default config warned about the headscale decode budget: %s", w)
+		}
+	}
+}
+
+func TestHeadscaleDecodeBudgetFromEnv(t *testing.T) {
+	t.Setenv("TS2OTEL_HEADSCALE__MAX_RESPONSE_BYTES", "8388608")
+	c, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := c.Headscale.MaxResponseBytes, int64(8<<20); got != want {
+		t.Fatalf("headscale.max_response_bytes = %d, want %d (TS2OTEL_HEADSCALE__MAX_RESPONSE_BYTES)", got, want)
+	}
+}

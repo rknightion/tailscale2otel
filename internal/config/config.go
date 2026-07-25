@@ -244,6 +244,15 @@ type HeadscaleConfig struct {
 	// surrounding whitespace before use.
 	APIKeyFile string              `yaml:"api_key_file"`
 	HTTP       TailscaleHTTPConfig `yaml:"http"` // reuse the same timeout/retry/rate_limit shape
+	// MaxResponseBytes bounds a single successful JSON response body before it
+	// is decoded, capping the exporter's peak decode memory (#488 — the Headscale
+	// client had the same post-hoc cap #474 removed from the Tailscale one).
+	// Fleet-wide, like tailscale.max_response_bytes: a process-memory safety
+	// budget, not per-endpoint connection policy. Headscale exposes only snapshot
+	// resources (no bulk log pull), so there is a single budget rather than the
+	// snapshot/log pair. See internal/hsapi/limit.go for the sizing evidence and
+	// the per-deployment tuning constraint.
+	MaxResponseBytes int64 `yaml:"max_response_bytes"`
 }
 
 // TailscaleConfig holds Tailscale API connection settings.

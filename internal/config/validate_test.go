@@ -887,6 +887,10 @@ func TestValidateHeadscaleRequiresURLAndKey(t *testing.T) {
 	}
 	c.Headscale.URL = "https://hs.example.org"
 	c.Headscale.APIKey = "k"
+	// The wipe above also zeroed max_response_bytes, which Validate rejects on
+	// its own (#488) — restore the default so this test still exercises only the
+	// url/api_key requirement it is named for.
+	c.Headscale.MaxResponseBytes = config.Default().Headscale.MaxResponseBytes
 	if err := c.Validate(); err != nil {
 		t.Fatalf("valid headscale config should pass: %v", err)
 	}

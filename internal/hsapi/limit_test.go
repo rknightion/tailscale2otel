@@ -13,7 +13,7 @@ import (
 
 // infiniteByteReader yields an endless stream of the same byte without
 // pre-allocating a large buffer, so tests can prove boundedness against the
-// real (32 MiB) cap cheaply.
+// real cap cheaply.
 type infiniteByteReader struct{ b byte }
 
 func (r infiniteByteReader) Read(p []byte) (int, error) {
@@ -44,7 +44,7 @@ func TestDecodeJSONLimited_NormalResponseUnchanged(t *testing.T) {
 	var out struct {
 		Nodes []string `json:"nodes"`
 	}
-	err := decodeJSONLimited(strings.NewReader(`{"nodes":["a","b"]}`), maxResponseBytes, &out)
+	err := decodeJSONLimited(strings.NewReader(`{"nodes":["a","b"]}`), defaultMaxResponseBytes, &out)
 	if err != nil {
 		t.Fatalf("decodeJSONLimited: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestDecodeJSONLimited_NormalResponseUnchanged(t *testing.T) {
 
 func TestDecodeJSONLimited_MalformedJSONUnderCapIsNotTooLarge(t *testing.T) {
 	var out map[string]any
-	err := decodeJSONLimited(strings.NewReader(`{not valid json`), maxResponseBytes, &out)
+	err := decodeJSONLimited(strings.NewReader(`{not valid json`), defaultMaxResponseBytes, &out)
 	if err == nil {
 		t.Fatal("expected a decode error")
 	}
@@ -74,7 +74,7 @@ func TestDecodeJSONLimited_OversizedFailsWithoutBufferingWholeBody(t *testing.T)
 	// of the string and keeps asking for more bytes until the cap trips.
 	// A small custom limit exercises the general algorithm quickly, without
 	// materializing dozens of MB under the race detector; the production
-	// maxResponseBytes constant is exercised end-to-end (real network,
+	// defaultMaxResponseBytes constant is exercised end-to-end (real network,
 	// getJSON, and the wired constant) by
 	// TestClientNodes_OversizedBodyFailsWithErrResponseTooLarge below.
 	const limit = 4096
@@ -119,7 +119,7 @@ func TestClientNodes_OversizedBodyFailsWithErrResponseTooLarge(t *testing.T) {
 		// return (closing the response), so the client's post-decode drain
 		// defer has a small, finite remainder to discard instead of
 		// draining an endless stream.
-		_, _ = io.CopyN(w, infiniteByteReader{'a'}, maxResponseBytes+(1<<20))
+		_, _ = io.CopyN(w, infiniteByteReader{'a'}, defaultMaxResponseBytes+(1<<20))
 	}))
 	defer srv.Close()
 

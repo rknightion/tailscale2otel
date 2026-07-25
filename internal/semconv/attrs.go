@@ -33,6 +33,18 @@ const (
 	// AttrErrorMessage is the stable OTEL key for a human-readable error string
 	// (error.message); carried on error-bearing audit log records.
 	AttrErrorMessage = "error.message"
+	// AttrErrorType is the stable OTEL key for a BOUNDED error class (error.type)
+	// — a closed enum, never free text, so it stays queryable and cardinality-safe
+	// even when a free-text description is redacted.
+	//
+	// The KEY is shared; the value set is PER-SURFACE and deliberately not
+	// unified, because the two surfaces classify unrelated failures:
+	//   - collector scrapes (the scheduler's span + tailscale2otel.scrape.errors):
+	//     "panic" | "timeout" | "error"   (internal/collector.scrapeErrorType)
+	//   - OTLP export (tailscale2otel.export.failures):
+	//     "export" | "timeout"            (internal/telemetry.errorType)
+	// Each set stays closed and small; do not merge them into one global enum.
+	AttrErrorType = "error.type"
 )
 
 // Tailscale-specific attribute keys (namespaced under "tailscale.").

@@ -108,9 +108,10 @@ func instanceID(cfg *config.Config) string {
 // API key; the minimal client uses only the request timeout (no retry in v1).
 func hsapiOptions(cfg *config.Config) hsapi.Options {
 	return hsapi.Options{
-		URL:     cfg.Headscale.URL,
-		APIKey:  cfg.Headscale.APIKey.Reveal(),
-		Timeout: cfg.Headscale.HTTP.Timeout.D(),
+		URL:              cfg.Headscale.URL,
+		APIKey:           cfg.Headscale.APIKey.Reveal(),
+		Timeout:          cfg.Headscale.HTTP.Timeout.D(),
+		MaxResponseBytes: cfg.Headscale.MaxResponseBytes,
 	}
 }
 

@@ -13,7 +13,8 @@ func Default() *Config {
 		LogLevel: "info",
 		Provider: "tailscale",
 		Headscale: HeadscaleConfig{
-			HTTP: TailscaleHTTPConfig{Timeout: dur(30 * time.Second)},
+			HTTP:             TailscaleHTTPConfig{Timeout: dur(30 * time.Second)},
+			MaxResponseBytes: 4 << 20, // 4 MiB — snapshot endpoints only; ~5,800 nodes at ~715 B each
 		},
 		Tailscale: TailscaleConfig{
 			Tailnet: "-", // the authenticated principal's default tailnet (works out of the box for single-tailnet OAuth)

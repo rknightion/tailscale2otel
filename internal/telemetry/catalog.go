@@ -32,7 +32,7 @@ var (
 		Unit:        "1",
 		Instrument:  metricdoc.Counter,
 		Description: "OTLP export failures, by error class.",
-		Attributes:  []string{"error.type"},
+		Attributes:  []string{semconv.AttrErrorType},
 		Group:       groupSelfObs,
 	}
 	docExportDatapoints = metricdoc.Metric{

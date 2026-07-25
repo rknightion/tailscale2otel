@@ -795,6 +795,11 @@ var oauthBodyLeakCases = map[string]struct{ body, marker string }{
 // (ERROR) must carry only the bounded diagnostic — class, status, retryability,
 // safe message — at every log level, and never the body or the token URL's
 // userinfo.
+//
+// #489: a 401 token error is now terminal, so this case exercises the TERMINAL
+// log only — max is still 2, but the loop stops at one attempt. The DEBUG
+// retry-record half of #468's proof lives in TestTokenRetryLogNeverLeaksResponseBody,
+// which drives a retryable 503.
 func TestTokenErrorLoggingNeverLeaksResponseBody(t *testing.T) {
 	for name, tc := range oauthBodyLeakCases {
 		for _, lvl := range []slog.Level{slog.LevelDebug, slog.LevelInfo} {
@@ -841,12 +846,11 @@ func TestTokenErrorLoggingNeverLeaksResponseBody(t *testing.T) {
 				if !strings.Contains(out, `"error_status":401`) {
 					t.Errorf("logs lost the token-endpoint status at %v: %s", lvl, out)
 				}
-				if lvl == slog.LevelDebug {
-					// The retry record carries the retry bookkeeping.
-					for _, key := range []string{`"attempt":1`, `"sleep"`, `"error_retryable"`} {
-						if !strings.Contains(out, key) {
-							t.Errorf("DEBUG retry log lost %s: %s", key, out)
-						}
+				// The terminal record carries the attempt bookkeeping and the
+				// retryability verdict that now drove the stop (#489).
+				for _, key := range []string{`"attempts":1`, `"error_retryable":false`} {
+					if !strings.Contains(out, key) {
+						t.Errorf("terminal auth-failure log at %v lost %s: %s", lvl, key, out)
 					}
 				}
 			})

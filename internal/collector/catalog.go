@@ -39,7 +39,7 @@ var (
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Counter,
 		Description: "Count of scrape errors, by collector and error class.",
-		Attributes:  []string{semconv.AttrCollector, "error.type"},
+		Attributes:  []string{semconv.AttrCollector, semconv.AttrErrorType},
 		Group:       groupSelfObs,
 	}
 	docScrapeLastTimestamp = metricdoc.Metric{

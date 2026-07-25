@@ -171,6 +171,7 @@ static `node_metrics` target (see the `node_metrics` section); there is no dedic
 | `headscale.url` | `""` | Headscale control-plane base URL, e.g. `https://headscale.example.org`. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__URL`. |
 | `headscale.api_key` | `""` | Bearer API key for the Headscale server. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__API_KEY`. |
 | `headscale.api_key_file` | `""` | Read `headscale.api_key` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `headscale.max_response_bytes` | `4194304` (4 MiB) | Cap on ONE Headscale API response body before it is decoded. Must be `> 0`. Sized from a measured ~715 B/node, so the default covers roughly 5,800 nodes. These endpoints are **not paginated**, so a larger deployment needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. Above 64 MiB triggers a startup warning. The same fixed structural budgets as `tailscale.max_response_bytes` apply (nesting depth, string length, array elements). |
 | `headscale.http.timeout` | `30s` | Per-request timeout for Headscale API calls. |
 | `headscale.http.retry.max_attempts` | `0` | Accepted for config parity with `tailscale.http`, but **not applied** by the minimal v1 Headscale client (which honors only `timeout`). |
 | `headscale.http.retry.base_delay` | `0s` | Accepted for parity; not applied in v1 (see above). |
@@ -741,6 +742,19 @@ Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs`
   poller cold-starts from `initial_lookback`, so any **downtime longer than `initial_lookback` leaves
   a gap**. Needs no volume; fine for streamed or stateless deployments where the checkpoint is unused
   or disposable.
+
+> **Startup sweep of orphaned staging files.** Each save is staged through a uniquely named temporary
+> file in the checkpoint directory and then renamed into place, so a crash can never leave a partially
+> written checkpoint. A `SIGKILL` or power loss between those two steps does leave the staging file
+> behind, and because the names are unique they would otherwise accumulate one per hard kill. On
+> startup the exporter removes staging files matching `.<checkpoint-file>.<random>.tmp` that have gone
+> untouched for over an hour.
+>
+> The one-hour guard is what makes this safe: a staging file exists for milliseconds in normal
+> operation, so a second instance's in-flight save can never be old enough to be swept. The checkpoint
+> file itself, symlinks, directories, and every other file in the directory are never touched, and a
+> sweep failure is logged and ignored rather than blocking startup. The threshold is fixed and not
+> configurable.
 
 ---
 

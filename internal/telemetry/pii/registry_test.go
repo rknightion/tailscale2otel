@@ -1,6 +1,10 @@
 package pii
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+)
 
 func TestRegistryCoversKnownKeys(t *testing.T) {
 	keyCat := map[string]Category{
@@ -96,5 +100,17 @@ func TestSpanAttributeKeysAreClassified(t *testing.T) {
 		case want != "" && got != want:
 			t.Errorf("span attribute %q = %v, want %v", k, got, want)
 		}
+	}
+}
+
+// The nonIdentifier table is a flat list of bare literals on purpose — it is a
+// lookup table, not a set of declarations, so importing semconv for one of its
+// ~60 entries would make it less uniform, not more. This guard buys the drift
+// protection instead: rename semconv.AttrErrorType and this fails loudly rather
+// than silently dropping error.type out of the allowlist.
+func TestNonIdentifierTracksSemconvErrorType(t *testing.T) {
+	if !nonIdentifier[semconv.AttrErrorType] {
+		t.Errorf("nonIdentifier is missing %q; the semconv constant and this table have drifted",
+			semconv.AttrErrorType)
 	}
 }
