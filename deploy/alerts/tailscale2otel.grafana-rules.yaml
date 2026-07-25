@@ -361,8 +361,8 @@ groups:
           summary: "Busiest tailscale2otel metric approaching the per-metric series cap"
           description: "A metric family is using >80% of its per-metric series budget (series_active / series_limit > 0.8); MetricCardinalityCapped fires once it overflows."
         isPaused: false
-      - uid: "ts2o-api-auth-failing"
-        title: "Tailscale API auth failing"
+      - uid: "ts2o-api-credential-rejected"
+        title: "Tailscale API credential rejected"
         condition: "C"
         data:
           - refId: "A"
@@ -375,7 +375,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~\"401|403\"}[10m]))"
+              expr: "max(tailscale2otel_api_availability_ratio{tailscale_api_state=\"credential_rejected\"})"
               instant: false
               range: true
               intervalMs: 1000
@@ -428,8 +428,78 @@ groups:
           service: "tailscale2otel"
           domain: "security"
         annotations:
-          summary: "Tailscale API returning 401/403 — credentials broken"
-          description: "The exporter is getting 401/403 from the Tailscale API — the OAuth client or API key is invalid, expired or revoked, so all polling fails and every tailnet metric goes stale."
+          summary: "Tailscale API returning 401 — the credential is invalid, expired or revoked"
+          description: "The Tailscale API is rejecting the exporter's credential outright (HTTP 401), so polling fails tailnet-wide and every metric goes stale. Rotate or re-issue the OAuth client or API key. This is distinct from a scope denial — see ts2o-api-scope-denied."
+        isPaused: false
+      - uid: "ts2o-api-scope-denied"
+        title: "Tailscale API operation denied by scope"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "max(tailscale2otel_api_availability_ratio{tailscale_api_state=\"scope_denied\"})"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "An API operation is returning 403 — the credential lacks its scope"
+          description: "The credential is valid but is being refused a specific operation (HTTP 403), so that collector's signals are silently missing while everything else keeps working. Widen the OAuth scope or disable the collector. Note this is NOT the same as a feature the tailnet does not have — that reports as `disabled` and is expected, not alertable."
         isPaused: false
       - uid: "ts2o-api-rate-limited"
         title: "Tailscale API rate limited"
@@ -3125,7 +3195,7 @@ groups:
           description: "An audit event modified the ACL/policy file — informational change tracking. Pair with the config-change row to see who/what changed."
         isPaused: true
       - uid: "ts2o-key-broad-scope"
-        title: "Key with broad scope"
+        title: "Key with unrestricted write scope"
         condition: "C"
         data:
           - refId: "A"
@@ -3138,7 +3208,7 @@ groups:
                 type: "prometheus"
                 uid: "grafanacloud-prom"
               editorMode: "code"
-              expr: "max(tailscale_key_scopes_ratio)"
+              expr: "max(tailscale_key_scope_class_ratio{tailscale_key_scope_class=\"all\"})"
               instant: false
               range: true
               intervalMs: 1000
@@ -3173,7 +3243,7 @@ groups:
                   evaluator:
                     type: "gt"
                     params:
-                      - 10
+                      - 0
                   operator:
                     type: "and"
                   query:
@@ -3192,8 +3262,79 @@ groups:
           domain: "security"
           skipinvestigation: "true"
         annotations:
-          summary: "An API/auth key has a very broad scope"
-          description: "A key grants more than 10 scopes — broad credential blast radius. Review the credential scopes table on the Policy & Config tab and scope it down if possible."
+          summary: "A credential holds the unrestricted `all` scope"
+          description: "A credential grants the `all` scope — unrestricted read AND write across the entire tailnet, including APIs Tailscale adds in future. This is the maximum blast radius a credential can have. Review the credential scopes table on the Policy & Config tab and scope it down; `all:read` is the least-privilege equivalent for a read-only integration."
+        isPaused: true
+      - uid: "ts2o-key-unrestricted-tags"
+        title: "Trust credential has no tag restriction"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "max(tailscale_key_tag_scope_ratio{tailscale_key_tag_scope=\"none\"})"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 0
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "An OAuth client's trust credential is unrestricted by tags"
+          description: "An OAuth client carries no top-level tag restriction, so auth keys it mints are not confined to a tag it owns. Scope it to the tags it actually needs."
         isPaused: true
       - uid: "ts2o-device-share-exit-node"
         title: "Device share grants exit node"

@@ -234,12 +234,28 @@ def groups():
               "A metric family is using >80% of its per-metric series budget "
               "(series_active / series_limit > 0.8); MetricCardinalityCapped fires once it overflows.",
               domain="observability", paused=False),
-        alert("ts2o-api-auth-failing", "Tailscale API auth failing",
-              'sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~"401|403"}[10m]))',
+        # Keyed off the classified availability state, not the raw status code
+        # (#420). The old rule fired critical on ANY 401 or 403 and declared "all
+        # polling fails" — but a legitimate 403 is how upstream reports an optional
+        # feature the tailnet does not have, so a tailnet simply lacking premium
+        # flow logs paged someone. 401 (credential rejected) is the tailnet-wide
+        # emergency; 403 (scope denied) is a real but narrower misconfiguration.
+        alert("ts2o-api-credential-rejected", "Tailscale API credential rejected",
+              'max(tailscale2otel_api_availability_ratio{tailscale_api_state="credential_rejected"})',
               "gt", 0, "10m", "critical",
-              "Tailscale API returning 401/403 — credentials broken",
-              "The exporter is getting 401/403 from the Tailscale API — the OAuth client or API key is "
-              "invalid, expired or revoked, so all polling fails and every tailnet metric goes stale.",
+              "Tailscale API returning 401 — the credential is invalid, expired or revoked",
+              "The Tailscale API is rejecting the exporter's credential outright (HTTP 401), so polling "
+              "fails tailnet-wide and every metric goes stale. Rotate or re-issue the OAuth client or "
+              "API key. This is distinct from a scope denial — see ts2o-api-scope-denied.",
+              domain="security", paused=False),
+        alert("ts2o-api-scope-denied", "Tailscale API operation denied by scope",
+              'max(tailscale2otel_api_availability_ratio{tailscale_api_state="scope_denied"})',
+              "gt", 0, "30m", "warning",
+              "An API operation is returning 403 — the credential lacks its scope",
+              "The credential is valid but is being refused a specific operation (HTTP 403), so that "
+              "collector's signals are silently missing while everything else keeps working. Widen the "
+              "OAuth scope or disable the collector. Note this is NOT the same as a feature the tailnet "
+              "does not have — that reports as `disabled` and is expected, not alertable.",
               domain="security", paused=False),
         alert("ts2o-api-rate-limited", "Tailscale API rate limited",
               'sum(rate(tailscale2otel_api_requests_total{http_response_status_code="429"}[10m]))',
@@ -542,11 +558,29 @@ def groups():
               "An audit event modified the ACL/policy file — informational change tracking. Pair with the "
               "config-change row to see who/what changed.",
               domain="security", hygiene=True, paused=True),
-        alert("ts2o-key-broad-scope", "Key with broad scope",
-              "max(tailscale_key_scopes_ratio)", "gt", 10, "1h", "info",
-              "An API/auth key has a very broad scope",
-              "A key grants more than 10 scopes — broad credential blast radius. Review the credential "
-              "scopes table on the Policy & Config tab and scope it down if possible.",
+        # Scope COUNT was the wrong signal and inverted the answer (#415): a single
+        # `all` scope grants unrestricted read+write over the whole tailnet,
+        # including APIs that do not exist yet, and scored 1 — never firing. Eleven
+        # narrow `*:read` scopes scored 11 and fired, despite being far safer. Key
+        # off the privilege CLASS instead; `all` is the only class that is both
+        # tailnet-wide and write-capable.
+        alert("ts2o-key-broad-scope", "Key with unrestricted write scope",
+              'max(tailscale_key_scope_class_ratio{tailscale_key_scope_class="all"})',
+              "gt", 0, "1h", "info",
+              "A credential holds the unrestricted `all` scope",
+              "A credential grants the `all` scope — unrestricted read AND write across the entire "
+              "tailnet, including APIs Tailscale adds in future. This is the maximum blast radius a "
+              "credential can have. Review the credential scopes table on the Policy & Config tab and "
+              "scope it down; `all:read` is the least-privilege equivalent for a read-only integration.",
+              domain="security", hygiene=True, paused=True),
+        # Companion hygiene signal: a credential that can create auth keys with no
+        # tag restriction can mint a node with any tags at all (#416).
+        alert("ts2o-key-unrestricted-tags", "Trust credential has no tag restriction",
+              'max(tailscale_key_tag_scope_ratio{tailscale_key_tag_scope="none"})',
+              "gt", 0, "1h", "info",
+              "An OAuth client's trust credential is unrestricted by tags",
+              "An OAuth client carries no top-level tag restriction, so auth keys it mints are not "
+              "confined to a tag it owns. Scope it to the tags it actually needs.",
               domain="security", hygiene=True, paused=True),
         alert("ts2o-device-share-exit-node", "Device share grants exit node",
               "sum(tailscale_device_invites_count_ratio{tailscale_device_invite_allow_exit_node=\"true\"})",

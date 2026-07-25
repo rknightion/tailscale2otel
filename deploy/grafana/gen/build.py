@@ -1567,6 +1567,30 @@ def tab_nodemetrics():
                unit="Bps", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
                desc="Current data-plane byte rate by curated path bucket (direct / DERP / peer-relay)."), 12, 6),
+        # The three panels below consume dimensions #429 restored. Before that,
+        # curation folded five of the seven documented drop reasons into "other"
+        # and read no peer-relay labels at all, so none of this was answerable.
+        (panel("Dropped packets by reason", "timeseries",
+               [prom_t("sum by (tailscale_drop_reason) (rate(tailscale_node_packets_dropped_total[%s]))" % RI,
+                       legend="{{tailscale_drop_reason}}")],
+               unit="pps", custom=ts_custom(stack="normal", fill=25), options=ts_opts(),
+               desc="Why tailscaled dropped packets, across the seven documented reasons. `acl` is the "
+                    "packet filter doing its job and is usually benign; `too_short` / `fragment` / "
+                    "`unknown_protocol` point at a malformed or misrouted sender; `error` is the one to "
+                    "escalate. `other` means a reason this build does not recognize yet."), 12, 7),
+        (panel("Peer-relay throughput by transport", "timeseries",
+               [prom_t("sum by (tailscale_peer_relay_transport_in, tailscale_peer_relay_transport_out) "
+                       "(rate(tailscale_node_peer_relay_io_bytes_total[%s]))" % RI,
+                       legend="{{tailscale_peer_relay_transport_in}} -> {{tailscale_peer_relay_transport_out}}")],
+               unit="Bps", custom=ts_custom(), options=ts_opts(),
+               desc="Relayed bytes by ingress and egress transport. A heavy udp4 -> udp6 (or reverse) "
+                    "share means the relay is bridging address families rather than just forwarding."), 12, 7),
+        (panel("Peer-relay endpoints by state", "timeseries",
+               [prom_t("sum by (tailscale_peer_relay_state) (%s)" % lot("tailscale_node_peer_relay_endpoints_ratio", "15m"),
+                       legend="{{tailscale_peer_relay_state}}")],
+               custom=ts_custom(), options=ts_opts(),
+               desc="Peer-relay endpoints split by connection state. A persistently high `connecting` "
+                    "count against a low `open` count is a relay failing to establish sessions."), 12, 6),
     ]
     return [row("Scraper health", health), row("Traffic (tailscaled)", traffic),
             row("Connection paths (DERP vs direct)", paths, present="has_path"),
