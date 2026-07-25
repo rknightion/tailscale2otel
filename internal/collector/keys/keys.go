@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsscope"
 )
 
 // Compile-time assertion that *Collector is a SnapshotCollector.
@@ -28,6 +30,20 @@ const (
 	MetricKeyPreauthorized = "tailscale.key.preauthorized"
 	MetricKeysByOwner      = "tailscale.keys.by_owner"
 	EventExpiring          = "tailscale.key.expiring"
+
+	// MetricKeyScopeClass is the #415 bounded REPLACEMENT for reasoning about a
+	// raw scope count: tsscope.Classify(k.Scopes), zero-seeded per credential.
+	MetricKeyScopeClass = "tailscale.key.scope_class"
+	// MetricKeyTagScope and MetricKeyAllowedTags are #416's top-level
+	// trust-credential tag-authority signals: a bounded class
+	// (none|restricted) and the exact count of allowed tags. Distinct from the
+	// existing attrTags (the nested, auto-applied capabilities.devices.create.tags).
+	MetricKeyTagScope    = "tailscale.key.tag_scope"
+	MetricKeyAllowedTags = "tailscale.key.allowed_tags"
+	// MetricKeysAge is the #426 fleet age distribution — a single bounded
+	// histogram across every key with a known Created timestamp, not a
+	// per-entity series.
+	MetricKeysAge = "tailscale.keys.age"
 )
 
 // Attribute keys emitted by this collector.
@@ -42,6 +58,18 @@ const (
 	attrScopeValues = "tailscale.key.scope_values"
 	attrOwner       = "tailscale.key.owner"
 	attrTags        = "tailscale.key.tags"
+	// attrScopeClass and attrTagScope are pre-registered, frozen non-identifier
+	// attribute keys (internal/telemetry/pii/registry.go, EPIC-03/#479) — they
+	// double as both the metric name and the attribute carrying the
+	// classification value, the same "info gauge" idiom as tailscale2otel.build_info.
+	attrScopeClass = "tailscale.key.scope_class"
+	attrTagScope   = "tailscale.key.tag_scope"
+)
+
+// Bounded tag_scope class values (#416).
+const (
+	tagScopeNone       = "none"       // no top-level tag restriction: broadest possible tag authority
+	tagScopeRestricted = "restricted" // one or more allowed tags constrain the credential
 )
 
 // keyType values mirror the API's keyType enum (federated is out of scope; see
@@ -252,6 +280,23 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 		}
 
+		// Per-credential privilege classification (#415): the bounded REPLACEMENT
+		// for the raw scope count above — it is the count that let a single `all`
+		// scope (unrestricted) under-score eleven narrow `*:read` scopes. Emitted
+		// for the same population as the scopes gauge (only credentials that
+		// carry scopes at all). Per-key -> gated by cardinality.per_entity.key.
+		if c.perEntity && len(k.Scopes) > 0 {
+			emitScopeClass(e, k, typ)
+		}
+
+		// Top-level trust-credential tag authority (#416). Only OAuth clients
+		// carry a meaningful top-level `tags` restriction on the wire (auth keys
+		// and API tokens never do — see tsapi.Key.AllowedTags' doc comment).
+		// Per-key -> gated by cardinality.per_entity.key.
+		if c.perEntity && typ == typeClient {
+			emitTagScope(e, k)
+		}
+
 		// Per-key preauthorized flag (auth keys only). Per-key -> gated by
 		// cardinality.per_entity.key.
 		if c.perEntity && typ == typeAuth {
@@ -292,7 +337,82 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 	}
 
+	// tailscale.keys.age (#426): a single bounded fleet age-distribution
+	// histogram, not a per-entity series, so it is unconditional on
+	// cardinality.per_entity.key. Keys with no Created timestamp are skipped
+	// (entityage.Seconds ok=false) rather than reported as age 0.
+	for i := range ks {
+		if secs, ok := entityage.Seconds(ks[i].Created, now); ok {
+			e.Histogram(docKeysAge.Name, docKeysAge.Unit, docKeysAge.Description,
+				secs, entityage.BucketsSeconds(), nil)
+		}
+	}
+
 	return nil
+}
+
+// emitScopeClass zero-seeds k's privilege class across every tsscope.Class
+// (mirrors apistate.EmitAvailability's zero-seed shape): one series holds
+// value 1 (the current class), the rest hold 0, so a plain synchronous Gauge
+// can never ghost a stale class after a credential's scopes change.
+func emitScopeClass(e telemetry.Emitter, k tsapi.Key, typ string) {
+	class := tsscope.Classify(k.Scopes)
+	for _, want := range tsscope.Classes() {
+		v := 0.0
+		if want == class {
+			v = 1
+		}
+		attrs := telemetry.Attrs{
+			attrID:          k.ID,
+			attrType:        typ,
+			attrDescription: k.Description,
+			attrScopeClass:  string(want),
+		}
+		addOwner(attrs, k)
+		e.Gauge(docKeyScopeClass.Name, docKeyScopeClass.Unit, docKeyScopeClass.Description, v, attrs)
+	}
+}
+
+// tagScopeClass classifies a credential's top-level AllowedTags (#416): empty
+// means no restriction at all — the broadest possible tag authority, not "no
+// tags allowed" — anything else means the credential is scoped down.
+func tagScopeClass(k tsapi.Key) string {
+	if len(k.AllowedTags) == 0 {
+		return tagScopeNone
+	}
+	return tagScopeRestricted
+}
+
+// emitTagScope zero-seeds k's tag_scope class across {none, restricted} (same
+// shape as emitScopeClass) and unconditionally emits the exact allowed-tag
+// count. The count is unconditional — never gated on count > 0 — because a
+// count of 0 IS the dangerous case here (no tag restriction) and must not be
+// silently omitted the way an empty node-attributes/scopes list is elsewhere.
+func emitTagScope(e telemetry.Emitter, k tsapi.Key) {
+	class := tagScopeClass(k)
+	for _, want := range []string{tagScopeNone, tagScopeRestricted} {
+		v := 0.0
+		if want == class {
+			v = 1
+		}
+		attrs := telemetry.Attrs{
+			attrID:          k.ID,
+			attrType:        typeClient,
+			attrDescription: k.Description,
+			attrTagScope:    want,
+		}
+		addOwner(attrs, k)
+		e.Gauge(docKeyTagScope.Name, docKeyTagScope.Unit, docKeyTagScope.Description, v, attrs)
+	}
+
+	countAttrs := telemetry.Attrs{
+		attrID:          k.ID,
+		attrType:        typeClient,
+		attrDescription: k.Description,
+	}
+	addOwner(countAttrs, k)
+	e.Gauge(docKeyAllowedTags.Name, docKeyAllowedTags.Unit, docKeyAllowedTags.Description,
+		float64(len(k.AllowedTags)), countAttrs)
 }
 
 // classify returns the credential's keyType and (for auth keys) its sub-kind.

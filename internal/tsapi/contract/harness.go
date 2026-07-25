@@ -26,16 +26,38 @@ type Op struct {
 	// decoder reads. []string{""} is a sentinel meaning the response is a bare
 	// array (not an object). Used by Decode to flag unexpected wrapper fields.
 	KnownTopLevelKeys []string
-	// LiveSkip, when true, excludes this op from the live-contract lane (Lane 3).
-	// Typically set for ops whose Invoke carries a placeholder path parameter that
-	// would 404 against the real API.
+	// LiveSkip, when true, permanently excludes this op from the live-contract
+	// lane (Lane 3). This is for ops that can never be exercised live, NOT for
+	// ops that merely need a path parameter — those declare LiveRequires and
+	// LiveInvoke instead, and are excluded per-run only when the tailnet has no
+	// suitable resource (#424).
 	LiveSkip bool
 	// FuzzSkip, when true, excludes this op from schema-driven fuzz (Lane 4).
 	// Typically set for ops whose response is not JSON (e.g. HuJSON policy file).
 	FuzzSkip bool
 	// Invoke runs the real Client method against c, discarding the return value
-	// and returning only the decode error (if any).
+	// and returning only the decode error (if any). Path-parameterized ops pass a
+	// placeholder here, which is correct for Decode and the fuzz lane because that
+	// harness serves the same body on every path.
 	Invoke func(ctx context.Context, c *tsapi.Client) error
+	// LiveRequires lists the resources LiveInvoke needs resolved before it can
+	// run. Empty for ops addressed by the tailnet alone.
+	LiveRequires []LiveResource
+	// LiveInvoke is Invoke's live-lane counterpart for path-parameterized ops: it
+	// substitutes the real values in args instead of a placeholder that would 404
+	// against the real API. nil when Invoke is already live-safe.
+	LiveInvoke func(ctx context.Context, c *tsapi.Client, args LiveArgs) error
+}
+
+// LiveRun is the live lane's single call path: it routes through LiveInvoke when
+// the op declares one and falls back to Invoke otherwise. Callers must check
+// args.Missing(op.LiveRequires) first — LiveRun does not gate itself, so that a
+// caller cannot accidentally treat "resource absent" as "op passed".
+func (op Op) LiveRun(ctx context.Context, c *tsapi.Client, args LiveArgs) error {
+	if op.LiveInvoke != nil {
+		return op.LiveInvoke(ctx, c, args)
+	}
+	return op.Invoke(ctx, c)
 }
 
 // ByID returns the Op with the given operationId, or false if not found.

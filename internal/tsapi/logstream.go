@@ -33,8 +33,13 @@ func (c *Client) ConfigureLogStream(ctx context.Context, logType string, cfg Log
 }
 
 // putJSON marshals body to JSON and PUTs it to urlStr through c.http (so auth,
-// retry and the observer transport apply). It returns an error on a non-2xx
-// response, including the status and a limited body snippet.
+// retry and the observer transport apply). A non-2xx response is returned as a
+// *StatusError carrying the status and a limited body snippet.
+//
+// The typed error matters (#420): this used to return a plain fmt.Errorf, so
+// the write path was the one API call in the client whose failure could not be
+// classified at all — a rejected credential, a missing scope and a transient
+// 5xx all arrived as identical opaque text.
 func (c *Client) putJSON(ctx context.Context, urlStr string, body any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -56,7 +61,12 @@ func (c *Client) putJSON(ctx context.Context, urlStr string, body any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<14))
-		return fmt.Errorf("tsapi: PUT %s: status %d %s: %s", urlStr, resp.StatusCode, http.StatusText(resp.StatusCode), string(snippet))
+		return &StatusError{
+			Method: http.MethodPut,
+			URL:    urlStr,
+			Code:   resp.StatusCode,
+			Body:   string(snippet),
+		}
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/tailscale/hujson"
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
@@ -68,6 +69,25 @@ type Collector struct {
 	// policy, when set, receives the raw document so the flow view can
 	// reconcile observed traffic against it.
 	policy PolicySink
+
+	// validator, when non-nil, is called each Collect to validate the
+	// tailnet's currently active ACL policy (#428). A nil validator (the
+	// default — no WithValidator option applied) is a clean no-op: no
+	// tailscale.acl.validation.* signal and no tailscale2otel.api.availability
+	// entry for validateAndTestPolicyFile are ever emitted. This keeps the
+	// dependency optional and Headscale-safe: provider.ControlPlane (shared
+	// with the Headscale adapter, which has no validate endpoint) never gains
+	// a ValidatePolicyFile method.
+	validator Validator
+	// validate gates emission when a validator IS wired (config.AclCollector.
+	// Validate, default true — the off switch for an otherwise-capable
+	// deployment). Defaults to true in New so a validator wired without an
+	// explicit WithValidate call still validates.
+	validate bool
+	// tracker records the validate operation's latest availability state for the
+	// admin status page and the configuration-to-capability matrix (#430). A nil
+	// tracker is a no-op, so the collector still works without one.
+	tracker *apistate.Tracker
 }
 
 // New returns an ACL collector. A non-positive interval resolves to the default
@@ -76,7 +96,7 @@ func New(a api, interval time.Duration, now func() time.Time, opts ...Option) *C
 	if now == nil {
 		now = time.Now
 	}
-	c := &Collector{api: a, interval: interval, now: now}
+	c := &Collector{api: a, interval: interval, now: now, validate: true}
 	for _, o := range opts {
 		o(c)
 	}
@@ -148,6 +168,8 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	c.emitRuleCounts(e, top)
 	c.emitRiskScores(e, top)
+
+	c.collectValidation(ctx, e)
 
 	return nil
 }

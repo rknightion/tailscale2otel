@@ -253,3 +253,52 @@ func TestRender_CardinalityGatedOff(t *testing.T) {
 		t.Error("cardinality tab should show the enable-self-obs prompt when off")
 	}
 }
+
+// TestRender_CapabilityMatrix asserts the #430 capability tab renders each row's
+// requirement, preflight and live state, and that a non-active row explains
+// itself rather than just reading as broken.
+func TestRender_CapabilityMatrix(t *testing.T) {
+	s := statusdata.Status{
+		Provider:     "tailscale",
+		Capabilities: []string{"devices", "flowlogs"},
+		CapabilityMatrix: []statusdata.CapabilityRow{
+			{Collector: "devices", Capability: "devices", RequiredScopes: []string{"devices:core:read"},
+				ConfigEnabled: true, ProviderSupported: true, Active: true,
+				ScopeStatus: statusdata.ScopeSatisfied, State: "supported", LastProbe: "2026-07-25T12:00:00Z"},
+			{Collector: "devices", Subrequest: "device_invites", Capability: "device_invites",
+				RequiredScopes: []string{"devices_invites:read"}, MissingScopes: []string{"devices_invites:read"},
+				ConfigEnabled: true, ProviderSupported: true, Active: true,
+				ScopeStatus: statusdata.ScopeInsufficient, State: "scope_denied", Actionable: true},
+			{Collector: "dns", Capability: "dns", ConfigEnabled: true, Active: false,
+				Reason: statusdata.CapabilityReasonUnsupported, ScopeStatus: statusdata.ScopeUnknown, State: "unknown"},
+			{Collector: "flowlogs", Capability: "flowlogs", ConfigEnabled: true, ProviderSupported: true,
+				Active: false, Reason: statusdata.CapabilityReasonNotRegistered, Source: "stream",
+				ScopeStatus: statusdata.ScopeSatisfied, State: "unknown"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`data-tab="capabilities"`, `data-target="capabilities"`,
+		"devices:core:read", "device_invites", "devices_invites:read",
+		"scope_denied", "insufficient", "unsupported", "not polling", "stream",
+		"2026-07-25T12:00:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("capability tab missing %q", want)
+		}
+	}
+	// Summary tiles: 2 active, 1 actionable, 1 running scope gap.
+	for _, want := range []string{
+		`<div class="k">Active capabilities</div><div class="v">2</div>`,
+		`<div class="k">Needing attention</div><div class="v">1</div>`,
+		`<div class="k">Scope gaps</div><div class="v">1</div>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("capability summary missing %q", want)
+		}
+	}
+}

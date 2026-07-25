@@ -25,7 +25,8 @@ const keysAllFixture = `{"keys":[
   {
     "id":"kClient11CNTRL","keyType":"client","description":"terraform",
     "created":"2026-02-01T00:00:00Z","updated":"2026-02-02T00:00:00Z",
-    "scopes":["all:read","devices:core"],"invalid":false
+    "scopes":["all:read","devices:core"],"invalid":false,
+    "tags":["tag:ci","tag:example"]
   },
   {
     "id":"kApi11CNTRL","keyType":"api","description":"prod token",
@@ -96,6 +97,13 @@ func TestKeysRich_DecodesUnifiedKeyModel(t *testing.T) {
 	if got := auth.Tags; len(got) != 2 || got[0] != "tag:ci" || got[1] != "tag:example" {
 		t.Errorf("auth.Tags = %v, want [tag:ci tag:example]", got)
 	}
+	// The auth key's fixture carries no top-level "tags" property (only the
+	// nested capabilities.devices.create.tags decoded above as Tags) — per the
+	// spec, top-level tags "only applies to OAuth clients and federated
+	// identities", so AllowedTags must stay empty and distinct from Tags (#416).
+	if len(auth.AllowedTags) != 0 {
+		t.Errorf("auth.AllowedTags = %v, want none (spec: only applies to OAuth clients)", auth.AllowedTags)
+	}
 
 	client := ks[byID["kClient11CNTRL"]]
 	if client.Type != "client" {
@@ -115,6 +123,17 @@ func TestKeysRich_DecodesUnifiedKeyModel(t *testing.T) {
 	}
 	if client.UserID != "" {
 		t.Errorf("client.UserID = %q, want empty (OAuth clients have no owning user)", client.UserID)
+	}
+	// Top-level trust-credential tags (#416) — the tag RESTRICTION on the
+	// credential itself, distinct from the nested capabilities.devices.create.tags
+	// (auto-applied device tags, which OAuth clients don't carry at all: they
+	// have no capabilities block). Both fixtures happen to use the same tag
+	// strings, which is exactly why they must decode into separate fields.
+	if got := client.AllowedTags; len(got) != 2 || got[0] != "tag:ci" || got[1] != "tag:example" {
+		t.Errorf("client.AllowedTags = %v, want [tag:ci tag:example]", got)
+	}
+	if len(client.Tags) != 0 {
+		t.Errorf("client.Tags (nested auto-applied tags) = %v, want none: OAuth clients carry no capabilities block", client.Tags)
 	}
 
 	api := ks[byID["kApi11CNTRL"]]

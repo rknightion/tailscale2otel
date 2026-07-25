@@ -3,6 +3,9 @@ package tsapi
 import (
 	"context"
 	"path"
+	"time"
+
+	tsclient "github.com/tailscale/tailscale-client-go/v2"
 )
 
 // DeviceInvite is the curated, bounded subset of a device-share invite returned
@@ -24,6 +27,16 @@ type DeviceInvite struct {
 	// empty when the invite is still pending. Populated from acceptedBy.loginName
 	// on the wire; acceptedBy.profilePicUrl is deliberately not decoded.
 	AcceptedByLogin string
+	// Created is the invite's creation time, or the zero time when the wire
+	// record omits it (or sends the empty string). Drives the pending-invite age
+	// distribution (#413); a zero value means "unknown", never "brand new".
+	Created time.Time
+	// LastEmailSentAt is the last time upstream attempted to email this invite.
+	// Upstream documents it as "only ever set if email is not empty", so a zero
+	// value on an emailed invite means it has not been resent — and a zero value
+	// with no email at all is a link-only share. Feeds the bounded delivery
+	// classification; the timestamp itself never becomes a metric dimension.
+	LastEmailSentAt time.Time
 }
 
 // wireAcceptedBy captures the nested acceptedBy object on the device-invite
@@ -41,6 +54,14 @@ type wireDeviceInvite struct {
 	AllowExitNode bool           `json:"allowExitNode"`
 	Email         string         `json:"email"`
 	AcceptedBy    wireAcceptedBy `json:"acceptedBy"`
+
+	// tsclient.Time (not time.Time) tolerates an empty-string wire value. Both
+	// fields are optional upstream — lastEmailSentAt is documented as set only
+	// when email is non-empty — and an empty string on either one would fail the
+	// WHOLE array decode with a plain time.Time, silently zeroing every invite
+	// signal for that device (the #48 failure mode, applied here pre-emptively).
+	Created         tsclient.Time `json:"created"`
+	LastEmailSentAt tsclient.Time `json:"lastEmailSentAt"`
 }
 
 // DeviceInvites lists the share invites for a single device. The endpoint
@@ -63,6 +84,8 @@ func (c *Client) DeviceInvites(ctx context.Context, deviceID string) ([]DeviceIn
 			AllowExitNode:   w.AllowExitNode,
 			Email:           w.Email,
 			AcceptedByLogin: w.AcceptedBy.LoginName,
+			Created:         w.Created.Time,
+			LastEmailSentAt: w.LastEmailSentAt.Time,
 		})
 	}
 	return out, nil

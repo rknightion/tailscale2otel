@@ -13,10 +13,11 @@ import (
 // incremented, so counter families produce a delta on scrape 2. The label names
 // (`path`, `reason`, `type`) and the raw `path` value set
 // (direct_ipv4|direct_ipv6|derp|peer_relay_ipv4|peer_relay_ipv6) mirror the real
-// tailscaled exposition documented in docs/node-metrics.md. NOTE: the exact
-// `reason` value set is constructed from the tailscaled client-metrics format,
-// not a captured live scrape — live-scrape validation of the reason admit-set is
-// recommended (see the lane brief).
+// tailscaled exposition documented in docs/node-metrics.md. The `reason` value
+// set now mirrors the seven documented upstream values (see
+// tailscale.com/docs/reference/tailscale-client-metrics) — see
+// TestCurated_DropReasonAllSevenValues for individual coverage of all seven plus
+// the unknown-value fold.
 const (
 	curatedFixtureScrape1 = `# TYPE tailscaled_inbound_bytes_total counter
 tailscaled_inbound_bytes_total{path="direct_ipv4"} 1000
@@ -291,4 +292,166 @@ func TestCurated_RawForwardByteIdentical(t *testing.T) {
 		t.Fatalf("raw tailscaled_home_derp_region_id not forwarded; pts=%+v",
 			rec.MetricPoints("tailscaled_home_derp_region_id"))
 	}
+}
+
+// TestCurated_DropReasonAllSevenValues verifies foldDropReason admits every one
+// of the seven documented tailscaled reason values individually (each preserved
+// as-is, not folded to "other"), while a genuinely unknown/future value still
+// folds to "other". Regression guard for #429: before the fix, only "acl" and
+// "error" were admitted and the other five documented values (multicast,
+// link_local_unicast, too_short, fragment, unknown_protocol) were silently
+// collapsed into "other" alongside truly unknown values.
+func TestCurated_DropReasonAllSevenValues(t *testing.T) {
+	body1 := `# TYPE tailscaled_inbound_dropped_packets_total counter
+tailscaled_inbound_dropped_packets_total{reason="acl"} 1
+tailscaled_inbound_dropped_packets_total{reason="multicast"} 1
+tailscaled_inbound_dropped_packets_total{reason="link_local_unicast"} 1
+tailscaled_inbound_dropped_packets_total{reason="too_short"} 1
+tailscaled_inbound_dropped_packets_total{reason="fragment"} 1
+tailscaled_inbound_dropped_packets_total{reason="unknown_protocol"} 1
+tailscaled_inbound_dropped_packets_total{reason="error"} 1
+tailscaled_inbound_dropped_packets_total{reason="totally_novel_future_reason"} 1
+`
+	body2 := `# TYPE tailscaled_inbound_dropped_packets_total counter
+tailscaled_inbound_dropped_packets_total{reason="acl"} 3
+tailscaled_inbound_dropped_packets_total{reason="multicast"} 4
+tailscaled_inbound_dropped_packets_total{reason="link_local_unicast"} 5
+tailscaled_inbound_dropped_packets_total{reason="too_short"} 6
+tailscaled_inbound_dropped_packets_total{reason="fragment"} 7
+tailscaled_inbound_dropped_packets_total{reason="unknown_protocol"} 8
+tailscaled_inbound_dropped_packets_total{reason="error"} 9
+tailscaled_inbound_dropped_packets_total{reason="totally_novel_future_reason"} 10
+`
+	rec := scrapeTwice(t, nodemetrics.Options{}, body1, body2)
+
+	wantDeltas := map[string]float64{
+		"acl":                2,
+		"multicast":          3,
+		"link_local_unicast": 4,
+		"too_short":          5,
+		"fragment":           6,
+		"unknown_protocol":   7,
+		"error":              8,
+	}
+	for reason, want := range wantDeltas {
+		wantCounter(t, rec, "tailscale.node.packets.dropped",
+			map[string]string{"tailscale.node": "node-a", "network.io.direction": "receive", "tailscale.drop.reason": reason}, want)
+	}
+	// A genuinely unknown/future reason still folds to "other" (delta 10-1=9).
+	wantCounter(t, rec, "tailscale.node.packets.dropped",
+		map[string]string{"tailscale.node": "node-a", "network.io.direction": "receive", "tailscale.drop.reason": "other"}, 9)
+}
+
+// TestCurated_PeerRelayTransportAttrs verifies the peer-relay forwarded
+// bytes/packets curated counters carry the bounded transport_in/transport_out
+// attributes: udp4 and udp6 pass through as-is, and an unrecognized transport
+// value folds to "other" independently on each of the two label positions.
+func TestCurated_PeerRelayTransportAttrs(t *testing.T) {
+	body1 := `# TYPE tailscaled_peer_relay_forwarded_bytes_total counter
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp4",transport_out="udp4"} 1000
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp6",transport_out="udp6"} 2000
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp4",transport_out="tcp"} 3000
+# TYPE tailscaled_peer_relay_forwarded_packets_total counter
+tailscaled_peer_relay_forwarded_packets_total{transport_in="udp4",transport_out="udp4"} 10
+tailscaled_peer_relay_forwarded_packets_total{transport_in="udp6",transport_out="udp6"} 20
+tailscaled_peer_relay_forwarded_packets_total{transport_in="udp4",transport_out="tcp"} 30
+`
+	body2 := `# TYPE tailscaled_peer_relay_forwarded_bytes_total counter
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp4",transport_out="udp4"} 1100
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp6",transport_out="udp6"} 2300
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp4",transport_out="tcp"} 3600
+# TYPE tailscaled_peer_relay_forwarded_packets_total counter
+tailscaled_peer_relay_forwarded_packets_total{transport_in="udp4",transport_out="udp4"} 11
+tailscaled_peer_relay_forwarded_packets_total{transport_in="udp6",transport_out="udp6"} 25
+tailscaled_peer_relay_forwarded_packets_total{transport_in="udp4",transport_out="tcp"} 39
+`
+	rec := scrapeTwice(t, nodemetrics.Options{}, body1, body2)
+
+	wantCounter(t, rec, "tailscale.node.peer_relay.io",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp4", "tailscale.peer_relay.transport_out": "udp4"}, 100)
+	wantCounter(t, rec, "tailscale.node.peer_relay.io",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp6", "tailscale.peer_relay.transport_out": "udp6"}, 300)
+	wantCounter(t, rec, "tailscale.node.peer_relay.io",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp4", "tailscale.peer_relay.transport_out": "other"}, 600)
+
+	wantCounter(t, rec, "tailscale.node.peer_relay.packets",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp4", "tailscale.peer_relay.transport_out": "udp4"}, 1)
+	wantCounter(t, rec, "tailscale.node.peer_relay.packets",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp6", "tailscale.peer_relay.transport_out": "udp6"}, 5)
+	wantCounter(t, rec, "tailscale.node.peer_relay.packets",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp4", "tailscale.peer_relay.transport_out": "other"}, 9)
+}
+
+// TestCurated_PeerRelayEndpointStateAttrs verifies the peer-relay endpoints
+// curated gauge carries the bounded state attribute: connecting and open pass
+// through as-is, and an unrecognized state folds to "other".
+func TestCurated_PeerRelayEndpointStateAttrs(t *testing.T) {
+	body := `# TYPE tailscaled_peer_relay_endpoints gauge
+tailscaled_peer_relay_endpoints{state="connecting"} 2
+tailscaled_peer_relay_endpoints{state="open"} 5
+tailscaled_peer_relay_endpoints{state="draining"} 1
+`
+	srv := serveText(&body)
+	defer srv.Close()
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "node-a"}},
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	wantGauge(t, rec, "tailscale.node.peer_relay.endpoints",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.state": "connecting"}, 2)
+	wantGauge(t, rec, "tailscale.node.peer_relay.endpoints",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.state": "open"}, 5)
+	wantGauge(t, rec, "tailscale.node.peer_relay.endpoints",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.state": "other"}, 1)
+}
+
+// TestCurated_PeerRelayAndDropReasonBypassFiltersAndDropLabels is the regression
+// guard proving the newly-widened curated attribute derivers stay on the
+// "curated metrics bypass passthrough filters" contract (see curated.go's
+// package doc and TestCurated_BypassesMetricFilters): metric_deny suppresses the
+// raw forward as before, and DropLabels configured for the exact raw label keys
+// the new derivers read (transport_in/transport_out/state/reason) strips them
+// from the RAW forward's attrs but never reaches the curated attribute deriver,
+// which reads s.labels directly. drop_labels never touches curated series.
+func TestCurated_PeerRelayAndDropReasonBypassFiltersAndDropLabels(t *testing.T) {
+	body1 := `# TYPE tailscaled_peer_relay_forwarded_bytes_total counter
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp4",transport_out="udp6"} 1000
+# TYPE tailscaled_peer_relay_endpoints gauge
+tailscaled_peer_relay_endpoints{state="open"} 2
+# TYPE tailscaled_inbound_dropped_packets_total counter
+tailscaled_inbound_dropped_packets_total{reason="fragment"} 1
+`
+	body2 := `# TYPE tailscaled_peer_relay_forwarded_bytes_total counter
+tailscaled_peer_relay_forwarded_bytes_total{transport_in="udp4",transport_out="udp6"} 1300
+# TYPE tailscaled_peer_relay_endpoints gauge
+tailscaled_peer_relay_endpoints{state="open"} 4
+# TYPE tailscaled_inbound_dropped_packets_total counter
+tailscaled_inbound_dropped_packets_total{reason="fragment"} 6
+`
+	opts := nodemetrics.Options{
+		MetricDeny: []string{"tailscaled_.*"},
+		DropLabels: []string{"transport_in", "transport_out", "state", "reason"},
+	}
+	rec := scrapeTwice(t, opts, body1, body2)
+
+	// Raw forward suppressed entirely by the deny filter.
+	if pts := rec.MetricPoints("tailscaled_peer_relay_forwarded_bytes_total"); len(pts) != 0 {
+		t.Fatalf("raw tailscaled_peer_relay_forwarded_bytes_total = %+v, want none (denied)", pts)
+	}
+	if pts := rec.MetricPoints("tailscaled_inbound_dropped_packets_total"); len(pts) != 0 {
+		t.Fatalf("raw tailscaled_inbound_dropped_packets_total = %+v, want none (denied)", pts)
+	}
+
+	// Curated series still carry their full folded attributes despite
+	// DropLabels naming the exact raw label keys the derivers read.
+	wantCounter(t, rec, "tailscale.node.peer_relay.io",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.transport_in": "udp4", "tailscale.peer_relay.transport_out": "udp6"}, 300)
+	wantGauge(t, rec, "tailscale.node.peer_relay.endpoints",
+		map[string]string{"tailscale.node": "node-a", "tailscale.peer_relay.state": "open"}, 4)
+	wantCounter(t, rec, "tailscale.node.packets.dropped",
+		map[string]string{"tailscale.node": "node-a", "network.io.direction": "receive", "tailscale.drop.reason": "fragment"}, 5)
 }

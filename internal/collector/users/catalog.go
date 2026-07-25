@@ -49,18 +49,42 @@ var (
 		Group:       groupUsers,
 	}
 	docUserInvites = metricdoc.Metric{
-		Name:        MetricUserInvites,
-		Unit:        semconv.UnitDimensionless,
-		Instrument:  metricdoc.Gauge,
-		Description: "Outstanding/processed user invites (a **count**), by role and accepted flag.",
-		Attributes:  []string{attrInviteRole, attrInviteAccepted},
-		Group:       groupUsers,
+		Name:       MetricUserInvites,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "Outstanding open user invites (a **count**), by role and delivery method. The " +
+			"list-user-invites endpoint returns only open (not yet accepted) invites, so this is a " +
+			"snapshot of pending invitations — not accepted-invite history, which the API does not expose.",
+		Attributes: []string{attrInviteRole, attrInviteDelivery},
+		Group:      groupUsers,
+	}
+	docUserInvitePendingAge = metricdoc.Metric{
+		Name:       MetricUserInvitePending,
+		Unit:       semconv.UnitSeconds,
+		Instrument: metricdoc.Histogram,
+		Description: "Distribution of time since Tailscale last emailed each pending invite (a " +
+			"**distribution**). Emitted only for emailed invites — manual-link invites have no delivery " +
+			"timestamp to measure age from, so they're omitted rather than reported as age zero.",
+		Attributes: []string{attrInviteRole},
+		Group:      groupUsers,
+	}
+	docUsersAge = metricdoc.Metric{
+		Name:       MetricUsersAge,
+		Unit:       semconv.UnitSeconds,
+		Instrument: metricdoc.Histogram,
+		Description: "Distribution of user account age (a **distribution**), i.e. time since each " +
+			"user was created. Users with no reported creation time are omitted rather than reported " +
+			"as age zero.",
+		Group: groupUsers,
 	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docUsersCount, docUserDevices, docUserConnected, docUserLastSeen, docUserInvites}
+	return []metricdoc.Metric{
+		docUsersCount, docUserDevices, docUserConnected, docUserLastSeen,
+		docUserInvites, docUserInvitePendingAge, docUsersAge,
+	}
 }
 
 // LogCatalog returns the log events this package emits (none).

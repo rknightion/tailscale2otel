@@ -41,6 +41,7 @@ import (
 var metricSources = []func() []metricdoc.Metric{
 	telemetry.Catalog,
 	appcatalog.Catalog,
+	appcatalog.CapabilityCatalog,
 	apistate.Catalog,
 	collector.Catalog,
 	devices.Catalog,

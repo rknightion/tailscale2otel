@@ -453,3 +453,54 @@ func Catalog() []metricdoc.Metric {
 func LogCatalog() []metricdoc.LogEvent {
 	return nil
 }
+
+// Capability-matrix metric source names (#425/#430). The matrix itself is built
+// in internal/app; only its descriptors live here, because internal/catalog
+// aggregates every package's Catalog() and must never import internal/app —
+// internal/app imports internal/catalog to render the admin status page, so the
+// dependency has to stay one-way.
+const (
+	// MetricCapabilityStatus is the per-collector capability state gauge.
+	MetricCapabilityStatus = "tailscale2otel.capability.status"
+	// MetricCapabilityScopeSatisfied is the scope-preflight flag gauge.
+	MetricCapabilityScopeSatisfied = "tailscale2otel.capability.scope_satisfied"
+)
+
+var (
+	// DocCapabilityStatus documents the per-collector capability state gauge.
+	DocCapabilityStatus = metricdoc.Metric{
+		Name:       MetricCapabilityStatus,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "`1` for the enabled collector's current capability state, `0` for every other state " +
+			"(a **flag**, despite the `_ratio` Prometheus suffix). The full state set is zero-seeded, so a " +
+			"collector that recovers falls to `0` on its old state instead of pinning there forever. The value " +
+			"is the most operator-relevant state across all of that collector's probed operations, so a partial " +
+			"`scope_denied` is never masked by a sibling success. Use it to render an optional-feature panel's " +
+			"empty state: `disabled` means the tailnet does not have the feature, `scope_denied` means the " +
+			"credential cannot see it.",
+		Attributes: []string{semconv.AttrCollector, semconv.AttrAPIState},
+		Group:      GroupSelfObs,
+	}
+	// DocCapabilityScopeSatisfied documents the advisory scope-preflight flag.
+	DocCapabilityScopeSatisfied = metricdoc.Metric{
+		Name:       MetricCapabilityScopeSatisfied,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "`1` when the OAuth scopes requested in configuration cover the capability's documented " +
+			"requirement, `0` when they demonstrably do not (a **flag**, despite the `_ratio` suffix). " +
+			"**Advisory startup preflight, not a server answer**: it compares `tailscale.auth.oauth.scopes` " +
+			"against a static map of upstream's documented scopes, so it never blocks collection and a `1` is " +
+			"not a guarantee. Emitted only for capabilities whose scope is modelled AND when the credential is " +
+			"an OAuth client — an API key carries no scope list, and a `0` there would read as a real permission " +
+			"gap. The authoritative signal is `tailscale2otel.capability.status` / " +
+			"`tailscale2otel.api.availability` reaching `scope_denied`.",
+		Attributes: []string{semconv.AttrCapability},
+		Group:      GroupSelfObs,
+	}
+)
+
+// CapabilityCatalog returns the capability-matrix descriptors.
+func CapabilityCatalog() []metricdoc.Metric {
+	return []metricdoc.Metric{DocCapabilityStatus, DocCapabilityScopeSatisfied}
+}

@@ -31,8 +31,25 @@ type Key struct {
 	Ephemeral     bool
 	Preauthorized bool
 	// Tags are the auto-applied device tags from capabilities.devices.create.tags
-	// (auth keys only — the only key type carrying create capabilities).
+	// (auth keys only — the only key type carrying create capabilities). These
+	// are stamped onto a device CREATED with the key; do not confuse with
+	// AllowedTags below, which restricts the credential itself (#416).
 	Tags []string
+
+	// AllowedTags is the top-level `tags` property on the wire (#416) — the tag
+	// RESTRICTION on the trust credential itself: auth keys created with this
+	// OAuth client/federated identity must carry exactly these tags, or tags
+	// owned by these tags. Mandatory upstream when scopes include
+	// "devices:core" or "auth_keys". Only applies to OAuth clients and
+	// federated identities (never auth keys or API tokens).
+	//
+	// This is DISTINCT from Tags above, which is the nested
+	// capabilities.devices.create.tags block (the tags auto-APPLIED to a
+	// device created by an auth key). AllowedTags governs what the credential
+	// is scoped to create; Tags governs what gets stamped on what it creates.
+	// An empty AllowedTags means the credential carries NO tag restriction —
+	// the broadest possible tag authority, not "no tags allowed".
+	AllowedTags []string
 
 	// UserID is the id of the user who created this key (wire: userId); empty
 	// for keys created by trust credentials (OAuth clients, federated identities).
@@ -44,16 +61,21 @@ type keysResponse struct {
 }
 
 type wireKey struct {
-	ID           string    `json:"id"`
-	Description  string    `json:"description"`
-	KeyType      string    `json:"keyType"`
-	Scopes       []string  `json:"scopes"`
-	Created      time.Time `json:"created"`
-	Updated      time.Time `json:"updated"`
-	Expires      time.Time `json:"expires"`
-	Revoked      time.Time `json:"revoked"`
-	Invalid      bool      `json:"invalid"`
-	UserID       string    `json:"userId"`
+	ID          string    `json:"id"`
+	Description string    `json:"description"`
+	KeyType     string    `json:"keyType"`
+	Scopes      []string  `json:"scopes"`
+	Created     time.Time `json:"created"`
+	Updated     time.Time `json:"updated"`
+	Expires     time.Time `json:"expires"`
+	Revoked     time.Time `json:"revoked"`
+	Invalid     bool      `json:"invalid"`
+	UserID      string    `json:"userId"`
+	// Tags is the top-level trust-credential tag restriction (#416) — distinct
+	// from Capabilities.Devices.Create.Tags below (nested auto-applied device
+	// tags). Named AllowedTags on the decoded Key to keep the two from ever
+	// being confused at the call site.
+	Tags         []string `json:"tags"`
 	Capabilities struct {
 		Devices struct {
 			Create struct {
@@ -89,6 +111,7 @@ func (c *Client) KeysRich(ctx context.Context) ([]Key, error) {
 			Ephemeral:     k.Capabilities.Devices.Create.Ephemeral,
 			Preauthorized: k.Capabilities.Devices.Create.Preauthorized,
 			Tags:          k.Capabilities.Devices.Create.Tags,
+			AllowedTags:   k.Tags,
 			UserID:        k.UserID,
 		})
 	}

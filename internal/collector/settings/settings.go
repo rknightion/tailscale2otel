@@ -84,6 +84,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			boolValue(b.on), telemetry.Attrs{attrSettingName: b.name})
 	}
 
+	// aclsExternalLink is gated behind the policy_file:read scope, separately
+	// from the rest of tailnet settings, so it can be absent from the wire
+	// response even when the rest of TailnetSettings decoded fine (#418). A nil
+	// pointer means "key absent" (unsupported for this credential/plan, or the
+	// scope isn't granted) and must be treated as ABSENCE — no data point at
+	// all — never a healthy-looking false. Only the derived presence boolean is
+	// ever emitted; the URI value itself (which can leak an internal repo path)
+	// never is.
+	if s.ACLsExternalLink != nil {
+		e.Gauge(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
+			boolValue(*s.ACLsExternalLink != ""), telemetry.Attrs{attrSettingName: "acls_external_link_set"})
+	}
+
 	e.Gauge(docSettingKeyDuration.Name, docSettingKeyDuration.Unit, docSettingKeyDuration.Description,
 		float64(s.DevicesKeyDurationDays), nil)
 

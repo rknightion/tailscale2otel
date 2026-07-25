@@ -112,6 +112,10 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit),
 			devices.WithConnectivity(c.Devices.CollectConnectivity),
 			devices.WithSubnetRouteRollup(cfg.Cardinality.SubnetRouteRollup),
+			// Per-device posture/invite subrequests can fail individually while the
+			// enclosing tick still reports a clean scrape. The coverage tally is what
+			// makes that partial blindness visible (#421).
+			devices.WithCoverage(rt.coverage),
 		}
 		if d.tsRelease != nil {
 			devOpts = append(devOpts, devices.WithUpstreamLatest(
@@ -127,7 +131,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 				// blocksIncomingConnections; suppress rather than fabricate 0s.
 				// The posture-identity gauge self-gates on wire presence.
 				devices.WithMultipleConnectionsData(false),
-				devices.WithBlocksIncomingConnectionsData(false))
+				devices.WithBlocksIncomingConnectionsData(false),
+				// hsapi hard-codes both source fields false, so without these a
+				// Headscale build would publish a confident "SSH enabled nowhere /
+				// key expiry disabled nowhere" (#414). Absence, not a false zero.
+				devices.WithSSHData(false),
+				devices.WithKeyExpiryDisabledData(false))
 		}
 		rt.registry.Register(devices.New(cp.Client, rt.cache, c.Devices.Interval.D(),
 			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())
@@ -155,9 +164,20 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(settings.New(rt.client, c.Settings.Interval.D()), c.Settings.Interval.D())
 	}
 	if c.Acl.Enabled && cp.Supports("acl") {
-		var aclOpts []acl.Option
+		aclOpts := []acl.Option{
+			acl.WithValidate(c.Acl.Validate),
+			acl.WithAPIState(rt.apiState),
+		}
 		if rt.policy != nil {
 			aclOpts = append(aclOpts, acl.WithPolicySink(rt.policy))
+		}
+		// The validator is deliberately NOT part of provider.ControlPlane: that
+		// interface is shared with the Headscale adapter, which has no validate
+		// endpoint. Wiring the concrete Tailscale client here keeps the dependency
+		// optional, so a Headscale runtime (rt.client == nil) simply never
+		// validates instead of needing a stub that errors (#428).
+		if rt.client != nil {
+			aclOpts = append(aclOpts, acl.WithValidator(rt.client))
 		}
 		rt.registry.Register(acl.New(cp.Client, c.Acl.Interval.D(), nil, aclOpts...), c.Acl.Interval.D())
 	}
@@ -169,13 +189,17 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	}
 	if c.Webhooks.Enabled && cp.Supports("webhooks") {
 		rt.registry.Register(webhooks.New(rt.client, c.Webhooks.Interval.D(),
-			webhooks.WithPerEntity(cfg.Cardinality.PerEntity.Webhook)), c.Webhooks.Interval.D())
+			webhooks.WithPerEntity(cfg.Cardinality.PerEntity.Webhook),
+			webhooks.WithDesiredEvents(c.Webhooks.DesiredEvents),
+			webhooks.WithAPIState(rt.apiState)), c.Webhooks.Interval.D())
 	}
 	if c.PostureIntegrations.Enabled && cp.Supports("posture_integrations") {
-		rt.registry.Register(postureintegrations.New(rt.client, c.PostureIntegrations.Interval.D()), c.PostureIntegrations.Interval.D())
+		rt.registry.Register(postureintegrations.New(rt.client, c.PostureIntegrations.Interval.D(),
+			postureintegrations.WithAPIState(rt.apiState)), c.PostureIntegrations.Interval.D())
 	}
 	if c.LogStream.Enabled && cp.Supports("log_stream") {
-		rt.registry.Register(logstream.New(rt.client, c.LogStream.Interval.D()), c.LogStream.Interval.D())
+		rt.registry.Register(logstream.New(rt.client, c.LogStream.Interval.D(),
+			logstream.WithAPIState(rt.apiState)), c.LogStream.Interval.D())
 	}
 	if c.OAuthApps.Enabled && cp.Supports("oauth_apps") {
 		rt.registry.Register(oauthapps.New(rt.client, c.OAuthApps.Interval.D()), c.OAuthApps.Interval.D())
@@ -206,7 +230,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		}
 	}
 	if c.Flowlogs.Enabled && cp.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
-		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), ingest)
+		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), ingest,
+			flowlogs.WithAPIState(rt.apiState))
 		rt.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
 	} else if c.Flowlogs.Enabled && cp.Supports("flowlogs") {
 		// Stream-only or objectstore-only: the poller isn't registered, so the

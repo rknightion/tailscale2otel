@@ -8,14 +8,21 @@ import (
 
 // OAuthApp is a tailnet OAuth application (client) as returned by
 // GET /api/v2/tailnet/{tailnet}/oauth-apps. Only the fields the oauth_apps
-// collector needs are decoded; redirectURIs and clientSecret (a write-only
-// secret, only ever populated on creation) are deliberately never surfaced.
+// collector needs are decoded. redirectURIs IS decoded (#419) so the
+// collector can report a bounded COUNT — the URI values themselves are never
+// surfaced past this struct. clientSecret (a write-only secret, only ever
+// populated on creation) has no field here at all and is deliberately never
+// decoded.
 type OAuthApp struct {
 	ID                    string
 	Name                  string
 	Description           string
 	Scopes                []string
 	AllowedNodeAttributes []string
+	// RedirectURIs is decoded only so its length can be reported as a bounded
+	// posture signal (tailscale.oauth_app.redirect_uris, #419). Collectors
+	// must never emit the URI values themselves.
+	RedirectURIs []string
 
 	Created time.Time
 	Updated time.Time
@@ -31,6 +38,7 @@ type wireOAuthApp struct {
 	Description           string    `json:"description"`
 	Scopes                []string  `json:"scopes"`
 	AllowedNodeAttributes []string  `json:"allowedNodeAttributes"`
+	RedirectURIs          []string  `json:"redirectURIs"`
 	Created               time.Time `json:"created"`
 	Updated               time.Time `json:"updated"`
 }

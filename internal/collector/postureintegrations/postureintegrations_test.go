@@ -2,9 +2,11 @@ package postureintegrations
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
@@ -149,5 +151,123 @@ func TestCollectPropagatesError(t *testing.T) {
 	rec := telemetrytest.New()
 	if err := New(&fakeAPI{err: context.DeadlineExceeded}, 0).Collect(context.Background(), rec.Emitter()); err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestClassifiesInsteadOfBlanketPropagating is the #420 regression. This
+// collector used to `return err` for everything, so a missing devices:read
+// scope, an expired credential and a flaky 503 were one indistinguishable
+// scrape failure.
+func TestClassifiesInsteadOfBlanketPropagating(t *testing.T) {
+	tests := []struct {
+		name          string
+		code          int
+		wantState     apistate.State
+		wantErr       bool
+		wantActonable bool
+		wantCount     bool // a count=0 gauge is emitted
+	}{
+		{"401 revoked credential", 401, apistate.StateCredentialRejected, true, true, false},
+		{"403 missing scope", 403, apistate.StateScopeDenied, true, true, false},
+		{"404 feature absent", 404, apistate.StateDisabled, false, false, true},
+		{"503 transient", 503, apistate.StateTransientFailure, true, true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			api := &fakeAPI{err: &tsapi.StatusError{Code: tc.code}}
+			err := New(api, 0).Collect(context.Background(), rec.Emitter())
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("Collect() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if got := availabilityStates(t, rec)["getPostureIntegrations"]; got != string(tc.wantState) {
+				t.Errorf("availability = %q, want %q", got, tc.wantState)
+			}
+			if got := tc.wantState.Actionable(); got != tc.wantActonable {
+				t.Errorf("%s.Actionable() = %v, want %v", tc.wantState, got, tc.wantActonable)
+			}
+			cnt := rec.MetricPoints("tailscale.posture_integrations.count")
+			if tc.wantCount {
+				if len(cnt) != 1 || cnt[0].Value != 0 {
+					t.Errorf("count = %+v, want a single 0 (the endpoint is absent, so there are none)", cnt)
+				}
+			} else if len(cnt) != 0 {
+				t.Errorf("count emitted %d points after a %d; we never learned how many integrations exist", len(cnt), tc.code)
+			}
+		})
+	}
+}
+
+// Test401And403AreObservablyDifferent states the invariant directly: the two
+// must never collapse to one outcome anywhere in this collector.
+func Test401And403AreObservablyDifferent(t *testing.T) {
+	state := func(code int) string {
+		rec := telemetrytest.New()
+		_ = New(&fakeAPI{err: &tsapi.StatusError{Code: code}}, 0).Collect(context.Background(), rec.Emitter())
+		return availabilityStates(t, rec)["getPostureIntegrations"]
+	}
+	if a, b := state(401), state(403); a == b {
+		t.Fatalf("401 and 403 both produced state %q; they must be distinguishable", a)
+	}
+}
+
+func TestAvailabilitySupportedAndTracker(t *testing.T) {
+	probe := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	c := New(&fakeAPI{ints: []tsapi.PostureIntegration{{ID: "p1", Provider: "intune"}}}, 0, WithAPIState(tr))
+	c.now = func() time.Time { return probe }
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := availabilityStates(t, rec)["getPostureIntegrations"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want supported", got)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "posture_integrations" {
+		t.Fatalf("tracker snapshot = %+v, want one posture_integrations entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
+	}
+}
+
+// TestNoAgeHistogram documents a deliberate #426 omission, so nobody "fixes" it
+// by inventing a timestamp. The upstream PostureIntegration schema exposes only
+// `configUpdated` (last config edit) and `status.lastSync` — there is NO
+// creation timestamp, so no age distribution is emitted for this entity family.
+func TestNoAgeHistogram(t *testing.T) {
+	rec := telemetrytest.New()
+	c := New(&fakeAPI{ints: []tsapi.PostureIntegration{{ID: "p1", Provider: "intune"}}}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	for _, name := range rec.MetricNames() {
+		if strings.Contains(name, ".age") {
+			t.Errorf("emitted age metric %q, but the posture schema has no creation timestamp", name)
+		}
 	}
 }

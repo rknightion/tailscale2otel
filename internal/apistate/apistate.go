@@ -279,9 +279,32 @@ func (c *Coverage) Record(collector, subrequest string, s State) {
 	e.Failures[s]++
 }
 
-// Reset clears every tally. Collectors call this at the start of a tick so the
-// snapshot always describes the most recent complete pass rather than an
+// ResetCollector clears the tallies belonging to one collector, leaving every
+// other collector's untouched. Collectors call this at the start of a tick so
+// their snapshot describes the most recent complete pass rather than an
 // ever-growing lifetime total.
+//
+// This is the method collectors must use, NOT Reset. One *Coverage is shared per
+// tailnet runtime so the status page can read a single object, which means a
+// global reset would let any collector wipe another's tallies mid-tick and then
+// emit the other's series as its own. Devices is the only N+1 collector today,
+// so that is latent rather than live — but it is exactly the kind of sharing bug
+// that only shows up once a second collector grows a subrequest.
+func (c *Coverage) ResetCollector(collector string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k := range c.m {
+		if k.collector == collector {
+			delete(c.m, k)
+		}
+	}
+}
+
+// Reset clears every tally, for tests and for a full teardown. Production
+// collectors want ResetCollector.
 func (c *Coverage) Reset() {
 	if c == nil {
 		return

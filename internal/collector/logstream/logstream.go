@@ -9,17 +9,24 @@
 // later scrapes emit current-minus-previous, or the current value on a reset
 // (the stream config was recreated). This makes the collector stateful.
 //
-// Gating is bulletproof because the collector is enabled by default: any 4xx
-// (StatusError) OR a 2xx body with no recognized status fields → configured=0,
-// idle, NO error (a tailnet with no SIEM sink never produces scrape-error
-// noise); only 5xx/transport errors surface as scrape failures.
+// Gating (#420): only a 404 — the endpoint is absent for this tailnet — OR a
+// 2xx body with no recognized status fields means "no stream configured", which
+// emits configured=0, stays idle and returns NO error, so a tailnet with no
+// SIEM sink never produces scrape-error noise.
+//
+// It used to fold ANY 4xx into that same benign reading, which is precisely the
+// bug #420 was filed for: a revoked credential (401) and a missing logs:read
+// scope (403) both surfaced as a deliberate-looking configured=0. Those now
+// classify as credential_rejected / scope_denied, return an error, and
+// deliberately emit NO configured gauge — being denied tells us nothing about
+// whether a sink exists, and claiming 0 would be inventing an answer.
 package logstream
 
 import (
 	"context"
-	"errors"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -39,6 +46,24 @@ const defaultInterval = 600 * time.Second
 var logTypes = []string{"configuration", "network"}
 
 const attrType = "tailscale.logstream.type"
+
+// opStatusPrefix is the upstream operationId of the status probe. The two log
+// types are INDEPENDENT probes with independent outcomes (one tailnet routinely
+// streams configuration logs and not network logs), so the availability signal
+// is keyed per log type: apistate.EmitAvailability takes only a collector and an
+// operation, and a single shared name would let the two probes overwrite each
+// other's state every tick. The suffix keeps the label bounded at exactly two
+// values.
+const opStatusPrefix = "getLogStreamingStatus"
+
+// statusOperation returns the availability operation name for a log type.
+func statusOperation(logType string) string { return opStatusPrefix + "." + logType }
+
+// statusDisposition is the DEFAULT disposition: no status code is read as
+// "feature disabled" beyond the built-in 404. Upstream does not document 403 on
+// this endpoint as a plan gate — it is a scope denial, and reading it as
+// disabled is what turned a permission regression into a healthy zero.
+var statusDisposition = apistate.Disposition{}
 
 const (
 	metricConfigured      = "tailscale.logstream.configured"
@@ -64,11 +89,35 @@ type Collector struct {
 	// prev holds the last cumulative counter value per (logType -> metricName)
 	// for delta emission. The collector is stateful between ticks.
 	prev map[string]map[string]float64
+	// tracker records per-operation availability for the admin status page. A
+	// nil *apistate.Tracker is a no-op, so it needs no nil check.
+	tracker *apistate.Tracker
+	// now is the clock, injectable from tests.
+	now func() time.Time
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithAPIState wires the shared per-operation availability tracker (#420) that
+// backs the admin status page. Availability METRICS are emitted regardless; the
+// tracker is only the in-process introspection copy.
+func WithAPIState(t *apistate.Tracker) Option {
+	return func(c *Collector) { c.tracker = t }
 }
 
 // New returns a logstream collector. A non-positive interval resolves to 600s.
-func New(a api, interval time.Duration) *Collector {
-	return &Collector{api: a, interval: interval, prev: map[string]map[string]float64{}}
+func New(a api, interval time.Duration, opts ...Option) *Collector {
+	c := &Collector{
+		api:      a,
+		interval: interval,
+		prev:     map[string]map[string]float64{},
+		now:      time.Now,
+	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier.
@@ -82,20 +131,26 @@ func (c *Collector) DefaultInterval() time.Duration {
 	return defaultInterval
 }
 
-// Collect probes each log type's stream-status endpoint, gating 4xx/empty as
-// "not configured" and emitting health (delta counters + gauges + error log)
-// for configured streams. A 5xx/transport error on any type is returned (the
-// other type is still attempted first).
+// Collect probes each log type's stream-status endpoint, gating 404/empty-200 as
+// "not configured" and emitting health (delta counters + gauges + error log) for
+// configured streams. Every probe also emits its bounded availability state
+// (#420). Any other error — 401, 403, 429, 5xx, transport — is returned (the
+// other log type is still attempted first).
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	var firstErr error
 	for _, lt := range logTypes {
 		st, err := c.api.LogStreamStatus(ctx, lt)
+		state := apistate.Observe(e, c.tracker, c.Name(), statusOperation(lt), statusDisposition, err, c.now())
 		if err != nil {
-			var se *tsapi.StatusError
-			if errors.As(err, &se) && se.Code >= 400 && se.Code < 500 {
+			if state == apistate.StateDisabled {
+				// 404: the endpoint is not present for this tailnet, so there is
+				// genuinely no stream. Benign and idle.
 				c.emitConfigured(e, lt, 0)
 				continue
 			}
+			// Deliberately no configured gauge here. A 401/403/5xx means we did
+			// not learn whether a stream exists; emitting 0 would manufacture a
+			// healthy-looking answer out of a failure.
 			if firstErr == nil {
 				firstErr = err
 			}

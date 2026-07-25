@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/oauthapps"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
@@ -126,6 +128,119 @@ func TestCollect_EmitsCountScopesNodeAttrsAndInfo(t *testing.T) {
 	}
 	if !sawApp1 || !sawApp2 {
 		t.Fatalf("expected an %s log event for both apps; sawApp1=%v sawApp2=%v", oauthapps.EventAppInfo, sawApp1, sawApp2)
+	}
+}
+
+// TestCollect_RedirectURICount guards #419: only the COUNT of configured
+// redirect URIs is ever emitted, never the URI values.
+func TestCollect_RedirectURICount(t *testing.T) {
+	rec := telemetrytest.New()
+	c := oauthapps.New(&fakeLister{apps: []tsapi.OAuthApp{
+		{ID: "app1", Name: "has-redirects", RedirectURIs: []string{"https://example.com/a", "https://example.com/b"}},
+		{ID: "app2", Name: "no-redirects"},
+	}}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints(oauthapps.MetricAppRedirectURIs)
+	p := findPoint(t, pts, map[string]string{"tailscale.oauth_app.id": "app1"})
+	if p.Value != 2 {
+		t.Errorf("app1 redirect_uris = %v, want 2", p.Value)
+	}
+	for _, pt := range pts {
+		if pt.Attrs["tailscale.oauth_app.id"] == "app2" {
+			t.Errorf("app2 (no redirect URIs) unexpectedly has a redirect_uris point: %+v", pt)
+		}
+	}
+
+	// The URI values themselves must never reach telemetry: not on the metric
+	// (it carries no such attribute) and not on the info log body/attrs.
+	for _, lr := range rec.LogRecords() {
+		for k, v := range lr.Attrs {
+			if v == "https://example.com/a" || v == "https://example.com/b" {
+				t.Errorf("redirect URI value leaked into log attr %q: %q", k, v)
+			}
+		}
+		if got := lr.Body; got != "" {
+			for _, banned := range []string{"https://example.com/a", "https://example.com/b"} {
+				if strings.Contains(got, banned) {
+					t.Errorf("redirect URI value leaked into log body: %q", got)
+				}
+			}
+		}
+	}
+}
+
+// TestCollect_ScopeClassGauge guards #419's scope_class slice, mirroring the
+// keys collector's #415 treatment: tsscope.Classify(a.Scopes), zero-seeded
+// across every class for EVERY app (including one with no scopes at all,
+// unlike the count-based tailscale.oauth_app.scopes gauge, since ClassNone is
+// itself a meaningful posture value here).
+func TestCollect_ScopeClassGauge(t *testing.T) {
+	rec := telemetrytest.New()
+	c := oauthapps.New(&fakeLister{apps: []tsapi.OAuthApp{
+		{ID: "app1", Name: "unrestricted", Scopes: []string{"all"}},
+		{ID: "app2", Name: "no-scopes"},
+	}}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints(oauthapps.MetricAppScopeClass)
+	byKey := func(id string) map[string]float64 {
+		out := map[string]float64{}
+		for _, p := range pts {
+			if p.Attrs["tailscale.oauth_app.id"] != id {
+				continue
+			}
+			out[p.Attrs["tailscale.oauth_app.scope_class"]] = p.Value
+		}
+		return out
+	}
+
+	app1 := byKey("app1")
+	if len(app1) != 5 {
+		t.Fatalf("app1: got %d classes, want 5 (zero-seeded): %v", len(app1), app1)
+	}
+	if app1["all"] != 1 {
+		t.Errorf("app1 class 'all' = %v, want 1", app1["all"])
+	}
+
+	app2 := byKey("app2")
+	if len(app2) != 5 {
+		t.Fatalf("app2 (no scopes): got %d classes, want 5 (zero-seeded, including for an unscoped app): %v", len(app2), app2)
+	}
+	if app2["none"] != 1 {
+		t.Errorf("app2 class 'none' = %v, want 1", app2["none"])
+	}
+}
+
+// TestCollect_AppsAgeHistogram guards the oauth_apps slice of #426.
+func TestCollect_AppsAgeHistogram(t *testing.T) {
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := oauthapps.New(&fakeLister{apps: []tsapi.OAuthApp{
+		{ID: "app1", Name: "week-old", Created: now.Add(-7 * 24 * time.Hour)},
+		{ID: "app2", Name: "no-created"}, // zero Created -> must be skipped
+	}}, 0, oauthapps.WithClock(func() time.Time { return now }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints(oauthapps.MetricAppsAge)
+	if len(pts) != 1 {
+		t.Fatalf("oauth_apps.age points = %d, want 1 (no-created must be skipped) (%+v)", len(pts), pts)
+	}
+	if pts[0].Kind != "histogram" {
+		t.Fatalf("oauth_apps.age kind = %q, want histogram", pts[0].Kind)
+	}
+	if pts[0].Unit != "s" {
+		t.Fatalf("oauth_apps.age unit = %q, want s", pts[0].Unit)
+	}
+	wantSecs := float64(7 * 24 * time.Hour / time.Second)
+	if pts[0].Value != wantSecs {
+		t.Fatalf("oauth_apps.age sum = %v, want %v", pts[0].Value, wantSecs)
 	}
 }
 

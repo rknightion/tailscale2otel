@@ -616,6 +616,209 @@ func TestCollect_KeysByOwner_NotGatedByPerEntity(t *testing.T) {
 	}
 }
 
+// TestCollect_ScopeClassGauge guards #415: tailscale.key.scope_class replaces
+// the raw scope count as the privilege signal, zero-seeded across every
+// tsscope.Class for each scoped credential (mirrors apistate.EmitAvailability's
+// zero-seed shape) so a plain synchronous Gauge can never ghost a stale class
+// after a credential's scopes change.
+func TestCollect_ScopeClassGauge(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "unrestricted", Type: "client", Description: "danger", Scopes: []string{"all"}},
+		{ID: "broad-read", Type: "client", Scopes: []string{"all:read"}},
+		{ID: "narrow-read", Type: "api", Scopes: []string{"devices:core:read", "dns:read"}},
+		{ID: "auth", Type: "auth", Reusable: true}, // no scopes -> no scope_class points
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.key.scope_class")
+	wantClasses := []string{"none", "read", "all_read", "write", "all"}
+
+	byKey := func(id string) map[string]float64 {
+		out := map[string]float64{}
+		for _, p := range pts {
+			if p.Attrs["tailscale.key.id"] != id {
+				continue
+			}
+			out[p.Attrs["tailscale.key.scope_class"]] = p.Value
+		}
+		return out
+	}
+
+	checkZeroSeeded := func(id, wantHot string) {
+		got := byKey(id)
+		if len(got) != len(wantClasses) {
+			t.Fatalf("%s: got %d classes, want %d (%v)", id, len(got), len(wantClasses), got)
+		}
+		for _, c := range wantClasses {
+			v, ok := got[c]
+			if !ok {
+				t.Fatalf("%s: missing zero-seeded class %q, got %v", id, c, got)
+			}
+			want := 0.0
+			if c == wantHot {
+				want = 1
+			}
+			if v != want {
+				t.Errorf("%s: class %q = %v, want %v", id, c, v, want)
+			}
+		}
+	}
+
+	checkZeroSeeded("unrestricted", "all")
+	checkZeroSeeded("broad-read", "all_read")
+	checkZeroSeeded("narrow-read", "read")
+
+	for _, p := range pts {
+		if p.Attrs["tailscale.key.id"] == "auth" {
+			t.Fatalf("unscoped auth key must not emit scope_class points, got %+v", p)
+		}
+	}
+
+	// Sanity: the previously-inverted alert scenario. A single "all" scope key
+	// must read as the "all" class, and NOT the same or lower rank than eleven
+	// narrow read scopes.
+	allPts := byKey("unrestricted")
+	readPts := byKey("narrow-read")
+	if allPts["all"] != 1 || readPts["all"] != 0 {
+		t.Fatalf("unrestricted 'all' key and narrow-read key must not collapse to the same class: all=%v read-as-all=%v", allPts["all"], readPts["all"])
+	}
+}
+
+func TestCollect_ScopeClassGauge_PerEntityFalse(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "oauth", Type: "client", Scopes: []string{"all"}},
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.key.scope_class"); len(pts) != 0 {
+		t.Errorf("scope_class emitted with WithPerEntity(false): %+v", pts)
+	}
+}
+
+// TestCollect_TagScopeAndAllowedTagsCount guards #416: the top-level
+// trust-credential AllowedTags (distinct from the nested auto-applied Tags)
+// drives a bounded tag_scope class (none|restricted, zero-seeded) plus an
+// unconditional count — unconditional because a count of 0 IS the dangerous
+// case (no tag restriction = broadest authority) and must never be hidden by
+// an "only emit when non-empty" convention.
+func TestCollect_TagScopeAndAllowedTagsCount(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "unrestricted", Type: "client", Scopes: []string{"all"}}, // no AllowedTags -> broadest authority
+		{ID: "restricted", Type: "client", Scopes: []string{"all"}, AllowedTags: []string{"tag:ci", "tag:prod"}},
+		{ID: "token", Type: "api", Scopes: []string{"all"}}, // api tokens carry no top-level tags -> not emitted
+		{ID: "auth", Type: "auth", Reusable: true},          // auth keys carry no top-level tags -> not emitted
+	}}, 0, time.Hour, func() time.Time { return now })
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	tagScopePts := rec.MetricPoints("tailscale.key.tag_scope")
+	byKeyClass := func(id string) map[string]float64 {
+		out := map[string]float64{}
+		for _, p := range tagScopePts {
+			if p.Attrs["tailscale.key.id"] != id {
+				continue
+			}
+			out[p.Attrs["tailscale.key.tag_scope"]] = p.Value
+		}
+		return out
+	}
+
+	unrestricted := byKeyClass("unrestricted")
+	if len(unrestricted) != 2 {
+		t.Fatalf("unrestricted: got %d tag_scope classes, want 2 (zero-seeded none/restricted): %v", len(unrestricted), unrestricted)
+	}
+	if unrestricted["none"] != 1 || unrestricted["restricted"] != 0 {
+		t.Errorf("unrestricted tag_scope = %v, want none=1 restricted=0", unrestricted)
+	}
+
+	restricted := byKeyClass("restricted")
+	if restricted["none"] != 0 || restricted["restricted"] != 1 {
+		t.Errorf("restricted tag_scope = %v, want none=0 restricted=1", restricted)
+	}
+
+	for _, id := range []string{"token", "auth"} {
+		if got := byKeyClass(id); len(got) != 0 {
+			t.Errorf("%s: tag_scope must not be emitted for non-OAuth-client keys, got %v", id, got)
+		}
+	}
+
+	countPts := rec.MetricPoints("tailscale.key.allowed_tags")
+	cByID := map[string]float64{}
+	for _, p := range countPts {
+		cByID[p.Attrs["tailscale.key.id"]] = p.Value
+	}
+	if v, ok := cByID["unrestricted"]; !ok || v != 0 {
+		t.Errorf("unrestricted allowed_tags count = %v (ok=%v), want 0 (and it must still be EMITTED)", v, ok)
+	}
+	if v, ok := cByID["restricted"]; !ok || v != 2 {
+		t.Errorf("restricted allowed_tags count = %v (ok=%v), want 2", v, ok)
+	}
+	if _, ok := cByID["token"]; ok {
+		t.Errorf("api tokens must not emit allowed_tags count")
+	}
+	if _, ok := cByID["auth"]; ok {
+		t.Errorf("auth keys must not emit allowed_tags count")
+	}
+}
+
+func TestCollect_TagScope_PerEntityFalse(t *testing.T) {
+	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "oauth", Type: "client", Scopes: []string{"all"}},
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.key.tag_scope"); len(pts) != 0 {
+		t.Errorf("tag_scope emitted with WithPerEntity(false): %+v", pts)
+	}
+	if pts := rec.MetricPoints("tailscale.key.allowed_tags"); len(pts) != 0 {
+		t.Errorf("allowed_tags emitted with WithPerEntity(false): %+v", pts)
+	}
+}
+
+// TestCollect_KeysAgeHistogram guards the keys slice of #426: a bounded fleet
+// age distribution, unconditional on per_entity (it is a histogram, not a
+// per-entity series), skipping keys with no Created timestamp rather than
+// recording a false age of 0.
+func TestCollect_KeysAgeHistogram(t *testing.T) {
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{keys: []tsapi.Key{
+		{ID: "week-old", Type: "auth", Reusable: true, Created: now.Add(-7 * 24 * time.Hour)},
+		{ID: "no-created", Type: "auth", Reusable: true}, // zero Created -> must be skipped
+	}}, 0, time.Hour, func() time.Time { return now }, keys.WithPerEntity(false))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.keys.age")
+	if len(pts) != 1 {
+		t.Fatalf("keys.age points = %d, want 1 (one histogram observation; no-created must be skipped) (%+v)", len(pts), pts)
+	}
+	if pts[0].Kind != "histogram" {
+		t.Fatalf("keys.age kind = %q, want histogram", pts[0].Kind)
+	}
+	if pts[0].Unit != "s" {
+		t.Fatalf("keys.age unit = %q, want s", pts[0].Unit)
+	}
+	wantSecs := float64(7 * 24 * time.Hour / time.Second)
+	if pts[0].Value != wantSecs {
+		t.Fatalf("keys.age sum = %v, want %v", pts[0].Value, wantSecs)
+	}
+}
+
 func TestCollect_TypeAndAuthKind(t *testing.T) {
 	now := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
 	rec := telemetrytest.New()

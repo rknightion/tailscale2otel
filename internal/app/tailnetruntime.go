@@ -6,6 +6,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
@@ -38,6 +39,13 @@ type tailnetRuntime struct {
 	sched       *collector.Scheduler
 	status      *collector.StatusTracker
 	apiStats    *APIStats
+	// apiState records each API operation's latest availability state, and
+	// coverage tallies per-entity subrequests. Both are per-tailnet: a scope
+	// denial on one tailnet says nothing about another, and merging them would
+	// let a healthy tailnet mask a broken one on the status page. In-process
+	// introspection only — they emit no OTLP themselves (#420, #421, #430).
+	apiState *apistate.Tracker
+	coverage *apistate.Coverage
 	flowProc    *flowlog.Processor
 	// flowStore backs the /flows view for THIS tailnet. One per runtime, not one
 	// process-wide: a device name is unique only within its tailnet, so a shared
@@ -96,6 +104,8 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 
 	rt.cache = enrich.NewDeviceCache()
 	rt.status = collector.NewStatusTracker()
+	rt.apiState = apistate.NewTracker()
+	rt.coverage = apistate.NewCoverage()
 	rt.registry = collector.NewRegistry()
 
 	schedOpts := []collector.SchedulerOption{

@@ -74,6 +74,12 @@ jobs:
           # The test t.Skip()s when the token or tailnet is empty, and a skip still exits 0.
           # The step above makes that unreachable, but if it ever happens again, a skip must
           # never look clean — "Resolve tracking issue" would close the drift issue on nothing.
+          #
+          # This grep stays a blunt "any --- SKIP fails the run" on purpose. The ops that
+          # legitimately cannot run — the path-parameterized ones, when the tailnet holds no
+          # device or Service to address them with (#424) — do NOT call t.Skip and so emit no
+          # --- SKIP marker; they log NOT-APPLICABLE instead, which the next step surfaces in
+          # the summary. So "--- SKIP" still means exactly one thing: this lane is misconfigured.
           if grep -q -- '--- SKIP' /tmp/live.log; then
             echo "live contract skipped despite passing preflight — refusing to report it clean." >&2
             code=1
@@ -97,18 +103,47 @@ jobs:
             echo
             n=$(grep -cE '^ +--- (PASS|FAIL|SKIP): TestLiveContract/' /tmp/live.log || true)
             echo "${n} op(s) exercised against the live API."
+
+            # Ops that could not run because this tailnet holds no resource to address
+            # them with (#424). These deliberately emit no "--- SKIP" marker, so without
+            # this section they would vanish silently — which is the same "green having
+            # checked nothing" failure the SKIP guard above exists to prevent.
+            na=$(grep -cE 'NOT-APPLICABLE: ' /tmp/live.log || true)
+            if [ "${na}" -gt 0 ]; then
+              echo
+              echo "### Skipped: no suitable resource"
+              echo
+              echo "| op | reason |"
+              echo "| --- | --- |"
+              sed -nE 's#^.*NOT-APPLICABLE: ([A-Za-z0-9_]+) :: (.*)$#| \1 | \2 |#p' /tmp/live.log
+              echo
+              sed -nE 's#^.*NOT-APPLICABLE-RESOURCE: ([a-z-]+) :: (.*)$#- **\1** — \2#p' /tmp/live.log
+              echo
+              echo "${na} op(s) skipped: no suitable resource in this tailnet."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           TS_TAILNET: ${{ vars.TS_TAILNET }}
 
       - name: Build report
         if: steps.live.outputs.code != '0' && steps.live.outputs.code != ''
+        env:
+          TS_TAILNET: ${{ vars.TS_TAILNET }}
         run: |
+          set -euo pipefail
+          # The test already routes every error through contract.SanitizeEvidence, but this
+          # report goes into a PUBLIC issue, so strip the tailnet name from anything the Go
+          # test harness itself printed (panics, file:line banners) as a second line of
+          # defence. Literal replacement via python3 — no regex metacharacter escaping to
+          # get wrong, and the tailnet name is read from the environment, never interpolated
+          # into the script.
+          python3 -c 'import os,sys; t=os.environ.get("TS_TAILNET","").strip(); d=sys.stdin.read(); sys.stdout.write(d.replace(t,"[redacted]") if t else d)' \
+            < /tmp/live.log > /tmp/live.sanitized.log
           {
             echo "## Live Tailscale API contract failures"
             echo
             echo '```'
-            tail -c 8000 /tmp/live.log
+            tail -c 8000 /tmp/live.sanitized.log
             echo '```'
           } > /tmp/live.md
 

@@ -2,9 +2,11 @@ package logstream
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
@@ -180,6 +182,159 @@ func TestCounterReset(t *testing.T) {
 	bs := rec.MetricPoints("tailscale.logstream.bytes_sent")
 	if len(bs) != 1 || bs[0].Value != 300 {
 		t.Fatalf("bytes_sent after reset = %+v, want one point value 300 (current)", bs)
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+// The metric is zero-seeded across the whole state set, so exactly one point per
+// operation must be 1 and every other point 0.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// Test401And403AreDistinctAndNotUnconfigured is the core #420 regression. The
+// collector used to fold ANY 4xx into "no stream configured", so a revoked
+// credential (401) and a missing scope (403) both read as a healthy, deliberate
+// zero — exactly the failure mode the issue exists to kill.
+func Test401And403AreDistinctAndNotUnconfigured(t *testing.T) {
+	tests := []struct {
+		code      int
+		wantState string
+	}{
+		{401, "credential_rejected"},
+		{403, "scope_denied"},
+	}
+	seen := map[string]bool{}
+	for _, tc := range tests {
+		t.Run(http.StatusText(tc.code), func(t *testing.T) {
+			api := &fakeAPI{fn: func(string) (*tsapi.LogStreamStatus, error) {
+				return nil, &tsapi.StatusError{Code: tc.code}
+			}}
+			rec := telemetrytest.New()
+			err := New(api, 0).Collect(context.Background(), rec.Emitter())
+			if err == nil {
+				t.Fatalf("Collect returned nil for a %d; a rejected credential must not read as success", tc.code)
+			}
+			// It must NOT claim the stream is unconfigured: we were denied, we
+			// did not learn that no sink exists.
+			if cfg := rec.MetricPoints("tailscale.logstream.configured"); len(cfg) != 0 {
+				t.Errorf("configured emitted %d points on a %d; we never learned whether a stream exists", len(cfg), tc.code)
+			}
+			states := availabilityStates(t, rec)
+			for _, lt := range logTypes {
+				op := "getLogStreamingStatus." + lt
+				if states[op] != tc.wantState {
+					t.Errorf("availability[%s] = %q, want %q", op, states[op], tc.wantState)
+				}
+			}
+			if !apistate.State(tc.wantState).Actionable() {
+				t.Errorf("state %q must be Actionable — it is a real regression", tc.wantState)
+			}
+			seen[tc.wantState] = true
+		})
+	}
+	if len(seen) != 2 {
+		t.Fatalf("401 and 403 produced %d distinct states, want 2", len(seen))
+	}
+}
+
+// Test404IsDisabledAndNotActionable pins the other half: an absent endpoint is
+// benign and must never page anyone.
+func Test404IsDisabledAndNotActionable(t *testing.T) {
+	api := &fakeAPI{fn: func(string) (*tsapi.LogStreamStatus, error) {
+		return nil, &tsapi.StatusError{Code: 404}
+	}}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect returned an error for a 404 (feature not configured): %v", err)
+	}
+	states := availabilityStates(t, rec)
+	for _, lt := range logTypes {
+		op := "getLogStreamingStatus." + lt
+		if states[op] != string(apistate.StateDisabled) {
+			t.Errorf("availability[%s] = %q, want disabled", op, states[op])
+		}
+	}
+	if apistate.StateDisabled.Actionable() {
+		t.Fatal("StateDisabled must not be Actionable — a feature being off is not a fault")
+	}
+	if cfg := byType(rec.MetricPoints("tailscale.logstream.configured")); cfg["network"] != 0 {
+		t.Errorf("configured = %v, want 0 for a 404", cfg)
+	}
+}
+
+// TestTransientFailureOn5xx keeps 5xx classified as retryable, distinct from
+// both the credential states and disabled.
+func TestTransientFailureOn5xx(t *testing.T) {
+	api := &fakeAPI{fn: func(string) (*tsapi.LogStreamStatus, error) {
+		return nil, &tsapi.StatusError{Code: 503}
+	}}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect should return an error on 5xx")
+	}
+	states := availabilityStates(t, rec)
+	if got := states["getLogStreamingStatus.network"]; got != string(apistate.StateTransientFailure) {
+		t.Errorf("availability = %q, want transient_failure", got)
+	}
+}
+
+// TestSupportedStateAndTracker checks the happy path records supported, and that
+// an injected tracker sees both operations (the admin status page reads it).
+func TestSupportedStateAndTracker(t *testing.T) {
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	c := New(networkOnly(nil), 0, WithAPIState(tr))
+	c.now = func() time.Time { return time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC) }
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	states := availabilityStates(t, rec)
+	if states["getLogStreamingStatus.network"] != string(apistate.StateSupported) {
+		t.Errorf("network availability = %q, want supported", states["getLogStreamingStatus.network"])
+	}
+	// The other log type 404s in networkOnly.
+	if states["getLogStreamingStatus.configuration"] != string(apistate.StateDisabled) {
+		t.Errorf("configuration availability = %q, want disabled", states["getLogStreamingStatus.configuration"])
+	}
+
+	snap := tr.Snapshot()
+	if len(snap) != 2 {
+		t.Fatalf("tracker snapshot = %d entries, want 2", len(snap))
+	}
+	for _, e := range snap {
+		if e.Collector != "logstream" {
+			t.Errorf("tracker entry collector = %q, want logstream", e.Collector)
+		}
+		if e.LastProbe.IsZero() {
+			t.Errorf("tracker entry %q has a zero LastProbe", e.Operation)
+		}
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 2 {
+		t.Fatalf("last_probe points = %d, want 2", len(lp))
+	}
+	want := float64(time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC).Unix())
+	for _, p := range lp {
+		if p.Value != want {
+			t.Errorf("last_probe = %v, want %v (injected clock)", p.Value, want)
+		}
 	}
 }
 

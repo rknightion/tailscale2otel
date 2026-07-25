@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 )
 
@@ -33,6 +34,67 @@ var funcs = template.FuncMap{
 			return "err"
 		default: // "starting" and any unknown state
 			return "pending"
+		}
+	},
+	// capCount tallies one dimension of the capability matrix for the summary
+	// tiles. Counting here rather than in the DTO keeps statusdata a plain data
+	// model with no derived fields for the JSON consumer to disagree with.
+	"capCount": func(rows []statusdata.CapabilityRow, what string) int {
+		n := 0
+		for _, r := range rows {
+			switch what {
+			case "active":
+				if r.Active {
+					n++
+				}
+			case "actionable":
+				if r.Actionable {
+					n++
+				}
+			case "scope_gap":
+				// Only a RUNNING row with a real gap counts: a disabled collector's
+				// missing scope is not a problem anyone needs to fix.
+				if r.Active && r.ScopeStatus == statusdata.ScopeInsufficient {
+					n++
+				}
+			}
+		}
+		return n
+	},
+	// capStateClass badges an apistate value. "disabled" is deliberately neutral,
+	// not an error — a tailnet simply lacking an optional feature is expected.
+	"capStateClass": func(state string, actionable bool) string {
+		if actionable {
+			return "err"
+		}
+		if state == string(apistate.StateSupported) {
+			return "ok"
+		}
+		return "pending"
+	},
+	// capScopeClass badges a scope-preflight outcome. Unknown and not_applicable
+	// are neutral: neither is a finding.
+	"capScopeClass": func(status string) string {
+		switch status {
+		case statusdata.ScopeSatisfied:
+			return "ok"
+		case statusdata.ScopeInsufficient:
+			return "err"
+		default:
+			return "pending"
+		}
+	},
+	// capReason renders a non-active reason code as operator-facing prose.
+	"capReason": func(reason string) string {
+		switch reason {
+		case statusdata.CapabilityReasonUnsupported:
+			return "unsupported"
+		case statusdata.CapabilityReasonConfigDisabled:
+			return "disabled in config"
+		case statusdata.CapabilityReasonNotRegistered:
+			return "not polling"
+		default:
+			return "inactive"
 		}
 	},
 }

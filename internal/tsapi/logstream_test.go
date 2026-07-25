@@ -3,6 +3,7 @@ package tsapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -88,6 +89,43 @@ func TestConfigureLogStream_Non2xxReturnsError(t *testing.T) {
 			}
 			if !strings.Contains(msg, "boom-detail") {
 				t.Fatalf("error %q does not include body snippet", msg)
+			}
+		})
+	}
+}
+
+// TestConfigureLogStream_Non2xxIsTypedStatusError pins the PUT path to the same
+// typed error the GET path returns (#420). Until this landed, putJSON returned a
+// plain fmt.Errorf, so a 401 on the write path was indistinguishable from a 403
+// or a network failure — nothing downstream could classify it at all.
+func TestConfigureLogStream_Non2xxIsTypedStatusError(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "boom-detail", status)
+			}))
+			defer srv.Close()
+
+			cfg := tsapi.LogStreamConfig{DestinationType: "splunk", URL: "https://sink.example/collect"}
+			err := newClient(t, srv.URL).ConfigureLogStream(context.Background(), "network", cfg)
+			if err == nil {
+				t.Fatalf("expected error for status %d, got nil", status)
+			}
+			var se *tsapi.StatusError
+			if !errors.As(err, &se) {
+				t.Fatalf("error %T (%v) is not a *tsapi.StatusError", err, err)
+			}
+			if se.Code != status {
+				t.Errorf("StatusError.Code = %d, want %d", se.Code, status)
+			}
+			if se.Method != http.MethodPut {
+				t.Errorf("StatusError.Method = %q, want PUT", se.Method)
+			}
+			if !strings.Contains(se.Body, "boom-detail") {
+				t.Errorf("StatusError.Body = %q, want the response snippet", se.Body)
+			}
+			if got, ok := tsapi.StatusCode(err); !ok || got != status {
+				t.Errorf("StatusCode(err) = %d,%v, want %d,true", got, ok, status)
 			}
 		})
 	}

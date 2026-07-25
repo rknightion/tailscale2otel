@@ -4,8 +4,10 @@
 //	apidrift -old vendored.json -new live.json [-format md|json]
 //
 // Exit codes: 0 = no actionable drift (clean or info-only); 3 = Breaking/Warning
-// changes present; 2 = usage/IO error. The -ops default is the consumed-surface
-// manifest, so the tool and runtime never diverge.
+// changes present; 2 = usage/IO error.
+//
+// The operation set is not configurable: it is always contract.ConsumedOpIDs(),
+// so the tool and the runtime can never diverge on what "consumed" means.
 package main
 
 import (

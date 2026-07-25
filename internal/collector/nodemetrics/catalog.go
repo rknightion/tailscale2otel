@@ -136,7 +136,7 @@ var (
 		Unit:        semconv.UnitBytes,
 		Instrument:  metricdoc.Counter,
 		Description: descNodePeerRelayIO,
-		Attributes:  []string{attrInstance},
+		Attributes:  []string{attrInstance, semconv.AttrPeerRelayTransportIn, semconv.AttrPeerRelayTransportOut},
 		Group:       groupNodeMetrics,
 	}
 	docNodePeerRelayPackets = metricdoc.Metric{
@@ -144,7 +144,7 @@ var (
 		Unit:        semconv.UnitPackets,
 		Instrument:  metricdoc.Counter,
 		Description: descNodePeerRelayPackets,
-		Attributes:  []string{attrInstance},
+		Attributes:  []string{attrInstance, semconv.AttrPeerRelayTransportIn, semconv.AttrPeerRelayTransportOut},
 		Group:       groupNodeMetrics,
 	}
 	docNodePeerRelayEndpoints = metricdoc.Metric{
@@ -152,7 +152,7 @@ var (
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
 		Description: descNodePeerRelayEndpoints,
-		Attributes:  []string{attrInstance},
+		Attributes:  []string{attrInstance, semconv.AttrPeerRelayState},
 		Group:       groupNodeMetrics,
 	}
 	docMetricNamesDropped = metricdoc.Metric{

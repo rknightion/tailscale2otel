@@ -20,10 +20,10 @@ package contract
 //	getLogStreamingStatus     → LogStreamStatus(…,"configuration") path: /api/v2/tailnet/{t}/logging/{logType}/stream/status
 //	getPostureIntegrations    → PostureIntegrations   path: /api/v2/tailnet/{t}/posture/integrations
 //	listServices              → Services              path: /api/v2/tailnet/{t}/services
-//	listServiceHosts          → ServiceHosts(…,name)  path: /api/v2/tailnet/{t}/services/{serviceName}/devices (LiveSkip)
+//	listServiceHosts          → ServiceHosts(…,name)  path: /api/v2/tailnet/{t}/services/{serviceName}/devices (LiveRequires service-name)
 //	getDnsConfiguration       → DNSConfiguration      path: /api/v2/tailnet/{t}/dns/configuration
-//	listDeviceInvites         → DeviceInvites(…,devID) path: /api/v2/device/{id}/device-invites (LiveSkip)
-//	getDevicePostureAttributes→ DevicePostureAttributes(…,devID) path: /api/v2/device/{id}/attributes (LiveSkip)
+//	listDeviceInvites         → DeviceInvites(…,devID) path: /api/v2/device/{id}/device-invites (LiveRequires device-id)
+//	getDevicePostureAttributes→ DevicePostureAttributes(…,devID) path: /api/v2/device/{id}/attributes (LiveRequires device-id)
 //	listUserInvites           → UserInvites           path: /api/v2/tailnet/{t}/user-invites
 //	listOAuthApps             → OAuthApps             path: /api/v2/tailnet/{t}/oauth-apps
 
@@ -194,13 +194,18 @@ var Manifest = []Op{
 	{
 		ID:     "listServiceHosts",
 		Method: "GET",
-		// Devices backing a VIP service. LiveSkip: placeholder service name 404s
-		// against the real API. Guards the ServiceHost field tags (esp. NodeID's
-		// stableNodeID wire name) against future drift (#72).
+		// Devices backing a VIP service. Guards the ServiceHost field tags (esp.
+		// NodeID's stableNodeID wire name) against future drift (#72). Invoke's
+		// placeholder is fine for Decode/fuzz (path-agnostic server); the live lane
+		// substitutes a real service name resolved from listServices (#424).
 		KnownTopLevelKeys: []string{"hosts"},
-		LiveSkip:          true,
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.ServiceHosts(ctx, "svc:placeholder")
+			return err
+		},
+		LiveRequires: []LiveResource{LiveServiceName},
+		LiveInvoke: func(ctx context.Context, c *tsapi.Client, args LiveArgs) error {
+			_, err := c.ServiceHosts(ctx, args.ServiceName)
 			return err
 		},
 	},
@@ -217,22 +222,32 @@ var Manifest = []Op{
 	{
 		ID:     "listDeviceInvites",
 		Method: "GET",
-		// Bare array response. LiveSkip: placeholder device ID 404s against real API.
+		// Bare array response. Invoke's placeholder device id is fine for
+		// Decode/fuzz; the live lane substitutes a real id from listTailnetDevices.
 		KnownTopLevelKeys: []string{""}, // sentinel: bare array
-		LiveSkip:          true,
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.DeviceInvites(ctx, "placeholder-device-id")
+			return err
+		},
+		LiveRequires: []LiveResource{LiveDeviceID},
+		LiveInvoke: func(ctx context.Context, c *tsapi.Client, args LiveArgs) error {
+			_, err := c.DeviceInvites(ctx, args.DeviceID)
 			return err
 		},
 	},
 	{
 		ID:     "getDevicePostureAttributes",
 		Method: "GET",
-		// LiveSkip: placeholder device ID 404s against real API.
+		// Invoke's placeholder device id is fine for Decode/fuzz; the live lane
+		// substitutes a real id from listTailnetDevices.
 		KnownTopLevelKeys: []string{"attributes"},
-		LiveSkip:          true,
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.DevicePostureAttributes(ctx, "placeholder-device-id")
+			return err
+		},
+		LiveRequires: []LiveResource{LiveDeviceID},
+		LiveInvoke: func(ctx context.Context, c *tsapi.Client, args LiveArgs) error {
+			_, err := c.DevicePostureAttributes(ctx, args.DeviceID)
 			return err
 		},
 	},

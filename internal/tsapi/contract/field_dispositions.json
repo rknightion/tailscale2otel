@@ -1,0 +1,1300 @@
+{
+  "//": [
+    "Consumed-field disposition contract (#422). Generated + hand-dispositioned.",
+    "Regenerate: go test ./internal/tsapi/contract -run TestFieldDispositionsInSync -update",
+    "Regeneration adds new fields with an EMPTY disposition and prunes removed ones;",
+    "it never assigns a disposition. Fill every empty one in by hand — an empty or",
+    "unknown disposition fails TestFieldDispositionsInSync.",
+    "disposition: emitted | enrichment | excluded | unhandled",
+    "  emitted    - reaches OTLP as a metric value/attribute or log attribute",
+    "  enrichment - feeds a cache, derived state or a gating decision; never emitted verbatim",
+    "  excluded   - decoded but deliberately dropped; the note must say privacy or cardinality",
+    "  unhandled  - decoded, no consumer yet; an acknowledged gap"
+  ],
+  "fields": [
+    {
+      "op": "getContacts",
+      "path": "Account.Email",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Account.FallbackEmail",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Account.NeedsVerification",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Security.Email",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Security.FallbackEmail",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Security.NeedsVerification",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Support.Email",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Support.FallbackEmail",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getContacts",
+      "path": "Support.NeedsVerification",
+      "type": "tsclient.Contacts",
+      "disposition": ""
+    },
+    {
+      "op": "getDevicePostureAttributes",
+      "path": "Attributes{}",
+      "type": "tsapi.DeviceAttributes",
+      "disposition": ""
+    },
+    {
+      "op": "getDevicePostureAttributes",
+      "path": "Expiries{}",
+      "type": "tsapi.DeviceAttributes",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "MagicDNS",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "Nameservers[].Address",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "Nameservers[].UseWithExitNode",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "OverrideLocalDNS",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "SearchPaths[]",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "SplitDNS{}[].Address",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getDnsConfiguration",
+      "path": "SplitDNS{}[].UseWithExitNode",
+      "type": "tsapi.DNSConfig",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "LastActivity",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "LastError",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "MaxBodySize",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "MaxNumEntries",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "NumBytesSent",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "NumEntriesSent",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "NumFailedRequests",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "NumMaxBodyRequests",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "NumSpoofedEntries",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getLogStreamingStatus",
+      "path": "NumTotalRequests",
+      "type": "tsapi.LogStreamStatus",
+      "disposition": ""
+    },
+    {
+      "op": "getPolicyFile",
+      "path": "(whole response)",
+      "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) — an opaque string we never structurally decode; disposition is recorded at op level",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "ID",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "Provider",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "Status.Error",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "Status.LastSync",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "Status.MatchedCount",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "Status.PossibleMatchedCount",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getPostureIntegrations",
+      "path": "Status.ProviderHostCount",
+      "type": "tsapi.PostureIntegration",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "ACLsExternalLink",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "ACLsExternallyManagedOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "DevicesApprovalOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "DevicesAutoUpdatesOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "DevicesKeyDurationDays",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "HTTPSEnabled",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "NetworkFlowLoggingOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "PostureIdentityCollectionOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "RegionalRoutingOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "UsersApprovalOn",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "getTailnetSettings",
+      "path": "UsersRoleAllowedToJoinExternalTailnets",
+      "type": "tsapi.TailnetSettings",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Action",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].ActionDetails",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Actor.DisplayName",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Actor.ID",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Actor.LoginName",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Actor.Tags[]",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Actor.Type",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Error",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].EventGroupID",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].EventTime",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].New",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Old",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Origin",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Target.ID",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Target.IsEphemeral",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Target.Name",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Target.Property",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Target.Type",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Type",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Tailnet",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "TailnetID",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Version",
+      "type": "audit.ConfigurationResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "Accepted",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "AcceptedByLogin",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "AllowExitNode",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "Created",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "Email",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "LastEmailSentAt",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listDeviceInvites",
+      "path": "MultiUse",
+      "type": "tsapi.DeviceInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].DstNodes[].Addresses[]",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].DstNodes[].Name",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].DstNodes[].NodeID",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].DstNodes[].OS",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].DstNodes[].Tags[]",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].DstNodes[].User",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].End",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].Dst",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].Proto",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].RxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].RxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].Src",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].TxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].ExitTraffic[].TxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].Logged",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].NodeID",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].Dst",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].Proto",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].RxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].RxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].Src",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].TxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].PhysicalTraffic[].TxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SrcNode.Addresses[]",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SrcNode.Name",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SrcNode.NodeID",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SrcNode.OS",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SrcNode.Tags[]",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SrcNode.User",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].Start",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].Dst",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].Proto",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].RxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].RxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].Src",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].TxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].SubnetTraffic[].TxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].Dst",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].Proto",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].RxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].RxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].Src",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].TxBytes",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listNetworkFlowLogs",
+      "path": "Logs[].VirtualTraffic[].TxPkts",
+      "type": "flowlog.NetworkResponse",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "AllowedNodeAttributes[]",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "Created",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "Description",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "ID",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "Name",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "RedirectURIs[]",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "Scopes[]",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listOAuthApps",
+      "path": "Updated",
+      "type": "tsapi.OAuthApp",
+      "disposition": ""
+    },
+    {
+      "op": "listServiceHosts",
+      "path": "ApprovalLevel",
+      "type": "tsapi.ServiceHost",
+      "disposition": ""
+    },
+    {
+      "op": "listServiceHosts",
+      "path": "Configured",
+      "type": "tsapi.ServiceHost",
+      "disposition": ""
+    },
+    {
+      "op": "listServiceHosts",
+      "path": "NodeID",
+      "type": "tsapi.ServiceHost",
+      "disposition": ""
+    },
+    {
+      "op": "listServices",
+      "path": "Name",
+      "type": "tsapi.VIPService",
+      "disposition": ""
+    },
+    {
+      "op": "listServices",
+      "path": "Ports[]",
+      "type": "tsapi.VIPService",
+      "disposition": ""
+    },
+    {
+      "op": "listServices",
+      "path": "Tags[]",
+      "type": "tsapi.VIPService",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Addresses[]",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "AdvertisedRoutes[]",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Authorized",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "BlocksIncomingConnections",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ClientSupports.IPv6",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ClientSupports.PCP",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ClientSupports.PMP",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ClientSupports.UDP",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ClientSupports.UPnP",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ClientVersion",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ConnectedToControl",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Created",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "DERPLatency{}.LatencyMs",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "DERPLatency{}.Preferred",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Distro.CodeName",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Distro.Name",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Distro.Version",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "EnabledRoutes[]",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Endpoints[]",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Expires",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "HardNAT",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Hostname",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "ID",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "IsEphemeral",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "IsExternal",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "KeyExpiryDisabled",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "LastSeen",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "MultipleConnections",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Name",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "NodeID",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "OS",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "PostureIdentity.Disabled",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "SSHEnabled",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "Tags[]",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "TailnetLockError",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "TailnetLockKey",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "UpdateAvailable",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "User",
+      "type": "tsapi.RichDevice",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "AllowedTags[]",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Created",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Description",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Ephemeral",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Expires",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "ID",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Invalid",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Preauthorized",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Reusable",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Revoked",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Scopes[]",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Tags[]",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Type",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "Updated",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listTailnetKeys",
+      "path": "UserID",
+      "type": "tsapi.Key",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "Email",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "ID",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "InviteURL",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "InviterID",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "LastEmailSentAt",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "Role",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUserInvites",
+      "path": "TailnetID",
+      "type": "tsapi.UserInvite",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "Created",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "CurrentlyConnected",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "DeviceCount",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "DisplayName",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "ID",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "LastSeen",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "LoginName",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "ProfilePicURL",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "Role",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "Status",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "TailnetID",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listUsers",
+      "path": "Type",
+      "type": "tsclient.User",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "Created",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "CreatorLoginName",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "EndpointID",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "EndpointURL",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "LastModified",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "ProviderType",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "Secret",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    },
+    {
+      "op": "listWebhooks",
+      "path": "Subscriptions[]",
+      "type": "tsclient.Webhook",
+      "disposition": ""
+    }
+  ]
+}

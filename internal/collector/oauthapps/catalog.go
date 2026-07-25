@@ -51,11 +51,41 @@ var (
 		Attributes:  []string{attrID, attrName, attrScopeValues, attrNodeAttrCount},
 		Group:       groupOAuthApps,
 	}
+
+	docAppRedirectURIs = metricdoc.Metric{
+		Name:        MetricAppRedirectURIs,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of redirect URIs configured for an OAuth application (a **count** — the URI values are never emitted); one series per app with at least one configured. #419.",
+		Attributes:  []string{attrID, attrName},
+		Group:       groupOAuthApps,
+	}
+
+	docAppScopeClass = metricdoc.Metric{
+		Name:       MetricAppScopeClass,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "OAuth application privilege class (info gauge, value 1 for the current class / 0 for the rest), the app-side analog of the keys collector's `tailscale.key.scope_class` (#415/#419): `none`|`read`|`all_read`|`write`|`all`, ranked by `internal/tsscope`. " +
+			"Zero-seeded across every class for every app, including one with no scopes at all.",
+		Attributes: []string{attrID, attrName, attrScopeClass},
+		Group:      groupOAuthApps,
+	}
+
+	docAppsAge = metricdoc.Metric{
+		Name:        MetricAppsAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Fleet age distribution of OAuth applications, in seconds since `created` (#426). A single bounded histogram across every app with a known Created timestamp — not a per-entity series. Bucket bounds: `internal/entityage.BucketsSeconds()`.",
+		Group:       groupOAuthApps,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docAppsCount, docAppScopes, docAppNodeAttributes}
+	return []metricdoc.Metric{
+		docAppsCount, docAppScopes, docAppNodeAttributes,
+		docAppRedirectURIs, docAppScopeClass, docAppsAge,
+	}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

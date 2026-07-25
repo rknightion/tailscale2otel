@@ -14,11 +14,11 @@ package flowlogs
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
@@ -46,6 +46,20 @@ const metricFeatureEnabled = "tailscale.feature.enabled"
 // feature.enabled gauge this collector emits.
 const featureName = "network_flow_logging"
 
+// opListNetworkFlowLogs is the upstream operationId of the window fetch.
+const opListNetworkFlowLogs = "listNetworkFlowLogs"
+
+// flowlogsDisposition is the ONE place 403 is read as "feature not enabled"
+// rather than "the credential lacks the scope" (#420).
+//
+// Network flow logging is a documented Premium/Enterprise feature that must
+// also be switched on for the tailnet, and upstream answers 403 when it is not
+// — nothing in the response distinguishes that from a scope denial. Because the
+// reading is declared HERE rather than baked into apistate.Classify, no other
+// operation inherits it: every collector that does not opt in reads 403 as
+// scope_denied, which is what keeps a real permission regression visible.
+var flowlogsDisposition = apistate.Disposition{DisabledOn: []int{403}}
+
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
 type api interface {
@@ -71,6 +85,21 @@ type Collector struct {
 	// ("poll","flow", <records accepted>, 0). The app supplies it (gated on
 	// self-observability); the collector stays agnostic to how it's emitted.
 	onIngest func(source, signal string, records, bytes int)
+	// tracker records per-operation availability for the admin status page
+	// (#420). A nil *apistate.Tracker is a no-op.
+	tracker *apistate.Tracker
+	// now is the clock, injectable from tests.
+	now func() time.Time
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithAPIState wires the shared per-operation availability tracker (#420).
+// Availability METRICS are emitted regardless; the tracker is the in-process
+// introspection copy the admin status page reads.
+func WithAPIState(t *apistate.Tracker) Option {
+	return func(c *Collector) { c.tracker = t }
 }
 
 // New returns a flowlogs Collector that fetches windows via a, converts them
@@ -81,8 +110,8 @@ type Collector struct {
 // disabled the collector stays idle and emits tailscale.feature.enabled=0
 // rather than fetching. A nil featureCheck preserves the always-enabled
 // behavior. featureCheck errors fail open (the collector proceeds as enabled).
-func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureCheck FeatureCheck, onIngest func(source, signal string, records, bytes int)) *Collector {
-	return &Collector{
+func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureCheck FeatureCheck, onIngest func(source, signal string, records, bytes int), opts ...Option) *Collector {
+	c := &Collector{
 		api:          a,
 		proc:         proc,
 		interval:     interval,
@@ -90,7 +119,12 @@ func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureChe
 		seen:         dedup.New(dedupCapacity),
 		featureCheck: featureCheck,
 		onIngest:     onIngest,
+		now:          time.Now,
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier.
@@ -144,6 +178,12 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 	}
 
 	resp, err := c.api.NetworkFlowLogs(ctx, from, to)
+	// Availability is a pure ADDITION here: the control flow below is unchanged,
+	// keyed on a genuine typed 403 exactly as before. A 404 therefore still
+	// returns an error and does not advance the checkpoint, even though its
+	// availability state is `disabled` — the endpoint's absence is real, but a
+	// window that was never read must still be retried.
+	apistate.Observe(e, c.tracker, c.Name(), opListNetworkFlowLogs, flowlogsDisposition, err, c.now())
 	if err != nil {
 		if isForbidden(err) {
 			// The feature requires Premium/Enterprise and being enabled; a 403
@@ -248,7 +288,11 @@ func (c *Collector) emitFeature(e telemetry.Emitter, enabled bool) {
 // checkpoint, silently dropping the window. Only a genuine typed 403 is
 // treated as "feature disabled"; every other error is ambiguous and must be
 // retried.
+//
+// It reads the code through tsapi.StatusCode — the one shared accessor — rather
+// than its own errors.As, so this predicate and apistate.Classify can never
+// disagree about what a 403 is (#420).
 func isForbidden(err error) bool {
-	var se *tsapi.StatusError
-	return errors.As(err, &se) && se.Code == 403
+	code, ok := tsapi.StatusCode(err)
+	return ok && code == 403
 }

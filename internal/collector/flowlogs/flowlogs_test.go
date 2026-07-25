@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
@@ -469,5 +470,119 @@ func TestCollectWindow_AmbiguousErrorTextNotMisclassified(t *testing.T) {
 				t.Fatalf("MetricPoints(%q) = %d, want 0 (nothing processed)", flowlog.MetricIO, len(pts))
 			}
 		})
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestAvailability403IsDisabledNot401 is the #420 regression for the one
+// collector that legitimately reads 403 as a feature gate. Flow logging is a
+// documented Premium/Enterprise feature, so listNetworkFlowLogs declares
+// Disposition{DisabledOn: []int{403}} — and BECAUSE it declares it explicitly,
+// no other collector inherits that reading. A 401 on the same call must stay a
+// credential rejection.
+func TestAvailability403IsDisabledNot401(t *testing.T) {
+	tests := []struct {
+		name          string
+		code          int
+		wantState     apistate.State
+		wantAdvance   bool
+		wantErr       bool
+		wantActonable bool
+	}{
+		{"403 premium gate", 403, apistate.StateDisabled, true, false, false},
+		{"401 revoked credential", 401, apistate.StateCredentialRejected, false, true, true},
+		{"429 rate limited", 429, apistate.StateTransientFailure, false, true, true},
+	}
+	from := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	to := from.Add(time.Minute)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			api := &fakeAPI{err: &tsapi.StatusError{Method: "GET", URL: "https://api.tailscale.com/x", Code: tc.code, Body: "body"}}
+			rec := telemetrytest.New()
+			c := New(api, newProcessor(), 0, 0, nil, nil)
+
+			hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("CollectWindow() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantAdvance != (hwm == to) {
+				t.Fatalf("high-water mark = %v (advance=%v), want advance=%v", hwm, hwm == to, tc.wantAdvance)
+			}
+
+			states := availabilityStates(t, rec)
+			if got := states["listNetworkFlowLogs"]; got != string(tc.wantState) {
+				t.Errorf("availability = %q, want %q", got, tc.wantState)
+			}
+			if got := tc.wantState.Actionable(); got != tc.wantActonable {
+				t.Errorf("%s.Actionable() = %v, want %v", tc.wantState, got, tc.wantActonable)
+			}
+		})
+	}
+}
+
+// TestAvailabilitySupportedOnSuccess pins the happy path and the injected clock
+// feeding the last-probe gauge.
+func TestAvailabilitySupportedOnSuccess(t *testing.T) {
+	from := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	to := from.Add(time.Minute)
+	probe := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	c := New(&fakeAPI{resp: oneTCPResponse()}, newProcessor(), 0, 0, nil, nil, WithAPIState(tr))
+	c.now = func() time.Time { return probe }
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: %v", err)
+	}
+	if got := availabilityStates(t, rec)["listNetworkFlowLogs"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want supported", got)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "flowlogs" || snap[0].Operation != "listNetworkFlowLogs" {
+		t.Fatalf("tracker snapshot = %+v, want one flowlogs/listNetworkFlowLogs entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
+	}
+}
+
+// TestAvailabilityUnknownOnCancellation: shutdown must not flap the collector
+// into a failure state, and unknown is not Actionable.
+func TestAvailabilityUnknownOnCancellation(t *testing.T) {
+	from := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	rec := telemetrytest.New()
+	c := New(&fakeAPI{err: context.Canceled}, newProcessor(), 0, 0, nil, nil)
+
+	if _, err := c.CollectWindow(context.Background(), from, from.Add(time.Minute), rec.Emitter()); err == nil {
+		t.Fatal("expected the cancellation error to propagate")
+	}
+	if got := availabilityStates(t, rec)["listNetworkFlowLogs"]; got != string(apistate.StateUnknown) {
+		t.Errorf("availability = %q, want unknown", got)
+	}
+	if apistate.StateUnknown.Actionable() {
+		t.Fatal("StateUnknown must not be Actionable")
 	}
 }

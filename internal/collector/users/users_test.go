@@ -50,6 +50,11 @@ outer:
 	return telemetrytest.MetricPoint{}
 }
 
+// fixedNow is the deterministic clock used by age-histogram tests
+// (users.WithClock). Fixed rather than time.Now() so bucket-boundary math is
+// reproducible.
+var fixedNow = time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+
 func sampleUsers() []tsclient.User {
 	return []tsclient.User{
 		{
@@ -61,6 +66,7 @@ func sampleUsers() []tsclient.User {
 			DeviceCount:        3,
 			CurrentlyConnected: true,
 			LastSeen:           time.Date(2024, 6, 6, 15, 27, 26, 0, time.UTC),
+			Created:            fixedNow.Add(-400 * 24 * time.Hour), // ~400 days old
 		},
 		{
 			ID:                 "u2",
@@ -71,6 +77,7 @@ func sampleUsers() []tsclient.User {
 			DeviceCount:        1,
 			CurrentlyConnected: false,
 			LastSeen:           time.Time{}, // zero -> skipped for last_seen
+			Created:            time.Time{}, // zero -> skipped for users.age (unknown provider value)
 		},
 		{
 			// Same role/status/type combo as bob => aggregated into the same count point.
@@ -82,6 +89,7 @@ func sampleUsers() []tsclient.User {
 			DeviceCount:        0,
 			CurrentlyConnected: true,
 			LastSeen:           time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+			Created:            fixedNow.Add(-5 * 24 * time.Hour), // 5 days old
 		},
 	}
 }
@@ -281,6 +289,56 @@ func TestCollect_PerUserLastSeen(t *testing.T) {
 	}
 }
 
+// TestCollect_UsersAge covers #426: a bounded fleet-level age distribution
+// from tsclient.User.Created. alice (~400d old) and carol (5d old) both have
+// a Created time and merge into the one nil-attr histogram series; bob has a
+// zero Created (the provider didn't report it) and must be entirely omitted
+// rather than recorded as age zero.
+func TestCollect_UsersAge(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers()}, 0,
+		users.WithClock(func() time.Time { return fixedNow }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.users.age")
+	if len(pts) != 1 {
+		t.Fatalf("users.age points = %d, want 1 (%+v)", len(pts), pts)
+	}
+	p := pts[0]
+	if p.Kind != "histogram" {
+		t.Fatalf("users.age kind = %q, want histogram", p.Kind)
+	}
+	if p.Unit != "s" {
+		t.Fatalf("users.age unit = %q, want s", p.Unit)
+	}
+	if p.Count != 2 {
+		t.Fatalf("users.age count = %d, want 2 (bob's zero Created must be omitted)", p.Count)
+	}
+	wantSum := float64(400*24*time.Hour/time.Second) + float64(5*24*time.Hour/time.Second)
+	if p.Value != wantSum {
+		t.Fatalf("users.age sum = %v, want %v", p.Value, wantSum)
+	}
+}
+
+// TestCollect_UsersAge_AllZeroCreatedEmitsNoSeries is the extreme case of the
+// above: when every user has a zero Created (e.g. a control plane that
+// doesn't report it), the histogram must not appear at all.
+func TestCollect_UsersAge_AllZeroCreatedEmitsNoSeries(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: []tsclient.User{
+		{ID: "u1", LoginName: "alice@example.com", Role: tsclient.UserRoleMember},
+	}}, 0, users.WithClock(func() time.Time { return fixedNow }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if pts := rec.MetricPoints("tailscale.users.age"); len(pts) != 0 {
+		t.Fatalf("users.age points = %d, want 0 (%+v)", len(pts), pts)
+	}
+}
+
 func TestCollect_PropagatesError(t *testing.T) {
 	rec := telemetrytest.New()
 	wantErr := errors.New("boom")
@@ -290,12 +348,16 @@ func TestCollect_PropagatesError(t *testing.T) {
 	}
 }
 
+// sampleInvites has three manual-link invites (no lastEmailSentAt) and one
+// emailed invite (i3, sent 3 days before fixedNow) — mirroring the shape of
+// the old accepted-based fixture (2/1/1 split) but grouped by delivery
+// method instead of the fabricated accepted flag (#411/#412).
 func sampleInvites() []tsapi.UserInvite {
 	return []tsapi.UserInvite{
-		{ID: "i1", Role: "member", Accepted: false},
-		{ID: "i2", Role: "member", Accepted: false},
-		{ID: "i3", Role: "member", Accepted: true},
-		{ID: "i4", Role: "admin", Accepted: false},
+		{ID: "i1", Role: "member"},
+		{ID: "i2", Role: "member"},
+		{ID: "i3", Role: "member", LastEmailSentAt: fixedNow.Add(-3 * 24 * time.Hour)},
+		{ID: "i4", Role: "admin"},
 	}
 }
 
@@ -307,8 +369,8 @@ func TestCollect_UserInvitesGroupedCounts(t *testing.T) {
 	}
 
 	pts := rec.MetricPoints("tailscale.user_invites.count")
-	// Three distinct (role, accepted) combos:
-	//   (member,false)=2, (member,true)=1, (admin,false)=1.
+	// Three distinct (role, delivery) combos:
+	//   (member,manual_link)=2, (member,emailed)=1, (admin,manual_link)=1.
 	if len(pts) != 3 {
 		t.Fatalf("invite count points = %d, want 3 (%+v)", len(pts), pts)
 	}
@@ -321,26 +383,81 @@ func TestCollect_UserInvitesGroupedCounts(t *testing.T) {
 		}
 	}
 
-	memberPending := findPoint(t, pts, map[string]string{
+	memberManual := findPoint(t, pts, map[string]string{
 		"tailscale.user_invite.role":     "member",
-		"tailscale.user_invite.accepted": "false",
+		"tailscale.user_invite.delivery": "manual_link",
 	})
-	if memberPending.Value != 2 {
-		t.Fatalf("member/false invite count = %v, want 2", memberPending.Value)
+	if memberManual.Value != 2 {
+		t.Fatalf("member/manual_link invite count = %v, want 2", memberManual.Value)
 	}
-	memberAccepted := findPoint(t, pts, map[string]string{
+	memberEmailed := findPoint(t, pts, map[string]string{
 		"tailscale.user_invite.role":     "member",
-		"tailscale.user_invite.accepted": "true",
+		"tailscale.user_invite.delivery": "emailed",
 	})
-	if memberAccepted.Value != 1 {
-		t.Fatalf("member/true invite count = %v, want 1", memberAccepted.Value)
+	if memberEmailed.Value != 1 {
+		t.Fatalf("member/emailed invite count = %v, want 1", memberEmailed.Value)
 	}
-	adminPending := findPoint(t, pts, map[string]string{
+	adminManual := findPoint(t, pts, map[string]string{
 		"tailscale.user_invite.role":     "admin",
-		"tailscale.user_invite.accepted": "false",
+		"tailscale.user_invite.delivery": "manual_link",
 	})
-	if adminPending.Value != 1 {
-		t.Fatalf("admin/false invite count = %v, want 1", adminPending.Value)
+	if adminManual.Value != 1 {
+		t.Fatalf("admin/manual_link invite count = %v, want 1", adminManual.Value)
+	}
+}
+
+// TestCollect_UserInvitesNeverEmitAcceptedAttr is the #411 regression guard:
+// the fabricated tailscale.user_invite.accepted label (the API cannot supply
+// accepted-invite history) must never appear on any invite metric point.
+func TestCollect_UserInvitesNeverEmitAcceptedAttr(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites()}, 0,
+		users.WithClock(func() time.Time { return fixedNow }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	for _, name := range rec.MetricNames() {
+		for _, p := range rec.MetricPoints(name) {
+			if _, ok := p.Attrs["tailscale.user_invite.accepted"]; ok {
+				t.Errorf("metric %q emitted fabricated tailscale.user_invite.accepted attr: %+v", name, p.Attrs)
+			}
+		}
+	}
+}
+
+// TestCollect_UserInvitePendingAge verifies #412's pending-age histogram: only
+// the emailed invite (i3, sent 3 days before fixedNow) contributes a data
+// point; the three manual-link invites have no delivery timestamp to measure
+// age from and must be omitted, not recorded as age zero.
+func TestCollect_UserInvitePendingAge(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites()}, 0,
+		users.WithClock(func() time.Time { return fixedNow }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.user_invites.pending_age")
+	if len(pts) != 1 {
+		t.Fatalf("pending_age points = %d, want 1 (%+v)", len(pts), pts)
+	}
+	p := pts[0]
+	if p.Kind != "histogram" {
+		t.Fatalf("pending_age kind = %q, want histogram", p.Kind)
+	}
+	if p.Unit != "s" {
+		t.Fatalf("pending_age unit = %q, want s", p.Unit)
+	}
+	if p.Attrs["tailscale.user_invite.role"] != "member" {
+		t.Fatalf("pending_age role attr = %q, want member", p.Attrs["tailscale.user_invite.role"])
+	}
+	wantSeconds := float64(3 * 24 * time.Hour / time.Second)
+	if p.Value != wantSeconds {
+		t.Fatalf("pending_age sum = %v, want %v", p.Value, wantSeconds)
+	}
+	if p.Count != 1 {
+		t.Fatalf("pending_age count = %d, want 1", p.Count)
 	}
 }
 

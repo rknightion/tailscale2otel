@@ -20,19 +20,33 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v3/internal/tsscope"
 )
 
 // Compile-time assertion that *Collector is a SnapshotCollector.
 var _ collector.SnapshotCollector = (*Collector)(nil)
 
-// Metric and event names emitted by this collector. Frozen by the #167 seam.
+// Metric and event names emitted by this collector. Frozen by the #167 seam
+// (MetricAppsCount/MetricAppScopes/MetricAppNodeAttributes/EventAppInfo) and
+// the EPIC-03/#479 seam (MetricAppRedirectURIs/MetricAppScopeClass/MetricAppsAge).
 const (
 	MetricAppsCount         = "tailscale.oauth_apps.count"
 	MetricAppScopes         = "tailscale.oauth_app.scopes"
 	MetricAppNodeAttributes = "tailscale.oauth_app.node_attributes"
 	EventAppInfo            = "tailscale.oauth_app.info"
+
+	// MetricAppRedirectURIs is the #419 COUNT of an app's configured redirect
+	// URIs — the values themselves are never emitted.
+	MetricAppRedirectURIs = "tailscale.oauth_app.redirect_uris"
+	// MetricAppScopeClass is #419's app-side analog of the keys collector's
+	// #415 tailscale.key.scope_class: tsscope.Classify(a.Scopes), zero-seeded.
+	MetricAppScopeClass = "tailscale.oauth_app.scope_class"
+	// MetricAppsAge is the oauth_apps slice of the #426 fleet age distribution:
+	// a single bounded histogram, not a per-entity series.
+	MetricAppsAge = "tailscale.oauth_apps.age"
 )
 
 // Attribute keys emitted by this collector.
@@ -41,6 +55,11 @@ const (
 	attrName          = "tailscale.oauth_app.name"
 	attrScopeValues   = "tailscale.oauth_app.scope_values"
 	attrNodeAttrCount = "tailscale.oauth_app.node_attribute_count"
+	// attrScopeClass is a pre-registered, frozen non-identifier attribute key
+	// (internal/telemetry/pii/registry.go, EPIC-03/#479) — it doubles as both
+	// the metric name and the attribute carrying the classification value, the
+	// same "info gauge" idiom as tailscale2otel.build_info.
+	attrScopeClass = "tailscale.oauth_app.scope_class"
 )
 
 // DefaultInterval is the poll cadence used when none is configured, per the
@@ -57,13 +76,27 @@ type lister interface {
 type Collector struct {
 	api      lister
 	interval time.Duration
+	now      func() time.Time
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithClock overrides the collector's clock (for deterministic age-histogram
+// tests); the default is time.Now.
+func WithClock(now func() time.Time) Option {
+	return func(c *Collector) { c.now = now }
 }
 
 // New returns an oauth_apps Collector. A non-positive interval falls back to
 // the package DefaultInterval (300s) via (*Collector).DefaultInterval,
 // mirroring webhooks.New/logstream.New.
-func New(api lister, interval time.Duration) *Collector {
-	return &Collector{api: api, interval: interval}
+func New(api lister, interval time.Duration, opts ...Option) *Collector {
+	c := &Collector{api: api, interval: interval, now: time.Now}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier.
@@ -97,6 +130,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	e.Gauge(docAppsCount.Name, docAppsCount.Unit, docAppsCount.Description, float64(len(apps)), nil)
 
+	now := c.now()
 	for i := range apps {
 		a := &apps[i]
 		attrs := telemetry.Attrs{attrID: a.ID, attrName: a.Name}
@@ -108,6 +142,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			e.Gauge(docAppNodeAttributes.Name, docAppNodeAttributes.Unit, docAppNodeAttributes.Description,
 				float64(len(a.AllowedNodeAttributes)), attrs)
 		}
+		// Redirect-URI COUNT only (#419) — the URI values themselves never
+		// reach telemetry, on this metric or anywhere else.
+		if len(a.RedirectURIs) > 0 {
+			e.Gauge(docAppRedirectURIs.Name, docAppRedirectURIs.Unit, docAppRedirectURIs.Description,
+				float64(len(a.RedirectURIs)), attrs)
+		}
+
+		// Privilege classification (#419, mirrors the keys collector's #415
+		// treatment): zero-seeded across every tsscope.Class for EVERY app,
+		// including one with no scopes at all (ClassNone is itself a
+		// meaningful posture value here, unlike the count-based
+		// tailscale.oauth_app.scopes gauge above).
+		emitScopeClass(e, a)
 
 		e.LogEvent(telemetry.Event{
 			Name:     docAppInfo.Name,
@@ -122,7 +169,35 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		})
 	}
 
+	// tailscale.oauth_apps.age (#426): a single bounded fleet age-distribution
+	// histogram, not a per-entity series. Apps with no Created timestamp are
+	// skipped (entityage.Seconds ok=false) rather than reported as age 0.
+	for i := range apps {
+		if secs, ok := entityage.Seconds(apps[i].Created, now); ok {
+			e.Histogram(docAppsAge.Name, docAppsAge.Unit, docAppsAge.Description,
+				secs, entityage.BucketsSeconds(), nil)
+		}
+	}
+
 	return nil
+}
+
+// emitScopeClass zero-seeds a's privilege class across every tsscope.Class
+// (mirrors the keys collector's emitScopeClass / apistate.EmitAvailability):
+// one series holds value 1 (the current class), the rest hold 0.
+func emitScopeClass(e telemetry.Emitter, a *tsapi.OAuthApp) {
+	class := tsscope.Classify(a.Scopes)
+	for _, want := range tsscope.Classes() {
+		v := 0.0
+		if want == class {
+			v = 1
+		}
+		e.Gauge(docAppScopeClass.Name, docAppScopeClass.Unit, docAppScopeClass.Description, v, telemetry.Attrs{
+			attrID:         a.ID,
+			attrName:       a.Name,
+			attrScopeClass: string(want),
+		})
+	}
 }
 
 // isFeatureOff reports whether err is (or wraps) a *tsapi.StatusError with an

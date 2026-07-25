@@ -26,6 +26,18 @@ type TailnetSettings struct {
 	// from tsclient.TailnetSettings, which is why this raw decode exists.
 	HTTPSEnabled            bool `json:"httpsEnabled"`
 	ACLsExternallyManagedOn bool `json:"aclsExternallyManagedOn"`
+
+	// ACLsExternalLink is the configured external ACL policy source (e.g.
+	// "https://github.com/example/tailnet-policy"), gated behind the SAME
+	// policy_file:read scope as ACLsExternallyManagedOn. A pointer so a caller
+	// can distinguish three states the flat string cannot: key absent from the
+	// wire response entirely (nil — unsupported for this credential/plan, or
+	// policy_file:read not granted; #418 says treat this as absence, never a
+	// definite false), key present but empty (non-nil, *ptr == "" — genuinely
+	// not configured), and key present and non-empty (configured). The URI
+	// itself can leak an internal repo path, so callers must derive only a
+	// presence boolean from this field and never emit the string.
+	ACLsExternalLink *string `json:"aclsExternalLink"`
 }
 
 // TailnetSettings returns the tailnet feature settings, decoding the full field

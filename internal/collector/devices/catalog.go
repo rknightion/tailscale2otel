@@ -133,8 +133,71 @@ var (
 		Name:        metricDeviceInvites,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "Device-share invites (accepted and pending) (a **count**, despite `_ratio`), bucketed by accepted/pending and the exit-node / multi-use exposure flags. **Gated** by `collect_device_invites` (one API call per device).",
-		Attributes:  []string{attrInviteAccepted, attrInviteAllowExitNode, attrInviteMultiUse},
+		Description: "Device-share invites (accepted and pending) (a **count**, despite `_ratio`), bucketed by accepted/pending, the exit-node / multi-use exposure flags, and how the invite was delivered (`tailscale.device_invite.delivery`: `emailed` when an invitee address or a send attempt is recorded, `manual_link` when the invite exists but was never emailed, `unknown` when the control plane reports neither). **Gated** by `collect_device_invites` (one API call per device).",
+		Attributes:  []string{attrInviteAccepted, attrInviteAllowExitNode, attrInviteMultiUse, attrInviteDelivery},
+		Group:       groupDevices,
+	}
+	docDeviceInvitesPendingAge = metricdoc.Metric{
+		Name:        metricDeviceInvitesPendingAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Distribution of how long **outstanding** (not yet accepted) device-share invites have existed, in seconds. Accepted invites are excluded, and an invite whose creation time the control plane omits is skipped rather than counted as brand new. Shares the tailnet-wide age buckets (1d, 7d, 30d, 90d, 180d, 1y, 2y). **Gated** by `collect_device_invites`.",
+		Group:       groupDevices,
+	}
+
+	docDevicesSSHEnabled = metricdoc.Metric{
+		Name:        metricDevicesSSHEnabled,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices with Tailscale SSH enabled (`sshEnabled`; a **count**, despite `_ratio`). Fleet-wide, no labels — emitted regardless of `cardinality.per_entity.device`. **Not emitted at all** on a control plane with no Tailscale-SSH concept (e.g. Headscale), so absence never reads as a confident zero.",
+		Group:       groupDevices,
+	}
+	docDeviceSSHEnabled = metricdoc.Metric{
+		Name:        metricDeviceSSHEnabled,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if Tailscale SSH is enabled on the device (`sshEnabled`), else `0` — the device accepts SSH sessions authenticated by the tailnet's ACL policy. **Gated** by `cardinality.per_entity.device`, and not emitted at all on a control plane that does not report Tailscale SSH.",
+		Attributes:  deviceIdentityAttrs,
+		Group:       groupDevices,
+	}
+	docDevicesKeyExpiryDisabled = metricdoc.Metric{
+		Name:        metricDevicesKeyExpiryDisabled,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices with node-key expiry disabled (`keyExpiryDisabled`; a **count**, despite `_ratio`) — these keys never expire and are therefore invisible to `tailscale.devices.key_expiry`. Fleet-wide, no labels. **Not emitted at all** on a control plane that does not report key-expiry state (e.g. Headscale).",
+		Group:       groupDevices,
+	}
+	docDeviceKeyExpiryDisabled = metricdoc.Metric{
+		Name:        metricDeviceKeyExpiryDisabled,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` if the device's node key is set never to expire (`keyExpiryDisabled`), else `0`. These are exactly the devices excluded from `tailscale.device.key.expiry` and the `tailscale.devices.key_expiry` histogram, so this gauge is how they stay visible. **Gated** by `cardinality.per_entity.device`, and not emitted at all on a control plane that does not report key-expiry state.",
+		Attributes:  deviceIdentityAttrs,
+		Group:       groupDevices,
+	}
+
+	docDevicesByDistro = metricdoc.Metric{
+		Name:        metricDevicesByDistro,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Device count per operating-system distribution (a **count**, despite `_ratio`); one series per `distro.name`/`distro.codename` pair, both lowercased and trimmed. Devices reporting no distribution at all (most non-Linux clients) are excluded rather than folded into an `unknown` bucket; a distribution that publishes no codename gets `tailscale.distro.codename=\"unknown\"`. Capped at 50 distinct pairs, with the remainder folded into `__other__`/`__other__` so the fleet total is preserved. The raw distro **version** is deliberately not a dimension here — it is carried as `os.version` on the per-device gauges.",
+		Attributes:  []string{attrDistroName, attrDistroCodename},
+		Group:       groupDevices,
+	}
+	docDeviceDistro = metricdoc.Metric{
+		Name:        metricDeviceDistro,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Per-device distribution info gauge (constant `1`), carrying the device identity plus its normalized `distro.name`/`distro.codename`. Emitted only for devices that report a distribution. **Gated** by `cardinality.per_entity.device`.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, attrDistroName, attrDistroCodename},
+		Group:       groupDevices,
+	}
+
+	docDevicesAge = metricdoc.Metric{
+		Name:        metricDevicesAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Distribution of device age (time since the device joined the tailnet), in seconds. Devices whose `created` timestamp the control plane omits — external/shared-in devices send an empty string — are **skipped**, never recorded as age 0. Buckets are the shared entity-age ladder: 1d, 7d, 30d, 90d, 180d, 1y, 2y.",
 		Group:       groupDevices,
 	}
 
@@ -310,8 +373,8 @@ var (
 	docDeviceInviteLog = metricdoc.LogEvent{
 		Name:        eventDeviceInvite,
 		Severity:    "INFO",
-		Description: "Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's device id, consistent with every other device signal (not its nodeId).",
-		Attributes:  []string{semconv.HostName, semconv.HostID, semconv.AttrUser, attrActorLogin},
+		Description: "Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), the bounded delivery state (`tailscale.device_invite.delivery`), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's device id, consistent with every other device signal (not its nodeId). The invite's `inviteUrl` is a bearer token and is never decoded, let alone emitted.",
+		Attributes:  []string{semconv.HostName, semconv.HostID, semconv.AttrUser, attrActorLogin, attrInviteDelivery},
 		Group:       groupDevices,
 	}
 
@@ -455,6 +518,9 @@ func Catalog() []metricdoc.Metric {
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
 		docMultipleConnections, docBlocksIncomingConnections, docPostureIdentityDisabled,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
+		docDeviceInvitesPendingAge,
+		docDevicesSSHEnabled, docDeviceSSHEnabled, docDevicesKeyExpiryDisabled, docDeviceKeyExpiryDisabled,
+		docDevicesByDistro, docDeviceDistro, docDevicesAge,
 		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
 		docAttribute, docAttributeInfo, docAttributeExpiry,

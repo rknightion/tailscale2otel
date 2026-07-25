@@ -421,6 +421,12 @@ func (a *App) Run(ctx context.Context) error {
 	if a.restore != nil {
 		defer a.restore()
 	}
+	// Advisory OAuth-scope preflight (#425). It compares the scopes REQUESTED in
+	// config against each enabled collector's documented requirement, so it can
+	// only ever warn: the server stays authoritative, and a real gap still shows
+	// up at runtime as apistate.StateScopeDenied. It must never block startup —
+	// a modelling bug in our scope map would otherwise take down collection.
+	LogScopeWarnings(a.logger, a.capabilityMatrix(a.primaryAPIState()))
 	if a.profiler != nil {
 		defer func() { _ = a.profiler.Stop() }()
 	}
@@ -435,7 +441,9 @@ func (a *App) Run(ctx context.Context) error {
 	if a.cfg.SelfObservability.Enabled {
 		// Process-global self-obs: emitted on the process provider (no tailnet
 		// Resource).
-		go runHeartbeat(ctx, a.procEmitter, heartbeatInterval)
+		go runHeartbeat(ctx, a.procEmitter, heartbeatInterval, func(e telemetry.Emitter) {
+			EmitCapabilityStatus(e, a.capabilityMatrix(a.primaryAPIState()))
+		})
 		go runRuntimeReporter(ctx, a.procEmitter, interval, readRuntimeStats)
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)

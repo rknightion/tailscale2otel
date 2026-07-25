@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
@@ -46,7 +47,10 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	}
 
 	declared := map[string]metricdoc.Metric{}
-	for _, m := range logstream.Catalog() {
+	// The per-operation availability signals are declared once, in the shared
+	// internal/apistate catalog (which internal/catalog aggregates), not per
+	// collector — every collector emits the same two descriptors.
+	for _, m := range append(logstream.Catalog(), apistate.Catalog()...) {
 		declared[m.Name] = m
 	}
 	for _, name := range rec.MetricNames() {
@@ -72,6 +76,11 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			t.Errorf("%s: catalog instrument %q but emitted kind=%q monotonic=%v", name, d.Instrument, p0.Kind, p0.Monotonic)
 		}
 	}
+
+	// Attribute-key drift guard: the loop above compares name/unit/description
+	// only, so an emitted-but-undeclared attribute would silently rot the docs.
+	telemetrytest.AssertCatalogAttrs(t, rec,
+		append(logstream.Catalog(), apistate.Catalog()...), logstream.LogCatalog())
 
 	logDeclared := map[string]bool{}
 	for _, le := range logstream.LogCatalog() {

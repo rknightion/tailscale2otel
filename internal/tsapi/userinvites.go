@@ -6,28 +6,31 @@ import (
 	"time"
 )
 
-// UserInvite is a pending or accepted invitation for a user to join the tailnet.
+// UserInvite is an open (not yet accepted) invitation for a user to join the
+// tailnet. The list-user-invites endpoint returns only open invites and its
+// schema has no "created"/"accepted" property, so this type deliberately does
+// not model accepted-invite history (#411) — decoding fields the wire never
+// sends produced an always-zero-value Accepted/Created that looked like real
+// data but never was.
 type UserInvite struct {
-	ID        string
-	Role      string
-	TailnetID string
-	InviterID string
-	Email     string
-	InviteURL string
-	Created   time.Time
-	Accepted  bool
+	ID              string
+	Role            string
+	TailnetID       string
+	InviterID       string
+	Email           string
+	InviteURL       string
+	LastEmailSentAt time.Time
 }
 
 // userInvite is the wire shape of a single user-invite record.
 type userInvite struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	TailnetID string    `json:"tailnetId"`
-	InviterID string    `json:"inviterId"`
-	Email     string    `json:"email"`
-	InviteURL string    `json:"inviteUrl"`
-	Created   time.Time `json:"created"`
-	Accepted  bool      `json:"accepted"`
+	ID              string    `json:"id"`
+	Role            string    `json:"role"`
+	TailnetID       string    `json:"tailnetId"`
+	InviterID       string    `json:"inviterId"`
+	Email           string    `json:"email"`
+	InviteURL       string    `json:"inviteUrl"`
+	LastEmailSentAt time.Time `json:"lastEmailSentAt"`
 }
 
 // UserInvites lists user invitations for the tailnet. The endpoint returns a

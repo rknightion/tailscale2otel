@@ -56,15 +56,15 @@ var curatedCounters = map[string]curatedCounter{
 	"tailscaled_inbound_dropped_packets_total":  {metricNodePacketsDropped, semconv.UnitPackets, descNodePacketsDropped, dropAttrs(semconv.DirectionReceive)},
 	"tailscaled_outbound_dropped_packets_total": {metricNodePacketsDropped, semconv.UnitPackets, descNodePacketsDropped, dropAttrs(semconv.DirectionTransmit)},
 
-	"tailscaled_peer_relay_forwarded_bytes_total":   {metricNodePeerRelayIO, semconv.UnitBytes, descNodePeerRelayIO, noAttrs},
-	"tailscaled_peer_relay_forwarded_packets_total": {metricNodePeerRelayPackets, semconv.UnitPackets, descNodePeerRelayPackets, noAttrs},
+	"tailscaled_peer_relay_forwarded_bytes_total":   {metricNodePeerRelayIO, semconv.UnitBytes, descNodePeerRelayIO, peerRelayTransportAttrs},
+	"tailscaled_peer_relay_forwarded_packets_total": {metricNodePeerRelayPackets, semconv.UnitPackets, descNodePeerRelayPackets, peerRelayTransportAttrs},
 }
 
 // curatedGauges is the source-family -> curated-gauge table.
 var curatedGaugeSpecs = map[string]curatedGauge{
 	"tailscaled_health_messages":      {metricNodeHealthMessages, semconv.UnitDimensionless, descNodeHealthMessages, healthAttrs},
 	"tailscaled_home_derp_region_id":  {metricNodeDERPHomeRegion, semconv.UnitDimensionless, descNodeDERPHomeRegion, noAttrs},
-	"tailscaled_peer_relay_endpoints": {metricNodePeerRelayEndpoints, semconv.UnitDimensionless, descNodePeerRelayEndpoints, noAttrs},
+	"tailscaled_peer_relay_endpoints": {metricNodePeerRelayEndpoints, semconv.UnitDimensionless, descNodePeerRelayEndpoints, peerRelayStateAttrs},
 }
 
 // noAttrs is the attribute deriver for curated series that carry only the
@@ -90,6 +90,28 @@ func dropAttrs(direction string) func(map[string]string) telemetry.Attrs {
 			semconv.NetworkIODirection: direction,
 			semconv.AttrDropReason:     foldDropReason(labels["reason"]),
 		}
+	}
+}
+
+// peerRelayTransportAttrs builds the bounded ingress/egress transport attributes
+// for the peer-relay forwarded bytes/packets counters (tailscale.node.peer_relay.io
+// / .packets). transport_in and transport_out each independently fold to the
+// admit-set {udp4, udp6}; any other/future value folds to "other" (scraped
+// labels come from semi-trusted tailnet-member nodes, same posture as
+// foldDropReason/foldPath).
+func peerRelayTransportAttrs(labels map[string]string) telemetry.Attrs {
+	return telemetry.Attrs{
+		semconv.AttrPeerRelayTransportIn:  foldPeerRelayTransport(labels["transport_in"]),
+		semconv.AttrPeerRelayTransportOut: foldPeerRelayTransport(labels["transport_out"]),
+	}
+}
+
+// peerRelayStateAttrs builds the bounded state attribute for the peer-relay
+// endpoints gauge (tailscale.node.peer_relay.endpoints), folding to the
+// admit-set {connecting, open}; any other/future value folds to "other".
+func peerRelayStateAttrs(labels map[string]string) telemetry.Attrs {
+	return telemetry.Attrs{
+		semconv.AttrPeerRelayState: foldPeerRelayState(labels["state"]),
 	}
 }
 
@@ -122,17 +144,47 @@ func foldPath(raw string) string {
 	}
 }
 
-// foldDropReason folds the raw tailscaled `reason` label to the bounded admit-set
-// (acl, error), collapsing any other/future value to `other`. Scraped labels come
-// from semi-trusted tailnet-member nodes, so bounding this keeps a misbehaving or
-// newer node from minting unbounded reason cardinality.
+// foldDropReason folds the raw tailscaled `reason` label to the bounded
+// admit-set of all seven documented upstream values (acl, multicast,
+// link_local_unicast, too_short, fragment, unknown_protocol, error; see
+// tailscale.com/docs/reference/tailscale-client-metrics), collapsing any
+// other/future value to `other`. Scraped labels come from semi-trusted
+// tailnet-member nodes, so bounding this keeps a misbehaving or newer node from
+// minting unbounded reason cardinality.
 func foldDropReason(raw string) string {
 	switch raw {
-	case semconv.DropReasonACL:
-		return semconv.DropReasonACL
-	case semconv.DropReasonError:
-		return semconv.DropReasonError
+	case semconv.DropReasonACL,
+		semconv.DropReasonMulticast,
+		semconv.DropReasonLinkLocalUnicast,
+		semconv.DropReasonTooShort,
+		semconv.DropReasonFragment,
+		semconv.DropReasonUnknownProtocol,
+		semconv.DropReasonError:
+		return raw
 	default:
 		return semconv.DropReasonOther
+	}
+}
+
+// foldPeerRelayTransport folds a raw tailscaled `transport_in`/`transport_out`
+// value to the bounded admit-set (udp4, udp6), collapsing any other/future value
+// to `other`.
+func foldPeerRelayTransport(raw string) string {
+	switch raw {
+	case semconv.PeerRelayTransportUDP4, semconv.PeerRelayTransportUDP6:
+		return raw
+	default:
+		return semconv.PeerRelayTransportOther
+	}
+}
+
+// foldPeerRelayState folds a raw tailscaled `state` value to the bounded
+// admit-set (connecting, open), collapsing any other/future value to `other`.
+func foldPeerRelayState(raw string) string {
+	switch raw {
+	case semconv.PeerRelayStateConnecting, semconv.PeerRelayStateOpen:
+		return raw
+	default:
+		return semconv.PeerRelayStateOther
 	}
 }

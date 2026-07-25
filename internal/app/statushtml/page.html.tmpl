@@ -174,6 +174,7 @@
   <button class="tab-btn" data-target="overview">Overview</button>
   <button class="tab-btn" data-target="collectors">Collectors</button>
   <button class="tab-btn" data-target="api">API</button>
+  <button class="tab-btn" data-target="capabilities">Capabilities</button>
   <button class="tab-btn" data-target="cardinality">Cardinality</button>
   <button class="tab-btn" data-target="inventory">Inventory &amp; Catalog</button>
   <button class="tab-btn" data-target="config">Config</button>
@@ -322,6 +323,40 @@
       </tbody>
     </table>
     </div>
+  </section>
+
+  <!-- ═══ CAPABILITIES ═══ -->
+  <section data-tab="capabilities">
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Active capabilities</div><div class="v">{{capCount .CapabilityMatrix "active"}}</div><div class="sub">of {{len .CapabilityMatrix}} configurable</div></div>
+      <div class="card{{if gt (capCount .CapabilityMatrix "actionable") 0}} warn2{{end}}"><div class="k">Needing attention</div><div class="v">{{capCount .CapabilityMatrix "actionable"}}</div><div class="sub">permission or transient failures</div></div>
+      <div class="card{{if gt (capCount .CapabilityMatrix "scope_gap") 0}} warn2{{end}}"><div class="k">Scope gaps</div><div class="v">{{capCount .CapabilityMatrix "scope_gap"}}</div><div class="sub">requested OAuth scopes vs. requirement</div></div>
+      <div class="card"><div class="k">Control plane</div><div class="v" style="font-size:16px">{{if .Provider}}{{.Provider}}{{else}}—{{end}}</div><div class="sub">{{len .Capabilities}} features supported</div></div>
+    </div>
+    <p class="note">Requirement vs. reality for every configurable capability. <strong>Scope</strong> is an advisory
+    preflight of the OAuth scopes <em>requested</em> in configuration — the server stays authoritative, so
+    <strong>State</strong> (from live API responses) is the column to trust. <code>disabled</code> means the tailnet
+    does not have the feature and is never a fault; <code>scope_denied</code> means the credential cannot see it.</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Capability</th><th>Required scope</th><th>Status</th><th>Scope preflight</th><th>State</th><th>Last probe</th></tr></thead>
+      <tbody>
+      {{range .CapabilityMatrix}}
+        <tr>
+          <td class="mono">{{.Collector}}{{if .Subrequest}} <span class="muted">/ {{.Subrequest}}</span>{{end}}{{if .Source}} <span class="muted">({{.Source}})</span>{{end}}</td>
+          <td class="mono">{{if .RequiredScopes}}{{range .RequiredScopes}}<code>{{.}}</code> {{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .Active}}<span class="badge ok">active</span>{{else}}<span class="badge pending">{{capReason .Reason}}</span>{{end}}</td>
+          <td><span class="badge {{capScopeClass .ScopeStatus}}">{{.ScopeStatus}}</span>{{if .MissingScopes}}<div class="sub">missing {{range .MissingScopes}}<code>{{.}}</code> {{end}}</div>{{end}}</td>
+          <td><span class="badge {{capStateClass .State .Actionable}}">{{if .State}}{{.State}}{{else}}unknown{{end}}</span></td>
+          <td class="mono">{{if .LastProbe}}{{.LastProbe}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="6" class="muted">No capability matrix available yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    <p class="note" style="margin-top:12px">Machine-readable form: <code>capability_matrix</code> in <a href="/api/status.json"><code>/api/status.json</code></a>.</p>
   </section>
 
   <!-- ═══ CARDINALITY ═══ -->

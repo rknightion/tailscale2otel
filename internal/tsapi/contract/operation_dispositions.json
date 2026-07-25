@@ -1,0 +1,649 @@
+{
+  "//": [
+    "Upstream operation classification (#423). Generated + hand-dispositioned.",
+    "Every operation the vendored spec publishes, across ALL verbs — not just the ones we consume.",
+    "Regenerate: go test ./internal/tsapi/contract -run TestOperationDispositionsInSync -update",
+    "Regeneration adds new operations with an EMPTY disposition and prunes ones upstream removed;",
+    "it never assigns a disposition. An empty or unknown disposition fails TestOperationDispositionsInSync.",
+    "disposition: consumed | implement | redundant | privacy-rejected | unstable | parked | write",
+    "  consumed         - already called by internal/tsapi (must match the contract manifest)",
+    "  implement        - we intend to consume it; expect a tracking issue",
+    "  redundant        - the data already arrives via an operation we consume",
+    "  privacy-rejected - deliberately never observed; the note must say why",
+    "  unstable         - alpha/undocumented/flaky; not safe to build a signal on",
+    "  parked           - considered and deferred; no plan, no objection",
+    "  write            - mutates state; tailscale2otel is read-only, permanently N/A"
+  ],
+  "operations": [
+    {
+      "id": "acceptDeviceInvite",
+      "method": "post",
+      "path": "/device-invites/-/accept",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "approveUser",
+      "method": "post",
+      "path": "/users/{userId}/approve",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "authorizeDevice",
+      "method": "post",
+      "path": "/device/{deviceId}/authorized",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "batchUpdateCustomDevicePostureAttributes",
+      "method": "patch",
+      "path": "/tailnet/{tailnet}/device-attributes",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "createDeviceInvites",
+      "method": "post",
+      "path": "/device/{deviceId}/device-invites",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "createKey",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/keys",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "createOAuthApp",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/oauth-apps",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "createPostureIntegration",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/posture/integrations",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "createUserInvites",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/user-invites",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "createWebhook",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/webhooks",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteCustomDevicePostureAttributes",
+      "method": "delete",
+      "path": "/device/{deviceId}/attributes/{attributeKey}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteDevice",
+      "method": "delete",
+      "path": "/device/{deviceId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteDeviceInvite",
+      "method": "delete",
+      "path": "/device-invites/{deviceInviteId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteKey",
+      "method": "delete",
+      "path": "/tailnet/{tailnet}/keys/{keyId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteOAuthApp",
+      "method": "delete",
+      "path": "/tailnet/{tailnet}/oauth-apps/{appId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deletePostureIntegration",
+      "method": "delete",
+      "path": "/posture/integrations/{id}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteService",
+      "method": "delete",
+      "path": "/tailnet/{tailnet}/services/{serviceName}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteUser",
+      "method": "post",
+      "path": "/users/{userId}/delete",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteUserInvite",
+      "method": "delete",
+      "path": "/user-invites/{userInviteId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteWebhook",
+      "method": "delete",
+      "path": "/webhooks/{endpointId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "disableLogStreaming",
+      "method": "delete",
+      "path": "/tailnet/{tailnet}/logging/{logType}/stream",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "expireDeviceKey",
+      "method": "post",
+      "path": "/device/{deviceId}/expire",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "getAwsExternalId",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/aws-external-id",
+      "disposition": "write",
+      "note": "POST that CREATES an AWS external id when none exists, despite the get- prefix"
+    },
+    {
+      "id": "getContacts",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/contacts",
+      "disposition": "consumed",
+      "note": "tsapi.Client.Contacts - contacts collector"
+    },
+    {
+      "id": "getDevice",
+      "method": "get",
+      "path": "/device/{deviceId}",
+      "disposition": "redundant",
+      "note": "single-device read; listTailnetDevices?fields=all already returns every field for every device"
+    },
+    {
+      "id": "getDeviceInvite",
+      "method": "get",
+      "path": "/device-invites/{deviceInviteId}",
+      "disposition": "redundant",
+      "note": "single-invite read; listDeviceInvites returns the same records per device"
+    },
+    {
+      "id": "getDevicePostureAttributes",
+      "method": "get",
+      "path": "/device/{deviceId}/attributes",
+      "disposition": "consumed",
+      "note": "tsapi.Client.DevicePostureAttributes - posture attributes"
+    },
+    {
+      "id": "getDnsConfiguration",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/dns/configuration",
+      "disposition": "consumed",
+      "note": "tsapi.Client.DNSConfiguration - dns collector"
+    },
+    {
+      "id": "getDnsPreferences",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/dns/preferences",
+      "disposition": "redundant",
+      "note": "getDnsConfiguration already carries preferences.magicDNS"
+    },
+    {
+      "id": "getKey",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/keys/{keyId}",
+      "disposition": "redundant",
+      "note": "single-key read; listTailnetKeys?all=true returns every key with the same fields"
+    },
+    {
+      "id": "getLogStreamingConfiguration",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/logging/{logType}/stream",
+      "disposition": "privacy-rejected",
+      "note": "returns the log-stream destination url, username and token fields; we read only the counter-only status endpoint so no destination credential ever enters the process"
+    },
+    {
+      "id": "getLogStreamingStatus",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/logging/{logType}/stream/status",
+      "disposition": "consumed",
+      "note": "tsapi.Client.LogStreamStatus - logstream collector"
+    },
+    {
+      "id": "getOAuthApp",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/oauth-apps/{appId}",
+      "disposition": "redundant",
+      "note": "single-app read; listOAuthApps returns the same records"
+    },
+    {
+      "id": "getPolicyFile",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/acl",
+      "disposition": "consumed",
+      "note": "tsapi.Client.PolicyFileRaw - acl collector"
+    },
+    {
+      "id": "getPostureIntegration",
+      "method": "get",
+      "path": "/posture/integrations/{id}",
+      "disposition": "redundant",
+      "note": "single-integration read; getPostureIntegrations returns the same records"
+    },
+    {
+      "id": "getPostureIntegrations",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/posture/integrations",
+      "disposition": "consumed",
+      "note": "tsapi.Client.PostureIntegrations - postureintegrations collector"
+    },
+    {
+      "id": "getService",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/services/{serviceName}",
+      "disposition": "redundant",
+      "note": "single-service read; listServices returns the same records"
+    },
+    {
+      "id": "getServiceDeviceApproval",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved",
+      "disposition": "redundant",
+      "note": "per-device approval status; listServiceHosts already returns approvalLevel for each host"
+    },
+    {
+      "id": "getSplitDns",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/dns/split-dns",
+      "disposition": "redundant",
+      "note": "getDnsConfiguration already carries splitDNS"
+    },
+    {
+      "id": "getTailnetSettings",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/settings",
+      "disposition": "consumed",
+      "note": "tsapi.Client.TailnetSettings - settings collector"
+    },
+    {
+      "id": "getUser",
+      "method": "get",
+      "path": "/users/{userId}",
+      "disposition": "redundant",
+      "note": "single-user read; listUsers returns the same records"
+    },
+    {
+      "id": "getUserInvite",
+      "method": "get",
+      "path": "/user-invites/{userInviteId}",
+      "disposition": "redundant",
+      "note": "single-invite read; listUserInvites returns the same records"
+    },
+    {
+      "id": "getWebhook",
+      "method": "get",
+      "path": "/webhooks/{endpointId}",
+      "disposition": "redundant",
+      "note": "single-webhook read; listWebhooks returns the same records"
+    },
+    {
+      "id": "listConfigurationAuditLogs",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/logging/configuration",
+      "disposition": "consumed",
+      "note": "tsapi.Client.ConfigAuditLogs - auditlogs collector"
+    },
+    {
+      "id": "listDeviceInvites",
+      "method": "get",
+      "path": "/device/{deviceId}/device-invites",
+      "disposition": "consumed",
+      "note": "tsapi.Client.DeviceInvites - device invites"
+    },
+    {
+      "id": "listDeviceRoutes",
+      "method": "get",
+      "path": "/device/{deviceId}/routes",
+      "disposition": "redundant",
+      "note": "listTailnetDevices?fields=all already carries advertisedRoutes and enabledRoutes per device"
+    },
+    {
+      "id": "listDnsNameservers",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/dns/nameservers",
+      "disposition": "redundant",
+      "note": "getDnsConfiguration already carries nameservers"
+    },
+    {
+      "id": "listDnsSearchPaths",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/dns/searchpaths",
+      "disposition": "redundant",
+      "note": "getDnsConfiguration already carries searchPaths"
+    },
+    {
+      "id": "listNetworkFlowLogs",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/logging/network",
+      "disposition": "consumed",
+      "note": "tsapi.Client.NetworkFlowLogs - flowlogs collector"
+    },
+    {
+      "id": "listOAuthApps",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/oauth-apps",
+      "disposition": "consumed",
+      "note": "tsapi.Client.OAuthApps"
+    },
+    {
+      "id": "listServiceHosts",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/services/{serviceName}/devices",
+      "disposition": "consumed",
+      "note": "tsapi.Client.ServiceHosts"
+    },
+    {
+      "id": "listServices",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/services",
+      "disposition": "consumed",
+      "note": "tsapi.Client.Services"
+    },
+    {
+      "id": "listTailnetDevices",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/devices",
+      "disposition": "consumed",
+      "note": "tsapi.Client.DevicesRich (fields=all) - devices collector"
+    },
+    {
+      "id": "listTailnetKeys",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/keys",
+      "disposition": "consumed",
+      "note": "tsapi.Client.KeysRich (all=true) - keys collector"
+    },
+    {
+      "id": "listUserInvites",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/user-invites",
+      "disposition": "consumed",
+      "note": "tsapi.Client.UserInvites"
+    },
+    {
+      "id": "listUsers",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/users",
+      "disposition": "consumed",
+      "note": "tsapi.Client.Users - users collector"
+    },
+    {
+      "id": "listWebhooks",
+      "method": "get",
+      "path": "/tailnet/{tailnet}/webhooks",
+      "disposition": "consumed",
+      "note": "tsapi.Client.Webhooks - webhooks collector"
+    },
+    {
+      "id": "previewRuleMatches",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/acl/preview",
+      "disposition": "parked",
+      "note": "read-only POST but requires a synthetic src/dst probe pair we would have to invent; no steady-state signal"
+    },
+    {
+      "id": "resendContactVerificationEmail",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/contacts/{contactType}/resend-verification-email",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "resendDeviceInvite",
+      "method": "post",
+      "path": "/device-invites/{deviceInviteId}/resend",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "resendUserInvite",
+      "method": "post",
+      "path": "/user-invites/{userInviteId}/resend",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "restoreUser",
+      "method": "post",
+      "path": "/users/{userId}/restore",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "rotateWebhookSecret",
+      "method": "post",
+      "path": "/webhooks/{endpointId}/rotate",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setCustomDevicePostureAttributes",
+      "method": "post",
+      "path": "/device/{deviceId}/attributes/{attributeKey}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDeviceIp",
+      "method": "post",
+      "path": "/device/{deviceId}/ip",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDeviceName",
+      "method": "post",
+      "path": "/device/{deviceId}/name",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDeviceRoutes",
+      "method": "post",
+      "path": "/device/{deviceId}/routes",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDeviceTags",
+      "method": "post",
+      "path": "/device/{deviceId}/tags",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDnsConfiguration",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/dns/configuration",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDnsNameservers",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/dns/nameservers",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDnsPreferences",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/dns/preferences",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setDnsSearchPaths",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/dns/searchpaths",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setKey",
+      "method": "put",
+      "path": "/tailnet/{tailnet}/keys/{keyId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setLogStreamingConfiguration",
+      "method": "put",
+      "path": "/tailnet/{tailnet}/logging/{logType}/stream",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setPolicyFile",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/acl",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "setSplitDns",
+      "method": "put",
+      "path": "/tailnet/{tailnet}/dns/split-dns",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "suspendUser",
+      "method": "post",
+      "path": "/users/{userId}/suspend",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "testWebhook",
+      "method": "post",
+      "path": "/webhooks/{endpointId}/test",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateContact",
+      "method": "patch",
+      "path": "/tailnet/{tailnet}/contacts/{contactType}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateDeviceKey",
+      "method": "post",
+      "path": "/device/{deviceId}/key",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateOAuthApp",
+      "method": "put",
+      "path": "/tailnet/{tailnet}/oauth-apps/{appId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updatePostureIntegration",
+      "method": "patch",
+      "path": "/posture/integrations/{id}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateService",
+      "method": "put",
+      "path": "/tailnet/{tailnet}/services/{serviceName}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateServiceDeviceApproval",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateSplitDns",
+      "method": "patch",
+      "path": "/tailnet/{tailnet}/dns/split-dns",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateTailnetSettings",
+      "method": "patch",
+      "path": "/tailnet/{tailnet}/settings",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateUserRole",
+      "method": "post",
+      "path": "/users/{userId}/role",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "updateWebhook",
+      "method": "patch",
+      "path": "/webhooks/{endpointId}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "validateAndTestPolicyFile",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/acl/validate",
+      "disposition": "implement",
+      "note": "read-only POST (validates/tests a policy file, never saves); being wired up as the acl-validate signal"
+    },
+    {
+      "id": "validateAwsExternalId",
+      "method": "post",
+      "path": "/tailnet/{tailnet}/aws-external-id/{id}/validate-aws-trust-policy",
+      "disposition": "parked",
+      "note": "read-only POST, meaningful only mid-provisioning of S3 log streaming; no steady-state signal"
+    }
+  ]
+}

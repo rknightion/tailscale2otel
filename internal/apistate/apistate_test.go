@@ -206,6 +206,34 @@ func TestCoverageResetClearsCounts(t *testing.T) {
 	}
 }
 
+// One *Coverage is shared per tailnet runtime, so a collector resetting its own
+// tallies must not touch anyone else's — otherwise two collectors with
+// subrequests would wipe each other mid-tick and emit the other's series.
+func TestCoverageResetCollectorIsScoped(t *testing.T) {
+	c := apistate.NewCoverage()
+	c.Record("devices", "device_invites", apistate.StateSupported)
+	c.Record("devices", "posture_attributes", apistate.StateScopeDenied)
+	c.Record("users", "user_invites", apistate.StateSupported)
+
+	c.ResetCollector("devices")
+
+	snap := c.Snapshot()
+	if len(snap) != 1 {
+		t.Fatalf("got %d entries after resetting devices, want 1 (users only): %+v", len(snap), snap)
+	}
+	if snap[0].Collector != "users" || snap[0].Subrequest != "user_invites" {
+		t.Errorf("surviving entry is %+v, want the users one", snap[0])
+	}
+	if snap[0].Attempted != 1 {
+		t.Errorf("users attempted = %d, want 1 (untouched by the devices reset)", snap[0].Attempted)
+	}
+}
+
+func TestCoverageResetCollectorIsNilSafe(t *testing.T) {
+	var c *apistate.Coverage
+	c.ResetCollector("devices")
+}
+
 func TestCoverageIsNilSafe(t *testing.T) {
 	var c *apistate.Coverage
 	c.Record("devices", "device_invites", apistate.StateSupported)

@@ -20,8 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
 	"github.com/rknightion/tailscale2otel/v3/internal/release"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -60,7 +62,21 @@ const (
 	metricDevicesByTag     = "tailscale.devices.by_tag"
 	metricDevicesKeyExpiry = "tailscale.devices.key_expiry"
 
-	metricDeviceInvites = "tailscale.device_invites.count"
+	metricDeviceInvites           = "tailscale.device_invites.count"
+	metricDeviceInvitesPendingAge = "tailscale.device_invites.pending_age"
+
+	// #414 SSH / key-expiry-disabled posture: fleet counts plus per-device flags.
+	metricDevicesSSHEnabled        = "tailscale.devices.ssh_enabled"
+	metricDeviceSSHEnabled         = "tailscale.device.ssh_enabled"
+	metricDevicesKeyExpiryDisabled = "tailscale.devices.key_expiry_disabled"
+	metricDeviceKeyExpiryDisabled  = "tailscale.device.key_expiry_disabled"
+
+	// #427 Linux distribution inventory.
+	metricDevicesByDistro = "tailscale.devices.by_distro"
+	metricDeviceDistro    = "tailscale.device.distro"
+
+	// #426 fleet lifecycle/age distribution.
+	metricDevicesAge = "tailscale.devices.age"
 
 	metricDeviceVersionSkew  = "tailscale.device.version_skew"
 	metricFleetLatestVersion = "tailscale.fleet.latest_version"
@@ -109,6 +125,19 @@ const (
 	attrInviteAccepted      = "tailscale.device_invite.accepted"
 	attrInviteAllowExitNode = "tailscale.device_invite.allow_exit_node"
 	attrInviteMultiUse      = "tailscale.device_invite.multi_use"
+
+	// attrInviteDelivery carries the bounded delivery classification of a
+	// device-share invite (emailed | manual_link | unknown). It describes HOW an
+	// invite was distributed, never to whom — the invitee email stays on the
+	// PII-gated log event and the inviteUrl bearer token is never decoded at all.
+	attrInviteDelivery = "tailscale.device_invite.delivery"
+
+	// Distro inventory labels (#427). Bounded platform vocabulary from the
+	// device's distro block; the raw distro VERSION is deliberately absent here —
+	// it already has one home as semconv.OSVersion on the per-device identity
+	// attrs, and a second, coarser home would only multiply series.
+	attrDistroName     = "tailscale.distro.name"
+	attrDistroCodename = "tailscale.distro.codename"
 
 	// attrActorLogin is the loginName of the user who accepted a device-share
 	// invite (acceptedBy.loginName on the wire). Uses the stable OTel user.*
@@ -202,6 +231,49 @@ const defaultInterval = 60 * time.Second
 // over-the-cap tags into, so per-tag totals are preserved.
 const tagOther = "__other__"
 
+// Distro-inventory bounding (#427). distroRollupLimit caps the distinct
+// (name, codename) series on tailscale.devices.by_distro; the overflow folds
+// into a single distroOther/distroOther series so the fleet total is preserved,
+// exactly like the by_tag rollup's __other__ bucket. The cap is a constant, not
+// a config key: unlike ACL tags (operator-authored, genuinely unbounded) the
+// distro vocabulary is a short upstream platform list, so 50 is far above any
+// real fleet and exists purely as a guard against a future free-text value.
+const (
+	distroRollupLimit = 50
+	distroOther       = "__other__"
+	// distroUnknown is the bounded fallback for a distro field that is present
+	// on the device but empty or unparseable — most often a codename the
+	// distribution does not publish. A device with NO distro name at all is
+	// skipped entirely instead (absence, not an "unknown" mega-bucket): most
+	// non-Linux devices report nothing here, and folding them all into one
+	// series would swamp the actual distribution this metric exists to show.
+	distroUnknown = "unknown"
+)
+
+// Bounded subrequest type names for the per-device N+1 calls (#421). These are
+// metric label values, so they are a CLOSED set — one per extra API call the
+// devices collector makes per device.
+const (
+	subrequestDeviceInvites     = "device_invites"
+	subrequestPostureAttributes = "posture_attributes"
+)
+
+// Bounded device-invite delivery states (#413), carried on attrInviteDelivery.
+const (
+	// deliveryEmailed: the invite was addressed to an email (or upstream has
+	// recorded an email send attempt for it).
+	deliveryEmailed = "emailed"
+	// deliveryManualLink: no email and no send attempt, but the record is
+	// otherwise populated — a share link distributed out of band.
+	deliveryManualLink = "manual_link"
+	// deliveryUnknown: the record carries nothing to classify on (no email, no
+	// send attempt, no creation time), so the control plane did not tell us how
+	// the invite was delivered. Deliberately NOT folded into manual_link — a
+	// provider that omits these fields must read as unknown, not as a confident
+	// "shared by link".
+	deliveryUnknown = "unknown"
+)
+
 // keyExpiryBucketsDays are the explicit histogram bucket boundaries (in days)
 // for tailscale.devices.key_expiry. The first bucket (-inf, 0] captures keys
 // that have already expired; the rest bracket "expiring soon" windows.
@@ -274,6 +346,31 @@ type Collector struct {
 	// never populates the field.
 	multipleConnectionsData       bool
 	blocksIncomingConnectionsData bool
+
+	// sshData / keyExpiryDisabledData gate the tailscale.device{s}.ssh_enabled
+	// and .key_expiry_disabled signals (#414), same rationale again: both
+	// default true because Tailscale reports sshEnabled/keyExpiryDisabled
+	// natively, and both must be set false for a control plane that has no such
+	// concept (Headscale's adapter hard-codes them false — see
+	// internal/hsapi/adapt.go), so an unsupported provider produces ABSENCE
+	// rather than a fleet that confidently reports "SSH nowhere enabled".
+	// tailscale.devices.by_distro needs no such option: it is gated on wire
+	// presence of a distro name, which Headscale never populates.
+	sshData               bool
+	keyExpiryDisabledData bool
+
+	// coverage tallies the per-device subrequests (posture attributes, device
+	// invites) attempted and their outcomes for #421. Nil is a no-op, so a
+	// collector built without WithCoverage behaves exactly as before.
+	coverage *apistate.Coverage
+
+	// ageBuckets is this collector's own copy of the shared entity-age bucket
+	// bounds (#426), taken once in New rather than per observation. The OTEL SDK
+	// retains the bounds slice it is handed, and entityage.BucketsSeconds returns
+	// a fresh copy per call precisely so no two collectors can end up sharing
+	// one — holding a single copy here preserves that while keeping the
+	// per-device hot loop allocation-free.
+	ageBuckets []float64
 
 	// now returns the current time; injectable for tests (key-expiry histogram).
 	now func() time.Time
@@ -463,6 +560,45 @@ func WithBlocksIncomingConnectionsData(enabled bool) Option {
 	return func(c *Collector) { c.blocksIncomingConnectionsData = enabled }
 }
 
+// WithSSHData controls whether the Tailscale SSH posture signals
+// (tailscale.devices.ssh_enabled fleet count + the per-device
+// tailscale.device.ssh_enabled gauge) are emitted. The default is true
+// (Tailscale reports `sshEnabled` natively); pass false when the control-plane
+// API has no Tailscale-SSH concept at all (e.g. Headscale), so the collector
+// doesn't publish a fabricated "SSH enabled nowhere" as if it were measured.
+// The per-device gauge is additionally gated by WithPerEntity.
+func WithSSHData(enabled bool) Option {
+	return func(c *Collector) { c.sshData = enabled }
+}
+
+// WithKeyExpiryDisabledData controls whether the key-expiry-disabled posture
+// signals (tailscale.devices.key_expiry_disabled fleet count + the per-device
+// tailscale.device.key_expiry_disabled gauge) are emitted. Default true; pass
+// false for a control plane that does not report whether key expiry has been
+// disabled for a node (Headscale). Same absence-over-false-zero rationale as
+// WithSSHData. Note this gates only the NEW posture signals — the existing
+// tailscale.device.key.expiry gauge and tailscale.devices.key_expiry histogram
+// already suppress themselves per device via the KeyExpiryDisabled flag and are
+// unaffected.
+func WithKeyExpiryDisabledData(enabled bool) Option {
+	return func(c *Collector) { c.keyExpiryDisabledData = enabled }
+}
+
+// WithCoverage supplies the shared per-tailnet subrequest coverage tally (#421).
+// The devices collector makes one posture-attributes and one device-invites call
+// PER DEVICE; before this, a failure on either was discarded silently, so a
+// missing device_invites:read scope read as "this tailnet has no invites" while
+// the scrape still reported success. With a Coverage wired, every attempt is
+// classified through apistate and emitted as
+// tailscale2otel.subrequest.{attempts,failures,coverage}, and the same tally
+// backs the admin status page.
+//
+// A nil *apistate.Coverage is a no-op (and emits nothing), so existing
+// constructions keep working unchanged.
+func WithCoverage(cov *apistate.Coverage) Option {
+	return func(c *Collector) { c.coverage = cov }
+}
+
 // New returns a devices Collector that lists via the rich devices endpoint,
 // repopulates cache, and uses interval as its poll cadence (a non-positive
 // interval defaults to 60s). When collectRoutes is true the per-device route
@@ -492,6 +628,10 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 
 		multipleConnectionsData:       true,
 		blocksIncomingConnectionsData: true,
+		sshData:                       true,
+		keyExpiryDisabledData:         true,
+
+		ageBuckets: entityage.BucketsSeconds(),
 
 		gsb: telemetry.NewGaugeSnapshotBuilder(),
 	}
@@ -515,6 +655,13 @@ func (c *Collector) DefaultInterval() time.Duration {
 // Collect lists devices, repopulates the cache, and emits metrics (and, when
 // enabled, route gauges and posture log events).
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
+	// Start each tick from a clean coverage tally so the emitted ratio describes
+	// the most recent pass rather than an ever-growing lifetime total. Reset
+	// before the list call on purpose: if the list itself fails there was no
+	// pass, and an empty tally is the honest answer (nothing is emitted, so the
+	// last good values stand until the next successful tick).
+	c.coverage.ResetCollector(c.Name())
+
 	devs, err := c.api.DevicesRich(ctx)
 	if err != nil {
 		return err
@@ -542,6 +689,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	byVersion := make(map[string]int)
 	byTag := make(map[string]int)
 	nowT := c.now()
+
+	// #414 posture roll-ups and #427 distro inventory accumulators.
+	sshEnabled := 0
+	keyExpiryDisabled := 0
+	byDistro := make(map[distroKey]int)
 
 	// B6 version-skew: resolve the latest upstream stable once per tick.
 	var latestVer release.Version
@@ -623,6 +775,32 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					boolToFloat(d.BlocksIncomingConnections), idAttrs)
 			}
 
+			// #414: Tailscale SSH + key-expiry-disabled posture, each gated on
+			// its own data-source option so an unsupported control plane emits
+			// nothing rather than a fabricated false.
+			if c.sshData {
+				c.gsb.Add(docDeviceSSHEnabled.Name, docDeviceSSHEnabled.Unit, docDeviceSSHEnabled.Description,
+					boolToFloat(d.SSHEnabled), idAttrs)
+			}
+			if c.keyExpiryDisabledData {
+				c.gsb.Add(docDeviceKeyExpiryDisabled.Name, docDeviceKeyExpiryDisabled.Unit, docDeviceKeyExpiryDisabled.Description,
+					boolToFloat(d.KeyExpiryDisabled), idAttrs)
+			}
+
+			// #427: per-device distro info gauge. Emitted only for devices that
+			// actually report a distribution — most non-Linux devices send an
+			// empty distro block, and a per-device "unknown" series for each of
+			// them would be pure noise.
+			if dk, ok := distroKeyFor(d.Distro); ok {
+				c.gsb.Add(docDeviceDistro.Name, docDeviceDistro.Unit, docDeviceDistro.Description,
+					1, telemetry.Attrs{
+						semconv.HostName:   d.Hostname,
+						semconv.HostID:     d.ID,
+						attrDistroName:     dk.name,
+						attrDistroCodename: dk.codename,
+					})
+			}
+
 			// tailscale.device.posture_identity.disabled is gated purely by wire
 			// presence, not a data-source option: Headscale's adapter never
 			// populates PostureIdentity (stays nil), so this already suppresses
@@ -678,7 +856,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 
 		if c.collectDeviceInvites {
-			c.tallyDeviceInvites(ctx, e, d, inviteCounts)
+			c.tallyDeviceInvites(ctx, e, d, inviteCounts, nowT)
 		}
 
 		if d.TailnetLockError != "" {
@@ -712,6 +890,29 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 		if d.ClientVersion != "" {
 			byVersion[NormalizeVersion(d.ClientVersion)]++
+		}
+
+		// #414 fleet posture counts (independent of per_entity, so the
+		// low-cardinality view survives when the per-device gauges are off).
+		if d.SSHEnabled {
+			sshEnabled++
+		}
+		if d.KeyExpiryDisabled {
+			keyExpiryDisabled++
+		}
+
+		// #427 fleet distro distribution.
+		if dk, ok := distroKeyFor(d.Distro); ok {
+			byDistro[dk]++
+		}
+
+		// #426 fleet age distribution. A device whose provider supplied no
+		// creation timestamp is SKIPPED, never recorded as age 0 — a fleet of
+		// apparently brand-new devices is a materially wrong answer, and
+		// external/shared-in devices legitimately arrive with created:"".
+		if age, ok := entityage.Seconds(d.Created, nowT); ok {
+			e.Histogram(docDevicesAge.Name, docDevicesAge.Unit, docDevicesAge.Description,
+				age, c.ageBuckets, nil)
 		}
 
 		// B6 version-skew per-device (gated by perEntity; outdated count always).
@@ -869,6 +1070,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	c.emitTagRollup(byTag)
 
+	// #414 fleet posture counts. Nil-attr single-series gauges, so they stay
+	// synchronous — they cannot churn.
+	if c.sshData {
+		e.Gauge(docDevicesSSHEnabled.Name, docDevicesSSHEnabled.Unit, docDevicesSSHEnabled.Description,
+			float64(sshEnabled), nil)
+	}
+	if c.keyExpiryDisabledData {
+		e.Gauge(docDevicesKeyExpiryDisabled.Name, docDevicesKeyExpiryDisabled.Unit, docDevicesKeyExpiryDisabled.Description,
+			float64(keyExpiryDisabled), nil)
+	}
+
+	c.emitDistroRollup(byDistro)
+
 	// B6 fleet-level version-skew gauges (emitted when upstream latest is known).
 	if haveLatest {
 		c.gsb.Add(docFleetLatestVersion.Name, docFleetLatestVersion.Unit, docFleetLatestVersion.Description,
@@ -884,6 +1098,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					attrInviteAccepted:      k.accepted,
 					attrInviteAllowExitNode: k.allowExitNode,
 					attrInviteMultiUse:      k.multiUse,
+					attrInviteDelivery:      k.delivery,
 				})
 		}
 	}
@@ -933,7 +1148,91 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// (#55). Reached only on the success path; a mid-Collect API error returned
 	// earlier, leaving the previous snapshot in place until the next good tick.
 	c.gsb.Flush(e)
+
+	// #421: publish this tick's per-device subrequest coverage. Nil Coverage
+	// emits nothing (Snapshot returns nil), so a collector built without
+	// WithCoverage is byte-identical to the pre-#421 behavior.
+	apistate.EmitCoverage(e, c.coverage)
 	return nil
+}
+
+// distroKey is the bounded (name, codename) label pair for the distro
+// inventory. Both components are normalized before they land here, so this is
+// also the map key used for the fleet rollup.
+type distroKey struct {
+	name     string
+	codename string
+}
+
+// distroKeyFor normalizes a device's distro block into the bounded label pair,
+// reporting false when the device declares no distribution at all.
+//
+// Normalization is deliberately narrow: trim and lowercase (so "Ubuntu " and
+// "ubuntu" are one series rather than two) and substitute distroUnknown for an
+// empty codename, which many distributions simply do not publish. The distro
+// VERSION never appears — it is already carried as semconv.OSVersion on the
+// per-device identity attributes, and putting a raw version string on a fleet
+// rollup is exactly the high-cardinality dimension #427 forbids.
+func distroKeyFor(d tsapi.DistroInfo) (distroKey, bool) {
+	name := strings.ToLower(strings.TrimSpace(d.Name))
+	if name == "" {
+		return distroKey{}, false
+	}
+	codename := strings.ToLower(strings.TrimSpace(d.CodeName))
+	if codename == "" {
+		codename = distroUnknown
+	}
+	return distroKey{name: name, codename: codename}, true
+}
+
+// emitDistroRollup emits tailscale.devices.by_distro, one series per distinct
+// (distro name, codename) pair. Over distroRollupLimit distinct pairs the
+// busiest `limit` keep their own series (ties broken by name then codename for
+// determinism) and the remainder fold into a single __other__/__other__ series,
+// so the fleet total is preserved — same shape as emitTagRollup's overflow
+// bucket.
+func (c *Collector) emitDistroRollup(byDistro map[distroKey]int) {
+	if len(byDistro) == 0 {
+		return
+	}
+	emit := func(k distroKey, n int) {
+		c.gsb.Add(docDevicesByDistro.Name, docDevicesByDistro.Unit, docDevicesByDistro.Description,
+			float64(n), telemetry.Attrs{attrDistroName: k.name, attrDistroCodename: k.codename})
+	}
+	if len(byDistro) <= distroRollupLimit {
+		for k, n := range byDistro {
+			emit(k, n)
+		}
+		return
+	}
+	type distroCount struct {
+		key distroKey
+		n   int
+	}
+	all := make([]distroCount, 0, len(byDistro))
+	for k, n := range byDistro {
+		all = append(all, distroCount{k, n})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].n != all[j].n {
+			return all[i].n > all[j].n // busiest first
+		}
+		if all[i].key.name != all[j].key.name {
+			return all[i].key.name < all[j].key.name
+		}
+		return all[i].key.codename < all[j].key.codename
+	})
+	other := 0
+	for i, dc := range all {
+		if i < distroRollupLimit {
+			emit(dc.key, dc.n)
+		} else {
+			other += dc.n
+		}
+	}
+	if other > 0 {
+		emit(distroKey{name: distroOther, codename: distroOther}, other)
+	}
 }
 
 // emitTagRollup emits tailscale.devices.by_tag, one series per ACL tag. When
@@ -984,31 +1283,72 @@ func (c *Collector) emitTagRollup(byTag map[string]int) {
 }
 
 // deviceInviteKey is the bounded label combination for the device-invites count
-// gauge: accepted/pending and the two exposure flags (2x2x2 = 8 series max).
+// gauge: accepted/pending, the two exposure flags, and the delivery state
+// (2x2x2x3 = 24 series max).
 type deviceInviteKey struct {
 	accepted      bool
 	allowExitNode bool
 	multiUse      bool
+	delivery      string
+}
+
+// inviteDelivery classifies HOW a device-share invite was distributed, into the
+// bounded {emailed, manual_link, unknown} set (#413).
+//
+// The order matters. An email address, or an upstream record of a send attempt,
+// is positive evidence of an emailed invite. Absence of both is only evidence of
+// a link-only share if the record is otherwise populated — which Created stands
+// in for. A record with no email, no send attempt AND no creation time tells us
+// nothing, so it reads as unknown rather than being folded into manual_link:
+// a control plane that simply omits these fields must not be reported as having
+// confidently shared everything by link.
+func inviteDelivery(inv tsapi.DeviceInvite) string {
+	switch {
+	case inv.Email != "" || !inv.LastEmailSentAt.IsZero():
+		return deliveryEmailed
+	case !inv.Created.IsZero():
+		return deliveryManualLink
+	default:
+		return deliveryUnknown
+	}
 }
 
 // tallyDeviceInvites fetches one device's share invites, folds them into
-// counts for the aggregate gauge, and emits a per-invite log event carrying
-// the invitee email, the acceptedBy login, and the sharing device identity.
+// counts for the aggregate gauge, records the pending-invite age distribution,
+// and emits a per-invite log event carrying the invitee email, the acceptedBy
+// login, and the sharing device identity.
+//
 // Per-device errors (e.g. a missing device_invites:read scope -> 403, or a
-// transient failure) are NON-FATAL: the device is skipped and collection
-// continues, so device-invite collection can never break the devices snapshot
-// (mirrors emitPosture's error handling).
-func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, counts map[deviceInviteKey]int) {
+// transient failure) stay NON-FATAL: the device is skipped and collection
+// continues, so device-invite collection can never break the devices snapshot.
+// They are no longer SILENT, though — every attempt is classified through
+// apistate and tallied on the shared Coverage (#421). Before that, a 403 on
+// every device was indistinguishable from a tailnet with no invites at all,
+// while the scrape still reported success.
+func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, counts map[deviceInviteKey]int, nowT time.Time) {
 	invs, err := c.api.DeviceInvites(ctx, d.ID)
+	c.coverage.Record(c.Name(), subrequestDeviceInvites, apistate.Classify(err, apistate.Disposition{}))
 	if err != nil {
 		return
 	}
 	for _, inv := range invs {
+		delivery := inviteDelivery(inv)
 		counts[deviceInviteKey{
 			accepted:      inv.Accepted,
 			allowExitNode: inv.AllowExitNode,
 			multiUse:      inv.MultiUse,
+			delivery:      delivery,
 		}]++
+
+		// Age of invites still outstanding. Accepted invites are excluded (their
+		// age is history, not exposure), and an invite whose creation time the
+		// provider did not supply is skipped rather than recorded as brand new.
+		if !inv.Accepted {
+			if age, ok := entityage.Seconds(inv.Created, nowT); ok {
+				e.Histogram(docDeviceInvitesPendingAge.Name, docDeviceInvitesPendingAge.Unit,
+					docDeviceInvitesPendingAge.Description, age, c.ageBuckets, nil)
+			}
+		}
 
 		// Emit a per-invite log event so "N pending shares" becomes observable
 		// as "who shared which device with whom". Only emit when there is
@@ -1027,10 +1367,11 @@ func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter,
 			Severity: telemetry.SeverityInfo,
 			Body:     body,
 			Attrs: telemetry.Attrs{
-				semconv.HostName: d.Hostname,
-				semconv.HostID:   d.ID, // device id, consistent with every other device signal
-				semconv.AttrUser: inv.Email,
-				attrActorLogin:   inv.AcceptedByLogin,
+				semconv.HostName:   d.Hostname,
+				semconv.HostID:     d.ID, // device id, consistent with every other device signal
+				semconv.AttrUser:   inv.Email,
+				attrActorLogin:     inv.AcceptedByLogin,
+				attrInviteDelivery: delivery,
 			},
 		})
 	}
@@ -1078,10 +1419,14 @@ func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 // emitPosture fetches the posture attributes for one device, always emits the
 // posture info-gauge metric (constant 1, curated labels), and conditionally
 // emits the full posture LOG event depending on the configured posture log mode.
-// Per-device errors are non-fatal: the device is skipped and collection
-// continues.
+//
+// Per-device errors are non-fatal — the device is skipped and collection
+// continues — but they are recorded on the shared Coverage tally first (#421),
+// so a posture fetch that fails on every device shows up as degraded coverage
+// instead of an empty posture surface on a green scrape.
 func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time) {
 	da, err := c.api.DevicePostureAttributes(ctx, d.ID)
+	c.coverage.Record(c.Name(), subrequestPostureAttributes, apistate.Classify(err, apistate.Disposition{}))
 	if err != nil {
 		return
 	}

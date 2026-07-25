@@ -161,9 +161,23 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 > and **do** gate PRs. The three *scheduled* lanes (`api-drift.yml`, `clientlib-main.yml`,
 > `live-contract.yml`) are advisory — on detection they open a deduped tracking issue + fail the
 > scheduled run, but never block PRs. The live lane does NOT use GitHub OIDC — it mints a short-lived
-> Tailscale API token via OAuth client-credentials, using a read-only (`all:read`) OAuth client whose
-> credentials live in the environment of a dedicated self-hosted runner (label `tailscale-api`), not
-> in GitHub secrets (see `.github/workflows/live-contract.yml`).
+> Tailscale API token via OAuth client-credentials, using a read-only (`all:read`) OAuth client.
+>
+> **The credentials are GitHub secrets on a standard `ubuntu-latest` runner.** An earlier design kept
+> them in the environment of a dedicated **self-hosted** runner (label `tailscale-api`) — that runner
+> was **never provisioned**, so the lane queued forever and was auto-cancelled at 24h every week,
+> producing no signal at all (#160). Standing a self-hosted runner up on a PUBLIC repo is also a risk
+> GitHub warns against, since a fork PR can target it. Secrets are safe here precisely because the lane
+> is `schedule` + `workflow_dispatch` only, so a fork PR can never reach them; worst case on a leak is
+> "can read the tailnet". **Do not "restore" the self-hosted runner** — read the header comment in
+> `.github/workflows/live-contract.yml` first.
+
+> **The vendored OpenAPI spec is `spec/tailscale-api.json`** (~286 KB; 58 paths / 90 operations, 34 of
+> them GET), with provenance in `spec/README.md`. It is NOT at the repo root, and there is no `.yaml`
+> copy. Refreshing it is manual and is how you *acknowledge* a detected drift — the daily
+> `api-drift.yml` fetches the live spec to `/tmp` for comparison but never writes back.
+> `internal/oas.ParseSpec` keeps **only** `get` operations and silently drops every other verb, so
+> `Spec.Ops` never contains a POST/PUT/PATCH/DELETE.
 
 ## Config & secrets
 

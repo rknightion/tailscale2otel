@@ -2,8 +2,13 @@
 // $ref resolution, bounded to the subset needed for drift detection and
 // schema-driven fuzz testing.
 //
-// Only GET operations are modeled. $ref resolution is cycle-safe via a visited
-// set and a hard depth cap (maxRefDepth).
+// Only GET operations are modeled WITH SCHEMAS (Spec.Ops) — schemas exist to
+// drive decode drift and fuzz, and only GETs have a consumed response body.
+// Spec.AllOperations (inventory.go) separately indexes EVERY operation of every
+// verb by id/method/path, with no schema, for new-operation detection.
+//
+// $ref resolution is cycle-safe via a visited set and a hard depth cap
+// (maxRefDepth).
 package oas
 
 import (
@@ -19,9 +24,13 @@ const maxRefDepth = 12
 
 // Spec is the minimal parsed OpenAPI document: GET operations keyed by
 // operationId, with $ref already resolved against components.schemas.
+//
+// Ops is GET-only by design (see the package doc). For the every-verb operation
+// census used by new-operation detection, call AllOperations.
 type Spec struct {
-	Ops        map[string]Operation // key = operationId
-	components map[string]rawSchema // unexported; raw components.schemas for resolution
+	Ops        map[string]Operation    // key = operationId; GET only
+	components map[string]rawSchema    // unexported; raw components.schemas for resolution
+	allOps     map[string]OperationRef // unexported; every verb, id/method/path only
 }
 
 // Operation is a parsed GET operation from the OpenAPI spec.
@@ -76,6 +85,7 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 	spec := &Spec{
 		Ops:        make(map[string]Operation),
 		components: components,
+		allOps:     map[string]OperationRef{},
 	}
 
 	// Extract paths.
@@ -83,6 +93,7 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 	if !ok {
 		return spec, nil
 	}
+	spec.allOps = parseAllOperations(rawPaths)
 	var paths map[string]json.RawMessage
 	if err := json.Unmarshal(rawPaths, &paths); err != nil {
 		return nil, fmt.Errorf("oas: unmarshal paths: %w", err)

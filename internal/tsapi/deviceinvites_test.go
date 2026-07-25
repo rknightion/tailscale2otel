@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // deviceInvitesFixture mirrors a GET /device/{id}/device-invites response: one
@@ -74,5 +75,53 @@ func TestDeviceInvites_NullBodyYieldsNil(t *testing.T) {
 	}
 	if invs != nil {
 		t.Errorf("invs = %v, want nil for null body", invs)
+	}
+}
+
+// deviceInvitesTimestampFixture exercises the #413 lifecycle fields: one invite
+// with both created and lastEmailSentAt, one with created only (a link-only
+// share is never emailed, so upstream never sets lastEmailSentAt), and one with
+// an empty-string created — the shape that took the whole devices decode down in
+// #48 and which a plain time.Time would reject here too.
+const deviceInvitesTimestampFixture = `[
+  {"id":"di1","accepted":false,"email":"a@example.com",
+   "created":"2026-04-03T21:38:49Z","lastEmailSentAt":"2026-04-05T09:00:00Z",
+   "inviteUrl":"https://login.tailscale.com/admin/invite/aaa"},
+  {"id":"di2","accepted":false,"created":"2026-04-01T00:00:00Z"},
+  {"id":"di3","accepted":false,"created":"","lastEmailSentAt":""}
+]`
+
+func TestDeviceInvites_DecodesLifecycleTimestamps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(deviceInvitesTimestampFixture))
+	}))
+	defer srv.Close()
+
+	invs, err := newClient(t, srv.URL).DeviceInvites(context.Background(), "dev123")
+	if err != nil {
+		t.Fatalf("DeviceInvites: %v", err)
+	}
+	if len(invs) != 3 {
+		t.Fatalf("len(invs) = %d, want 3", len(invs))
+	}
+
+	wantCreated := time.Date(2026, 4, 3, 21, 38, 49, 0, time.UTC)
+	if !invs[0].Created.Equal(wantCreated) {
+		t.Errorf("invs[0].Created = %v, want %v", invs[0].Created, wantCreated)
+	}
+	wantSent := time.Date(2026, 4, 5, 9, 0, 0, 0, time.UTC)
+	if !invs[0].LastEmailSentAt.Equal(wantSent) {
+		t.Errorf("invs[0].LastEmailSentAt = %v, want %v", invs[0].LastEmailSentAt, wantSent)
+	}
+
+	if invs[1].Created.IsZero() {
+		t.Error("invs[1].Created is zero, want the decoded creation time")
+	}
+	if !invs[1].LastEmailSentAt.IsZero() {
+		t.Errorf("invs[1].LastEmailSentAt = %v, want zero (never emailed)", invs[1].LastEmailSentAt)
+	}
+
+	if !invs[2].Created.IsZero() || !invs[2].LastEmailSentAt.IsZero() {
+		t.Errorf("invs[2] = %+v, want zero times for empty-string wire values", invs[2])
 	}
 }

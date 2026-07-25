@@ -39,7 +39,13 @@ type Status struct {
 	Metrics       []MetricRow       `json:"metrics"`
 	LogEvents     []LogRow          `json:"log_events"`
 	Config        ConfigSummary     `json:"config"`
-	GeneratedAt   string            `json:"generated_at"`
+	// CapabilityMatrix is the configuration-to-capability matrix (#425/#430): one
+	// row per enabled collector (plus its optional per-entity subrequests) joining
+	// the required API capability/scope, the provider's support for it, the live
+	// permission state, and the last probe. Deliberately a flat list so the JSON
+	// is directly machine-readable.
+	CapabilityMatrix []CapabilityRow `json:"capability_matrix"`
+	GeneratedAt      string          `json:"generated_at"`
 	// RefreshMs is the client poll interval in milliseconds (admin.status_refresh_interval).
 	// The page falls back to 5000 when this is 0. The 1s freshness ticker is independent.
 	RefreshMs int `json:"refresh_ms,omitempty"`
@@ -425,6 +431,95 @@ type LogRow struct {
 	Group       string   `json:"group"`
 	Description string   `json:"description"`
 	Attributes  []string `json:"attributes,omitempty"`
+}
+
+// Scope preflight outcomes (#425). A CLOSED set, safe as a label or a UI badge
+// class. The preflight compares the REQUESTED OAuth scopes from configuration
+// against each collector's required scope — nothing here reflects what the
+// server actually granted, so it is advisory only and the runtime 403
+// classification in State remains authoritative.
+const (
+	// ScopeSatisfied means the configured scopes cover the requirement.
+	ScopeSatisfied = "satisfied"
+	// ScopeInsufficient means they demonstrably do not. Advisory: a modelling
+	// error here must never stop collection, only warn.
+	ScopeInsufficient = "insufficient"
+	// ScopeUnknown means the answer is not knowable: either the credential is not
+	// an OAuth client (an API key carries no scope list), or upstream does not
+	// document a scope for this capability. Never warned about.
+	ScopeUnknown = "unknown"
+	// ScopeNotApplicable means the capability needs no Tailscale API scope at all
+	// (node-local scrapes, object-store ingestion). Distinct from ScopeUnknown so
+	// "we deliberately require nothing" cannot be confused with "we do not know".
+	ScopeNotApplicable = "not_applicable"
+)
+
+// Reasons a capability is not currently active. A CLOSED set.
+const (
+	// CapabilityReasonUnsupported means the active control plane does not expose
+	// the API at all (e.g. DNS under Headscale). Checked first: it holds
+	// regardless of what the configuration asks for.
+	CapabilityReasonUnsupported = "provider_unsupported"
+	// CapabilityReasonConfigDisabled means the operator turned it off.
+	CapabilityReasonConfigDisabled = "config_disabled"
+	// CapabilityReasonNotRegistered means it is enabled and supported yet no
+	// collector was registered — the ingestion source excludes polling, or a
+	// required sub-configuration (e.g. node-metrics targets) is absent.
+	CapabilityReasonNotRegistered = "not_registered"
+)
+
+// CapabilityRow is one row of the configuration-to-capability matrix: an enabled
+// collector, or one of its optional per-entity subrequests (Subrequest set).
+//
+// Collector/Capability/Active/Reason describe the CONFIGURED intent and what the
+// composition root actually did with it; ScopeStatus is the advisory startup
+// preflight; State/LastProbe are the live, server-authoritative truth.
+type CapabilityRow struct {
+	Collector string `json:"collector"`
+	// Subrequest is empty on a collector row and names the bounded per-entity
+	// subrequest type (e.g. "device_invites") on a subrequest row.
+	Subrequest string `json:"subrequest,omitempty"`
+	// Capability is the provider feature key this row needs, and the value of the
+	// tailscale.capability attribute on the scope-preflight metric. Unique across
+	// rows, so a subrequest row carries its own capability key.
+	Capability string `json:"capability"`
+	// RequiredScopes are the OAuth scopes upstream documents for this capability.
+	// Empty when none are needed or none are modelled — see ScopeStatus.
+	RequiredScopes []string `json:"required_scopes,omitempty"`
+	// MissingScopes lists the required scopes the configured set does not cover.
+	// Populated only when ScopeStatus is ScopeInsufficient.
+	MissingScopes     []string `json:"missing_scopes,omitempty"`
+	ConfigEnabled     bool     `json:"config_enabled"`
+	ProviderSupported bool     `json:"provider_supported"`
+	// Active means a collector is actually registered and running for this row.
+	Active bool `json:"active"`
+	// Reason explains a non-Active row (one of the CapabilityReason* constants);
+	// empty when Active.
+	Reason string `json:"reason,omitempty"`
+	// ScopeStatus is one of the Scope* constants.
+	ScopeStatus string `json:"scope_status"`
+	// State is the aggregated apistate.State across every probed operation of this
+	// collector: the most operator-relevant one, so a partial scope denial is never
+	// masked by a sibling success. "unknown" until something has been probed.
+	State string `json:"state"`
+	// Actionable mirrors apistate.State.Actionable() — false for the expected
+	// "disabled"/"unknown" states, so a feature that is simply off never pages.
+	Actionable bool `json:"actionable"`
+	// LastProbe is the most recent probe time across this row's operations
+	// (RFC3339; empty when never probed).
+	LastProbe string `json:"last_probe,omitempty"`
+	// Source is the effective ingestion source for the log collectors
+	// ("poll"/"stream"/"both"/object-store); empty for snapshot collectors.
+	Source string `json:"source,omitempty"`
+	// Operations is the per-operation breakdown behind State, on collector rows only.
+	Operations []CapabilityOperation `json:"operations,omitempty"`
+}
+
+// CapabilityOperation is one probed API operation's latest availability.
+type CapabilityOperation struct {
+	Operation string `json:"operation"`
+	State     string `json:"state"`
+	LastProbe string `json:"last_probe,omitempty"`
 }
 
 // ConfigSummary is the redacted configuration overview. Secret VALUES never

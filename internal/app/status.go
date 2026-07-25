@@ -134,8 +134,13 @@ func (a *App) buildStatus() statusdata.Status {
 		API:         a.apiInfo(),
 		Metrics:     metricRows(metrics, cardByName),
 		LogEvents:   logRows(catalog.LogEvents()),
-		Config:      a.redactedConfigSummary(),
-		GeneratedAt: now.UTC().Format(rfc3339),
+		Config: a.redactedConfigSummary(),
+		// The tracker is per-tailnet. The matrix describes the primary runtime, to
+		// stay consistent with the rest of the status header (see oauthScopes),
+		// so it reads that runtime's tracker rather than merging every tailnet's
+		// — a healthy tailnet must not mask a broken one.
+		CapabilityMatrix: a.capabilityMatrix(a.primaryAPIState()),
+		GeneratedAt:      now.UTC().Format(rfc3339),
 		RefreshMs:   int(a.cfg.Admin.StatusRefreshInterval.D() / time.Millisecond),
 	}
 	if a.runtimeHist != nil {

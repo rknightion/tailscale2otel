@@ -75,11 +75,54 @@ var (
 		Attributes:  []string{attrOwner, attrType},
 		Group:       groupKeys,
 	}
+
+	docKeyScopeClass = metricdoc.Metric{
+		Name:       MetricKeyScopeClass,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "Credential privilege class (info gauge, value 1 for the current class / 0 for the rest), replacing a raw scope count as the blast-radius signal (#415): `none`|`read`|`all_read`|`write`|`all`, ranked by `internal/tsscope`. " +
+			"A single `all` scope (unrestricted read+write, including future APIs) now reads as `all`, distinct from many narrow `*:read` scopes (`read`) or `all:read` (`all_read`, read-only tailnet-wide). " +
+			"Zero-seeded across every class for each scoped credential. Emitted for the same population as `tailscale.key.scopes` (credentials that carry scopes). Gated by `cardinality.per_entity.key`.",
+		Attributes: []string{attrID, attrType, attrDescription, attrOwner, attrScopeClass},
+		Group:      groupKeys,
+	}
+
+	docKeyTagScope = metricdoc.Metric{
+		Name:       MetricKeyTagScope,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "Top-level trust-credential tag-authority class (info gauge, value 1 for the current class / 0 for the rest, #416): `none` (no tag restriction — the credential may create devices with ANY tag, the broadest authority) or `restricted` (one or more allowed tags constrain it). " +
+			"This is the credential's OWN tag restriction (wire: top-level `tags`), NOT the tags it auto-applies to devices it creates (see `tailscale.key.tags`, from `capabilities.devices.create.tags`) — the two are unrelated fields. " +
+			"Only OAuth clients carry this restriction. Zero-seeded across both classes. Gated by `cardinality.per_entity.key`.",
+		Attributes: []string{attrID, attrType, attrDescription, attrOwner, attrTagScope},
+		Group:      groupKeys,
+	}
+
+	docKeyAllowedTags = metricdoc.Metric{
+		Name:       MetricKeyAllowedTags,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "Number of tags an OAuth client's trust credential is restricted to (a **count**; 0 means unrestricted — see `tailscale.key.tag_scope`, #416). " +
+			"Always emitted for OAuth clients (never omitted at 0, unlike most optional-array counts elsewhere: 0 is the security-relevant case here). Gated by `cardinality.per_entity.key`.",
+		Attributes: []string{attrID, attrType, attrDescription, attrOwner},
+		Group:      groupKeys,
+	}
+
+	docKeysAge = metricdoc.Metric{
+		Name:        MetricKeysAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Fleet age distribution of tailnet keys, in seconds since `created` (#426). A single bounded histogram across every key with a known Created timestamp — not a per-entity series, so it is unconditional on `cardinality.per_entity.key`. Bucket bounds: `internal/entityage.BucketsSeconds()`.",
+		Group:       groupKeys,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docKeyExpiry, docKeysCount, docKeyScopes, docKeyPreauthorized, docKeysByOwner}
+	return []metricdoc.Metric{
+		docKeyExpiry, docKeysCount, docKeyScopes, docKeyPreauthorized, docKeysByOwner,
+		docKeyScopeClass, docKeyTagScope, docKeyAllowedTags, docKeysAge,
+	}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

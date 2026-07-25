@@ -273,11 +273,13 @@ gh label create clientlib-drift -c FBCA04
 gh label create live-contract -c FBCA04
 ```
 
-The live lane stores **no Tailscale key in GitHub**. It runs on a dedicated self-hosted runner (label
-`tailscale-api`) and mints a short-lived token from Tailscale's OAuth endpoint using a read-only
-(`all:read`) OAuth client whose `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET` live in that runner's
-environment. Set the repo variable `TS_TAILNET` (the tailnet name is not a secret). The lane
-self-skips cleanly if the runner env vars are absent. Optionally set the `ANTHROPIC_API_KEY` secret
+The live lane stores **no long-lived Tailscale key**. It runs on a standard GitHub-hosted runner and
+mints a short-lived token from Tailscale's OAuth endpoint using a read-only (`all:read`) OAuth client,
+whose `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET` are repo secrets. Keeping them as secrets is safe
+because this lane is `schedule` + `workflow_dispatch` only, so a fork PR can never run it and never
+reach them; the minted token is masked and lives only for that run. Set the repo variable `TS_TAILNET`
+(the tailnet name is not a secret). Missing configuration fails the lane loudly rather than
+self-skipping, so a misconfigured preflight cannot look green. Optionally set the `ANTHROPIC_API_KEY` secret
 for Claude enrichment on the spec-drift and live lanes; the client-lib lane never receives it by
 design, since it builds untrusted upstream code.
 
