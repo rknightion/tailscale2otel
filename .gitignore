@@ -5,20 +5,47 @@
 # Third-party notices are a RELEASE ARTIFACT (regenerated on every dependency bump by
 # scripts/notices.sh, baked into the image, attached to the GitHub Release) — never committed.
 /THIRD_PARTY_NOTICES.md
-.smoke.yaml
-/checkpoints.json
-
-# Local secrets and credentials — NEVER commit. (see .secrets/)
+# ---------------------------------------------------------------------------
+# Local secrets, credentials, local config and captured data — NEVER commit.
+#
+# deploy/.env is the CANONICAL Compose credential file. `docker compose` reads
+# its env file from the PROJECT directory — the directory holding the compose
+# file — not from the shell's cwd, so `docker compose -f deploy/docker-compose.yaml`
+# loads deploy/.env whichever directory you run it from. The root .env is covered
+# too, for `docker run --env-file .env` and stray tooling.
+#
+# These patterns are deliberately UNANCHORED so they also match one level down
+# (deploy/.env, deploy/.secrets/, deploy/.capture/, deploy/checkpoints/).
+#
+# WARNING: .gitignore is NOT a Docker build-context boundary — Docker never reads
+# it. .dockerignore is the only thing keeping these files out of a build context,
+# its layers and its cache. Add every new sensitive path to BOTH files.
+# Both halves are gated by scripts/check-secret-hygiene.sh.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+*.env
 .secrets/
-*.local.env
-.env.local
 config.local.yaml
 config.smoke.yaml
+config.lowlog.yaml
+.smoke.yaml
+# Checkpoint state (poller high-water marks). checkpoints.json is the default
+# file store; deploy/docker-compose.yaml documents a ./checkpoints bind-mount
+# beside itself, which lands at deploy/checkpoints/.
+checkpoints.json
+checkpoints/
 # Captured real-tailnet data used only for local fixture authoring.
-/.capture/
+.capture/
+# Non-secret templates stay committable. These negations MUST stay below the
+# patterns above (last match wins), and note that a `!` re-include can never
+# resurrect a file inside an excluded DIRECTORY — so never put a committed
+# template inside .secrets/, .capture/ or checkpoints/.
+!.env.example
+!.env.sample
+!.env.template
 
 .DS_Store
-config.lowlog.yaml
 
 # Local working copies of the Tailscale OpenAPI spec (root only). The committed,
 # tracked baseline the drift CI diffs against is spec/tailscale-api.json — the

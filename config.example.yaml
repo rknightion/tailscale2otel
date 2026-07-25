@@ -66,6 +66,13 @@ tailscale:
       base_delay: 500ms               # initial backoff delay
       max_delay: 10s                  # backoff ceiling
     rate_limit: 0                     # global requests/sec across ALL collectors (0 = unlimited)
+  max_response_bytes: 4194304         # cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated
+  max_log_response_bytes: 33554432    # cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it
+# Both budgets are fleet-wide (they apply to every entry in tailnets: below too) and
+# bound the exporter's peak decode memory. Decoding costs SEVERAL TIMES the wire size,
+# so keep them well under the deployment's memory limit (Helm default: 256Mi).
+# Structural budgets (nesting depth 64, single string 4 MiB, array elements 500000)
+# are fixed in code — no real Tailscale response comes close to them.
 
 # ── Multi-tailnet / MSP (OPTIONAL) ──────────────────────────────────────────────
 # Observe MORE THAN ONE tailnet from a single instance. Mutually exclusive with an

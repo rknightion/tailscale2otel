@@ -217,12 +217,50 @@ The HTTP client used for all Tailscale API calls.
 | `tailscale.http.retry.max_delay` | `10s` | Maximum backoff delay between retries. Also **caps a server-sent `Retry-After`**: a `429`/`503` carrying a longer `Retry-After` (numeric seconds or an HTTP date) waits at most `max_delay`, not the full server value, so an upstream cannot park a collector inside one request for hours. A `Retry-After` below `max_delay` is still honoured exactly. The wait counts toward `api.duration`, and request-context cancellation still interrupts it immediately. |
 | `tailscale.http.rate_limit` | `0` | Global request rate cap in requests/second across **all** collectors. `0` = unlimited. |
 
+### `tailscale` response-decode budgets
+
+Caps on how large a single API response body may be before it is decoded. They exist so a malicious
+or broken upstream (or a proxy in front of it) cannot stream an unbounded body into memory. Both are
+**fleet-wide**: they apply to every `tailnets[]` entry, not per tailnet.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `tailscale.max_response_bytes` | `4194304` (4 MiB) | Cap on ONE snapshot-endpoint response body (devices, keys, dns, services, settings, posture, invites, …) before it is decoded. Must be `> 0`. Sized from a live capture at ~1.8 KiB/device, i.e. roughly 2,400 devices. These endpoints are **not paginated**, so a larger tailnet needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. |
+| `tailscale.max_log_response_bytes` | `33554432` (32 MiB) | The same cap for the bulk log pulls (`logging/network`, `logging/configuration`), which are legitimately multi-MB: roughly 13,600 flow records at ~2.4 KiB each. Must be `> 0`. If you hit it, shorten the collector's poll window rather than raising this. |
+
+A value above 64 MiB triggers a startup warning: decoding allocates several times the wire size, so a
+budget that large can exceed a typical container memory limit before the cap ever engages.
+
+> **Structural budgets are fixed and not configurable.** Alongside the byte caps, decoding is bounded
+> by nesting depth (64), single-string length (4 MiB), and array elements per container (500,000).
+> These bound a degenerate-but-valid body that would otherwise force a large allocation well before the
+> byte ceiling is reached — `[0,0,0,…]` costs 2 bytes on the wire per element but roughly 16 decoded.
+> Every limit is orders of magnitude above anything the real API emits (the deepest live payload
+> measures 7 levels, the longest live string 645 bytes). Exceeding one is reported as a distinct error
+> class from a byte-budget overrun, because the remedies differ: a too-large body may just be a big
+> tailnet, whereas a too-complex one is not shaped like anything the Tailscale API produces.
+
+> **A budget failure is not retried in a tight loop.** The limit is enforced while decoding a `200`
+> response, after the HTTP round-trip has already returned, so it cannot drive the transport's retry
+> chain. The collector re-polls on its normal interval instead.
+
 > **Token fetches use the same timeout, end-to-end.** `tailscale.http.timeout` also bounds each OAuth
 > client-credentials refresh and workload-identity token exchange — but there it covers the *whole* call
 > (connect + headers + **body read**) with no retries and no backoff, unlike a normal API call where it
 > bounds one attempt and `max_attempts` governs the retry chain. A token endpoint that sends valid
 > headers and then stalls mid-body therefore fails within this timeout instead of hanging the refresh —
 > and every collector queued behind that single shared refresh — indefinitely.
+
+> **Cross-origin redirects are refused on credential-bearing requests.** Every authenticated call —
+> API key, OAuth client-credentials, and workload-identity token exchange — is bound to the configured
+> Tailscale origin. A redirect is followed only when its target is the exact same scheme, host, and
+> port, with no injected userinfo; a scheme downgrade, an alternate port, and a subdomain all count as
+> different origins. This stops an API key riding a redirect off-origin, and stops a `307`/`308`
+> replaying the OAuth client secret or the projected workload-identity JWT in the POST body to another
+> host. There is no allowlist knob, and the API origin is not configurable — it is always
+> `https://api.tailscale.com`. A refusal is logged at ERROR with the diagnostic class `redirect_refused` and
+> names the two origins only — never the credential, the body, or the full destination URL. Seeing it
+> means a deliberate control fired, not a bug.
 
 > **Tune `tailscale.http.timeout` together with `flowlogs`/`auditlogs` `max_window`.** After an outage,
 > the next poll tick fetches and decodes a catch-up window as large as `max_window` in a single request.
@@ -819,7 +857,7 @@ Tailscale IPs, for example.
 | `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability metrics and spans. The path embeds the tailnet name and device IDs, so `false` drops `url.full` and `tailscale.endpoint` from exported spans and scrubs the URL out of span status descriptions and error events. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
 | `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical — they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |
-| `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. |
+| `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. Also governs **span status descriptions** — see the note below. |
 
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
 > category to `false` simply omits that class of identifier from emitted telemetry entirely.
@@ -836,6 +874,27 @@ Tailscale IPs, for example.
 > `external_ips` toggle — never by `hostnames`. A value that merely looks like `host:port` but whose
 > host segment is not a parseable IP (a genuine hostname such as `laptop-1:5252`) still falls back to
 > `hostnames`, unchanged.
+>
+> Addresses are **normalised before classification**, so a category cannot be bypassed by changing the
+> textual representation. Surrounding whitespace is trimmed, and an IPv4-mapped IPv6 address is
+> unmapped first — `::ffff:100.64.0.1` is a Tailscale CGNAT address and is gated by `tailscale_ips`,
+> not `external_ips`.
+
+> **Unclassifiable values on IP-only attributes fail closed.** Three attributes are IP-valued by
+> definition and have no hostname fallback: `source.address`, `destination.address`, and
+> `tailscale.dns.resolver.address`. If one of them carries a non-empty value that will not parse as an
+> address, and any IP category is disabled, the value is **dropped** rather than emitted — the filter
+> cannot tell which category it would have belonged to, so it declines to guess. When every IP category
+> is enabled, such a value is kept unchanged. The rejected value is never logged.
+
+> **Span status descriptions follow the free-text policy.** Collector errors and recovered panic text
+> reach span status descriptions, which are free text like an exception message. With
+> `pii_filter.free_text_details` set to `false`, a status description is replaced unless it is one of a
+> fixed set of code-defined strings (the receivers' reject reasons and the standard HTTP status texts),
+> which pass through as-is. A description outside that set fails closed, so a newly added message loses
+> diagnostic value until it is listed — never the reverse. Diagnosis survives regardless: the span's
+> error **status code** and its bounded `error.type` attribute (`panic`, `timeout`, or `error`) are
+> always kept. No status string is ever used as a metric label.
 
 > **The filter covers log message bodies too, not only attributes.** A disabled category's identifiers
 > are removed from log record **bodies** as well as from metric labels and log **attributes** — so an

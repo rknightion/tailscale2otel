@@ -31,6 +31,12 @@ func Default() *Config {
 					MaxDelay:    dur(10 * time.Second),
 				},
 			},
+			// Response decode budgets (#474). 4 MiB covers ~2,400 devices on the
+			// heaviest snapshot endpoint; 32 MiB covers ~12,000 flow-log records in
+			// one poll window. Both are far below the 256 MiB memory limit the Helm
+			// chart ships by default. See internal/tsapi/limit.go.
+			MaxResponseBytes:    4 << 20,
+			MaxLogResponseBytes: 32 << 20,
 		},
 		OTLP: OTLPConfig{
 			Protocol: "http",

@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 // infiniteByteReader yields an endless stream of the same byte without
 // pre-allocating a large buffer, so tests can prove boundedness against the
-// real (256 MiB) cap without actually materializing hundreds of megabytes.
+// real budgets without actually materializing hundreds of megabytes.
 type infiniteByteReader struct{ b byte }
 
 func (r infiniteByteReader) Read(p []byte) (int, error) {
@@ -44,7 +45,7 @@ func TestDecodeJSONLimited_NormalResponseUnchanged(t *testing.T) {
 	var out struct {
 		Logs []string `json:"logs"`
 	}
-	err := decodeJSONLimited(strings.NewReader(`{"logs":["a","b"]}`), maxResponseBytes, &out)
+	err := decodeJSONLimited(strings.NewReader(`{"logs":["a","b"]}`), defaultMaxResponseBytes, &out)
 	if err != nil {
 		t.Fatalf("decodeJSONLimited: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestDecodeJSONLimited_NormalResponseUnchanged(t *testing.T) {
 
 func TestDecodeJSONLimited_MalformedJSONUnderCapIsNotTooLarge(t *testing.T) {
 	var out map[string]any
-	err := decodeJSONLimited(strings.NewReader(`{not valid json`), maxResponseBytes, &out)
+	err := decodeJSONLimited(strings.NewReader(`{not valid json`), defaultMaxResponseBytes, &out)
 	if err == nil {
 		t.Fatal("expected a decode error")
 	}
@@ -74,9 +75,9 @@ func TestDecodeJSONLimited_OversizedFailsWithoutBufferingWholeBody(t *testing.T)
 	// of the string and keeps asking for more bytes until the cap trips.
 	// A small custom limit exercises the general algorithm quickly, without
 	// materializing hundreds of MB under the race detector; the production
-	// maxResponseBytes constant is exercised end-to-end (real network,
+	// defaultMaxResponseBytes constant is exercised end-to-end (real network,
 	// getJSON, and the wired constant) by
-	// TestNetworkFlowLogs_OversizedBodyFailsWithErrResponseTooLarge below.
+	// TestNetworkFlowLogs_OversizedBodyFailsWithBudgetError below.
 	const limit = 4096
 	cr := &countingReader{r: infiniteByteReader{'a'}}
 	body := io.MultiReader(strings.NewReader(`"`), cr)
@@ -119,13 +120,71 @@ func TestGetJSON_NonSuccessStatusStillTruncatesAt16KiB(t *testing.T) {
 	}
 }
 
-func TestNetworkFlowLogs_OversizedBodyFailsWithErrResponseTooLarge(t *testing.T) {
+func TestNetworkFlowLogs_OversizedBodyFailsWithBudgetError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `"`)
-		// Stream well beyond maxResponseBytes; the client must stop reading
-		// once the cap is exceeded rather than read this to completion.
+		// Stream well beyond every budget; the client must stop reading once one
+		// of them trips rather than read this to completion. The endless string
+		// literal blows the STRUCTURAL string budget first, which is the point of
+		// #474: the byte ceiling is no longer the first line of defense.
 		_, _ = io.Copy(w, infiniteByteReader{'a'})
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(Options{Tailnet: "example.com", BaseURL: srv.URL, APIKey: "k", MaxAttempts: 1, Timeout: 30 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = c.NetworkFlowLogs(t.Context(), time.Unix(0, 0), time.Unix(60, 0))
+	if !errors.Is(err, ErrResponseTooComplex) {
+		t.Fatalf("err = %v, want ErrResponseTooComplex", err)
+	}
+	var be *BudgetError
+	if !errors.As(err, &be) || be.Limit != BudgetLimitString {
+		t.Fatalf("err = %v, want a string *BudgetError", err)
+	}
+}
+
+// TestNetworkFlowLogs_BudgetFailureIsNotRetried pins the retry contract: a
+// budget violation is detected while DECODING a 200 response, i.e. after
+// retryTransport.RoundTrip has already returned, so it can never drive the retry
+// loop. An oversized body is not transient — retrying it would re-download and
+// re-buffer the same body every attempt, which is exactly the tight loop the
+// acceptance criteria forbid. Exactly one request must reach the server even
+// with retries configured.
+func TestNetworkFlowLogs_BudgetFailureIsNotRetried(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `"`)
+		_, _ = io.Copy(w, infiniteByteReader{'a'})
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(Options{Tailnet: "example.com", BaseURL: srv.URL, APIKey: "k",
+		MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, Timeout: 30 * time.Second})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if _, err := c.NetworkFlowLogs(t.Context(), time.Unix(0, 0), time.Unix(60, 0)); err == nil {
+		t.Fatal("expected a budget error")
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("server saw %d requests, want exactly 1 (a budget failure must not be retried)", got)
+	}
+}
+
+// TestNetworkFlowLogs_DeclaredContentLengthRejectedBeforeReading covers the
+// cheap pre-check: an upstream that DECLARES an over-budget Content-Length is
+// refused without the body being decoded at all.
+func TestNetworkFlowLogs_DeclaredContentLengthRejectedBeforeReading(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "999999999")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, io.LimitReader(infiniteByteReader{'a'}, 1<<16))
 	}))
 	defer srv.Close()
 
@@ -136,5 +195,9 @@ func TestNetworkFlowLogs_OversizedBodyFailsWithErrResponseTooLarge(t *testing.T)
 	_, err = c.NetworkFlowLogs(t.Context(), time.Unix(0, 0), time.Unix(60, 0))
 	if !errors.Is(err, ErrResponseTooLarge) {
 		t.Fatalf("err = %v, want ErrResponseTooLarge", err)
+	}
+	var be *BudgetError
+	if !errors.As(err, &be) || be.Limit != BudgetLimitBytes || be.ConfigKey != cfgKeyMaxLogResponseBytes {
+		t.Fatalf("err = %v, want a bytes *BudgetError naming %s", err, cfgKeyMaxLogResponseBytes)
 	}
 }

@@ -3,6 +3,18 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.14.0: credentials set inline under `config:` no longer land in a ConfigMap (SEC-07 / #470).
+# When any credential-bearing key is set inline — oauth client_secret, apikey, headscale api_key,
+# grafana_cloud token, otlp.headers, the objectstore keys, streaming/webhook/prometheus/admin
+# tokens, pyroscope password, any tailnets[] entry, or a node_metrics target with a
+# bearer_token/headers — the whole rendered config.yaml moves into Secret <fullname>-config
+# (the same mechanism multi-tailnet mode already used) and the pod mounts it from there.
+# Credential-free configs keep the ConfigMap. New `configStorage.mode` (auto|secret|configmap)
+# overrides the choice; `configmap` + an inline credential makes `helm template` fail, naming the
+# keys. Also adds `rolloutTrigger` (SEC-06 / #469): an opaque operator-chosen value surfaced as the
+# pod annotation tailscale2otel.m7kni.io/rollout-trigger, so rotating an externally managed
+# existingSecret has a supported way to force a rollout — Kubernetes never refreshes env vars in a
+# running container, so envFrom credentials are otherwise stale until the pod is replaced.
 # 0.13.0: BREAKING — removes config.cardinality.flow.destination_service. tailscale.dst.service is
 # now emitted unconditionally on BOTH flow metric families; it was already ungated on the rollup
 # families, so the toggle only ever governed the raw ones and the same dimension appeared or vanished
@@ -60,7 +72,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.13.0
+version: 0.14.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "2.0.2"
 home: https://m7kni.io/tailscale2otel/

@@ -56,6 +56,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_TAILSCALE__HTTP__RETRY__BASE_DELAY` | `500ms` | initial backoff delay |
 | `TS2OTEL_TAILSCALE__HTTP__RETRY__MAX_DELAY` | `10s` | backoff ceiling |
 | `TS2OTEL_TAILSCALE__HTTP__RATE_LIMIT` | `0` | global requests/sec across ALL collectors (0 = unlimited) |
+| `TS2OTEL_TAILSCALE__MAX_RESPONSE_BYTES` | `4194304` | cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated |
+| `TS2OTEL_TAILSCALE__MAX_LOG_RESPONSE_BYTES` | `33554432` | cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it |
 | `TS2OTEL_OTLP__PROTOCOL` | `http` | http \| grpc \| stdout (stdout = print signals to the console for local debug, no backend) |
 | `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID` | `""` | Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID) |

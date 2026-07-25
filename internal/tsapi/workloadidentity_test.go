@@ -3,6 +3,7 @@ package tsapi
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 func TestReadIDTokenFile_MissingFile(t *testing.T) {
@@ -335,6 +338,113 @@ func TestWorkloadIdentityTokenFetchBodyStallIsBounded(t *testing.T) {
 	}
 	if atomic.LoadInt32(&exchangeHits) == 0 {
 		t.Fatal("token-exchange endpoint was never hit; test did not exercise the exchange path")
+	}
+}
+
+// TestWorkloadIdentityExchange_RefusesRedirectToOtherOrigin pins #467: the
+// token exchange submits a projected Kubernetes service-account JWT in a POST
+// form body. Go's default redirect policy replays that body verbatim on a
+// cross-origin 307/308, handing the JWT to whoever the exchange endpoint (or a
+// proxy in front of it) names. Every redirect status must be refused before the
+// second origin is contacted at all.
+func TestWorkloadIdentityExchange_RefusesRedirectToOtherOrigin(t *testing.T) {
+	for _, code := range []int{
+		http.StatusMovedPermanently,  // 301
+		http.StatusFound,             // 302
+		http.StatusSeeOther,          // 303
+		http.StatusTemporaryRedirect, // 307
+		http.StatusPermanentRedirect, // 308
+	} {
+		t.Run(fmt.Sprintf("%d", code), func(t *testing.T) {
+			var targetHits int32
+			var targetSawJWT int32
+			var targetBody string
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&targetHits, 1)
+				b, _ := io.ReadAll(r.Body)
+				targetBody = string(b)
+				if strings.Contains(targetBody, "projected-jwt-secret") || r.URL.Query().Get("jwt") != "" {
+					atomic.AddInt32(&targetSawJWT, 1)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"access_token":"stolen","token_type":"Bearer"}`))
+			}))
+			defer target.Close()
+
+			exchange := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, target.URL+"/api/v2/oauth/token-exchange", code)
+			}))
+			defer exchange.Close()
+
+			tokenPath := filepath.Join(t.TempDir(), "token")
+			if err := os.WriteFile(tokenPath, []byte("projected-jwt-secret"), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			src := &workloadIdentityTokenSource{
+				ctx:         context.WithValue(context.Background(), oauth2.HTTPClient, newBoundedTokenFetchClient(2*time.Second, redirectPolicy(nil))),
+				baseURL:     exchange.URL,
+				clientID:    "wif-client-id",
+				idTokenFile: tokenPath,
+			}
+			tok, err := src.Token()
+
+			if atomic.LoadInt32(&targetSawJWT) != 0 {
+				t.Errorf("JWT replayed to the cross-origin redirect target (body %q)", targetBody)
+			}
+			if got := atomic.LoadInt32(&targetHits); got != 0 {
+				t.Errorf("cross-origin redirect target contacted %d times, want 0", got)
+			}
+			if err == nil {
+				t.Fatalf("Token() err = nil (token %+v), want a refused cross-origin redirect", tok)
+			}
+			if strings.Contains(err.Error(), "projected-jwt-secret") {
+				t.Errorf("error text leaks the JWT: %q", err)
+			}
+		})
+	}
+}
+
+// TestWorkloadIdentityExchange_SameOriginRedirectFollowed keeps the other half
+// of #467 honest: a redirect that stays on the exchange endpoint's own origin
+// is ordinary behavior and must still complete, JWT body intact.
+func TestWorkloadIdentityExchange_SameOriginRedirectFollowed(t *testing.T) {
+	var gotJWT string
+	var mux http.ServeMux
+	mux.HandleFunc("/api/v2/oauth/token-exchange", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/v2/oauth/token-exchange-v2", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("/api/v2/oauth/token-exchange-v2", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		gotJWT = r.PostForm.Get("jwt")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"same-origin-token","token_type":"Bearer"}`))
+	})
+	srv := httptest.NewServer(&mux)
+	defer srv.Close()
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("projected-jwt-secret"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	src := &workloadIdentityTokenSource{
+		ctx:         context.WithValue(context.Background(), oauth2.HTTPClient, newBoundedTokenFetchClient(2*time.Second, redirectPolicy(nil))),
+		baseURL:     srv.URL,
+		clientID:    "wif-client-id",
+		idTokenFile: tokenPath,
+	}
+	tok, err := src.Token()
+	if err != nil {
+		t.Fatalf("same-origin redirect must still be followed: %v", err)
+	}
+	if tok.AccessToken != "same-origin-token" {
+		t.Fatalf("AccessToken = %q, want %q", tok.AccessToken, "same-origin-token")
+	}
+	if gotJWT != "projected-jwt-secret" {
+		t.Fatalf("same-origin redirect target saw jwt = %q, want the projected token re-sent", gotJWT)
 	}
 }
 

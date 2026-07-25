@@ -27,6 +27,14 @@ spec:
         {{- if not .Values.existingSecret }}
         checksum/secret: {{ toYaml .Values.secret | sha256sum }}
         {{- end }}
+        {{- with .Values.rolloutTrigger }}
+        # Operator-chosen opaque rollout token. Credentials in an externally managed
+        # existingSecret contribute only a name reference, so rotating them leaves the
+        # pod template — and therefore the running container's env — untouched. Changing
+        # this value changes the pod template and forces a Recreate rollout. It is NEVER
+        # derived from secret content (no value, no digest of a value, ever lands here).
+        tailscale2otel.m7kni.io/rollout-trigger: {{ . | quote }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -97,10 +105,11 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config
-          {{- if .Values.config.tailnets }}
-          # Multi-tailnet config carries inline credentials — served from a Secret.
+          {{- if include "tailscale2otel.configStoresSecret" . }}
+          # This config carries credentials (multi-tailnet entries, an inline
+          # credential key, or configStorage.mode: secret) — served from a Secret.
           secret:
-            secretName: {{ include "tailscale2otel.fullname" . }}-config
+            secretName: {{ include "tailscale2otel.configSecretName" . }}
           {{- else }}
           configMap:
             name: {{ include "tailscale2otel.fullname" . }}

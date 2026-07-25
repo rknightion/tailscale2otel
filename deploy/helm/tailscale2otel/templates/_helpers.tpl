@@ -48,12 +48,136 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 The rendered config.yaml. Always sourced from .Values.config so there is a single
 source of truth and no chart<->config drift. The full default config map lives in
 values.yaml under `config:`; Helm deep-merges maps, so single-key overrides
-(e.g. --set config.log_level=debug) keep working. Secrets contain no values here —
-they are injected exclusively via TS2OTEL_* environment variables from the envFrom
-Secret, which override the corresponding fields in this file at runtime.
+(e.g. --set config.log_level=debug) keep working. The intended path is to leave the
+credential fields empty here and inject them as TS2OTEL_* environment variables from
+the envFrom Secret, which override the corresponding fields in this file at runtime.
+A credential set inline anyway does NOT land in a ConfigMap: see
+tailscale2otel.configStoresSecret below.
 */}}
 {{- define "tailscale2otel.config" -}}
 {{ .Values.config | toYaml }}
+{{- end -}}
+
+{{/*
+Name of the Secret holding the rendered config.yaml when the config is stored in a
+Secret rather than the ConfigMap. Unchanged from the multi-tailnet behaviour that
+predates the credential auto-routing, so existing multi-tailnet installs keep their
+object name.
+*/}}
+{{- define "tailscale2otel.configSecretName" -}}
+{{- printf "%s-config" (include "tailscale2otel.fullname" .) -}}
+{{- end -}}
+
+{{/*
+The authoritative list of credential-bearing keys inside .Values.config, one dotted
+path per line. A non-empty value at ANY of these moves the whole rendered config.yaml
+out of the ConfigMap and into a Secret (SEC-07 / #470): a ConfigMap is readable by
+anyone with namespace `get configmaps`, which in practice is granted far more widely
+than `get secrets`.
+
+Deliberately NOT listed:
+  * identity halves of credential pairs — tailscale.auth.oauth.client_id,
+    tailscale.auth.workload_identity.client_id, otlp.grafana_cloud.instance_id,
+    profiling.pyroscope.basic_auth_user. They are identifiers, not secrets, and
+    listing them would push credential-free installs off the ConfigMap path.
+  * every *_file key (client_secret_file, apikey_file, token_file, secret_file,
+    basic_auth_password_file, tls cert/key/ca files) — those are PATHS to material
+    mounted from elsewhere, so the config file itself stays credential-free.
+otlp.headers IS listed (as a whole map): raw OTLP headers are where an Authorization
+header goes, so any non-empty value there is treated as a credential.
+Structural carriers that are lists — config.tailnets[] and
+config.collectors.node_metrics.targets[] — are handled separately below.
+*/}}
+{{- define "tailscale2otel.credentialPaths" -}}
+headscale.api_key
+tailscale.auth.oauth.client_secret
+tailscale.auth.apikey
+otlp.grafana_cloud.token
+otlp.headers
+collectors.flowlogs.objectstore.access_key_id
+collectors.flowlogs.objectstore.secret_access_key
+collectors.flowlogs.objectstore.session_token
+streaming.token
+webhook.secret
+prometheus.auth.token
+admin.auth.token
+profiling.pyroscope.basic_auth_password
+{{- end -}}
+
+{{/*
+Which credential-bearing keys are actually set inline under `config:`, as a
+comma-separated list of dotted paths (empty when none). KEY NAMES ONLY — the values
+are never included, so this is safe to put in a `fail` message.
+*/}}
+{{- define "tailscale2otel.inlineCredentialKeys" -}}
+{{- $found := list -}}
+{{- range $path := splitList "\n" (include "tailscale2otel.credentialPaths" .) -}}
+  {{- $p := trim $path -}}
+  {{- if $p -}}
+    {{- $node := $.Values.config -}}
+    {{- range $seg := splitList "." $p -}}
+      {{- if kindIs "map" $node -}}
+        {{- $node = index $node $seg -}}
+      {{- else -}}
+        {{- $node = "" -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if $node -}}
+      {{- $found = append $found (printf "config.%s" $p) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- /* Multi-tailnet entries carry their own inline auth; the list is file-only
+       (no TS2OTEL_* env path exists for it), so any entry is credential-bearing. */ -}}
+{{- if $.Values.config.tailnets -}}
+  {{- $found = append $found "config.tailnets[]" -}}
+{{- end -}}
+{{- /* Node-metrics scrape targets may carry a per-target bearer token or headers. */ -}}
+{{- $nm := $.Values.config.collectors -}}
+{{- if kindIs "map" $nm -}}{{- $nm = index $nm "node_metrics" -}}{{- end -}}
+{{- if kindIs "map" $nm -}}
+  {{- range $t := (index $nm "targets" | default list) -}}
+    {{- if kindIs "map" $t -}}
+      {{- if index $t "bearer_token" -}}
+        {{- $found = append $found "config.collectors.node_metrics.targets[].bearer_token" -}}
+      {{- end -}}
+      {{- if index $t "headers" -}}
+        {{- $found = append $found "config.collectors.node_metrics.targets[].headers" -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- join ", " (uniq $found) -}}
+{{- end -}}
+
+{{/*
+Whether the rendered config.yaml is stored in a Secret ("true") or a ConfigMap ("").
+Every template that touches the config object routes through this, so the decision —
+and the `fail` guards — are made in exactly one place.
+
+configStorage.mode:
+  auto      (default) Secret when any credential-bearing key is set inline, else ConfigMap.
+  secret    always a Secret.
+  configmap always a ConfigMap — REFUSED (helm template fails) when a credential is
+            set inline, because that is the one combination that cannot be made safe.
+*/}}
+{{- define "tailscale2otel.configStoresSecret" -}}
+{{- $mode := "auto" -}}
+{{- if and .Values.configStorage (kindIs "map" .Values.configStorage) .Values.configStorage.mode -}}
+  {{- $mode = .Values.configStorage.mode | toString -}}
+{{- end -}}
+{{- $keys := include "tailscale2otel.inlineCredentialKeys" . -}}
+{{- if eq $mode "secret" -}}
+true
+{{- else if eq $mode "auto" -}}
+{{- if $keys -}}true{{- end -}}
+{{- else if eq $mode "configmap" -}}
+{{- if $keys -}}
+{{- fail (printf "configStorage.mode=configmap, but credential-bearing keys are set inline under `config:` (%s). A ConfigMap is readable by anyone holding `get configmaps` in this namespace, which is routinely granted far more widely than `get secrets`, so this chart refuses to write credentials there. Fix by ONE of: (1) drop configStorage.mode (the default `auto` stores this config in Secret %s instead, no other change needed); (2) clear those keys and inject them as TS2OTEL_* env vars via `secret:` or `existingSecret`; (3) point the matching *_file key at a mounted Secret. See the chart README, 'Credentials and the rendered config'." $keys (include "tailscale2otel.configSecretName" .)) -}}
+{{- end -}}
+{{- else -}}
+{{- fail (printf "configStorage.mode must be one of auto|secret|configmap, got %q" $mode) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

@@ -251,6 +251,20 @@ type TailscaleConfig struct {
 	Tailnet string              `yaml:"tailnet"`
 	Auth    TailscaleAuth       `yaml:"auth"`
 	HTTP    TailscaleHTTPConfig `yaml:"http"`
+	// MaxResponseBytes bounds a single successful JSON response body from a
+	// snapshot endpoint (devices, keys, dns, services, …) before it is decoded.
+	// MaxLogResponseBytes is the same ceiling for the bulk log pulls (flow logs,
+	// audit logs), which are legitimately multi-MB. They bound the exporter's
+	// peak decode memory (#474); see internal/tsapi/limit.go for the sizing
+	// evidence and the per-tailnet tuning constraint.
+	//
+	// Fleet-wide on purpose: these are process-memory safety budgets, not
+	// per-tailnet connection policy, so a tailnets[] entry does NOT override them
+	// — the top-level values apply to every tailnet runtime (and are therefore
+	// reachable from the environment in multi-tailnet mode, which a file-only
+	// tailnets[] field would not be).
+	MaxResponseBytes    int64 `yaml:"max_response_bytes"`
+	MaxLogResponseBytes int64 `yaml:"max_log_response_bytes"`
 }
 
 // TailnetConfig is one entry in the multi-tailnet list. It mirrors the
@@ -268,6 +282,11 @@ type ResolvedTailnet struct {
 	Name string
 	Auth TailscaleAuth
 	HTTP TailscaleHTTPConfig
+	// MaxResponseBytes / MaxLogResponseBytes are the fleet-wide decode budgets
+	// from the top-level tailscale: block, copied onto every resolved tailnet so
+	// the app layer has one place to read them from (#474).
+	MaxResponseBytes    int64
+	MaxLogResponseBytes int64
 }
 
 // ResolvedTailnets normalizes the single tailscale: block OR the tailnets: list
@@ -285,6 +304,7 @@ func (c *Config) ResolvedTailnets() []ResolvedTailnet {
 	if c.Provider == "headscale" {
 		return nil
 	}
+	maxBytes, maxLogBytes := c.decodeBudgets()
 	if len(c.Tailnets) > 0 {
 		// Effective fleet base: the top-level tailscale.http block with any zero
 		// field filled from the built-in defaults, so backfill works even when the
@@ -300,18 +320,38 @@ func (c *Config) ResolvedTailnets() []ResolvedTailnet {
 				auth.OAuth.Scopes = []string{"all:read"}
 			}
 			out[i] = ResolvedTailnet{
-				Name: t.Name,
-				Auth: auth,
-				HTTP: mergeHTTPDefaults(t.HTTP, base),
+				Name:                t.Name,
+				Auth:                auth,
+				HTTP:                mergeHTTPDefaults(t.HTTP, base),
+				MaxResponseBytes:    maxBytes,
+				MaxLogResponseBytes: maxLogBytes,
 			}
 		}
 		return out
 	}
 	return []ResolvedTailnet{{
-		Name: c.Tailscale.Tailnet,
-		Auth: c.Tailscale.Auth,
-		HTTP: c.Tailscale.HTTP,
+		Name:                c.Tailscale.Tailnet,
+		Auth:                c.Tailscale.Auth,
+		HTTP:                c.Tailscale.HTTP,
+		MaxResponseBytes:    maxBytes,
+		MaxLogResponseBytes: maxLogBytes,
 	}}
+}
+
+// decodeBudgets returns the effective fleet-wide response decode budgets,
+// falling back to the built-in defaults when a value is unset or non-positive
+// (a zero would otherwise reach tsapi as "no budget configured"; tsapi defaults
+// it too, but resolving here keeps the app layer honest about what is in force).
+func (c *Config) decodeBudgets() (maxBytes, maxLogBytes int64) {
+	d := Default().Tailscale
+	maxBytes, maxLogBytes = c.Tailscale.MaxResponseBytes, c.Tailscale.MaxLogResponseBytes
+	if maxBytes <= 0 {
+		maxBytes = d.MaxResponseBytes
+	}
+	if maxLogBytes <= 0 {
+		maxLogBytes = d.MaxLogResponseBytes
+	}
+	return maxBytes, maxLogBytes
 }
 
 // mergeHTTPDefaults returns x with each zero-valued HTTP field taken from base.

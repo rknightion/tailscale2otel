@@ -15,14 +15,14 @@ import (
 // NetworkFlowLogs fetches network flow logs for the window [start, end].
 func (c *Client) NetworkFlowLogs(ctx context.Context, start, end time.Time) (flowlog.NetworkResponse, error) {
 	var out flowlog.NetworkResponse
-	err := c.getJSON(ctx, c.logURL("network", start, end), &out)
+	err := c.getJSONBudgeted(ctx, c.logURL("network", start, end), c.logBudget(), &out)
 	return out, err
 }
 
 // ConfigAuditLogs fetches configuration audit logs for the window [start, end].
 func (c *Client) ConfigAuditLogs(ctx context.Context, start, end time.Time) (audit.ConfigurationResponse, error) {
 	var out audit.ConfigurationResponse
-	err := c.getJSON(ctx, c.logURL("configuration", start, end), &out)
+	err := c.getJSONBudgeted(ctx, c.logURL("configuration", start, end), c.logBudget(), &out)
 	return out, err
 }
 
@@ -36,7 +36,14 @@ func (c *Client) logURL(kind string, start, end time.Time) string {
 	return u.String()
 }
 
+// getJSON fetches urlStr and decodes the body under the snapshot-endpoint
+// budget (tailscale.max_response_bytes). The bulk log pulls use
+// getJSONBudgeted with the larger log budget instead (#474).
 func (c *Client) getJSON(ctx context.Context, urlStr string, out any) error {
+	return c.getJSONBudgeted(ctx, urlStr, c.apiBudget(), out)
+}
+
+func (c *Client) getJSONBudgeted(ctx context.Context, urlStr string, budget decodeBudget, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return err
@@ -54,5 +61,12 @@ func (c *Client) getJSON(ctx context.Context, urlStr string, out any) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<14))
 		return &StatusError{Method: http.MethodGet, URL: urlStr, Code: resp.StatusCode, Body: string(body)}
 	}
-	return decodeJSONLimited(resp.Body, maxResponseBytes, out)
+	// Content-Length, when the upstream declares one, lets an over-budget body be
+	// rejected before a single byte of it is read. It is advisory (absent on a
+	// chunked response, where ContentLength is -1), so the streaming budget below
+	// remains the real control.
+	if resp.ContentLength > budget.MaxBytes {
+		return &BudgetError{Limit: BudgetLimitBytes, Max: budget.MaxBytes, ConfigKey: budget.ConfigKey, sentinel: ErrResponseTooLarge}
+	}
+	return decodeJSONBudgeted(resp.Body, budget, out)
 }

@@ -27,6 +27,7 @@ const (
 	reasonAlreadySeen  = "already_ingested"
 	reasonUnparsedKey  = "unrecognized_key"
 	reasonBeforeCursor = "before_cursor"
+	reasonFutureKey    = "future_timestamp"
 	reasonDecodeError  = "decode_error"
 	reasonReadError    = "read_error"
 )
@@ -57,7 +58,7 @@ var (
 		Name:        metricSkipped,
 		Instrument:  metricdoc.Counter,
 		Unit:        semconv.UnitDimensionless,
-		Description: "Objects or lines not ingested, by reason. A sustained non-zero `per_cycle_budget` means the per-cycle object cap is holding ingestion behind the bucket.",
+		Description: "Objects or lines not ingested, by reason. A sustained non-zero `per_cycle_budget` means the per-cycle object cap is holding ingestion behind the bucket. A non-zero `future_timestamp` means objects are named beyond the 5-minute clock-skew allowance and were skipped so they could not push the ingestion cursor past the wall clock; check the exporter's clock.",
 		Attributes:  []string{attrReason},
 		Group:       "Object-store ingestion",
 	}

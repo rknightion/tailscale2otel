@@ -37,6 +37,27 @@ func (c *Config) Warnings() []string {
 			"(method: oauth) — its scoped tokens are short-lived and not bound to a user.")
 	}
 
+	// Response decode budgets vs. the container memory limit (#474). Decoding a
+	// body costs several times its wire size (the decoder buffers the whole
+	// top-level value, then materializes the object graph), so a budget anywhere
+	// near the deployment's memory limit re-creates the OOM this control exists to
+	// prevent. 64 MiB is a quarter of the 256 MiB the Helm chart ships by default.
+	const budgetAdvisoryBytes = 64 << 20
+	for _, b := range []struct {
+		key string
+		val int64
+	}{
+		{"tailscale.max_response_bytes", c.Tailscale.MaxResponseBytes},
+		{"tailscale.max_log_response_bytes", c.Tailscale.MaxLogResponseBytes},
+	} {
+		if b.val > budgetAdvisoryBytes {
+			w = append(w, fmt.Sprintf("%s=%d bytes: decoding a JSON body costs several times its wire "+
+				"size, so a budget this large can exceed the container memory limit (the Helm chart "+
+				"defaults to 256Mi) and OOM the exporter. Raise the deployment's memory limit alongside it.",
+				b.key, b.val))
+		}
+	}
+
 	// Dual log-ingestion risk: the supported design is to pick ONE method per log
 	// type (poll OR stream). When the stream receiver is enabled AND a log
 	// collector still polls, the same flow/audit data can arrive via both paths
@@ -523,6 +544,17 @@ func (c *Config) Validate() error {
 		}
 		if err := validateWorkloadIdentity("tailscale.auth", c.Tailscale.Auth); err != nil {
 			return err
+		}
+		// Response decode budgets (#474). Zero/negative would mean "no body may be
+		// decoded at all", which silently breaks every collector, so reject it here
+		// rather than at the first poll.
+		if c.Tailscale.MaxResponseBytes <= 0 {
+			return fmt.Errorf("tailscale.max_response_bytes must be > 0 (bytes); it caps a single " +
+				"snapshot-endpoint response body before decoding")
+		}
+		if c.Tailscale.MaxLogResponseBytes <= 0 {
+			return fmt.Errorf("tailscale.max_log_response_bytes must be > 0 (bytes); it caps a single " +
+				"flow-log/audit-log response body before decoding")
 		}
 		// Single tailscale: block and a tailnets: list are mutually exclusive.
 		// Default() seeds tailscale.tailnet="-" (the "principal's default tailnet"

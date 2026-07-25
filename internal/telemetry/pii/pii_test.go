@@ -275,3 +275,128 @@ func TestUnknownKeyIPValueClassified(t *testing.T) {
 		t.Error("unknown key with tailscale-IP value must survive when only external_ips is off")
 	}
 }
+
+// --- #465 (security:SEC-02): fail closed on unclassifiable semantic IP values ---
+
+// ipOnlyKeys are the ipValueKeys that have NO ipKeyFallback: their value is only
+// ever an IP address, so a value that will not classify has an unknown permitted
+// category and must not be emitted while any IP category is disabled.
+func TestRedactKeyFailsClosedForUnclassifiableIPOnlyValue(t *testing.T) {
+	ipOnlyKeys := []string{"source.address", "destination.address", "tailscale.dns.resolver.address"}
+	unclassifiable := []string{
+		"not-an-ip",
+		"100.64.0.1.5",    // malformed: extra octet
+		"100.64.0.",       // malformed: truncated
+		"fd7a:115c:zz::1", // malformed: bad hextet
+		"   ",             // whitespace only
+		"1.2.3.4/32",      // a prefix, not an address
+	}
+	for _, off := range []Category{CatTailscaleIPs, CatInternalIPs, CatExternalIPs} {
+		for _, key := range ipOnlyKeys {
+			for _, val := range unclassifiable {
+				t.Run(string(off)+"/"+key+"/"+val, func(t *testing.T) {
+					c := allOn()
+					c[off] = false
+					r := New(c)
+					out := r.Merge(map[string]any{key: val, "network.transport": "tcp"})
+					if _, ok := out[key]; ok {
+						t.Errorf("%s off: unclassifiable %s=%q must be dropped, got %v", off, key, val, out)
+					}
+					if _, ok := out["network.transport"]; !ok {
+						t.Error("non-identifier attribute must survive")
+					}
+				})
+			}
+		}
+	}
+}
+
+// The fail-closed rule is scoped to IP categories: a deployment that disables an
+// unrelated category keeps the value, so the blast radius is exactly the operator's
+// stated IP policy.
+func TestRedactKeyKeepsUnclassifiableIPValueWhenNoIPCategoryOff(t *testing.T) {
+	c := allOn()
+	c[CatEmails] = false // not an IP category
+	r := New(c)
+	out := r.Merge(map[string]any{"source.address": "not-an-ip"})
+	if _, ok := out["source.address"]; !ok {
+		t.Error("no IP category off: unclassifiable source.address must be kept")
+	}
+}
+
+// A fully-enabled deployment must be byte-identical: the all-on fast path is
+// untouched by the fail-closed rule.
+func TestRedactKeyAllOnKeepsUnclassifiableIPValue(t *testing.T) {
+	r := New(allOn())
+	in := map[string]any{"source.address": "not-an-ip"}
+	out := r.Merge(in)
+	if _, ok := out["source.address"]; !ok {
+		t.Error("all categories on: unclassifiable source.address must be kept")
+	}
+}
+
+// An absent/empty value carries nothing, so there is nothing to fail closed on.
+func TestRedactKeyKeepsEmptyIPValue(t *testing.T) {
+	c := allOn()
+	c[CatExternalIPs] = false
+	r := New(c)
+	out := r.Merge(map[string]any{"source.address": "", "destination.address": nil})
+	if _, ok := out["source.address"]; !ok {
+		t.Error("empty source.address must be kept (nothing to redact)")
+	}
+	if _, ok := out["destination.address"]; !ok {
+		t.Error("nil destination.address must be kept (nothing to redact)")
+	}
+}
+
+// A MIXED key (one with an ipKeyFallback) is unaffected: a non-IP value there is a
+// hostname by design and is governed by the fallback category, not by IP policy.
+func TestRedactKeyFallbackKeysUnaffectedByFailClosed(t *testing.T) {
+	for _, key := range []string{"tailscale.src.node", "tailscale.dst.node", "tailscale.exit_node", "tailscale.node"} {
+		t.Run(key, func(t *testing.T) {
+			c := allOn()
+			c[CatTailscaleIPs] = false // IP category off, hostnames still on
+			r := New(c)
+			out := r.Merge(map[string]any{key: "laptop-1"})
+			if _, ok := out[key]; !ok {
+				t.Errorf("%s: hostname value must survive tailscale_ips=false via ipKeyFallback", key)
+			}
+
+			c2 := allOn()
+			c2[CatHostnames] = false
+			out2 := New(c2).Merge(map[string]any{key: "laptop-1"})
+			if _, ok := out2[key]; ok {
+				t.Errorf("%s: hostname value must be dropped when hostnames=false", key)
+			}
+		})
+	}
+}
+
+// Fail-closed must hold on the gauge path too: a datapoint whose only identity key
+// is an unclassifiable IP-only key is suppressed rather than emitted unredacted.
+func TestIdentitySuppressesUnclassifiableIPIdentity(t *testing.T) {
+	c := allOn()
+	c[CatInternalIPs] = false
+	r := New(c)
+	_, suppress := r.Identity(map[string]any{
+		"tailscale.dns.resolver.address": "not-an-ip",
+		"tailscale.dns.resolver.kind":    "global",
+	})
+	if !suppress {
+		t.Error("internal_ips off: gauge whose sole identity is an unclassifiable IP must be suppressed")
+	}
+}
+
+// The disabled-category bypass must not be reachable by rewriting the address text:
+// every representation of the same CGNAT address is redacted together.
+func TestRedactKeyMappedRepresentationsCannotBypass(t *testing.T) {
+	c := allOn()
+	c[CatTailscaleIPs] = false
+	r := New(c)
+	for _, v := range []string{"100.64.0.1", "::ffff:100.64.0.1", "::ffff:6440:1", " 100.64.0.1 ", "[::ffff:100.64.0.1]:41641"} {
+		out := r.Merge(map[string]any{"source.address": v})
+		if _, ok := out["source.address"]; ok {
+			t.Errorf("tailscale_ips off: representation %q bypassed redaction", v)
+		}
+	}
+}

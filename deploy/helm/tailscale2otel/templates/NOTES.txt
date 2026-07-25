@@ -12,15 +12,27 @@ endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metri
    TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID / TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET
    (or TS2OTEL_TAILSCALE__AUTH__APIKEY) and TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID /
    TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN.
+
+   Those values are injected with envFrom, and Kubernetes never refreshes the
+   environment of a running container — rotating them in that Secret does NOT reach
+   this pod on its own. After rotating, force a rollout with:
+     helm upgrade {{ .Release.Name }} <chart> --reuse-values --set rolloutTrigger=$(date +%s)
+   or run Stakater Reloader and set podAnnotations."reloader.stakater.com/auto"="true".
 {{- else }}
    Rendered into Secret "{{ include "tailscale2otel.fullname" . }}". Set values via
    --set secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=... etc., or point
    existingSecret at your own.
 {{- end }}
-{{- if .Values.config.tailnets }}
+{{- $inlineCreds := include "tailscale2otel.inlineCredentialKeys" . }}
+{{- if include "tailscale2otel.configStoresSecret" . }}
 
-   Multi-tailnet mode: config.yaml (including the inline per-tailnet credentials)
-   is rendered into Secret "{{ include "tailscale2otel.fullname" . }}-config", not a ConfigMap.
+   config.yaml is rendered into Secret "{{ include "tailscale2otel.configSecretName" . }}", not a ConfigMap
+{{- if $inlineCreds }}, because these credential-bearing keys are set inline:
+   {{ $inlineCreds }}
+   (a ConfigMap is readable by anyone holding `get configmaps` in this namespace).
+   Prefer injecting them as TS2OTEL_* env vars via `secret:`/`existingSecret`.
+{{- else }} (configStorage.mode: {{ dig "mode" "auto" (.Values.configStorage | default dict) }}).
+{{- end }}
 {{- end }}
 
 3. In Grafana Cloud Explore, look for metrics like tailscale.device.online,

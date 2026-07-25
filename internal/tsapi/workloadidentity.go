@@ -22,10 +22,22 @@ import (
 // The ID token is re-read from idTokenFile on every Token() call — Kubernetes
 // projected service-account tokens rotate in place, and caching the first
 // read would eventually submit an expired JWT to the exchange.
+// Redirect handling (#467): the exchange POSTs the JWT in a form body, and
+// under Go's default redirect policy a cross-origin 307/308 replays that body —
+// JWT included — to whatever origin the response names. The bounded client in
+// ctx therefore carries the shared redirectPolicy: a redirect is followed only
+// when its target is the exact same origin (scheme, host, port, and no injected
+// userinfo) the exchange started on, so a same-origin move of the endpoint
+// keeps working while any other target is refused BEFORE the request is sent.
+// A refusal surfaces from Token() as a *CrossOriginRedirectError (matching
+// ErrCrossOriginRedirect, diagnostic class "redirect_refused"), wrapped in the
+// "workload identity token exchange failed" error below; it names the two
+// origins only, never the JWT, the body or the full destination URL.
 type workloadIdentityTokenSource struct {
 	// ctx carries the bounded token-fetch HTTP client (oauth2.HTTPClient) so the
 	// exchange request is subject to the same dial/TLS/response-header timeouts
-	// as the OAuth client-credentials path (#84) rather than blocking forever.
+	// as the OAuth client-credentials path (#84) rather than blocking forever,
+	// and to the shared cross-origin redirect refusal described above (#467).
 	ctx         context.Context
 	baseURL     string
 	clientID    string

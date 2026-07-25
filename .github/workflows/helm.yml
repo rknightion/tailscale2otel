@@ -43,6 +43,14 @@ jobs:
       - name: helm template
         run: helm template t "$CHART_DIR" > /dev/null
 
+      # Asserts the credential-routing contract (#470) and the rollout-trigger contract
+      # (#469): no credential value reaches any ConfigMap, pod annotation, label or arg;
+      # credential-free configs keep the ConfigMap; an unsafe combination fails the
+      # render. Pure `helm template` + yq, no cluster. yq is preinstalled on
+      # ubuntu-latest runners.
+      - name: chart render contracts (credential routing, rollout trigger)
+        run: deploy/helm/tests/render-tests.sh
+
       # Regenerate values.schema.json (draft-07; Helm only validates draft-07) and
       # fail if the committed copy drifts. The committed file is the baseline.
       #

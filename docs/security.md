@@ -48,6 +48,55 @@ Levers to reduce what leaves the tailnet (all under the `cardinality:` block in
     receiver spans. Account for this extra stream when scoping data residency or export policies;
     tracing is off by default.
 
+## How `pii_filter` decides — the guarantees
+
+The per-category toggles are documented in
+[configuration.md](configuration.md#pii_filter-pii-identifier-redaction). Three properties of the
+redactor matter when you are reasoning about what can escape once a category is turned **off**.
+None of them change anything in the default (all-enabled) configuration, which stays byte-identical.
+
+### Unclassifiable IP values fail closed
+
+The three IP categories (`tailscale_ips`, `internal_ips`, `external_ips`) are chosen by
+**range-classifying the address itself**, not by trusting the attribute name. Before classification a
+value is normalized: surrounding whitespace is trimmed, a `host:port` or `[host]:port` form is
+reduced to its address, and an **IPv4-mapped IPv6 address is unmapped** — so `100.64.0.1`,
+`::ffff:100.64.0.1`, `::ffff:6440:1` and `[::ffff:100.64.0.1]:41641` are all the same CGNAT address
+and are all gated by `tailscale_ips`. A disabled category cannot be bypassed by rewriting the
+address's textual representation.
+
+For an attribute whose value is **only ever an IP** (`source.address`, `destination.address`,
+`tailscale.dns.resolver.address`), a non-empty value that will not parse as an address has an
+**unknown** category. While any IP category is disabled such a value is **dropped**, not emitted:
+the filter fails closed rather than guessing. The rejected text is never logged or echoed anywhere —
+only the drop decision leaves the redactor. Mixed attributes that legitimately hold a name
+(`tailscale.node`, `tailscale.exit_node`, `tailscale.src.node`, `tailscale.dst.node`) are unaffected:
+a non-IP value there is a hostname by design and stays governed by `hostnames`.
+
+### Span status descriptions follow the free-text policy
+
+A span's **status description** is free text written by whatever failed — a collector error string, a
+recovered panic value, an upstream HTTP error. It is governed by **`free_text_details`**, the same
+category as the `exception.message` that usually carries the identical text. With
+`free_text_details: false`, a status description is replaced with `[redacted]` unless it is a
+**bounded, code-defined class** — a receiver's fixed reject reason (`method not allowed`,
+`corrupt batch`, `bad_signature`, …) or an HTTP status text (`Too Many Requests`) — which carries no
+free text and is kept so failures stay distinguishable.
+
+The span's **status code stays `Error`**, so a failed span is still visibly failed, and the scrape
+span additionally carries a bounded `error.type` attribute (`panic` \| `timeout` \| `error`) naming
+the failure class. With `free_text_details: true` (the default) descriptions are unchanged, except
+that an identifier from some *other* disabled category is still scrubbed out of them — e.g.
+`endpoint_paths: false` removes the API URL from the description and from error events.
+
+### Body redaction is deterministic
+
+When a disabled-category value is removed from a log **body** or a status description, the
+replacement is a single left-to-right pass that always takes the **longest** matching value first.
+Overlapping values therefore cannot leave a partial remnant (removing a short value first must not
+strip a prefix off a longer one and leave its tail behind), output does not depend on Go map
+iteration order, and the `[redacted]` marker itself is never re-matched.
+
 ## ACL policy hygiene
 
 The `acl` collector scores the tailnet policy for **structural risk** on each tick (no extra API

@@ -248,7 +248,7 @@ type candidate struct {
 // enumerate lists the day partitions spanning [from, now] and returns the
 // objects worth fetching, oldest first.
 func (c *Collector) enumerate(ctx context.Context, from, now time.Time, seen map[string]struct{}, e telemetry.Emitter) (out []candidate, listed int, err error) {
-	var unparsed, already, stale int
+	var unparsed, already, stale, future int
 	for _, prefix := range dayPrefixes(c.opts.Prefix, from, now, maxDayPrefixes) {
 		// Listing is bounded per cycle even before the ingest budget: a day's
 		// partition on a large tailnet is hundreds of objects, and there is no
@@ -263,6 +263,11 @@ func (c *Collector) enumerate(ctx context.Context, from, now time.Time, seen map
 			switch {
 			case !ok:
 				unparsed++
+			case isFutureKey(at, now):
+				// Checked before every other filter so a future timestamp can
+				// never become a candidate: a candidate is what advances the
+				// cursor, and the cursor is the next cycle's lower bound.
+				future++
 			case at.Before(from):
 				stale++
 			default:
@@ -274,10 +279,17 @@ func (c *Collector) enumerate(ctx context.Context, from, now time.Time, seen map
 			}
 		}
 	}
+	if future > 0 {
+		// Bounded and name-free: the count is the signal, and an object key is
+		// operator data that must never become a metric label.
+		c.logger.Warn("objectstore: skipped objects timestamped beyond the clock-skew allowance; check the exporter's clock",
+			"objects", future, "allowance", maxClockSkew)
+	}
 	countSkips(e, map[string]int{
 		reasonUnparsedKey:  unparsed,
 		reasonAlreadySeen:  already,
 		reasonBeforeCursor: stale,
+		reasonFutureKey:    future,
 	})
 
 	// Chronological order across day prefixes. Within one prefix the listing is

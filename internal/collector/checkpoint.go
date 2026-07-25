@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -125,40 +124,22 @@ func (s *fileStore) Delete(name string) error {
 	return s.persistLocked()
 }
 
-// persistLocked writes the current map atomically (temp file + rename) with an
-// fsync of both the temp file and its directory before/after the rename, so a
-// crash mid-write can't corrupt the file and the rename is durable. Callers must
+// checkpointFileMode is the intended permission of the checkpoint file:
+// owner-only, since it is exporter-private state.
+const checkpointFileMode os.FileMode = 0o600
+
+// persistLocked writes the current map atomically via writeFileAtomic — a
+// randomized, symlink-safe temp file in the checkpoint's own directory, fsynced
+// and renamed into place, with the directory fsynced afterwards — so a crash
+// mid-write can't corrupt the file, the rename is durable, and a symlink parked
+// at the old predictable "<path>.tmp" is never followed (#471). Callers must
 // hold s.mu.
 func (s *fileStore) persistLocked() error {
 	data, err := json.MarshalIndent(s.m, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		return err
-	}
-	// fsync the directory so the rename survives a crash/power loss.
-	if dir, err := os.Open(filepath.Dir(s.path)); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-	return nil
+	return writeFileAtomic(s.path, data, checkpointFileMode)
 }
 
 // keysOf returns the keys of a checkpoint map (unordered).

@@ -1,6 +1,9 @@
 package pii
 
-import "net/netip"
+import (
+	"net/netip"
+	"strings"
+)
 
 type ipClass int
 
@@ -31,7 +34,20 @@ var (
 // netip.ParseAddr is tried first, and only on failure does a netip.ParseAddrPort
 // attempt strip the port. A genuine "hostname:port" still fails both parses and
 // returns ipNotIP, so it correctly falls back to the key's registry category.
+//
+// The value is NORMALIZED before range classification (#465): surrounding
+// whitespace is trimmed and an IPv4-mapped IPv6 address is unmapped. Both are
+// representation differences, not different addresses, and netip deliberately
+// does NOT match a 4-in-6 address against an IPv4 prefix
+// (netip.Prefix.Contains), so without Unmap the same CGNAT address written
+// "::ffff:100.64.0.1" (or "::ffff:6440:1") would classify as external and
+// bypass a disabled tailscale_ips category. Unmap only rewrites the ::ffff:/96
+// range, so a genuine IPv6 address is untouched.
 func classifyIP(s string) ipClass {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ipNotIP
+	}
 	addr, err := netip.ParseAddr(s)
 	if err != nil {
 		addrPort, apErr := netip.ParseAddrPort(s)
@@ -40,6 +56,7 @@ func classifyIP(s string) ipClass {
 		}
 		addr = addrPort.Addr()
 	}
+	addr = addr.Unmap()
 	switch {
 	case cgnat4.Contains(addr) || tailscale6.Contains(addr):
 		return ipTailscale

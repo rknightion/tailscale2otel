@@ -16,9 +16,10 @@
 
 The entire application config lives under a single top-level `config:` key in
 `values.yaml` (the single source of truth, kept in sync with
-`config.example.yaml`). It is rendered verbatim into a ConfigMap as `config.yaml`.
-Secrets are injected exclusively via `TS2OTEL_*` environment variables from the
-Secret — they never appear in the ConfigMap.
+`config.example.yaml`). It is rendered verbatim as `config.yaml` — into a ConfigMap
+while it is credential-free, and into a Secret as soon as it is not (see below).
+The supported path is to leave the credential fields empty and inject them as
+`TS2OTEL_*` environment variables from the Secret.
 
 Helm deep-merges maps, so single-key overrides work without restating the rest:
 
@@ -34,6 +35,87 @@ helm install t deploy/helm/tailscale2otel \
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
+
+### Credentials and the rendered config
+
+A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which
+in practice is granted far more widely than `get secrets`. So the chart never puts
+a credential in one: if any credential-bearing key is set inline under `config:`,
+the **whole** rendered `config.yaml` moves into Secret `<fullname>-config` and the
+pod mounts it from there instead. Nothing else changes — same file, same path, same
+`-config` argument — and no credential value, digest or fragment is ever placed in a
+pod annotation, label or command line.
+
+The keys that trigger this:
+
+| Key under `config:` | |
+| --- | --- |
+| `tailscale.auth.oauth.client_secret` | Tailscale OAuth client secret |
+| `tailscale.auth.apikey` | Tailscale API key |
+| `headscale.api_key` | Headscale bearer key |
+| `otlp.grafana_cloud.token` | Grafana Cloud OTLP token |
+| `otlp.headers` | any raw OTLP header (this is where an `Authorization` header goes) |
+| `collectors.flowlogs.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
+| `streaming.token` | HEC receiver token |
+| `webhook.secret` | webhook HMAC secret |
+| `prometheus.auth.token` | `/metrics` token |
+| `admin.auth.token` | admin/pprof token |
+| `profiling.pyroscope.basic_auth_password` | Pyroscope password |
+| `tailnets[]` (any entry) | multi-tailnet inline auth — the list is file-only, there is no `TS2OTEL_*` path for it |
+| `collectors.node_metrics.targets[]` with `bearer_token` or `headers` | per-target scrape credentials |
+
+Identifiers are *not* on that list — `tailscale.auth.oauth.client_id`,
+`tailscale.auth.workload_identity.client_id`, `otlp.grafana_cloud.instance_id` and
+`profiling.pyroscope.basic_auth_user` are the identity halves of credential pairs,
+not secrets, so setting them keeps the ConfigMap path. Nor are the `*_file` keys:
+those are paths to material mounted from elsewhere, which is the cleanest option of
+all (`readOnlyRootFilesystem` aside, pair them with `extraVolumes`).
+
+`configStorage.mode` overrides the decision: `secret` always uses the Secret,
+`configmap` always uses the ConfigMap — and makes `helm template` **fail**, naming
+the offending keys, if a credential is set inline. That failure is deliberate: it is
+the one combination the chart cannot make safe.
+
+### Rotating credentials
+
+`checksum/config` and `checksum/secret` already roll the pod when the chart-managed
+config or the inline `secret:` values change. An **`existingSecret` you manage
+yourself is different**: it contributes only a name reference to the pod template,
+and Kubernetes never refreshes the environment of a running container, so rotating
+its values leaves the pod running the old credential indefinitely. Two supported
+ways to close that:
+
+```sh
+# Manual: change rolloutTrigger to anything new. It is an opaque operator-chosen
+# token surfaced as a pod annotation, so the pod template changes and the Deployment
+# does a Recreate rollout. Never put a secret value (or a digest of one) here.
+kubectl create secret generic ts2otel-creds --from-literal=... --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade t deploy/helm/tailscale2otel --reuse-values --set rolloutTrigger="$(date +%s)"
+```
+
+```yaml
+# Automated: with Stakater Reloader running in the cluster, it watches the referenced
+# Secret and issues a rollout RESTART when it changes — which is what env-injected
+# credentials require.
+existingSecret: ts2otel-creds
+podAnnotations:
+  reloader.stakater.com/auto: "true"
+  # or, to watch one specific Secret:
+  # secret.reloader.stakater.com/reload: ts2otel-creds
+```
+
+The `prometheus-config-reloader`/`configmap-reload` sidecar family does not fit
+here: those watch a mounted *volume* and signal the process, which needs
+file-mounted credentials and an in-process reload trigger. tailscale2otel reads its
+configuration once at startup and handles only SIGINT/SIGTERM, so a restart *is* the
+reload.
+
+A replacement credential that turns out to be wrong is visible without exposing any
+value: the exporter keeps running, its Tailscale API calls fail, and that shows up as
+`tailscale2otel.api.requests` with an error outcome, collector scrape errors, and a
+stale `tailscale2otel.enrich.cache_age` — plus the per-collector health on the admin
+status page (`config.admin.landing_page`). Alert on those rather than assuming a
+green rollout means a working credential.
 
 ### Mounting a TLS cert for the streaming receiver
 

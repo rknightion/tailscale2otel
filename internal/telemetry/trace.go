@@ -162,7 +162,14 @@ func (e piiSpanExporter) Shutdown(ctx context.Context) error { return e.next.Shu
 //
 //   - span attributes: keys resolving to a disabled category are dropped
 //     (Redactor.Merge — the exact policy metrics and logs use);
-//   - the status description, and
+//   - the status description, which is FREE TEXT and therefore governed by
+//     free_text_details exactly like the exception.message carrying the same
+//     string (#473). Redactor.RedactStatusDescription owns that decision: with
+//     the category off, anything that is not a bounded code-defined class is
+//     replaced wholesale; with it on, the description still gets the attr-value
+//     scrub below. Sending it through RedactBody alone was the bypass — that
+//     only removes values carried as attributes, so disabling free_text_details
+//     dropped the exception event and left the identical text in the status;
 //   - event / link attribute values: free text that can EMBED a redacted value
 //     (internal/tsapi's sanitizeTransportError puts the request URL in both the
 //     span status and, via RecordError, exception.message). Redactor.RedactBody
@@ -178,7 +185,7 @@ func (e piiSpanExporter) filterSpan(s sdktrace.ReadOnlySpan) (sdktrace.ReadOnlyS
 		f.attrs = keepPresent(attrs, kept)
 		changed = true
 	}
-	if d := e.red.RedactBody(f.status.Description, nil, all); d != f.status.Description {
+	if d := e.red.RedactStatusDescription(f.status.Description, all); d != f.status.Description {
 		f.status.Description = d
 		changed = true
 	}

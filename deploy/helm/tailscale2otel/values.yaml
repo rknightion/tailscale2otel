@@ -106,6 +106,40 @@ extraVolumeMounts: []
 # existing Secret via existingSecret. Inline values win only when existingSecret is "".
 # -- Name of a pre-created Secret exposing the TS2OTEL_* env keys. When set, no Secret is rendered.
 existingSecret: ""
+
+# -- Opaque value surfaced as the pod annotation
+# `tailscale2otel.m7kni.io/rollout-trigger`. Changing it changes the pod template and
+# forces a Recreate rollout. This is the supported way to pick up a rotated
+# `existingSecret`: an externally managed Secret contributes only a name reference to
+# the pod template, and Kubernetes NEVER refreshes environment variables in a running
+# container, so credentials injected via `envFrom` stay stale until the pod is
+# replaced. After rotating the Secret run e.g.
+# `helm upgrade ... --set rolloutTrigger=$(date +%s)`. Pick anything you like (a
+# timestamp, a git SHA, a counter) — it must NOT be a secret value or any digest of
+# one, since annotations are readable by anyone who can read the Deployment. For an
+# automated path instead, run Stakater Reloader in the cluster and set
+# `podAnnotations.reloader.stakater.com/auto: "true"` (Reloader issues a rollout
+# restart, which is what env-injected credentials require). The chart's own
+# `checksum/config` and `checksum/secret` annotations already cover chart-managed
+# config and inline `secret:` values — this is only for externally managed Secrets.
+rolloutTrigger: ""
+
+# Where the rendered config.yaml is stored.
+configStorage:
+  # -- Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`.
+  # `auto` (default) renders it into a ConfigMap while it is credential-free, and into
+  # Secret `<fullname>-config` as soon as any credential-bearing key is set inline under
+  # `config:` (`tailscale.auth.oauth.client_secret`, `tailscale.auth.apikey`,
+  # `headscale.api_key`, `otlp.grafana_cloud.token`, `otlp.headers`, the three
+  # `collectors.flowlogs.objectstore.*` keys, `streaming.token`, `webhook.secret`,
+  # `prometheus.auth.token`, `admin.auth.token`,
+  # `profiling.pyroscope.basic_auth_password`, any `tailnets[]` entry, or a
+  # `collectors.node_metrics.targets[]` entry with `bearer_token`/`headers`). A
+  # ConfigMap is readable by anyone holding `get configmaps` in the namespace, which is
+  # routinely granted far more widely than `get secrets`. `secret` always uses the
+  # Secret. `configmap` forces the ConfigMap and makes `helm template` FAIL, naming the
+  # offending keys, if a credential is set inline.
+  mode: auto # @schema enum:["auto","secret","configmap"]
 # -- Inline secret values rendered into a Secret and injected via envFrom. These
 # TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at
 # runtime — secrets never appear in the ConfigMap. Keys left empty ("") are NOT
@@ -255,6 +289,14 @@ config:
         max_delay: 10s
       # -- Global requests/sec across all collectors (0 = unlimited).
       rate_limit: 0
+    # -- Cap on the response body read from a Tailscale snapshot endpoint (devices, keys,
+    # dns, services, …) before it is decoded, in bytes (4 MiB). Bounds peak decode memory.
+    # Fleet-wide: a tailnets[] entry does NOT override it.
+    max_response_bytes: 4194304
+    # -- Same ceiling for the bulk log pulls (flow logs, audit logs), which are legitimately
+    # multi-MB, in bytes (32 MiB). Decoding costs several times the wire size, so keep both
+    # budgets well under resources.limits.memory — above 64 MiB the app raises a startup advisory.
+    max_log_response_bytes: 33554432
 
   otlp:
     # -- Export protocol: http | grpc | stdout (stdout = local debug).

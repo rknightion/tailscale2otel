@@ -1,8 +1,54 @@
-.git
-.github
-*.md
-docs/
-deploy/grafana/
-/tailscale2otel
-*_test.go
-.claude/
+# Docker build context — DEFAULT DENY (allowlist).
+#
+# WARNING: .gitignore is NOT a Docker build-context boundary. Docker never reads
+# it. Before this file was an allowlist, every local `.env`, `.secrets/`,
+# `.capture/`, `config.local.yaml` and `checkpoints.json` in a developer's tree
+# was transferred to the daemon with the context and recorded in the build-stage
+# cache, even though the final distroless image copies no source tree. Only
+# .dockerignore prevents that. Add every new sensitive path to BOTH files.
+#
+# The build context is the REPOSITORY ROOT on every path we support, and
+# .dockerignore is honoured only at the context root, so this one file governs
+# all of them:
+#   deploy/docker-compose.yaml          build.context: ..
+#   .github/workflows/ci.yml            docker/build-push-action, context: .
+#   .github/workflows/publish.yml       -> rknightion/.github container-publish.yml
+#   direct/BuildKit                     docker build -f deploy/Dockerfile .
+# (.goreleaser.yaml deliberately has no docker pipeline — see its header.)
+#
+# Adding a top-level path the image build needs? Re-include it below. Forgetting
+# fails the build loudly with a missing package/file — never silently.
+# Verified by: scripts/check-secret-hygiene.sh docker
+
+# Deny everything, at every depth.
+**
+
+# --- re-include exactly what deploy/Dockerfile consumes ---
+!go.mod
+!go.sum
+!cmd/**
+!internal/**
+!LICENSE
+# Copied into the runtime image at /etc/tailscale2otel/config.example.yaml.
+!config.example.yaml
+# The builder runs scripts/notices.sh to generate THIRD_PARTY_NOTICES.md into
+# /licenses/. It reads its template from its own directory.
+!scripts/notices.sh
+!scripts/notices.tsv.tmpl
+
+# --- re-deny inside the allowlisted trees (last match wins, so keep these last) ---
+# Tests never ship, and their fixtures include captured API payloads.
+**/*_test.go
+**/testdata/**
+# Belt and braces: these can never be reached through the allowlist above, but
+# keep them explicit so a future `!` re-include cannot resurrect them silently.
+**/.env
+**/.env.*
+**/*.env
+**/.secrets/**
+**/.capture/**
+**/checkpoints.json
+**/checkpoints/**
+**/config.local.yaml
+**/config.smoke.yaml
+**/config.lowlog.yaml

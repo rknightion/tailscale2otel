@@ -10,6 +10,32 @@ import (
 // order chronological order too — the whole cursor scheme rests on that.
 const keyLayout = "2006-01-02-15-04-05"
 
+// maxClockSkew is how far ahead of this process's clock an object's basename
+// timestamp may be and still be treated as real data. It is a fixed constant
+// rather than a config knob: it exists to absorb ordinary NTP drift between the
+// exporter and this process, not to be tuned, and an operator raising it would
+// only widen the window in which the failure below can happen.
+//
+// The cursor doubles as the listing lower bound, so a timestamp accepted from
+// the future moves the window past the wall clock and the next cycle derives no
+// day prefixes at all — ingestion stops until the clock catches up, which for a
+// key named hours or years ahead means indefinitely. Anything beyond the
+// allowance is therefore skipped BEFORE it can reach the cursor, the seen set,
+// or the lower bound.
+//
+// Skipping is not permanent. Nothing about the object is recorded, so once the
+// clock reaches its timestamp a later cycle ingests it like any other object.
+const maxClockSkew = 5 * time.Minute
+
+// isFutureKey reports whether at is far enough ahead of now to be rejected.
+// Equality with the boundary is accepted: the allowance is inclusive so that a
+// host exactly maxClockSkew fast is still ordinary data.
+//
+// This is applied during enumeration, above every backend, so the policy is the
+// same whether the bucket is S3, GCS via its S3 interop endpoint, or Azure
+// behind an S3-compatible gateway.
+func isFutureKey(at, now time.Time) bool { return at.After(now.Add(maxClockSkew)) }
+
 // compression is how an object's bytes are encoded, decided by its extension.
 type compression int
 

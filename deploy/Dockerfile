@@ -5,6 +5,13 @@ FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aab
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+# `COPY . .` is safe because .dockerignore at the context root is an ALLOWLIST
+# (default-deny): the context holds only go.mod/go.sum, cmd/, internal/, LICENSE,
+# config.example.yaml and scripts/notices.*. Local .env / .secrets/ / .capture/ /
+# config.local.yaml / checkpoints never reach the daemon, so they cannot land in
+# this layer or the build cache. .gitignore does NOT do that — Docker never reads
+# it. Adding a top-level path the build needs means re-including it in
+# .dockerignore; scripts/check-secret-hygiene.sh gates both directions.
 COPY . .
 ARG VERSION=dev
 # Cache mount for the Go build cache so incremental rebuilds (and CI builds via

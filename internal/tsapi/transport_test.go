@@ -1,6 +1,7 @@
 package tsapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -774,6 +775,227 @@ func TestSanitizeTransportErrorStripsOAuthBody(t *testing.T) {
 	plain := errors.New("dial tcp: connection refused")
 	if got := sanitizeTransportError(plain); got != plain.Error() {
 		t.Errorf("plain error mangled: %q", got)
+	}
+}
+
+// oauthBodyLeakCases are the response-body shapes #468 names: a token endpoint
+// (or a proxy in front of it) can put arbitrary content in the body that
+// oauth2.RetrieveError.Error() then embeds verbatim. Each marker must be absent
+// from every captured log record at every level.
+var oauthBodyLeakCases = map[string]struct{ body, marker string }{
+	"json":      {`{"error":"nope","internal":"SECRET-JSON-DETAIL"}`, "SECRET-JSON-DETAIL"},
+	"html":      {"<html><body><h1>SECRET-HTML-DETAIL</h1></body></html>", "SECRET-HTML-DETAIL"},
+	"bearer":    {"Authorization: Bearer SECRET-BEARER-TOKEN", "SECRET-BEARER-TOKEN"},
+	"multiline": {"first line\nSECRET-MULTILINE-DETAIL\nthird line", "SECRET-MULTILINE-DETAIL"},
+}
+
+// TestTokenErrorLoggingNeverLeaksResponseBody pins #468: the DEBUG retry path
+// logged err.Error() directly, and oauth2.RetrieveError.Error() embeds the RAW
+// response body. Both the retry log (DEBUG) and the terminal auth-failure log
+// (ERROR) must carry only the bounded diagnostic — class, status, retryability,
+// safe message — at every log level, and never the body or the token URL's
+// userinfo.
+func TestTokenErrorLoggingNeverLeaksResponseBody(t *testing.T) {
+	for name, tc := range oauthBodyLeakCases {
+		for _, lvl := range []slog.Level{slog.LevelDebug, slog.LevelInfo} {
+			t.Run(name+"/"+lvl.String(), func(t *testing.T) {
+				var buf bytes.Buffer
+				logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: lvl}))
+				re := &oauth2.RetrieveError{
+					Response: &http.Response{Status: "401 Unauthorized", StatusCode: http.StatusUnauthorized},
+					Body:     []byte(tc.body),
+				}
+				// The URL carries userinfo, which must never reach a log line either.
+				wrapped := &url.Error{
+					Op:  "Post",
+					URL: "https://oauthclient:S3CR3T-CLIENT-SECRET@api.tailscale.com/api/v2/oauth/token",
+					Err: re,
+				}
+				rt := &retryTransport{
+					base:      &errRoundTripper{err: wrapped},
+					max:       2, // one retry -> exercises logRetry, then logFinal
+					baseDelay: time.Millisecond,
+					maxDelay:  2 * time.Millisecond,
+					rnd:       func() float64 { return 0 },
+					logger:    logger,
+				}
+				req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+					"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+				if _, err := rt.RoundTrip(req); err == nil {
+					t.Fatal("RoundTrip err = nil, want the token error")
+				}
+				out := buf.String()
+				if out == "" {
+					t.Fatalf("no log output captured at %v; test proves nothing", lvl)
+				}
+				if strings.Contains(out, tc.marker) {
+					t.Errorf("response body leaked into logs at %v: %s", lvl, out)
+				}
+				if strings.Contains(out, "S3CR3T-CLIENT-SECRET") {
+					t.Errorf("token URL userinfo leaked into logs at %v: %s", lvl, out)
+				}
+				// Operators must still get a stable class and the status code.
+				if !strings.Contains(out, `"error_class":"oauth_error"`) {
+					t.Errorf("logs lost the stable diagnostic class at %v: %s", lvl, out)
+				}
+				if !strings.Contains(out, `"error_status":401`) {
+					t.Errorf("logs lost the token-endpoint status at %v: %s", lvl, out)
+				}
+				if lvl == slog.LevelDebug {
+					// The retry record carries the retry bookkeeping.
+					for _, key := range []string{`"attempt":1`, `"sleep"`, `"error_retryable"`} {
+						if !strings.Contains(out, key) {
+							t.Errorf("DEBUG retry log lost %s: %s", key, out)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestClassifyTransportError pins the bounded diagnostic vocabulary #468 asks
+// for: a stable class, the token-endpoint status, a retryability judgement and
+// a message that never carries the raw body.
+func TestClassifyTransportError(t *testing.T) {
+	cases := []struct {
+		name         string
+		err          error
+		wantClass    string
+		wantStatus   int
+		wantRetry    bool
+		wantContains string
+		wantAbsent   string
+	}{
+		{
+			name:       "oauth RFC6749 code",
+			err:        &oauth2.RetrieveError{ErrorCode: "invalid_client", ErrorDescription: "bad client"},
+			wantClass:  "oauth_invalid_client",
+			wantStatus: 0, wantRetry: false,
+			wantContains: "invalid_client",
+		},
+		{
+			name: "oauth raw body 500",
+			err: &oauth2.RetrieveError{
+				Response: &http.Response{Status: "500 Internal Server Error", StatusCode: 500},
+				Body:     []byte(`{"internal":"SECRET-DETAIL"}`),
+			},
+			wantClass:  "oauth_error",
+			wantStatus: 500, wantRetry: true,
+			wantContains: "oauth2", wantAbsent: "SECRET-DETAIL",
+		},
+		{
+			name: "oauth unknown code is folded into the generic class",
+			err: &oauth2.RetrieveError{
+				ErrorCode: "some_vendor_specific_code_" + strings.Repeat("x", 200),
+				Response:  &http.Response{Status: "400 Bad Request", StatusCode: 400},
+			},
+			wantClass:  "oauth_error",
+			wantStatus: 400, wantRetry: false,
+			wantContains: "oauth2",
+		},
+		{
+			name:      "cross-origin redirect refusal",
+			err:       &CrossOriginRedirectError{From: "https://api.tailscale.com:443", To: "https://evil.example:443"},
+			wantClass: "redirect_refused",
+			wantRetry: false,
+			// The refusal is observable via the origins, never the full destination.
+			wantContains: "evil.example",
+		},
+		{
+			name:         "plain transport error",
+			err:          errors.New("dial tcp: connection refused"),
+			wantClass:    "network",
+			wantRetry:    true,
+			wantContains: "connection refused",
+		},
+		{
+			name:         "context cancellation",
+			err:          context.Canceled,
+			wantClass:    "canceled",
+			wantRetry:    false,
+			wantContains: "canceled",
+		},
+		{
+			name:         "context deadline",
+			err:          context.DeadlineExceeded,
+			wantClass:    "timeout",
+			wantRetry:    true,
+			wantContains: "deadline",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := classifyTransportError(c.err)
+			if got.Class != c.wantClass {
+				t.Errorf("Class = %q, want %q", got.Class, c.wantClass)
+			}
+			if got.Status != c.wantStatus {
+				t.Errorf("Status = %d, want %d", got.Status, c.wantStatus)
+			}
+			if got.Retryable != c.wantRetry {
+				t.Errorf("Retryable = %v, want %v", got.Retryable, c.wantRetry)
+			}
+			if c.wantContains != "" && !strings.Contains(got.Message, c.wantContains) {
+				t.Errorf("Message = %q, want it to contain %q", got.Message, c.wantContains)
+			}
+			if c.wantAbsent != "" && strings.Contains(got.Message, c.wantAbsent) {
+				t.Errorf("Message = %q leaks %q", got.Message, c.wantAbsent)
+			}
+			if strings.ContainsAny(got.Message, "\n\r") {
+				t.Errorf("Message is multiline, which breaks single-line log/span fields: %q", got.Message)
+			}
+		})
+	}
+}
+
+// TestSanitizeTransportErrorRedactsURLUserinfo covers the #468 requirement that
+// the token URL's userinfo never reaches the span status, the admin status page
+// or RequestInfo.Err — sanitizeTransportError interpolates url.Error.URL.
+func TestSanitizeTransportErrorRedactsURLUserinfo(t *testing.T) {
+	wrapped := &url.Error{
+		Op:  "Post",
+		URL: "https://oauthclient:S3CR3T@api.tailscale.com/api/v2/oauth/token",
+		Err: &oauth2.RetrieveError{ErrorCode: "invalid_client"},
+	}
+	got := sanitizeTransportError(wrapped)
+	if strings.Contains(got, "S3CR3T") || strings.Contains(got, "oauthclient") {
+		t.Errorf("sanitized error still carries the token URL userinfo: %q", got)
+	}
+	if !strings.Contains(got, "api.tailscale.com/api/v2/oauth/token") {
+		t.Errorf("sanitized error lost the (safe) endpoint identity: %q", got)
+	}
+	if !strings.Contains(got, "invalid_client") {
+		t.Errorf("sanitized error lost the structured oauth code: %q", got)
+	}
+}
+
+// TestObservedErrorMatchesSanitizedDiagnostic pins that the retry logs, the
+// span/status surface (RequestInfo.Err) and the terminal log all render the
+// SAME sanitized representation — #468 asks for one representation, not three.
+func TestObservedErrorMatchesSanitizedDiagnostic(t *testing.T) {
+	re := &oauth2.RetrieveError{
+		Response: &http.Response{Status: "500 Internal Server Error", StatusCode: 500},
+		Body:     []byte("SECRET-OBSERVE-DETAIL"),
+	}
+	var got RequestInfo
+	rt := &retryTransport{
+		base:      &errRoundTripper{err: re},
+		max:       1,
+		baseDelay: time.Millisecond,
+		maxDelay:  2 * time.Millisecond,
+		onRequest: func(_ context.Context, i RequestInfo) { got = i },
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	if _, err := rt.RoundTrip(req); err == nil {
+		t.Fatal("want an error")
+	}
+	if strings.Contains(got.Err, "SECRET-OBSERVE-DETAIL") {
+		t.Errorf("RequestInfo.Err leaks the oauth response body: %q", got.Err)
+	}
+	if want := classifyTransportError(re).Message; got.Err != want {
+		t.Errorf("RequestInfo.Err = %q, want the shared sanitized message %q", got.Err, want)
 	}
 }
 

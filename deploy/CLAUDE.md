@@ -24,11 +24,28 @@ consumed by operators or by the release pipelines.
 
 ## Helm chart — config is single-source
 
-Since chart **0.2.0** the entire app config lives under `values.yaml` `config:` (it is rendered
-verbatim into the ConfigMap's `config.yaml`). This is deliberate: there is **no separate chart-specific
-config schema to keep in sync** — edit `config:` in `values.yaml`, not the template. Secrets come from
-`secret:`/`existingSecret` and are injected as `TS2OTEL_*` env vars that override the corresponding
-config fields at runtime — secrets never appear in the ConfigMap (no `${VAR}` placeholders).
+Since chart **0.2.0** the entire app config lives under `values.yaml` `config:`. This is deliberate:
+there is **no separate chart-specific config schema to keep in sync** — edit `config:` in
+`values.yaml`, not the template. Secrets come from `secret:`/`existingSecret` and are injected as
+`TS2OTEL_*` env vars that override the corresponding config fields at runtime (no `${VAR}`
+placeholders).
+
+**Since chart 0.14.0 the rendered `config.yaml` auto-routes** (SEC-07 / #470): credential-free →
+ConfigMap `<fullname>`; any credential-bearing key set inline under `config:` (or
+`configStorage.mode: secret`) → Secret `<fullname>-config`, the same mechanism multi-tailnet mode
+already used. The authoritative key list is `tailscale2otel.credentialPaths` in
+`templates/_helpers.tpl` — **add any new credential field in the app config to it**, nothing derives
+it from the Go struct. `configStorage.mode: configmap` plus an inline credential makes
+`helm template` fail on purpose. One helper, `tailscale2otel.configStoresSecret`, owns the decision
+and both `fail` guards; every template routes through it. `deploy/helm/tests/render-tests.sh`
+(bash + helm + yq, no cluster) asserts the whole contract, including that no credential reaches any
+ConfigMap, annotation, label or arg — run it after touching the chart's config/secret plumbing.
+
+**`rolloutTrigger`** (SEC-06 / #469) is the documented way to pick up a rotated externally managed
+`existingSecret`: credentials arrive via `envFrom` and Kubernetes never refreshes env in a running
+container, so the pod must be replaced. It is an opaque operator value, never derived from secret
+content. Stakater Reloader via `podAnnotations` is the automated alternative. Config hot reload is
+parked (#486) — do not add a SIGHUP handler or a reload route to make a config-reloader sidecar work.
 
 **Since chart 0.5.0** the secret keys follow the systematic `TS2OTEL_` prefix + `__`-separated nesting
 convention (e.g. `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`). This is a BREAKING rename from the

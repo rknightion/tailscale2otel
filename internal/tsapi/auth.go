@@ -3,6 +3,7 @@ package tsapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -27,6 +28,19 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 	if baseURL == "" {
 		baseURL = defaultTailscaleBaseURL
 	}
+	// The configured scheme+authority is the trust boundary for every credential
+	// this client can carry (#466/#467): the API key is attached only for it, and
+	// no redirect may leave it. Parse it up front so a malformed BaseURL fails
+	// loudly here rather than silently unbinding the credential.
+	apiOrigin, err := parseOrigin(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("tsapi: invalid BaseURL %q: %w", baseURL, err)
+	}
+	// checkRedirect is built ONCE and shared by the API client and the token-fetch
+	// client below, so the API-key, OAuth client-credentials and workload-identity
+	// paths cannot drift apart on redirect handling.
+	checkRedirect := redirectPolicy(opts.Logger)
+	tokenFetchClient := newBoundedTokenFetchClient(timeout, checkRedirect)
 	// wrap builds the retrying transport around base. The rate limiter lives ON
 	// the retryTransport (not as a wrapping base) so its token wait happens on the
 	// parent request context, before the per-attempt HTTP timeout is applied — a
@@ -52,14 +66,15 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 		// bounded client via context, since oauth2.Transport ignores the request
 		// context when fetching a token.
 		src := oauth2.ReuseTokenSource(nil, &workloadIdentityTokenSource{
-			ctx:         context.WithValue(context.Background(), oauth2.HTTPClient, newBoundedTokenFetchClient(timeout)),
+			ctx:         context.WithValue(context.Background(), oauth2.HTTPClient, tokenFetchClient),
 			baseURL:     baseURL,
 			clientID:    opts.WorkloadIdentityClientID,
 			idTokenFile: opts.WorkloadIdentityIDTokenFile,
 		})
 		return &http.Client{
-			Timeout:   0,
-			Transport: wrap(&oauth2.Transport{Source: src, Base: http.DefaultTransport}),
+			Timeout:       0,
+			CheckRedirect: checkRedirect,
+			Transport:     wrap(&oauth2.Transport{Source: src, Base: http.DefaultTransport}),
 		}, nil
 	case opts.OAuthClientID != "":
 		// Build the client-credentials source ourselves rather than via
@@ -77,19 +92,21 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 			Scopes:       opts.OAuthScopes,
 			TokenURL:     baseURL + "/api/v2/oauth/token",
 		}
-		src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, newBoundedTokenFetchClient(timeout)))
+		src := cc.TokenSource(context.WithValue(context.Background(), oauth2.HTTPClient, tokenFetchClient))
 		// API calls use the default transport (unchanged behavior); only the token
 		// FETCH runs on the bounded tokenFetch client above. Wrap so retries apply
 		// to API calls too. No whole-client timeout — it would bound the whole retry
 		// chain incl. backoff; retryTransport applies attemptTimeout per attempt.
 		return &http.Client{
-			Timeout:   0,
-			Transport: wrap(&oauth2.Transport{Source: src, Base: http.DefaultTransport}),
+			Timeout:       0,
+			CheckRedirect: checkRedirect,
+			Transport:     wrap(&oauth2.Transport{Source: src, Base: http.DefaultTransport}),
 		}, nil
 	case opts.APIKey != "":
 		return &http.Client{
-			Timeout:   0, // per-attempt timeout lives in retryTransport (see OAuth path)
-			Transport: wrap(&authKeyTransport{base: http.DefaultTransport, key: opts.APIKey}),
+			Timeout:       0, // per-attempt timeout lives in retryTransport (see OAuth path)
+			CheckRedirect: checkRedirect,
+			Transport:     wrap(&authKeyTransport{base: http.DefaultTransport, key: opts.APIKey, origin: apiOrigin}),
 		}, nil
 	default:
 		return nil, errors.New("tsapi: no authentication configured (set APIKey, OAuth client credentials, or workload identity)")
@@ -111,9 +128,16 @@ func buildHTTPClient(opts Options) (*http.Client, error) {
 // tailscale.http.timeout, which bounds one attempt inside a retry chain, and
 // unlike retryTransport's attemptTimeout, which excludes queued/backoff wait
 // time — this bound is the entire token fetch, start to finish.
-func newBoundedTokenFetchClient(timeout time.Duration) *http.Client {
+//
+// #467: checkRedirect is REQUIRED and must be the shared redirectPolicy. The
+// exchange submits a projected service-account JWT (or the OAuth client secret)
+// in a POST form body; under Go's default policy a cross-origin 307/308 replays
+// that body verbatim to the redirect target. Callers pass the same policy value
+// the API client uses so the two cannot diverge.
+func newBoundedTokenFetchClient(timeout time.Duration, checkRedirect func(*http.Request, []*http.Request) error) *http.Client {
 	return &http.Client{
-		Timeout: timeout,
+		Timeout:       timeout,
+		CheckRedirect: checkRedirect,
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,

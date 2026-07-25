@@ -453,6 +453,139 @@ func TestCollect_CursorSurvivesARestart(t *testing.T) {
 	}
 }
 
+// A basename stamped in the future must never reach the cursor. The cursor is
+// the listing lower bound, so one object named three hours ahead moves the
+// window past the wall clock and the NEXT cycle derives no day prefixes at all —
+// ingestion stops until the clock catches up.
+func TestCollect_FutureDatedKeyCannotAdvanceTheCursor(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) { o.Lookback = time.Hour })
+	current := now.Add(-10 * time.Minute)
+	future := now.Add(3 * time.Hour)
+	h.store.put(keyAt(current, ".ndjson"), []byte(record("n1", current)+"\n"))
+	h.store.put(keyAt(future, ".ndjson"), []byte(record("nFuture", future)+"\n"))
+
+	h.collect(t)
+
+	if got := h.flowRecords(); got != 1 {
+		t.Errorf("records = %d, want only the current object", got)
+	}
+	if skippedByReason(h.rec)["future_timestamp"] != 1 {
+		t.Errorf("skipped = %v, want the future-dated key counted", skippedByReason(h.rec))
+	}
+	if len(h.store.fetched) != 1 || h.store.fetched[0] != keyAt(current, ".ndjson") {
+		t.Errorf("fetched = %v, want only the current object", h.store.fetched)
+	}
+
+	// The cursor is unpoisoned, which is only observable through the next cycle
+	// still covering ground: an object landing after cycle one must be found.
+	later := now.Add(-5 * time.Minute)
+	h.store.put(keyAt(later, ".ndjson"), []byte(record("nLater", later)+"\n"))
+
+	h.collect(t)
+
+	if got := h.flowRecords(); got != 2 {
+		t.Errorf("records after the second cycle = %d, want the newly arrived object ingested — the cursor was pushed into the future", got)
+	}
+}
+
+// The allowance is a fixed five minutes, and it is a real boundary: an export
+// written by a host a few minutes fast is legitimate data, one named hours ahead
+// is not.
+func TestCollect_ClockSkewAllowanceBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		at         time.Time
+		wantRecord int
+	}{
+		{"a second inside the allowance", now.Add(5*time.Minute - time.Second), 1},
+		{"exactly at the allowance", now.Add(5 * time.Minute), 1},
+		{"a second beyond the allowance", now.Add(5*time.Minute + time.Second), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			h.store.put(keyAt(tc.at, ".ndjson"), []byte(record("n1", tc.at)+"\n"))
+
+			h.collect(t)
+
+			if got := h.flowRecords(); got != tc.wantRecord {
+				t.Errorf("records = %d, want %d for a key at %s", got, tc.wantRecord, tc.at.Format(time.RFC3339))
+			}
+			wantSkips := float64(1 - tc.wantRecord)
+			if got := skippedByReason(h.rec)["future_timestamp"]; got != wantSkips {
+				t.Errorf("future_timestamp skips = %v, want %v", got, wantSkips)
+			}
+		})
+	}
+}
+
+// A near-future object is ordinary data — hosts drift — so it is ingested and
+// then treated exactly like any other ingested object on the next cycle.
+func TestCollect_NearFutureObjectIsIngestedAndNotReIngested(t *testing.T) {
+	h := newHarness(t, nil)
+	at := now.Add(2 * time.Minute)
+	h.store.put(keyAt(at, ".ndjson"), []byte(record("nSkew", at)+"\n"))
+
+	h.collect(t)
+	if got := h.flowRecords(); got != 1 {
+		t.Fatalf("records = %d, want the near-future object ingested", got)
+	}
+
+	h.collect(t)
+	if got := h.flowRecords(); got != 1 {
+		t.Errorf("records after a second cycle = %d, want 1 — it was ingested twice", got)
+	}
+}
+
+// Skipping a future key is not permanent: once the wall clock reaches it, the
+// object is picked up like any other. Rejection must not enter the seen set.
+func TestCollect_FutureKeyIsPickedUpOnceTheClockCatchesUp(t *testing.T) {
+	clock := now
+	h := newHarness(t, func(o *objectstore.Options) { o.Now = func() time.Time { return clock } })
+	at := now.Add(30 * time.Minute)
+	h.store.put(keyAt(at, ".ndjson"), []byte(record("nAhead", at)+"\n"))
+
+	h.collect(t)
+	if got := h.flowRecords(); got != 0 {
+		t.Fatalf("records = %d, want the future key skipped", got)
+	}
+
+	clock = now.Add(time.Hour)
+	h.collect(t)
+	if got := h.flowRecords(); got != 1 {
+		t.Errorf("records = %d, want the object ingested once its timestamp is in the past", got)
+	}
+}
+
+// The cursor is durable, so a future key that reached it would keep ingestion
+// wedged across a restart too. A fresh process over the same checkpoint store
+// must resume normally.
+func TestCollect_FutureKeyDoesNotPoisonTheCursorAcrossARestart(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) { o.Lookback = time.Hour })
+	current := now.Add(-10 * time.Minute)
+	future := now.Add(3 * time.Hour)
+	h.store.put(keyAt(current, ".ndjson"), []byte(record("n1", current)+"\n"))
+	h.store.put(keyAt(future, ".ndjson"), []byte(record("nFuture", future)+"\n"))
+	h.collect(t)
+
+	// A fresh collector over the SAME checkpoint store: a process restart.
+	later := now.Add(-5 * time.Minute)
+	h.store.put(keyAt(later, ".ndjson"), []byte(record("nLater", later)+"\n"))
+	rec2 := telemetrytest.New()
+	restarted := objectstore.New(h.store,
+		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), h.cp,
+		objectstore.Options{
+			Prefix: "flow", Lookback: time.Hour,
+			Now: func() time.Time { return now }, Logger: discardLogger(),
+		})
+	if err := restarted.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(rec2.LogRecords()); got != 1 {
+		t.Errorf("records after a restart = %d, want the newly arrived object — the persisted cursor was in the future", got)
+	}
+}
+
 // A key that carries no timestamp cannot be placed against the cursor, so it is
 // reported rather than guessed at: assuming "now" ingests it and never looks
 // again, assuming zero skips it forever.

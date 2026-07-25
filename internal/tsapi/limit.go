@@ -1,36 +1,83 @@
 package tsapi
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 )
 
-// maxResponseBytes bounds a single successful (2xx) Tailscale API JSON
-// response body before it is decoded. The flow-log pull is legitimately
-// multi-MB, so the cap is generous; it exists only to stop a malicious or
-// compromised upstream (or a proxy in front of it) from streaming an
-// unbounded valid JSON body into memory (#210).
-const maxResponseBytes = 256 << 20 // 256 MiB
+// Byte budgets for a single successful (2xx) Tailscale API JSON response body,
+// tiered by endpoint class and both operator-tunable (#474).
+//
+// The old single 256 MiB cap was checked only AFTER encoding/json had
+// materialized the value, so an abusive body allocated ~1 GiB (measured live
+// heap 896 MiB) before ErrResponseTooLarge came back — four times the 256 MiB
+// memory limit the Helm chart ships by default, i.e. the guard OOM-killed the
+// process it was supposed to protect.
+//
+// Sizing evidence:
+//   - Bulk log pulls (logging/network, logging/configuration) are legitimately
+//     multi-MB. A representative flow-log record with srcNode/dstNodes
+//     identities and four traffic slices measures ~2.6 KiB on the wire
+//     (internal/tsapi/budget_test.go), so 32 MiB covers ~12,000 records in a
+//     single poll window — far past what a one-to-five minute window produces on
+//     a large tailnet, and 8x below the Helm memory limit.
+//   - Every other endpoint is a snapshot resource. The heaviest is the rich
+//     device list: a live capture (.capture/devices-rich-live-20260713.json)
+//     measures 39,056 bytes for 22 devices, i.e. ~1.8 KiB/device, so 4 MiB
+//     covers roughly 2,400 devices. TUNING CONSTRAINT: tailnets much past ~2,000
+//     devices must raise tailscale.max_response_bytes — the API has no
+//     pagination for these endpoints, so a bigger tailnet is a bigger single
+//     body. The error names the key to raise.
+const (
+	defaultMaxResponseBytes    = 4 << 20  // 4 MiB — snapshot endpoints (devices, keys, dns, services, ...)
+	defaultMaxLogResponseBytes = 32 << 20 // 32 MiB — bulk log pulls (flow logs, audit logs)
+)
 
-// ErrResponseTooLarge is returned by getJSON when a successful response body
-// exceeds maxResponseBytes. Callers can errors.Is against it to distinguish
+// Structural decode budgets. These are NOT operator-tunable: they exist to stop
+// a degenerate-but-syntactically-valid body from forcing a large allocation long
+// before the byte ceiling is reached, and every one of them is orders of
+// magnitude above anything the real API emits.
+//
+//   - maxDecodeDepth: the deepest live payload measured is the rich device list
+//     at 7 levels (.capture/devices-rich-live-20260713.json); 64 is ~9x that and
+//     bounds a `[[[[...` nesting bomb.
+//   - maxDecodeStringBytes: the largest realistic single string is an audit
+//     old/new value carrying a whole tailnet policy file; 4 MiB is far past any
+//     hand-written ACL. Live captures top out at 645 bytes.
+//   - maxDecodeArrayElements: bounds the cheapest attack per byte — `[0,0,0,…]`
+//     is 2 bytes per element on the wire but ~16 bytes per element decoded, so
+//     without this a 32 MiB body expands to a ~256 MiB slice. 500,000 is ~40x
+//     the ~12,000 flow-log records the byte budget allows.
+const (
+	maxDecodeDepth         = 64
+	maxDecodeStringBytes   = 4 << 20 // 4 MiB
+	maxDecodeArrayElements = 500_000
+)
+
+// Config keys behind the two byte budgets, quoted back in BudgetError so an
+// operator who hits a limit is told exactly what to raise.
+const (
+	cfgKeyMaxResponseBytes    = "tailscale.max_response_bytes"
+	cfgKeyMaxLogResponseBytes = "tailscale.max_log_response_bytes"
+)
+
+// ErrResponseTooLarge is returned when a successful response body exceeds the
+// endpoint's byte budget. Callers can errors.Is against it to distinguish
 // "upstream sent too much" from an ordinary malformed-JSON decode error.
 var ErrResponseTooLarge = errors.New("tsapi: response body exceeds maximum allowed size")
 
-// decodeJSONLimited decodes a single JSON value from r into out, never
-// reading more than limit+1 bytes. If reading exhausts that allowance
-// (limit+1 bytes consumed), the body is provably larger than limit — whether
-// or not json managed to decode something along the way — so
-// ErrResponseTooLarge is returned instead of leaking whatever incidental
-// io/json error a truncated read happens to produce (typically
-// io.ErrUnexpectedEOF, which is indistinguishable from other malformed-JSON
-// errors and must not be relied on to signal an oversized body).
+// ErrResponseTooComplex is returned when a successful response body stays under
+// its byte budget but violates a structural budget (nesting depth, single-string
+// length, or array element count). Kept distinct from ErrResponseTooLarge
+// because the remedy differs: a too-large body may just be a big tailnet
+// (raise the key named in the error), whereas a too-complex one is not shaped
+// like anything the Tailscale API emits.
+var ErrResponseTooComplex = errors.New("tsapi: response JSON exceeds structural decode budget")
+
+// decodeJSONLimited decodes a single JSON value from r into out under the
+// default structural budgets and an explicit byte ceiling. It is the
+// byte-budget-only entry point kept for callers (and tests) that care about a
+// single number; getJSON uses the Client's tiered budgets instead.
 func decodeJSONLimited(r io.Reader, limit int64, out any) error {
-	lr := &io.LimitedReader{R: r, N: limit + 1}
-	err := json.NewDecoder(lr).Decode(out)
-	if lr.N == 0 {
-		return ErrResponseTooLarge
-	}
-	return err
+	return decodeJSONBudgeted(r, budgetOf(limit, cfgKeyMaxResponseBytes), out)
 }

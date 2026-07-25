@@ -129,13 +129,15 @@ func tsapiOptions(cfg *config.Config, version string) tsapi.Options {
 // request logs can attribute traffic to this exporter and its build (#66).
 func tsapiOptionsFor(rt config.ResolvedTailnet, version string) tsapi.Options {
 	o := tsapi.Options{
-		Tailnet:     rt.Name,
-		UserAgent:   serviceName + "/" + version,
-		Timeout:     rt.HTTP.Timeout.D(),
-		MaxAttempts: rt.HTTP.Retry.MaxAttempts,
-		BaseDelay:   rt.HTTP.Retry.BaseDelay.D(),
-		MaxDelay:    rt.HTTP.Retry.MaxDelay.D(),
-		RateLimit:   rt.HTTP.RateLimit,
+		Tailnet:             rt.Name,
+		UserAgent:           serviceName + "/" + version,
+		Timeout:             rt.HTTP.Timeout.D(),
+		MaxAttempts:         rt.HTTP.Retry.MaxAttempts,
+		BaseDelay:           rt.HTTP.Retry.BaseDelay.D(),
+		MaxDelay:            rt.HTTP.Retry.MaxDelay.D(),
+		RateLimit:           rt.HTTP.RateLimit,
+		MaxResponseBytes:    rt.MaxResponseBytes,
+		MaxLogResponseBytes: rt.MaxLogResponseBytes,
 	}
 	switch rt.Auth.Method {
 	case "apikey":

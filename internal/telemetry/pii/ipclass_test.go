@@ -62,3 +62,47 @@ func TestClassifyIPWithPort(t *testing.T) {
 		}
 	}
 }
+
+// TestClassifyIPNormalization covers #465 (security:SEC-02): a disabled IP
+// category must not be bypassable by changing the address's TEXTUAL
+// representation. An IPv4-mapped IPv6 address (`::ffff:100.64.0.1`, or its hex
+// form `::ffff:6440:1`) is the same address as `100.64.0.1`, but netip's Prefix
+// matching deliberately does not match a 4-in-6 address against an IPv4 prefix,
+// so the value must be unmapped before range classification. Surrounding
+// whitespace is likewise a representation difference, not a different address.
+func TestClassifyIPNormalization(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want ipClass
+	}{
+		{"canonical ipv4 cgnat", "100.64.0.1", ipTailscale},
+		{"canonical ipv6 tailscale", "fd7a:115c:a1e0::1", ipTailscale},
+		{"mapped ipv4 cgnat", "::ffff:100.64.0.1", ipTailscale},
+		{"mapped ipv4 cgnat hex form", "::ffff:6440:1", ipTailscale},
+		{"mapped ipv4 rfc1918", "::ffff:10.0.0.5", ipInternal},
+		{"mapped ipv4 loopback", "::ffff:127.0.0.1", ipInternal},
+		{"mapped ipv4 link-local", "::ffff:169.254.1.1", ipInternal},
+		{"mapped ipv4 external", "::ffff:8.8.8.8", ipExternal},
+		{"mapped ipv4 cgnat with port", "[::ffff:100.64.0.1]:41641", ipTailscale},
+		{"address port", "100.64.0.1:41641", ipTailscale},
+		{"bracketed loopback with port", "[::1]:80", ipInternal},
+		{"leading and trailing spaces", "  100.64.0.1  ", ipTailscale},
+		{"tab and newline padding", "\t100.64.0.1\n", ipTailscale},
+		{"padded address port", " 100.64.0.1:41641 ", ipTailscale},
+		{"padded mapped address", " ::ffff:100.64.0.1 ", ipTailscale},
+		{"malformed extra octet", "100.64.0.1.5", ipNotIP},
+		{"malformed truncated", "100.64.0.", ipNotIP},
+		{"malformed hex garbage", "fd7a:115c:zzzz::1", ipNotIP},
+		{"sentinel external", "external", ipNotIP},
+		{"whitespace only", "   ", ipNotIP},
+		{"empty", "", ipNotIP},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := classifyIP(c.in); got != c.want {
+				t.Errorf("classifyIP(%q) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+}

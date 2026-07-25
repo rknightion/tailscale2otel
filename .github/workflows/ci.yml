@@ -139,6 +139,17 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
+      # Lives in this job on purpose: it already has a checkout, Docker and buildx, and
+      # the job is already in ci-success's `needs`, so the gate becomes blocking WITHOUT
+      # editing the branch ruleset (a renamed required check has stalled every bot PR in
+      # this repo before). Safe ahead of the image build: the probe plants disposable
+      # sentinels removed by an EXIT trap, and runs --no-cache -o type=cacheonly with no
+      # cache-to, so it cannot pollute the layer cache below.
+      - name: repository secret-hygiene gate (.gitignore + Docker build context)
+        env:
+          HYGIENE_REQUIRE_DOCKER: "1"
+        run: scripts/check-secret-hygiene.sh
+
       # The Dockerfile's `go build` step uses a BuildKit cache mount for the Go
       # build cache (/root/.cache/go-build). type=gha layer cache does NOT carry
       # cache-mount contents across runs, so restore/save it via actions/cache and

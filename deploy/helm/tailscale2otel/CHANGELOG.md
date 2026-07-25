@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.14.0 — Inline credentials never land in a ConfigMap; a supported rotation path
+
+Two security fixes, neither requiring operator action on upgrade.
+
+### Credentials auto-route to a Secret (#470)
+
+A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which is
+routinely granted far more widely than `get secrets`. Previously any single-tailnet
+config was rendered into a ConfigMap verbatim — credentials included — even though the
+config surface carries OAuth secrets, API keys, OTLP headers, object-store credentials
+and several tokens.
+
+Now, if any credential-bearing key is set inline under `config:`, the whole rendered
+`config.yaml` moves into Secret `<fullname>-config` and the pod mounts it from there.
+This reuses the mechanism multi-tailnet mode already used, so the object name, mount
+path and container args are unchanged. Credential-free configs keep the ConfigMap.
+
+### What changed
+
+- New `configStorage.mode` (`auto` | `secret` | `configmap`, default `auto`). `auto`
+  picks the ConfigMap for credential-free configs and a Secret otherwise. `configmap`
+  combined with an inline credential makes `helm template` fail and names the offending
+  keys rather than writing them somewhere too readable.
+- New `rolloutTrigger` (default `""`), surfaced as pod annotation
+  `tailscale2otel.m7kni.io/rollout-trigger` when set. This is the supported way to pick
+  up a rotated externally managed `existingSecret` (#469): credentials arrive via
+  `envFrom`, and Kubernetes never refreshes environment variables in a running
+  container, so the pod must be replaced. Set it to any opaque value that changes —
+  never a secret value or a hash of one. Clusters running Stakater Reloader can instead
+  set `podAnnotations."reloader.stakater.com/auto"="true"`.
+- New `config.tailscale.max_response_bytes` (4 MiB) and
+  `config.tailscale.max_log_response_bytes` (32 MiB), tracking the app's new response
+  decode budgets.
+- `deploy/helm/tests/render-tests.sh` asserts the whole contract without a cluster.
+
+### Upgrading
+
+No action required. Operators who had credentials inline will see the `<fullname>`
+ConfigMap disappear and a `<fullname>-config` Secret appear; the pod sees byte-identical
+config at the same path. To keep the old placement, set `configStorage.mode: configmap`
+— but that render now fails if credentials are inline, which is the point.
+
 ## 0.5.1 — Checkpoint persistence out of the box
 
 The app now defaults `checkpoint.store` to `file` (was `memory`), persisting window

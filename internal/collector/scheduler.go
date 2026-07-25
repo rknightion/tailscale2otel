@@ -22,6 +22,12 @@ import (
 // creation in runTick never allocates a fresh no-op provider on every tick.
 var noopSchedulerTracer = tracenoop.NewTracerProvider().Tracer("")
 
+// spanAttrErrorType is the OTEL semantic-convention key for a bounded error class.
+// internal/semconv carries no constant for it (the scrape.errors counter and its
+// catalog entry both use the literal), so it is declared once here rather than
+// repeated at the call sites.
+const spanAttrErrorType = "error.type"
+
 // Scheduler runs each registered collector on its own goroutine and ticker,
 // isolating failures so one collector cannot stop the others.
 type Scheduler struct {
@@ -221,10 +227,26 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 		}
 		// Finalize the scrape span before emitting metrics so the span is ended
 		// (and therefore visible to any span processor) prior to the scrape metrics.
+		//
+		// Both branches also stamp the BOUNDED failure class (#473). The status
+		// description below is free text — a collector error string or a recovered
+		// panic value — so internal/telemetry's PII span exporter replaces it
+		// wholesale once free_text_details is disabled. error.type is the same
+		// three-value enum the scrape.errors counter carries (panic|timeout|error),
+		// so a redacted span still says WHAT KIND of failure this was. It is set
+		// only on failure, keeping "attribute present" equivalent to "this scrape
+		// failed", and its value set is closed — no cardinality risk on the span or
+		// on any series a metrics-generator derives from it.
 		switch {
 		case panicked:
+			span.SetAttributes(attribute.String(spanAttrErrorType, scrapeErrorType(nil, true)))
+			// Record the panic as an exception event too, so the panic text lands on
+			// the governed free-text surface (exception.message) rather than living
+			// only in the ungoverned status description.
+			span.RecordError(fmt.Errorf("panic: %v", panicVal))
 			span.SetStatus(codes.Error, fmt.Sprintf("panic: %v", panicVal))
 		case runErr != nil:
+			span.SetAttributes(attribute.String(spanAttrErrorType, scrapeErrorType(runErr, false)))
 			span.RecordError(runErr)
 			span.SetStatus(codes.Error, runErr.Error())
 		}

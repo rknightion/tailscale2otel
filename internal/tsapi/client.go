@@ -72,6 +72,15 @@ type Options struct {
 	// client. Zero means unlimited (pure pass-through).
 	RateLimit float64
 
+	// MaxResponseBytes bounds a single successful JSON response body from a
+	// snapshot endpoint (devices, keys, dns, services, …) before it is decoded.
+	// Zero uses defaultMaxResponseBytes. See limit.go for the sizing evidence.
+	MaxResponseBytes int64
+	// MaxLogResponseBytes is the same ceiling for the bulk log pulls
+	// (logging/network, logging/configuration), which are legitimately multi-MB.
+	// Zero uses defaultMaxLogResponseBytes.
+	MaxLogResponseBytes int64
+
 	// HTTPClient, when set, is used as-is (tests); auth/retry are not applied.
 	HTTPClient *http.Client
 }
@@ -83,6 +92,10 @@ type Client struct {
 	baseURL   *url.URL
 	tailnet   string
 	userAgent string
+
+	// Response decode byte budgets, resolved once in NewClient (#474).
+	maxResponseBytes    int64
+	maxLogResponseBytes int64
 }
 
 // NewClient builds a Client from opts.
@@ -117,13 +130,34 @@ func NewClient(opts Options) (*Client, error) {
 		ts.APIKey = opts.APIKey
 	}
 
+	maxBytes := opts.MaxResponseBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxResponseBytes
+	}
+	maxLogBytes := opts.MaxLogResponseBytes
+	if maxLogBytes <= 0 {
+		maxLogBytes = defaultMaxLogResponseBytes
+	}
+
 	return &Client{
-		ts:        ts,
-		http:      httpClient,
-		baseURL:   u,
-		tailnet:   opts.Tailnet,
-		userAgent: opts.UserAgent,
+		ts:                  ts,
+		http:                httpClient,
+		baseURL:             u,
+		tailnet:             opts.Tailnet,
+		userAgent:           opts.UserAgent,
+		maxResponseBytes:    maxBytes,
+		maxLogResponseBytes: maxLogBytes,
 	}, nil
+}
+
+// apiBudget is the decode budget for a snapshot endpoint; logBudget is the
+// (larger) budget for the bulk log pulls.
+func (c *Client) apiBudget() decodeBudget {
+	return budgetOf(c.maxResponseBytes, cfgKeyMaxResponseBytes)
+}
+
+func (c *Client) logBudget() decodeBudget {
+	return budgetOf(c.maxLogResponseBytes, cfgKeyMaxLogResponseBytes)
 }
 
 // Devices lists all devices in the tailnet.

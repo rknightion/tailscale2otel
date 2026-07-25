@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,6 +49,217 @@ func TestFileStore_DeleteAndKeys(t *testing.T) {
 	}
 	if len(s2.Keys()) != 0 {
 		t.Fatalf("reopened store keys = %v, want none", s2.Keys())
+	}
+}
+
+// TestFileStore_PersistDoesNotFollowSymlinkAtPredictableTempPath pins
+// security:SEC-08 (#471): the historical implementation derived a predictable
+// sibling temp path ("<path>.tmp") and opened it with plain O_CREATE|O_TRUNC, so
+// another local principal on a shared checkpoint directory could park a symlink
+// there and have the exporter write through it. Persisting must never open,
+// write through, replace, or remove a pre-existing symlink at that path.
+func TestFileStore_PersistDoesNotFollowSymlinkAtPredictableTempPath(t *testing.T) {
+	dir := t.TempDir()
+	sentinel := filepath.Join(t.TempDir(), "sentinel")
+	const sentinelContent = "attacker-owned file that must not be clobbered\n"
+	if err := os.WriteFile(sentinel, []byte(sentinelContent), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	path := filepath.Join(dir, "checkpoints.json")
+	trap := path + ".tmp"
+	if err := os.Symlink(sentinel, trap); err != nil {
+		t.Skipf("symlinks unsupported on this platform: %v", err)
+	}
+
+	s, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	want := time.Unix(1717000456, 0).UTC()
+	if err := s.Set("flowlogs", want); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	// 1. The file the symlink points at must be byte-unchanged.
+	got, err := os.ReadFile(sentinel)
+	if err != nil {
+		t.Fatalf("read sentinel: %v", err)
+	}
+	if string(got) != sentinelContent {
+		t.Errorf("sentinel was written through the symlink:\n got %q\nwant %q", got, sentinelContent)
+	}
+
+	// 2. The symlink itself must be untouched — not renamed away, not replaced.
+	li, err := os.Lstat(trap)
+	if err != nil {
+		t.Fatalf("pre-existing symlink at %s was removed or renamed: %v", trap, err)
+	}
+	if li.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("pre-existing symlink at %s was replaced by a %v", trap, li.Mode().Type())
+	} else if dest, err := os.Readlink(trap); err != nil || dest != sentinel {
+		t.Errorf("symlink target = %q/%v, want %q", dest, err, sentinel)
+	}
+
+	// 3. The checkpoint itself must be a real regular file holding the new state.
+	fi, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("lstat checkpoint: %v", err)
+	}
+	if !fi.Mode().IsRegular() {
+		t.Fatalf("checkpoint path is a %v, want a regular file", fi.Mode().Type())
+	}
+	reopened, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if at, ok := reopened.Get("flowlogs"); !ok || !at.Equal(want) {
+		t.Fatalf("reopened checkpoint = %v/%v, want %v", at, ok, want)
+	}
+}
+
+// TestFileStore_ConcurrentSetsCannotShareTempFiles pins #471: independent
+// savers writing the same checkpoint path must each stage their replacement in
+// a file of its own, and a reader must never observe a truncated or partial
+// checkpoint while they do. Run with -race.
+func TestFileStore_ConcurrentSetsCannotShareTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoints.json")
+
+	const writers, rounds = 8, 25
+	base := time.Unix(1717000000, 0).UTC()
+
+	// Seed the file so the concurrent readers always have something to read.
+	seed, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	if err := seed.Set("cursor", base); err != nil {
+		t.Fatalf("seed Set: %v", err)
+	}
+
+	stop := make(chan struct{})
+	errs := make(chan error, writers*rounds+1)
+
+	var writersWG, readerWG sync.WaitGroup
+	for w := range writers {
+		// A separate store per writer: within one store s.mu serializes saves,
+		// so only independent stores exercise temp-file uniqueness.
+		s, err := collector.NewFileStore(path)
+		if err != nil {
+			t.Fatalf("NewFileStore(writer %d): %v", w, err)
+		}
+		writersWG.Add(1)
+		go func() {
+			defer writersWG.Done()
+			for r := range rounds {
+				if err := s.Set("cursor", base.Add(time.Duration(w*rounds+r)*time.Second)); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+
+	// A reader racing the writers: every observation must be a complete,
+	// decodable checkpoint, never a partial one.
+	readerWG.Add(1)
+	go func() {
+		defer readerWG.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := collector.NewFileStore(path); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+
+	writersWG.Wait()
+	close(stop)
+	readerWG.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent save/read: %v", err)
+	}
+
+	// The survivor must be a complete checkpoint holding one of the written values.
+	final, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("final store is not a complete checkpoint: %v", err)
+	}
+	at, ok := final.Get("cursor")
+	if !ok {
+		t.Fatal("final checkpoint lost the cursor key")
+	}
+	if at.Before(base) || at.After(base.Add(time.Duration(writers*rounds)*time.Second)) {
+		t.Fatalf("final cursor %v is outside the written range", at)
+	}
+	assertOnlyCheckpointFile(t, dir, path)
+}
+
+// TestFileStore_PersistedFileIsOwnerOnly pins the intended 0600 mode across the
+// switch to os.CreateTemp (which creates 0600 before umask, so a strict umask
+// would otherwise narrow it).
+func TestFileStore_PersistedFileIsOwnerOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoints.json")
+	s, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	if err := s.Set("flowlogs", time.Unix(1717000000, 0).UTC()); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Fatalf("checkpoint mode = %04o, want 0600", got)
+	}
+}
+
+// TestFileStore_SuccessfulPersistLeavesNoTempFiles pins that the randomized
+// staging file is always consumed by the rename or removed.
+func TestFileStore_SuccessfulPersistLeavesNoTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoints.json")
+	s, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	for i := range 5 {
+		if err := s.Set("flowlogs", time.Unix(int64(1717000000+i), 0).UTC()); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+	}
+	if err := s.Delete("flowlogs"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	assertOnlyCheckpointFile(t, dir, path)
+}
+
+// assertOnlyCheckpointFile fails if dir holds anything besides the checkpoint
+// file itself — i.e. if a staging temp file was left behind.
+func assertOnlyCheckpointFile(t *testing.T, dir, path string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read checkpoint dir: %v", err)
+	}
+	var leftovers []string
+	for _, e := range entries {
+		if e.Name() != filepath.Base(path) {
+			leftovers = append(leftovers, e.Name())
+		}
+	}
+	if len(leftovers) > 0 {
+		t.Fatalf("temp files left behind in %s: %v", dir, leftovers)
 	}
 }
 

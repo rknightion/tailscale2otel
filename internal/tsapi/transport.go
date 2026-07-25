@@ -6,8 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -19,13 +21,30 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// authKeyTransport injects a Bearer token on each request.
+// authKeyTransport injects a Bearer token on each request bound for the
+// configured Tailscale origin.
+//
+// #466: this used to set the header unconditionally. http.Client strips a
+// cross-origin Authorization header while following a redirect — but it then
+// calls the transport again for the redirected request, and an unconditional
+// RoundTrip put the credential straight back on. Binding attachment to
+// Options.BaseURL's scheme+authority means the key cannot ride a redirect (or
+// any other off-origin request) out of the tailnet's API. redirectPolicy
+// refuses such a redirect outright; this is the second line of defense for any
+// caller that supplies its own http.Client around the transport.
+//
+// origin is REQUIRED: the zero value matches nothing, so a mis-wired transport
+// fails closed (unauthenticated 401s) rather than open.
 type authKeyTransport struct {
-	base http.RoundTripper
-	key  string
+	base   http.RoundTripper
+	key    string
+	origin origin
 }
 
 func (t *authKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !originOf(req.URL).equal(t.origin) {
+		return t.base.RoundTrip(req)
+	}
 	r := req.Clone(req.Context())
 	r.Header.Set("Authorization", "Bearer "+t.key)
 	return t.base.RoundTrip(r)
@@ -123,9 +142,27 @@ func (t *retryTransport) logRetry(req *http.Request, resp *http.Response, err er
 		args = append(args, "status", resp.StatusCode)
 	}
 	if err != nil {
-		args = append(args, "error", err.Error())
+		// #468: NEVER err.Error() here. oauth2.RetrieveError.Error() embeds the RAW
+		// token-endpoint response body, so the DEBUG retry path used to write a
+		// hostile (or merely verbose) body straight into local logs, bypassing the
+		// sanitization telemetry and the status page already went through.
+		args = append(args, diagnosticLogArgs(err)...)
 	}
 	t.logger.Debug("retrying tailscale API request", args...)
+}
+
+// diagnosticLogArgs renders a transport error as bounded slog key/values. It is
+// the ONLY way an error reaches a log line in this package (#468), so the raw
+// response body, headers, client secret, assertion and token-URL userinfo have
+// no path in — including via %v/%+v/%w formatting or slog.Any, none of which
+// are used on the error value itself.
+func diagnosticLogArgs(err error) []any {
+	d := classifyTransportError(err)
+	args := []any{"error_class", d.Class, "error_retryable", d.Retryable, "error", d.Message}
+	if d.Status != 0 {
+		args = append(args, "error_status", d.Status)
+	}
+	return args
 }
 
 // logFinal records the terminal outcome of a request. Only an unambiguous auth
@@ -147,8 +184,10 @@ func (t *retryTransport) logFinal(req *http.Request, resp *http.Response, err er
 		var re *oauth2.RetrieveError
 		if errors.As(err, &re) && re.Response != nil &&
 			(re.Response.StatusCode == http.StatusUnauthorized || re.Response.StatusCode == http.StatusForbidden) {
-			t.logger.Error("tailscale OAuth token request failed; check client credentials",
-				"endpoint", ep, "attempts", attempt, "status", re.Response.StatusCode)
+			// Same sanitized representation as the retry path and telemetry (#468):
+			// the status arrives as error_status, never via the raw error text.
+			args := append([]any{"endpoint", ep, "attempts", attempt}, diagnosticLogArgs(err)...)
+			t.logger.Error("tailscale OAuth token request failed; check client credentials", args...)
 		}
 	}
 }
@@ -326,33 +365,153 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 	}
 }
 
-// sanitizeTransportError renders err for telemetry (span status, admin status
-// page). For OAuth token-endpoint failures it uses only the structured fields:
-// oauth2.RetrieveError.Error() embeds the RAW response body when the endpoint
-// returns a non-RFC-6749 error, and that body must not reach traces or the
-// status page.
+// Stable, bounded diagnostic classes for transport and token errors (#468).
+// The set is closed: every error resolves to one of these, so the class is safe
+// as a log field, a span attribute or a metric dimension.
+const (
+	errClassOAuth           = "oauth_error"      // token endpoint failed (generic / unrecognized code)
+	errClassRedirectRefused = "redirect_refused" // cross-origin redirect or redirect-loop cap (#466/#467)
+	errClassTimeout         = "timeout"
+	errClassCanceled        = "canceled"
+	errClassNetwork         = "network"
+)
+
+// rfc6749ErrorCodes is the CLOSED set of OAuth error codes promoted to their
+// own "oauth_<code>" class. The token endpoint chooses this string, so anything
+// outside the RFC folds into errClassOAuth — an endpoint (or a proxy in front
+// of it) must not be able to mint unbounded diagnostic classes.
+var rfc6749ErrorCodes = map[string]bool{
+	"invalid_request":        true,
+	"invalid_client":         true,
+	"invalid_grant":          true,
+	"unauthorized_client":    true,
+	"unsupported_grant_type": true,
+	"invalid_scope":          true,
+}
+
+// maxDiagnosticMessage bounds the sanitized message. Endpoint-supplied fields
+// (an OAuth error_description, a vendor error code) are structured, not raw
+// body — but they are still remote input, so they are capped and flattened to
+// one line before they can reach a log record or a span status.
+const maxDiagnosticMessage = 200
+
+// transportDiagnostic is the sanitized, bounded view of a transport error: a
+// stable class, the token-endpoint status when there was one, a retryability
+// judgement, and a message safe to log at any level (#468).
+//
+// Retryable is a CLASSIFICATION, not the retry loop's decision — retryTransport
+// still retries on its own status/error rule (any transport error is retried).
+// It is reported so an operator reading a retry log can tell "this will not
+// improve by trying again" (a 401 from the token endpoint) from "transient".
+type transportDiagnostic struct {
+	Class     string
+	Status    int
+	Retryable bool
+	Message   string
+}
+
+// sanitizeTransportError renders err for telemetry (span status, RecordError,
+// RequestInfo.Err, the admin status page). It is the Message of the shared
+// diagnostic, so telemetry, retry logs and terminal logs all render the SAME
+// sanitized text (#468).
 func sanitizeTransportError(err error) string {
-	// Unwrap url.Error wrappers first so errors.As can reach the inner type.
+	return classifyTransportError(err).Message
+}
+
+// classifyTransportError converts err into its bounded diagnostic. Nothing that
+// reaches a log, a span or the status page bypasses this function.
+func classifyTransportError(err error) transportDiagnostic {
+	if err == nil {
+		return transportDiagnostic{}
+	}
+	// Unwrap url.Error wrappers first so errors.As can reach the inner type, and
+	// so the (userinfo-stripped) endpoint identity survives in the message.
 	var ue *url.Error
 	if errors.As(err, &ue) {
-		inner := sanitizeTransportError(ue.Err)
-		return ue.Op + " " + ue.URL + ": " + inner
+		d := classifyTransportError(ue.Err)
+		if d.Class == "" { // url.Error with a nil inner error: still needs a class
+			d.Class, d.Retryable = errClassNetwork, true
+		}
+		d.Message = safeDiagnosticText(ue.Op + " " + redactURL(ue.URL) + ": " + d.Message)
+		return d
+	}
+	var cor *CrossOriginRedirectError
+	if errors.As(err, &cor) {
+		return transportDiagnostic{Class: errClassRedirectRefused, Message: safeDiagnosticText(cor.Error())}
+	}
+	if errors.Is(err, ErrCrossOriginRedirect) || errors.Is(err, ErrTooManyRedirects) {
+		return transportDiagnostic{Class: errClassRedirectRefused, Message: safeDiagnosticText(err.Error())}
 	}
 	var re *oauth2.RetrieveError
-	if !errors.As(err, &re) {
-		return err.Error()
+	if errors.As(err, &re) {
+		return classifyOAuthRetrieveError(re)
 	}
-	if re.ErrorCode != "" {
-		s := "oauth2: " + re.ErrorCode
-		if re.ErrorDescription != "" {
-			s += ": " + re.ErrorDescription
-		}
-		return s
+	switch {
+	case errors.Is(err, context.Canceled):
+		return transportDiagnostic{Class: errClassCanceled, Message: safeDiagnosticText(err.Error())}
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded):
+		return transportDiagnostic{Class: errClassTimeout, Retryable: true, Message: safeDiagnosticText(err.Error())}
 	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return transportDiagnostic{Class: errClassTimeout, Retryable: true, Message: safeDiagnosticText(err.Error())}
+	}
+	return transportDiagnostic{Class: errClassNetwork, Retryable: true, Message: safeDiagnosticText(err.Error())}
+}
+
+// classifyOAuthRetrieveError uses ONLY the structured fields of a
+// RetrieveError. Its Body — the raw token-endpoint response — is never read
+// here, and Error() (which embeds that body) is never called.
+func classifyOAuthRetrieveError(re *oauth2.RetrieveError) transportDiagnostic {
+	d := transportDiagnostic{Class: errClassOAuth}
 	if re.Response != nil {
-		return "oauth2: cannot fetch token: " + re.Response.Status
+		d.Status = re.Response.StatusCode
 	}
-	return "oauth2: cannot fetch token"
+	d.Retryable = d.Status == http.StatusTooManyRequests || d.Status >= 500
+	switch {
+	case re.ErrorCode != "":
+		if rfc6749ErrorCodes[re.ErrorCode] {
+			d.Class = "oauth_" + re.ErrorCode
+		}
+		msg := "oauth2: " + re.ErrorCode
+		if re.ErrorDescription != "" {
+			msg += ": " + re.ErrorDescription
+		}
+		d.Message = safeDiagnosticText(msg)
+	case re.Response != nil:
+		d.Message = safeDiagnosticText("oauth2: cannot fetch token: " + re.Response.Status)
+	default:
+		d.Message = "oauth2: cannot fetch token"
+	}
+	return d
+}
+
+// redactURL strips userinfo from a URL string so a token URL configured as
+// https://client:secret@host/... cannot reach a log, span or status page (#468).
+// An unparseable URL is dropped entirely rather than echoed.
+func redactURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(unparseable url)"
+	}
+	if u.User != nil {
+		u.User = url.User("redacted")
+	}
+	return u.String()
+}
+
+// safeDiagnosticText flattens a diagnostic message to a single bounded line:
+// newlines/tabs collapse to spaces (a multiline body must not be able to forge
+// extra log records or split a span status) and the result is truncated.
+func safeDiagnosticText(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > maxDiagnosticMessage {
+		s = s[:maxDiagnosticMessage] + "..."
+	}
+	return s
 }
 
 // collectionsWithVarSegment is the set of collection prefixes (already with the

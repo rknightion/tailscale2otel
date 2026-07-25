@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.13.0](https://img.shields.io/badge/Version-0.13.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.0](https://img.shields.io/badge/Version-0.14.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -20,9 +20,10 @@ Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network fl
 
 The entire application config lives under a single top-level `config:` key in
 `values.yaml` (the single source of truth, kept in sync with
-`config.example.yaml`). It is rendered verbatim into a ConfigMap as `config.yaml`.
-Secrets are injected exclusively via `TS2OTEL_*` environment variables from the
-Secret — they never appear in the ConfigMap.
+`config.example.yaml`). It is rendered verbatim as `config.yaml` — into a ConfigMap
+while it is credential-free, and into a Secret as soon as it is not (see below).
+The supported path is to leave the credential fields empty and inject them as
+`TS2OTEL_*` environment variables from the Secret.
 
 Helm deep-merges maps, so single-key overrides work without restating the rest:
 
@@ -38,6 +39,87 @@ helm install t deploy/helm/tailscale2otel \
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
+
+### Credentials and the rendered config
+
+A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which
+in practice is granted far more widely than `get secrets`. So the chart never puts
+a credential in one: if any credential-bearing key is set inline under `config:`,
+the **whole** rendered `config.yaml` moves into Secret `<fullname>-config` and the
+pod mounts it from there instead. Nothing else changes — same file, same path, same
+`-config` argument — and no credential value, digest or fragment is ever placed in a
+pod annotation, label or command line.
+
+The keys that trigger this:
+
+| Key under `config:` | |
+| --- | --- |
+| `tailscale.auth.oauth.client_secret` | Tailscale OAuth client secret |
+| `tailscale.auth.apikey` | Tailscale API key |
+| `headscale.api_key` | Headscale bearer key |
+| `otlp.grafana_cloud.token` | Grafana Cloud OTLP token |
+| `otlp.headers` | any raw OTLP header (this is where an `Authorization` header goes) |
+| `collectors.flowlogs.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
+| `streaming.token` | HEC receiver token |
+| `webhook.secret` | webhook HMAC secret |
+| `prometheus.auth.token` | `/metrics` token |
+| `admin.auth.token` | admin/pprof token |
+| `profiling.pyroscope.basic_auth_password` | Pyroscope password |
+| `tailnets[]` (any entry) | multi-tailnet inline auth — the list is file-only, there is no `TS2OTEL_*` path for it |
+| `collectors.node_metrics.targets[]` with `bearer_token` or `headers` | per-target scrape credentials |
+
+Identifiers are *not* on that list — `tailscale.auth.oauth.client_id`,
+`tailscale.auth.workload_identity.client_id`, `otlp.grafana_cloud.instance_id` and
+`profiling.pyroscope.basic_auth_user` are the identity halves of credential pairs,
+not secrets, so setting them keeps the ConfigMap path. Nor are the `*_file` keys:
+those are paths to material mounted from elsewhere, which is the cleanest option of
+all (`readOnlyRootFilesystem` aside, pair them with `extraVolumes`).
+
+`configStorage.mode` overrides the decision: `secret` always uses the Secret,
+`configmap` always uses the ConfigMap — and makes `helm template` **fail**, naming
+the offending keys, if a credential is set inline. That failure is deliberate: it is
+the one combination the chart cannot make safe.
+
+### Rotating credentials
+
+`checksum/config` and `checksum/secret` already roll the pod when the chart-managed
+config or the inline `secret:` values change. An **`existingSecret` you manage
+yourself is different**: it contributes only a name reference to the pod template,
+and Kubernetes never refreshes the environment of a running container, so rotating
+its values leaves the pod running the old credential indefinitely. Two supported
+ways to close that:
+
+```sh
+# Manual: change rolloutTrigger to anything new. It is an opaque operator-chosen
+# token surfaced as a pod annotation, so the pod template changes and the Deployment
+# does a Recreate rollout. Never put a secret value (or a digest of one) here.
+kubectl create secret generic ts2otel-creds --from-literal=... --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade t deploy/helm/tailscale2otel --reuse-values --set rolloutTrigger="$(date +%s)"
+```
+
+```yaml
+# Automated: with Stakater Reloader running in the cluster, it watches the referenced
+# Secret and issues a rollout RESTART when it changes — which is what env-injected
+# credentials require.
+existingSecret: ts2otel-creds
+podAnnotations:
+  reloader.stakater.com/auto: "true"
+  # or, to watch one specific Secret:
+  # secret.reloader.stakater.com/reload: ts2otel-creds
+```
+
+The `prometheus-config-reloader`/`configmap-reload` sidecar family does not fit
+here: those watch a mounted *volume* and signal the process, which needs
+file-mounted credentials and an in-process reload trigger. tailscale2otel reads its
+configuration once at startup and handles only SIGINT/SIGTERM, so a restart *is* the
+reload.
+
+A replacement credential that turns out to be wrong is visible without exposing any
+value: the exporter keeps running, its Tailscale API calls fail, and that shows up as
+`tailscale2otel.api.requests` with an error outcome, collector scrape errors, and a
+stale `tailscale2otel.enrich.cache_age` — plus the per-collector health on the admin
+status page (`config.admin.landing_page`). Alert on those rather than assuming a
+green rollout means a working credential.
 
 ### Mounting a TLS cert for the streaming receiver
 
@@ -273,6 +355,8 @@ extraVolumeMounts:
 | config.tailscale.http.retry.max_attempts | int | `4` | Max attempts per request (incl. the first) before giving up. |
 | config.tailscale.http.retry.max_delay | string | `"10s"` | Ceiling on the per-retry backoff delay. |
 | config.tailscale.http.timeout | string | `"30s"` | Per-request HTTP timeout for Tailscale API calls. |
+| config.tailscale.max_log_response_bytes | int | `33554432` | Same ceiling for the bulk log pulls (flow logs, audit logs), which are legitimately multi-MB, in bytes (32 MiB). Decoding costs several times the wire size, so keep both budgets well under resources.limits.memory — above 64 MiB the app raises a startup advisory. |
+| config.tailscale.max_response_bytes | int | `4194304` | Cap on the response body read from a Tailscale snapshot endpoint (devices, keys, dns, services, …) before it is decoded, in bytes (4 MiB). Bounds peak decode memory. Fleet-wide: a tailnets[] entry does NOT override it. |
 | config.tailscale.tailnet | string | `"-"` | Tailnet name, or "-" for the auth principal's default tailnet (the default, which works out of the box for single-tailnet OAuth). Override with the TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
 | config.tracing | object | `{"enabled":false,"sampler":"parentbased_always_on","sampler_arg":1}` | OTEL traces pillar (spans for the exporter's own work). OFF by default; reuses otlp.* for the endpoint/protocol/headers/TLS. |
 | config.tracing.enabled | bool | `false` | Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration. |
@@ -291,6 +375,7 @@ extraVolumeMounts:
 | config.webhook.secret | string | `""` | HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs). Set via TS2OTEL_WEBHOOK__SECRET (secret). |
 | config.webhook.secret_file | string | `""` | Read webhook.secret from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.webhook.tolerance | string | `"5m"` | Allowed clock skew in BOTH directions on the signed timestamp: a request older than now-tolerance or newer than now+tolerance is rejected. The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable. 0 disables the timestamp check entirely. |
+| configStorage.mode | string | `"auto"` | Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`. `auto` (default) renders it into a ConfigMap while it is credential-free, and into Secret `<fullname>-config` as soon as any credential-bearing key is set inline under `config:` (`tailscale.auth.oauth.client_secret`, `tailscale.auth.apikey`, `headscale.api_key`, `otlp.grafana_cloud.token`, `otlp.headers`, the three `collectors.flowlogs.objectstore.*` keys, `streaming.token`, `webhook.secret`, `prometheus.auth.token`, `admin.auth.token`, `profiling.pyroscope.basic_auth_password`, any `tailnets[]` entry, or a `collectors.node_metrics.targets[]` entry with `bearer_token`/`headers`). A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which is routinely granted far more widely than `get secrets`. `secret` always uses the Secret. `configmap` forces the ConfigMap and makes `helm template` FAIL, naming the offending keys, if a credential is set inline. |
 | existingSecret | string | `""` | Name of a pre-created Secret exposing the TS2OTEL_* env keys. When set, no Secret is rendered. |
 | extraVolumeMounts | list | `[]` | Extra volume mounts appended to the main container's volumeMounts, as-is. Paired with extraVolumes above by name. |
 | extraVolumes | list | `[]` | Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding TLS cert/key material for config.streaming.tls, since readOnlyRootFilesystem leaves no other place to put arbitrary files). Paired with extraVolumeMounts below by volume name. See the chart README for a worked TLS-cert example. |
@@ -314,6 +399,7 @@ extraVolumeMounts:
 | podSecurityContext | object | `{"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. fsGroup makes the opt-in PVC persistence path (persistence.enabled=true) reliably writable by the uid-65532 container regardless of the CSI driver's default ownership behavior — a freshly provisioned block PVC is typically root:root on many drivers. The default emptyDir checkpoint volume already works without this (kubelet chmods emptyDir roots 0777, and the image pre-seeds /var/lib/tailscale2otel owned by 65532:65532). |
 | replicaCount | int | `1` | Replica count. MUST stay 1 — this is a singleton poller (no leader election or shared checkpoint coordination); scaling up would double-emit every metric and log against the same tailnet. Enforced by the generated values.schema.json AND a template `fail` guard (see templates/deployment.yaml) — any other value is rejected. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. The defaults suit a few-hundred-device tailnet; raise limits if you enable high-volume flow-log streaming or many node-metrics targets. |
+| rolloutTrigger | string | `""` | Opaque value surfaced as the pod annotation `tailscale2otel.m7kni.io/rollout-trigger`. Changing it changes the pod template and forces a Recreate rollout. This is the supported way to pick up a rotated `existingSecret`: an externally managed Secret contributes only a name reference to the pod template, and Kubernetes NEVER refreshes environment variables in a running container, so credentials injected via `envFrom` stay stale until the pod is replaced. After rotating the Secret run e.g. `helm upgrade ... --set rolloutTrigger=$(date +%s)`. Pick anything you like (a timestamp, a git SHA, a counter) — it must NOT be a secret value or any digest of one, since annotations are readable by anyone who can read the Deployment. For an automated path instead, run Stakater Reloader in the cluster and set `podAnnotations.reloader.stakater.com/auto: "true"` (Reloader issues a rollout restart, which is what env-injected credentials require). The chart's own `checksum/config` and `checksum/secret` annotations already cover chart-managed config and inline `secret:` values — this is only for externally managed Secrets. |
 | secret | object | `{"TS2OTEL_ADMIN__AUTH__TOKEN":"","TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID":"","TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY":"","TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN":"","TS2OTEL_HEADSCALE__API_KEY":"","TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID":"","TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER":"","TS2OTEL_PROMETHEUS__AUTH__TOKEN":"","TS2OTEL_STREAMING__TOKEN":"","TS2OTEL_TAILSCALE__AUTH__APIKEY":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET":"","TS2OTEL_TAILSCALE__TAILNET":"","TS2OTEL_WEBHOOK__SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at runtime — secrets never appear in the ConfigMap. Keys left empty ("") are NOT rendered into the Secret: an empty env var would override — and blank — the same key set under `config:` (env beats file), silently disabling e.g. receiver auth. |
 | secret.TS2OTEL_ADMIN__AUTH__TOKEN | string | `""` | Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable config.profiling.pprof. /healthz and /readyz are never gated. |
 | secret.TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID | string | `""` | S3 access key for the flow-log export bucket. Set ONLY when config.collectors.flowlogs.source=objectstore AND the bucket has no role to assume (MinIO, Ceph). On EKS leave these empty and annotate the service account for IRSA instead. |

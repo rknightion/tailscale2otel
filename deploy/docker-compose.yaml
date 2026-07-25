@@ -1,13 +1,24 @@
 # Minimal docker-compose for tailscale2otel.
 #
 # Usage:
-#   1. Put your secrets in a .env file next to this compose file (gitignored), e.g.:
+#   1. Put your secrets in deploy/.env — the file next to THIS compose file, e.g.:
 #        TS2OTEL_TAILSCALE__TAILNET=example.com
 #        TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=...
 #        TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=...
 #        TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=...
 #        TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=...
 #   2. docker compose -f deploy/docker-compose.yaml up --build
+#
+# deploy/.env is the ONE canonical credential file for Compose. Compose loads its
+# env file from the PROJECT directory — the directory holding the compose file —
+# not from your shell's cwd, so `docker compose -f deploy/docker-compose.yaml`
+# reads deploy/.env whichever directory you run it from. A `.env` at the
+# repository root is NOT read on that command line; point at one explicitly with
+# `--env-file` if you keep credentials elsewhere.
+#
+# deploy/.env is git-ignored (.gitignore) AND excluded from the Docker build
+# context (.dockerignore). Those are two separate boundaries — Docker never reads
+# .gitignore — and scripts/check-secret-hygiene.sh gates both.
 #
 # The container runs from built-in defaults + TS2OTEL_* environment variables.
 # No config file is required — secrets are injected purely via env vars.
