@@ -50,6 +50,13 @@ jobs:
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         with:
           # PAT (not GITHUB_TOKEN): bot-authored release PRs need a non-default-token author for CI to run without manual approval
+          #
+          # zizmor's `secrets-outside-env` audit (auditor persona only; not raised under the
+          # persona CI runs) wants this moved into a deployment environment. DELIBERATELY NOT
+          # DONE: this job has no `if:` gate, so it runs on EVERY push to main to maintain the
+          # release PR — not just when cutting a release. An environment with protection rules
+          # would put a manual approval in front of every push, which is exactly what this PAT
+          # exists to avoid; one without protection rules is naming ceremony and no security.
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
   # Build + push the image + Helm chart for the freshly-created tag via the shared
@@ -61,9 +68,9 @@ jobs:
     uses: ./.github/workflows/publish.yml
     permissions:
       contents: write        # attach SBOMs + third-party notices to the GitHub Release
-      packages: write
+      packages: write        # push the image + Helm chart to GHCR
       id-token: write        # cosign keyless signing + provenance attestation
-      attestations: write
+      attestations: write    # SLSA build provenance for the image
       security-events: write # Trivy SARIF upload
     with:
       release_tag: ${{ needs.release-please.outputs.tag_name }}
@@ -77,11 +84,16 @@ jobs:
     if: needs.release-please.outputs.release_created != 'true'
     uses: ./.github/workflows/publish.yml
     permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
-      security-events: write
+      # Same grants as `publish` above: one reusable, one code path, only release_tag differs.
+      # A reusable's job-level permissions cap against the caller's, so granting less than the
+      # reusable declares fails the call — these cannot be trimmed for the edge path alone.
+      # contents: write is genuinely unused here: both `gh release upload` steps in
+      # container-publish are gated on `release-tag != ''`, which is empty on this path.
+      contents: write        # (unused on the edge path — see above)
+      packages: write        # push the :main image + main-snapshot Helm chart to GHCR
+      id-token: write        # cosign keyless signing + provenance attestation
+      attestations: write    # SLSA build provenance for the image
+      security-events: write # Trivy SARIF upload
     with:
       release_tag: ""
 
@@ -102,12 +114,13 @@ jobs:
     permissions:
       contents: write # upload release assets
       id-token: write # keyless cosign signing
-      packages: write
+      # Declared by the reusable, so dropping it fails the call — but nothing uses it here.
+      packages: write # required by the reusable; unused (--skip=docker; images are `publish`'s job)
       attestations: write # SLSA build provenance (.intoto.jsonl) attached to the release
-    # Pinned past v1.4.3 for the checksums-locate fix (the attest step was nondeterministically
-    # handed the cosign .sigstore.json bundle instead of SHA256SUMS — see #176). Renovate will
-    # repin this to the tag once the shared repo cuts its next release.
-    uses: rknightion/.github/.github/workflows/binaries.yml@d1c590b295b9d7f2535fadc7bc5e74f2eddbd512 # main
+    # v1.5.0 is the first shared release containing the checksums-locate fix (the attest step was
+    # nondeterministically handed the cosign .sigstore.json bundle instead of SHA256SUMS — #176),
+    # so this is no longer pinned to a floating @main SHA. Renovate maintains the bump from here.
+    uses: rknightion/.github/.github/workflows/binaries.yml@a4182f2ed573c3b5015e195b797d1e96cf09a8bf # v1.5.0
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true
