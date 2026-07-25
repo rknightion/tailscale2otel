@@ -88,8 +88,14 @@ jobs:
   # Binaries via the shared GoReleaser reusable: cross-compiled binaries + checksums +
   # archive SBOMs + cosign signatures, uploaded to the release-please release. Images +
   # THIRD_PARTY_NOTICES are published by the `publish` job (container-publish reusable),
-  # so this skips docker. pre-cmd installs the pinned syft (archive SBOMs) + go-licenses
+  # so this skips docker. pre-cmd waits for the just-created tag to be visible on the Go
+  # module proxy (see below), then installs the pinned syft (archive SBOMs) + go-licenses
   # and regenerates the notices that .goreleaser.yaml bakes into the archives (extra_files).
+  #
+  # The proxy wait is NOT optional: .goreleaser.yaml sets `gomod.proxy: true`, so GoReleaser
+  # rebuilds from proxy.golang.org + sum.golang.org rather than the checked-out tree, and this
+  # job starts in the same second release-please creates the tag. v3.0.0 hit a sumdb 500 for a
+  # tag 40s old and failed the release (#254); a re-run minutes later was green, unchanged.
   binaries:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
@@ -106,4 +112,7 @@ jobs:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true
       goreleaser-args: "release --clean --skip=docker"
-      pre-cmd: "go install github.com/anchore/syft/cmd/syft@v1.18.1 && go install github.com/google/go-licenses@v1.6.0 && bash scripts/notices.sh"
+      # The tag is passed explicitly rather than left to the script's `git describe` fallback:
+      # the reusable's checkout does not guarantee tags are fetched, and a guard that silently
+      # no-ops is worse than no guard. Same value already passed as release-tag above.
+      pre-cmd: "bash scripts/wait-for-module-proxy.sh '${{ needs.release-please.outputs.tag_name }}' && go install github.com/anchore/syft/cmd/syft@v1.18.1 && go install github.com/google/go-licenses@v1.6.0 && bash scripts/notices.sh"
