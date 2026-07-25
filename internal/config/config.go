@@ -606,10 +606,10 @@ type Collectors struct {
 	Users               SimpleCollector    `yaml:"users"`
 	Keys                KeysCollector      `yaml:"keys"`
 	Settings            SimpleCollector    `yaml:"settings"`
-	Acl                 SimpleCollector    `yaml:"acl"`
+	Acl                 AclCollector       `yaml:"acl"`
 	Dns                 SimpleCollector    `yaml:"dns"`
 	Contacts            SimpleCollector    `yaml:"contacts"`
-	Webhooks            SimpleCollector    `yaml:"webhooks"`
+	Webhooks            WebhooksCollector  `yaml:"webhooks"`
 	PostureIntegrations SimpleCollector    `yaml:"posture_integrations"`
 	LogStream           SimpleCollector    `yaml:"log_stream"`
 	Services            ServicesCollector  `yaml:"services"`
@@ -625,6 +625,41 @@ type Collectors struct {
 type SimpleCollector struct {
 	Enabled  bool     `yaml:"enabled"`
 	Interval Duration `yaml:"interval"`
+}
+
+// AclCollector configures the ACL policy collector.
+type AclCollector struct {
+	Enabled  bool     `yaml:"enabled"`
+	Interval Duration `yaml:"interval"`
+	// Validate runs the tailnet's active policy through the API's non-mutating
+	// POST /tailnet/{tailnet}/acl/validate on each tick, exporting whether the
+	// policy still parses and how many embedded ACL tests fail.
+	//
+	// Despite being a POST this is a READ operation: upstream documents it as
+	// requiring only the policy_file:read scope, and it never modifies the
+	// policy — it is the one non-GET call this exporter makes. Sending no
+	// request body validates the tailnet's CURRENT policy (a body would instead
+	// validate a hypothetical replacement, which is not what we want).
+	//
+	// Default true, on with the collector. Set false to keep the client strictly
+	// GET-only. Permission denial surfaces as an unavailable/degraded state, not
+	// a healthy zero.
+	Validate bool `yaml:"validate"`
+}
+
+// WebhooksCollector configures the webhook-subscription inventory collector.
+type WebhooksCollector struct {
+	Enabled  bool     `yaml:"enabled"`
+	Interval Duration `yaml:"interval"`
+	// DesiredEvents is an optional list of webhook event categories this tailnet
+	// is expected to be subscribed to (e.g. "nodeCreated", "userSuspended").
+	// When set, the collector reports which desired categories no endpoint
+	// covers, so a silently-unsubscribed alerting path becomes visible.
+	//
+	// Empty (the default) means "no expectation" — coverage is still exported
+	// per category, but nothing is reported as missing. Unrecognized values are
+	// folded to "other" rather than minting an unbounded label.
+	DesiredEvents []string `yaml:"desired_events"`
 }
 
 // DevicesCollector configures the devices collector. Besides the snapshot

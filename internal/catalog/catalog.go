@@ -9,6 +9,7 @@
 package catalog
 
 import (
+	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
@@ -40,6 +41,7 @@ import (
 var metricSources = []func() []metricdoc.Metric{
 	telemetry.Catalog,
 	appcatalog.Catalog,
+	apistate.Catalog,
 	collector.Catalog,
 	devices.Catalog,
 	users.Catalog,
@@ -67,6 +69,7 @@ var metricSources = []func() []metricdoc.Metric{
 var logSources = []func() []metricdoc.LogEvent{
 	telemetry.LogCatalog,
 	appcatalog.LogCatalog,
+	apistate.LogCatalog,
 	collector.LogCatalog,
 	devices.LogCatalog,
 	users.LogCatalog,

@@ -141,6 +141,9 @@
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "validate": {
+                                    "type": "boolean"
                                 }
                             }
                         },
@@ -465,6 +468,9 @@
                         "webhooks": {
                             "type": "object",
                             "properties": {
+                                "desired_events": {
+                                    "type": "array"
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },

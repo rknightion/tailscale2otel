@@ -132,13 +132,70 @@ const (
 )
 
 // tailscale.drop.reason values — the bounded admit-set for curated dropped-packet
-// reasons. tailscaled emits `acl` (blocked by the packet filter) and `error`
-// (dropped due to an error); any other/future value folds to DropReasonOther so
-// the label cardinality stays bounded (same posture as flowlog transportName).
+// reasons. These are the SEVEN reasons tailscaled documents at
+// tailscale.com/docs/reference/tailscale-client-metrics; any other/future value
+// folds to DropReasonOther so the label cardinality stays bounded (same posture
+// as flowlog transportName).
+//
+// Only `acl` and `error` were admitted until #429. The other five are documented
+// upstream values that have always existed, so folding them into `other` was
+// discarding real diagnostic signal — "packets are being dropped" with no way to
+// tell a policy block from a malformed frame. `other` is now reserved for values
+// genuinely unknown to this build.
 const (
-	DropReasonACL   = "acl"
-	DropReasonError = "error"
-	DropReasonOther = "other"
+	DropReasonACL              = "acl"
+	DropReasonMulticast        = "multicast"
+	DropReasonLinkLocalUnicast = "link_local_unicast"
+	DropReasonTooShort         = "too_short"
+	DropReasonFragment         = "fragment"
+	DropReasonUnknownProtocol  = "unknown_protocol"
+	DropReasonError            = "error"
+	DropReasonOther            = "other"
+)
+
+// Peer-relay attribute keys (#429). tailscaled labels its peer-relay forwarding
+// counters with BOTH an ingress and an egress transport on the same series, so
+// they need two distinct keys — the generic NetworkTransport key above is the
+// L4 transport of a flow and means something different.
+const (
+	AttrPeerRelayTransportIn  = "tailscale.peer_relay.transport_in"
+	AttrPeerRelayTransportOut = "tailscale.peer_relay.transport_out"
+	AttrPeerRelayState        = "tailscale.peer_relay.state"
+)
+
+// Peer-relay transport values — bounded admit-set. tailscaled documents udp4 and
+// udp6; anything else folds to PeerRelayTransportOther, since these labels are
+// scraped from semi-trusted tailnet-member nodes.
+const (
+	PeerRelayTransportUDP4  = "udp4"
+	PeerRelayTransportUDP6  = "udp6"
+	PeerRelayTransportOther = "other"
+)
+
+// Peer-relay endpoint state values — bounded admit-set (documented: connecting,
+// open), unknown values fold to PeerRelayStateOther.
+const (
+	PeerRelayStateConnecting = "connecting"
+	PeerRelayStateOpen       = "open"
+	PeerRelayStateOther      = "other"
+)
+
+// API availability attribute keys (#420/#421/#425/#430). See internal/apistate
+// for the bounded value sets and why an ambiguous 403 defaults to scope_denied
+// rather than disabled.
+const (
+	// AttrAPIOperation is the upstream OpenAPI operationId, e.g.
+	// "listNetworkFlowLogs". A closed set — it comes from the vendored spec, not
+	// from a response.
+	AttrAPIOperation = "tailscale.api.operation"
+	// AttrAPIState carries an apistate.State value.
+	AttrAPIState = "tailscale.api.state"
+	// AttrSubrequest names a bounded per-entity subrequest type, e.g.
+	// "device_invites" or "posture_attributes".
+	AttrSubrequest = "tailscale.subrequest"
+	// AttrCapability names an enabled collector's required upstream capability
+	// on the configuration-to-capability matrix (#430).
+	AttrCapability = "tailscale.capability"
 )
 
 // Self-observability attribute keys.

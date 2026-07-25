@@ -220,6 +220,7 @@ collectors:
   acl:                                # ACL policy snapshot
     enabled: true
     interval: 600s
+    validate: true                    # run the non-mutating POST /acl/validate (policy_file:read scope) each tick; set false to keep the client strictly GET-only
   dns:                                # DNS/MagicDNS settings snapshot
     enabled: true
     interval: 600s
@@ -229,6 +230,7 @@ collectors:
   webhooks:                           # webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)
     enabled: true
     interval: 600s
+    desired_events: []                # optional expected event categories (e.g. ["nodeCreated","userSuspended"]); empty means no expectation
   posture_integrations:               # MDM/EDR posture-integration sync health: matched counts + last_sync staleness
     enabled: true
     interval: 600s

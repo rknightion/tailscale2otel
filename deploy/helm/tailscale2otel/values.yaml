@@ -563,6 +563,8 @@ config:
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only.
+      validate: true
     dns:
       # -- Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS).
       enabled: true
@@ -578,6 +580,8 @@ config:
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- Optional expected webhook event categories (e.g. `["nodeCreated","userSuspended"]`); empty means no expectation is checked.
+      desired_events: []
     posture_integrations:
       # -- Enable the device-posture-integration collector (MDM/EDR matched counts + last_sync staleness).
       enabled: true

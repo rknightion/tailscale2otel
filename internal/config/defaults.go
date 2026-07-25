@@ -134,9 +134,10 @@ func Default() *Config {
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Acl: SimpleCollector{
+			Acl: AclCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
+				Validate: true,
 			},
 			Dns: SimpleCollector{
 				Enabled:  true,
@@ -146,7 +147,7 @@ func Default() *Config {
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
-			Webhooks: SimpleCollector{
+			Webhooks: WebhooksCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},

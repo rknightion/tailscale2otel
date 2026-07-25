@@ -153,6 +153,51 @@ var nonIdentifier = map[string]bool{
 	"exception.type":               true, // Go error type name recorded by RecordError
 	"attempt":                      true, // retry span-event: numeric attempt index
 	"sleep_ms":                     true, // retry span-event: numeric backoff
+
+	// EPIC-03 (#479) — API and collector fidelity. Every key below is a
+	// code-defined enum, a bounded upstream vocabulary, or a numeric count, so
+	// none of them are identifiers. They are registered here up front, as one
+	// frozen seam, so the parallel implementation lanes never have to edit this
+	// shared file (a key missing here fails TestEveryCatalogAttributeIsClassified).
+
+	// Per-operation API availability (#420/#421/#425/#430). See internal/apistate.
+	"tailscale.api.operation": true, // upstream OpenAPI operationId — closed set from the vendored spec
+	"tailscale.api.state":     true, // apistate.State enum
+	"tailscale.subrequest":    true, // bounded per-entity subrequest type
+	"tailscale.capability":    true, // enabled-collector capability name on the config→capability matrix
+
+	// Peer-relay dimensions restored in #429. Bounded admit-sets folded from
+	// scraped tailscaled labels; they describe transport and connection state,
+	// never who is connected.
+	"tailscale.peer_relay.transport_in":  true,
+	"tailscale.peer_relay.transport_out": true,
+	"tailscale.peer_relay.state":         true,
+
+	// Invite delivery state (#412/#413): emailed | manual_link | unknown. The
+	// invite's email address and its bearer inviteUrl remain excluded entirely —
+	// this key carries only HOW the invite was delivered, never to whom.
+	"tailscale.user_invite.delivery":   true,
+	"tailscale.device_invite.delivery": true,
+
+	// Linux distribution inventory (#427). Bounded platform names from the
+	// device's distro block — the same class as os.type/os.version above.
+	"tailscale.distro.name":     true,
+	"tailscale.distro.codename": true,
+
+	// Credential privilege classification (#415/#416/#419): tsscope.Class and the
+	// tag-authority class. These are the bounded REPLACEMENTS for reasoning about
+	// a raw scope count; the exact scope strings stay on log events only.
+	"tailscale.key.scope_class":       true,
+	"tailscale.key.tag_scope":         true,
+	"tailscale.oauth_app.scope_class": true,
+
+	// Webhook event-category coverage (#417). The 18-value subscription enum from
+	// the vendored spec, unknown values folded to "other".
+	"tailscale.webhook.event": true,
+
+	// ACL policy validation (#428): error | warning | test_failure. The validator's
+	// free-text messages are deliberately NOT emitted — only the bounded kind.
+	"tailscale.acl.validation.kind": true,
 }
 
 // categoryForIPClass maps an ipClass to the toggle category.

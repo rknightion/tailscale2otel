@@ -142,12 +142,14 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__SETTINGS__INTERVAL` | `600s` | tailnet settings snapshot |
 | `TS2OTEL_COLLECTORS__ACL__ENABLED` | `true` | ACL policy snapshot |
 | `TS2OTEL_COLLECTORS__ACL__INTERVAL` | `600s` | ACL policy snapshot |
+| `TS2OTEL_COLLECTORS__ACL__VALIDATE` | `true` | run the non-mutating POST /acl/validate (policy_file:read scope) each tick; set false to keep the client strictly GET-only |
 | `TS2OTEL_COLLECTORS__DNS__ENABLED` | `true` | DNS/MagicDNS settings snapshot |
 | `TS2OTEL_COLLECTORS__DNS__INTERVAL` | `600s` | DNS/MagicDNS settings snapshot |
 | `TS2OTEL_COLLECTORS__CONTACTS__ENABLED` | `true` | account/support/security contact verification status (no emails emitted) |
 | `TS2OTEL_COLLECTORS__CONTACTS__INTERVAL` | `600s` | account/support/security contact verification status (no emails emitted) |
 | `TS2OTEL_COLLECTORS__WEBHOOKS__ENABLED` | `true` | webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret) |
 | `TS2OTEL_COLLECTORS__WEBHOOKS__INTERVAL` | `600s` | webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret) |
+| `TS2OTEL_COLLECTORS__WEBHOOKS__DESIRED_EVENTS` | `[]` | optional expected event categories (e.g. ["nodeCreated","userSuspended"]); empty means no expectation _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__ENABLED` | `true` | MDM/EDR posture-integration sync health: matched counts + last_sync staleness |
 | `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__INTERVAL` | `600s` | MDM/EDR posture-integration sync health: matched counts + last_sync staleness |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__ENABLED` | `true` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |

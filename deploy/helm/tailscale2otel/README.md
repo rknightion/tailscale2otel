@@ -183,6 +183,7 @@ extraVolumeMounts:
 | config.checkpoint.store | string | `"file"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
+| config.collectors.acl.validate | bool | `true` | Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only. |
 | config.collectors.auditlogs.enabled | bool | `true` | Enable the configuration-audit-logs collector. |
 | config.collectors.auditlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run. |
 | config.collectors.auditlogs.interval | string | `"60s"` | Poll interval. |
@@ -263,6 +264,7 @@ extraVolumeMounts:
 | config.collectors.settings.interval | string | `"600s"` | Poll interval (settings change rarely). |
 | config.collectors.users.enabled | bool | `true` | Enable the users collector (users.count, per-user devices/connected/last_seen). |
 | config.collectors.users.interval | string | `"300s"` | Poll interval (user data changes slowly). |
+| config.collectors.webhooks.desired_events | list | `[]` | Optional expected webhook event categories (e.g. `["nodeCreated","userSuspended"]`); empty means no expectation is checked. |
 | config.collectors.webhooks.enabled | bool | `true` | Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret). |
 | config.collectors.webhooks.interval | string | `"600s"` | Poll interval. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
