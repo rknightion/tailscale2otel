@@ -55,7 +55,7 @@ func TestRDNSPurge_ClearsCache(t *testing.T) {
 	seedRDNS(t, a, "203.0.113.5")
 	srv := a.buildAdminServer()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/rdns/purge", nil)
+	req := loopbackReq(http.MethodPost, "/api/rdns/purge")
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -81,7 +81,7 @@ func TestRDNSPurge_RejectsGET(t *testing.T) {
 	a := rdnsTestApp(t)
 	srv := a.buildAdminServer()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/rdns/purge", nil)
+	req := loopbackReq(http.MethodGet, "/api/rdns/purge")
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -95,8 +95,7 @@ func TestRDNSPurge_RejectsCrossOrigin(t *testing.T) {
 	seedRDNS(t, a, "203.0.113.5")
 	srv := a.buildAdminServer()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/rdns/purge", nil)
-	req.Host = "admin.local"
+	req := loopbackReq(http.MethodPost, "/api/rdns/purge")
 	req.Header.Set("Origin", "http://evil.example")
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
@@ -117,7 +116,7 @@ func TestRDNSPurge_DisabledReportsNotEnabled(t *testing.T) {
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/rdns/purge", nil)
+	req := loopbackReq(http.MethodPost, "/api/rdns/purge")
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -140,7 +139,7 @@ func TestStatusPage_HasRDNSSection(t *testing.T) {
 	a := rdnsTestApp(t)
 	srv := a.buildAdminServer()
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := loopbackReq(http.MethodGet, "/")
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

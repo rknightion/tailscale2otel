@@ -63,7 +63,7 @@ func TestStatus_FlowStoreDisabled(t *testing.T) {
 func TestStatusPage_LinksToFlows(t *testing.T) {
 	a := flowsTestApp(t, nil)
 	w := httptest.NewRecorder()
-	a.buildAdminServer().Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET / = %d", w.Code)
@@ -77,7 +77,7 @@ func TestStatusPage_LinksToFlows(t *testing.T) {
 func TestStatusPage_NoFlowsLinkWhenDisabled(t *testing.T) {
 	a := flowsTestApp(t, func(c *config.Config) { c.Flows.Enabled = false })
 	w := httptest.NewRecorder()
-	a.buildAdminServer().Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/"))
 
 	if strings.Contains(w.Body.String(), `href="/flows"`) {
 		t.Error("the status page links to /flows even though the route is not registered")

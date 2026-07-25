@@ -209,9 +209,16 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache
 		Timeout:          nm.Timeout.D(),
 		MaxResponseBytes: nm.MaxResponseBytes,
 		MaxSamples:       nm.MaxSamples,
-		MetricAllow:      nm.MetricAllow,
-		MetricDeny:       nm.MetricDeny,
-		DropLabels:       nm.DropLabels,
+		// A target picks its own metric names and every unseen name creates an
+		// instrument held for the process lifetime, which MaxSamples (a
+		// per-scrape cap) does not bound (GHSA-gp33-6r5x-hw2f).
+		MaxDistinctMetrics: nm.MaxDistinctMetrics,
+		MetricAllow:        nm.MetricAllow,
+		MetricDeny:         nm.MetricDeny,
+		DropLabels:         nm.DropLabels,
+		// Needed so a target whose custom TLS material fails to build is
+		// reported rather than silently falling back (GHSA-2q4v-rrm9-966w).
+		Logger: logger,
 	}
 	// Dynamic discovery: poll the Tailscale device inventory on its own interval
 	// and union the result with the static targets (handled by the collector).

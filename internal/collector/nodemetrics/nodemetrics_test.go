@@ -1,10 +1,12 @@
 package nodemetrics_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -996,6 +999,115 @@ func TestTLS_InsecureSkipVerifySucceeds(t *testing.T) {
 	up := rec.MetricPoints("tailscale.node.up")
 	if len(up) != 1 || up[0].Value != 1 {
 		t.Fatalf("up = %+v, want single value 1 (verify skipped)", up)
+	}
+}
+
+// TestTLS_ConstructionFailureDisablesTargetNeverSendsCredentials is the
+// regression guard for GHSA-2q4v-rrm9-966w. Before the fix, a target whose TLS
+// config failed to build (here: an unreadable CAFile) fell back to the shared
+// client while scrapeTarget still attached the target's bearer token — so it
+// scraped this PLAIN http (not https) test server successfully and leaked the
+// token. After the fix the target must be disabled outright: the test server
+// must receive ZERO requests (proving no fallback scrape happens at all, so no
+// client — shared or otherwise — could ever carry the credential), node.up
+// must report 0, and an ERROR log naming the instance and the TLS error must be
+// emitted exactly once.
+func TestTLS_ConstructionFailureDisablesTargetNeverSendsCredentials(t *testing.T) {
+	var requests atomic.Int64
+	var gotAuth atomic.Value
+	gotAuth.Store("")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		gotAuth.Store(r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte("# TYPE g gauge\ng 1\n"))
+	}))
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{
+			URL:         srv.URL,
+			Instance:    "leaky",
+			BearerToken: "super-secret-token",
+			TLS:         &nodemetrics.TLSClientConfig{CAFile: filepath.Join(t.TempDir(), "does-not-exist.pem")},
+		}},
+		Logger: logger,
+	})
+
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect() error = nil, want an error (the only target is disabled and must fail)")
+	}
+
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("test server received %d request(s), want 0 — a disabled target must never be scraped over any client (credential leak)", got)
+	}
+	if got := gotAuth.Load().(string); got != "" {
+		t.Fatalf("test server observed Authorization = %q, want none sent", got)
+	}
+
+	up := rec.MetricPoints("tailscale.node.up")
+	if len(up) != 1 || up[0].Value != 0 {
+		t.Fatalf("tailscale.node.up = %+v, want single value 0 (disabled target reported down)", up)
+	}
+	if up[0].Attrs["tailscale.node"] != "leaky" {
+		t.Fatalf("tailscale.node.up attrs = %+v, want tailscale.node=leaky", up[0].Attrs)
+	}
+
+	logOut := logBuf.String()
+	if !strings.Contains(logOut, "level=ERROR") {
+		t.Fatalf("log output = %q, want an ERROR-level line", logOut)
+	}
+	if !strings.Contains(logOut, "leaky") {
+		t.Fatalf("log output = %q, want it to name the disabled instance %q", logOut, "leaky")
+	}
+	if !strings.Contains(logOut, "does-not-exist.pem") {
+		t.Fatalf("log output = %q, want it to carry the underlying TLS/CA error", logOut)
+	}
+}
+
+// TestTLS_ConstructionFailureLeavesOtherTargetsUnaffected verifies that one
+// target disabled by a TLS construction failure does not take the whole
+// collector down: a second, healthy plain-HTTP target in the same Collect
+// still scrapes successfully (Collect returns nil because not EVERY target
+// failed).
+func TestTLS_ConstructionFailureLeavesOtherTargetsUnaffected(t *testing.T) {
+	healthyBody := "# TYPE g gauge\ng 7\n"
+	healthy := serveText(&healthyBody)
+	defer healthy.Close()
+
+	brokenTLSSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("should never be scraped\n")) //nolint:errcheck
+	}))
+	defer brokenTLSSrv.Close()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{
+			{URL: healthy.URL, Instance: "healthy"},
+			{URL: brokenTLSSrv.URL, Instance: "broken", TLS: &nodemetrics.TLSClientConfig{CAFile: filepath.Join(t.TempDir(), "missing.pem")}},
+		},
+		Logger: logger,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (the healthy target succeeds)", err)
+	}
+
+	byInstance := map[string]float64{}
+	for _, p := range rec.MetricPoints("tailscale.node.up") {
+		byInstance[p.Attrs["tailscale.node"]] = p.Value
+	}
+	if byInstance["healthy"] != 1 {
+		t.Fatalf("healthy target up = %v, want 1", byInstance["healthy"])
+	}
+	if byInstance["broken"] != 0 {
+		t.Fatalf("broken target up = %v, want 0 (disabled)", byInstance["broken"])
 	}
 }
 
@@ -1988,5 +2100,89 @@ func TestScrape_DoesNotFollowRedirects(t *testing.T) {
 	up := rec.MetricPoints("tailscale.node.up")
 	if len(up) != 1 || up[0].Value != 0 {
 		t.Fatalf("tailscale.node.up = %+v, want one down point (redirect = failed scrape)", up)
+	}
+}
+
+// TestMetricNameBudget_DropsNamesBeyondBudgetAndCountsThem is the regression
+// guard for GHSA-gp33-6r5x-hw2f: a scrape target fully controls the metric
+// names it exposes, and with default-empty metric_allow/metric_deny every
+// unseen name would otherwise create a permanently-retained OTEL instrument.
+// With MaxDistinctMetrics set to 2, a body presenting 4 distinct gauge names
+// must admit exactly the first 2 encountered verbatim and drop the other 2,
+// each drop counted via metricMetricNamesDropped (reason=metric_name_budget),
+// with exactly one WARN log line (not one per dropped sample).
+func TestMetricNameBudget_DropsNamesBeyondBudgetAndCountsThem(t *testing.T) {
+	body := "# TYPE metric_a gauge\nmetric_a 1\n" +
+		"# TYPE metric_b gauge\nmetric_b 2\n" +
+		"# TYPE metric_c gauge\nmetric_c 3\n" +
+		"# TYPE metric_d gauge\nmetric_d 4\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:            []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MaxDistinctMetrics: 2,
+		Logger:             logger,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	admitted := 0
+	for _, name := range []string{"metric_a", "metric_b", "metric_c", "metric_d"} {
+		if pts := rec.MetricPoints(name); len(pts) == 1 {
+			admitted++
+		}
+	}
+	if admitted != 2 {
+		t.Fatalf("admitted %d of 4 metric names, want exactly 2 (MaxDistinctMetrics budget)", admitted)
+	}
+
+	dropped := rec.MetricPoints("tailscale2otel.nodemetrics.metric_names.dropped")
+	var total float64
+	for _, p := range dropped {
+		if p.Attrs["reason"] != "metric_name_budget" {
+			t.Fatalf("drop point attrs = %+v, want reason=metric_name_budget", p.Attrs)
+		}
+		total += p.Value
+	}
+	if total != 2 {
+		t.Fatalf("metric_names.dropped total = %v, want 2 (two names dropped)", total)
+	}
+
+	if got := strings.Count(logBuf.String(), "level=WARN"); got != 1 {
+		t.Fatalf("WARN log lines in output = %d, want exactly 1 (budget exhaustion logged once, not per dropped sample)\n%s", got, logBuf.String())
+	}
+}
+
+// TestMetricNameBudget_NegativeDisablesBudget verifies a negative
+// MaxDistinctMetrics disables the cap entirely: all distinct names in the body
+// are admitted and nothing is dropped.
+func TestMetricNameBudget_NegativeDisablesBudget(t *testing.T) {
+	body := "# TYPE metric_a gauge\nmetric_a 1\n" +
+		"# TYPE metric_b gauge\nmetric_b 2\n" +
+		"# TYPE metric_c gauge\nmetric_c 3\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:            []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		MaxDistinctMetrics: -1,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	for _, name := range []string{"metric_a", "metric_b", "metric_c"} {
+		if pts := rec.MetricPoints(name); len(pts) != 1 {
+			t.Errorf("%s points = %+v, want exactly 1 (budget disabled)", name, pts)
+		}
+	}
+	if dropped := rec.MetricPoints("tailscale2otel.nodemetrics.metric_names.dropped"); len(dropped) != 0 {
+		t.Fatalf("metric_names.dropped = %+v, want none (budget disabled)", dropped)
 	}
 }

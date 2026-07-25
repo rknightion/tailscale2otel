@@ -9,10 +9,16 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
+
+// adminLoopbackHost is the Host header a tokenless admin request must carry:
+// with no admin.auth.token the gate only serves requests addressed to loopback,
+// and httptest.NewRequest defaults the Host to "example.com".
+const adminLoopbackHost = "127.0.0.1:9091"
 
 func TestStatusPage_HTMLRenders(t *testing.T) {
 	cfg := config.Default()             // landing_page defaults to true
@@ -21,6 +27,7 @@ func TestStatusPage_HTMLRenders(t *testing.T) {
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -54,6 +61,7 @@ func TestStatusPage_UnknownPath404(t *testing.T) {
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -68,6 +76,7 @@ func TestStatusJSON_Shape(t *testing.T) {
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 
@@ -119,6 +128,7 @@ func TestStatusJSON_ThroughputAndFleetFields(t *testing.T) {
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -175,6 +185,7 @@ func TestStatusPage_RedactsSecrets(t *testing.T) {
 	secrets := []string{"SECRETAPIKEY", "SECRETOAUTH", "SECRETGCTOKEN", "SECRETSTREAM", "SECRETWEBHOOK", "SECRETPYRO", "SECRETHEADER", "tskey-SECRETAPIKEY", "Basic SECRETHEADER"}
 	for _, path := range []string{"/", "/api/status.json"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 		w := httptest.NewRecorder()
 		srv.Handler.ServeHTTP(w, req)
 		body := w.Body.String()
@@ -188,6 +199,7 @@ func TestStatusPage_RedactsSecrets(t *testing.T) {
 	// The JSON must still report that the secrets ARE configured (booleans), and
 	// header KEYS (not values) may appear.
 	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	var got statusdata.Status
@@ -280,6 +292,7 @@ func TestAdminServer_CardinalityJSON(t *testing.T) {
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/cardinality.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -295,6 +308,7 @@ func TestAdminServer_CardinalityJSON(t *testing.T) {
 
 	// Non-GET is rejected.
 	req = httptest.NewRequest(http.MethodPost, "/api/cardinality.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w = httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -309,6 +323,7 @@ func TestAdminServer_ConfigJSON(t *testing.T) {
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 	w := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -330,6 +345,7 @@ func TestAdminServer_PprofGatedByConfig(t *testing.T) {
 		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 		srv := a.buildAdminServer()
 		req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+		req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 		w := httptest.NewRecorder()
 		srv.Handler.ServeHTTP(w, req)
 		if w.Code != http.StatusNotFound {
@@ -343,10 +359,53 @@ func TestAdminServer_PprofGatedByConfig(t *testing.T) {
 		a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 		srv := a.buildAdminServer()
 		req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+		req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
 		w := httptest.NewRecorder()
 		srv.Handler.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("pprof enabled: GET /debug/pprof/ = %d, want 200", w.Code)
 		}
 	})
+}
+
+// TestStatusJSON_NoURLCredentials is the end-to-end guard for
+// GHSA-qch3-gwff-r6pf / GHSA-jp5c-3282-6882 / GHSA-h5p7-qj62-m8qx: whatever the
+// DTO construction does internally, the bytes actually served by /api/status.json
+// must not contain a credential embedded in any configured URL.
+func TestStatusJSON_NoURLCredentials(t *testing.T) {
+	const secret = "sUpErSeCrEtCrEdEnTiAl"
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	cfg.OTLP.Protocol = "http"
+	cfg.OTLP.Endpoint = "https://12345:" + secret + "@otlp.example.com/otlp"
+	cfg.Profiling.Pyroscope.Enabled = true
+	cfg.Profiling.Pyroscope.ServerAddress = "https://profiles.example.com?api_key=" + secret
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	a.runtimes[0].nodeMetrics = nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: "https://n:" + secret + "@node.example.com/metrics", Instance: "n1"}},
+	})
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/status.json = %d, want 200", w.Code)
+	}
+	if strings.Contains(w.Body.String(), secret) {
+		t.Errorf("status JSON leaks a URL-embedded credential")
+	}
+
+	// ...and neither may the HTML page, which renders the same DTO.
+	reqHTML := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqHTML.Host = adminLoopbackHost // tokenless loopback mode requires a loopback Host
+	wHTML := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(wHTML, reqHTML)
+	if wHTML.Code != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200", wHTML.Code)
+	}
+	if strings.Contains(wHTML.Body.String(), secret) {
+		t.Errorf("status HTML leaks a URL-embedded credential")
+	}
 }

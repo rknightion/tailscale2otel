@@ -22,17 +22,42 @@ spec:
   template:
     metadata:
       annotations:
-        # Roll the pod when the config or secret changes.
+        {{- /*
+        GHSA-825f-hph6-x65w: a checksum annotation is only safe when it hashes
+        data that carries no secret. configStoresSecret is false ONLY when
+        .Values.config has no credential-bearing key inline (see
+        tailscale2otel.credentialPaths) and no tailnets[]/node_metrics-target
+        credential, so this branch never hashes anything confidential — it's a
+        legitimate rollout trigger for a ConfigMap-backed, credential-free config.
+        There used to also be a `checksum/secret: {{ toYaml .Values.secret |
+        sha256sum }}` here and this hashed the secret-backed config.yaml too:
+        BOTH published a deterministic digest of secret material into a pod
+        annotation, which anyone with workload-read (but no Secret-read) could
+        compare against offline guesses. Removed; see rolloutTrigger below.
+        */}}
+        {{- if not (include "tailscale2otel.configStoresSecret" .) }}
+        # Roll the pod when the (credential-free) rendered config changes.
         checksum/config: {{ include "tailscale2otel.config" . | sha256sum }}
-        {{- if not .Values.existingSecret }}
-        checksum/secret: {{ toYaml .Values.secret | sha256sum }}
         {{- end }}
         {{- with .Values.rolloutTrigger }}
-        # Operator-chosen opaque rollout token. Credentials in an externally managed
-        # existingSecret contribute only a name reference, so rotating them leaves the
-        # pod template — and therefore the running container's env — untouched. Changing
-        # this value changes the pod template and forces a Recreate rollout. It is NEVER
-        # derived from secret content (no value, no digest of a value, ever lands here).
+        # Operator-chosen opaque rollout token — the ONLY supported way to force a
+        # rollout when secret-bearing input changes: a rotated externally managed
+        # existingSecret, a changed inline `secret:` value, or an edit to a
+        # secret-backed config.yaml (any inline credential under `config:`, a
+        # `tailnets[]` entry, or a node_metrics target bearer_token/headers — see
+        # tailscale2otel.credentialPaths). None of those may ever be hashed into an
+        # annotation: annotations are readable by any principal with workload-read
+        # but no Secret-read, and a published digest lets that principal verify
+        # offline guesses against real secret material (GHSA-825f-hph6-x65w).
+        # Kubernetes never refreshes envFrom/Secret-mounted values in a running
+        # container regardless, so a pod replacement is required either way.
+        # Changing this value changes the pod template and forces a Recreate
+        # rollout. It is NEVER derived from secret content (no value, no digest of
+        # a value, ever lands here). For an automated path instead, run Stakater
+        # Reloader in the cluster and set
+        # `podAnnotations.reloader.stakater.com/auto: "true"` — Reloader watches
+        # the Secret object itself and issues the rollout restart, so it never
+        # needs to read or hash the secret's contents.
         tailscale2otel.m7kni.io/rollout-trigger: {{ . | quote }}
         {{- end }}
         {{- with .Values.podAnnotations }}

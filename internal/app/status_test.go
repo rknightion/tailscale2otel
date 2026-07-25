@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,8 +10,10 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
+	"github.com/rknightion/tailscale2otel/v3/internal/redact"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
@@ -154,5 +157,70 @@ func TestBuildStatus_FleetIsLiveNotSampled(t *testing.T) {
 	}
 	if got := st.Fleet.FailingSeries; len(got) != 1 || got[0] != 4 {
 		t.Errorf("Fleet.FailingSeries = %v, want [4] (the sampled trend is still carried)", got)
+	}
+}
+
+// --- credential redaction on the status surface (GHSA-qch3-gwff-r6pf,
+// GHSA-jp5c-3282-6882, GHSA-h5p7-qj62-m8qx) ---------------------------------
+//
+// The admin status model is served to anyone who reaches the admin listener, so
+// a URL configured with embedded credentials must be sanitized on the way into
+// the DTO — not merely on the way out of one renderer.
+
+const statusTestSecret = "sUpErSeCrEtCrEdEnTiAl"
+
+func TestBuildStatus_RedactsOTLPEndpointCredentials(t *testing.T) {
+	cfg := config.Default()
+	cfg.OTLP.Protocol = "http"
+	cfg.OTLP.Endpoint = "https://123456:" + statusTestSecret + "@otlp.example.com/otlp?api_key=" + statusTestSecret + "#" + statusTestSecret
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+
+	got := a.buildStatus().Telemetry.Endpoint
+	if strings.Contains(got, statusTestSecret) {
+		t.Fatalf("Telemetry.Endpoint = %q leaks the credential", got)
+	}
+	if want := redact.URL(cfg.OTLP.Endpoint); got != want {
+		t.Errorf("Telemetry.Endpoint = %q, want %q", got, want)
+	}
+	if !strings.Contains(got, "otlp.example.com") {
+		t.Errorf("Telemetry.Endpoint = %q: host should survive for diagnostics", got)
+	}
+}
+
+func TestBuildStatus_RedactsPyroscopeServerAddress(t *testing.T) {
+	cfg := config.Default()
+	cfg.Profiling.Pyroscope.Enabled = true
+	cfg.Profiling.Pyroscope.ServerAddress = "https://user:" + statusTestSecret + "@profiles.example.com?token=" + statusTestSecret
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+
+	got := a.buildStatus().Profiling.PyroscopeServer
+	if strings.Contains(got, statusTestSecret) {
+		t.Fatalf("Profiling.PyroscopeServer = %q leaks the credential", got)
+	}
+	if want := redact.URL(cfg.Profiling.Pyroscope.ServerAddress); got != want {
+		t.Errorf("Profiling.PyroscopeServer = %q, want %q", got, want)
+	}
+}
+
+func TestBuildStatus_RedactsNodeMetricsTargetURLs(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	raw := "https://scraper:" + statusTestSecret + "@node.example.com:5252/metrics?sig=" + statusTestSecret
+	a.runtimes[0].nodeMetrics = nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: raw, Instance: "node-a"}},
+	})
+
+	nd := a.buildStatus().NodeDiscovery
+	if len(nd.Targets) != 1 {
+		t.Fatalf("targets = %d, want 1", len(nd.Targets))
+	}
+	got := nd.Targets[0].URL
+	if strings.Contains(got, statusTestSecret) {
+		t.Fatalf("NodeDiscovery.Targets[0].URL = %q leaks the credential", got)
+	}
+	if want := redact.URL(raw); got != want {
+		t.Errorf("NodeDiscovery.Targets[0].URL = %q, want %q", got, want)
+	}
+	if nd.Targets[0].Instance != "node-a" {
+		t.Errorf("Instance = %q, want node-a (redaction must not disturb identity)", nd.Targets[0].Instance)
 	}
 }

@@ -162,6 +162,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__NODE_METRICS__TIMEOUT` | `10s` | per-scrape HTTP timeout |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__MAX_RESPONSE_BYTES` | `4194304` | per-target response cap (4 MiB) — bounds memory |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__MAX_SAMPLES` | `50000` | per-target sample cap per scrape — bounds cardinality |
+| `TS2OTEL_COLLECTORS__NODE_METRICS__MAX_DISTINCT_METRICS` | `2000` | cap on DISTINCT forwarded metric NAMES over the process lifetime (targets choose their own names and each new one creates a permanent instrument); 0 = 2000 default, negative = unlimited (over-budget names are dropped and counted) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__METRIC_ALLOW` | `[]` | if non-empty, only forwarded metric names matching one of these anchored regexes are kept _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__METRIC_DENY` | `[]` | forwarded metric names matching any of these anchored regexes are dropped (after allow) _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DROP_LABELS` | `[]` | label keys stripped from every forwarded series (the tailscale.node identity label is never dropped) _(comma-separated list)_ |
@@ -201,6 +202,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | reject signed timestamps older than this (replay window); "0" disables the check |
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | best-effort: drop a webhook event already counted via the audit logs |
 | `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413) |
+| `TS2OTEL_WEBHOOK__MAX_CONCURRENT_REQUESTS` | `0` | how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After) |
 | `TS2OTEL_PII_FILTER__EMAILS` | `true` | user/actor login names (often email addresses) |
 | `TS2OTEL_PII_FILTER__USER_DISPLAY_NAMES` | `true` | actor display (human) names |
 | `TS2OTEL_PII_FILTER__USER_IDS` | `true` | numeric/opaque user IDs (user.id) |

@@ -1419,3 +1419,124 @@ func TestValidateCardinalityThresholds(t *testing.T) {
 		t.Errorf("all-zero thresholds should be valid, got %v", err)
 	}
 }
+
+// --- URL-embedded credentials (GHSA-qch3-gwff-r6pf, GHSA-jp5c-3282-6882,
+// GHSA-h5p7-qj62-m8qx, GHSA-rm3x-hhrj-94v4) ---------------------------------
+//
+// Every one of these settings has a dedicated secret field for the credential.
+// Userinfo in the URL is therefore never necessary, is not honored by the
+// exporter/agent in most cases, and survives into logs and the admin status
+// surface. Validate() rejects it and names the field to use instead.
+
+const urlCredSecret = "sUpErSeCrEtCrEdEnTiAl"
+
+func TestValidateRejectsURLUserinfo(t *testing.T) {
+	cases := []struct {
+		name       string
+		mutate     func(*config.Config)
+		wantSubstr []string // all must appear in the error
+	}{
+		{
+			name: "otlp.endpoint",
+			mutate: func(c *config.Config) {
+				c.OTLP.Protocol = "http"
+				c.OTLP.Endpoint = "https://12345:" + urlCredSecret + "@otlp.example.com/otlp"
+			},
+			wantSubstr: []string{"otlp.endpoint", "otlp.grafana_cloud", "otlp.headers"},
+		},
+		{
+			name: "profiling.pyroscope.server_address",
+			mutate: func(c *config.Config) {
+				c.Admin.Enabled = true
+				c.Profiling.Pyroscope.Enabled = true
+				c.Profiling.Pyroscope.ServerAddress = "https://user:" + urlCredSecret + "@profiles.example.com"
+			},
+			wantSubstr: []string{"profiling.pyroscope.server_address", "basic_auth_user", "basic_auth_password"},
+		},
+		{
+			name: "collectors.node_metrics.targets[].url",
+			mutate: func(c *config.Config) {
+				c.Collectors.NodeMetrics.Enabled = true
+				c.Collectors.NodeMetrics.Targets = []config.NodeMetricsTarget{
+					{URL: "https://ok.example.com/metrics"},
+					{URL: "https://u:" + urlCredSecret + "@node.example.com/metrics"},
+				}
+			},
+			wantSubstr: []string{"collectors.node_metrics.targets[1].url", "bearer_token", "headers"},
+		},
+		{
+			name: "streaming.public_url",
+			mutate: func(c *config.Config) {
+				c.Streaming.Enabled = true
+				c.Streaming.AutoConfigure = true
+				c.Streaming.PublicURL = "https://u:" + urlCredSecret + "@recv.example.com/services/collector/event"
+			},
+			wantSubstr: []string{"streaming.public_url", "streaming.token"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			tc.mutate(c)
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("expected an error for URL userinfo in %s", tc.name)
+			}
+			for _, want := range tc.wantSubstr {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q should mention %q", err.Error(), want)
+				}
+			}
+			if strings.Contains(err.Error(), urlCredSecret) {
+				t.Errorf("error %q echoes the credential back", err.Error())
+			}
+		})
+	}
+}
+
+// TestValidateAllowsCredentialFreeURLs is the regression guard on the above: the
+// ordinary shapes must keep validating.
+func TestValidateAllowsCredentialFreeURLs(t *testing.T) {
+	c := config.Default()
+	c.OTLP.Protocol = "http"
+	c.OTLP.Endpoint = "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+	c.Admin.Enabled = true
+	c.Profiling.Pyroscope.Enabled = true
+	c.Profiling.Pyroscope.ServerAddress = "https://profiles-prod-001.grafana.net"
+	c.Collectors.NodeMetrics.Enabled = true
+	c.Collectors.NodeMetrics.Targets = []config.NodeMetricsTarget{{URL: "http://100.64.0.1:5252/metrics"}}
+	c.Streaming.Enabled = true
+	c.Streaming.Token = "tok"
+	c.Streaming.AutoConfigure = true
+	c.Streaming.PublicURL = "https://recv.example.com/services/collector/event"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("credential-free URLs should validate: %v", err)
+	}
+}
+
+// TestWarningsFlagsQueryBearingPublicURL: a signed query on the public URL is a
+// legitimate reverse-proxy pattern, so it stays allowed — but the operator is
+// told it will be handed to Tailscale and must not be a reusable credential
+// (GHSA-rm3x-hhrj-94v4).
+func TestWarningsFlagsQueryBearingPublicURL(t *testing.T) {
+	c := config.Default()
+	c.Streaming.Enabled = true
+	c.Streaming.Token = "tok"
+	c.Streaming.AutoConfigure = true
+	c.Streaming.PublicURL = "https://recv.example.com/collect?sig=abc"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a query string must not be a hard error: %v", err)
+	}
+	var found string
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "streaming.public_url") {
+			found = w
+		}
+	}
+	if found == "" {
+		t.Fatalf("expected a warning about the query-bearing public_url, got %v", c.Warnings())
+	}
+	if strings.Contains(found, "sig=abc") {
+		t.Errorf("warning %q echoes the query value", found)
+	}
+}

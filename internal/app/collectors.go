@@ -278,5 +278,10 @@ func webhookOptions(c config.WebhookConfig) webhook.Options {
 		Secret:       c.Secret.Reveal(),
 		Tolerance:    c.Tolerance.D(),
 		MaxBodyBytes: c.MaxBodyBytes,
+		// Aggregate admission control (GHSA-9547-8jpc-48h6): the HMAC covers the
+		// whole body, so buffering necessarily precedes authentication.
+		// MaxBodyBytes bounds ONE body; this bounds their sum, so unauthenticated
+		// senders cannot multiply the per-request allowance.
+		MaxConcurrentRequests: c.MaxConcurrentRequests,
 	}
 }

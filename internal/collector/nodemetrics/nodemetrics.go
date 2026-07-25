@@ -25,6 +25,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -93,6 +94,17 @@ const (
 	// cap, NEW series stop acquiring baselines (their deltas are suppressed)
 	// while existing series keep updating; pruneStale recovers space.
 	prevHardCap = 250_000
+
+	// defaultMaxDistinctMetrics is the process-lifetime cap on distinct forwarded
+	// metric NAMES when Options.MaxDistinctMetrics is unset (0). It bounds the
+	// number of OTEL instruments the raw verbatim forward can create over the
+	// life of the process: with default-empty metric_allow/metric_deny, a scraped
+	// node otherwise controls an unbounded set of metric names and each unseen
+	// one creates a new, permanently-retained instrument (GHSA-gp33-6r5x-hw2f).
+	// The per-scrape maxSamples and per-response maxResponseBytes budgets do NOT
+	// bound this: they cap one response, not the distinct names accumulated
+	// across many scrapes.
+	defaultMaxDistinctMetrics = 2000
 )
 
 // prevEntry is a tracked counter series' last cumulative value and the scrape
@@ -161,6 +173,24 @@ type Options struct {
 	MaxResponseBytes  int64
 	MaxSamples        int
 
+	// Logger receives ERROR-level target-disable notices (a target's TLS config
+	// failed to build, see tlsDisabled) and a one-time WARN when the distinct
+	// forwarded metric-name budget (MaxDistinctMetrics) is first exhausted. A nil
+	// Logger defaults to slog.Default().
+	Logger *slog.Logger
+
+	// MaxDistinctMetrics bounds the number of DISTINCT forwarded metric NAMES
+	// admitted over the process lifetime (not per scrape), guarding the OTEL
+	// instrument registry against an unbounded, node-controlled set of metric
+	// names (GHSA-gp33-6r5x-hw2f). 0 selects defaultMaxDistinctMetrics (2000); a
+	// negative value disables the budget entirely. Names encountered after the
+	// budget is exhausted are dropped (never emitted, never create an
+	// instrument) and counted via the metricMetricNamesDropped counter; the
+	// tailscale.node.up-style health signals and curated tailscale.node.*
+	// families are never subject to this budget — only the raw verbatim
+	// forward is.
+	MaxDistinctMetrics int
+
 	// Concurrency bounds how many targets are scraped in parallel per tick
 	// through a worker pool (never one goroutine per target). <= 0 defaults to
 	// defaultConcurrency. Together with the per-tick deadline Collect derives
@@ -183,10 +213,21 @@ type Options struct {
 // effective identity (see targetIdentity): it deduplicates the runtime target set
 // and namespaces this target's delta baselines so two distinct targets never share
 // a baseline (#199).
+//
+// tlsDisabled marks a target whose TLS config was present but failed to build
+// (e.g. an unreadable CAFile): the target is scraped NEVER, not merely with a
+// fallback client. Before GHSA-2q4v-rrm9-966w, a failed TLS build left client nil
+// so the target silently scraped over the shared/system-trust client while still
+// attaching its bearer token / headers — an attacker who could present a
+// system-trusted cert for the target's hostname would receive the credentials.
+// tlsDisabled short-circuits scrapeTarget before any request is built, so a
+// target's credentials are only ever sent over the client its own TLS trust
+// policy produced.
 type resolvedTarget struct {
-	target Target
-	client *http.Client // nil => use the shared Collector.client
-	id     string       // stable effective identity (normalized URL + node label)
+	target      Target
+	client      *http.Client // nil => use the shared Collector.client
+	id          string       // stable effective identity (normalized URL + node label)
+	tlsDisabled bool         // true => never scraped; reported as tailscale.node.up=0
 }
 
 // Collector implements collector.SnapshotCollector for node /metrics scraping.
@@ -201,10 +242,21 @@ type Collector struct {
 	maxResponseBytes  int64
 	maxSamples        int
 	concurrency       int // resolved worker-pool size for scrapeAll (#80)
+	logger            *slog.Logger
 
 	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
 	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
 	dropLabels  map[string]struct{} // label keys stripped from forwarded series (never the tailscale.node label)
+
+	// maxDistinctMetrics is the resolved distinct-forwarded-metric-name budget
+	// (see Options.MaxDistinctMetrics); -1 means the budget is disabled.
+	// metricNames is the process-lifetime admitted-name set guarded by
+	// metricNamesMu (checked from scrapeAll's concurrent workers, see
+	// admitMetricName); metricBudgetWarned gates the one-time WARN log.
+	maxDistinctMetrics int
+	metricNamesMu      sync.Mutex
+	metricNames        map[string]struct{}
+	metricBudgetWarned bool
 
 	mu          sync.Mutex
 	active      []resolvedTarget     // current scrape set: static ∪ discovered (guarded by mu)
@@ -245,9 +297,10 @@ type Collector struct {
 // transport is a clone of http.DefaultTransport with a TLS config built from the
 // target's CA/cert/key (mirroring telemetry.tlsConfig). Targets without a TLS
 // config share the default client, so an injected opts.Client still applies to
-// them. A TLS config that fails to build (e.g. unreadable CAFile) leaves that
-// target on the default client, deferring the failure to scrape time where it is
-// surfaced as tailscale.node.up=0.
+// them. A TLS config that fails to build (e.g. unreadable CAFile) DISABLES that
+// target entirely (see resolveTargets) — it is never scraped over any client,
+// so its credentials can never leak to a fallback client; the failure is logged
+// at ERROR and the target reports tailscale.node.up=0 every tick.
 func New(opts Options) *Collector {
 	timeout := opts.Timeout
 	if timeout <= 0 {
@@ -277,25 +330,39 @@ func New(opts Options) *Collector {
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
-	static := dedupTargets(resolveTargets(opts.Targets, timeout))
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	maxDistinctMetrics := opts.MaxDistinctMetrics
+	switch {
+	case maxDistinctMetrics == 0:
+		maxDistinctMetrics = defaultMaxDistinctMetrics
+	case maxDistinctMetrics < 0:
+		maxDistinctMetrics = -1 // any negative value collapses to the disabled sentinel
+	}
+	static := dedupTargets(resolveTargets(opts.Targets, timeout, logger))
 	return &Collector{
-		static:            static,
-		interval:          opts.Interval,
-		client:            client,
-		now:               now,
-		discoverer:        opts.Discoverer,
-		discoveryInterval: discoveryInterval,
-		timeout:           timeout,
-		maxResponseBytes:  maxResponseBytes,
-		maxSamples:        maxSamples,
-		concurrency:       concurrency,
-		metricAllow:       compileAnchored(opts.MetricAllow),
-		metricDeny:        compileAnchored(opts.MetricDeny),
-		dropLabels:        toSet(opts.DropLabels),
-		active:            static,
-		prev:              make(map[string]prevEntry),
-		gsb:               telemetry.NewGaugeSnapshotBuilder(),
-		curatedGauges:     telemetry.NewGaugeSnapshotBuilder(),
+		static:             static,
+		interval:           opts.Interval,
+		client:             client,
+		now:                now,
+		discoverer:         opts.Discoverer,
+		discoveryInterval:  discoveryInterval,
+		timeout:            timeout,
+		maxResponseBytes:   maxResponseBytes,
+		maxSamples:         maxSamples,
+		concurrency:        concurrency,
+		logger:             logger,
+		metricAllow:        compileAnchored(opts.MetricAllow),
+		metricDeny:         compileAnchored(opts.MetricDeny),
+		dropLabels:         toSet(opts.DropLabels),
+		maxDistinctMetrics: maxDistinctMetrics,
+		metricNames:        make(map[string]struct{}),
+		active:             static,
+		prev:               make(map[string]prevEntry),
+		gsb:                telemetry.NewGaugeSnapshotBuilder(),
+		curatedGauges:      telemetry.NewGaugeSnapshotBuilder(),
 	}
 }
 
@@ -333,21 +400,35 @@ func toSet(keys []string) map[string]struct{} {
 // resolveTargets pairs each Target with its dedicated *http.Client, or nil to
 // fall back to the shared Collector.client. A target carrying a non-nil TLS
 // config that builds successfully gets a DEDICATED client whose transport is a
-// clone of http.DefaultTransport with that TLS config; a target with no TLS (or
-// a TLS config that fails to build, e.g. an unreadable CAFile) leaves client nil
-// so the failure is deferred to scrape time and surfaced as tailscale.node.up=0.
-func resolveTargets(ts []Target, timeout time.Duration) []resolvedTarget {
+// clone of http.DefaultTransport with that TLS config.
+//
+// A target whose TLS config is present but FAILS to build (e.g. an unreadable
+// CAFile) is marked tlsDisabled and left on a nil client: it is NEVER scraped
+// (see scrapeTarget), not silently scraped over the shared/system-trust client.
+// Before this fix (GHSA-2q4v-rrm9-966w) a failed TLS build fell through to the
+// shared client while the target's bearer token / headers were still attached
+// at scrape time, so an attacker able to present a system-trusted certificate
+// for the target's original hostname would receive its credentials. One bad
+// target's TLS config must not take the whole process down, so the failure is
+// logged at ERROR (naming the target and the error) and the target reports
+// tailscale.node.up=0 every tick, same as any other scrape failure — it is a
+// disabled target, not a process-fatal one.
+func resolveTargets(ts []Target, timeout time.Duration, logger *slog.Logger) []resolvedTarget {
 	out := make([]resolvedTarget, len(ts))
 	for i := range ts {
 		out[i].target = ts[i]
-		out[i].id = targetIdentity(ts[i].URL, effectiveInstance(&ts[i]))
-		tls := ts[i].TLS
-		if tls == nil {
+		instance := effectiveInstance(&ts[i])
+		out[i].id = targetIdentity(ts[i].URL, instance)
+		tlsCfg := ts[i].TLS
+		if tlsCfg == nil {
 			continue
 		}
-		tc, err := buildTLSConfig(tls)
+		tc, err := buildTLSConfig(tlsCfg)
 		if err != nil {
-			continue // fall back to shared client; scrape will fail and report up=0
+			out[i].tlsDisabled = true
+			logger.Error("nodemetrics: target TLS configuration failed to load; target disabled and will not be scraped (no fallback to a shared/untrusted client, so credentials are never sent)",
+				"instance", instance, "url", ts[i].URL, "error", err)
+			continue
 		}
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		tr.TLSClientConfig = tc
@@ -599,7 +680,7 @@ func (c *Collector) maybeDiscover(ctx context.Context) {
 		c.mu.Unlock()
 		return // keep prior active set and lastDiscACK; retry next tick
 	}
-	union := dedupTargets(unionTargets(c.static, resolveTargets(discovered, c.timeout)))
+	union := dedupTargets(unionTargets(c.static, resolveTargets(discovered, c.timeout, c.logger)))
 	c.mu.Lock()
 	c.active = union
 	c.lastDiscACK = now
@@ -757,6 +838,14 @@ func (r *maxBytesReadCloser) Read(p []byte) (int, error) {
 func (c *Collector) scrapeTarget(ctx context.Context, rt *resolvedTarget, client *http.Client, e telemetry.Emitter) (string, error) {
 	t := &rt.target
 	instance := effectiveInstance(t)
+	if rt.tlsDisabled {
+		// Never build or send a request for a target whose TLS trust policy
+		// failed to construct: no client (shared, default, or otherwise) is
+		// used, so credentials configured on this target can never be sent
+		// over an unintended connection (GHSA-2q4v-rrm9-966w). The ERROR log
+		// was already emitted once, at target resolution (resolveTargets).
+		return instance, fmt.Errorf("nodemetrics: target %s disabled: TLS configuration failed to load", instance)
+	}
 	return instance, c.fetchAndEmit(ctx, t, rt.id, client, instance, e)
 }
 
@@ -830,9 +919,13 @@ func (c *Collector) emitSample(s *sample, t *Target, targetID, instance string, 
 		return
 	}
 	if allowed {
-		attrs := mergeAttrs(t.Labels, s.labels, instance)
-		c.applyDropLabels(attrs)
-		e.Gauge(s.name, "", s.help, s.value, attrs)
+		if c.admitMetricName(s.name) {
+			attrs := mergeAttrs(t.Labels, s.labels, instance)
+			c.applyDropLabels(attrs)
+			e.Gauge(s.name, "", s.help, s.value, attrs)
+		} else {
+			c.recordMetricNameDrop(e)
+		}
 	}
 	c.curateGauge(s, instance)
 }
@@ -865,9 +958,13 @@ func (c *Collector) emitCumulative(s *sample, t *Target, targetID, instance stri
 		return
 	}
 	if allowed {
-		attrs := mergeAttrs(t.Labels, s.labels, instance)
-		c.applyDropLabels(attrs)
-		e.Counter(s.name, "", s.help, delta, attrs)
+		if c.admitMetricName(s.name) {
+			attrs := mergeAttrs(t.Labels, s.labels, instance)
+			c.applyDropLabels(attrs)
+			e.Counter(s.name, "", s.help, delta, attrs)
+		} else {
+			c.recordMetricNameDrop(e)
+		}
 	}
 	if curated {
 		out := cc.attrs(s.labels)
@@ -926,6 +1023,44 @@ func (c *Collector) allowMetric(name string) bool {
 		}
 	}
 	return true
+}
+
+// admitMetricName reports whether name may be forwarded: either it was already
+// admitted, or the process-lifetime distinct-name budget (maxDistinctMetrics)
+// still has room. It is the enforcement point for GHSA-gp33-6r5x-hw2f — a
+// scraped target fully controls the set of metric names it exposes, and with
+// default-empty metric_allow/metric_deny every unseen name would otherwise
+// create a new OTEL instrument retained for the process lifetime. A negative
+// maxDistinctMetrics disables the budget (always admits). Safe for concurrent
+// callers (scrapeAll's worker pool scrapes multiple targets at once); logs a
+// single WARN the first time the budget is exhausted, never per dropped sample.
+func (c *Collector) admitMetricName(name string) bool {
+	if c.maxDistinctMetrics < 0 {
+		return true
+	}
+	c.metricNamesMu.Lock()
+	defer c.metricNamesMu.Unlock()
+	if _, ok := c.metricNames[name]; ok {
+		return true
+	}
+	if len(c.metricNames) >= c.maxDistinctMetrics {
+		if !c.metricBudgetWarned {
+			c.metricBudgetWarned = true
+			c.logger.Warn("nodemetrics: distinct forwarded metric-name budget exhausted; new metric names are now dropped",
+				"max_distinct_metrics", c.maxDistinctMetrics)
+		}
+		return false
+	}
+	c.metricNames[name] = struct{}{}
+	return true
+}
+
+// recordMetricNameDrop emits the counted, observable signal for a sample
+// dropped by admitMetricName, so a bitten budget shows up in telemetry rather
+// than silently vanishing (the accompanying WARN log fires only once; this
+// counter increments on every subsequent drop).
+func (c *Collector) recordMetricNameDrop(e telemetry.Emitter) {
+	e.Counter(metricMetricNamesDropped, "", descMetricNamesDropped, 1, telemetry.Attrs{attrReason: reasonMetricNameBudget})
 }
 
 // applyDropLabels deletes every dropLabels key from attrs, EXCEPT the

@@ -89,8 +89,8 @@ func TestProcess_PortlessProtocolReportsNoPort(t *testing.T) {
 			if got := logs[0].Attrs[semconv.DestinationAddress]; got != "100.64.0.2" {
 				t.Errorf("log %s = %q, want the address kept", semconv.DestinationAddress, got)
 			}
-			if got := logs[0].Attrs[semconv.AttrDstNode]; got != "gfmbp" {
-				t.Errorf("log %s = %q, want the peer still named", semconv.AttrDstNode, got)
+			if got := logs[0].Attrs[semconv.AttrDstNode]; got != unverifiedName("gfmbp") {
+				t.Errorf("log %s = %q, want the peer still named (marked unverified)", semconv.AttrDstNode, got)
 			}
 		})
 	}

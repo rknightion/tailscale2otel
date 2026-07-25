@@ -5,8 +5,10 @@ import (
 	"crypto/subtle"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -61,6 +63,80 @@ func adminAuthorized(r *http.Request, token string) bool {
 	return false
 }
 
+// Additional admin auth-rejection reasons, in the same closed-set shape as the
+// reason* constants in selfobs.go (they label the same
+// tailscale2otel.admin.auth.rejected counter, so the set stays bounded).
+const (
+	// reasonUntrustedHost marks a tokenless-loopback request whose Host header
+	// is not a loopback literal or "localhost" — the DNS-rebinding case in
+	// GHSA-gvm7-8848-7hcq.
+	reasonUntrustedHost = "untrusted_host"
+	// reasonCrossSiteRequest marks a tokenless-loopback request a browser
+	// labeled cross-site (or whose Origin does not match the request Host) —
+	// a remote page reading the local admin surface.
+	reasonCrossSiteRequest = "cross_site_request"
+)
+
+// loopbackHostHeader reports whether an HTTP Host header addresses this machine
+// over loopback: a loopback IP literal (127.0.0.0/8, ::1, with or without a
+// port or brackets) or the "localhost" name.
+//
+// It exists because listenaddr.IsLoopback classifies the *bind* address, which
+// says nothing about who a request was addressed to. A loopback bind is not a
+// caller-authorization proof on its own: a remote origin can point its own name
+// at 127.0.0.1 (DNS rebinding) and reach the listener through a victim's
+// browser, carrying its own name in Host.
+//
+// It fails CLOSED — an empty, unparseable or non-literal host is not loopback.
+// A name other than "localhost" is never resolved: a DNS answer is not a
+// security boundary, and resolving one is exactly the attack.
+func loopbackHostHeader(host string) bool {
+	if host == "" {
+		return false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	// A rooted FQDN ("localhost.") is the same name.
+	host = strings.TrimSuffix(host, ".")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
+}
+
+// requireLoopbackCaller gates the tokenless-loopback escape hatch on the
+// request actually being addressed to loopback and not originating from another
+// web origin. Both checks are browser-facing: Host is what DNS rebinding
+// forges, and Sec-Fetch-Site is what a browser stamps on a cross-site fetch and
+// script cannot override. Non-browser clients (curl) send neither Sec-Fetch-*
+// nor Origin and are unaffected; they still must address loopback.
+func (a *App) requireLoopbackCaller(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !loopbackHostHeader(r.Host) {
+			a.adminAuthRejected(reasonUntrustedHost)
+			a.logger.Warn("admin request rejected: tokenless loopback mode requires a loopback Host header",
+				"reason", reasonUntrustedHost, "path", r.URL.Path, "host", r.Host,
+				"remedy", "reach the admin server as 127.0.0.1/localhost, or set admin.auth.token")
+			http.Error(w,
+				"admin access refused: without admin.auth.token the request must address loopback (Host: 127.0.0.1 or localhost)",
+				http.StatusForbidden)
+			return
+		}
+		if !sameOrigin(r) {
+			a.adminAuthRejected(reasonCrossSiteRequest)
+			a.logger.Warn("admin request rejected: cross-site request to the tokenless loopback admin server",
+				"reason", reasonCrossSiteRequest, "path", r.URL.Path,
+				"origin", r.Header.Get("Origin"), "sec_fetch_site", r.Header.Get("Sec-Fetch-Site"))
+			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
 // requireAdminAuth wraps next so it is reachable only with the configured admin
 // token. When no token is configured it fails CLOSED unless the admin listener
 // is bound to loopback (#227): a wildcard/tailnet bind with no token would
@@ -68,22 +144,36 @@ func adminAuthorized(r *http.Request, token string) bool {
 // that can reach the port. A loopback bind stays usable without a credential —
 // only the local host can reach it, so that is the deliberate escape hatch.
 // pprof cannot reach the untokened branch at all: Validate requires a token
-// whenever pprof is enabled, regardless of bind. On an auth failure (wrong bind,
-// wrong/missing credential) it records the rejection reason and responds:
+// whenever pprof is enabled, regardless of bind.
+//
+// The escape hatch is additionally gated by requireLoopbackCaller
+// (GHSA-gvm7-8848-7hcq): a loopback *bind* is not proof the *caller* is local,
+// because a remote origin can rebind its own DNS name to 127.0.0.1 and drive
+// the listener through a victim's browser. So in that branch the request must
+// also address loopback in its Host header and must not be a cross-site browser
+// fetch. Neither check applies once a token is configured — a tokened admin
+// server is legitimately reached under any hostname behind a reverse proxy, and
+// the token itself is the caller proof.
+//
+// On an auth failure (wrong bind, wrong/missing credential, rebound Host,
+// cross-site fetch) it records the rejection reason and responds:
 //   - no token configured, non-loopback bind: 403 plain text naming both
 //     remedies (set admin.auth.token, or bind admin.listen to loopback). No
 //     WWW-Authenticate challenge — this is misconfiguration, not a missing
 //     credential, and a 401 would make a browser prompt for a password that
 //     does not exist.
+//   - no token configured, loopback bind, non-loopback Host or cross-site
+//     fetch: 403 plain text, likewise with no challenge.
 //   - token configured but the caller's credential is wrong/absent: 401 with a
 //     Basic-auth challenge, as before.
 //
-// The /healthz and /readyz probes are registered separately and never wrapped.
+// The /healthz and /readyz probes are registered separately and never wrapped:
+// cluster health checks legitimately send an arbitrary Host.
 func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 	token := a.cfg.Admin.Auth.Token.Reveal()
 	if token == "" {
 		if listenaddr.IsLoopback(a.cfg.Admin.Listen) {
-			return next
+			return a.requireLoopbackCaller(next)
 		}
 		return func(w http.ResponseWriter, r *http.Request) {
 			a.adminAuthRejected(reasonAuthRequired)

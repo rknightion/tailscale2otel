@@ -77,6 +77,13 @@ func newServer(t *testing.T, opts stream.Options) (*stream.Server, *telemetrytes
 func post(t *testing.T, h http.Handler, method, path string, header http.Header, body io.Reader) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, body)
+	// The tokenless mode refuses requests whose Host is not a loopback name
+	// (GHSA-cvp7-f3mx-m68x — DNS rebinding lets a browser reach 127.0.0.1 while
+	// sending the attacker's hostname). httptest.NewRequest defaults Host to
+	// "example.com", which is exactly that shape, so state the truthful loopback
+	// value these in-process tests actually represent. csrf_test.go drives the
+	// gate itself with fully-controlled requests.
+	req.Host = "127.0.0.1:9099"
 	for k, vs := range header {
 		for _, v := range vs {
 			req.Header.Add(k, v)

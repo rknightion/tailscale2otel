@@ -25,6 +25,12 @@ func cacheWith(t *testing.T) *enrich.DeviceCache {
 	return c
 }
 
+// unverifiedName is what a node name learned ONLY from the identity a flow
+// record embedded about itself looks like downstream: marked, because the
+// reporting node wrote that field and can put anything in it
+// (GHSA-pjfv-prc8-4fc9). A name the devices collector confirmed is unmarked.
+func unverifiedName(n string) string { return enrich.UnverifiedPrefix + n }
+
 // findPoint returns the first MetricPoint whose attrs match every key/value in
 // want, or fails the test.
 func findPoint(t *testing.T, pts []telemetrytest.MetricPoint, want map[string]string) telemetrytest.MetricPoint {

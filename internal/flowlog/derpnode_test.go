@@ -65,9 +65,10 @@ func TestRelayedPhysical_MetricsOmitDstNode(t *testing.T) {
 					if got := pt.Attrs[semconv.AttrDERPRegionID]; got != relayedRegion {
 						t.Errorf("%s = %q, want %q", semconv.AttrDERPRegionID, got, relayedRegion)
 					}
-					if got := pt.Attrs[semconv.AttrSrcNode]; got != "gfmbp" {
-						t.Errorf("%s = %q, want gfmbp — the peer is on the src side and must survive",
-							semconv.AttrSrcNode, got)
+					// Marked: only the record's own embedded identity names this peer.
+					if got, want := pt.Attrs[semconv.AttrSrcNode], unverifiedName("gfmbp"); got != want {
+						t.Errorf("%s = %q, want %q — the peer is on the src side and must survive",
+							semconv.AttrSrcNode, got, want)
 					}
 				}
 			})
@@ -138,13 +139,13 @@ func TestRelayedPhysical_IsNotADistinctPeer(t *testing.T) {
 	p.FlushRollup(rec.Emitter())
 
 	peers := findPoint(t, rec.MetricPoints(flowlog.MetricUniqueDstPeers),
-		map[string]string{semconv.AttrSrcNode: "gfmbp"})
+		map[string]string{semconv.AttrSrcNode: unverifiedName("gfmbp")})
 	if peers.Value != 1 {
 		t.Errorf("unique dst peers = %v, want 1 (the direct endpoint only; the relay marker is not a peer)",
 			peers.Value)
 	}
 	ports := findPoint(t, rec.MetricPoints(flowlog.MetricUniqueDstPorts),
-		map[string]string{semconv.AttrSrcNode: "gfmbp"})
+		map[string]string{semconv.AttrSrcNode: unverifiedName("gfmbp")})
 	if ports.Value != 1 {
 		t.Errorf("unique dst ports = %v, want 1 (a DERP region ID is not a port)", ports.Value)
 	}
@@ -197,8 +198,8 @@ func TestRelayedPhysical_LogKeepsAddressOmitsNode(t *testing.T) {
 	if got := attrs[semconv.DestinationPort]; got != relayedRegion {
 		t.Errorf("%s = %q, want %q", semconv.DestinationPort, got, relayedRegion)
 	}
-	if got := attrs[semconv.AttrSrcNode]; got != "gfmbp" {
-		t.Errorf("%s = %q, want gfmbp", semconv.AttrSrcNode, got)
+	if got, want := attrs[semconv.AttrSrcNode], unverifiedName("gfmbp"); got != want {
+		t.Errorf("%s = %q, want %q", semconv.AttrSrcNode, got, want)
 	}
 }
 

@@ -151,7 +151,7 @@ func TestFlowsJSON_PolicyIsPerTailnet(t *testing.T) {
 func TestFlowsJSON_PolicyRulesAreAlwaysAnArray(t *testing.T) {
 	a := flowsTestApp(t, nil)
 	w := httptest.NewRecorder()
-	a.buildAdminServer().Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/flows.json", nil))
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/api/flows.json"))
 	if strings.Contains(w.Body.String(), `"rules": null`) {
 		t.Error(`policy.rules marshaled as null; it must be []`)
 	}

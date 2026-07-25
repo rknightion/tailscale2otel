@@ -50,8 +50,9 @@ func TestProcess_FeedsStoreOnePerConnection(t *testing.T) {
 	if o.SrcAddr != "100.64.0.1:443" || o.DstAddr != "100.64.0.2:51820" {
 		t.Errorf("raw endpoints = %q -> %q", o.SrcAddr, o.DstAddr)
 	}
-	if o.SrcNode != "camden" || o.DstNode != "mbp16" {
-		t.Errorf("nodes = %q -> %q, want camden -> mbp16 (self-enrichment)", o.SrcNode, o.DstNode)
+	// Self-enrichment, marked: the record is the only source for these names.
+	if o.SrcNode != unverifiedName("camden") || o.DstNode != unverifiedName("mbp16") {
+		t.Errorf("nodes = %q -> %q, want the marked camden -> mbp16 (self-enrichment)", o.SrcNode, o.DstNode)
 	}
 	if o.DstPort != "51820" {
 		t.Errorf("DstPort = %q, want 51820", o.DstPort)
@@ -130,8 +131,8 @@ func TestProcess_StoreShowsIdentityTheEmitterRedacts(t *testing.T) {
 	if o.DstUser != "rob@example.com" {
 		t.Errorf("DstUser = %q, want it shown to the admin in full", o.DstUser)
 	}
-	if o.SrcNode != "camden" || o.DstNode != "mbp16" {
-		t.Errorf("nodes = %q/%q, want camden/mbp16", o.SrcNode, o.DstNode)
+	if o.SrcNode != unverifiedName("camden") || o.DstNode != unverifiedName("mbp16") {
+		t.Errorf("nodes = %q/%q, want the marked camden/mbp16", o.SrcNode, o.DstNode)
 	}
 	if o.SrcAddr != "100.64.0.1:443" || o.DstAddr != "100.64.0.2:51820" {
 		t.Errorf("raw endpoints = %q/%q, want both kept", o.SrcAddr, o.DstAddr)

@@ -114,15 +114,215 @@ func TestAdminAuth_ProbesStayOpenWhenAuthRequired(t *testing.T) {
 	}
 }
 
-func TestAdminAuth_LoopbackBindNoTokenStaysOpen(t *testing.T) {
-	// A loopback bind with no token is the deliberate escape hatch: only the
-	// local host can reach it, so it stays usable without a credential.
+// loopbackNoTokenServer builds the tokenless loopback-bind admin server — the
+// deliberate no-credential escape hatch that the Host gate protects.
+func loopbackNoTokenServer(t *testing.T) *http.Server {
+	t.Helper()
 	cfg := config.Default()
 	cfg.Admin.Listen = "127.0.0.1:9091"
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
-	srv := a.buildAdminServer()
-	if w := do(srv, httptest.NewRequest(http.MethodGet, "/", nil)); w.Code != http.StatusOK {
+	return a.buildAdminServer()
+}
+
+// loopbackReq builds a request carrying a loopback Host, as a browser or curl
+// pointed at the loopback listener would. Any admin-server test in this package
+// that drives a tokenless loopback bind must use it (or set Host itself):
+// requireAdminAuth rejects a non-loopback Host in that mode, and
+// httptest.NewRequest defaults Host to "example.com".
+func loopbackReq(method, path string) *http.Request {
+	r := httptest.NewRequest(method, path, nil)
+	r.Host = "127.0.0.1:9091"
+	return r
+}
+
+func TestAdminAuth_LoopbackBindNoTokenStaysOpen(t *testing.T) {
+	// A loopback bind with no token is the deliberate escape hatch: only the
+	// local host can reach it, so it stays usable without a credential — as long
+	// as the request is genuinely addressed to loopback (see the Host gate).
+	srv := loopbackNoTokenServer(t)
+	if w := do(srv, loopbackReq(http.MethodGet, "/")); w.Code != http.StatusOK {
 		t.Errorf("GET / on loopback bind with no token = %d, want 200 (opt-in escape hatch)", w.Code)
+	}
+}
+
+func TestAdminAuth_TokenlessLoopbackAcceptsLoopbackHosts(t *testing.T) {
+	// Every spelling of "this machine" a browser or client can put in Host must
+	// keep the escape hatch usable.
+	srv := loopbackNoTokenServer(t)
+	for _, host := range []string{
+		"127.0.0.1:9091", "127.0.0.1", "127.5.6.7:9091",
+		"localhost:9091", "localhost", "LocalHost:9091", "localhost.:9091",
+		"[::1]:9091", "[::1]", "::1",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Host = host
+		if w := do(srv, req); w.Code != http.StatusOK {
+			t.Errorf("GET / with Host %q = %d, want 200 (loopback host)", host, w.Code)
+		}
+	}
+}
+
+func TestAdminAuth_TokenlessLoopbackRejectsForeignHost(t *testing.T) {
+	// GHSA-gvm7-8848-7hcq: a remote origin can DNS-rebind its own name to
+	// 127.0.0.1 and have the victim's browser read the status page, the flow
+	// data or invoke the RDNS purge. The bind proves the *listener* is local; it
+	// proves nothing about who the request was addressed to. Reject any Host
+	// that is not a loopback literal (or localhost).
+	srv := loopbackNoTokenServer(t)
+	for _, host := range []string{
+		"rebind.evil.example", "rebind.evil.example:9091",
+		"example.com", "admin.local:9091",
+		"100.64.0.1:9091", // a tailnet peer name/address is not loopback either
+		"",
+	} {
+		for _, path := range []string{"/", "/api/status.json", "/api/config.json"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Host = host
+			w := do(srv, req)
+			if w.Code != http.StatusForbidden {
+				t.Errorf("GET %s with Host %q = %d, want 403 (DNS-rebinding guard)", path, host, w.Code)
+			}
+			// Misaddressed request, not a missing credential: no Basic challenge,
+			// so a browser does not prompt for a password that does not exist.
+			if got := w.Header().Get("WWW-Authenticate"); got != "" {
+				t.Errorf("GET %s Host %q set WWW-Authenticate=%q, want none", path, host, got)
+			}
+		}
+	}
+}
+
+func TestAdminAuth_TokenlessLoopbackRejectsRDNSPurgeFromForeignHost(t *testing.T) {
+	// The purge route is the one mutating endpoint on the admin server; it must
+	// be behind the same Host gate as the read routes.
+	srv := loopbackNoTokenServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/rdns/purge", nil)
+	req.Host = "rebind.evil.example"
+	if w := do(srv, req); w.Code != http.StatusForbidden {
+		t.Errorf("POST /api/rdns/purge with a rebound Host = %d, want 403", w.Code)
+	}
+}
+
+func TestAdminAuth_TokenlessLoopbackRejectsCrossSiteFetch(t *testing.T) {
+	// Defense in depth: even with a correct loopback Host, a page on a remote
+	// origin fetching http://127.0.0.1:9091/ is a cross-site read of local data.
+	// A browser cannot forge fetch metadata, so Sec-Fetch-Site is trustworthy.
+	srv := loopbackNoTokenServer(t)
+
+	crossSite := loopbackReq(http.MethodGet, "/api/status.json")
+	crossSite.Header.Set("Sec-Fetch-Site", "cross-site")
+	crossSite.Header.Set("Origin", "http://evil.example")
+	if w := do(srv, crossSite); w.Code != http.StatusForbidden {
+		t.Errorf("cross-site GET /api/status.json = %d, want 403", w.Code)
+	}
+
+	// The page's own fetches and a typed-in navigation must still work.
+	for _, site := range []string{"same-origin", "none"} {
+		ok := loopbackReq(http.MethodGet, "/api/status.json")
+		ok.Header.Set("Sec-Fetch-Site", site)
+		if w := do(srv, ok); w.Code != http.StatusOK {
+			t.Errorf("GET /api/status.json with Sec-Fetch-Site=%s = %d, want 200", site, w.Code)
+		}
+	}
+
+	// A non-browser client (curl) sends no fetch metadata and no Origin: allowed.
+	if w := do(srv, loopbackReq(http.MethodGet, "/api/status.json")); w.Code != http.StatusOK {
+		t.Errorf("GET /api/status.json with no fetch metadata = %d, want 200", w.Code)
+	}
+}
+
+func TestAdminAuth_TokenlessLoopbackProbesIgnoreHost(t *testing.T) {
+	// Cluster health checks legitimately send an arbitrary Host (a Service DNS
+	// name, a node IP, or none at all). The probes are registered outside the
+	// gate and must answer regardless.
+	srv := loopbackNoTokenServer(t)
+	for _, host := range []string{"rebind.evil.example", "tailscale2otel.default.svc.cluster.local", ""} {
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		req.Host = host
+		w := do(srv, req)
+		if w.Code != http.StatusOK || w.Body.String() != "ok" {
+			t.Errorf("GET /healthz with Host %q = %d %q, want 200 ok (never gated)", host, w.Code, w.Body.String())
+		}
+
+		req = httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		req.Host = host
+		if w := do(srv, req); w.Code == http.StatusForbidden || w.Code == http.StatusUnauthorized {
+			t.Errorf("GET /readyz with Host %q = %d, want NOT 401/403 (probes are never auth-gated)", host, w.Code)
+		}
+	}
+}
+
+func TestAdminAuth_ForeignHostRejectionEmitsMetric(t *testing.T) {
+	rec := telemetrytest.New()
+	cfg := config.Default() // self-observability defaults on
+	cfg.Admin.Listen = "127.0.0.1:9091"
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+	srv := a.buildAdminServer()
+
+	rebound := httptest.NewRequest(http.MethodGet, "/", nil)
+	rebound.Host = "rebind.evil.example"
+	do(srv, rebound)
+
+	crossSite := loopbackReq(http.MethodGet, "/")
+	crossSite.Header.Set("Sec-Fetch-Site", "cross-site")
+	do(srv, crossSite)
+
+	pts := rec.MetricPoints("tailscale2otel.admin.auth.rejected")
+	if len(pts) == 0 {
+		t.Fatal("expected tailscale2otel.admin.auth.rejected on a rebinding/cross-site rejection")
+	}
+	var total float64
+	reasons := map[string]bool{}
+	for _, p := range pts {
+		total += p.Value
+		reasons[p.Attrs["reason"]] = true
+	}
+	if total != 2 {
+		t.Errorf("rejected total = %v, want 2", total)
+	}
+	if !reasons[reasonUntrustedHost] || !reasons[reasonCrossSiteRequest] {
+		t.Errorf("reasons = %v, want both %s and %s", reasons, reasonUntrustedHost, reasonCrossSiteRequest)
+	}
+}
+
+func TestAdminAuth_TokenConfiguredIgnoresHost(t *testing.T) {
+	// A tokened admin server is legitimately reachable behind a reverse proxy
+	// under any hostname, and a token is not replayable by a rebinding page.
+	// The Host gate must not apply there.
+	srv := adminAuthApp(t, false)
+	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = "admin.internal.example"
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.SetBasicAuth("admin", testAdminToken)
+	if w := do(srv, req); w.Code != http.StatusOK {
+		t.Errorf("authenticated GET with a proxy Host = %d, want 200", w.Code)
+	}
+}
+
+func TestLoopbackHostHeader(t *testing.T) {
+	tests := map[string]bool{
+		"127.0.0.1:9091":  true,
+		"127.0.0.1":       true,
+		"127.0.0.53":      true,
+		"localhost":       true,
+		"localhost:9091":  true,
+		"LOCALHOST:9091":  true,
+		"localhost.":      true,
+		"[::1]:9091":      true,
+		"[::1]":           true,
+		"::1":             true,
+		"":                false,
+		"example.com":     false,
+		"example.com:80":  false,
+		"0.0.0.0:9091":    false,
+		"100.64.0.1:9091": false,
+		"localhosts":      false,
+		"notlocalhost":    false,
+		"::1.example.com": false,
+	}
+	for host, want := range tests {
+		if got := loopbackHostHeader(host); got != want {
+			t.Errorf("loopbackHostHeader(%q) = %v, want %v", host, got, want)
+		}
 	}
 }
 

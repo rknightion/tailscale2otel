@@ -109,19 +109,25 @@ existingSecret: ""
 
 # -- Opaque value surfaced as the pod annotation
 # `tailscale2otel.m7kni.io/rollout-trigger`. Changing it changes the pod template and
-# forces a Recreate rollout. This is the supported way to pick up a rotated
-# `existingSecret`: an externally managed Secret contributes only a name reference to
-# the pod template, and Kubernetes NEVER refreshes environment variables in a running
-# container, so credentials injected via `envFrom` stay stale until the pod is
-# replaced. After rotating the Secret run e.g.
-# `helm upgrade ... --set rolloutTrigger=$(date +%s)`. Pick anything you like (a
-# timestamp, a git SHA, a counter) — it must NOT be a secret value or any digest of
-# one, since annotations are readable by anyone who can read the Deployment. For an
-# automated path instead, run Stakater Reloader in the cluster and set
-# `podAnnotations.reloader.stakater.com/auto: "true"` (Reloader issues a rollout
-# restart, which is what env-injected credentials require). The chart's own
-# `checksum/config` and `checksum/secret` annotations already cover chart-managed
-# config and inline `secret:` values — this is only for externally managed Secrets.
+# forces a Recreate rollout. This is the supported way to pick up ANY secret-bearing
+# change: a rotated `existingSecret`, a changed inline `secret:` value, or an edit to
+# a secret-backed `config.yaml` (an inline credential under `config:`, a `tailnets[]`
+# entry, or a node_metrics target bearer_token/headers). Kubernetes NEVER refreshes
+# environment variables or Secret-mounted files in a running container, so credentials
+# injected via `envFrom`/`secret.yaml`/`secret-config.yaml` stay stale until the pod is
+# replaced. After rotating run e.g. `helm upgrade ... --set rolloutTrigger=$(date +%s)`.
+# Pick anything you like (a timestamp, a git SHA, a counter) — it must NOT be a secret
+# value or any digest of one, since annotations are readable by anyone who can read
+# the Deployment (workload-read), a materially weaker grant than Secret-read
+# (GHSA-825f-hph6-x65w: a published checksum of secret material lets that reader
+# verify offline guesses against the real value). For an automated path instead, run
+# Stakater Reloader in the cluster and set
+# `podAnnotations.reloader.stakater.com/auto: "true"` (Reloader watches the Secret
+# object's contents server-side and issues the rollout restart itself, so it never
+# needs to publish a digest). The chart's own `checksum/config` annotation only ever
+# hashes the rendered config when it is credential-free (ConfigMap-backed); a
+# secret-backed config (Secret-backed) is never hashed anywhere — use rolloutTrigger
+# or Reloader for that case too.
 rolloutTrigger: ""
 
 # Where the rendered config.yaml is stored.
@@ -621,6 +627,11 @@ config:
       # -- Cap on samples parsed from one target per scrape. Bounds cardinality: an over-cap
       # target fails that one scrape rather than forwarding the whole set. Must be > 0 when enabled.
       max_samples: 50000
+      # -- Cap on DISTINCT forwarded metric NAMES over the process lifetime. A target chooses its
+      # own metric names and each unseen name creates an instrument that is never released, so
+      # max_samples alone does not bound them. 0 = 2000 default, <0 = unlimited; names beyond the
+      # budget are dropped and counted rather than silently ignored.
+      max_distinct_metrics: 2000
       # Discover scrape targets from the Tailscale devices API instead of (or alongside) the
       # static `targets` list above. Discovered targets are unioned with the static ones,
       # deduped by URL with static winning, on this block's own interval.
@@ -723,6 +734,11 @@ config:
     # -- Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited
     # (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body.
     max_body_bytes: 0
+    # -- How many requests may buffer a body AT ONCE, before the HMAC is verified. max_body_bytes
+    # caps one body; this caps their sum, so unauthenticated senders cannot multiply it. 0 = 4
+    # default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffered memory is roughly
+    # this x max_body_bytes, so raise it together with resources.limits.memory.
+    max_concurrent_requests: 0
     # -- Best-effort: drop a webhook event already counted via the audit logs (off by default).
     dedup_audit_events: false
 

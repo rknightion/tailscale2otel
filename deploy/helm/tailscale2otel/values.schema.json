@@ -381,6 +381,9 @@
                                 "interval": {
                                     "type": "string"
                                 },
+                                "max_distinct_metrics": {
+                                    "type": "integer"
+                                },
                                 "max_response_bytes": {
                                     "type": "integer"
                                 },
@@ -942,6 +945,9 @@
                             "type": "string"
                         },
                         "max_body_bytes": {
+                            "type": "integer"
+                        },
+                        "max_concurrent_requests": {
                             "type": "integer"
                         },
                         "path": {

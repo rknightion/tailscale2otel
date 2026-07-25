@@ -5,6 +5,7 @@ package enrich
 
 import (
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 )
@@ -28,22 +29,125 @@ type DeviceMeta struct {
 	// discovery's online_only filter needs this when sourcing targets from the
 	// cache instead of its own DevicesRich() call (#85).
 	Online bool
-	// FromFlow marks an entry derived from the node identity embedded in a flow
-	// log record rather than from the devices collector. Flow records carry a
-	// strict subset of the device fields, so such an entry is a gap-filler: it is
-	// never allowed to overwrite a devices-collector entry. Set by UpsertFromFlow;
-	// callers do not set it themselves.
-	FromFlow bool
+	// Unverified marks an entry that came from the node identity embedded in a
+	// flow log record rather than from the control plane's devices API. Tailscale
+	// documents the embedded srcNode/dstNodes as node-produced, so a compromised
+	// enrolled node can put anything it likes there; such an entry is a
+	// best-effort hint only. Set by UpsertUnverified on the entries it stores;
+	// callers never set it themselves, and it is always false on anything the
+	// authoritative tier returns.
+	Unverified bool
+}
+
+// Provenance says where a cache answer came from, so a consumer can decide
+// whether to trust it and can label anything derived from it. See
+// GHSA-pjfv-prc8-4fc9: flow-embedded identity is attacker-controllable, so an
+// answer sourced from it must never be presented as control-plane truth.
+type Provenance uint8
+
+const (
+	// ProvenanceNone means nothing was found; the returned value is a sentinel.
+	ProvenanceNone Provenance = iota
+	// ProvenanceAuthoritative means the answer came from the devices collector
+	// (the Tailscale devices API) or the services collector.
+	ProvenanceAuthoritative
+	// ProvenanceUnverified means the answer came from identity a node embedded
+	// in its own flow log records. Treat it as a hint, never as identity.
+	ProvenanceUnverified
+)
+
+// String renders the provenance for logs and error messages.
+func (p Provenance) String() string {
+	switch p {
+	case ProvenanceAuthoritative:
+		return "authoritative"
+	case ProvenanceUnverified:
+		return "unverified"
+	default:
+		return "none"
+	}
+}
+
+// UnverifiedPrefix marks a name that came from the unverified tier when it is
+// used as a telemetry attribute VALUE (e.g. "unverified:laptop"). Provenance
+// rides on the value rather than on a new attribute for two reasons: a separate
+// dimension would multiply every flow series by the endpoints it labels, and a
+// value that reads as a plain hostname on one series and a spoofable hint on the
+// next is exactly the ambiguity this advisory is about. The value space it adds
+// is bounded by MaxUnverifiedEntries.
+const UnverifiedPrefix = "unverified:"
+
+// Mark returns name tagged with the provenance p, so a spoofable hint is never
+// indistinguishable from a control-plane name downstream. Authoritative names,
+// sentinels and empty strings are returned unchanged.
+func Mark(name string, p Provenance) string {
+	if p != ProvenanceUnverified || name == "" {
+		return name
+	}
+	return UnverifiedPrefix + name
+}
+
+// Bounds on the unverified tier. They are deliberately package constants, not
+// configuration: they exist to cap what a compromised node can force this
+// process to hold, and an operator lowering the ceiling is not a use case worth
+// the attack surface of a knob.
+const (
+	// MaxUnverifiedEntries caps distinct flow-claimed node identities held at
+	// once. Comfortably above any real tailnet's device count, small enough that
+	// a node inventing an identity per record cannot grow the process.
+	MaxUnverifiedEntries = 2048
+	// maxUnverifiedAddrsPerEntry caps the addresses one claimed identity may
+	// register. A real device has two (IPv4 + IPv6); the slack covers
+	// multi-address nodes without letting one entry own an address range.
+	maxUnverifiedAddrsPerEntry = 8
+	// UnverifiedTTL is how long a flow-claimed identity is served for after it
+	// was last seen. Flow logs for a live conversation arrive continuously, so a
+	// hint that stops being refreshed is a hint that stopped being true.
+	UnverifiedTTL = 30 * time.Minute
+	// unverifiedEvictBatch is how many least-recently-seen entries one eviction
+	// pass reclaims once the tier is full, so a flood pays one bounded sort per
+	// batch rather than a scan per record.
+	unverifiedEvictBatch = 256
+	// unverifiedPruneInterval throttles the expiry sweep. UpsertUnverified runs
+	// once per flow record — on a busy tailnet, thousands per second — and a
+	// full sweep per call would be O(MaxUnverifiedEntries) on the ingest path.
+	// Throttling costs nothing in correctness: every read re-checks the TTL, so
+	// an expired entry is never served regardless of when it is swept, and the
+	// memory ceiling is MaxUnverifiedEntries either way.
+	unverifiedPruneInterval = time.Minute
+)
+
+// unverifiedEntry is one flow-claimed identity plus when it was last seen.
+type unverifiedEntry struct {
+	meta DeviceMeta
+	seen time.Time
 }
 
 // DeviceCache maps Tailscale addresses and node IDs to device metadata.
 // It is safe for concurrent use by multiple goroutines.
+//
+// It holds two strictly separated tiers:
+//
+//   - The AUTHORITATIVE tier (byAddr/byNode), written only by Replace from the
+//     devices collector's Tailscale API poll. Every plain lookup — LookupAddr,
+//     LookupNode, ResolveName, Snapshot, Len — reads this tier and nothing else.
+//   - The UNVERIFIED tier (unvNode/unvAddr), written only by UpsertUnverified
+//     from identity a node embedded in its own flow log records. It is bounded
+//     (MaxUnverifiedEntries) and expiring (UnverifiedTTL), it is never promoted
+//     into the authoritative tier, and it is served only through the explicit
+//     *Any / *Unverified methods, which report Provenance so the caller can mark
+//     what it derives. See GHSA-pjfv-prc8-4fc9.
 type DeviceCache struct {
 	mu      sync.RWMutex
 	byAddr  map[netip.Addr]*DeviceMeta
 	byNode  map[string]*DeviceMeta
-	updated time.Time
-	now     func() time.Time
+	unvNode map[string]*unverifiedEntry
+	unvAddr map[netip.Addr]string // address -> claimed node ID, into unvNode
+	// unvPruned is when the unverified tier was last swept for expiry; the sweep
+	// is throttled to unverifiedPruneInterval because it runs on the ingest path.
+	unvPruned time.Time
+	updated   time.Time
+	now       func() time.Time
 
 	// byService maps a Tailscale Service (VIP service) backing address to the
 	// service's name (e.g. "svc:argocd"), so flow-log peers destined for a
@@ -65,6 +169,8 @@ func NewDeviceCache(opts ...Option) *DeviceCache {
 	c := &DeviceCache{
 		byAddr:    map[netip.Addr]*DeviceMeta{},
 		byNode:    map[string]*DeviceMeta{},
+		unvNode:   map[string]*unverifiedEntry{},
+		unvAddr:   map[netip.Addr]string{},
 		byService: map[netip.Addr]string{},
 		now:       time.Now,
 	}
@@ -75,14 +181,21 @@ func NewDeviceCache(opts ...Option) *DeviceCache {
 	return c
 }
 
-// Replace atomically swaps the cache contents for the given set of devices.
-// It builds the new indexes before taking the write lock to keep the critical
-// section tiny.
+// Replace atomically swaps the AUTHORITATIVE cache contents for the given set
+// of devices. Only the devices collector calls this; it is the sole way an
+// entry becomes authoritative. It builds the new indexes before taking the
+// write lock to keep the critical section tiny.
+//
+// It also drops the whole unverified tier: a fresh control-plane view is the
+// moment stale flow-claimed hints stop being worth anything, and dropping them
+// stops a hint shadowing a device the control plane has since removed. Live
+// conversations re-seed their own hints from the next flow record.
 func (c *DeviceCache) Replace(metas []DeviceMeta) {
 	byAddr := make(map[netip.Addr]*DeviceMeta, len(metas))
 	byNode := make(map[string]*DeviceMeta, len(metas))
 	for i := range metas {
 		m := metas[i]
+		m.Unverified = false // authoritative by construction
 		byNode[m.NodeID] = &m
 		for _, a := range m.Addrs {
 			byAddr[a] = &m
@@ -92,50 +205,145 @@ func (c *DeviceCache) Replace(metas []DeviceMeta) {
 	c.mu.Lock()
 	c.byAddr = byAddr
 	c.byNode = byNode
+	c.unvNode = map[string]*unverifiedEntry{}
+	c.unvAddr = map[netip.Addr]string{}
 	c.updated = now
 	c.mu.Unlock()
 }
 
-// UpsertFromFlow folds device identity observed inside flow log records into
-// the cache, so flow enrichment keeps working when the devices collector is
-// disabled, rate-limited, or has not yet completed its first poll. Every flow
-// record embeds its endpoints' identity, so this is data we already receive.
+// UpsertUnverified records device identity a node embedded in its own flow log
+// records, so flow enrichment still says something useful when the devices
+// collector is disabled, rate-limited, or has not yet completed its first poll.
 //
-// It is strictly additive and never degrades what the devices collector knows:
-// an existing entry that did NOT come from a flow record is left untouched,
-// because flow records carry a subset of the device fields (no device ID, no OS
-// version, no online state). An earlier flow-derived entry may be refined by a
-// later one. Entries with no NodeID are skipped — they cannot be looked up and
-// would only create an empty-keyed entry.
+// This data is NOT trustworthy. Tailscale documents the embedded
+// srcNode/dstNodes fields as produced by the reporting node, so a compromised
+// enrolled node can claim any identity for any address (GHSA-pjfv-prc8-4fc9).
+// It therefore lands in a separate tier that:
 //
-// A subsequent Replace by the devices collector is a full swap and drops
-// flow-derived entries; the next flow record re-adds any still in use, which is
-// what keeps a stale entry from shadowing a device the collector has dropped.
-func (c *DeviceCache) UpsertFromFlow(metas []DeviceMeta) {
+//   - never touches the authoritative tier, and is never promoted into it;
+//   - is invisible to LookupAddr/LookupNode/ResolveName/Snapshot/Len, so every
+//     existing consumer keeps control-plane-only semantics;
+//   - is served only through ResolveNameAny/LookupNodeAny, which report
+//     ProvenanceUnverified so the caller marks whatever it derives;
+//   - is capped at MaxUnverifiedEntries identities, each with at most
+//     maxUnverifiedAddrsPerEntry addresses, expiring UnverifiedTTL after it was
+//     last seen — a node cannot grow it or park a claim in it;
+//   - does NOT refresh Age(), so flow traffic cannot make a stale authoritative
+//     cache look fresh.
+//
+// Entries with no NodeID are skipped (unusable for lookup), as are identities
+// the authoritative tier already knows (it wins every lookup anyway, so storing
+// them would only spend the budget). A later record may refine an earlier hint
+// for the same node.
+func (c *DeviceCache) UpsertUnverified(metas []DeviceMeta) {
 	if len(metas) == 0 {
 		return
 	}
 	now := c.now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.pruneUnverifiedLocked(now)
 	for i := range metas {
 		m := metas[i]
 		if m.NodeID == "" {
 			continue
 		}
-		if existing, ok := c.byNode[m.NodeID]; ok && !existing.FromFlow {
-			continue // devices-collector data is authoritative
+		if _, ok := c.byNode[m.NodeID]; ok {
+			continue // the control plane already knows this node
 		}
-		m.FromFlow = true
-		c.byNode[m.NodeID] = &m
-		for _, a := range m.Addrs {
-			if existing, ok := c.byAddr[a]; ok && !existing.FromFlow {
+		if _, refresh := c.unvNode[m.NodeID]; !refresh {
+			// New identity: enforce the ceiling, evicting the least recently seen
+			// claims if that is what it takes to make room.
+			if len(c.unvNode) >= MaxUnverifiedEntries {
+				c.evictOldestUnverifiedLocked(unverifiedEvictBatch)
+			}
+			if len(c.unvNode) >= MaxUnverifiedEntries {
 				continue
 			}
-			c.byAddr[a] = &m
+		}
+		addrs := m.Addrs
+		if len(addrs) > maxUnverifiedAddrsPerEntry {
+			addrs = addrs[:maxUnverifiedAddrsPerEntry]
+		}
+		m.Addrs = addrs
+		m.Unverified = true
+		c.dropUnverifiedAddrsLocked(m.NodeID)
+		c.unvNode[m.NodeID] = &unverifiedEntry{meta: m, seen: now}
+		for _, a := range addrs {
+			if _, ok := c.byAddr[a]; ok {
+				continue // never shadow an authoritative address
+			}
+			c.unvAddr[a] = m.NodeID
 		}
 	}
-	c.updated = now
+	// Deliberately does NOT set c.updated: Age() reports authoritative staleness.
+}
+
+// pruneUnverifiedLocked drops every expired unverified entry, at most once per
+// unverifiedPruneInterval. Callers hold the write lock.
+func (c *DeviceCache) pruneUnverifiedLocked(now time.Time) {
+	if now.Sub(c.unvPruned) < unverifiedPruneInterval {
+		return
+	}
+	c.unvPruned = now
+	for id, e := range c.unvNode {
+		if now.Sub(e.seen) >= UnverifiedTTL {
+			c.dropUnverifiedAddrsLocked(id)
+			delete(c.unvNode, id)
+		}
+	}
+}
+
+// dropUnverifiedAddrsLocked removes the address index entries pointing at id.
+// Callers hold the write lock.
+func (c *DeviceCache) dropUnverifiedAddrsLocked(id string) {
+	e, ok := c.unvNode[id]
+	if !ok {
+		return
+	}
+	for _, a := range e.meta.Addrs {
+		if c.unvAddr[a] == id {
+			delete(c.unvAddr, a)
+		}
+	}
+}
+
+// evictOldestUnverifiedLocked removes up to n least recently seen unverified
+// entries. Callers hold the write lock. It runs only once the tier is full, and
+// evicts a batch rather than a single entry so a node flooding fresh identities
+// pays one bounded O(MaxUnverifiedEntries log n) pass per batch instead of one
+// full scan per record.
+func (c *DeviceCache) evictOldestUnverifiedLocked(n int) {
+	if n <= 0 || len(c.unvNode) == 0 {
+		return
+	}
+	type aged struct {
+		id   string
+		seen time.Time
+	}
+	all := make([]aged, 0, len(c.unvNode))
+	for id, e := range c.unvNode {
+		all = append(all, aged{id, e.seen})
+	}
+	slices.SortFunc(all, func(a, b aged) int { return a.seen.Compare(b.seen) })
+	if n > len(all) {
+		n = len(all)
+	}
+	for _, a := range all[:n] {
+		c.dropUnverifiedAddrsLocked(a.id)
+		delete(c.unvNode, a.id)
+	}
+}
+
+// lookupUnverifiedLocked returns the live (unexpired) unverified entry for id.
+// Callers hold at least the read lock; expired entries are reported as missing
+// and swept by the next UpsertUnverified rather than mutating under a read lock.
+func (c *DeviceCache) lookupUnverifiedLocked(id string, now time.Time) (*unverifiedEntry, bool) {
+	e, ok := c.unvNode[id]
+	if !ok || now.Sub(e.seen) >= UnverifiedTTL {
+		return nil, false
+	}
+	return e, true
 }
 
 // ReplaceServices atomically swaps the cached Tailscale Service (VIP service)
@@ -155,7 +363,9 @@ func (c *DeviceCache) ReplaceServices(byAddr map[netip.Addr]string) {
 	c.mu.Unlock()
 }
 
-// LookupAddr returns the device owning the given address, if cached.
+// LookupAddr returns the AUTHORITATIVE device owning the given address, if
+// cached. Flow-claimed identity is never returned here; ask for it explicitly
+// via ResolveNameAny or LookupNodeAny.
 func (c *DeviceCache) LookupAddr(a netip.Addr) (*DeviceMeta, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -163,7 +373,8 @@ func (c *DeviceCache) LookupAddr(a netip.Addr) (*DeviceMeta, bool) {
 	return m, ok
 }
 
-// LookupNode returns the device with the given node ID, if cached.
+// LookupNode returns the AUTHORITATIVE device with the given node ID, if
+// cached. Flow-claimed identity is never returned here; see LookupNodeAny.
 func (c *DeviceCache) LookupNode(id string) (*DeviceMeta, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -171,40 +382,123 @@ func (c *DeviceCache) LookupNode(id string) (*DeviceMeta, bool) {
 	return m, ok
 }
 
-// ResolveName maps an "addr:port" (or bare address) to a device's short name.
-// A Service (VIP service) backing address that isn't also a known device
-// resolves to the service name (e.g. "svc:argocd"). Unrecognized
-// Tailscale-range addresses resolve to "unknown"; addresses outside
-// Tailscale's ranges resolve to "external".
+// LookupNodeAny returns the device for id from the authoritative tier, falling
+// back to an unverified flow-claimed hint, and reports which it found. A caller
+// using this is opting in to attacker-controllable data: anything derived from
+// a ProvenanceUnverified result must be marked as such downstream.
+func (c *DeviceCache) LookupNodeAny(id string) (*DeviceMeta, Provenance, bool) {
+	now := c.now()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if m, ok := c.byNode[id]; ok {
+		return m, ProvenanceAuthoritative, true
+	}
+	if e, ok := c.lookupUnverifiedLocked(id, now); ok {
+		m := e.meta
+		return &m, ProvenanceUnverified, true
+	}
+	return nil, ProvenanceNone, false
+}
+
+// LenUnverified returns the number of live (unexpired) flow-claimed identities
+// held in the unverified tier. Never more than MaxUnverifiedEntries.
+func (c *DeviceCache) LenUnverified() int {
+	now := c.now()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	n := 0
+	for _, e := range c.unvNode {
+		if now.Sub(e.seen) < UnverifiedTTL {
+			n++
+		}
+	}
+	return n
+}
+
+// SnapshotUnverified returns a copy of every live flow-claimed identity, for a
+// read-only view that presents them AS unverified (e.g. a separate admin status
+// table). It must never be merged into the authoritative device list.
+func (c *DeviceCache) SnapshotUnverified() []DeviceMeta {
+	now := c.now()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]DeviceMeta, 0, len(c.unvNode))
+	for _, e := range c.unvNode {
+		if now.Sub(e.seen) < UnverifiedTTL {
+			out = append(out, e.meta)
+		}
+	}
+	return out
+}
+
+// ResolveName maps an "addr:port" (or bare address) to a device's short name
+// using AUTHORITATIVE data only. A Service (VIP service) backing address that
+// isn't also a known device resolves to the service name (e.g. "svc:argocd").
+// Unrecognized Tailscale-range addresses resolve to "unknown"; addresses
+// outside Tailscale's ranges resolve to "external".
+//
+// Flow-claimed identity is deliberately invisible here. A caller that wants it
+// must use ResolveNameAny and handle the provenance it returns.
 func (c *DeviceCache) ResolveName(addrPort string) string {
+	name, _ := c.resolve(addrPort, false)
+	return name
+}
+
+// ResolveNameAny is ResolveName plus the unverified tier, consulted only after
+// the authoritative tier and the service map both miss. It returns the name and
+// where it came from. A ProvenanceUnverified name was chosen by whichever node
+// wrote the flow record — the caller MUST mark anything it derives from it, so
+// a spoofed name is never indistinguishable from a control-plane one.
+func (c *DeviceCache) ResolveNameAny(addrPort string) (string, Provenance) {
+	return c.resolve(addrPort, true)
+}
+
+// resolve is the shared body of ResolveName/ResolveNameAny. unverified selects
+// whether the flow-claimed tier is consulted on an authoritative miss.
+func (c *DeviceCache) resolve(addrPort string, unverified bool) (string, Provenance) {
 	addr, ok := parseAddr(addrPort)
 	if !ok {
-		return "unknown"
+		return "unknown", ProvenanceNone
 	}
+	now := c.now()
 	c.mu.RLock()
 	m, found := c.byAddr[addr]
 	svc, svcFound := c.byService[addr]
+	var hint string
+	if unverified && !found && !svcFound {
+		if id, ok := c.unvAddr[addr]; ok {
+			if e, live := c.lookupUnverifiedLocked(id, now); live {
+				hint = e.meta.Hostname
+			}
+		}
+	}
 	c.mu.RUnlock()
 	if found {
-		return m.Hostname
+		return m.Hostname, ProvenanceAuthoritative
 	}
 	if svcFound {
-		return svc
+		return svc, ProvenanceAuthoritative
+	}
+	if hint != "" {
+		return hint, ProvenanceUnverified
 	}
 	if IsTailscaleAddr(addr) {
-		return "unknown" // a tailnet address we don't (yet) have cached
+		return "unknown", ProvenanceNone // a tailnet address we don't (yet) have cached
 	}
-	return "external" // non-Tailscale address (exit-node / subnet-router traffic)
+	return "external", ProvenanceNone // non-Tailscale address (exit-node / subnet-router traffic)
 }
 
-// Len returns the number of cached devices.
+// Len returns the number of AUTHORITATIVE cached devices. Flow-claimed
+// identities are counted by LenUnverified, so the enrich.cache_size gauge
+// cannot be inflated by traffic.
 func (c *DeviceCache) Len() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.byNode)
 }
 
-// Snapshot returns a copy of every cached device exactly once, suitable for
+// Snapshot returns a copy of every AUTHORITATIVE cached device exactly once,
+// suitable for
 // rendering a read-only device table (e.g. an admin status page). It iterates
 // byNode (one entry per device) rather than byAddr, so multi-address devices are
 // not duplicated. Each element is a value copy of the cached *DeviceMeta;
@@ -221,7 +515,10 @@ func (c *DeviceCache) Snapshot() []DeviceMeta {
 	return out
 }
 
-// Age returns how long ago the cache was last replaced.
+// Age returns how long ago the AUTHORITATIVE cache was last replaced. It is the
+// staleness signal behind enrich.cache_age, so unverified upserts deliberately
+// do not touch it: flow traffic must not be able to make a stalled devices
+// collector look healthy.
 func (c *DeviceCache) Age() time.Duration {
 	c.mu.RLock()
 	updated := c.updated

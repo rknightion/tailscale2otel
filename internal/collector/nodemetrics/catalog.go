@@ -29,7 +29,22 @@ const (
 	metricNodePeerRelayIO        = "tailscale.node.peer_relay.io"
 	metricNodePeerRelayPackets   = "tailscale.node.peer_relay.packets"
 	metricNodePeerRelayEndpoints = "tailscale.node.peer_relay.endpoints"
+
+	// metricMetricNamesDropped is the self-obs counter for GHSA-gp33-6r5x-hw2f:
+	// forwarded samples dropped because their metric name was new and the
+	// distinct-forwarded-metric-name budget (node_metrics.max_distinct_metrics)
+	// was already exhausted. Bounded cardinality: one series per reason value.
+	metricMetricNamesDropped = "tailscale2otel.nodemetrics.metric_names.dropped"
 )
+
+// attrReason labels why a forwarded sample was dropped by the metric-name
+// budget. It is a closed, single-value set today (reasonMetricNameBudget) but
+// kept as an attribute rather than folded into the metric name so a future
+// drop reason can be added without a new series name.
+const attrReason = "reason"
+
+// reasonMetricNameBudget is the sole attrReason value emitted today.
+const reasonMetricNameBudget = "metric_name_budget"
 
 // Curated metric descriptions (also passed to the emitter so the emitted
 // signal can't drift from the declared one).
@@ -42,6 +57,7 @@ const (
 	descNodePeerRelayIO        = "Bytes this node forwarded while acting as a peer relay. Curated from tailscaled_peer_relay_forwarded_bytes_total (raw series still forwarded verbatim)."
 	descNodePeerRelayPackets   = "Packets this node forwarded while acting as a peer relay. Curated from tailscaled_peer_relay_forwarded_packets_total (raw series still forwarded verbatim)."
 	descNodePeerRelayEndpoints = "Peer-relay endpoints currently configured on this node. Curated from tailscaled_peer_relay_endpoints (raw series still forwarded verbatim)."
+	descMetricNamesDropped     = "Forwarded samples dropped, by reason, because their metric name was not yet seen and the distinct forwarded metric-name budget (node_metrics.max_distinct_metrics) was already exhausted. A sustained non-zero rate means a scrape target is presenting more distinct metric names than the budget allows; check node_metrics.max_distinct_metrics and metric_allow/metric_deny."
 )
 
 var docNodeUp = metricdoc.Metric{
@@ -139,6 +155,14 @@ var (
 		Attributes:  []string{attrInstance},
 		Group:       groupNodeMetrics,
 	}
+	docMetricNamesDropped = metricdoc.Metric{
+		Name:        metricMetricNamesDropped,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Counter,
+		Description: descMetricNamesDropped,
+		Attributes:  []string{attrReason},
+		Group:       groupNodeMetrics,
+	}
 )
 
 // Catalog returns the statically-enumerable metrics this package emits, for the
@@ -150,6 +174,7 @@ func Catalog() []metricdoc.Metric {
 		docNodeIO, docNodePackets, docNodePacketsDropped,
 		docNodeHealthMessages, docNodeDERPHomeRegion,
 		docNodePeerRelayIO, docNodePeerRelayPackets, docNodePeerRelayEndpoints,
+		docMetricNamesDropped,
 	}
 }
 

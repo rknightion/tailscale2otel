@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v3/internal/redact"
 )
 
 // Bounds on flows.retention. The floor is one bucket; the ceiling reflects that
@@ -187,6 +188,21 @@ func (c *Config) Warnings() []string {
 				"request with HTTP 403, so NO logs will be ingested. Set streaming.token (e.g. "+
 				"TS2OTEL_STREAMING__TOKEN — check the env var name), or bind streaming.listen to "+
 				"loopback and put an authenticating proxy in front.")
+		}
+	}
+
+	// streaming.public_url is handed to Tailscale as the log-streaming
+	// destination, so every part of it leaves this process. Userinfo is a hard
+	// error (see validateNoURLCredentials); a query string is allowed because a
+	// signed-URL reverse proxy is a legitimate pattern no typed field replaces —
+	// but the operator should know it is being exported (GHSA-rm3x-hhrj-94v4).
+	// The value is never logged and the warning shows only the query KEY names.
+	if c.Streaming.PublicURL != "" {
+		if u, err := url.Parse(c.Streaming.PublicURL); err == nil && u.RawQuery != "" {
+			w = append(w, "streaming.public_url carries a query string ("+redact.URL(c.Streaming.PublicURL)+
+				"): this URL is registered with Tailscale as the log-streaming sink, so anything in it "+
+				"leaves this process and is stored by the control plane. If the query is a reusable "+
+				"credential, move the receiver's authentication to streaming.token instead.")
 		}
 	}
 
@@ -440,6 +456,14 @@ func (c *Config) Validate() error {
 	// method's "first error found" contract.
 	if len(c.secretFileConflicts) > 0 {
 		return fmt.Errorf("%s: set only one, not both (value XOR file)", c.secretFileConflicts[0])
+	}
+
+	// Credentials embedded in a URL's userinfo are rejected before any other
+	// shape check, so no later error message can echo one back in its diagnostic
+	// (GHSA-qch3-gwff-r6pf, GHSA-jp5c-3282-6882, GHSA-h5p7-qj62-m8qx,
+	// GHSA-rm3x-hhrj-94v4).
+	if err := c.validateNoURLCredentials(); err != nil {
+		return err
 	}
 
 	provider := c.Provider
@@ -885,6 +909,71 @@ func (c *Config) Validate() error {
 // lockstep with the runtime identity in internal/collector/nodemetrics
 // (targetIdentity/effectiveInstance/normalizeTargetURL) so a config that passes
 // validation and the set the collector actually dedups/keys baselines by agree.
+// validateNoURLCredentials rejects credentials embedded in a URL's userinfo
+// ("https://user:password@host/...") for every setting that has a dedicated
+// secret field expressing the same thing.
+//
+// Why a hard error rather than a warning:
+//   - The credential is reusable and long-lived, and each of these values reaches
+//     a lower-trust surface — the admin status page and its JSON API, or a log
+//     line — where a reader who should only see "where do we push" recovers "and
+//     with what".
+//   - For otlp.endpoint and profiling.pyroscope.server_address the userinfo is
+//     not even honored: the OTLP exporter is configured from the URL's host and
+//     path, and the Pyroscope agent authenticates from basic_auth_*. Accepting
+//     the value silently would keep a credential in the config that never
+//     actually authenticated anything.
+//   - node_metrics targets and streaming.public_url CAN work with userinfo
+//     today, so this is a deliberate breaking change; the error names the typed
+//     field to move the secret into, and the value is redacted in the message.
+//
+// The checks are unconditional (not gated on the feature being enabled) so a
+// credential can never sit in the config waiting for someone to flip a flag.
+// Query strings are NOT rejected — a signed query is a legitimate reverse-proxy
+// pattern that no typed field replaces — they are only redacted at every
+// diagnostic surface, plus flagged by Warnings for streaming.public_url.
+func (c *Config) validateNoURLCredentials() error {
+	checks := []struct {
+		key    string
+		value  string
+		useFmt string // the typed field(s) to use instead
+	}{
+		{
+			key:    "otlp.endpoint",
+			value:  c.OTLP.Endpoint,
+			useFmt: "put the credential in otlp.grafana_cloud.instance_id + otlp.grafana_cloud.token, or in otlp.headers (values are Secret and redact themselves); the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "profiling.pyroscope.server_address",
+			value:  c.Profiling.Pyroscope.ServerAddress,
+			useFmt: "use profiling.pyroscope.basic_auth_user + profiling.pyroscope.basic_auth_password (or basic_auth_password_file); the Pyroscope agent authenticates from those, not from URL userinfo",
+		},
+		{
+			key:    "streaming.public_url",
+			value:  c.Streaming.PublicURL,
+			useFmt: "authenticate the receiver with streaming.token instead; this URL is handed to Tailscale as the log-streaming destination, so anything embedded in it leaves this process",
+		},
+	}
+	for i, t := range c.Collectors.NodeMetrics.Targets {
+		checks = append(checks, struct {
+			key    string
+			value  string
+			useFmt string
+		}{
+			key:    fmt.Sprintf("collectors.node_metrics.targets[%d].url", i),
+			value:  t.URL,
+			useFmt: "use the target's bearer_token / bearer_token_file, or headers (e.g. an Authorization header — header values are Secret and redact themselves)",
+		})
+	}
+	for _, ch := range checks {
+		if redact.HasUserinfo(ch.value) {
+			return fmt.Errorf("%s %q embeds credentials in the URL (the \"user:password@host\" form): "+
+				"remove them — %s", ch.key, redact.URL(ch.value), ch.useFmt)
+		}
+	}
+	return nil
+}
+
 func nodeMetricsTargetIdentity(t NodeMetricsTarget) string {
 	return normalizeNodeMetricsURL(t.URL) + "\x00" + effectiveNodeMetricsInstance(t)
 }

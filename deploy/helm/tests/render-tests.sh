@@ -9,8 +9,15 @@
 #                 The whole config.yaml moves to a Secret instead.
 #   SEC-06 (#469) `rolloutTrigger` must reach the pod template so rotating an
 #                 externally managed `existingSecret` has a documented way to
-#                 force a rollout, and an inline `secret:` change must still
-#                 move `checksum/secret`.
+#                 force a rollout.
+#   GHSA-825f-hph6-x65w  no pod-template annotation may ever carry a digest of
+#                 secret material (an inline `secret:` value, a secret-backed
+#                 config.yaml, or anything else credential-bearing) — that lets
+#                 a workload-read-only principal verify offline guesses against
+#                 it. `checksum/config` may hash the rendered config ONLY while
+#                 it stays credential-free (ConfigMap-backed); rolloutTrigger /
+#                 Reloader are the only supported rollout path once anything
+#                 secret-bearing is in play.
 #
 # Requires: helm, yq (mikefarah). Run from anywhere:
 #   deploy/helm/tests/render-tests.sh
@@ -149,21 +156,43 @@ grep -q 'rollout-trigger' <<<"$(dep_field '.spec.template.metadata.annotations')
   || ok "C: no rollout-trigger annotation when unset"
 
 # --------------------------------------------------------------------------
-case_ "D. inline secret: changes still move checksum/secret"
+case_ "D. GHSA-825f-hph6-x65w: no checksum/secret annotation ever, inline secret or not"
 render --set secret.TS2OTEL_TAILSCALE__AUTH__APIKEY=v1
-c1="$(dep_field '.spec.template.metadata.annotations."checksum/secret"')"
-render --set secret.TS2OTEL_TAILSCALE__AUTH__APIKEY=v2
-c2="$(dep_field '.spec.template.metadata.annotations."checksum/secret"')"
-[[ -n "$c1" && "$c1" != "$c2" ]] && ok "D: checksum/secret changes with the inline value" \
-  || bad "D: checksum/secret did not change ($c1 vs $c2)"
+d1="$(dep_field '.spec.template.metadata.annotations."checksum/secret"')"
+[[ -z "$d1" || "$d1" == "null" ]] && ok "D: no checksum/secret annotation with an inline secret set" \
+  || bad "D: checksum/secret annotation present ($d1) — a digest of secret material must never be published"
+render
+d2="$(dep_field '.spec.template.metadata.annotations."checksum/secret"')"
+[[ -z "$d2" || "$d2" == "null" ]] && ok "D: no checksum/secret annotation by default" \
+  || bad "D: checksum/secret annotation present by default ($d2)"
 
-case_ "D2. inline config: changes still move checksum/config"
+# Two different offline-guessable secret values must never produce two different,
+# individually derivable digests published anywhere in the pod template — that is
+# the exact mechanism GHSA-825f-hph6-x65w closes. Assert the WHOLE annotations block
+# is byte-identical across the two secret values (proves nothing secret-derived
+# leaks into it at all, not just that one known key is absent).
+render --set secret.TS2OTEL_TAILSCALE__AUTH__APIKEY=v1
+d3="$(dep_field '.spec.template.metadata.annotations')"
+render --set secret.TS2OTEL_TAILSCALE__AUTH__APIKEY=v2
+d4="$(dep_field '.spec.template.metadata.annotations')"
+[[ "$d3" == "$d4" ]] && ok "D: pod-template annotations are identical across two different secret values" \
+  || bad "D: pod-template annotations changed with the secret value — something derived from it leaked"
+
+case_ "D2. checksum/config only ever hashes a credential-free (ConfigMap-backed) config"
 render --set config.log_level=debug
 c3="$(dep_field '.spec.template.metadata.annotations."checksum/config"')"
 render --set config.log_level=warn
 c4="$(dep_field '.spec.template.metadata.annotations."checksum/config"')"
-[[ -n "$c3" && "$c3" != "$c4" ]] && ok "D2: checksum/config changes with the config" \
-  || bad "D2: checksum/config did not change"
+[[ -n "$c3" && "$c3" != "$c4" && "$c3" != "null" ]] \
+  && ok "D2: checksum/config changes with the credential-free config" \
+  || bad "D2: checksum/config did not change ($c3 vs $c4)"
+
+# Once the config is secret-backed, checksum/config must be entirely absent — not
+# hashed, not present, not derivable — same rationale as case D above.
+render --set "config.tailscale.auth.apikey=${SENTINEL}"
+d5="$(dep_field '.spec.template.metadata.annotations."checksum/config"')"
+[[ -z "$d5" || "$d5" == "null" ]] && ok "D2: no checksum/config annotation once the config is secret-backed" \
+  || bad "D2: checksum/config annotation present for a secret-backed config ($d5)"
 
 # --------------------------------------------------------------------------
 case_ "E. unsafe combination fails with an actionable message"

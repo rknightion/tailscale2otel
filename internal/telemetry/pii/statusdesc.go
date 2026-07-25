@@ -47,6 +47,11 @@ var boundedStatusDescriptions = map[string]bool{
 	"could not parse body":  true,
 	"corrupt batch":         true,
 	"record decode failure": true,
+	// Browser-deputy and nested-width refusals on the untokened receiver
+	// (GHSA-cvp7-f3mx-m68x, GHSA-7rg3-xj9w-2gm8). Both are closed-set verdicts
+	// naming the control that fired, carrying no request detail.
+	"cross-site request":   true,
+	"too many connections": true,
 }
 
 // httpStatusTexts holds every net/http status text, which internal/tsapi's

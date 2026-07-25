@@ -172,6 +172,9 @@ func Default() *Config {
 				Timeout:          dur(10 * time.Second),
 				MaxResponseBytes: 4 * 1024 * 1024,
 				MaxSamples:       50000,
+				// Distinct forwarded metric NAMES are node-controlled and each one
+				// costs a permanent instrument, so they get their own budget.
+				MaxDistinctMetrics: 2000,
 				Discovery: NodeMetricsDiscovery{
 					Enabled:           false,
 					Interval:          dur(5 * time.Minute),

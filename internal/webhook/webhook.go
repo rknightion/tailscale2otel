@@ -87,6 +87,14 @@ const (
 	// sized for the streaming receiver's batch flow/audit logs.
 	defaultMaxBodyBytes = 1 << 20 // 1 MiB
 
+	// defaultMaxConcurrentRequests is the aggregate admission budget used when
+	// Options.MaxConcurrentRequests is 0 (GHSA-9547-8jpc-48h6, mirroring the
+	// streaming receiver's #209 fix): at most this many handlers may be buffering
+	// a body — and thus be pending HMAC verification — at once, so worst-case
+	// unauthenticated memory use is bounded by MaxConcurrentRequests *
+	// MaxBodyBytes rather than by how many senders show up.
+	defaultMaxConcurrentRequests = 4
+
 	// eventNamePrefix is prepended to the Tailscale event type to form the OTEL
 	// LogRecord EventName, e.g. "tailscale.webhook.nodeCreated".
 	eventNamePrefix = "tailscale.webhook."
@@ -109,6 +117,12 @@ const (
 	// distinct-type cap is reached.
 	overflowType = "other"
 )
+
+// admissionWait is how long a request will wait for an admission slot before
+// giving up when the aggregate budget is momentarily full — long enough to
+// smooth a brief burst, short enough that a genuinely overloaded receiver
+// still fails fast (mirrors the streaming receiver's #209 constant).
+const admissionWait = 250 * time.Millisecond
 
 // severityByType is the explicit, per-type log-severity classification for
 // webhook events. It replaces an earlier substring heuristic ({Expir, Suspend,
@@ -161,6 +175,12 @@ type Options struct {
 	// bounding unauthenticated memory use. 0 selects a 1 MiB default (real
 	// Tailscale webhook payloads are KB-scale); a negative value disables the cap.
 	MaxBodyBytes int64
+	// MaxConcurrentRequests bounds handlers buffering a body simultaneously
+	// (GHSA-9547-8jpc-48h6): MaxBodyBytes caps ONE request's body, not the sum of
+	// every body in flight, and that buffering happens before HMAC verification
+	// — no credential is required to reach it. 0 selects
+	// defaultMaxConcurrentRequests; negative disables the limit.
+	MaxConcurrentRequests int
 	// OnIngest, when non-nil, is called once after a successful parse with
 	// (IngestSourceWebhook, IngestSignalWebhook, len(events), len(body)).
 	// Supplied by the app, gated on self-observability.
@@ -176,6 +196,12 @@ type Server struct {
 	dedup    *dedup.Set       // optional cross-source de-dup set (see WithDedup)
 	onIngest func(source, signal string, records, bytes int)
 	tracer   trace.Tracer
+
+	// admit is the aggregate admission semaphore (GHSA-9547-8jpc-48h6): a
+	// buffered channel whose capacity is the number of handlers allowed to
+	// buffer a body — and thus be pending HMAC verification — at once. nil
+	// when the limit is disabled.
+	admit chan struct{}
 
 	// typesMu guards seenTypes, the bounded set of distinct event types already
 	// admitted as a telemetry dimension. handle (and thus emit) runs concurrently
@@ -227,12 +253,21 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 	if opts.Path == "" {
 		opts.Path = "/webhook"
 	}
+	maxConcurrent := opts.MaxConcurrentRequests
+	if maxConcurrent == 0 {
+		maxConcurrent = defaultMaxConcurrentRequests
+	}
+	var admit chan struct{}
+	if maxConcurrent > 0 {
+		admit = make(chan struct{}, maxConcurrent)
+	}
 	s := &Server{
 		opts:     opts,
 		e:        e,
 		logger:   logger,
 		now:      time.Now,
 		onIngest: opts.OnIngest,
+		admit:    admit,
 	}
 	for _, o := range options {
 		o(s)
@@ -312,6 +347,23 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	// Aggregate admission control (GHSA-9547-8jpc-48h6): the per-request byte
+	// cap bounds ONE body, and that buffering happens BEFORE HMAC verification
+	// — reachable with no credential — so it must be bounded by an aggregate
+	// admission slot rather than by the byte cap alone. Take the slot before
+	// buffering anything so worst-case buffered memory is capped at
+	// MaxConcurrentRequests * MaxBodyBytes regardless of how many unauthenticated
+	// senders arrive at once. Released via defer on every exit path below.
+	release, admitted := s.acquire(r.Context())
+	if !admitted {
+		span.SetStatus(codes.Error, "overloaded")
+		s.logger.Warn("webhook: refusing request, receiver at capacity", "max_concurrent_requests", cap(s.admit))
+		w.Header().Set("Retry-After", "1")
+		s.rejectStatus(w, http.StatusServiceUnavailable, "overloaded", "receiver at capacity, retry shortly", nil)
+		return
+	}
+	defer release()
+
 	body, err := s.readBody(w, r)
 	if err != nil {
 		var maxErr *http.MaxBytesError
@@ -357,6 +409,32 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// acquire takes an admission slot (GHSA-9547-8jpc-48h6), returning a release
+// func. It tries a non-blocking take first (the steady state), then waits up
+// to admissionWait for a slot, giving up early if the client goes away.
+// ok=false means the receiver is at capacity and the caller must refuse the
+// request.
+func (s *Server) acquire(ctx context.Context) (release func(), ok bool) {
+	if s.admit == nil {
+		return func() {}, true
+	}
+	select {
+	case s.admit <- struct{}{}:
+		return func() { <-s.admit }, true
+	default:
+	}
+	timer := time.NewTimer(admissionWait)
+	defer timer.Stop()
+	select {
+	case s.admit <- struct{}{}:
+		return func() { <-s.admit }, true
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	}
 }
 
 func (s *Server) readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {

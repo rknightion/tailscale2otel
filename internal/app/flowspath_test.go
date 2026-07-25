@@ -52,8 +52,8 @@ func TestFlowsJSON_PathQualityReachesTheAPI(t *testing.T) {
 		t.Fatalf("peer paths = %+v, want the one peer", got.Result.PeerPaths)
 	}
 	p := got.Result.PeerPaths[0]
-	if p.Peer != "mbp16" {
-		t.Errorf("peer = %q, want mbp16 — the peer is the far end, not the reporting node", p.Peer)
+	if p.Peer != unverifiedName("mbp16") {
+		t.Errorf("peer = %q, want %q — the peer is the far end, not the reporting node", p.Peer, unverifiedName("mbp16"))
 	}
 	if p.Direct.Bytes() != 900 || p.Relayed.Bytes() != 100 {
 		t.Errorf("direct/relayed = %d/%d, want 900/100", p.Direct.Bytes(), p.Relayed.Bytes())

@@ -272,12 +272,14 @@ func (p *Processor) FlushRollup(e telemetry.Emitter) {
 // caller owns the budget (one per ProcessAll window, or one per standalone
 // Process call) and is responsible for flushing the dropped count.
 func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget) {
-	// Seed the cache from the identity the record embeds BEFORE resolving any of
-	// its connections, so a record enriches itself even when the devices
-	// collector is disabled or has not yet run. Additive only — devices-collector
-	// entries are never overwritten (see enrich.UpsertFromFlow).
+	// Seed the UNVERIFIED tier from the identity the record embeds BEFORE
+	// resolving any of its connections, so a record enriches itself even when the
+	// devices collector is disabled or has not yet run. The embedded identity is
+	// written by the reporting node, so it lands in a bounded, expiring tier that
+	// never becomes authoritative and that marks everything derived from it —
+	// see enrich.UpsertUnverified and GHSA-pjfv-prc8-4fc9.
 	if p.cache != nil {
-		p.cache.UpsertFromFlow(flow.nodeRefs())
+		p.cache.UpsertUnverified(flow.nodeRefs())
 	}
 
 	sets := [...]trafficSet{
@@ -850,11 +852,11 @@ func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txP
 // exitNodeLabel resolves the reporting node's hostname for the exit-node
 // attribution metric, falling back to the raw nodeId on a nil/miss cache or an
 // empty hostname, and to "unknown" only when there is no nodeId.
+// A hostname that could only be learned from the reporting node's own flow
+// records is marked with enrich.UnverifiedPrefix.
 func (p *Processor) exitNodeLabel(nodeID string) string {
-	if p.cache != nil {
-		if meta, ok := p.cache.LookupNode(nodeID); ok && meta.Hostname != "" {
-			return meta.Hostname
-		}
+	if name, ok := p.nodeHostname(nodeID); ok {
+		return name
 	}
 	if nodeID != "" {
 		return nodeID
@@ -865,13 +867,27 @@ func (p *Processor) exitNodeLabel(nodeID string) string {
 // addNodeHostname adds tailscale.node.hostname to attrs when the cache has a
 // device for nodeID with a non-empty Hostname. A nil cache, a cache miss, or an
 // empty hostname leaves attrs untouched (the attribute is omitted entirely).
+// A hostname known only from flow-embedded identity is marked with
+// enrich.UnverifiedPrefix rather than presented as control-plane truth.
 func (p *Processor) addNodeHostname(attrs telemetry.Attrs, nodeID string) {
+	if name, ok := p.nodeHostname(nodeID); ok {
+		attrs[attrNodeHostname] = name
+	}
+}
+
+// nodeHostname resolves a node ID to a hostname, consulting the cache's
+// unverified tier only after its authoritative tier misses and marking the
+// result when it does (GHSA-pjfv-prc8-4fc9). Reports false on a nil cache, a
+// miss, or an empty hostname, which callers treat as "omit the attribute".
+func (p *Processor) nodeHostname(nodeID string) (string, bool) {
 	if p.cache == nil {
-		return
+		return "", false
 	}
-	if meta, ok := p.cache.LookupNode(nodeID); ok && meta.Hostname != "" {
-		attrs[attrNodeHostname] = meta.Hostname
+	meta, prov, ok := p.cache.LookupNodeAny(nodeID)
+	if !ok || meta.Hostname == "" {
+		return "", false
 	}
+	return enrich.Mark(meta.Hostname, prov), true
 }
 
 // resolveEndpoint resolves an endpoint the record may not carry at all. An
@@ -890,6 +906,11 @@ func (p *Processor) resolveEndpoint(addrPort, host string) string {
 // a cached PTR name replaces the "external" sentinel. Otherwise, when
 // keepExternal is set and the cache misses (collapsing to "external"/"unknown"),
 // the raw host is returned instead of the collapsed sentinel.
+//
+// It uses ResolveNameAny, opting in to the cache's unverified tier so flow
+// enrichment still works without the devices collector — and marks the result
+// with enrich.UnverifiedPrefix when that is where the name came from, because
+// the reporting node chose it (GHSA-pjfv-prc8-4fc9).
 func (p *Processor) resolve(addrPort, host string) string {
 	if p.cache == nil {
 		if p.keepExternal && host != "" {
@@ -897,7 +918,10 @@ func (p *Processor) resolve(addrPort, host string) string {
 		}
 		return "unknown"
 	}
-	name := p.cache.ResolveName(addrPort)
+	name, prov := p.cache.ResolveNameAny(addrPort)
+	if prov == enrich.ProvenanceUnverified {
+		return enrich.Mark(name, prov)
+	}
 	// Reverse DNS enriches only external addresses (never tailnet "unknown"), and
 	// only when a name is already cached — the lookup itself never blocks here.
 	if name == "external" && p.rdns != nil && host != "" {

@@ -3,6 +3,17 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.14.1: GHSA-825f-hph6-x65w — remove every pod-template annotation that hashed secret
+# material. The Deployment used to publish `checksum/secret` (a SHA-256 of the inline
+# `secret:` map) and `checksum/config` unconditionally (including when the rendered
+# config.yaml was Secret-backed, e.g. multi-tailnet or any inline credential). Both let
+# a principal with workload-read but no Secret-read verify offline guesses against the
+# real value. `checksum/config` now renders ONLY when the config stays credential-free
+# (ConfigMap-backed); `checksum/secret` is removed outright. `rolloutTrigger` (already
+# the documented path for a rotated `existingSecret`, SEC-06 / #469) is now also the
+# documented path for an inline `secret:` change and a secret-backed config.yaml change
+# — Stakater Reloader (watching the Secret object server-side, never its contents) is
+# the automated alternative for all three cases. No values keys added or removed.
 # 0.14.0: credentials set inline under `config:` no longer land in a ConfigMap (SEC-07 / #470).
 # When any credential-bearing key is set inline — oauth client_secret, apikey, headscale api_key,
 # grafana_cloud token, otlp.headers, the objectstore keys, streaming/webhook/prometheus/admin
@@ -72,7 +83,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.14.0
+version: 0.14.1
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "2.0.2"
 home: https://m7kni.io/tailscale2otel/

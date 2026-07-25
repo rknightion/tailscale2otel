@@ -427,6 +427,11 @@ func postStream(t *testing.T, a *App, body string) int {
 		t.Fatal("stream server not built (streaming.enabled?)")
 	}
 	req := httptest.NewRequest(http.MethodPost, "/services/collector/event", strings.NewReader(body))
+	// httptest.NewRequest defaults Host to "example.com", which is exactly the
+	// shape the untokened receiver now refuses (GHSA-cvp7-f3mx-m68x). This test
+	// drives the handler in-process, so it really is a loopback caller — the
+	// line states that truth rather than working around the gate.
+	req.Host = "127.0.0.1:9099"
 	w := httptest.NewRecorder()
 	a.streamSrv.Handler().ServeHTTP(w, req)
 	return w.Code

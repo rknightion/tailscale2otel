@@ -14,6 +14,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/app/flowsdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
@@ -80,7 +81,7 @@ func seedFlows(t *testing.T, a *App) {
 func getFlows(t *testing.T, a *App, query string) (*httptest.ResponseRecorder, flowsdata.Response) {
 	t.Helper()
 	w := httptest.NewRecorder()
-	a.buildAdminServer().Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/flows.json"+query, nil))
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/api/flows.json"+query))
 	var got flowsdata.Response
 	if w.Code == http.StatusOK {
 		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
@@ -104,8 +105,11 @@ func TestFlowsJSON_ServesWhatTheProcessorRecorded(t *testing.T) {
 	if len(got.Result.Pairs) != 1 {
 		t.Fatalf("pairs = %+v, want 1", got.Result.Pairs)
 	}
-	if got.Result.Pairs[0].Src != "camden" || got.Result.Pairs[0].Dst != "mbp16" {
-		t.Errorf("pair = %s -> %s, want camden -> mbp16", got.Result.Pairs[0].Src, got.Result.Pairs[0].Dst)
+	// The fixture has no authoritative device cache, so both names could only be
+	// learned from the flow record itself and carry the unverified marker
+	// (GHSA-pjfv-prc8-4fc9). With the devices collector running these are bare.
+	if got.Result.Pairs[0].Src != unverifiedName("camden") || got.Result.Pairs[0].Dst != unverifiedName("mbp16") {
+		t.Errorf("pair = %s -> %s, want %s -> %s", got.Result.Pairs[0].Src, got.Result.Pairs[0].Dst, unverifiedName("camden"), unverifiedName("mbp16"))
 	}
 	if len(got.Recent) != 1 {
 		t.Fatalf("recent = %+v, want 1 connection", got.Recent)
@@ -147,7 +151,7 @@ func TestFlowsJSON_IdentityIsNotFilteredByPIIFilter(t *testing.T) {
 	if r.DstUser != "rob@example.com" {
 		t.Errorf("recent dst user = %q, want it shown in full", r.DstUser)
 	}
-	if r.SrcNode != "camden" || r.DstNode != "mbp16" {
+	if r.SrcNode != unverifiedName("camden") || r.DstNode != unverifiedName("mbp16") {
 		t.Errorf("recent nodes = %q -> %q, want them shown in full", r.SrcNode, r.DstNode)
 	}
 	if r.SrcAddr != "100.64.0.1:52000" || r.DstAddr != "100.64.0.2:443" {
@@ -155,7 +159,7 @@ func TestFlowsJSON_IdentityIsNotFilteredByPIIFilter(t *testing.T) {
 	}
 	// The aggregates are keyed off the same identity, so a filtered view would
 	// also collapse the topology graph into unnamed endpoints.
-	if len(got.Result.Pairs) != 1 || got.Result.Pairs[0].Src != "camden" {
+	if len(got.Result.Pairs) != 1 || got.Result.Pairs[0].Src != unverifiedName("camden") {
 		t.Errorf("pairs = %+v, want the named pair", got.Result.Pairs)
 	}
 }
@@ -253,7 +257,7 @@ func TestFlowsRoutes_AbsentWhenDisabled(t *testing.T) {
 
 	for _, path := range []string{"/api/flows.json", "/flows"} {
 		w := httptest.NewRecorder()
-		srv.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		srv.Handler.ServeHTTP(w, loopbackReq(http.MethodGet, path))
 		if w.Code != http.StatusNotFound {
 			t.Errorf("GET %s with flows disabled = %d, want 404", path, w.Code)
 		}
@@ -293,13 +297,13 @@ func TestFlowsRoutes_RequireAdminAuth(t *testing.T) {
 
 	for _, path := range []string{"/api/flows.json", "/flows"} {
 		w := httptest.NewRecorder()
-		srv.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		srv.Handler.ServeHTTP(w, loopbackReq(http.MethodGet, path))
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("unauthenticated GET %s = %d, want 401", path, w.Code)
 		}
 
 		w = httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := loopbackReq(http.MethodGet, path)
 		req.Header.Set("Authorization", "Bearer s3cret")
 		srv.Handler.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -316,7 +320,7 @@ func TestFlowsRoutes_FailClosedWithoutToken(t *testing.T) {
 
 	for _, path := range []string{"/api/flows.json", "/flows"} {
 		w := httptest.NewRecorder()
-		srv.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		srv.Handler.ServeHTTP(w, loopbackReq(http.MethodGet, path))
 		if w.Code != http.StatusForbidden {
 			t.Errorf("GET %s on a tokenless network bind = %d, want 403", path, w.Code)
 		}
@@ -329,7 +333,7 @@ func TestFlowsRoutes_GetOnly(t *testing.T) {
 
 	for _, path := range []string{"/api/flows.json", "/flows"} {
 		w := httptest.NewRecorder()
-		srv.Handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, nil))
+		srv.Handler.ServeHTTP(w, loopbackReq(http.MethodPost, path))
 		if w.Code != http.StatusMethodNotAllowed {
 			t.Errorf("POST %s = %d, want 405", path, w.Code)
 		}
@@ -341,7 +345,7 @@ func TestFlowsPage_RendersSelfContainedHTML(t *testing.T) {
 	seedFlows(t, a)
 
 	w := httptest.NewRecorder()
-	a.buildAdminServer().Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/flows", nil))
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/flows"))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET /flows = %d, want 200: %s", w.Code, w.Body.String())
@@ -409,4 +413,13 @@ func TestFlowsJSON_EmptyStore(t *testing.T) {
 	if got.Recent == nil {
 		t.Error("recent is null; the page expects an array it can iterate")
 	}
+}
+
+// unverifiedName tags a name the way the flow processor does when the identity
+// could only be learned from the flow record itself — i.e. when no authoritative
+// device cache entry exists for it (GHSA-pjfv-prc8-4fc9). Test fixtures here
+// drive the processor without a devices collector, so every flow-derived name
+// they assert on carries the marker.
+func unverifiedName(name string) string {
+	return enrich.Mark(name, enrich.ProvenanceUnverified)
 }

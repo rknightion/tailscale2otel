@@ -22,6 +22,9 @@ endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metri
    Rendered into Secret "{{ include "tailscale2otel.fullname" . }}". Set values via
    --set secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=... etc., or point
    existingSecret at your own.
+
+   Changing a `secret:` value does NOT roll this pod on its own (same envFrom
+   staleness as above) — bump rolloutTrigger or run Reloader after every change.
 {{- end }}
 {{- $inlineCreds := include "tailscale2otel.inlineCredentialKeys" . }}
 {{- if include "tailscale2otel.configStoresSecret" . }}
@@ -33,6 +36,11 @@ endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metri
    Prefer injecting them as TS2OTEL_* env vars via `secret:`/`existingSecret`.
 {{- else }} (configStorage.mode: {{ dig "mode" "auto" (.Values.configStorage | default dict) }}).
 {{- end }}
+
+   This chart never hashes a secret-backed config into a pod annotation (that would
+   let a workload-read-only principal verify offline guesses against it). Changing
+   it does NOT roll this pod on its own — bump rolloutTrigger or run Reloader after
+   every change, same as rotating credentials above.
 {{- end }}
 
 3. In Grafana Cloud Explore, look for metrics like tailscale.device.online,

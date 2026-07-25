@@ -770,6 +770,14 @@ type NodeMetricsConfig struct {
 	// Scrape limits bound memory and telemetry cardinality per target.
 	MaxResponseBytes int64 `yaml:"max_response_bytes"` // maximum response bytes read from one scrape
 	MaxSamples       int   `yaml:"max_samples"`        // maximum valid samples forwarded from one scrape
+	// MaxDistinctMetrics bounds the number of DISTINCT forwarded metric names
+	// over the process lifetime. MaxSamples caps one scrape; a scrape target
+	// picks its own metric names, and every unseen name creates an OTEL
+	// instrument that is never released, so without this budget a compromised
+	// target grows the instrument registry without limit. Names beyond the
+	// budget are dropped and counted (never silently); 0 selects a default of
+	// 2000, negative disables the budget.
+	MaxDistinctMetrics int `yaml:"max_distinct_metrics"`
 
 	// Passthrough filters on the FORWARDED Prometheus samples. They never affect
 	// tailscale.node.up or the discovery.* gauges. A zero value means no filtering.
@@ -912,6 +920,15 @@ type WebhookConfig struct {
 	// a 1 MiB default (real Tailscale webhook payloads are KB-scale); a
 	// negative value disables the cap.
 	MaxBodyBytes int64 `yaml:"max_body_bytes"`
+	// MaxConcurrentRequests bounds how many requests may buffer a body at once,
+	// mirroring streaming.max_concurrent_requests (#209). The HMAC covers the
+	// whole body, so buffering happens BEFORE any credential is verified: without
+	// an aggregate bound, N unauthenticated senders multiply MaxBodyBytes. An
+	// over-limit POST is rejected with 503 + Retry-After +
+	// rejected{reason=overloaded} before the body is read. 0 selects a default of
+	// 4; negative disables the limit. Worst-case buffered memory is roughly this
+	// times max_body_bytes.
+	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
 }
 
 // TracingConfig configures the OTEL traces pillar. Off by default; reuses otlp.*

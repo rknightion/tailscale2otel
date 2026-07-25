@@ -100,11 +100,13 @@ func TestProcess_ResolvesNamesWithEmptyDeviceCache(t *testing.T) {
 	if len(recs) != 1 {
 		t.Fatalf("got %d log records, want 1", len(recs))
 	}
-	if got := recs[0].Attrs[semconv.AttrSrcNode]; got != "camden" {
-		t.Errorf("%s = %q, want %q — embedded identity did not enrich", semconv.AttrSrcNode, got, "camden")
+	// Enriched from the record itself — and MARKED, because with no devices
+	// collector nothing has confirmed these names (GHSA-pjfv-prc8-4fc9).
+	if got, want := recs[0].Attrs[semconv.AttrSrcNode], unverifiedName("camden"); got != want {
+		t.Errorf("%s = %q, want %q — embedded identity did not enrich", semconv.AttrSrcNode, got, want)
 	}
-	if got := recs[0].Attrs[semconv.AttrDstNode]; got != "mbp16" {
-		t.Errorf("%s = %q, want %q — embedded identity did not enrich", semconv.AttrDstNode, got, "mbp16")
+	if got, want := recs[0].Attrs[semconv.AttrDstNode], unverifiedName("mbp16"); got != want {
+		t.Errorf("%s = %q, want %q — embedded identity did not enrich", semconv.AttrDstNode, got, want)
 	}
 }
 

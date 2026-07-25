@@ -67,6 +67,27 @@
 // record we failed to decode / structural corruption" ⇒ hard reject, versus "a
 // record type we do not recognize at all" ⇒ skip.
 //
+// # Resource budgets and the tokenless mode
+//
+// The body is attacker-reachable before any credential narrows it, so every axis
+// along which bytes amplify into work has its own package constant — none of them
+// is a config key, because together they ARE the receiver's advertised safety
+// envelope: maxBodyBytes (decompressed bytes), maxRecordsPerRequest (record
+// objects), maxConnectionsPerRequest (per-connection entries inside flow records,
+// which one record slot would otherwise buy without limit), maxUnwrapDepth
+// (envelope nesting) and MaxConcurrentRequests (bodies buffered at once).
+//
+// Two properties hold for all of them. Budgets are enforced DURING the walk, not
+// after it: array-shaped envelopes are visited one child at a time and refused at
+// budget+1, so peak allocation tracks the budget rather than the width the sender
+// chose. And a refusal is ATOMIC — an over-budget request returns no records at
+// all, never a prefix.
+//
+// The untokened mode is loopback-only (see insecureOpen) and is additionally
+// gated against browser-originated requests: reachability alone authorizes it, so
+// a remote page could otherwise use a victim's browser as a confused deputy to
+// write forged records. See crossSiteReason.
+//
 // Each extracted record object is CLASSIFIED by shape, not by a declared type:
 //
 //   - if it has a non-empty "nodeId" and any of virtualTraffic / subnetTraffic /
@@ -87,6 +108,8 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"mime"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -128,11 +151,13 @@ const (
 	// carries a low-cardinality "type" attribute ("flow" or "audit").
 	MetricRecords = "tailscale.stream.records"
 	// MetricRejected counts whole REQUESTS the receiver refused to ingest. It
-	// carries a low-cardinality "reason" attribute: "auth", "too_large",
-	// "unparsable" (nothing JSON-like), "malformed" (the body was structurally
-	// corrupt/truncated), or "decode_error" (a known record failed typed decoding).
-	// The last two are the #201 atomic-batch rejections — a corrupt or partially
-	// undecodable batch is rejected whole rather than partially ACKed.
+	// carries a low-cardinality "reason" attribute: "auth", "auth_required",
+	// "cross_site", "too_large", "too_many_records", "too_many_connections",
+	// "overloaded", "unparsable" (nothing JSON-like), "malformed" (the body was
+	// structurally corrupt/truncated), or "decode_error" (a known record failed
+	// typed decoding). The last two are the #201 atomic-batch rejections — a
+	// corrupt or partially undecodable batch is rejected whole rather than
+	// partially ACKed.
 	MetricRejected = "tailscale.stream.rejected"
 	// MetricDecodeErrors counts records that classified as a known type but whose
 	// typed decode failed (a malformed flow/audit record). Carries the "type"
@@ -202,6 +227,19 @@ const (
 	reasonAuthRequired   = "auth_required"
 	reasonTooManyRecords = "too_many_records"
 	reasonOverloaded     = "overloaded"
+
+	// reasonTooManyConnections is the per-request nested-connection budget
+	// (GHSA-7rg3-xj9w-2gm8). One flow object consumes ONE record slot no matter
+	// how wide its four traffic arrays are, so the record cap does not bound the
+	// work those arrays drive; this reason surfaces a body that busts
+	// maxConnectionsPerRequest. Surfaced like the byte and record caps (413),
+	// because it is the same class of failure: refused for its size.
+	reasonTooManyConnections = "too_many_connections"
+
+	// reasonCrossSite is the tokenless-mode CSRF gate (GHSA-cvp7-f3mx-m68x): the
+	// request looked browser-originated or cross-site, so it is refused before any
+	// body is read. See crossSiteReason.
+	reasonCrossSite = "cross_site"
 )
 
 // defaultPath is the Splunk-HEC event endpoint path used when Options.Path is
@@ -234,6 +272,32 @@ const maxRecordsPerRequest = 500_000
 // than maxRecordsPerRequest records. The handler maps it to 413 +
 // rejected{reason=too_many_records}, matching how the byte cap is surfaced.
 var errTooManyRecords = errors.New("stream: request exceeds max record count")
+
+// maxConnectionsPerRequest caps how many per-connection entries the traffic
+// arrays of ALL flow records in one request may carry, combined
+// (GHSA-7rg3-xj9w-2gm8).
+//
+// maxRecordsPerRequest does not bound this. A flow object consumes exactly ONE
+// record slot however wide its virtualTraffic / subnetTraffic / exitTraffic /
+// physicalTraffic arrays are, and an empty `{}` is a valid ConnectionCounts — so
+// three bytes of body buy one more connection, and every connection later drives
+// metric, dedup, enrichment and (optionally) log work in the shared flow
+// processor. The count of CONNECTIONS is therefore its own axis and needs its own
+// budget, checked before any []ConnectionCounts is grown.
+//
+// The value matches maxRecordsPerRequest deliberately: the two together bound one
+// request at ~1M units of downstream work. A live capture of the real
+// TailscaleLogStreamPublisher carries a handful of connections per record across
+// a ~73-record batch, so this sits four orders of magnitude above any legitimate
+// sender. It is a package constant, not a config key, for the same reason the
+// caps around it are: it is the receiver's advertised safety envelope.
+const maxConnectionsPerRequest = 500_000
+
+// errNotAnArray is returned by countJSONArrayElements when the value it was given
+// is well-formed JSON but not an array. The caller treats it exactly as it treats
+// any other typed-decode failure of a KNOWN record (decode_error), because that
+// is what the subsequent json.Unmarshal into []ConnectionCounts would have done.
+var errNotAnArray = errors.New("stream: value is not a JSON array")
 
 // maxUnwrapDepth bounds envelope-unwrapping recursion (#228). The documented
 // shapes nest at most a couple of levels ({"logs":[{"event":<record>}]} is two),
@@ -531,6 +595,24 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// GHSA-cvp7-f3mx-m68x: with no token, ingestion is authorized by reachability
+	// alone, so a victim's browser can be driven by a remote page into writing
+	// forged records. Refuse anything carrying a browser's fingerprints BEFORE any
+	// body is read. A configured token makes this impossible already, so the gate
+	// is deliberately scoped to the tokenless mode — see crossSiteReason.
+	if s.token == "" {
+		if why := crossSiteReason(r); why != "" {
+			span.SetStatus(codes.Error, "cross-site request")
+			s.logger.Warn("stream: refusing browser-originated request to the untokened receiver", "cause", why)
+			s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+				telemetry.Attrs{attrReason: reasonCrossSite})
+			s.writeError(w, http.StatusForbidden,
+				"untokened streaming receiver refuses cross-site or browser-originated requests ("+why+
+					"): set streaming.token, or post from a local non-browser client with a loopback Host")
+			return
+		}
+	}
+
 	if !s.authorized(r) {
 		span.SetStatus(codes.Error, "unauthorized")
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
@@ -618,9 +700,30 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	pendingFlows := make([]flowlog.FlowLog, 0, len(records))
 	pendingAudits := make([]audit.Event, 0, len(records))
 	var classifyUnknown, flowDecodeErr, auditDecodeErr int
+	// GHSA-7rg3-xj9w-2gm8: the per-request nested-connection budget. It is spent
+	// across every flow record in the batch, and it is checked from the record's
+	// RAW bytes — before json.Unmarshal grows a []ConnectionCounts and long before
+	// the flow processor walks one.
+	connRemaining := maxConnectionsPerRequest
+	var connOverflow bool
+classifyLoop:
 	for _, rec := range records {
-		switch classify(rec.raw) {
+		kind, sh := classify(rec.raw)
+		switch kind {
 		case kindFlow:
+			n, cerr := countConnections(sh, connRemaining+1)
+			if cerr != nil {
+				// A traffic field that is not an array is a KNOWN record failing
+				// typed decoding — the same verdict json.Unmarshal below would
+				// reach, so keep it a decode_error rather than a size refusal.
+				flowDecodeErr++
+				continue
+			}
+			if n > connRemaining {
+				connOverflow = true
+				break classifyLoop
+			}
+			connRemaining -= n
 			var f flowlog.FlowLog
 			if err := json.Unmarshal(rec.raw, &f); err != nil {
 				flowDecodeErr++
@@ -646,6 +749,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		default:
 			classifyUnknown++
 		}
+	}
+
+	// GHSA-7rg3-xj9w-2gm8: the batch's flow records carry more connection entries
+	// than one request may spend. Refused for its SIZE like the byte and record
+	// caps (413), atomically — pendingFlows/pendingAudits are discarded unread, so
+	// the request contributes zero records.
+	if connOverflow {
+		span.SetStatus(codes.Error, "too many connections")
+		s.logger.Warn("stream: request exceeds max connection count", "limit_connections", maxConnectionsPerRequest)
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+			telemetry.Attrs{attrReason: reasonTooManyConnections})
+		s.writeError(w, http.StatusRequestEntityTooLarge, "too many connection entries in body")
+		return
 	}
 
 	// #201: a KNOWN record (flow/audit) that failed typed decoding means the batch
@@ -752,6 +868,95 @@ func (s *Server) authorized(r *http.Request) bool {
 	return false
 }
 
+// corsSafelistedMediaTypes are the media types a cross-origin browser request may
+// set WITHOUT triggering a CORS preflight. They are therefore exactly the set a
+// forged, no-preflight POST can carry — a request declaring one of them cannot
+// have been a deliberate JSON HEC submission and is refused in tokenless mode.
+// Anything else (including application/json) forces a preflight the receiver never
+// answers, so the browser never sends the real request.
+var corsSafelistedMediaTypes = map[string]bool{
+	"application/x-www-form-urlencoded": true,
+	"multipart/form-data":               true,
+	"text/plain":                        true,
+}
+
+// crossSiteReason reports why a request looks browser-originated or cross-site,
+// or "" when it does not (GHSA-cvp7-f3mx-m68x).
+//
+// The tokenless loopback mode is authorized by REACHABILITY alone: any process
+// that can open a socket to 127.0.0.1 may write flow and audit records. A browser
+// is such a process, and it will make the request on behalf of whatever page told
+// it to — so a remote web origin can use a victim's browser as a confused deputy
+// and forge records. The same-origin policy does not help: the attacker never
+// needs to read the response, only to have it accepted.
+//
+// The mode stays (it is the documented way to run the receiver locally without a
+// credential), so the gate instead refuses everything that carries a browser's
+// fingerprints. Each check is independently sufficient; together they cover both
+// current browsers (fetch metadata) and older ones (Origin, safelisted
+// Content-Type):
+//
+//   - Origin: attached to every cross-origin fetch/XHR and to form POSTs. Nothing
+//     that legitimately posts here sends one, so ANY value is refused rather than
+//     matched against an allowlist — there is no origin this endpoint serves.
+//   - Sec-Fetch-Site / -Mode / -Dest: fetch metadata, unforgeable by page script.
+//     Only the shapes a non-browser client produces (absent) or a genuinely
+//     same-origin one produces are let through.
+//   - Content-Type: see corsSafelistedMediaTypes.
+//   - Host: the DNS-rebinding case. `evil.example` resolving to 127.0.0.1 really
+//     does reach the loopback listener, but the browser sends the attacker's name
+//     in Host, so requiring a loopback Host refuses it. This is also why the gate
+//     is tokenless-mode only — a tokened receiver behind a reverse proxy has a
+//     legitimately non-loopback Host, and its token already makes CSRF impossible.
+func crossSiteReason(r *http.Request) string {
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" {
+		return "an Origin header (" + origin + ")"
+	}
+	switch site := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); site {
+	case "", "none", "same-origin":
+	default:
+		return "Sec-Fetch-Site: " + site
+	}
+	switch mode := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Mode"))); mode {
+	case "", "cors", "same-origin":
+	default:
+		return "Sec-Fetch-Mode: " + mode
+	}
+	if dest := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Dest"))); dest != "" && dest != "empty" {
+		return "Sec-Fetch-Dest: " + dest
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		mt, _, err := mime.ParseMediaType(ct)
+		if err != nil || corsSafelistedMediaTypes[strings.ToLower(mt)] {
+			return "a CORS-safelisted Content-Type (" + ct + ")"
+		}
+	}
+	if !hostIsLoopback(r.Host) {
+		return "a non-loopback Host header (" + r.Host + ")"
+	}
+	return ""
+}
+
+// hostIsLoopback reports whether an HTTP Host header names the loopback
+// interface. Unlike listenaddr.IsLoopback it accepts a bare host with no port
+// (Host may omit the default port) but is otherwise the same fail-closed rule: a
+// hostname is never resolved, so only the "localhost" literal passes by name.
+func hostIsLoopback(host string) bool {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return false
+	}
+	if hostOnly, _, err := net.SplitHostPort(h); err == nil {
+		h = hostOnly
+	}
+	h = strings.Trim(h, "[]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
 // readBody reads and (per Decompress / Content-Encoding) decompresses the
 // request body.
 func (s *Server) readBody(r *http.Request) ([]byte, error) {
@@ -847,23 +1052,84 @@ type shape struct {
 	Action string          `json:"action"`
 }
 
-// classify inspects a record's shape and returns its kind. A record is a flow
-// if it has a non-empty nodeId and at least one traffic field; otherwise it is
-// an audit event if it has both an actor and an action.
-func classify(rec json.RawMessage) recordKind {
+// classify inspects a record's shape and returns its kind, plus the probed shape
+// itself so the caller can reuse the already-decoded traffic arrays for the
+// connection count instead of parsing the record a second time. A record is a
+// flow if it has a non-empty nodeId and at least one traffic field; otherwise it
+// is an audit event if it has both an actor and an action.
+func classify(rec json.RawMessage) (recordKind, shape) {
 	var sh shape
 	if err := json.Unmarshal(rec, &sh); err != nil {
-		return kindUnknown
+		return kindUnknown, shape{}
 	}
 	hasTraffic := len(sh.VirtualTraffic) > 0 || len(sh.SubnetTraffic) > 0 ||
 		len(sh.ExitTraffic) > 0 || len(sh.PhysicalTraffic) > 0
 	if sh.NodeID != "" && hasTraffic {
-		return kindFlow
+		return kindFlow, sh
 	}
 	if len(sh.Actor) > 0 && sh.Action != "" {
-		return kindAudit
+		return kindAudit, sh
 	}
-	return kindUnknown
+	return kindUnknown, sh
+}
+
+// countJSONArrayElements counts the elements of a JSON array WITHOUT retaining
+// any of them, stopping as soon as limit is reached.
+//
+// Both properties matter for GHSA-7rg3-xj9w-2gm8: the count has to happen before
+// json.Unmarshal grows a []ConnectionCounts, and it must not itself become the
+// unbounded walk it exists to prevent — an answer of "at least limit" is all the
+// caller needs to refuse the request.
+//
+// An absent or null value counts as zero (the wire really does send
+// "virtualTraffic": null, and it unmarshals cleanly to a nil slice). A well-formed
+// non-array returns errNotAnArray so the caller keeps treating it as the typed
+// decode failure it is, rather than as a size problem.
+func countJSONArrayElements(raw json.RawMessage, limit int) (int, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return 0, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	open, err := dec.Token()
+	if err != nil {
+		return 0, err
+	}
+	if d, isDelim := open.(json.Delim); !isDelim || d != '[' {
+		return 0, errNotAnArray
+	}
+	n := 0
+	for dec.More() {
+		if n >= limit {
+			return n, nil
+		}
+		var e json.RawMessage
+		if err := dec.Decode(&e); err != nil {
+			return n, err
+		}
+		n++
+	}
+	if closing, err := dec.Token(); err != nil || closing != json.Delim(']') {
+		return n, errors.New("stream: truncated JSON array")
+	}
+	return n, nil
+}
+
+// countConnections sums the entries across a flow record's four traffic arrays,
+// stopping as soon as the running total reaches limit.
+func countConnections(sh shape, limit int) (int, error) {
+	total := 0
+	for _, arr := range []json.RawMessage{sh.VirtualTraffic, sh.SubnetTraffic, sh.ExitTraffic, sh.PhysicalTraffic} {
+		if total >= limit {
+			return total, nil
+		}
+		n, err := countJSONArrayElements(arr, limit-total)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
 }
 
 // extractedRecord pairs a raw record object with the timestamp carried by its
@@ -1029,11 +1295,30 @@ func (st *unwrapState) take() bool {
 // plus the HEC timestamp fields ("time" and "fields.recorded") that sit beside
 // "event". Time and Fields are kept raw so a malformed or unexpected shape can
 // never fail the whole envelope decode — keeping the parser defensive.
+// Logs is kept as ONE raw value rather than a []json.RawMessage on purpose
+// (GHSA-6j2r-56pv-qrm7): decoding it as a slice materialized every wrapper child
+// into its own allocation, and the walk then preallocated its output to that same
+// full width — all before the record budget could refuse the batch. The array is
+// now visited incrementally by unwrapArray, so allocation tracks the BUDGET
+// instead of the sender's chosen width. See logsShapeOK for the one behavior
+// that typed field used to give for free.
 type envelope struct {
-	Time   json.RawMessage   `json:"time"`
-	Event  json.RawMessage   `json:"event"`
-	Fields json.RawMessage   `json:"fields"`
-	Logs   []json.RawMessage `json:"logs"`
+	Time   json.RawMessage `json:"time"`
+	Event  json.RawMessage `json:"event"`
+	Fields json.RawMessage `json:"fields"`
+	Logs   json.RawMessage `json:"logs"`
+}
+
+// logsShapeOK reports whether the raw "logs" value is one this walk can use:
+// absent, null, or a JSON array.
+//
+// With the old typed `Logs []json.RawMessage`, a "logs" of any other shape failed
+// the WHOLE envelope decode, which sent the value down the plain-record path (and
+// therefore also ignored any sibling "event"). Logs is now raw, so that decode no
+// longer fails — this restates the rule explicitly so the behavior is unchanged.
+func (e envelope) logsShapeOK() bool {
+	arr := bytes.TrimSpace(e.Logs)
+	return len(arr) == 0 || arr[0] == '[' || bytes.Equal(arr, []byte("null"))
 }
 
 // unwrap turns a single top-level JSON value into the record object(s) it
@@ -1063,16 +1348,8 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		// Not a JSON object (e.g. an array or scalar at top level); ignore.
 		if len(trimmed) > 0 && trimmed[0] == '[' {
-			// A bare JSON array of records.
-			var arr []json.RawMessage
-			if err := decodeOnce(trimmed, &arr); err == nil {
-				var out []extractedRecord
-				for _, e := range arr {
-					out = append(out, unwrap(e, inherited, depth+1, st)...)
-					if st.overflow {
-						return out
-					}
-				}
+			// A bare JSON array of records, visited INCREMENTALLY (see unwrapArray).
+			if out, _, ok := unwrapArray(trimmed, inherited, depth, st); ok {
 				return out
 			}
 		}
@@ -1081,7 +1358,7 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 	}
 
 	var env envelope
-	if err := decodeOnce(trimmed, &env); err == nil {
+	if err := decodeOnce(trimmed, &env); err == nil && env.logsShapeOK() {
 		// A HEC/batch wrapper's "time"/"fields.recorded" sibling is the event
 		// time; prefer it over an inherited time when propagating down to the
 		// record(s) it carries. Applied to BOTH the {"logs":[...]} and {"event":...}
@@ -1090,15 +1367,17 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 		if t.IsZero() {
 			t = inherited
 		}
-		if len(env.Logs) > 0 {
-			out := make([]extractedRecord, 0, len(env.Logs))
-			for _, e := range env.Logs {
-				out = append(out, unwrap(e, t, depth+1, st)...)
-				if st.overflow {
-					return out
-				}
+		if arr := bytes.TrimSpace(env.Logs); len(arr) > 0 && arr[0] == '[' {
+			out, elements, ok := unwrapArray(arr, t, depth, st)
+			if st.overflow {
+				return nil
 			}
-			return out
+			// An EMPTY logs array is not a batch wrapper: the old typed field made
+			// {"logs":[]} fall through to the plain-record path, so a zero element
+			// count keeps doing that.
+			if ok && elements > 0 {
+				return out
+			}
 		}
 		if len(bytes.TrimSpace(env.Event)) > 0 {
 			return unwrap(env.Event, t, depth+1, st)
@@ -1109,6 +1388,61 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 		return nil
 	}
 	return []extractedRecord{{raw: trimmed, envTime: inherited}}
+}
+
+// unwrapArray walks the elements of a JSON array ONE AT A TIME, unwrapping each
+// as it is read, and stops the instant the record budget is exhausted
+// (GHSA-429c-x655-jwpx for the bare top-level array, GHSA-6j2r-56pv-qrm7 for the
+// {"logs":[...]} wrapper).
+//
+// Both call sites used to decode the complete array into a []json.RawMessage —
+// one allocation per child, plus (in the wrapper case) an output slice
+// preallocated to the array's full width — and only THEN walk it and discover the
+// budget was blown. The peak allocation was therefore proportional to the width
+// the SENDER chose, not to the budget, so the eventual 413 arrived after the
+// damage. Reading through a json.Decoder inverts that: the budget is consulted
+// before each child is decoded, so at most budget+1 children are ever touched.
+//
+// On overflow it returns NO records at all. The batch is going to be rejected
+// whole, and handing back a prefix is how a partial emit gets one refactor away.
+//
+// elements is the number of children actually read; ok is false when the value is
+// not a well-formed lone array, which both callers treat exactly as the old
+// whole-value decode failure did.
+func unwrapArray(arr []byte, inherited time.Time, depth int, st *unwrapState) (out []extractedRecord, elements int, ok bool) {
+	dec := json.NewDecoder(bytes.NewReader(arr))
+	open, err := dec.Token()
+	if err != nil {
+		return nil, 0, false
+	}
+	if d, isDelim := open.(json.Delim); !isDelim || d != '[' {
+		return nil, 0, false
+	}
+	for dec.More() {
+		// Checked BEFORE the next child is decoded: this is the whole point of the
+		// rewrite. A child cannot yield a record without taking budget, so an
+		// exhausted budget means every remaining child is unusable.
+		if st.remaining <= 0 {
+			st.overflow = true
+			return nil, elements, true
+		}
+		var e json.RawMessage
+		if err := dec.Decode(&e); err != nil {
+			return nil, elements, false
+		}
+		elements++
+		out = append(out, unwrap(e, inherited, depth+1, st)...)
+		if st.overflow {
+			return nil, elements, true
+		}
+	}
+	// dec.More() also returns false on a truncated array, so the closing bracket
+	// has to be consumed explicitly — otherwise `[{}` would look like a clean
+	// one-element array, where the old whole-value decode failed it.
+	if closing, err := dec.Token(); err != nil || closing != json.Delim(']') {
+		return nil, elements, false
+	}
+	return out, elements, true
 }
 
 // decodeOnce decodes the single JSON value in data into out.

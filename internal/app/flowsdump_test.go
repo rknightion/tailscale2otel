@@ -90,7 +90,7 @@ func TestDumpFlowsJSON(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	a.buildAdminServer().Handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/flows.json?window=1h&recent=500", nil))
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/api/flows.json?window=1h&recent=500"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}

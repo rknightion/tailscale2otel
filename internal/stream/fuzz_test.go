@@ -31,6 +31,25 @@ func FuzzExtractRecords(f *testing.F) {
 		`{"event":null,"time":"1717171717"}`,
 		`{}`,
 		``,
+		// The array-shaped envelopes are now walked one child at a time
+		// (GHSA-429c-x655-jwpx / GHSA-6j2r-56pv-qrm7), so the malformed and
+		// degenerate array shapes that walk has to survive are seeded explicitly:
+		// truncated, empty, non-array "logs", nested arrays, trailing garbage.
+		`[]`,
+		`[{}`,
+		`[{},`,
+		`[{},{}]trailing`,
+		`{"logs":[]}`,
+		`{"logs":null,"actor":{},"action":"X"}`,
+		`{"logs":"not-an-array","actor":{},"action":"X"}`,
+		`{"logs":[[{"nodeId":"n","exitTraffic":[]}]]}`,
+		`{"logs":[{"logs":[{"actor":{},"action":"A"}]}]}`,
+		// Flow records whose traffic arrays are the shapes the connection-count
+		// pass has to tolerate (GHSA-7rg3-xj9w-2gm8): null, empty, non-array,
+		// scalar elements.
+		`{"nodeId":"n","virtualTraffic":null,"subnetTraffic":[]}`,
+		`{"nodeId":"n","virtualTraffic":{"not":"array"}}`,
+		`{"nodeId":"n","virtualTraffic":[1,2,3]}`,
 	}
 	for _, s := range seeds {
 		f.Add([]byte(s))
@@ -41,15 +60,32 @@ func FuzzExtractRecords(f *testing.F) {
 		if err != nil {
 			return // nothing JSON-like in the body; not a decode path
 		}
+		// The record budget is a hard bound on what extraction may hand back, and
+		// an over-budget body must come back as an error with NOTHING attached —
+		// the atomic-rejection invariant, asserted here so no input can smuggle a
+		// partial batch past it.
+		if len(recs) > maxRecordsPerRequest {
+			t.Fatalf("extractRecords returned %d records, over the %d budget", len(recs), maxRecordsPerRequest)
+		}
 		for _, rec := range recs {
 			// classify() probes the record shape, then the handler fully decodes
 			// it into the record type classify picked. Mirror that here so the
 			// fuzzer reaches the real flowlog/audit decoders, not just the
 			// envelope walk.
-			switch classify(rec.raw) {
+			switch kind, sh := classify(rec.raw); kind {
 			case kindFlow:
+				// The handler counts connections from the probed shape BEFORE it
+				// grows a []ConnectionCounts; the count must never exceed what the
+				// full decode then produces, or the budget could be under-charged.
+				n, cerr := countConnections(sh, maxConnectionsPerRequest+1)
 				var fl flowlog.FlowLog
-				_ = json.Unmarshal(rec.raw, &fl)
+				derr := json.Unmarshal(rec.raw, &fl)
+				if cerr == nil && derr == nil {
+					got := len(fl.VirtualTraffic) + len(fl.SubnetTraffic) + len(fl.ExitTraffic) + len(fl.PhysicalTraffic)
+					if n != got {
+						t.Fatalf("countConnections = %d but the decoded record has %d connections", n, got)
+					}
+				}
 			case kindAudit:
 				var ev audit.Event
 				_ = json.Unmarshal(rec.raw, &ev)

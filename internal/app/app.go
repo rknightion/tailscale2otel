@@ -602,7 +602,12 @@ func (a *App) autoConfigureStreaming(ctx context.Context) {
 			a.componentError(appcatalog.ComponentAutoConfigure)
 			continue
 		}
-		a.logger.Info("streaming auto_configure registered sink", "log_type", logType, "url", sink.URL)
+		// The destination URL is deliberately NOT logged (GHSA-rm3x-hhrj-94v4):
+		// streaming.public_url can embed userinfo or a signed query, and this
+		// line would hand that reusable credential to anything reading the
+		// process log. The type and the outcome are what an operator needs; the
+		// URL is already in their config.
+		a.logger.Info("streaming auto_configure registered sink", "log_type", logType)
 	}
 }
 

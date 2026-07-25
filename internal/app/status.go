@@ -12,6 +12,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v3/internal/redact"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
@@ -97,8 +98,12 @@ func (a *App) buildStatus() statusdata.Status {
 			SelfObs:   a.cfg.SelfObservability.Enabled,
 		},
 		Telemetry: statusdata.TelemetryInfo{
-			Protocol:        a.cfg.OTLP.Protocol,
-			Endpoint:        a.cfg.OTLP.Endpoint,
+			Protocol: a.cfg.OTLP.Protocol,
+			// The exporter needs the endpoint verbatim, but the status surface must
+			// not echo credentials an operator embedded in it (GHSA-qch3-gwff-r6pf).
+			// Validate() rejects URL userinfo outright; this is the second line of
+			// defense and also strips query values and the fragment.
+			Endpoint:        redact.URL(a.cfg.OTLP.Endpoint),
 			Insecure:        a.cfg.OTLP.TLS.Insecure,
 			MetricIntervalS: int64(a.cfg.OTLP.MetricInterval.D().Seconds()),
 		},
@@ -118,7 +123,10 @@ func (a *App) buildStatus() statusdata.Status {
 		Profiling: statusdata.ProfilingInfo{
 			PprofEnabled:     a.cfg.Profiling.Pprof.Enabled,
 			PyroscopeEnabled: a.cfg.Profiling.Pyroscope.Enabled,
-			PyroscopeServer:  a.cfg.Profiling.Pyroscope.ServerAddress,
+			// Same treatment as the OTLP endpoint: a push target can carry userinfo
+			// or a signed query, and the dedicated basic_auth_* fields express the
+			// same thing (GHSA-jp5c-3282-6882).
+			PyroscopeServer: redact.URL(a.cfg.Profiling.Pyroscope.ServerAddress),
 		},
 		Runtime:     runtimeInfo(),
 		Throughput:  throughputInfo(a.emitStats()),
@@ -496,7 +504,11 @@ func (a *App) nodeDiscovery() statusdata.NodeDiscovery {
 		nd.LastDiscovery = ds.LastDiscovery.UTC().Format(rfc3339)
 	}
 	for _, t := range ds.Targets {
-		nd.Targets = append(nd.Targets, statusdata.NodeTarget{Instance: t.Instance, URL: t.URL, Source: t.Source})
+		// A static target URL may carry userinfo or a signed query even though the
+		// typed bearer_token/headers fields exist for that; the active-target
+		// snapshot is always serialized by /api/status.json, so sanitize it here
+		// rather than trusting each renderer (GHSA-h5p7-qj62-m8qx).
+		nd.Targets = append(nd.Targets, statusdata.NodeTarget{Instance: t.Instance, URL: redact.URL(t.URL), Source: t.Source})
 	}
 	return nd
 }
