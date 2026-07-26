@@ -21,10 +21,12 @@
 //
 // Malformed or semantically invalid NDJSON lines are record-level failures: good
 // lines in that object are accepted and the object can be marked complete. GET,
-// decompressor, and scanner failures are object-level gaps. Raw rows are staged
-// until clean EOF, so these failures emit no signal rows. An unexpected signal
-// processing failure can still occur after earlier staged rows were emitted;
-// generic prepare/commit is outside this package's current boundary.
+// decompressor, scanner, and unexpected signal-preparation failures are
+// object-level gaps. Raw rows are staged until clean EOF and then converted to
+// prepared actions without side effects. Only after every row has prepared does
+// the engine commit those actions in order. This makes object processing atomic
+// across preparation failures, but it is not a crash, checkpoint, or OTLP
+// transaction.
 // OTLP/backend acknowledgement is outside this boundary.
 package objectstore
 
@@ -617,8 +619,13 @@ type ingestResult struct {
 	decompressedBytes int64
 }
 
-// ingest fetches, decompresses, and stages every nonblank row before sending
-// any row to the configured signal processor.
+type preparedAction struct {
+	record   PreparedRecord
+	accepted bool
+}
+
+// ingest fetches, decompresses, and stages every nonblank row before preparing
+// or committing any signal-specific action.
 func (c *Collector) ingest(
 	ctx context.Context,
 	identity string,
@@ -734,18 +741,62 @@ func (c *Collector) ingest(
 		return result, expansionError(wireLimitKind, wire.n, wireLimit)
 	}
 
-	var bad, semanticBad int
-	for _, line := range staged {
-		timestamps, err := c.signal.ProcessRecord(ctx, line, c.now(), e)
+	var (
+		actions          = make([]preparedAction, 0, len(staged))
+		bad, semanticBad int
+	)
+	for i, line := range staged {
+		prepared, err := c.signal.PrepareRecord(ctx, line, c.now())
+		// Release each raw row as soon as its bounded prepared representation
+		// replaces it, so its payload can be reclaimed during preparation.
+		staged[i] = nil
+		if errors.Is(err, ErrRecordDecode) && errors.Is(err, ErrRecordInvalid) {
+			return result, &objectIngestError{
+				stage: "process",
+				err:   errors.New("signal processor error matched both row-local sentinels"),
+			}
+		}
 		switch {
 		case errors.Is(err, ErrRecordDecode):
+			if prepared != nil {
+				return result, &objectIngestError{
+					stage: "process",
+					err:   errors.New("signal processor returned a prepared record with ErrRecordDecode"),
+				}
+			}
 			bad++
 			continue
 		case errors.Is(err, ErrRecordInvalid):
+			if prepared == nil {
+				return result, &objectIngestError{
+					stage: "process",
+					err:   errors.New("signal processor returned nil with ErrRecordInvalid"),
+				}
+			}
 			semanticBad++
+			actions = append(actions, preparedAction{record: prepared})
 			continue
 		case err != nil:
 			return result, &objectIngestError{stage: "process", err: err}
+		case prepared == nil:
+			return result, &objectIngestError{
+				stage: "process",
+				err:   errors.New("signal processor returned nil for an accepted record"),
+			}
+		}
+		actions = append(actions, preparedAction{record: prepared, accepted: true})
+	}
+
+	// Cancellation is an all-or-nothing boundary for row-derived effects. Once
+	// commit starts it runs to completion without another context check, so a
+	// retry cannot repeat an action prefix.
+	if err := ctx.Err(); err != nil {
+		return result, &objectIngestError{stage: "process", err: err}
+	}
+	for _, action := range actions {
+		timestamps := action.record.Commit(e)
+		if !action.accepted {
+			continue
 		}
 		if c.opts.OnAccepted != nil {
 			c.opts.OnAccepted(ingest.AcceptedEvent{

@@ -28,12 +28,27 @@ type RecordTimestamps struct {
 	CaptureTime time.Time
 }
 
-// SignalProcessor decodes, validates, and hands one source record to the
-// signal's existing processor. Implementations must wrap ErrRecordDecode or
-// ErrRecordInvalid for row-local failures; any other error fails the object.
+// PreparedRecord is one decoded record whose row-local outcome can be committed
+// after every row in the containing object has prepared successfully. Commit is
+// infallible and is the first point at which a signal adapter may touch shared
+// processors, emitters, caches, de-duplication, stores, rDNS, rollups, or
+// freshness observers.
+type PreparedRecord interface {
+	Commit(telemetry.Emitter) RecordTimestamps
+}
+
+// SignalProcessor decodes and validates one source record without observable
+// side effects. Implementations return:
+//   - a non-nil prepared record and nil for an accepted row;
+//   - nil and an error wrapping ErrRecordDecode for malformed source data;
+//   - a non-nil deferred-observation record and an error wrapping
+//     ErrRecordInvalid for semantically invalid source data.
+//
+// Any other error fails the object, and the engine ignores any prepared record
+// returned with it.
 type SignalProcessor interface {
 	Signal() string
-	ProcessRecord(context.Context, []byte, time.Time, telemetry.Emitter) (RecordTimestamps, error)
+	PrepareRecord(context.Context, []byte, time.Time) (PreparedRecord, error)
 }
 
 type flowSignal struct {
@@ -48,24 +63,41 @@ func NewFlowSignal(proc *flowlog.Processor) SignalProcessor {
 
 func (*flowSignal) Signal() string { return semconv.IngestSignalFlow }
 
-func (s *flowSignal) ProcessRecord(
+func (s *flowSignal) PrepareRecord(
 	_ context.Context,
 	line []byte,
 	now time.Time,
-	e telemetry.Emitter,
-) (RecordTimestamps, error) {
+) (PreparedRecord, error) {
 	var record flowlog.FlowLog
 	if err := json.Unmarshal(line, &record); err != nil {
-		return RecordTimestamps{}, fmt.Errorf("%w: %w", ErrRecordDecode, err)
+		return nil, fmt.Errorf("%w: %w", ErrRecordDecode, err)
 	}
 	violations := flowlog.Validate(record, flowlog.ValidationOptions{Now: func() time.Time { return now }})
 	if len(violations) != 0 {
-		flowlog.ObserveDataQuality(e, semconv.IngestSourceObjectStore, violations)
-		return RecordTimestamps{}, fmt.Errorf("%w: %d violation(s)", ErrRecordInvalid, len(violations))
+		return invalidFlowRecord{violations: violations},
+			fmt.Errorf("%w: %d violation(s)", ErrRecordInvalid, len(violations))
 	}
-	s.proc.Process(record, e)
+	return acceptedFlowRecord{proc: s.proc, record: record}, nil
+}
+
+type acceptedFlowRecord struct {
+	proc   *flowlog.Processor
+	record flowlog.FlowLog
+}
+
+func (r acceptedFlowRecord) Commit(e telemetry.Emitter) RecordTimestamps {
+	r.proc.Process(r.record, e)
 	return RecordTimestamps{
-		EventTime:   flowlog.EventTimestamp(record),
-		CaptureTime: flowlog.CaptureTimestamp(record),
-	}, nil
+		EventTime:   flowlog.EventTimestamp(r.record),
+		CaptureTime: flowlog.CaptureTimestamp(r.record),
+	}
+}
+
+type invalidFlowRecord struct {
+	violations []flowlog.Violation
+}
+
+func (r invalidFlowRecord) Commit(e telemetry.Emitter) RecordTimestamps {
+	flowlog.ObserveDataQuality(e, semconv.IngestSourceObjectStore, r.violations)
+	return RecordTimestamps{}
 }

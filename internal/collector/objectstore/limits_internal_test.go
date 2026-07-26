@@ -64,13 +64,18 @@ type benchmarkSignal struct{}
 
 func (benchmarkSignal) Signal() string { return "benchmark" }
 
-func (benchmarkSignal) ProcessRecord(
+func (benchmarkSignal) PrepareRecord(
 	context.Context,
 	[]byte,
 	time.Time,
-	telemetry.Emitter,
-) (RecordTimestamps, error) {
-	return RecordTimestamps{}, nil
+) (PreparedRecord, error) {
+	return benchmarkPrepared{}, nil
+}
+
+type benchmarkPrepared struct{}
+
+func (benchmarkPrepared) Commit(telemetry.Emitter) RecordTimestamps {
+	return RecordTimestamps{}
 }
 
 func BenchmarkIngestExpansionLimits(b *testing.B) {

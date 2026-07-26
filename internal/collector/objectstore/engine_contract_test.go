@@ -49,17 +49,24 @@ type contractSignal struct {
 
 func (s *contractSignal) Signal() string { return s.name }
 
-func (s *contractSignal) ProcessRecord(
+func (s *contractSignal) PrepareRecord(
 	_ context.Context,
 	_ []byte,
 	_ time.Time,
-	_ telemetry.Emitter,
-) (objectstore.RecordTimestamps, error) {
-	s.processed++
+) (objectstore.PreparedRecord, error) {
+	return contractPrepared{s: s}, nil
+}
+
+type contractPrepared struct {
+	s *contractSignal
+}
+
+func (r contractPrepared) Commit(telemetry.Emitter) objectstore.RecordTimestamps {
+	r.s.processed++
 	return objectstore.RecordTimestamps{
 		EventTime:   now.Add(-2 * time.Minute),
 		CaptureTime: now.Add(-time.Minute),
-	}, nil
+	}
 }
 
 func TestEngineUsesProviderNeutralIdentityAndSignalContracts(t *testing.T) {
