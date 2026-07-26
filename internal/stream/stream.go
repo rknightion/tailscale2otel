@@ -146,6 +146,17 @@ type Option func(*Server)
 // disables span emission (the server falls back to the noop tracer).
 func WithTracer(tr trace.Tracer) Option { return func(s *Server) { s.tracer = tr } }
 
+// DurableAppend persists one fully validated, decompressed request body before
+// the receiver acknowledges it. The app supplies a route-bound implementation;
+// request data never selects the durable route.
+type DurableAppend func(context.Context, []byte, time.Time) error
+
+// WithDurableAppend enables durable acknowledgement for this receiver route.
+// A nil appender leaves the existing synchronous path unchanged.
+func WithDurableAppend(append DurableAppend) Option {
+	return func(s *Server) { s.durableAppend = append }
+}
+
 // Exported metric names emitted by the receiver.
 const (
 	// MetricRecords counts records successfully routed to a processor. It
@@ -156,8 +167,9 @@ const (
 	// "cross_site", "too_large", "too_many_records", "too_many_connections",
 	// "overloaded", "unparsable" (nothing JSON-like), "malformed" (the body was
 	// structurally corrupt/truncated), "decode_error" (a known record failed
-	// typed decoding), or "semantic_invalid" (a decoded flow failed bounded
-	// semantic validation). These are #201 atomic-batch rejections — a
+	// typed decoding), "semantic_invalid" (a decoded flow failed bounded
+	// semantic validation), or "wal_unavailable" (durable append failed). These
+	// are #201 atomic-batch rejections — a
 	// corrupt or partially undecodable batch is rejected whole rather than
 	// partially ACKed.
 	MetricRejected = "tailscale.stream.rejected"
@@ -207,9 +219,10 @@ const (
 	// a KNOWN type (flow/audit) but failed typed decoding. Either rejects the
 	// WHOLE request with no partial emit, distinct from an unknown future record
 	// type (which is skipped, not rejected — see reasonUnclassified below).
-	reasonMalformed   = "malformed"
-	reasonDecodeError = "decode_error"
-	reasonSemantic    = "semantic_invalid"
+	reasonMalformed      = "malformed"
+	reasonDecodeError    = "decode_error"
+	reasonSemantic       = "semantic_invalid"
+	reasonWALUnavailable = "wal_unavailable"
 
 	// reasonUnclassified and reasonUnwrapDrop are the "reason" values for
 	// MetricSkipped (#67): the two ways a record extracted from a valid
@@ -422,6 +435,31 @@ type Server struct {
 	onIngest   func(source, signal string, records, bytes int)
 	onAccepted ingest.AcceptedObserver
 	tracer     trace.Tracer
+
+	durableAppend DurableAppend
+}
+
+type pendingFlow struct {
+	log flowlog.FlowLog
+}
+
+type pendingAudit struct {
+	event       audit.Event
+	captureTime time.Time
+}
+
+type decodedBatch struct {
+	flows           []pendingFlow
+	audits          []pendingAudit
+	classifyUnknown int
+	unwrapDropped   int
+}
+
+// ApplyResult is the minimal replay result needed by app wiring. A true
+// FlowsApplied tells the matching route to drain its flow rollup before the
+// export barrier.
+type ApplyResult struct {
+	FlowsApplied bool
 }
 
 // Route binds one exact HEC path to the processor/emitter pair for one
@@ -793,15 +831,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// fails typed decoding is tallied so the whole request can be rejected below
 	// (nothing emitted). Genuinely-unknown record types are counted as skips and
 	// do NOT fail the batch (forward compatibility).
-	type pendingFlow struct {
-		log flowlog.FlowLog
+	batch := decodedBatch{
+		flows:         make([]pendingFlow, 0, len(records)),
+		audits:        make([]pendingAudit, 0, len(records)),
+		unwrapDropped: outcome.unwrapDropped,
 	}
-	type pendingAudit struct {
-		event       audit.Event
-		captureTime time.Time
-	}
-	pendingFlows := make([]pendingFlow, 0, len(records))
-	pendingAudits := make([]pendingAudit, 0, len(records))
 	var classifyUnknown, flowDecodeErr, auditDecodeErr int
 	// GHSA-7rg3-xj9w-2gm8: the per-request nested-connection budget. It is spent
 	// across every flow record in the batch, and it is checked from the record's
@@ -832,7 +866,7 @@ classifyLoop:
 				flowDecodeErr++
 				continue
 			}
-			pendingFlows = append(pendingFlows, pendingFlow{log: f})
+			batch.flows = append(batch.flows, pendingFlow{log: f})
 		case kindAudit:
 			var ev audit.Event
 			if err := json.Unmarshal(rec.raw, &ev); err != nil {
@@ -848,7 +882,7 @@ classifyLoop:
 			if ev.EventTime.IsZero() && !rec.envTime.IsZero() {
 				ev.EventTime = rec.envTime
 			}
-			pendingAudits = append(pendingAudits, pendingAudit{event: ev, captureTime: rec.captureTime})
+			batch.audits = append(batch.audits, pendingAudit{event: ev, captureTime: rec.captureTime})
 		default:
 			classifyUnknown++
 		}
@@ -888,14 +922,15 @@ classifyLoop:
 		s.writeError(w, http.StatusBadRequest, "batch contains an undecodable record")
 		return
 	}
+	batch.classifyUnknown = classifyUnknown
 
 	// A typed decode can still be semantically impossible (negative counters,
 	// inverted windows, malformed endpoints, implausibly future timestamps, or
 	// an out-of-range protocol). Validate the complete staged batch before any
 	// processor side effect so one invalid flow cannot be partially ACKed.
 	semanticInvalid := false
-	for i := range pendingFlows {
-		violations := flowlog.Validate(pendingFlows[i].log, flowlog.ValidationOptions{})
+	for i := range batch.flows {
+		violations := flowlog.Validate(batch.flows[i].log, flowlog.ValidationOptions{})
 		if len(violations) == 0 {
 			continue
 		}
@@ -911,104 +946,41 @@ classifyLoop:
 		return
 	}
 
+	if s.durableAppend != nil {
+		// Cancellation has one final boundary immediately before publication.
+		// Once the appender begins, its fsync/rename barrier decides whether the
+		// body is durable; a successful return is acknowledged even if the
+		// request context became canceled during that barrier.
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
+		if err := s.durableAppend(r.Context(), raw, time.Now()); err != nil {
+			span.SetStatus(codes.Error, "durable append failed")
+			// WAL errors may contain filesystem paths or backend free text.
+			// Keep receiver diagnostics closed and bounded.
+			s.logger.Warn("stream: durable append unavailable")
+			s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+				telemetry.Attrs{attrReason: reasonWALUnavailable})
+			w.Header().Set("Retry-After", "1")
+			s.writeError(w, http.StatusServiceUnavailable, "durable append failed, retry shortly")
+			return
+		}
+		s.writeAck(w)
+		return
+	}
+
 	// Phase 2: the batch is fully understood and semantically valid (every record
 	// either decoded cleanly or is a forward-compatible unknown). NOW emit —
 	// route the staged records, count skips, and ack success. Nothing above this
 	// point touched a processor.
-	if s.phase2DeadlineExceeded(r.Context(), w, span) {
+	if _, err := s.applyDecoded(raw, batch, time.Now, r.Context().Err); err != nil {
+		s.phase2DeadlineExceeded(r.Context(), w, span)
 		return
 	}
-	if s.onIngest != nil && len(raw) > 0 {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
-	}
-	for i := range pendingFlows {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		flow := pendingFlows[i].log
-		s.flowProc.Process(flow, s.emitter)
-		if s.onAccepted != nil {
-			s.onAccepted(ingest.AcceptedEvent{
-				Source:      semconv.IngestSourceStream,
-				Signal:      semconv.IngestSignalFlow,
-				EventTime:   flowlog.EventTimestamp(flow),
-				CaptureTime: flowlog.CaptureTimestamp(flow),
-				AcceptedAt:  time.Now(),
-			})
-		}
-	}
-	for i := range pendingAudits {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		auditRecord := pendingAudits[i]
-		s.auditProc.Process(auditRecord.event, s.emitter)
-		if s.onAccepted != nil {
-			s.onAccepted(ingest.AcceptedEvent{
-				Source:      semconv.IngestSourceStream,
-				Signal:      semconv.IngestSignalAudit,
-				EventTime:   auditRecord.event.EventTime,
-				CaptureTime: auditRecord.captureTime,
-				AcceptedAt:  time.Now(),
-			})
-		}
-	}
-	flows := len(pendingFlows)
-	audits := len(pendingAudits)
-	// #67: total skipped records, combining both stages a record can be
-	// dropped at — classify()-stage kindUnknown (above) and unwrap-stage drops
-	// (a non-object HEC "event"/nested value, tallied inside extractRecords).
-	// The request still 200s; this is a per-RECORD count, not a request-level
-	// rejection like MetricRejected.
-	skipped := classifyUnknown + outcome.unwrapDropped
 
-	if flows > 0 {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
-			telemetry.Attrs{attrType: typeFlow})
-		if s.onIngest != nil {
-			if s.phase2DeadlineExceeded(r.Context(), w, span) {
-				return
-			}
-			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalFlow, flows, 0)
-		}
-	}
-	if audits > 0 {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
-			telemetry.Attrs{attrType: typeAudit})
-		if s.onIngest != nil {
-			if s.phase2DeadlineExceeded(r.Context(), w, span) {
-				return
-			}
-			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
-		}
-	}
-	if classifyUnknown > 0 {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
-			float64(classifyUnknown), telemetry.Attrs{attrReason: reasonUnclassified})
-	}
-	if outcome.unwrapDropped > 0 {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
-			float64(outcome.unwrapDropped), telemetry.Attrs{attrReason: reasonUnwrapDrop})
-	}
-	if skipped > 0 {
-		s.logger.Debug("stream: skipped unrecognized records", "count", skipped,
-			"unclassified", classifyUnknown, "unwrap_drop", outcome.unwrapDropped)
-	}
+	flows := len(batch.flows)
+	audits := len(batch.audits)
+	skipped := batch.classifyUnknown + batch.unwrapDropped
 
 	// Record aggregate counts and body size on the span before the success ack.
 	if span.IsRecording() {
@@ -1027,6 +999,169 @@ classifyLoop:
 		return
 	}
 	s.writeAck(w)
+}
+
+// ApplyDurable deterministically reconstructs and applies one body that already
+// passed the receiver's request-time trust boundary. It deliberately does not
+// authenticate, route, enforce current admission budgets, or re-run semantic
+// validation. The persisted acceptedAt timestamp is used for every freshness
+// observation reconstructed from the body.
+func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.Time) (ApplyResult, error) {
+	batch, err := decodeDurableBatch(body)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	// Cancellation is atomic at the application boundary: before this check
+	// there are no effects; after it the whole batch runs without mid-effect
+	// cancellation guards, so replay never returns a partial-apply error that
+	// invites an immediate duplicate retry in the same process.
+	if err := ctx.Err(); err != nil {
+		return ApplyResult{}, err
+	}
+	return s.applyDecoded(body, batch, func() time.Time { return acceptedAt }, noEffectGuard)
+}
+
+func noEffectGuard() error { return nil }
+
+// decodeDurableBatch reparses trusted stored bytes without request-time resource
+// or semantic policy. Any impossible structural or typed shape means the stored
+// entry is corrupt/incompatible and must remain pending for operator action.
+func decodeDurableBatch(body []byte) (decodedBatch, error) {
+	records, outcome, err := extractRecordsTrusted(body)
+	if err != nil || outcome.corrupt {
+		return decodedBatch{}, errors.New("stream: stored body is corrupt or incompatible")
+	}
+	batch := decodedBatch{unwrapDropped: outcome.unwrapDropped}
+	batch.flows = make([]pendingFlow, 0, len(records))
+	batch.audits = make([]pendingAudit, 0, len(records))
+	for _, rec := range records {
+		kind, _ := classify(rec.raw)
+		switch kind {
+		case kindFlow:
+			var flow flowlog.FlowLog
+			if err := json.Unmarshal(rec.raw, &flow); err != nil {
+				return decodedBatch{}, errors.New("stream: stored body is corrupt or incompatible")
+			}
+			batch.flows = append(batch.flows, pendingFlow{log: flow})
+		case kindAudit:
+			var event audit.Event
+			if err := json.Unmarshal(rec.raw, &event); err != nil {
+				return decodedBatch{}, errors.New("stream: stored body is corrupt or incompatible")
+			}
+			if event.EventTime.IsZero() && !rec.envTime.IsZero() {
+				event.EventTime = rec.envTime
+			}
+			batch.audits = append(batch.audits, pendingAudit{
+				event:       event,
+				captureTime: rec.captureTime,
+			})
+		default:
+			batch.classifyUnknown++
+		}
+	}
+	return batch, nil
+}
+
+// applyDecoded owns every accepted-delivery side effect shared by the
+// synchronous and durable-replay paths. nowAccepted supplies time.Now in
+// stateless mode and the one persisted timestamp in durable mode.
+func (s *Server) applyDecoded(
+	raw []byte,
+	batch decodedBatch,
+	nowAccepted func() time.Time,
+	guard func() error,
+) (ApplyResult, error) {
+	if err := guard(); err != nil {
+		return ApplyResult{}, err
+	}
+	if s.onIngest != nil && len(raw) > 0 {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
+	}
+	for i := range batch.flows {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		flow := batch.flows[i].log
+		s.flowProc.Process(flow, s.emitter)
+		if s.onAccepted != nil {
+			s.onAccepted(ingest.AcceptedEvent{
+				Source:      semconv.IngestSourceStream,
+				Signal:      semconv.IngestSignalFlow,
+				EventTime:   flowlog.EventTimestamp(flow),
+				CaptureTime: flowlog.CaptureTimestamp(flow),
+				AcceptedAt:  nowAccepted(),
+			})
+		}
+	}
+	for i := range batch.audits {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		auditRecord := batch.audits[i]
+		s.auditProc.Process(auditRecord.event, s.emitter)
+		if s.onAccepted != nil {
+			s.onAccepted(ingest.AcceptedEvent{
+				Source:      semconv.IngestSourceStream,
+				Signal:      semconv.IngestSignalAudit,
+				EventTime:   auditRecord.event.EventTime,
+				CaptureTime: auditRecord.captureTime,
+				AcceptedAt:  nowAccepted(),
+			})
+		}
+	}
+
+	flows := len(batch.flows)
+	audits := len(batch.audits)
+	skipped := batch.classifyUnknown + batch.unwrapDropped
+
+	if flows > 0 {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
+			telemetry.Attrs{attrType: typeFlow})
+		if s.onIngest != nil {
+			if err := guard(); err != nil {
+				return ApplyResult{}, err
+			}
+			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalFlow, flows, 0)
+		}
+	}
+	if audits > 0 {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
+			telemetry.Attrs{attrType: typeAudit})
+		if s.onIngest != nil {
+			if err := guard(); err != nil {
+				return ApplyResult{}, err
+			}
+			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
+		}
+	}
+	if batch.classifyUnknown > 0 {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
+			float64(batch.classifyUnknown), telemetry.Attrs{attrReason: reasonUnclassified})
+	}
+	if batch.unwrapDropped > 0 {
+		if err := guard(); err != nil {
+			return ApplyResult{}, err
+		}
+		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
+			float64(batch.unwrapDropped), telemetry.Attrs{attrReason: reasonUnwrapDrop})
+	}
+	if skipped > 0 {
+		s.logger.Debug("stream: skipped unrecognized records", "count", skipped,
+			"unclassified", batch.classifyUnknown, "unwrap_drop", batch.unwrapDropped)
+	}
+	return ApplyResult{FlowsApplied: flows > 0}, nil
 }
 
 // authorized reports whether the request carries the configured token. When no
@@ -1355,6 +1490,17 @@ type extractOutcome struct {
 // structural JSON error, and returns an error only when nothing JSON-like can be
 // extracted at all.
 func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
+	return extractRecordsWithLimit(raw, maxRecordsPerRequest)
+}
+
+// extractRecordsTrusted removes only the request-time record-count admission
+// budget. The body was already bounded and validated before durable append, so
+// replay must not strand it because a later binary changed its admission limit.
+func extractRecordsTrusted(raw []byte) ([]extractedRecord, extractOutcome, error) {
+	return extractRecordsWithLimit(raw, -1)
+}
+
+func extractRecordsWithLimit(raw []byte, recordLimit int) ([]extractedRecord, extractOutcome, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, extractOutcome{}, errors.New("empty body")
@@ -1390,7 +1536,7 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 		}
 		// #229: checked BEFORE the append, so `values` never grows past the cap —
 		// the slice itself is the amplification this bounds.
-		if len(values) >= maxRecordsPerRequest {
+		if recordLimit >= 0 && len(values) >= recordLimit {
 			return nil, extractOutcome{}, errTooManyRecords
 		}
 		values = append(values, v)
@@ -1412,7 +1558,7 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 				// #229 again: the line-scan path grows the same slice, so it needs
 				// the same pre-append cap. Without it the cap is bypassed by simply
 				// prefixing the body with a non-JSON line.
-				if len(values) >= maxRecordsPerRequest {
+				if recordLimit >= 0 && len(values) >= recordLimit {
 					return nil, extractOutcome{}, errTooManyRecords
 				}
 				values = append(values, json.RawMessage(line))
@@ -1436,7 +1582,7 @@ func extractRecords(raw []byte) ([]extractedRecord, extractOutcome, error) {
 	// records than there are top-level values (a single {"logs":[...]} batch), so
 	// the budget is threaded INTO the walk rather than checked after it.
 	var out []extractedRecord
-	st := unwrapState{remaining: maxRecordsPerRequest}
+	st := unwrapState{remaining: recordLimit}
 	for _, v := range values {
 		out = append(out, unwrap(v, time.Time{}, 0, &st)...)
 		if st.overflow {
@@ -1466,6 +1612,9 @@ type unwrapState struct {
 
 // take reserves budget for one record, reporting whether it was available.
 func (st *unwrapState) take() bool {
+	if st.remaining < 0 {
+		return true
+	}
 	if st.remaining <= 0 {
 		st.overflow = true
 		return false

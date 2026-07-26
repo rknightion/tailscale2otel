@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -151,6 +153,24 @@ func TestNewApp_ReverseDNSGating(t *testing.T) {
 		t.Fatal("rdnsCache should be non-nil when reverse_dns is enabled")
 	}
 	a.rdnsCache.Close()
+}
+
+func TestCleanupFailedConstructionClosesResourcesBeforeTelemetry(t *testing.T) {
+	var calls []string
+	cleanupFailedConstruction(
+		context.Background(),
+		func() { calls = append(calls, "wal") },
+		func() { calls = append(calls, "rdns") },
+		func() { calls = append(calls, "restore") },
+		func(context.Context) error {
+			calls = append(calls, "telemetry")
+			return errors.New("ignored shutdown error")
+		},
+	)
+
+	if want := []string{"wal", "rdns", "restore", "telemetry"}; !slices.Equal(calls, want) {
+		t.Fatalf("cleanup calls = %v, want %v", calls, want)
+	}
 }
 
 // TestNewApp_ReleaseFetcherGating verifies selfRelease/tsRelease are populated

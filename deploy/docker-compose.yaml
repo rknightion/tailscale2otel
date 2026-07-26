@@ -50,6 +50,13 @@ services:
       TS2OTEL_TAILSCALE__AUTH__APIKEY: ${TS2OTEL_TAILSCALE__AUTH__APIKEY:-}
       TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ${TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID:-}
       TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN: ${TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN:-}
+      # Optional receiver WAL. The existing named state volume below holds both
+      # checkpoints and WAL data; keep enabled=false for stateless receiver ACKs.
+      TS2OTEL_INGRESS_WAL__ENABLED: ${TS2OTEL_INGRESS_WAL__ENABLED:-false}
+      TS2OTEL_INGRESS_WAL__DIRECTORY: ${TS2OTEL_INGRESS_WAL__DIRECTORY:-/var/lib/tailscale2otel/ingress-wal}
+      TS2OTEL_INGRESS_WAL__MAX_BYTES: ${TS2OTEL_INGRESS_WAL__MAX_BYTES:-268435456}
+      TS2OTEL_INGRESS_WAL__MAX_ENTRIES: ${TS2OTEL_INGRESS_WAL__MAX_ENTRIES:-10000}
+      TS2OTEL_INGRESS_WAL__CORRUPTION: ${TS2OTEL_INGRESS_WAL__CORRUPTION:-fail}
       # Gates the admin status page (/ and /api/status.json) and pprof when
       # admin.enabled. Leave empty to keep the status page open; required if you
       # enable profiling.pprof. /healthz and /readyz are never gated.
@@ -59,12 +66,14 @@ services:
       # halves that frequency. GOMEMLIMIT is a soft backstop ~10% below mem_limit.
       GOGC: ${GOGC:-200}
       GOMEMLIMIT: ${GOMEMLIMIT:-230MiB}
-    # Checkpoint persistence: window cursors survive container recreation via a
-    # named volume. Docker copies the image directory (owned by uid 65532) on
-    # first creation, so the nonroot user can write without extra chmod.
+    # Process state: checkpoint cursors and an enabled receiver WAL survive
+    # container recreation via the existing named volume. Docker copies the image
+    # directory (owned by uid 65532) on first creation, so the nonroot user can
+    # write without extra chmod.
     # Alternative: bind-mount a host directory pre-chowned to uid 65532, e.g.:
     #   - ./checkpoints:/var/lib/tailscale2otel
-    # (the app WARNs and falls back to in-memory if the path is not writable)
+    # If it is not writable, checkpoints WARN and fall back to memory; an enabled
+    # ingress WAL fails closed instead of accepting data without durability.
     volumes:
       - checkpoints:/var/lib/tailscale2otel
     # File-based config (optional): uncomment to mount a config file and pass -config.
@@ -77,7 +86,8 @@ services:
     #   - "8089:8089"
     #   - "2112:2112"   # Prometheus pull endpoint (set prometheus.enabled=true)
 
-# Named volume for checkpoint persistence. Created once by Docker and inherits
-# the /var/lib/tailscale2otel directory ownership from the image (uid 65532).
+# Existing named volume for checkpoints plus an enabled receiver WAL. Created
+# once by Docker and inherits the /var/lib/tailscale2otel directory ownership
+# from the image (uid 65532).
 volumes:
   checkpoints: {}

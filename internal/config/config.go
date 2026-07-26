@@ -56,6 +56,7 @@ type Config struct {
 	Cardinality       CardinalityConfig       `yaml:"cardinality"`
 	Collectors        Collectors              `yaml:"collectors"`
 	Checkpoint        CheckpointConfig        `yaml:"checkpoint"`
+	IngressWAL        IngressWALConfig        `yaml:"ingress_wal"`
 	Streaming         StreamingConfig         `yaml:"streaming"`
 	Webhook           WebhookConfig           `yaml:"webhook"`
 	SelfObservability SelfObservabilityConfig `yaml:"self_observability"`
@@ -924,6 +925,16 @@ type NodeMetricsTargetTLS struct {
 type CheckpointConfig struct {
 	Store    string `yaml:"store"`
 	FilePath string `yaml:"file_path"`
+}
+
+// IngressWALConfig configures the process-global write-ahead log for accepted
+// streaming and webhook request bodies. It is disabled by default.
+type IngressWALConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	Directory  string `yaml:"directory"`
+	MaxBytes   int64  `yaml:"max_bytes"`
+	MaxEntries int    `yaml:"max_entries"`
+	Corruption string `yaml:"corruption"`
 }
 
 // StreamingConfig configures the HEC-style streaming receiver.

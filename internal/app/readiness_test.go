@@ -99,3 +99,62 @@ func TestReadyzHandler_ServesVerdict(t *testing.T) {
 		t.Errorf("GET /readyz on a fresh app = %d, want 503", w.Code)
 	}
 }
+
+func TestReadyzHandler_GatesOnIngressWALLifecycle(t *testing.T) {
+	for _, state := range []ingressWALState{
+		ingressWALStateReplaying,
+		ingressWALStateRetrying,
+		ingressWALStateFull,
+		ingressWALStateFailed,
+		ingressWALStateDraining,
+		ingressWALStateStopped,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			a := &App{
+				readyState: newReceiverHealth(),
+				ingressWAL: &ingressWALCoordinator{state: state},
+			}
+			w := httptest.NewRecorder()
+			a.readyz(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("state %q status = %d, want 503", state, w.Code)
+			}
+			if !strings.Contains(w.Body.String(), "ingress WAL") ||
+				!strings.Contains(w.Body.String(), string(state)) {
+				t.Fatalf("state %q body = %q, want bounded WAL state", state, w.Body.String())
+			}
+		})
+	}
+
+	for _, state := range []ingressWALState{
+		ingressWALStateDisabled,
+		ingressWALStateReady,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			a := &App{
+				readyState: newReceiverHealth(),
+				ingressWAL: &ingressWALCoordinator{state: state},
+			}
+			w := httptest.NewRecorder()
+			a.readyz(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("state %q status = %d, want 200: %q", state, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestReadyzHandler_IngressWALFailurePrecedesCollectorsStarting(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	a.ingressWAL = &ingressWALCoordinator{state: ingressWALStateFailed}
+
+	w := httptest.NewRecorder()
+	a.readyz(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", w.Code)
+	}
+	if got := w.Body.String(); got != "ingress WAL: failed" {
+		t.Fatalf("body = %q, want WAL failure to precede collector startup", got)
+	}
+}

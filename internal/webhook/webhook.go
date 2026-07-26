@@ -35,6 +35,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -221,14 +222,15 @@ type Options struct {
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
 type Server struct {
-	opts       Options
-	e          telemetry.Emitter
-	logger     *slog.Logger
-	now        func() time.Time // injectable clock; defaults to time.Now
-	dedup      *dedup.Set       // optional cross-source de-dup set (see WithDedup)
-	onIngest   func(source, signal string, records, bytes int)
-	onAccepted ingest.AcceptedObserver
-	tracer     trace.Tracer
+	opts          Options
+	e             telemetry.Emitter
+	logger        *slog.Logger
+	now           func() time.Time // injectable clock; defaults to time.Now
+	dedup         *dedup.Set       // optional cross-source de-dup set (see WithDedup)
+	durableAppend DurableAppend
+	onIngest      func(source, signal string, records, bytes int)
+	onAccepted    ingest.AcceptedObserver
+	tracer        trace.Tracer
 
 	// admit is the aggregate admission semaphore (GHSA-9547-8jpc-48h6): a
 	// buffered channel whose capacity is the number of handlers allowed to
@@ -423,6 +425,18 @@ func webhookTailnet(body []byte) (string, bool) {
 // Option configures a Server at construction time.
 type Option func(*Server)
 
+// DurableAppend persists one already-authenticated, completely validated raw
+// request body before the receiver acknowledges it. The app binds the function
+// to the configured route; transport headers and route selection stay outside
+// this seam.
+type DurableAppend func(context.Context, []byte, time.Time) error
+
+// WithDurableAppend enables durable acknowledgement for this route. A nil
+// appender preserves the synchronous stateless receiver path.
+func WithDurableAppend(appendBody DurableAppend) Option {
+	return func(s *Server) { s.durableAppend = appendBody }
+}
+
 // WithDedup attaches a cross-SOURCE de-duplication set shared with the audit
 // Processor (see audit.WithCrossDedup). When set is non-nil, a webhook event
 // that maps to a change already recorded in set — by the audit poller/stream or
@@ -468,6 +482,11 @@ type event struct {
 	Tailnet   string                     `json:"tailnet"`
 	Message   string                     `json:"message"`
 	Data      map[string]json.RawMessage `json:"data"`
+}
+
+type acceptedBatch struct {
+	events  []event
+	digests []string
 }
 
 // New returns a Server that verifies against opts.Secret and emits via e.
@@ -628,35 +647,89 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var rawEvents []json.RawMessage
-	if err := json.Unmarshal(body, &rawEvents); err != nil {
+	batch, err := decodeAcceptedBatch(body)
+	if err != nil {
 		span.SetStatus(codes.Error, "failed to parse webhook body")
 		s.reject(w, "invalid_body", "failed to parse webhook body", err)
 		return
 	}
-	events := make([]event, 0, len(rawEvents))
+
+	if s.durableAppend != nil {
+		acceptedAt := s.now()
+		if err := r.Context().Err(); err != nil {
+			span.SetStatus(codes.Error, "durability unavailable")
+			w.Header().Set("Retry-After", "1")
+			s.rejectStatus(w, http.StatusServiceUnavailable, "wal_unavailable",
+				"webhook durability unavailable, retry shortly", nil)
+			return
+		}
+		if err := s.durableAppend(r.Context(), body, acceptedAt); err != nil {
+			span.SetStatus(codes.Error, "durability unavailable")
+			w.Header().Set("Retry-After", "1")
+			s.rejectStatus(w, http.StatusServiceUnavailable, "wal_unavailable",
+				"webhook durability unavailable, retry shortly", nil)
+			return
+		}
+	} else {
+		s.applyAcceptedBatch(batch, len(body), s.now)
+	}
+
+	// Record aggregate counts and body size on the span before the success response.
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.Int("tailscale.webhook.events", len(batch.events)),
+			attribute.Int("http.request.body.size", len(body)),
+		)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// ApplyDurable applies one trusted body previously admitted and persisted by
+// this route. It deliberately does not verify transport authentication,
+// timestamp tolerance, or route identity: those are request-time concerns.
+func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.Time) error {
+	batch, err := decodeAcceptedBatch(body)
+	if err != nil {
+		return fmt.Errorf("webhook apply durable body: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.applyAcceptedBatch(batch, len(body), func() time.Time { return acceptedAt })
+	return nil
+}
+
+func decodeAcceptedBatch(body []byte) (acceptedBatch, error) {
+	var rawEvents []json.RawMessage
+	if err := json.Unmarshal(body, &rawEvents); err != nil {
+		return acceptedBatch{}, err
+	}
+	batch := acceptedBatch{
+		events:  make([]event, 0, len(rawEvents)),
+		digests: make([]string, 0, len(rawEvents)),
+	}
 	for _, raw := range rawEvents {
 		ev, err := decodeEvent(raw)
 		if err != nil {
-			span.SetStatus(codes.Error, "failed to parse webhook event")
-			s.reject(w, "invalid_body", "failed to parse webhook event", err)
-			return
+			return acceptedBatch{}, err
 		}
-		events = append(events, ev)
-	}
-
-	if s.onIngest != nil {
-		s.onIngest(semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(events), len(body))
-	}
-
-	for i, ev := range events {
-		key, err := canonicalDigest(rawEvents[i])
+		digest, err := canonicalDigest(raw)
 		if err != nil {
-			span.SetStatus(codes.Error, "failed to canonicalize webhook event")
-			s.reject(w, "invalid_body", "failed to canonicalize webhook event", err)
-			return
+			return acceptedBatch{}, err
 		}
-		if !s.delivery.Add(key) {
+		batch.events = append(batch.events, ev)
+		batch.digests = append(batch.digests, digest)
+	}
+	return batch, nil
+}
+
+func (s *Server) applyAcceptedBatch(batch acceptedBatch, bodyBytes int, acceptedAt func() time.Time) {
+	if s.onIngest != nil {
+		s.onIngest(semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(batch.events), bodyBytes)
+	}
+	for i, ev := range batch.events {
+		if !s.delivery.Add(batch.digests[i]) {
 			s.e.Counter(docWebhookDuplicates.Name, docWebhookDuplicates.Unit, docWebhookDuplicates.Description, 1, nil)
 			continue
 		}
@@ -666,20 +739,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				Source:     semconv.IngestSourceWebhook,
 				Signal:     semconv.IngestSignalWebhook,
 				EventTime:  parseTimestamp(ev.Timestamp),
-				AcceptedAt: s.now(),
+				AcceptedAt: acceptedAt(),
 			})
 		}
 	}
-
-	// Record aggregate counts and body size on the span before the success response.
-	if span.IsRecording() {
-		span.SetAttributes(
-			attribute.Int("tailscale.webhook.events", len(events)),
-			attribute.Int("http.request.body.size", len(body)),
-		)
-	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 // acquire takes an admission slot (GHSA-9547-8jpc-48h6), returning a release

@@ -68,6 +68,16 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// config.warnings + config.valid: an empty config emits both gauges.
 	emitConfigHealth(rec.Emitter(), &config.Config{})
 
+	// ingress_wal.*: an empty in-memory seam emits all five attribute-free
+	// capacity/cleanup gauges.
+	walCoordinator, err := newIngressWALCoordinator(&coordinatorWAL{}, []ingressWALRoute{
+		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+	})
+	if err != nil {
+		t.Fatalf("newIngressWALCoordinator: %v", err)
+	}
+	emitIngressWALHealth(rec.Emitter(), walCoordinator)
+
 	// update_available: emit with a known-newer latest so the gauge fires.
 	emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v9.9.9", true }, "v0.1.0")
 

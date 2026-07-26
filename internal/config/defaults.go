@@ -207,6 +207,13 @@ func Default() *Config {
 			Store:    "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
 			FilePath: "/var/lib/tailscale2otel/checkpoints.json",
 		},
+		IngressWAL: IngressWALConfig{
+			Enabled:    false,
+			Directory:  "/var/lib/tailscale2otel/ingress-wal",
+			MaxBytes:   268435456,
+			MaxEntries: 10000,
+			Corruption: "fail",
+		},
 		Streaming: StreamingConfig{
 			Enabled:       false,
 			Listen:        ":8088",

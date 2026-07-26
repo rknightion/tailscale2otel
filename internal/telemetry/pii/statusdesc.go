@@ -31,6 +31,7 @@ var boundedStatusDescriptions = map[string]bool{
 	"failed to parse webhook body":         true,
 	"failed to parse webhook event":        true,
 	"failed to canonicalize webhook event": true,
+	"durability unavailable":               true,
 	// internal/webhook signature-verification reasons (Server.verify). Not string
 	// literals at the SetStatus call, so the source guard cannot see them.
 	"missing_signature":   true,
@@ -51,6 +52,7 @@ var boundedStatusDescriptions = map[string]bool{
 	"record decode failure":        true,
 	"processing deadline exceeded": true,
 	"semantic validation failure":  true,
+	"durable append failed":        true,
 	// Browser-deputy and nested-width refusals on the untokened receiver
 	// (GHSA-cvp7-f3mx-m68x, GHSA-7rg3-xj9w-2gm8). Both are closed-set verdicts
 	// naming the control that fired, carrying no request detail.

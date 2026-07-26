@@ -298,6 +298,18 @@ checkpoint:
   store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)
   file_path: /var/lib/tailscale2otel/checkpoints.json   # used when store: file — mount a writable, persistent path here (the dir is auto-created)
 
+# ── Receiver write-ahead log (OPTIONAL: durable local acceptance) ───────────────
+# Disabled is fully stateless. When enabled, a successful receiver ACK means the
+# accepted payload is durable on this filesystem: the raw authenticated webhook
+# body or fully validated decompressed streaming body. It does NOT mean OTLP/backend
+# acknowledgement. Replay is at-least-once, so a crash can duplicate exported data.
+ingress_wal:
+  enabled: false                        # opt in to durable local acceptance and oldest-first replay for receiver payloads
+  directory: /var/lib/tailscale2otel/ingress-wal   # absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters
+  max_bytes: 268435456               # encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction
+  max_entries: 10000                 # encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction
+  corruption: fail                   # only supported mode: fail closed rather than discard corrupt state
+
 # ── Streaming receiver (OPTIONAL: RECEIVE logs instead of polling) ──────────────
 # When enabled, set collectors.{flowlogs,auditlogs}.source to stream so each log
 # type is ingested by exactly one path.
@@ -313,7 +325,7 @@ streaming:
     key_file: ""                      # HTTPS key
   decompress: auto                    # auto | gzip | zstd | none — request body decompression
   auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope
-  max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413)
+  max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
   # FILE-ONLY multi-tailnet routes. When non-empty, replace path/token/public_url/
   # auto_configure above. Every route selects exactly one tailnets[].name.
@@ -331,7 +343,7 @@ webhook:
     key_file: ""                      # private key paired with cert_file; both paths are validated as readable at startup
   tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
-  max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413)
+  max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
   # FILE-ONLY multi-tailnet routes. When non-empty, replace path/secret above.
   # A delivery is accepted only when every event names one matching tailnet.

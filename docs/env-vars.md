@@ -198,6 +198,11 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_TAGS_LABEL` | `true` | attach tailscale.tags to each target's series |
 | `TS2OTEL_CHECKPOINT__STORE` | `file` | file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) \| memory (RAM only; cold-starts from initial_lookback after a restart) |
 | `TS2OTEL_CHECKPOINT__FILE_PATH` | `/var/lib/tailscale2otel/checkpoints.json` | used when store: file — mount a writable, persistent path here (the dir is auto-created) |
+| `TS2OTEL_INGRESS_WAL__ENABLED` | `false` | opt in to durable local acceptance and oldest-first replay for receiver payloads |
+| `TS2OTEL_INGRESS_WAL__DIRECTORY` | `/var/lib/tailscale2otel/ingress-wal` | absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters |
+| `TS2OTEL_INGRESS_WAL__MAX_BYTES` | `268435456` | encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction |
+| `TS2OTEL_INGRESS_WAL__MAX_ENTRIES` | `10000` | encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction |
+| `TS2OTEL_INGRESS_WAL__CORRUPTION` | `fail` | only supported mode: fail closed rather than discard corrupt state |
 | `TS2OTEL_STREAMING__ENABLED` | `false` | run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream) |
 | `TS2OTEL_STREAMING__LISTEN` | `:8088` | bind address for the Splunk-HEC-compatible receiver |
 | `TS2OTEL_STREAMING__PATH` | `/services/collector/event` | HEC endpoint path Tailscale POSTs to |
@@ -208,7 +213,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__TLS__KEY_FILE` | `""` | HTTPS key |
 | `TS2OTEL_STREAMING__DECOMPRESS` | `auto` | auto \| gzip \| zstd \| none — request body decompression |
 | `TS2OTEL_STREAMING__AUTO_CONFIGURE` | `false` | on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope |
-| `TS2OTEL_STREAMING__MAX_BODY_BYTES` | `0` | cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413) |
+| `TS2OTEL_STREAMING__MAX_BODY_BYTES` | `0` | cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB |
 | `TS2OTEL_STREAMING__MAX_CONCURRENT_REQUESTS` | `0` | how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After) |
 | `TS2OTEL_WEBHOOK__ENABLED` | `false` | run the receiver for real-time Tailscale webhook events |
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | bind address for the webhook receiver |
@@ -219,7 +224,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__TLS__KEY_FILE` | `""` | private key paired with cert_file; both paths are validated as readable at startup |
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | reject signed timestamps older than this (replay window); "0" disables the check |
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | best-effort: drop a webhook event already counted via the audit logs |
-| `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413) |
+| `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB |
 | `TS2OTEL_WEBHOOK__MAX_CONCURRENT_REQUESTS` | `0` | how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After) |
 | `TS2OTEL_PII_FILTER__EMAILS` | `true` | user/actor login names (often email addresses) |
 | `TS2OTEL_PII_FILTER__USER_DISPLAY_NAMES` | `true` | actor display (human) names |

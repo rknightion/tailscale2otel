@@ -81,6 +81,7 @@ const (
 	ComponentAdmin         = "admin"
 	ComponentAutoConfigure = "auto_configure"
 	ComponentMetrics       = "metrics"
+	ComponentIngressWAL    = "ingress_wal"
 )
 
 // MetricAdminAuthRejected counts admin HTTP requests rejected by the admin auth
@@ -116,6 +117,16 @@ const (
 const (
 	MetricConfigWarnings = "tailscale2otel.config.warnings"
 	MetricConfigValid    = "tailscale2otel.config.valid"
+)
+
+// Ingress-WAL capacity metrics are process-global and deliberately carry no
+// route, tailnet, filesystem, or error attributes.
+const (
+	MetricIngressWALPendingEntries    = "tailscale2otel.ingress_wal.pending.entries"
+	MetricIngressWALPendingSize       = "tailscale2otel.ingress_wal.pending.size"
+	MetricIngressWALOrphanStages      = "tailscale2otel.ingress_wal.orphan.stages"
+	MetricIngressWALOrphanSize        = "tailscale2otel.ingress_wal.orphan.size"
+	MetricIngressWALCompletionMarkers = "tailscale2otel.ingress_wal.completion.markers"
 )
 
 // Ingestion-volume self-observability metric names. Emitted (via an app-built
@@ -196,6 +207,44 @@ var (
 		Unit:        "1",
 		Instrument:  metricdoc.Gauge,
 		Description: "`1` when a newer tailscale2otel release is available on GitHub than the running build, else `0` (a **flag**, despite the `_ratio` Prometheus suffix). Emitted only when `version_checks.self` is enabled and both the running and latest versions parse — dev builds (version `dev`) never emit. Fail-open: a blocked/failed GitHub fetch emits nothing.",
+		Group:       GroupSelfObs,
+	}
+)
+
+var (
+	DocIngressWALPendingEntries = metricdoc.Metric{
+		Name:        MetricIngressWALPendingEntries,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Durable ingress-WAL entries awaiting successful processor application and metric/log flush (a **count**, despite the `_ratio` Prometheus suffix).",
+		Group:       GroupSelfObs,
+	}
+	DocIngressWALPendingSize = metricdoc.Metric{
+		Name:        MetricIngressWALPendingSize,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Encoded on-disk bytes consumed by durable ingress-WAL entries.",
+		Group:       GroupSelfObs,
+	}
+	DocIngressWALOrphanStages = metricdoc.Metric{
+		Name:        MetricIngressWALOrphanStages,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Ingress-WAL staging files retained for bounded recovery cleanup (a **count**, despite the `_ratio` Prometheus suffix).",
+		Group:       GroupSelfObs,
+	}
+	DocIngressWALOrphanSize = metricdoc.Metric{
+		Name:        MetricIngressWALOrphanSize,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Encoded on-disk bytes consumed by retained ingress-WAL staging files.",
+		Group:       GroupSelfObs,
+	}
+	DocIngressWALCompletionMarkers = metricdoc.Metric{
+		Name:        MetricIngressWALCompletionMarkers,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Transient ingress-WAL completion markers awaiting durable cleanup (a **count**, despite the `_ratio` Prometheus suffix).",
 		Group:       GroupSelfObs,
 	}
 )
@@ -483,6 +532,8 @@ func Catalog() []metricdoc.Metric {
 		DocDedupSize, DocDedupEvictions, DocDedupHits,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
+		DocIngressWALPendingEntries, DocIngressWALPendingSize,
+		DocIngressWALOrphanStages, DocIngressWALOrphanSize, DocIngressWALCompletionMarkers,
 		DocIngestRecords, DocIngestBytes, DocIngestEventAge, DocIngestCaptureDelay,
 		DocIngestLastEventTimestamp, DocIngestTimestampSkew,
 		DocSeriesByGroup,

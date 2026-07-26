@@ -81,6 +81,7 @@ type App struct {
 	auditDedup    *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
 	streamSrv     receiver
 	webhookSrv    receiver
+	ingressWAL    *ingressWALCoordinator
 	webhookDedup  *dedup.Set            // shared cross-source set (webhook<->audit); nil unless enabled
 	webhookDedups map[string]*dedup.Set // per-tailnet route sets in multi-tailnet mode
 	adminSrv      *http.Server
@@ -175,6 +176,31 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	a.procExportStats = ps.Process().ExportStats
 	a.metricGroups = metricGroupMap()
 	a.buildProcessDeps()
+	constructionComplete := false
+	defer func() {
+		if constructionComplete {
+			return
+		}
+		cleanupFailedConstruction(
+			ctx,
+			func() {
+				if a.ingressWAL != nil {
+					_ = a.ingressWAL.Close()
+				}
+			},
+			func() {
+				if a.rdnsCache != nil {
+					a.rdnsCache.Close()
+				}
+			},
+			func() {
+				if a.restore != nil {
+					a.restore()
+				}
+			},
+			ps.Shutdown,
+		)
+	}()
 
 	// Build one runtime per tailnet (Tailscale), or a single Headscale runtime.
 	if cfg.Provider == "headscale" {
@@ -190,7 +216,16 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		// state, inflating export.* ~2x and corrupting series.active (#54). This
 		// mirrors the newApp test seam and the multi-tailnet design (distinct
 		// providers get their own trackers; a shared provider gets none).
-		a.addRuntime("", a.procEmitter, nil, nil, cp, multi)
+		a.addRuntimeConfigured(
+			"headscale",
+			"",
+			a.procEmitter,
+			nil,
+			nil,
+			ps.Process().ForceFlush,
+			cp,
+			multi,
+		)
 	} else {
 		for i, rt := range resolved {
 			label := labels[i]
@@ -199,13 +234,21 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			apiStats := NewAPIStats()
 			cp, err := buildTailscaleProvider(rt, version, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
 			if err != nil {
-				_ = ps.Shutdown(ctx)
 				// Attribute the failure to the offending tailnet so an MSP with many
 				// entries knows which one to fix (e.g. a mis-mounted secret) instead of
 				// a bare "no authentication configured" — #125.
 				return nil, fmt.Errorf("tailnets[%d] %q: %w", i, label, err)
 			}
-			r := a.addRuntime(label, emitter, tp.Cardinality(), tp.ExportStats, cp, multi)
+			r := a.addRuntimeConfigured(
+				rt.Name,
+				label,
+				emitter,
+				tp.Cardinality(),
+				tp.ExportStats,
+				tp.ForceFlush,
+				cp,
+				multi,
+			)
 			r.apiStats = apiStats
 			// Resolved per-tailnet identity for the status page (#116) — from the
 			// tailnets[] entry (rt is the ResolvedTailnet), not the top-level block.
@@ -227,7 +270,10 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// transitions, tailnet renames) so window cursors survive instead of silently
 	// cold-starting and re-emitting the overlap window (#105).
 	a.migrateCheckpointKeys(withComponent(logger, compCheckpoint))
-	a.buildReceivers()
+	ingressRoutes := a.buildReceivers()
+	if err := a.buildIngressWAL(ingressRoutes); err != nil {
+		return nil, fmt.Errorf("ingress WAL: %w", err)
+	}
 	if cfg.Admin.Enabled {
 		a.adminSrv = a.buildAdminServer()
 	}
@@ -246,7 +292,29 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		profLogger.Error("pyroscope profiler failed to start", "error", err)
 	}
 	a.profiler = prof
+	constructionComplete = true
 	return a, nil
+}
+
+func cleanupFailedConstruction(
+	ctx context.Context,
+	closeWAL func(),
+	closeRDNS func(),
+	restoreTelemetry func(),
+	shutdownTelemetry func(context.Context) error,
+) {
+	if closeWAL != nil {
+		closeWAL()
+	}
+	if closeRDNS != nil {
+		closeRDNS()
+	}
+	if restoreTelemetry != nil {
+		restoreTelemetry()
+	}
+	if shutdownTelemetry != nil {
+		_ = shutdownTelemetry(ctx)
+	}
 }
 
 // buildTailscaleProvider constructs an instrumented Tailscale provider for one
@@ -359,13 +427,40 @@ func (a *App) addRuntime(
 	cp *provider.Provider,
 	multi bool,
 ) *tailnetRuntime {
+	return a.addRuntimeConfigured(
+		name,
+		name,
+		emitter,
+		card,
+		exportStats,
+		func(context.Context) error { return nil },
+		cp,
+		multi,
+	)
+}
+
+func (a *App) addRuntimeConfigured(
+	configuredName string,
+	name string,
+	emitter telemetry.Emitter,
+	card *telemetry.CardinalityTracker,
+	exportStats func() telemetry.ExportStats,
+	forceFlush func(context.Context) error,
+	cp *provider.Provider,
+	multi bool,
+) *tailnetRuntime {
+	if forceFlush == nil {
+		forceFlush = func(context.Context) error { return nil }
+	}
 	rt := &tailnetRuntime{
-		name:        name,
-		emitter:     emitter,
-		card:        card,
-		exportStats: exportStats,
-		cp:          cp,
-		apiStats:    NewAPIStats(),
+		configuredName: configuredName,
+		name:           name,
+		emitter:        emitter,
+		card:           card,
+		exportStats:    exportStats,
+		forceFlush:     forceFlush,
+		cp:             cp,
+		apiStats:       NewAPIStats(),
 	}
 	// Retain the concrete Tailscale client for the Tailscale-only paths
 	// (flowFeatureCheck, autoConfigureStreaming). It is nil under provider:
@@ -376,7 +471,7 @@ func (a *App) addRuntime(
 	webhookDedup := a.webhookDedup
 	if a.webhookDedups != nil {
 		webhookDedup = dedup.New(auditDedupCapacity)
-		a.webhookDedups[name] = webhookDedup
+		a.webhookDedups[configuredName] = webhookDedup
 	}
 	newRuntime(rt, runtimeDeps{
 		cfg:          a.cfg,
@@ -412,7 +507,16 @@ func newApp(
 	a := newAppShell(cfg, version, logger, emitter, tracer, shutdown, store)
 	a.metricGroups = metricGroupMap()
 	a.buildProcessDeps()
-	rt := a.addRuntime("", emitter, nil, nil, cp, false)
+	rt := a.addRuntimeConfigured(
+		cfg.Tailscale.Tailnet,
+		"",
+		emitter,
+		nil,
+		nil,
+		func(context.Context) error { return nil },
+		cp,
+		false,
+	)
 	rt.apiStats = apiStats
 	if cfg.SelfObservability.Enabled {
 		a.restore = telemetry.InstallExportErrorHandler(emitter, withComponent(a.logger, compTelemetry))
@@ -421,6 +525,9 @@ func newApp(
 	a.flowDedup = rt.flowDedup
 	a.auditDedup = rt.auditDedup
 	a.buildReceivers()
+	if !cfg.IngressWAL.Enabled {
+		a.ingressWAL, _ = newIngressWALCoordinator(nil, nil)
+	}
 	// Note: a.metricsSrv is intentionally NOT built here — this test seam has no
 	// telemetry.ProviderSet, so there is no prometheus gatherer to serve. The real
 	// Prometheus endpoint is wired only in New(). See New()'s cfg.Prometheus block.
@@ -452,6 +559,46 @@ func (a *App) Run(ctx context.Context) error {
 		// issued once it begins (the rdns cache is also shutdown-safe on its own — #121).
 		defer a.rdnsCache.Close()
 	}
+	if a.adminSrv != nil {
+		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
+	}
+	if a.metricsSrv != nil {
+		go a.runMetrics(ctx) //nolint:gosec // G118 false positive: runMetrics's only context.Background is the bounded graceful-shutdown context
+	}
+
+	walEnabled := a.ingressWAL != nil && a.ingressWAL.wal != nil
+	var (
+		walCancel context.CancelFunc
+		walDone   chan error
+	)
+	if walEnabled {
+		startupErr := a.ingressWAL.ReplayStartup(ctx)
+		if startupErr != nil {
+			if ctx.Err() == nil {
+				a.logger.Error("ingress WAL startup replay unavailable", "error", startupErr)
+				a.componentError(appcatalog.ComponentIngressWAL)
+				<-ctx.Done()
+			}
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownErr := a.shutdown(shutdownCtx)
+			cancel()
+			closeErr := a.ingressWAL.Close()
+			if errors.Is(startupErr, context.Canceled) ||
+				errors.Is(startupErr, context.DeadlineExceeded) {
+				startupErr = nil
+			}
+			return errors.Join(startupErr, shutdownErr, closeErr)
+		}
+
+		var walCtx context.Context
+		walCtx, walCancel = context.WithCancel(context.Background())
+		defer walCancel()
+		walDone = make(chan error, 1)
+		go func() {
+			walDone <- a.ingressWAL.Run(walCtx)
+		}()
+	}
+
 	interval := a.cfg.OTLP.MetricInterval.D()
 	if a.cfg.SelfObservability.Enabled {
 		// Process-global self-obs: emitted on the process provider (no tailnet
@@ -463,6 +610,7 @@ func (a *App) Run(ctx context.Context) error {
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
 		go runPIIFilterReporter(ctx, a.cfg.PIIFilter, a.procEmitter, interval)
+		go runIngressWALReporter(ctx, a.procEmitter, a.ingressWAL, interval)
 		// webhook cross-dedup is a process-global, single-tailnet-only set — report it
 		// on the process emitter. Each tailnet's own flow/audit dedup sets are
 		// reported on THAT runtime's emitter (stamping tailscale.tailnet), so in
@@ -562,13 +710,6 @@ func (a *App) Run(ctx context.Context) error {
 			a.recordReceiverStop(appcatalog.ComponentWebhook, a.webhookSrv.Run(ctx))
 		}()
 	}
-	if a.adminSrv != nil {
-		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
-	}
-	if a.metricsSrv != nil {
-		go a.runMetrics(ctx) //nolint:gosec // G118 false positive: runMetrics's only context.Background is the bounded graceful-shutdown context
-	}
-
 	// One scheduler per tailnet, each driving its own registry. Aggregate their
 	// exit errors (each returns ctx.Err() on clean stop).
 	done := make(chan error, len(a.runtimes))
@@ -595,6 +736,21 @@ func (a *App) Run(ctx context.Context) error {
 	// would be lost when a.shutdown() stops the exporters (#53).
 	receiverWG.Wait()
 
+	if walEnabled {
+		// No receiver can append after the join above. Stop the live worker first
+		// so a canceled export attempt releases replay serialization, then perform
+		// one bounded final drain over the complete accepted backlog.
+		walCancel()
+		if err := <-walDone; err != nil {
+			a.logger.Warn("ingress WAL worker stopped with a bounded failure")
+		}
+		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := a.ingressWAL.Drain(drainCtx); err != nil {
+			a.logger.Warn("ingress WAL final drain incomplete; pending entries remain for restart")
+		}
+		cancel()
+	}
+
 	// Drain each runtime's buffered flow rollup so the final interval's accumulated
 	// counts are exported before the telemetry pipeline shuts down. The schedulers
 	// AND receivers have stopped (so no connections are still being processed) and
@@ -604,8 +760,13 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return errors.Join(schedErr, a.shutdown(shutdownCtx))
+	shutdownErr := a.shutdown(shutdownCtx)
+	cancel()
+	var closeErr error
+	if a.ingressWAL != nil {
+		closeErr = a.ingressWAL.Close()
+	}
+	return errors.Join(schedErr, shutdownErr, closeErr)
 }
 
 // autoConfigureStreaming registers this receiver as a Splunk-HEC log-streaming

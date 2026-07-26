@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
@@ -28,17 +29,19 @@ import (
 // stats, and poll-path flow/audit processors. Process-level singletons (admin
 // server, checkpoint store, the webhook cross-dedup, runtime history) live on App.
 type tailnetRuntime struct {
-	name        string
-	emitter     telemetry.Emitter
-	card        *telemetry.CardinalityTracker
-	exportStats func() telemetry.ExportStats
-	cp          *provider.Provider
-	client      *tsapi.Client // concrete Tailscale client; nil under provider: headscale
-	cache       *enrich.DeviceCache
-	registry    *collector.Registry
-	sched       *collector.Scheduler
-	status      *collector.StatusTracker
-	apiStats    *APIStats
+	configuredName string
+	name           string
+	emitter        telemetry.Emitter
+	card           *telemetry.CardinalityTracker
+	exportStats    func() telemetry.ExportStats
+	forceFlush     func(context.Context) error
+	cp             *provider.Provider
+	client         *tsapi.Client // concrete Tailscale client; nil under provider: headscale
+	cache          *enrich.DeviceCache
+	registry       *collector.Registry
+	sched          *collector.Scheduler
+	status         *collector.StatusTracker
+	apiStats       *APIStats
 	// apiState records each API operation's latest availability state, and
 	// coverage tallies per-entity subrequests. Both are per-tailnet: a scope
 	// denial on one tailnet says nothing about another, and merging them would
@@ -75,6 +78,16 @@ type tailnetRuntime struct {
 func (a *App) runtimeName(rt *tailnetRuntime) string {
 	if rt.name != "" {
 		return rt.name
+	}
+	return a.cfg.Tailscale.Tailnet
+}
+
+func (a *App) runtimeConfiguredName(rt *tailnetRuntime) string {
+	if rt.configuredName != "" {
+		return rt.configuredName
+	}
+	if a.cfg.Provider == "headscale" {
+		return "headscale"
 	}
 	return a.cfg.Tailscale.Tailnet
 }

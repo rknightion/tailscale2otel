@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
@@ -25,7 +26,6 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/stream"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 	"github.com/rknightion/tailscale2otel/v3/internal/webhook"
 )
@@ -281,14 +281,41 @@ func replayStoreForRuntime(store collector.CheckpointStore, tailnet string, mult
 	return collector.Namespaced(store, tailnet)
 }
 
-// buildReceivers constructs the optional HTTP receivers. Legacy configuration
-// feeds the sole runtime; route lists construct one isolated receiver per
-// configured tailnet and compose them behind a single listener.
-func (a *App) buildReceivers() {
+// buildReceivers constructs the optional HTTP receivers and, when durability is
+// enabled, returns closed replay routes for every configured runtime. Replay
+// routes exist even when a listener is disabled so an operator can drain
+// accepted backlog before changing receiver configuration.
+func (a *App) buildReceivers() []ingressWALRoute {
 	rt := a.runtimes[0]
-	if a.cfg.Streaming.Enabled {
-		streamOptions := func(path, token string, e telemetry.Emitter) stream.Options {
-			return stream.Options{
+	streamServers := make(map[*tailnetRuntime]*stream.Server, len(a.runtimes))
+	webhookServers := make(map[*tailnetRuntime]*webhook.Server, len(a.runtimes))
+	durableAppend := func(
+		routeRT *tailnetRuntime,
+		source, signal string,
+	) func(context.Context, []byte, time.Time) error {
+		tailnet := a.runtimeConfiguredName(routeRT)
+		return func(ctx context.Context, body []byte, accepted time.Time) error {
+			if a.ingressWAL == nil {
+				return errIngressWALAppend
+			}
+			return a.ingressWAL.appender(tailnet, source, signal)(ctx, body, accepted)
+		}
+	}
+	newStream := func(
+		routeRT *tailnetRuntime,
+		path, token string,
+		acceptDurably bool,
+	) *stream.Server {
+		options := []stream.Option{stream.WithTracer(a.tracer)}
+		if acceptDurably {
+			options = append(options, stream.WithDurableAppend(durableAppend(
+				routeRT,
+				ingressWALSourceStream,
+				ingressWALSignalHEC,
+			)))
+		}
+		server := stream.New(
+			stream.Options{
 				Listen:       a.cfg.Streaming.Listen,
 				Path:         path,
 				Token:        token,
@@ -299,12 +326,62 @@ func (a *App) buildReceivers() {
 				// Aggregate admission control (#209): MaxBodyBytes bounds one body,
 				// this bounds how many are buffered at once.
 				MaxConcurrentRequests: a.cfg.Streaming.MaxConcurrentRequests,
-				OnIngest:              ingestObserver(e, a.cfg.SelfObservability.Enabled),
-				OnAccepted:            acceptedEventObserver(e, a.cfg.SelfObservability.Enabled),
-			}
+				OnIngest: ingestObserver(
+					routeRT.emitter,
+					a.cfg.SelfObservability.Enabled,
+				),
+				OnAccepted: acceptedEventObserver(
+					routeRT.emitter,
+					a.cfg.SelfObservability.Enabled,
+				),
+			},
+			routeRT.flowProc,
+			routeRT.auditProc,
+			routeRT.emitter,
+			withComponent(a.logger, appcatalog.ComponentStream),
+			options...,
+		)
+		streamServers[routeRT] = server
+		return server
+	}
+	newWebhook := func(
+		routeRT *tailnetRuntime,
+		secret string,
+		acceptDurably bool,
+	) *webhook.Server {
+		options := []webhook.Option{webhook.WithTracer(a.tracer)}
+		if set := a.webhookDedupFor(routeRT); set != nil {
+			options = append(options, webhook.WithDedup(set))
 		}
+		if acceptDurably {
+			options = append(options, webhook.WithDurableAppend(durableAppend(
+				routeRT,
+				ingressWALSourceWebhook,
+				ingressWALSignalWebhook,
+			)))
+		}
+		wh := webhookOptions(a.cfg.Webhook)
+		wh.Secret = secret
+		wh.OnIngest = ingestObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
+		wh.OnAccepted = acceptedEventObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
+		server := webhook.New(
+			wh,
+			routeRT.emitter,
+			withComponent(a.logger, appcatalog.ComponentWebhook),
+			options...,
+		)
+		webhookServers[routeRT] = server
+		return server
+	}
+
+	if a.cfg.Streaming.Enabled {
 		if len(a.cfg.Streaming.Routes) == 0 {
-			a.streamSrv = stream.New(streamOptions(a.cfg.Streaming.Path, a.cfg.Streaming.Token.Reveal(), rt.emitter), rt.flowProc, rt.auditProc, rt.emitter, withComponent(a.logger, appcatalog.ComponentStream), stream.WithTracer(a.tracer))
+			a.streamSrv = newStream(
+				rt,
+				a.cfg.Streaming.Path,
+				a.cfg.Streaming.Token.Reveal(),
+				a.cfg.IngressWAL.Enabled,
+			)
 		} else {
 			routes := make([]stream.Route, 0, len(a.cfg.Streaming.Routes))
 			for _, route := range a.cfg.Streaming.Routes {
@@ -312,26 +389,24 @@ func (a *App) buildReceivers() {
 				if routeRT == nil { // Validate prevents this; keep startup fail-closed.
 					continue
 				}
-				srv := stream.New(streamOptions(route.Path, route.Token.Reveal(), routeRT.emitter), routeRT.flowProc, routeRT.auditProc, routeRT.emitter, withComponent(a.logger, appcatalog.ComponentStream), stream.WithTracer(a.tracer))
+				srv := newStream(
+					routeRT,
+					route.Path,
+					route.Token.Reveal(),
+					a.cfg.IngressWAL.Enabled,
+				)
 				routes = append(routes, stream.Route{Path: route.Path, Server: srv})
 			}
 			a.streamSrv = stream.NewRouter(routes)
 		}
 	}
 	if a.cfg.Webhook.Enabled {
-		newWebhook := func(routeRT *tailnetRuntime, secret string) *webhook.Server {
-			wopts := []webhook.Option{webhook.WithTracer(a.tracer)}
-			if set := a.webhookDedupFor(routeRT); set != nil {
-				wopts = append(wopts, webhook.WithDedup(set))
-			}
-			wh := webhookOptions(a.cfg.Webhook)
-			wh.Secret = secret
-			wh.OnIngest = ingestObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
-			wh.OnAccepted = acceptedEventObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
-			return webhook.New(wh, routeRT.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
-		}
 		if len(a.cfg.Webhook.Routes) == 0 {
-			a.webhookSrv = newWebhook(rt, a.cfg.Webhook.Secret.Reveal())
+			a.webhookSrv = newWebhook(
+				rt,
+				a.cfg.Webhook.Secret.Reveal(),
+				a.cfg.IngressWAL.Enabled,
+			)
 		} else {
 			routes := make([]webhook.Route, 0, len(a.cfg.Webhook.Routes))
 			for _, route := range a.cfg.Webhook.Routes {
@@ -339,16 +414,73 @@ func (a *App) buildReceivers() {
 				if routeRT == nil {
 					continue
 				}
-				routes = append(routes, webhook.Route{Tailnet: route.Tailnet, Server: newWebhook(routeRT, route.Secret.Reveal())})
+				routes = append(routes, webhook.Route{
+					Tailnet: route.Tailnet,
+					Server: newWebhook(
+						routeRT,
+						route.Secret.Reveal(),
+						a.cfg.IngressWAL.Enabled,
+					),
+				})
 			}
 			a.webhookSrv = webhook.NewRouter(routes)
 		}
 	}
+
+	if !a.cfg.IngressWAL.Enabled {
+		return nil
+	}
+	routes := make([]ingressWALRoute, 0, 2*len(a.runtimes))
+	for _, routeRT := range a.runtimes {
+		streamServer := streamServers[routeRT]
+		if streamServer == nil {
+			streamServer = newStream(routeRT, a.cfg.Streaming.Path, "", false)
+		}
+		webhookServer := webhookServers[routeRT]
+		if webhookServer == nil {
+			webhookServer = newWebhook(routeRT, "", false)
+		}
+		streamApply := streamServer
+		webhookApply := webhookServer
+		routes = append(routes,
+			ingressWALRoute{
+				tailnet: a.runtimeConfiguredName(routeRT),
+				source:  ingressWALSourceStream,
+				signal:  ingressWALSignalHEC,
+				apply: func(
+					ctx context.Context,
+					body []byte,
+					accepted time.Time,
+				) (bool, error) {
+					result, err := streamApply.ApplyDurable(ctx, body, accepted)
+					return result.FlowsApplied, err
+				},
+				drain: func() {
+					routeRT.flowProc.FlushRollup(routeRT.emitter)
+				},
+				flush: routeRT.forceFlush,
+			},
+			ingressWALRoute{
+				tailnet: a.runtimeConfiguredName(routeRT),
+				source:  ingressWALSourceWebhook,
+				signal:  ingressWALSignalWebhook,
+				apply: func(
+					ctx context.Context,
+					body []byte,
+					accepted time.Time,
+				) (bool, error) {
+					return false, webhookApply.ApplyDurable(ctx, body, accepted)
+				},
+				flush: routeRT.forceFlush,
+			},
+		)
+	}
+	return routes
 }
 
 func (a *App) runtimeFor(name string) *tailnetRuntime {
 	for _, rt := range a.runtimes {
-		if a.runtimeName(rt) == name {
+		if a.runtimeConfiguredName(rt) == name {
 			return rt
 		}
 	}
@@ -357,7 +489,7 @@ func (a *App) runtimeFor(name string) *tailnetRuntime {
 
 func (a *App) webhookDedupFor(rt *tailnetRuntime) *dedup.Set {
 	if a.webhookDedups != nil {
-		return a.webhookDedups[a.runtimeName(rt)]
+		return a.webhookDedups[a.runtimeConfiguredName(rt)]
 	}
 	return a.webhookDedup
 }

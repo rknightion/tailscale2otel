@@ -36,6 +36,40 @@ See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config move
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
 
+### Receiver WAL durability and storage
+
+`config.ingress_wal.enabled` is `false` by default, so receiver acceptance stays
+stateless unless you opt in. When enabled, a successful receiver ACK means the
+accepted payload has been stored durably by the local WAL: the raw authenticated
+webhook body or fully validated decompressed streaming body. It does not mean OTLP
+export or backend acknowledgement. Replay is at-least-once, so a crash after export
+but before the local completion commit can duplicate data.
+
+The existing `/var/lib/tailscale2otel` state mount holds both checkpoints and the
+WAL. With `persistence.enabled=false` it is an `emptyDir`: data survives container
+restarts within the same pod, but is lost when the pod is replaced, rescheduled,
+or lost with its node. Set `persistence.enabled=true` to create a PVC, or combine
+it with `persistence.existingClaim`, when WAL data must survive those events. WAL
+entries contain sensitive raw or decompressed receiver payloads; do not expose,
+share, or back them up without the same access controls as the source data.
+
+The existing `persistence.size: 64Mi` default is retained for checkpoint-only
+deployments. It is too small for the default 256 MiB encoded WAL ceiling. For that
+WAL setting, request at least `512Mi` to leave room for entries, staging files,
+and metadata:
+
+```yaml
+config:
+  ingress_wal:
+    enabled: true
+  streaming:
+    enabled: true
+    max_body_bytes: 67108864
+persistence:
+  enabled: true
+  size: 512Mi
+```
+
 ### Credentials and the rendered config
 
 A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which

@@ -719,6 +719,21 @@ config:
     # -- Checkpoint file path when store: file (mount a writable volume here).
     file_path: "/var/lib/tailscale2otel/checkpoints.json"
 
+  # Process-global write-ahead log for accepted streaming/webhook request bodies.
+  # Disabled is the stateless default. When enabled, ACK means durable local acceptance,
+  # not OTLP/backend acknowledgement; replay is at-least-once and can duplicate after a crash.
+  ingress_wal:
+    # -- Persist accepted receiver bodies before acknowledging them. Off by default.
+    enabled: false
+    # -- Absolute, clean, non-root WAL directory. Must live on the state volume for persistence.
+    directory: "/var/lib/tailscale2otel/ingress-wal"
+    # -- Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no TTL or eviction.
+    max_bytes: 268435456
+    # -- Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction.
+    max_entries: 10000
+    # -- Corruption policy. Only fail is supported: startup/drain stops rather than discarding data.
+    corruption: fail
+
   # Optional Splunk-HEC-compatible receiver for streamed logs. When enabled, set the
   # flowlogs/auditlogs source to `stream` (NOT poll/both) so each log type is ingested by
   # exactly ONE path; running both the poller and this receiver for the same log type risks
@@ -750,6 +765,7 @@ config:
     # sink for either. NEVER enable against a tailnet whose streaming you do not intend to overwrite.
     auto_configure: false
     # -- Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed).
+    # When ingress_wal.enabled, an enabled receiver must set this explicitly to >0 and <=64MiB.
     max_body_bytes: 0
     # -- How many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their
     # sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is
@@ -788,6 +804,7 @@ config:
     tolerance: 5m
     # -- Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited
     # (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body.
+    # When ingress_wal.enabled, an enabled receiver must set this explicitly to >0 and <=64MiB.
     max_body_bytes: 0
     # -- How many requests may buffer a body AT ONCE, before the HMAC is verified. max_body_bytes
     # caps one body; this caps their sum, so unauthenticated senders cannot multiply it. 0 = 4
@@ -961,16 +978,20 @@ config:
     # -- Per-request timeout for the external version fetch.
     timeout: 10s
 
-# --- Checkpoint persistence ---
+# --- Process-state persistence (checkpoints plus an enabled receiver WAL) ---
 persistence:
-  # -- Persist checkpoints (window cursors) across restarts. When false, an emptyDir is used
-  # (survives container restarts within a pod, but not rescheduling); when true, a PVC is created.
+  # -- Persist process state across pod replacement/rescheduling. When false, an emptyDir is used:
+  # it survives container restarts within the same pod, but is lost with pod replacement,
+  # rescheduling, or node loss. When true, a PVC is created or existingClaim is mounted.
   enabled: false
   # -- StorageClass for the PVC (empty = cluster default). Only used when enabled.
   storageClass: ""
   # -- PVC access mode.
   accessMode: ReadWriteOnce
-  # -- PVC size (checkpoints are tiny).
+  # -- PVC size. The existing 64Mi default suits checkpoints only. With the default 256Mi
+  # encoded WAL limit, request at least 512Mi for WAL entries plus staging files and metadata.
   size: 64Mi
-  # -- Use an existing PVC instead of creating one (empty = create one). Only used when enabled.
+  # -- Use an existing PVC instead of creating one (empty = create one). Only used when enabled;
+  # persistence.enabled=true is required, and existingClaim may supply the durable volume instead
+  # of this chart creating it.
   existingClaim: ""

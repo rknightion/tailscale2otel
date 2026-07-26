@@ -182,7 +182,8 @@ func TestEmitComponentError(t *testing.T) {
 	rec := telemetrytest.New()
 	e := rec.Emitter()
 
-	for _, c := range []string{"stream", "webhook", "admin", "auto_configure"} {
+	components := []string{"stream", "webhook", "admin", "auto_configure", "ingress_wal"}
+	for _, c := range components {
 		emitComponentError(e, c)
 	}
 
@@ -191,7 +192,7 @@ func TestEmitComponentError(t *testing.T) {
 	for _, p := range pts {
 		byComponent[p.Attrs["component"]] = p
 	}
-	for _, c := range []string{"stream", "webhook", "admin", "auto_configure"} {
+	for _, c := range components {
 		p, ok := byComponent[c]
 		if !ok {
 			t.Errorf("no component.errors point for component=%q (have %v)", c, byComponent)

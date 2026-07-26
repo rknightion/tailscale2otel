@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.4](https://img.shields.io/badge/Version-0.14.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.5](https://img.shields.io/badge/Version-0.14.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -39,6 +39,40 @@ helm install t deploy/helm/tailscale2otel \
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
+
+### Receiver WAL durability and storage
+
+`config.ingress_wal.enabled` is `false` by default, so receiver acceptance stays
+stateless unless you opt in. When enabled, a successful receiver ACK means the
+accepted payload has been stored durably by the local WAL: the raw authenticated
+webhook body or fully validated decompressed streaming body. It does not mean OTLP
+export or backend acknowledgement. Replay is at-least-once, so a crash after export
+but before the local completion commit can duplicate data.
+
+The existing `/var/lib/tailscale2otel` state mount holds both checkpoints and the
+WAL. With `persistence.enabled=false` it is an `emptyDir`: data survives container
+restarts within the same pod, but is lost when the pod is replaced, rescheduled,
+or lost with its node. Set `persistence.enabled=true` to create a PVC, or combine
+it with `persistence.existingClaim`, when WAL data must survive those events. WAL
+entries contain sensitive raw or decompressed receiver payloads; do not expose,
+share, or back them up without the same access controls as the source data.
+
+The existing `persistence.size: 64Mi` default is retained for checkpoint-only
+deployments. It is too small for the default 256 MiB encoded WAL ceiling. For that
+WAL setting, request at least `512Mi` to leave room for entries, staging files,
+and metadata:
+
+```yaml
+config:
+  ingress_wal:
+    enabled: true
+  streaming:
+    enabled: true
+    max_body_bytes: 67108864
+persistence:
+  enabled: true
+  size: 512Mi
+```
 
 ### Credentials and the rendered config
 
@@ -307,6 +341,11 @@ extraVolumeMounts:
 | config.headscale.http.timeout | string | `"30s"` | Per-request timeout for Headscale API calls (the only http knob applied in v1). |
 | config.headscale.max_response_bytes | int | `4194304` | Cap on ONE Headscale API response body before it is decoded, in bytes. Sized from a measured ~715 B/node, so 4 MiB covers roughly 5,800 nodes. These endpoints are not paginated, so a larger deployment needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. A value above 64 MiB triggers a startup warning. |
 | config.headscale.url | string | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org. |
+| config.ingress_wal.corruption | string | `"fail"` | Corruption policy. Only fail is supported: startup/drain stops rather than discarding data. |
+| config.ingress_wal.directory | string | `"/var/lib/tailscale2otel/ingress-wal"` | Absolute, clean, non-root WAL directory. Must live on the state volume for persistence. |
+| config.ingress_wal.enabled | bool | `false` | Persist accepted receiver bodies before acknowledging them. Off by default. |
+| config.ingress_wal.max_bytes | int | `268435456` | Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
+| config.ingress_wal.max_entries | int | `10000` | Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
 | config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
 | config.otlp.grafana_cloud.instance_id | string | `""` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret). |
@@ -357,7 +396,7 @@ extraVolumeMounts:
 | config.streaming.decompress | string | `"auto"` | Body decompression: auto | gzip | zstd | none. |
 | config.streaming.enabled | bool | `false` | Enable the HEC-style streaming receiver. |
 | config.streaming.listen | string | `":8088"` | Address the receiver binds (host:port). |
-| config.streaming.max_body_bytes | int | `0` | Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed). |
+| config.streaming.max_body_bytes | int | `0` | Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed). When ingress_wal.enabled, an enabled receiver must set this explicitly to >0 and <=64MiB. |
 | config.streaming.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.streaming.path | string | `"/services/collector/event"` | HTTP path the receiver serves (the Splunk-HEC event endpoint). |
 | config.streaming.public_url | string | `""` | Externally reachable receiver URL; REQUIRED when auto_configure: true. |
@@ -396,7 +435,7 @@ extraVolumeMounts:
 | config.webhook.dedup_audit_events | bool | `false` | Best-effort: drop a webhook event already counted via the audit logs (off by default). |
 | config.webhook.enabled | bool | `false` | Enable the webhook receiver. |
 | config.webhook.listen | string | `":8089"` | Address the receiver binds (host:port). |
-| config.webhook.max_body_bytes | int | `0` | Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body. |
+| config.webhook.max_body_bytes | int | `0` | Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body. When ingress_wal.enabled, an enabled receiver must set this explicitly to >0 and <=64MiB. |
 | config.webhook.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE, before the HMAC is verified. max_body_bytes caps one body; this caps their sum, so unauthenticated senders cannot multiply it. 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffered memory is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.webhook.path | string | `"/tailscale/webhook"` | HTTP path the receiver serves. |
 | config.webhook.routes | list | `[]` | FILE-ONLY multi-tailnet routes. Each item has tailnet and secret or secret_file. Non-empty replaces legacy path/secret identity; all events must name one route tailnet. |
@@ -420,9 +459,9 @@ extraVolumeMounts:
 | nameOverride | string | `""` | Override the chart name portion of resource names. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | persistence.accessMode | string | `"ReadWriteOnce"` | PVC access mode. |
-| persistence.enabled | bool | `false` | Persist checkpoints (window cursors) across restarts. When false, an emptyDir is used (survives container restarts within a pod, but not rescheduling); when true, a PVC is created. |
-| persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one (empty = create one). Only used when enabled. |
-| persistence.size | string | `"64Mi"` | PVC size (checkpoints are tiny). |
+| persistence.enabled | bool | `false` | Persist process state across pod replacement/rescheduling. When false, an emptyDir is used: it survives container restarts within the same pod, but is lost with pod replacement, rescheduling, or node loss. When true, a PVC is created or existingClaim is mounted. |
+| persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one (empty = create one). Only used when enabled; persistence.enabled=true is required, and existingClaim may supply the durable volume instead of this chart creating it. |
+| persistence.size | string | `"64Mi"` | PVC size. The existing 64Mi default suits checkpoints only. With the default 256Mi encoded WAL limit, request at least 512Mi for WAL entries plus staging files and metadata. |
 | persistence.storageClass | string | `""` | StorageClass for the PVC (empty = cluster default). Only used when enabled. |
 | podAnnotations | object | `{}` | Extra annotations for the pod. |
 | podLabels | object | `{}` | Extra labels for the pod. |

@@ -406,6 +406,14 @@ func (p *Provider) Cardinality() *CardinalityTracker { return p.card }
 // a no-op tracer, so callers never need to nil-check.
 func (p *Provider) Tracer() trace.Tracer { return p.tracer }
 
+// ForceFlush exports pending metrics and logs without stopping either pipeline.
+// The pipelines flush concurrently under ctx so one blocked exporter cannot
+// consume the shared budget before the other starts. Traces are deliberately
+// excluded: this barrier covers ingress-derived metrics and logs only.
+func (p *Provider) ForceFlush(ctx context.Context) error {
+	return shutdownAll(ctx, p.mp.ForceFlush, p.lp.ForceFlush)
+}
+
 // Shutdown flushes and stops the metric, log, and trace pipelines. The three are
 // independent exporters, so they are shut down concurrently under ctx (see
 // shutdownAll / #204): a metric exporter blocked on an unresponsive backend must

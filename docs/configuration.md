@@ -108,6 +108,7 @@ ignored.
 - [`cardinality` — metric/label cardinality controls](#cardinality-metriclabel-cardinality-controls)
 - [`collectors` — per-source polling](#collectors-per-source-polling)
 - [`checkpoint` — poll high-water marks](#checkpoint-poll-high-water-marks)
+- [`ingress_wal` — durable local receiver acceptance](#ingress_wal-durable-local-receiver-acceptance)
 - [`streaming` — Splunk-HEC log receiver](#streaming-splunk-hec-log-receiver)
 - [`webhook` — event webhook receiver](#webhook-event-webhook-receiver)
 - [`self_observability` — the exporter's own telemetry](#self_observability-the-exporters-own-telemetry)
@@ -802,6 +803,58 @@ Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs`
 
 ---
 
+## `ingress_wal` — durable local receiver acceptance
+
+The process-global ingress WAL is an opt-in durability boundary for accepted streaming and webhook
+request bodies. It is disabled by default, so the default remains stateless. When enabled, a
+successful receiver ACK means the accepted payload was fsynced into the local WAL: the raw
+authenticated webhook body or the fully validated decompressed streaming body. It means **durable
+local acceptance only**: it does not mean OTLP export completed or the backend acknowledged the data.
+
+Replay is at-least-once. A crash after export but before the local completion commit can replay the
+same body and create duplicates. There is no TTL, age-based cleanup, or eviction. An exhausted byte
+or entry limit refuses new receiver requests, and a file/directory fsync failure or corrupt state
+fails closed rather than acknowledging data whose durability is uncertain.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ingress_wal.enabled` | `false` | Enable durable local acceptance and oldest-first replay for receiver request bodies. With both receivers disabled, this is a valid drain-only configuration for clearing already persisted entries. It does not require the admin server or a persistent volume. |
+| `ingress_wal.directory` | `/var/lib/tailscale2otel/ingress-wal` | WAL directory. When enabled, it must be an absolute, filepath-clean path and must not be the filesystem root. The existing parent must be writable; the WAL creates and secures the final directory. |
+| `ingress_wal.max_bytes` | `268435456` (256 MiB) | Encoded byte ceiling. Must be `> 0` and `< 9223372036854775807`. Counts pending entries and staging/recovery state; full means new receiver requests fail closed. |
+| `ingress_wal.max_entries` | `10000` | Encoded entry ceiling. Must be `> 0`; full means new receiver requests fail closed. |
+| `ingress_wal.corruption` | `fail` | Corruption policy. `fail` is the only supported value: malformed, truncated, checksum-invalid, or incompatible state blocks startup/drain instead of being discarded. |
+
+The WAL is process-global and provider-neutral: `provider: headscale` is valid. It does not require
+an enabled receiver, so an operator can disable both receivers and drain already accepted entries.
+It also has no dependency on the admin listener.
+
+Each enabled receiver must set its own `max_body_bytes` to a positive value no larger than
+`67108864` (64 MiB) while the WAL is enabled. The receiver cap bounds one accepted payload before it
+becomes an encoded WAL entry. The usual `0` receiver defaults and negative unlimited values remain
+valid when the WAL is disabled, and dormant WAL fields are not validated.
+
+The directory is owner-only and held under an exclusive writer lock for the process lifetime. A
+second writer, a symlink/non-regular object, or state with unsafe permissions is refused. Keep one
+process per WAL and run it under the same filesystem user after restart. WAL entries contain
+sensitive raw or decompressed receiver payloads; do not expose, share, or back them up without the
+same access controls as the source data. Durable filesystem WAL construction is supported on Linux
+and macOS; Windows builds retain stateless operation, but enabling the WAL is unsupported.
+
+Persisted identities include the configured runtime/tailnet, source, and signal. Before renaming or
+removing a configured identity, stop new ingress for it and run the same configuration in drain-only
+mode until its entries are gone. Renaming first leaves the old identity with no valid replay route
+and intentionally fails closed.
+
+For Docker Compose, the existing named `checkpoints` volume already mounts
+`/var/lib/tailscale2otel`, so it holds checkpoints and the WAL without stranding the old volume. In
+the Helm chart, the default `emptyDir` survives container restarts within one pod but is lost on pod
+replacement, rescheduling, or node loss. Use `persistence.enabled=true` (optionally with
+`persistence.existingClaim`) for reschedule durability. The chart keeps its existing `64Mi`
+checkpoint-only PVC default; for the default 256 MiB encoded WAL ceiling, request at least `512Mi`
+for entries, staging files, and metadata.
+
+---
+
 ## `streaming` — Splunk-HEC log receiver
 
 Optional receiver for Tailscale's log streaming (a Splunk-HEC sink). When you enable it, set the
@@ -819,7 +872,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.tls.cert_file` / `.key_file` | `""` | HTTPS is required by Tailscale; a `tailscale cert` works for private tailnet endpoints. |
 | `streaming.decompress` | `auto` | Request-body decompression: `auto` \| `gzip` \| `zstd` \| `none`. |
 | `streaming.auto_configure` | `false` | On startup, PUT this receiver as a Splunk-HEC log-streaming sink. **Requires `enabled: true`, `public_url`, and an OAuth client with the `log_streaming` scope.** |
-| `streaming.max_body_bytes` | `0` | Cap on the **decompressed** request body. `0` selects a 64 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413. |
+| `streaming.max_body_bytes` | `0` | Cap on the **decompressed** request body. `0` selects a 64 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413. When `ingress_wal.enabled=true` and this receiver is enabled, set an explicit value `> 0` and `<= 67108864` (64 MiB). |
 | `streaming.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**. `max_body_bytes` caps one body; this caps their sum, so N simultaneous in-limit POSTs cannot exceed the process memory budget. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1`. Raise it only alongside the container/process memory limit — worst-case buffering is roughly this × `max_body_bytes`. |
 | `streaming.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, exact rooted `path`, `token` or `token_file`, optional `public_url`, and per-route `auto_configure`. Every route tailnet must match one configured `tailnets[]` runtime; paths and tailnets are unique. Non-empty routes replace legacy `path`/token/public-url/auto-configure identity. |
 
@@ -872,7 +925,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.secret_file` | `""` | Read `webhook.secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `webhook.tls.cert_file` / `.key_file` | `""` | Serve the webhook listener over native HTTPS when both readable files are set. Tailscale webhook endpoints require HTTPS. Leave both empty for an HTTPS reverse proxy; setting only one is a startup error. Certificate issuance/ACME is out of scope. |
 | `webhook.tolerance` | `5m` | Allowed clock skew in **both** directions: a signed timestamp older than `now - tolerance` **or** newer than `now + tolerance` is rejected (the boundary itself is allowed). The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable until its future timestamp plus this window — turning a short skew allowance into a much longer one. `0` disables the timestamp check. |
-| `webhook.max_body_bytes` | `0` | Cap on the **raw** request body read before signature verification. `0` selects a 1 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413 and counted into `tailscale.webhook.rejected{reason="too_large"}`. Distinct from `streaming.max_body_bytes`, which caps a *decompressed* body. |
+| `webhook.max_body_bytes` | `0` | Cap on the **raw** request body read before signature verification. `0` selects a 1 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413 and counted into `tailscale.webhook.rejected{reason="too_large"}`. Distinct from `streaming.max_body_bytes`, which caps a *decompressed* body. When `ingress_wal.enabled=true` and this receiver is enabled, set an explicit value `> 0` and `<= 67108864` (64 MiB). |
 | `webhook.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**, before the HMAC is verified. The signature covers the whole body, so buffering necessarily precedes authentication; `max_body_bytes` caps one body and this caps their sum, so unauthenticated senders cannot multiply it. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1` and counted into `tailscale.webhook.rejected{reason="overloaded"}`. Worst-case buffering is roughly this × `max_body_bytes`. |
 | `webhook.dedup_audit_events` | `false` | Best-effort: drop a webhook event already counted via the audit logs (shares a cross-source de-dup set with the audit processor). |
 | `webhook.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, `secret` or `secret_file`. Every route tailnet must match one configured `tailnets[]` runtime and is unique. A delivery is routed only when every event carries the same non-empty matching tailnet, before that route's HMAC is verified; non-empty routes replace legacy `path`/secret identity. |

@@ -222,5 +222,64 @@ assert_rc0 "G: renders"
 [[ "$(docs_of ConfigMap | yq '.metadata.name')" == "$FULLNAME" ]] \
   && ok "G: ConfigMap rendered" || bad "G: ConfigMap missing"
 
+# --------------------------------------------------------------------------
+case_ "H. ingress WAL config renders with safe defaults and accepts overrides"
+render
+assert_rc0 "H: default renders"
+default_config="$(docs_of ConfigMap | yq -r '.data."config.yaml"')"
+[[ "$(yq '.ingress_wal.enabled' <<<"$default_config")" == "false" ]] \
+  && ok "H: WAL disabled by default" || bad "H: WAL default enabled mismatch"
+[[ "$(yq '.ingress_wal.directory' <<<"$default_config")" == "/var/lib/tailscale2otel/ingress-wal" ]] \
+  && ok "H: WAL default directory rendered" || bad "H: WAL default directory mismatch"
+[[ "$(yq '.ingress_wal.max_bytes' <<<"$default_config")" == "268435456" ]] \
+  && ok "H: WAL default byte limit rendered" || bad "H: WAL default byte limit mismatch"
+[[ "$(yq '.ingress_wal.max_entries' <<<"$default_config")" == "10000" ]] \
+  && ok "H: WAL default entry limit rendered" || bad "H: WAL default entry limit mismatch"
+[[ "$(yq '.ingress_wal.corruption' <<<"$default_config")" == "fail" ]] \
+  && ok "H: WAL fail-closed corruption mode rendered" || bad "H: WAL corruption mode mismatch"
+
+render \
+  --set config.ingress_wal.enabled=true \
+  --set config.ingress_wal.directory=/state/wal \
+  --set config.ingress_wal.max_bytes=33554432 \
+  --set config.ingress_wal.max_entries=321
+assert_rc0 "H: override renders"
+override_config="$(docs_of ConfigMap | yq -r '.data."config.yaml"')"
+[[ "$(yq '.ingress_wal.enabled' <<<"$override_config")" == "true" ]] \
+  && ok "H: WAL enabled override rendered" || bad "H: WAL enabled override missing"
+[[ "$(yq '.ingress_wal.directory' <<<"$override_config")" == "/state/wal" ]] \
+  && ok "H: WAL directory override rendered" || bad "H: WAL directory override missing"
+[[ "$(yq '.ingress_wal.max_bytes' <<<"$override_config")" == "33554432" ]] \
+  && ok "H: WAL byte override rendered" || bad "H: WAL byte override missing"
+[[ "$(yq '.ingress_wal.max_entries' <<<"$override_config")" == "321" ]] \
+  && ok "H: WAL entry override rendered" || bad "H: WAL entry override missing"
+
+# --------------------------------------------------------------------------
+case_ "I. state volume keeps the existing emptyDir/PVC and nonroot security contracts"
+render
+assert_rc0 "I: default renders"
+[[ "$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .volumeMounts[] | select(.name == "checkpoints") | .mountPath')" == "/var/lib/tailscale2otel" ]] \
+  && ok "I: state mount covers checkpoints and WAL" || bad "I: state mount path changed"
+[[ "$(dep_field '.spec.template.spec.volumes[] | select(.name == "checkpoints") | has("emptyDir")')" == "true" ]] \
+  && ok "I: default state volume remains emptyDir" || bad "I: default state volume is not emptyDir"
+[[ "$(dep_field '.spec.template.spec.securityContext.fsGroup')" == "65532" ]] \
+  && ok "I: pod fsGroup keeps state writable by uid 65532" || bad "I: pod fsGroup changed"
+[[ "$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .securityContext.readOnlyRootFilesystem')" == "true" ]] \
+  && ok "I: read-only root filesystem preserved" || bad "I: read-only root filesystem changed"
+
+render --set persistence.enabled=true
+assert_rc0 "I: managed PVC renders"
+[[ "$(dep_field '.spec.template.spec.volumes[] | select(.name == "checkpoints") | .persistentVolumeClaim.claimName')" == "$FULLNAME" ]] \
+  && ok "I: managed PVC backs the existing state volume" || bad "I: managed PVC claim mismatch"
+[[ "$(docs_of PersistentVolumeClaim | yq '.spec.resources.requests.storage')" == "64Mi" ]] \
+  && ok "I: existing 64Mi PVC default preserved" || bad "I: PVC default size changed"
+
+render --set persistence.enabled=true --set persistence.existingClaim=durable-state
+assert_rc0 "I: existing PVC renders"
+[[ "$(dep_field '.spec.template.spec.volumes[] | select(.name == "checkpoints") | .persistentVolumeClaim.claimName')" == "durable-state" ]] \
+  && ok "I: existingClaim backs the state volume" || bad "I: existingClaim not used"
+[[ -z "$(docs_of PersistentVolumeClaim | tr -d '[:space:]-')" ]] \
+  && ok "I: existingClaim does not create another PVC" || bad "I: unexpected managed PVC with existingClaim"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

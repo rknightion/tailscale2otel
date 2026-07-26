@@ -613,6 +613,26 @@
                         }
                     }
                 },
+                "ingress_wal": {
+                    "type": "object",
+                    "properties": {
+                        "corruption": {
+                            "type": "string"
+                        },
+                        "directory": {
+                            "type": "string"
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "max_bytes": {
+                            "type": "integer"
+                        },
+                        "max_entries": {
+                            "type": "integer"
+                        }
+                    }
+                },
                 "log_level": {
                     "type": "string"
                 },

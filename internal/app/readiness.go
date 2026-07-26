@@ -91,7 +91,18 @@ func readinessVerdict(collectors []statusdata.CollectorStatus, receiverFailures 
 // recordReceiverStop (internal/app/selfobs.go) when a stream/webhook receiver
 // terminates with other than a clean-shutdown error (see isCleanShutdownErr).
 func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
-	ready, reason := readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
+	ready := true
+	reason := ""
+	if a.ingressWAL != nil {
+		state := a.ingressWAL.Health().State
+		if state != ingressWALStateDisabled && state != ingressWALStateReady {
+			ready = false
+			reason = "ingress WAL: " + string(state)
+		}
+	}
+	if ready {
+		ready, reason = readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
+	}
 	w.Header().Set("Content-Type", "text/plain")
 	if !ready {
 		w.WriteHeader(http.StatusServiceUnavailable)

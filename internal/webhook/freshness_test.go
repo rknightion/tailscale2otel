@@ -110,6 +110,7 @@ func TestHandler_OnAcceptedSurvivesCrossSourceDedup(t *testing.T) {
 	}, telemetrytest.New().Emitter())
 
 	var got []ingest.AcceptedEvent
+	var crossDedupHitsAtAccepted uint64
 	rec := telemetrytest.New()
 	s := New(Options{
 		Listen: "127.0.0.1:0",
@@ -117,6 +118,7 @@ func TestHandler_OnAcceptedSurvivesCrossSourceDedup(t *testing.T) {
 		Secret: testSecret,
 		OnAccepted: func(event ingest.AcceptedEvent) {
 			got = append(got, event)
+			crossDedupHitsAtAccepted = set.Hits()
 		},
 	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)), WithClock(func() time.Time { return now }), WithDedup(set))
 
@@ -128,5 +130,8 @@ func TestHandler_OnAcceptedSurvivesCrossSourceDedup(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("accepted events = %d, want 1 despite cross-source dedup", len(got))
+	}
+	if crossDedupHitsAtAccepted != 1 {
+		t.Fatalf("cross-source dedup hits at OnAccepted = %d, want 1 (dedup attempt must precede freshness observation)", crossDedupHitsAtAccepted)
 	}
 }

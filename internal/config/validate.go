@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,8 +20,9 @@ import (
 // Bounds on flows.retention. The floor is one bucket; the ceiling reflects that
 // this is a process-memory ring, not durable storage.
 const (
-	minFlowsRetention = time.Minute
-	maxFlowsRetention = 24 * time.Hour
+	minFlowsRetention              = time.Minute
+	maxFlowsRetention              = 24 * time.Hour
+	maxIngressWALReceiverBodyBytes = int64(64 << 20)
 )
 
 // oneOf reports whether v equals one of the allowed values.
@@ -849,6 +852,9 @@ func (c *Config) Validate() error {
 	if !oneOf(c.Checkpoint.Store, "memory", "file") {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
 	}
+	if err := c.validateIngressWAL(); err != nil {
+		return err
+	}
 
 	// Source + window-timing validation. Only the two log collectors have a
 	// source; an empty value defaults to poll.
@@ -1168,6 +1174,55 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("version_checks.devices.outdated_minor_threshold must be >= 1")
 	}
 
+	return nil
+}
+
+func (c *Config) validateIngressWAL() error {
+	if !c.IngressWAL.Enabled {
+		return nil
+	}
+
+	directory := c.IngressWAL.Directory
+	cleanDirectory := filepath.Clean(directory)
+	if !filepath.IsAbs(directory) {
+		return fmt.Errorf("ingress_wal.directory %q invalid: must be an absolute path", directory)
+	}
+	if cleanDirectory != directory {
+		return fmt.Errorf("ingress_wal.directory %q invalid: must already be filepath-clean (use %q)",
+			directory, cleanDirectory)
+	}
+	root := filepath.VolumeName(cleanDirectory) + string(filepath.Separator)
+	if cleanDirectory == root {
+		return fmt.Errorf("ingress_wal.directory %q invalid: must not be the filesystem root", directory)
+	}
+	if c.IngressWAL.MaxBytes <= 0 || c.IngressWAL.MaxBytes == math.MaxInt64 {
+		return fmt.Errorf("ingress_wal.max_bytes must be > 0 and < %d (got %d)",
+			int64(math.MaxInt64), c.IngressWAL.MaxBytes)
+	}
+	if c.IngressWAL.MaxEntries <= 0 {
+		return fmt.Errorf("ingress_wal.max_entries must be > 0 (got %d)", c.IngressWAL.MaxEntries)
+	}
+	if c.IngressWAL.Corruption != "fail" {
+		return fmt.Errorf("ingress_wal.corruption %q invalid: must be exactly \"fail\"",
+			c.IngressWAL.Corruption)
+	}
+
+	receivers := [...]struct {
+		key     string
+		enabled bool
+		value   int64
+	}{
+		{key: "streaming.max_body_bytes", enabled: c.Streaming.Enabled, value: c.Streaming.MaxBodyBytes},
+		{key: "webhook.max_body_bytes", enabled: c.Webhook.Enabled, value: c.Webhook.MaxBodyBytes},
+	}
+	for _, receiver := range receivers {
+		if receiver.enabled &&
+			(receiver.value <= 0 || receiver.value > maxIngressWALReceiverBodyBytes) {
+			return fmt.Errorf("%s must be > 0 and <= %d when ingress_wal.enabled=true (got %d; max %d)",
+				receiver.key, maxIngressWALReceiverBodyBytes, receiver.value,
+				maxIngressWALReceiverBodyBytes)
+		}
+	}
 	return nil
 }
 

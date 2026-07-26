@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.5 — Optional durable receiver acceptance
+
+- New `config.ingress_wal` values expose the disabled-by-default, bounded local
+  write-ahead log for authenticated streaming and webhook request bodies.
+- The chart documents the local-only, at-least-once acknowledgement boundary:
+  successful receiver ACK does not mean OTLP/backend acknowledgement, and crash
+  replay can duplicate exported data.
+- The existing process-state volume is reused. `emptyDir` does not survive pod
+  replacement or rescheduling; use a PVC and request at least `512Mi` with the
+  default 256 MiB encoded WAL ceiling.
+
 ## 0.14.3 — Receiver TLS and flow reporter trust
 
 - `config.webhook.tls.cert_file` and `key_file` can terminate HTTPS in the
