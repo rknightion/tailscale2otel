@@ -5,10 +5,16 @@ import (
 	"time"
 )
 
-// keyLayout is the timestamp format Tailscale names each exported object with.
-// It is zero-padded throughout, which is what makes S3's lexicographic listing
-// order chronological order too — the whole cursor scheme rests on that.
-const keyLayout = "2006-01-02-15-04-05"
+const (
+	// officialKeyLayout is Tailscale's documented object-key suffix. The date
+	// lives in the three partition directories and the basename carries only
+	// the UTC time.
+	officialKeyLayout = "2006/01/02/15:04:05"
+	// legacyKeyLayout is retained for exports and copied objects produced for
+	// the original collector contract. Its date-bearing basename can also be
+	// parsed after an operator flattens the object hierarchy.
+	legacyKeyLayout = "2006-01-02-15-04-05"
+)
 
 // maxClockSkew is how far ahead of this process's clock an object's basename
 // timestamp may be and still be treated as real data. It is a fixed constant
@@ -67,16 +73,18 @@ var suffixes = []struct {
 
 // parseKey reads the object's own timestamp and codec out of its name.
 //
+// Official:
+//
+//	<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]
+//
+// Retained legacy/copied layout:
+//
 //	<prefix>/YYYY/MM/DD/<YYYY-MM-DD-HH-MM-SS>.ndjson[.zst|.zstd|.gz|.gzip]
 //
 // The timestamp is what the cursor is compared against, so a key that does not
 // carry one is reported as unparseable rather than defaulted to a time — an
 // object assumed to be "now" would be ingested and then never re-examined, and
 // one assumed to be zero would be skipped forever.
-//
-// It reads the BASENAME only. The day-partition directories are redundant with
-// the timestamp, and trusting them would break on a bucket whose objects were
-// copied into a flat prefix.
 func parseKey(key string) (at time.Time, comp compression, ok bool) {
 	base := key
 	if i := strings.LastIndexByte(base, '/'); i >= 0 {
@@ -87,7 +95,20 @@ func parseKey(key string) (at time.Time, comp compression, ok bool) {
 		if !found {
 			continue
 		}
-		t, err := time.Parse(keyLayout, stem)
+		// The legacy basename is self-contained, so try it first and preserve
+		// flat copied-export compatibility.
+		if t, err := time.Parse(legacyKeyLayout, stem); err == nil {
+			return t.UTC(), s.comp, true
+		}
+		// The official basename carries only a time. Its date is the final
+		// three directory components immediately above it; any earlier
+		// components are the operator-selected key prefix.
+		parts := strings.Split(strings.TrimSuffix(key, "/"), "/")
+		if len(parts) < 4 {
+			return time.Time{}, compNone, false
+		}
+		stamp := strings.Join(parts[len(parts)-4:len(parts)-1], "/") + "/" + stem
+		t, err := time.Parse(officialKeyLayout, stamp)
 		if err != nil {
 			return time.Time{}, compNone, false
 		}

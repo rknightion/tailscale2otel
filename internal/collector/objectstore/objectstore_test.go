@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -290,21 +291,24 @@ func TestCollect_AcceptedFreshnessSurvivesProcessorCrossSourceDedup(t *testing.T
 // The export is zstd; gzip appears when an operator re-compresses while copying
 // between buckets. Both, and plain, must decode.
 func TestCollect_DecodesEveryCompression(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/official-network-export.ndjson")
+	if err != nil {
+		t.Fatalf("read sanitized live-shape fixture: %v", err)
+	}
 	for _, tc := range []struct {
 		name string
 		ext  string
 		body func(*testing.T, string) []byte
 	}{
-		{"plain", ".ndjson", func(_ *testing.T, s string) []byte { return []byte(s) }},
-		{"zstd", ".ndjson.zst", zstdBytes},
-		{"zstd long extension", ".ndjson.zstd", zstdBytes},
-		{"gzip", ".ndjson.gz", gzipBytes},
-		{"gzip long extension", ".ndjson.gzip", gzipBytes},
+		{"plain", ".json", func(_ *testing.T, s string) []byte { return []byte(s) }},
+		{"zstd", ".json.zst", zstdBytes},
+		{"gzip", ".json.gz", gzipBytes},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, nil)
-			at := now.Add(-10 * time.Minute)
-			h.store.put(keyAt(at, tc.ext), tc.body(t, record("n1", at)+"\n"))
+			at := time.Date(2026, 7, 24, 9, 5, 0, 0, time.UTC)
+			key := "flow/" + at.Format("2006/01/02/15:04:05") + tc.ext
+			h.store.put(key, tc.body(t, string(fixture)))
 
 			h.collect(t)
 
@@ -312,6 +316,20 @@ func TestCollect_DecodesEveryCompression(t *testing.T) {
 				t.Errorf("records = %d, want 1 from a %s object", got, tc.name)
 			}
 		})
+	}
+}
+
+func TestCollect_UnrecognizedOfficialLayoutIsVisible(t *testing.T) {
+	h := newHarness(t, nil)
+	h.store.put("flow/2026/07/24/not-a-time.json", []byte(record("n1", now.Add(-10*time.Minute))+"\n"))
+
+	h.collect(t)
+
+	if got := skippedByReason(h.rec)["unrecognized_key"]; got != 1 {
+		t.Errorf("unrecognized-key skips = %v, want 1", got)
+	}
+	if len(h.store.fetched) != 0 {
+		t.Errorf("fetched = %v, want an unknown layout rejected before GET", h.store.fetched)
 	}
 }
 

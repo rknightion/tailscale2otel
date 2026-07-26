@@ -16,7 +16,15 @@ func TestParseKey(t *testing.T) {
 		wantOK   bool
 	}{
 		{
-			name:     "the shape Tailscale writes",
+			name:   "official uncompressed layout",
+			key:    "flow/2026/07/24/09:05:00.json",
+			wantAt: want,
+			wantOK: true,
+		},
+		{name: "official zstd layout", key: "flow/2026/07/24/09:05:00.json.zst", wantAt: want, wantComp: compZstd, wantOK: true},
+		{name: "official gzip layout", key: "flow/2026/07/24/09:05:00.json.gz", wantAt: want, wantComp: compGzip, wantOK: true},
+		{
+			name:     "legacy date-bearing basename",
 			key:      "flow/2026/07/24/2026-07-24-09-05-00.ndjson.zst",
 			wantAt:   want,
 			wantComp: compZstd,
@@ -32,9 +40,10 @@ func TestParseKey(t *testing.T) {
 			name: "json extension", key: "flow/2026/07/24/2026-07-24-09-05-00.json", wantAt: want, wantOK: true,
 		},
 		{
-			// The day directories are redundant with the timestamp, so a bucket
-			// whose objects were copied into a flat prefix still works.
-			name: "no day partition", key: "2026-07-24-09-05-00.ndjson", wantAt: want, wantOK: true,
+			// The retained legacy basename is self-contained. This only pins
+			// parser compatibility; bounded discovery of a flat bucket is the
+			// separate end-to-end contract in #293.
+			name: "legacy basename is self-contained", key: "2026-07-24-09-05-00.ndjson", wantAt: want, wantOK: true,
 		},
 		{
 			// Deliberately NOT taken from the directories: a mismatch means
@@ -43,6 +52,7 @@ func TestParseKey(t *testing.T) {
 			name: "day directories disagree with the stem", key: "flow/2020/01/01/2026-07-24-09-05-00.ndjson", wantAt: want, wantOK: true,
 		},
 		{name: "no timestamp", key: "flow/2026/07/24/manifest.ndjson", wantOK: false},
+		{name: "official basename copied flat loses its date", key: "09:05:00.json", wantOK: false},
 		{name: "unknown extension", key: "flow/2026/07/24/2026-07-24-09-05-00.parquet", wantOK: false},
 		{name: "no extension", key: "flow/2026/07/24/2026-07-24-09-05-00", wantOK: false},
 		{name: "empty", key: "", wantOK: false},
