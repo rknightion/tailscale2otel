@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,71 @@ const (
 // oneOf reports whether v equals one of the allowed values.
 func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
+}
+
+// validateLogStreamingPublicURL validates the endpoint registered with the
+// Tailscale log-streaming API. Tailscale permits plain HTTP only for private
+// tailnet endpoints, and its current contract rejects every IPv4 literal.
+func validateLogStreamingPublicURL(key, rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("%s invalid: must be an absolute http or https URL with a host", key)
+	}
+	if !u.IsAbs() || u.Host == "" || u.Hostname() == "" || !validURLPort(u.Host) {
+		return fmt.Errorf("%s invalid: must be an absolute http or https URL with a host", key)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("%s invalid: scheme must be http or https", key)
+	}
+	if scheme == "http" {
+		if ip := net.ParseIP(u.Hostname()); ip != nil && ip.To4() != nil {
+			return fmt.Errorf("%s invalid: plain HTTP cannot use an IPv4 literal; use a private shared node hostname/FQDN or IPv6 literal", key)
+		}
+	}
+	return nil
+}
+
+func validURLPort(host string) bool {
+	if !strings.Contains(host, ":") {
+		return true
+	}
+	if strings.HasPrefix(host, "[") {
+		end := strings.LastIndex(host, "]")
+		if end < 0 {
+			return false
+		}
+		suffix := host[end+1:]
+		if suffix == "" {
+			return true
+		}
+		if !strings.HasPrefix(suffix, ":") || len(suffix) == 1 {
+			return false
+		}
+		return validPortNumber(suffix[1:])
+	}
+	_, port, err := net.SplitHostPort(host)
+	return err == nil && validPortNumber(port)
+}
+
+func validPortNumber(s string) bool {
+	port, err := strconv.Atoi(s)
+	return err == nil && port >= 1 && port <= 65535
+}
+
+func privateLogStreamingHTTPURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || strings.ToLower(u.Scheme) != "http" || u.Hostname() == "" {
+		return false
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip == nil || ip.To4() == nil
+}
+
+func privateLogStreamingHTTPWarning(key string) string {
+	return key + " uses plain HTTP. Private log streaming requires node sharing plus policy access from " +
+		"logstream@tailscale, with the appropriate device_invites and policy_file authority. " +
+		"Local validation cannot verify that this endpoint is a private shared tailnet node."
 }
 
 // validateReceiverRoutes freezes the receiver-routing boundary: a routes list
@@ -79,6 +145,11 @@ func (c *Config) validateReceiverRoutes() error {
 			}
 			if r.AutoConfigure && r.PublicURL == "" {
 				return fmt.Errorf("streaming.routes[%d].auto_configure requires public_url", i)
+			}
+			if r.AutoConfigure {
+				if err := validateLogStreamingPublicURL(fmt.Sprintf("streaming.routes[%d].public_url", i), r.PublicURL); err != nil {
+					return err
+				}
 			}
 		}
 	} else if len(c.Tailnets) > 1 && c.Streaming.Enabled {
@@ -305,6 +376,15 @@ func (c *Config) Warnings() []string {
 		}
 	}
 
+	if c.Streaming.AutoConfigure && privateLogStreamingHTTPURL(c.Streaming.PublicURL) {
+		w = append(w, privateLogStreamingHTTPWarning("streaming.public_url"))
+	}
+	for i, route := range c.Streaming.Routes {
+		if route.AutoConfigure && privateLogStreamingHTTPURL(route.PublicURL) {
+			w = append(w, privateLogStreamingHTTPWarning(fmt.Sprintf("streaming.routes[%d].public_url", i)))
+		}
+	}
+
 	// streaming.public_url is handed to Tailscale as the log-streaming
 	// destination, so every part of it leaves this process. Userinfo is a hard
 	// error (see validateNoURLCredentials); a query string is allowed because a
@@ -510,7 +590,7 @@ func validateReceiverPath(field, p string) error {
 }
 
 // validateTLSFiles enforces the shared TLS-file contract for a listener block
-// (admin.tls / prometheus.tls): cert_file and key_file must be set together
+// (admin.tls / prometheus.tls / webhook.tls): cert_file and key_file must be set together
 // (both-or-neither), and any set path must exist and be readable now — not
 // discovered as an opaque http.Server.ListenAndServeTLS failure at startup.
 // label is the config prefix (e.g. "admin") used in error messages.
@@ -678,13 +758,16 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("flows.max_future_skew must be between 0 and 1h (got %v)", d)
 		}
 	}
-	// admin.tls / prometheus.tls: both-or-neither, and any configured file must
+	// Listener TLS blocks: both-or-neither, and any configured file must
 	// exist and be readable now rather than surfacing as an opaque
 	// ListenAndServeTLS failure at startup.
 	if err := validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile); err != nil {
 		return err
 	}
 	if err := validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile); err != nil {
+		return err
+	}
+	if err := validateTLSFiles("webhook", c.Webhook.TLS.CertFile, c.Webhook.TLS.KeyFile); err != nil {
 		return err
 	}
 	if provider == "tailscale" {
@@ -903,6 +986,9 @@ func (c *Config) Validate() error {
 		}
 		if c.Streaming.PublicURL == "" {
 			return fmt.Errorf("streaming.auto_configure requires streaming.public_url to be set")
+		}
+		if err := validateLogStreamingPublicURL("streaming.public_url", c.Streaming.PublicURL); err != nil {
+			return err
 		}
 	}
 

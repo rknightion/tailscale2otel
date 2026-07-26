@@ -101,6 +101,21 @@ func TestLoadEnvListSplitsOnComma(t *testing.T) {
 	}
 }
 
+func TestLoadEnvTrustedReporterListsSplitOnComma(t *testing.T) {
+	t.Setenv("TS2OTEL_COLLECTORS__FLOWLOGS__TRUSTED_REPORTER_NODE_IDS", "node-a,node-b")
+	t.Setenv("TS2OTEL_COLLECTORS__FLOWLOGS__TRUSTED_REPORTER_TAGS", "tag:router, tag:infra")
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Collectors.Flowlogs.TrustedReporterNodeIDs; len(got) != 2 || got[0] != "node-a" || got[1] != "node-b" {
+		t.Errorf("TrustedReporterNodeIDs = %v, want [node-a node-b]", got)
+	}
+	if got := cfg.Collectors.Flowlogs.TrustedReporterTags; len(got) != 2 || got[0] != "tag:router" || got[1] != "tag:infra" {
+		t.Errorf("TrustedReporterTags = %v, want [tag:router tag:infra]", got)
+	}
+}
+
 // TestLoadWarnsOnUnknownEnvVar: a TS2OTEL_* variable that does not map to any
 // config key is a likely typo and surfaces as a Warning.
 func TestLoadWarnsOnUnknownEnvVar(t *testing.T) {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.3 — Receiver TLS and flow reporter trust
+
+- `config.webhook.tls.cert_file` and `key_file` can terminate HTTPS in the
+  exporter; both files are validated together. Leaving both empty keeps the
+  existing reverse-proxy deployment path.
+- `config.collectors.flowlogs.trusted_reporter_node_ids` and
+  `trusted_reporter_tags` configure bounded reporter-trust diagnostics. Tag
+  trust comes only from authoritative device metadata.
+- The existing `extraVolumes`/`extraVolumeMounts` path now documents mounting
+  one TLS Secret for either receiver. No certificate issuance or ACME behavior
+  is added.
+
 ## 0.14.0 — Inline credentials never land in a ConfigMap; a supported rotation path
 
 Two security fixes, neither requiring operator action on upgrade.

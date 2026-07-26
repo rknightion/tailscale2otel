@@ -136,13 +136,12 @@ func TestHandler_ValidSignatureEmitsEventsAndCounter(t *testing.T) {
 	}
 }
 
-func TestHandler_MultiSignatureRotationVerifies(t *testing.T) {
+func TestHandler_MultipleV1SignaturesVerifies(t *testing.T) {
 	ts := time.Date(2026, 6, 2, 10, 6, 0, 0, time.UTC)
 
-	// During secret rotation Tailscale signs with multiple secrets and emits a
-	// v1=<hex> entry per secret. Only the entry computed from our configured
-	// secret is valid; a bogus one precedes it. Verification must succeed by
-	// matching any single v1 value.
+	// A forward-compatible signature header can carry multiple v1 entries. Only
+	// the entry computed from our configured secret is valid; a bogus one
+	// precedes it. Verification must succeed by matching any single v1 value.
 	valid := signBody(testSecret, ts, twoEventBody)
 	// valid is "t=<ts>,v1=<hex>"; extract just the v1 hex to build a multi-sig header.
 	_, validHex, ok := strings.Cut(valid, "v1=")
@@ -168,7 +167,7 @@ func TestHandler_MultiSignatureRotationVerifies(t *testing.T) {
 				t.Errorf("LogRecords len = %d, want 2", len(rec.LogRecords()))
 			}
 			if rej := rec.MetricPoints("tailscale.webhook.rejected"); len(rej) != 0 {
-				t.Errorf("unexpected rejected metric points on rotation header: %+v", rej)
+				t.Errorf("unexpected rejected metric points on multi-signature header: %+v", rej)
 			}
 		})
 	}

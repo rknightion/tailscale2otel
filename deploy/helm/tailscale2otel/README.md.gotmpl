@@ -117,16 +117,22 @@ stale `tailscale2otel.enrich.cache_age` — plus the per-collector health on the
 status page (`config.admin.landing_page`). Alert on those rather than assuming a
 green rollout means a working credential.
 
-### Mounting a TLS cert for the streaming receiver
+### Mounting a TLS cert for a receiver
 
 `readOnlyRootFilesystem: true` means there is no writable path inside the pod to
-place arbitrary files, so `config.streaming.tls.cert_file`/`key_file` need an
+place arbitrary files, so `config.streaming.tls.cert_file`/`key_file` and
+`config.webhook.tls.cert_file`/`key_file` need an
 explicit mount. Use `extraVolumes`/`extraVolumeMounts` to wire in a `kubernetes.io/tls`
 Secret (or any other file-backed Secret/ConfigMap) without forking the chart:
 
 ```yaml
 config:
   streaming:
+    enabled: true
+    tls:
+      cert_file: /etc/tailscale2otel/tls/tls.crt
+      key_file: /etc/tailscale2otel/tls/tls.key
+  webhook:
     enabled: true
     tls:
       cert_file: /etc/tailscale2otel/tls/tls.crt

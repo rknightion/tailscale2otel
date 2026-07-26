@@ -32,6 +32,35 @@ func TestPropertyTaxonomyCoversVendoredSchema(t *testing.T) {
 	}
 }
 
+func TestAuditVocabularyCoversVendoredSchema(t *testing.T) {
+	vocabulary := vendoredAuditEnums(t)
+	for field, values := range map[string][]string{
+		"action":     vocabulary.Action,
+		"origin":     vocabulary.Origin,
+		"actor_type": vocabulary.ActorType,
+	} {
+		known := map[string]bool{}
+		switch field {
+		case "action":
+			known = knownActions
+		case "origin":
+			known = knownOrigins
+		case "actor_type":
+			known = knownActorTypes
+		}
+		for _, value := range values {
+			if !known[value] {
+				t.Errorf("vendored ConfigurationAuditLog.%s enum %q lacks a classification", field, value)
+			}
+		}
+	}
+	for _, property := range vocabulary.Property {
+		if !knownProperty[property] {
+			t.Errorf("vendored ConfigurationAuditLog.target.property enum %q lacks a classification", property)
+		}
+	}
+}
+
 func TestPropertyTaxonomyCategories(t *testing.T) {
 	for property, want := range map[string]string{
 		"NETWORK_FLOW_LOGGING":    "network_flow_logging",
@@ -52,6 +81,17 @@ func TestPropertyTaxonomyCategories(t *testing.T) {
 }
 
 func vendoredAuditTargetProperties(t *testing.T) []string {
+	return vendoredAuditEnums(t).Property
+}
+
+type auditEnums struct {
+	Action    []string
+	Origin    []string
+	ActorType []string
+	Property  []string
+}
+
+func vendoredAuditEnums(t *testing.T) auditEnums {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -67,6 +107,7 @@ func vendoredAuditTargetProperties(t *testing.T) []string {
 		Components struct {
 			Schemas map[string]struct {
 				Properties map[string]struct {
+					Enum       []string `json:"enum"`
 					Properties map[string]struct {
 						Enum []string `json:"enum"`
 					} `json:"properties"`
@@ -77,12 +118,23 @@ func vendoredAuditTargetProperties(t *testing.T) []string {
 	if err := json.Unmarshal(body, &schema); err != nil {
 		t.Fatalf("decode vendored schema: %v", err)
 	}
-	properties := schema.Components.Schemas["ConfigurationAuditLog"].Properties["target"].Properties["property"].Enum
-	if len(properties) == 0 {
-		t.Fatal("vendored ConfigurationAuditLog.target.property enum is empty or missing")
+	properties := schema.Components.Schemas["ConfigurationAuditLog"].Properties
+	values := auditEnums{
+		Action:    properties["action"].Enum,
+		Origin:    properties["origin"].Enum,
+		ActorType: properties["actor"].Properties["type"].Enum,
+		Property:  properties["target"].Properties["property"].Enum,
 	}
-	sort.Strings(properties)
-	return properties
+	for field, enum := range map[string][]string{
+		"action": values.Action, "origin": values.Origin,
+		"actor.type": values.ActorType, "target.property": values.Property,
+	} {
+		if len(enum) == 0 {
+			t.Fatalf("vendored ConfigurationAuditLog.%s enum is empty or missing", field)
+		}
+		sort.Strings(enum)
+	}
+	return values
 }
 
 func contains(values []string, want string) bool {

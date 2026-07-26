@@ -9,8 +9,8 @@
 // Signature scheme (verified against Tailscale's official example consumer):
 //
 //	Header: Tailscale-Webhook-Signature: t=<unixSeconds>,v1=<hex>
-//	  - There may be multiple v1=<hex> entries (e.g. during secret rotation);
-//	    a match against any one is sufficient.
+//	  - The parser accepts multiple v1=<hex> entries for forward-compatible
+//	    header tolerance; a match against any one is sufficient.
 //	Signed string: <unixSeconds> + "." + <raw request body>
 //	Signature:     hex(HMAC-SHA256(secret, signedString))
 //	Comparison:    constant time (subtle.ConstantTimeCompare) over each v1 value.
@@ -194,6 +194,9 @@ type Options struct {
 	// Secret is the per-webhook signing secret. When empty, signature
 	// verification is skipped (useful for local testing behind a trusted proxy).
 	Secret string
+	// TLSCertFile and TLSKeyFile, when both set, make Run serve HTTPS.
+	TLSCertFile string
+	TLSKeyFile  string
 	// Tolerance is the maximum age of a request timestamp before it is rejected
 	// as a replay. Zero disables the check.
 	Tolerance time.Duration
@@ -371,7 +374,12 @@ func (r *Router) Run(ctx context.Context) error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		err := srv.ListenAndServe()
+		var err error
+		if r.base.opts.TLSCertFile != "" && r.base.opts.TLSKeyFile != "" {
+			err = srv.ListenAndServeTLS(r.base.opts.TLSCertFile, r.base.opts.TLSKeyFile)
+		} else {
+			err = srv.ListenAndServe()
+		}
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
@@ -521,7 +529,12 @@ func (s *Server) Run(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		err := srv.ListenAndServe()
+		var err error
+		if s.opts.TLSCertFile != "" && s.opts.TLSKeyFile != "" {
+			err = srv.ListenAndServeTLS(s.opts.TLSCertFile, s.opts.TLSKeyFile)
+		} else {
+			err = srv.ListenAndServe()
+		}
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}

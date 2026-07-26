@@ -2,11 +2,14 @@ package audit
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
@@ -34,6 +37,12 @@ const MetricAuditDeferredDelay = "tailscale.config.audit.deferred.delay"
 // this processor. It has no attributes, preserving a single fleet-level
 // bounded histogram.
 const MetricAuditProcessingDelay = "tailscale.config.audit.processing.delay"
+
+// MetricAuditSchemaDrift counts observations of values in the bounded audit
+// schema vocabulary. It identifies only the field and whether the observed
+// value is known to this version of the collector; raw values never become
+// metric attributes.
+const MetricAuditSchemaDrift = "tailscale.config.audit.schema_drift"
 
 // auditEventName is the OTEL LogRecord EventName for configuration audit logs.
 const auditEventName = "tailscale.config.audit"
@@ -86,6 +95,10 @@ type Processor struct {
 	dedup      *dedup.Set
 	crossDedup *dedup.Set
 	now        func() time.Time
+	logger     *slog.Logger
+
+	mu                  sync.Mutex
+	unknownSchemaValues map[string]struct{}
 }
 
 // Option configures a Processor at construction time.
@@ -121,10 +134,21 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+// WithLogger attaches the logger used for bounded audit-schema drift warnings.
+// A nil logger suppresses those warnings while retaining the schema-drift
+// metric. Main wires the application logger so operators can identify a schema
+// addition without exposing its raw value.
+func WithLogger(logger *slog.Logger) Option {
+	return func(p *Processor) { p.logger = logger }
+}
+
 // NewProcessor returns an audit Processor. With no options it behaves exactly
 // as before: every event produces one log record and one counter increment.
 func NewProcessor(opts ...Option) *Processor {
-	p := &Processor{now: time.Now}
+	p := &Processor{
+		now:                 time.Now,
+		unknownSchemaValues: make(map[string]struct{}),
+	}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -254,6 +278,8 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		attrOrigin: normalizeOrigin(ev.Origin),
 	})
 
+	p.observeSchemaDrift(ev, e)
+
 	if cat, ok := classifyChange(ev); ok {
 		e.Counter(docAuditChanges.Name, docAuditChanges.Unit, docAuditChanges.Description, 1, telemetry.Attrs{
 			attrChange:    cat,
@@ -263,6 +289,54 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	}
 
 	emitDelayHistograms(ev, acceptedAt, e)
+}
+
+const schemaDriftWarningLimit = 128
+
+func (p *Processor) observeSchemaDrift(ev Event, e telemetry.Emitter) {
+	p.observeSchemaValue("action", ev.Action, knownActions, e)
+	p.observeSchemaValue("origin", ev.Origin, knownOrigins, e)
+	p.observeSchemaValue("actor_type", ev.Actor.Type, knownActorTypes, e)
+	if ev.Target.Property != "" {
+		p.observeSchemaValue("target_property", ev.Target.Property, knownProperty, e)
+	}
+}
+
+func (p *Processor) observeSchemaValue(field, value string, known map[string]bool, e telemetry.Emitter) {
+	status := "known"
+	if !known[value] {
+		status = "unknown"
+		p.warnUnknownSchemaValue(field, value)
+	}
+	e.Counter(docAuditSchemaDrift.Name, docAuditSchemaDrift.Unit, docAuditSchemaDrift.Description, 1, telemetry.Attrs{
+		"field":  field,
+		"status": status,
+	})
+}
+
+func (p *Processor) warnUnknownSchemaValue(field, value string) {
+	if p.logger == nil {
+		return
+	}
+	key := field + "\x00" + value
+	p.mu.Lock()
+	if len(p.unknownSchemaValues) >= schemaDriftWarningLimit {
+		p.mu.Unlock()
+		return
+	}
+	if _, seen := p.unknownSchemaValues[key]; seen {
+		p.mu.Unlock()
+		return
+	}
+	p.unknownSchemaValues[key] = struct{}{}
+	p.mu.Unlock()
+
+	p.logger.Warn("unrecognized audit schema enum value", "field", field, "digest", schemaValueDigest(value))
+}
+
+func schemaValueDigest(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:6])
 }
 
 // canonicalTags returns a stable, comma-joined representation of an audit

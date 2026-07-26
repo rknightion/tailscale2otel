@@ -54,7 +54,7 @@ stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`doma
 label (`security` / `infra` / `observability`); rules not worthy of automatic
 investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
 "true"` so IRM routing / auto-investigation stays focused. The generated set currently
-has **71 alert rules + 12 recording rules** across five groups (`-health`, `-security`,
+has **73 alert rules + 12 recording rules** across five groups (`-health`, `-security`,
 `-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
 `gen/build_rules.py` is the source of truth.
 
@@ -132,6 +132,8 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 | `HighDERPRelayUsage` | warning | ✅ on | > 50% of fleet bytes relayed via DERP (NAT-traversal problems) |
 | `DERPRegionLatencyHigh` | info | ⏸ off | best latency to a DERP region > 150ms |
 | `NoFlowData` | info | ⏸ off | ~0 flow records for an hour while flow logging is on |
+| `FlowReporterIdentityMismatch` | warning | ⏸ off | the verified reporter node ID disagrees with the unverified embedded source reference |
+| `AuditSchemaDriftDetected` | warning | ⏸ off | an audit enum field carries a value unknown to this collector version |
 
 ### `tailscale2otel-recording` — recording rules
 

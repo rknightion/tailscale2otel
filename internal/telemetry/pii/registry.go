@@ -93,6 +93,8 @@ var nonIdentifier = map[string]bool{
 	"tailscale.feature": true, "metric.name": true, "component": true, "dedup.set": true,
 	"source": true, "signal": true, "outcome": true, "metric.group": true, "cpu.mode": true,
 	"tailscale.webhook.type": true, "reason": true, "type": true, "status": true, "field": true,
+	"field_class": true, "state": true, "trust": true, "consistency": true,
+	"tailscale.reporter.trust": true, "tailscale.reporter.consistency": true,
 	"scope": true, "tailscale.logstream.type": true,
 	"tailscale.webhook.key.expiration": true, "tailscale.webhook.old_roles": true, "tailscale.webhook.new_roles": true,
 	"tailscale.contact.type": true, "tailscale.posture.provider": true, "tailscale.setting.name": true,

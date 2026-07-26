@@ -187,6 +187,8 @@ collectors:
     max_window: 1h                    # poll only — cap one tick's window so a long outage catches up over several ticks
     replay_overlap: 5m                # poll only — reread this completed-window overlap for records that became available late (0 disables)
     replay_seen_capacity: 131072      # poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled)
+    trusted_reporter_node_ids: []     # verified FlowLog.NodeID values classified as configured; empty with trusted_reporter_tags means trust policy is unconfigured
+    trusted_reporter_tags: []         # authoritative device tags (e.g. ["tag:router"]) classified as tagged; embedded flow tags never grant trust
     log_mode: per_connection          # per_connection | per_record | off — log detail level (applies to poll AND stream)
     max_log_records_per_window: 0     # cap flow LOG records per window (0 = unlimited); excess -> tailscale.network.flow.logs_dropped (metrics are never capped)
     objectstore:                      # source: objectstore only — read the flow-log export Tailscale writes to an S3-compatible bucket
@@ -314,6 +316,9 @@ webhook:
   path: /tailscale/webhook            # endpoint path Tailscale POSTs events to
   secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read
   secret_file: ""                     # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
+  tls:
+    cert_file: ""                     # serve native HTTPS when paired with key_file; leave both empty behind an HTTPS reverse proxy
+    key_file: ""                      # private key paired with cert_file; both paths are validated as readable at startup
   tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
   max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413)

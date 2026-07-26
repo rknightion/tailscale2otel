@@ -986,6 +986,27 @@ def tab_network():
                [prom_t("sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total%s[%s]))" % (tf, RI), legend="{{tailscale_traffic_type}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 6, 5),
     ]
+    integrity = [
+        (panel("Reporter trust & consistency", "timeseries",
+               [prom_t("sum by (trust, consistency) "
+                       "(rate(tailscale_network_reporter_observations_total[%s]))" % RI,
+                       legend="{{trust}} / {{consistency}}")],
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
+               desc="One bounded observation per flow record. Trust is configured (node-ID "
+                    "allowlist), tagged (authoritative device tag), untrusted, or unconfigured; "
+                    "consistency compares the verified reporter with the unverified embedded "
+                    "source reference. No raw node ID is present."), 12, 7),
+        (panel("Observed field omissions", "timeseries",
+               [prom_t("sum by (tailscale_traffic_type, field_class) "
+                       "(rate(tailscale_network_field_observations_total{state=\"missing\"}[%s])) / "
+                       "clamp_min(sum by (tailscale_traffic_type, field_class) "
+                       "(rate(tailscale_network_field_observations_total[%s])), 0.000000001)"
+                       % (RI, RI),
+                       legend="{{tailscale_traffic_type}} / {{field_class}}")],
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(),
+               desc="Observed missing-field fraction, not inferred Destination Logging state. "
+                    "Privacy-driven destination/port omissions can be expected."), 12, 7),
+    ]
     # Exit-node IO — uses tailscale_exit_node label (node identity); gate with pii_node.
     exitio = [
         (panel("Exit-node throughput", "timeseries",
@@ -1093,6 +1114,7 @@ def tab_network():
     ]
     return [
         row("Flow summary", summary, present="has_flows"),
+        row("Flow integrity", integrity, present="has_flows"),
         row("Exit-node I/O", exitio, present="has_exit_io", hide_when=["pii_node"]),
         row("Observed tailnet bandwidth (flow logs)", fl_bw, present="has_flows", hide_when=["pii_topology"]),
         row("Throughput & talkers — ROLLUP (bounded top-N)", rollup_agg, present="has_rollup_flow"),
@@ -1115,6 +1137,15 @@ def tab_events():
         (panel("Audit events (range)", "stat",
                [prom_t("sum(increase(tailscale_config_audit_events_total[$__range]))", instant=True)],
                unit="short", options=stat_opts(color="value", graph="none")), 6, 7),
+    ]
+    auditdrift = [
+        (panel("Audit schema drift", "timeseries",
+               [prom_t("sum by (field, status) "
+                       "(rate(tailscale_config_audit_schema_drift_total[%s]))" % RI,
+                       legend="{{field}} / {{status}}")],
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
+               desc="Bounded known/unknown observations for audit action, origin, actor type, "
+                    "and target property. Raw unknown values never enter metric labels."), 24, 7),
     ]
     ingest = [
         (panel("Stream records/s by type", "timeseries",
@@ -1253,7 +1284,8 @@ def tab_events():
                [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[%s]))" % RI, legend="{{dedup_set}}")],
                unit="cps", custom=ts_custom(), options=ts_opts()), 9, 7),
     ]
-    return [row("Audit & event rates", rates), row("Stream ingestion", ingest, present="has_stream"),
+    return [row("Audit & event rates", rates), row("Audit schema drift", auditdrift, present="has_audit"),
+            row("Stream ingestion", ingest, present="has_stream"),
             row("Log streaming delivery (SIEM)", streamhealth, present="has_logstream"),
             row("Webhooks", webhook, present="has_webhook"),
             row("Receiver health", receiver, present="has_recv_dur"),

@@ -147,7 +147,10 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	rt.flowProc = flowlog.NewProcessor(rt.cache, fopts)
 
 	rt.auditDedup = dedup.New(auditDedupCapacity)
-	auditOpts := []audit.Option{audit.WithDedup(rt.auditDedup)}
+	auditOpts := []audit.Option{
+		audit.WithDedup(rt.auditDedup),
+		audit.WithLogger(withComponent(d.logger, compCollector)),
+	}
 	if d.webhookDedup != nil {
 		auditOpts = append(auditOpts, audit.WithCrossDedup(d.webhookDedup))
 	}

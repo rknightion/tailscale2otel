@@ -148,6 +148,13 @@ type Observation struct {
 	DstTags    string
 	SrcOS      string
 	DstOS      string
+	// ReporterNodeID is the verified record reporter (FlowLog.NodeID), distinct
+	// from the flow-embedded endpoint references. ReporterTrust and
+	// ReporterConsistency explain how the configured trust policy and the
+	// unverified embedded source reference relate to that reporter.
+	ReporterNodeID      string
+	ReporterTrust       string
+	ReporterConsistency string
 	// Verdict is the network policy's reading of this connection:
 	// VerdictPermitted, VerdictNoRule or VerdictUndetermined. Empty means the
 	// connection was NOT evaluated — no policy has been collected yet, or the
@@ -788,6 +795,11 @@ type Recent struct {
 	DstTags string `json:"dst_tags,omitempty"`
 	SrcOS   string `json:"src_os,omitempty"`
 	DstOS   string `json:"dst_os,omitempty"`
+	// Reporter diagnosis is bounded to closed trust/consistency values. The node
+	// ID is retained only in this bounded, admin-authenticated recent ring.
+	ReporterNodeID      string `json:"reporter_node_id,omitempty"`
+	ReporterTrust       string `json:"reporter_trust,omitempty"`
+	ReporterConsistency string `json:"reporter_consistency,omitempty"`
 	// The policy's reading of this one connection, so the list an operator drills
 	// into after seeing a relationship in the aggregate can show which
 	// connections were unexplained and which rule covered the rest.
@@ -876,26 +888,29 @@ func (m *Memory) RecordResult(o Observation) Admission {
 // does not count toward Truncated.
 func (m *Memory) recordRecentLocked(o Observation) {
 	m.recent[m.next] = Recent{
-		Time:        o.Time,
-		TrafficType: o.TrafficType,
-		Transport:   o.Transport,
-		SrcAddr:     o.SrcAddr,
-		DstAddr:     o.DstAddr,
-		SrcNode:     o.SrcNode,
-		DstNode:     o.DstNode,
-		DstService:  o.DstService,
-		SrcUser:     o.SrcUser,
-		DstUser:     o.DstUser,
-		SrcTags:     o.SrcTags,
-		DstTags:     o.DstTags,
-		SrcOS:       o.SrcOS,
-		DstOS:       o.DstOS,
-		Verdict:     o.Verdict,
-		Reversed:    o.Reversed,
-		Rule:        o.Rule,
-		Path:        o.Path,
-		DERPRegion:  o.DERPRegion,
-		Counts:      o.Counts,
+		Time:                o.Time,
+		TrafficType:         o.TrafficType,
+		Transport:           o.Transport,
+		SrcAddr:             o.SrcAddr,
+		DstAddr:             o.DstAddr,
+		SrcNode:             o.SrcNode,
+		DstNode:             o.DstNode,
+		DstService:          o.DstService,
+		SrcUser:             o.SrcUser,
+		DstUser:             o.DstUser,
+		SrcTags:             o.SrcTags,
+		DstTags:             o.DstTags,
+		SrcOS:               o.SrcOS,
+		DstOS:               o.DstOS,
+		ReporterNodeID:      o.ReporterNodeID,
+		ReporterTrust:       o.ReporterTrust,
+		ReporterConsistency: o.ReporterConsistency,
+		Verdict:             o.Verdict,
+		Reversed:            o.Reversed,
+		Rule:                o.Rule,
+		Path:                o.Path,
+		DERPRegion:          o.DERPRegion,
+		Counts:              o.Counts,
 	}
 	m.next = (m.next + 1) % len(m.recent)
 	m.filled = min(m.filled+1, len(m.recent))

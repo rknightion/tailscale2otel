@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -122,6 +123,11 @@ type Options struct {
 	// intrinsically bounded by exit-node count, so it is emitted directly (not via
 	// the rollup accumulator) in every mode.
 	ExitNodeAttribution bool
+	// TrustedReporterNodeIDs and TrustedReporterTags define which authoritative
+	// device-cache reporters may be treated as trusted. Flow-embedded endpoint
+	// identity is never consulted for this decision: the reporting node wrote it.
+	TrustedReporterNodeIDs []string
+	TrustedReporterTags    []string
 }
 
 // Recorder receives one observation per processed connection. It is the narrow
@@ -170,7 +176,15 @@ type Processor struct {
 	store Recorder
 	// policy supplies the compiled network policy each connection is reconciled
 	// against; nil when reconciliation is off.
-	policy PolicySource
+	policy                 PolicySource
+	trustedReporterNodeIDs map[string]struct{}
+	trustedReporterTags    map[string]struct{}
+}
+
+type reporterDiagnosis struct {
+	nodeID      string
+	trust       string
+	consistency string
 }
 
 // NewProcessor returns a Processor using cache for device-name resolution. A nil
@@ -185,25 +199,40 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		flowMode = flowModeAll
 	}
 	p := &Processor{
-		cache:        cache,
-		logMode:      logMode,
-		mode:         flowMode,
-		srcPort:      opts.IncludeSourcePort,
-		dstPort:      opts.IncludeDestinationPort,
-		nodes:        opts.NodeDims,
-		keepExternal: opts.KeepExternalAddrs,
-		identity:     opts.IdentityDims,
-		rdns:         opts.RDNS,
-		dedup:        opts.Dedup,
-		maxLogs:      opts.MaxLogRecordsPerWindow,
-		exitNode:     opts.ExitNodeAttribution,
-		store:        opts.Store,
-		policy:       opts.Policy,
+		cache:                  cache,
+		logMode:                logMode,
+		mode:                   flowMode,
+		srcPort:                opts.IncludeSourcePort,
+		dstPort:                opts.IncludeDestinationPort,
+		nodes:                  opts.NodeDims,
+		keepExternal:           opts.KeepExternalAddrs,
+		identity:               opts.IdentityDims,
+		rdns:                   opts.RDNS,
+		dedup:                  opts.Dedup,
+		maxLogs:                opts.MaxLogRecordsPerWindow,
+		exitNode:               opts.ExitNodeAttribution,
+		store:                  opts.Store,
+		policy:                 opts.Policy,
+		trustedReporterNodeIDs: stringSet(opts.TrustedReporterNodeIDs),
+		trustedReporterTags:    stringSet(opts.TrustedReporterTags),
 	}
 	if flowMode == flowModeRollup || flowMode == flowModeBoth {
 		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims, opts.IdentityDims)
 	}
 	return p
+}
+
+func stringSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	return set
 }
 
 // logBudget gates flow LOG record emission for the volume guard. remaining < 0
@@ -291,6 +320,11 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 	if p.cache != nil {
 		p.cache.UpsertUnverified(flow.nodeRefs())
 	}
+	reporter := p.reporterDiagnosis(flow)
+	e.Counter(docReporterObservations.Name, docReporterObservations.Unit, docReporterObservations.Description, 1, telemetry.Attrs{
+		"trust":       reporter.trust,
+		"consistency": reporter.consistency,
+	})
 
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
@@ -319,7 +353,7 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 					continue
 				}
 			}
-			p.processConn(flow, set.typ, cc, e, budget)
+			p.processConn(flow, set.typ, cc, reporter, e, budget)
 
 			totalConns++
 			totalTxBytes += cc.TxBytes
@@ -334,7 +368,7 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 	// dedup off, preserve the original always-emit behavior. The summary log also
 	// consumes the volume budget.
 	if p.logMode == logPerRecord && (totalConns > 0 || p.dedup == nil) && budget.allow() {
-		p.emitRecordLog(flow, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
+		p.emitRecordLog(flow, reporter, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
 	}
 }
 
@@ -350,11 +384,11 @@ func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 // processConn emits metrics (and, in per_connection mode, a log) for one
 // ConnectionCounts entry. Metrics are always emitted; the per-connection log is
 // gated through budget so the volume guard never suppresses metrics.
-func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget) {
 	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitEndpoint(cc.Src)
 	dstAddr, dstPort := splitEndpoint(cc.Dst)
-	netType := networkType(srcAddr)
+	netType := networkType(srcAddr, dstAddr)
 	// An endpoint the record does not carry is structurally ABSENT, not a failed
 	// lookup, so it resolves to "" and every attribute derived from it is omitted
 	// rather than filled with the "unknown" sentinel. Exit traffic is the case
@@ -461,6 +495,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		semconv.NetworkTransport: transport,
 		semconv.AttrTrafficType:  trafficType,
 	})
+	p.observeFieldCompleteness(e, trafficType, srcAddr, srcPort, dstAddr, dstPort, cc.protocolPresent())
 
 	// Per-exit-node IO attribution (bounded by exit-node count; all metric modes).
 	if p.exitNode && trafficType == semconv.TrafficExit {
@@ -480,7 +515,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	// describe, so it is fed from inside the dedup-guarded path and never from a
 	// second traversal.
 	if p.store != nil {
-		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService)
+		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter)
 		if store, ok := p.store.(resultRecorder); ok {
 			switch store.RecordResult(observation) {
 			case flowstore.AdmissionExpired:
@@ -494,7 +529,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
-		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, e)
+		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter, e)
 	}
 }
 
@@ -514,6 +549,7 @@ func (p *Processor) observeStoreDrop(e telemetry.Emitter, reason string) {
 // therefore means one thing only: the record did not carry it.
 func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionCounts,
 	transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string,
+	reporter reporterDiagnosis,
 ) flowstore.Observation {
 	// Resolved once and used for both the identity fields and the policy
 	// evaluation below: refByAddr walks the record's embedded node blocks, so a
@@ -528,15 +564,18 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 		Transport:   transport,
 		// The endpoints keep their ports; the nodes are the already-resolved
 		// names, empty for an endpoint the record did not carry at all.
-		SrcAddr:    cc.Src,
-		DstAddr:    cc.Dst,
-		DstPort:    dstPort,
-		DstService: dstService,
-		SrcNode:    srcNode,
-		DstNode:    dstNode,
-		Verdict:    verdict,
-		Rule:       rule,
-		Reversed:   reversed,
+		SrcAddr:             cc.Src,
+		DstAddr:             cc.Dst,
+		DstPort:             dstPort,
+		DstService:          dstService,
+		SrcNode:             srcNode,
+		DstNode:             dstNode,
+		Verdict:             verdict,
+		Rule:                rule,
+		Reversed:            reversed,
+		ReporterNodeID:      reporter.nodeID,
+		ReporterTrust:       reporter.trust,
+		ReporterConsistency: reporter.consistency,
 		Counts: flowstore.Counts{
 			TxBytes: cc.TxBytes,
 			RxBytes: cc.RxBytes,
@@ -553,6 +592,63 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 	}
 	o.Path, o.DERPRegion = classifyPath(trafficType, dstAddr, dstPort)
 	return o
+}
+
+// reporterDiagnosis derives trust exclusively from the reporter's control-plane
+// device metadata. The embedded source reference is intentionally used only for
+// a diagnostic consistency comparison because it is reporter-controlled.
+func (p *Processor) reporterDiagnosis(flow FlowLog) reporterDiagnosis {
+	d := reporterDiagnosis{nodeID: flow.NodeID, trust: "unconfigured", consistency: "missing_reference"}
+	if flow.SrcNode != nil && flow.SrcNode.NodeID != "" {
+		if flow.SrcNode.NodeID == flow.NodeID {
+			d.consistency = "match"
+		} else {
+			d.consistency = "mismatch"
+		}
+	}
+	if len(p.trustedReporterNodeIDs) == 0 && len(p.trustedReporterTags) == 0 {
+		return d
+	}
+	if _, ok := p.trustedReporterNodeIDs[flow.NodeID]; ok {
+		d.trust = "configured"
+		return d
+	}
+	if p.cache != nil {
+		if meta, ok := p.cache.LookupNode(flow.NodeID); ok {
+			for _, tag := range canonicalTags(meta.Tags) {
+				if _, ok := p.trustedReporterTags[tag]; ok {
+					d.trust = "tagged"
+					return d
+				}
+			}
+		}
+	}
+	d.trust = "untrusted"
+	return d
+}
+
+func (p *Processor) observeFieldCompleteness(e telemetry.Emitter, trafficType, srcAddr, srcPort, dstAddr, dstPort string, protoPresent bool) {
+	fields := [...]struct {
+		class   string
+		present bool
+	}{
+		{"source", srcAddr != ""},
+		{"destination", dstAddr != ""},
+		{"protocol", protoPresent},
+		{"source_port", srcPort != ""},
+		{"destination_port", dstPort != ""},
+	}
+	for _, field := range fields {
+		state := "missing"
+		if field.present {
+			state = "present"
+		}
+		e.Counter(docFieldObservations.Name, docFieldObservations.Unit, docFieldObservations.Description, 1, telemetry.Attrs{
+			semconv.AttrTrafficType: trafficType,
+			"field_class":           field.class,
+			"state":                 state,
+		})
+	}
 }
 
 // derpMarker is the loopback address Tailscale writes as a physical destination
@@ -633,9 +729,41 @@ func metricPathValue(storePath string) string {
 	}
 }
 
-// joinTags renders a node block's tags the way every other surface does. An
-// empty list yields an empty string, which the store reads as "untagged".
+// canonicalTags produces the one stable representation of flow-embedded tags:
+// it copies the decoded slice, trims values, drops empties, removes duplicates,
+// and sorts the remaining values. Every flow consumer uses this helper so tags
+// cannot split metric/log/store/policy identities merely because the control
+// plane changed their order or included whitespace. The decoded record is never
+// mutated because it can feed more than one connection and is shared by the
+// polling and streaming paths.
+func canonicalTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		out = append(out, tag)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	slices.Sort(out)
+	return out
+}
+
+// joinTags renders a canonical node block tag list. An empty list yields an
+// empty string, which the store reads as "untagged".
 func joinTags(tags []string) string {
+	tags = canonicalTags(tags)
 	if len(tags) == 0 {
 		return ""
 	}
@@ -691,15 +819,13 @@ func (p *Processor) reconcile(trafficType, transport string, srcRef, dstRef *Nod
 	return res.Verdict.String(), res.Rule, res.Reversed
 }
 
-// policyEndpoint builds the evaluator's view of one endpoint. The tag slice is
-// the one the record decoded, not a copy: it is read-only from here on, and
-// copying it per connection is the kind of cost that has no business on the
-// emit path.
+// policyEndpoint builds the evaluator's view of one endpoint. Tags use the
+// shared canonical representation, matching every emitted and stored surface.
 func policyEndpoint(ref *NodeRef, addr string) aclpolicy.Endpoint {
 	ep := aclpolicy.Endpoint{}
 	if ref != nil {
 		ep.User = ref.User
-		ep.Tags = ref.Tags
+		ep.Tags = canonicalTags(ref.Tags)
 	}
 	if addr != "" {
 		if a, err := netip.ParseAddr(addr); err == nil {
@@ -758,7 +884,7 @@ func addPathAttrs(attrs telemetry.Attrs, path, derpRegion string) {
 // by the record's embedded srcNode/dstNodes blocks. Each attribute is omitted
 // when the corresponding ref is absent or does not carry that field — the
 // fields genuinely vary per node, so an absent attribute is the honest
-// encoding. Tags are joined with "," in record order.
+// encoding. Tags use the shared canonical representation.
 func addIdentityAttrs(attrs telemetry.Attrs, src, dst *NodeRef) {
 	add := func(ref *NodeRef, userKey, tagsKey, osKey string) {
 		if ref == nil {
@@ -789,17 +915,21 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 }
 
 // emitConnLog emits one per-connection flow log event.
-func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, e telemetry.Emitter) {
+func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, reporter reporterDiagnosis, e telemetry.Emitter) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
-		semconv.NetworkTransport: transport,
-		semconv.NetworkType:      netType,
-		semconv.AttrTrafficType:  trafficType,
-		semconv.AttrNodeID:       flow.NodeID,
-		"tailscale.tx.bytes":     cc.TxBytes,
-		"tailscale.rx.bytes":     cc.RxBytes,
-		"tailscale.tx.packets":   cc.TxPkts,
-		"tailscale.rx.packets":   cc.RxPkts,
+		semconv.NetworkTransport:         transport,
+		semconv.AttrTrafficType:          trafficType,
+		semconv.AttrNodeID:               flow.NodeID,
+		"tailscale.tx.bytes":             cc.TxBytes,
+		"tailscale.rx.bytes":             cc.RxBytes,
+		"tailscale.tx.packets":           cc.TxPkts,
+		"tailscale.rx.packets":           cc.RxPkts,
+		"tailscale.reporter.trust":       reporter.trust,
+		"tailscale.reporter.consistency": reporter.consistency,
+	}
+	if netType != "" {
+		attrs[semconv.NetworkType] = netType
 	}
 	// Endpoint attributes only for endpoints the record actually carries — see
 	// resolveEndpoint. Exit records carry no destination at all, and half carry
@@ -849,15 +979,17 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 }
 
 // emitRecordLog emits one summary log event for an entire FlowLog.
-func (p *Processor) emitRecordLog(flow FlowLog, conns int, txBytes, rxBytes, txPkts, rxPkts int64, e telemetry.Emitter) {
+func (p *Processor) emitRecordLog(flow FlowLog, reporter reporterDiagnosis, conns int, txBytes, rxBytes, txPkts, rxPkts int64, e telemetry.Emitter) {
 	body := fmt.Sprintf("node %s: %d connections tx=%dB rx=%dB", flow.NodeID, conns, txBytes, rxBytes)
 	attrs := telemetry.Attrs{
-		semconv.AttrNodeID:      flow.NodeID,
-		"tailscale.connections": int64(conns),
-		"tailscale.tx.bytes":    txBytes,
-		"tailscale.rx.bytes":    rxBytes,
-		"tailscale.tx.packets":  txPkts,
-		"tailscale.rx.packets":  rxPkts,
+		semconv.AttrNodeID:               flow.NodeID,
+		"tailscale.connections":          int64(conns),
+		"tailscale.tx.bytes":             txBytes,
+		"tailscale.rx.bytes":             rxBytes,
+		"tailscale.tx.packets":           txPkts,
+		"tailscale.rx.packets":           rxPkts,
+		"tailscale.reporter.trust":       reporter.trust,
+		"tailscale.reporter.consistency": reporter.consistency,
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	addFlowWindow(attrs, flow)
@@ -1105,15 +1237,21 @@ func transportName(proto int) string {
 	return strconv.Itoa(proto)
 }
 
-// networkType classifies an address as ipv4 or ipv6. Unparseable addresses
-// default to ipv4.
-func networkType(addr string) string {
-	a, err := netip.ParseAddr(addr)
-	if err != nil {
+// networkType returns the IP family of the first parseable endpoint, preferring
+// the source. A malformed or omitted source must not force an IPv4 label when a
+// valid destination says IPv6; when neither parses, the record made no
+// trustworthy family claim and the caller omits the attribute. IPv4-mapped IPv6
+// remains IPv4, matching OpenTelemetry network.type semantics.
+func networkType(src, dst string) string {
+	for _, addr := range [...]string{src, dst} {
+		a, err := netip.ParseAddr(addr)
+		if err != nil {
+			continue
+		}
+		if a.Is6() && !a.Is4In6() {
+			return semconv.NetworkTypeIPv6
+		}
 		return semconv.NetworkTypeIPv4
 	}
-	if a.Is6() && !a.Is4In6() {
-		return semconv.NetworkTypeIPv6
-	}
-	return semconv.NetworkTypeIPv4
+	return ""
 }

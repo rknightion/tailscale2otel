@@ -713,6 +713,22 @@ def groups():
     ]
 
     network = [
+        alert("ts2o-flow-reporter-mismatch", "Flow reporter identity mismatch",
+              'sum(rate(tailscale_network_reporter_observations_total{consistency="mismatch"}[10m]))',
+              "gt", 0, "15m", "warning",
+              "Verified flow reporter disagrees with embedded source identity",
+              "Flow records are arriving where the Tailscale-verified reporter node ID differs from "
+              "the unverified embedded source reference. This bounded diagnostic ships paused: "
+              "enable it where reporter/source agreement is expected.",
+              domain="security", paused=True, nodata="OK"),
+        alert("ts2o-audit-schema-drift", "Audit schema drift detected",
+              'sum by (field) (rate(tailscale_config_audit_schema_drift_total{status="unknown"}[10m]))',
+              "gt", 0, "15m", "warning",
+              "Unknown configuration-audit {{ $labels.field }} values are arriving",
+              "The current Tailscale audit stream contains enum values this collector version does "
+              "not classify. Metrics remain bounded and raw values stay out of labels; inspect the "
+              "once-per-value digest warning and update the vendored API contract.",
+              domain="observability", paused=True, nodata="OK"),
         alert("ts2o-high-derp-relay-usage", "High DERP relay usage",
               _derp_byte_fraction(),
               "gt", 0.5, "30m", "warning",

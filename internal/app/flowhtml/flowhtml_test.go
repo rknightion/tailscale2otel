@@ -213,6 +213,23 @@ func TestRender_PathSectionIsNotAlarming(t *testing.T) {
 	}
 }
 
+func TestRender_ExplainsReporterTrustAndPrivacyOmissions(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		"Verified reporter",
+		"reporter_node_id",
+		"reporter_trust",
+		"reporter_consistency",
+		"Destination Logging",
+		"observed completeness",
+		"privacy-driven omissions",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the flow view is missing reporter/completeness contract %q", want)
+		}
+	}
+}
+
 // "Undecidable" is not "unexplained", and the page must say so where an operator
 // reads it, not only in the Go doc comments.
 func TestRender_ExplainsTheUndecidableVerdict(t *testing.T) {

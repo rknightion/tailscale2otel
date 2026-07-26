@@ -721,6 +721,12 @@ type FlowlogsCollector struct {
 	// suppress the intentional overlap across process restarts.
 	ReplayOverlap      Duration `yaml:"replay_overlap"`       // poll only
 	ReplaySeenCapacity int      `yaml:"replay_seen_capacity"` // poll only
+	// TrustedReporterNodeIDs and TrustedReporterTags define the operator's
+	// allowlist for the verified FlowLog.NodeID reporter. Tag trust is resolved
+	// only from the authoritative device cache; tags embedded in a flow record
+	// never grant trust.
+	TrustedReporterNodeIDs []string `yaml:"trusted_reporter_node_ids"`
+	TrustedReporterTags    []string `yaml:"trusted_reporter_tags"`
 	// LogMode sets the per-connection/per-record/off log detail (applies to poll
 	// AND stream).
 	LogMode string `yaml:"log_mode"`
@@ -960,6 +966,10 @@ type WebhookConfig struct {
 	Listen  string `yaml:"listen"`
 	Path    string `yaml:"path"`
 	Secret  Secret `yaml:"secret"`
+	// TLS optionally serves the webhook listener over HTTPS. It reuses the
+	// streaming receiver's paired cert/key contract; leaving both empty keeps
+	// plaintext HTTP for reverse-proxy deployments.
+	TLS StreamingTLS `yaml:"tls"`
 	// SecretFile reads Secret from a file at Load (Docker-secrets style). Value
 	// XOR file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.

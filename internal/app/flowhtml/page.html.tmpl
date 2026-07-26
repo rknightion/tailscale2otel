@@ -355,8 +355,14 @@
 
 <section>
   <h2>Recent connections <span class="hint" id="flowCount"></span></h2>
+  <p class="coverage">
+    <b>Verified reporter</b> is the node ID authenticated by Tailscale's log service; trust uses only
+    the configured reporter allowlist and authoritative device tags. Field presence is
+    <b>observed completeness</b>, not proof of the tailnet's Destination Logging configuration:
+    missing destination or port fields can be expected privacy-driven omissions.
+  </p>
   <div class="controls" style="margin-bottom:10px">
-    <input class="ctl" id="flowFilter" type="search" placeholder="filter by device, address, port, service or protocol" style="flex:1;min-width:240px">
+    <input class="ctl" id="flowFilter" type="search" placeholder="filter by device, reporter, address, port, service or protocol" style="flex:1;min-width:240px">
     <button class="ctl" id="flowClear">clear</button>
   </div>
   <div class="panel" id="flowList"></div>
@@ -1572,6 +1578,19 @@ function endpointCell(node, addr, user, tags, os){
   return wrap;
 }
 
+function reporterCell(f){
+  var wrap = document.createElement("span");
+  wrap.appendChild(document.createTextNode(f.reporter_node_id || "—"));
+  var diagnosis = [f.reporter_trust, f.reporter_consistency].filter(Boolean).join(" · ");
+  if (diagnosis){
+    var s = document.createElement("span");
+    s.className = "ident";
+    s.textContent = diagnosis;
+    wrap.appendChild(s);
+  }
+  return wrap;
+}
+
 function identityOf(user, tags, os){
   var bits = [];
   if (user) bits.push(user);
@@ -1591,6 +1610,7 @@ function renderFlows(d){
     // actually looks for a connection.
     return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport,
             f.traffic_type, f.src_user, f.dst_user, f.src_tags, f.dst_tags, f.src_os, f.dst_os,
+            f.reporter_node_id, f.reporter_trust, f.reporter_consistency,
             verdictText(f.verdict, f.reversed), pathText(f.path)]
       .some(function(v){ return v && v.toLowerCase().indexOf(q) >= 0; });
   });
@@ -1599,7 +1619,7 @@ function renderFlows(d){
     : rows.length + " of " + all.length + " retained";
 
   buildTable(el("flowList"), [
-    {text:"Time"}, {text:"Source"}, {text:"Destination"}, {text:"Service"},
+    {text:"Time"}, {text:"Source"}, {text:"Destination"}, {text:"Verified reporter"}, {text:"Service"},
     {text:"Type"}, {text:"Policy"}, {text:"Tx", num:true}, {text:"Rx", num:true}
   ], rows.map(function(f){
     var pill = document.createElement("span");
@@ -1621,6 +1641,7 @@ function renderFlows(d){
         {text: fmtTime(f.time), cls:"mono"},
         {node: endpointCell(f.src_node, f.src_addr, f.src_user, f.src_tags, f.src_os), cls:"mono"},
         {node: endpointCell(f.dst_node, f.dst_addr, f.dst_user, f.dst_tags, f.dst_os), cls:"mono"},
+        {node: reporterCell(f), cls:"mono"},
         {text: f.dst_service || "—", cls:"mono"},
         {node: pill},
         {node: verdict},

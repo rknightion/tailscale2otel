@@ -24,6 +24,8 @@ import (
 var listEnvKeys = map[string]bool{
 	"tailscale.auth.oauth.scopes":                    true,
 	"collectors.devices.attribute_namespaces":        true,
+	"collectors.flowlogs.trusted_reporter_node_ids":  true,
+	"collectors.flowlogs.trusted_reporter_tags":      true,
 	"collectors.node_metrics.metric_allow":           true,
 	"collectors.node_metrics.metric_deny":            true,
 	"collectors.node_metrics.drop_labels":            true,

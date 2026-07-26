@@ -59,6 +59,12 @@ collectors:
 
 **Auto-configure.** Setting `auto_configure: true` (with `enabled: true`, a `public_url`, and an OAuth client carrying the `log_streaming` scope) causes `tailscale2otel` to register itself as the tailnet's log-streaming sink on startup.
 
+`public_url` is preflighted before any API write. HTTPS may name a public endpoint. Plain HTTP is
+accepted only for a private shared-node hostname/FQDN or IPv6 literal; every IPv4 literal is rejected.
+The exporter warns on accepted HTTP endpoints because it cannot prove the other upstream
+prerequisites: node sharing, policy access for `logstream@tailscale`, and OAuth authority covering
+`device_invites` and `policy_file`. The configured path and query are passed through unchanged.
+
 ### Multi-tailnet routes
 
 For a `tailnets:` deployment, configure a file-only `streaming.routes` list instead of the legacy
@@ -103,6 +109,9 @@ webhook:
   listen: ":8089"                    # bind address for the webhook receiver
   path: /tailscale/webhook           # endpoint path Tailscale POSTs events to
   secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty works only on loopback, otherwise requests get 403)
+  tls:
+    cert_file: ""                    # native HTTPS certificate; set with key_file
+    key_file: ""                     # native HTTPS key; leave both empty behind an HTTPS reverse proxy
   tolerance: 5m                      # reject signed timestamps older than this (replay window); "0" disables
   dedup_audit_events: false          # best-effort, bidirectional: audit and webhook events sharing a normalized key are deduplicated against a shared set, first-arrival-wins (either copy can be the one that survives)
 ```
@@ -114,6 +123,11 @@ webhook:
     receiver's `listen`/`path`, with the same secret configured on both sides.
 
 **HMAC verification.** Tailscale signs each webhook request with a `Tailscale-Webhook-Signature` header containing a Unix timestamp and an HMAC-SHA256 signature (`t=<seconds>,v1=<hex>`). The receiver verifies the signature by computing `HMAC-SHA256(secret, "<seconds>.<body>")` and comparing it in constant time. The parser tolerates repeated `v1` entries for forward compatibility, but the public sender contract does not promise old/new-secret overlap during rotation; update the receiver secret immediately after rotating it in Tailscale. The `tolerance` field (default `5m`) rejects requests whose timestamp is outside the allowed past or future clock-skew window.
+
+**HTTPS.** Tailscale requires webhook destinations to use HTTPS on port 80 or 443. Set
+`webhook.tls.cert_file` and `webhook.tls.key_file` together to terminate TLS in the exporter, or
+leave both empty and terminate HTTPS at a reverse proxy. The exporter validates configured files at
+startup but does not issue or renew certificates.
 
 For version-1 events, the emitted log carries a typed allowlist of documented structured fields:
 node ID, device name, owner/actor, admin URL, key expiration, user, and old/new roles where the
@@ -139,7 +153,10 @@ separate from the optional audit/webhook cross-source deduplication.
 
     These values are set most safely via environment variables (`TS2OTEL_STREAMING__TOKEN`, `TS2OTEL_WEBHOOK__SECRET`). A mistyped variable name (e.g. `TS2OTEL_WEBHOOK__SECRT`) leaves the value empty rather than failing loudly — the startup log WARNs on any `TS2OTEL_*` variable that matches no config key, so double-check that the credentials are actually set.
 
-**TLS.** Tailscale requires HTTPS for the log-streaming sink. Use `streaming.tls.cert_file` and `streaming.tls.key_file` to serve the HEC receiver over HTTPS. A certificate obtained via `tailscale cert` works well for private tailnet endpoints.
+**TLS.** Tailscale requires HTTPS for public log-streaming sinks and for webhook destinations. Use
+the paired `streaming.tls.*` or `webhook.tls.*` files for native TLS, or put the corresponding
+listener behind an HTTPS reverse proxy. A certificate obtained via `tailscale cert` works well for
+private tailnet endpoints.
 
 **Data sensitivity.** Flow logs and audit logs carry source/destination IP addresses and ports, device names, and user identities. See [Configuration](configuration.md) for the `cardinality.*` knobs that shape which fields appear on flow metrics, [Security](security.md) for the PII-redaction categories, and [`SECURITY.md` on GitHub](https://github.com/rknightion/tailscale2otel/blob/main/SECURITY.md) for the full data-handling and vulnerability-reporting notes.
 

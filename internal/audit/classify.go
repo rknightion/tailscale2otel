@@ -65,6 +65,21 @@ var propertyExclusions = map[string]string{
 	"TCD":                  "undocumented product-specific property lacks a stable category",
 }
 
+// knownProperty is the complete, intentionally classified target.property
+// vocabulary. Both curated categories and deliberate exclusions are known:
+// the schema-drift signal reports API vocabulary changes, not whether a field
+// belongs in the narrower audit-changes metric.
+var knownProperty = func() map[string]bool {
+	values := make(map[string]bool, len(propertyCategories)+len(propertyExclusions))
+	for property := range propertyCategories {
+		values[property] = true
+	}
+	for property := range propertyExclusions {
+		values[property] = true
+	}
+	return values
+}()
+
 // knownOrigins is the complete set of origin values defined in the Tailscale
 // audit-log API (OpenAPI spec ConfigurationAuditLog.origin enum). Unknown
 // values fold to "other" so the tailscale.config.audit.events metric's

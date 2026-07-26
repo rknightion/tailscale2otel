@@ -48,6 +48,8 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		// tailscale.dst.node (srcNode/dstNode come from the processor's resolve()).
 		KeepExternalAddrs:      !cfg.Cardinality.Flow.CollapseExternal,
 		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
+		TrustedReporterNodeIDs: cfg.Collectors.Flowlogs.TrustedReporterNodeIDs,
+		TrustedReporterTags:    cfg.Collectors.Flowlogs.TrustedReporterTags,
 		// Default "rollup": emit the bounded top-N *.rollup families instead of the
 		// raw per-connection io/packets. FlushRollup (runRollupFlusher) drains the
 		// accumulator on the OTLP export interval.
@@ -369,6 +371,8 @@ func webhookOptions(c config.WebhookConfig) webhook.Options {
 		Path:         c.Path,
 		Secret:       c.Secret.Reveal(),
 		Tolerance:    c.Tolerance.D(),
+		TLSCertFile:  c.TLS.CertFile,
+		TLSKeyFile:   c.TLS.KeyFile,
 		MaxBodyBytes: c.MaxBodyBytes,
 		// Aggregate admission control (GHSA-9547-8jpc-48h6): the HMAC covers the
 		// whole body, so buffering necessarily precedes authentication.

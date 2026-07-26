@@ -162,8 +162,10 @@ loopback (these behaviours are also noted in
 
 !!! danger "Always set credentials before exposing a receiver"
     Always set these when exposing a receiver, especially on a wildcard/all-interfaces bind
-    or without TLS. Tailscale requires HTTPS for the streaming sink; a `tailscale cert`
-    works for private tailnet endpoints.
+    or without TLS. Tailscale requires HTTPS for public streaming sinks and webhook
+    destinations. Use the paired `streaming.tls.*` or `webhook.tls.*` files for native TLS,
+    or leave them empty behind an HTTPS reverse proxy. A `tailscale cert` works for private
+    tailnet endpoints.
 
 !!! warning "Mistyped environment variable names silently leave auth disabled"
     Any field can be set via a `TS2OTEL_*` environment variable (the env layer overrides the

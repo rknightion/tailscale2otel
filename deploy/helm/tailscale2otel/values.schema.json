@@ -303,6 +303,12 @@
                                 },
                                 "source": {
                                     "type": "string"
+                                },
+                                "trusted_reporter_node_ids": {
+                                    "type": "array"
+                                },
+                                "trusted_reporter_tags": {
+                                    "type": "array"
                                 }
                             }
                         },
@@ -979,6 +985,17 @@
                         },
                         "secret_file": {
                             "type": "string"
+                        },
+                        "tls": {
+                            "type": "object",
+                            "properties": {
+                                "cert_file": {
+                                    "type": "string"
+                                },
+                                "key_file": {
+                                    "type": "string"
+                                }
+                            }
                         },
                         "tolerance": {
                             "type": "string"

@@ -46,7 +46,7 @@ func TestRollupCarriesIdentity(t *testing.T) {
 	want := map[string]string{
 		semconv.AttrSrcUser: "rob@example.com",
 		semconv.AttrSrcOS:   "macOS",
-		semconv.AttrDstTags: "tag:servers,tag:prod",
+		semconv.AttrDstTags: "tag:prod,tag:servers",
 		semconv.AttrDstOS:   "linux",
 	}
 	for k, v := range want {

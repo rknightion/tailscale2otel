@@ -12,6 +12,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
@@ -68,5 +69,24 @@ func TestRecordReceiverStop_RealErrorLogsWithComponent(t *testing.T) {
 	}
 	if !strings.Contains(out, "component=webhook") {
 		t.Fatalf("log = %q, want component=webhook", out)
+	}
+}
+
+func TestRuntimeWiresAuditSchemaDriftLogger(t *testing.T) {
+	var buf bytes.Buffer
+	a := appWithLog(t, &buf)
+	a.runtimes[0].auditProc.Process(audit.Event{
+		Action: "FUTURE_ACTION",
+		Origin: "FUTURE_ORIGIN",
+		Actor:  audit.Actor{Type: "FUTURE_ACTOR"},
+		Target: audit.Target{Property: "FUTURE_PROPERTY"},
+	}, telemetrytest.New().Emitter())
+
+	out := buf.String()
+	if !strings.Contains(out, "unrecognized audit schema enum value") {
+		t.Fatalf("log = %q, want audit schema-drift warning from the app-wired logger", out)
+	}
+	if !strings.Contains(out, "component=collector") {
+		t.Fatalf("log = %q, want component=collector", out)
 	}
 }

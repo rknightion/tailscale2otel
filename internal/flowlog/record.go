@@ -5,6 +5,7 @@
 package flowlog
 
 import (
+	"encoding/json"
 	"net/netip"
 	"slices"
 	"strings"
@@ -132,8 +133,9 @@ func (f FlowLog) refByAddr(addr string) *NodeRef {
 
 // ConnectionCounts is bidirectional traffic for a single 5-tuple in a window.
 // Src and Dst are "addr:port" strings. Proto is the IANA protocol number (e.g.
-// 6=tcp, 17=udp); the API omits it for some physical-traffic entries, decoding
-// to zero.
+// 6=tcp, 17=udp); the API omits it for some physical-traffic entries. Proto
+// remains an int for existing processing, while protoPresent preserves the
+// wire-level distinction between an omitted field and an explicit protocol 0.
 type ConnectionCounts struct {
 	Proto   int    `json:"proto"`
 	Src     string `json:"src"`
@@ -142,4 +144,41 @@ type ConnectionCounts struct {
 	TxBytes int64  `json:"txBytes"`
 	RxPkts  int64  `json:"rxPkts"`
 	RxBytes int64  `json:"rxBytes"`
+
+	protoPresent bool
+}
+
+// UnmarshalJSON preserves protocol-field presence without changing the public
+// numeric surface. Protocol 0 is a valid IANA value, so treating Proto == 0 as
+// synonymous with omission would make observed-completeness telemetry lie.
+func (c *ConnectionCounts) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Proto   *int   `json:"proto"`
+		Src     string `json:"src"`
+		Dst     string `json:"dst"`
+		TxPkts  int64  `json:"txPkts"`
+		TxBytes int64  `json:"txBytes"`
+		RxPkts  int64  `json:"rxPkts"`
+		RxBytes int64  `json:"rxBytes"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*c = ConnectionCounts{
+		Src:     wire.Src,
+		Dst:     wire.Dst,
+		TxPkts:  wire.TxPkts,
+		TxBytes: wire.TxBytes,
+		RxPkts:  wire.RxPkts,
+		RxBytes: wire.RxBytes,
+	}
+	if wire.Proto != nil {
+		c.Proto = *wire.Proto
+		c.protoPresent = true
+	}
+	return nil
+}
+
+func (c ConnectionCounts) protocolPresent() bool {
+	return c.protoPresent || c.Proto != 0
 }

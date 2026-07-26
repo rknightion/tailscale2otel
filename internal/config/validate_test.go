@@ -501,6 +501,112 @@ func TestValidateAutoConfigureValidWhenComplete(t *testing.T) {
 	}
 }
 
+// TestValidateAutoConfigurePublicURL pins the endpoint contract for Tailscale
+// log-streaming auto-configuration. HTTPS may be public, while plaintext HTTP
+// is only safe for a private tailnet endpoint and must never use a reusable
+// CGNAT IPv4 identity.
+func TestValidateAutoConfigurePublicURL(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		publicURL   string
+		wantErr     string
+		wantWarning bool
+	}{
+		{name: "https hostname", publicURL: "https://receive.example/collect?preserve=this", wantWarning: false},
+		{name: "https ipv4", publicURL: "https://203.0.113.8:8443/collect", wantWarning: false},
+		{name: "private http hostname", publicURL: "http://receive.tailnet.ts.net:8088/collect?preserve=this", wantWarning: true},
+		{name: "private http ipv6", publicURL: "http://[fd7a:115c:a1e0::1]:8088/collect", wantWarning: true},
+		{name: "http ipv4", publicURL: "http://100.64.0.1:8088/collect", wantErr: "IPv4"},
+		{name: "unsupported scheme", publicURL: "ftp://receive.example/collect", wantErr: "http or https"},
+		{name: "missing host", publicURL: "https:///collect", wantErr: "host"},
+		{name: "malformed port", publicURL: "https://receive.example:bad/collect", wantErr: "invalid"},
+		{name: "empty port", publicURL: "https://receive.example:/collect", wantErr: "invalid"},
+		{name: "out of range port", publicURL: "https://receive.example:70000/collect", wantErr: "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Streaming.Enabled = true
+			c.Streaming.AutoConfigure = true
+			c.Streaming.PublicURL = tc.publicURL
+
+			err := c.Validate()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Validate() = %v, want error containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() = %v", err)
+			}
+			if c.Streaming.PublicURL != tc.publicURL {
+				t.Fatalf("Validate() changed public_url to %q, want %q", c.Streaming.PublicURL, tc.publicURL)
+			}
+
+			warnings := strings.Join(c.Warnings(), "\n")
+			gotWarning := strings.Contains(warnings, "Private log streaming requires")
+			if gotWarning != tc.wantWarning {
+				t.Fatalf("Warnings() = %q, private HTTP warning = %t, want %t", warnings, gotWarning, tc.wantWarning)
+			}
+			if tc.wantWarning {
+				for _, want := range []string{"node sharing", "logstream@tailscale", "device_invites", "policy_file"} {
+					if !strings.Contains(warnings, want) {
+						t.Errorf("private HTTP warning %q does not mention %q", warnings, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestValidateAutoConfigureRoutePublicURL(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		publicURL   string
+		wantErr     string
+		wantWarning bool
+	}{
+		{name: "https", publicURL: "https://receive.example/hec/beta"},
+		{name: "private http hostname", publicURL: "http://receive.tailnet.ts.net:8088/hec/beta", wantWarning: true},
+		{name: "private http ipv6", publicURL: "http://[fd7a:115c:a1e0::1]:8088/hec/beta", wantWarning: true},
+		{name: "http ipv4", publicURL: "http://100.64.0.1:8088/hec/beta", wantErr: "streaming.routes[1].public_url"},
+		{name: "unsupported scheme", publicURL: "ftp://receive.example/hec/beta", wantErr: "streaming.routes[1].public_url"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Tailnets = []config.TailnetConfig{
+				{Name: "alpha.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+				{Name: "beta.example.com", Auth: config.TailscaleAuth{Method: "oauth"}},
+			}
+			c.Streaming.Enabled = true
+			c.Streaming.Routes = []config.StreamingRoute{
+				{Tailnet: "alpha.example.com", Path: "/hec/alpha", Token: "alpha"},
+				{Tailnet: "beta.example.com", Path: "/hec/beta", Token: "beta", AutoConfigure: true, PublicURL: tc.publicURL},
+			}
+
+			err := c.Validate()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Validate() = %v, want error containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() = %v", err)
+			}
+			if got := c.Streaming.Routes[1].PublicURL; got != tc.publicURL {
+				t.Fatalf("Validate() changed route public_url to %q, want %q", got, tc.publicURL)
+			}
+
+			warnings := strings.Join(c.Warnings(), "\n")
+			gotWarning := strings.Contains(warnings, "Private log streaming requires")
+			if gotWarning != tc.wantWarning {
+				t.Fatalf("Warnings() = %q, private HTTP warning = %t, want %t", warnings, gotWarning, tc.wantWarning)
+			}
+		})
+	}
+}
+
 func TestValidateNodeMetricsRequiresTargetURL(t *testing.T) {
 	const y = "collectors:\n  node_metrics:\n    enabled: true\n    targets:\n      - instance: nodeA\n"
 	err := loadErr(t, y)
@@ -1270,6 +1376,39 @@ func TestValidate_PrometheusTLSBothOrNeither(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "prometheus.tls.cert_file") || !strings.Contains(err.Error(), "prometheus.tls.key_file") {
 		t.Errorf("error %q should name both prometheus.tls.cert_file and prometheus.tls.key_file", err.Error())
+	}
+}
+
+// TestValidate_WebhookTLSBothOrNeither applies the listener TLS contract to
+// webhook.tls: a half-configured key pair must fail during config validation,
+// before the receiver reaches ListenAndServeTLS.
+func TestValidate_WebhookTLSBothOrNeither(t *testing.T) {
+	c := config.Default()
+	c.Webhook.TLS.CertFile = "/does/not/matter.crt"
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error: webhook.tls.cert_file set without webhook.tls.key_file")
+	}
+	if !strings.Contains(err.Error(), "webhook.tls.cert_file") || !strings.Contains(err.Error(), "webhook.tls.key_file") {
+		t.Errorf("error %q should name both webhook.tls.cert_file and webhook.tls.key_file", err.Error())
+	}
+
+	c = config.Default()
+	c.Webhook.TLS.KeyFile = "/does/not/matter.key"
+	err = c.Validate()
+	if err == nil {
+		t.Fatal("expected error: webhook.tls.key_file set without webhook.tls.cert_file")
+	}
+	if !strings.Contains(err.Error(), "webhook.tls.cert_file") || !strings.Contains(err.Error(), "webhook.tls.key_file") {
+		t.Errorf("error %q should name both webhook.tls.cert_file and webhook.tls.key_file", err.Error())
+	}
+
+	c = config.Default()
+	c.Webhook.TLS.CertFile = filepath.Join(t.TempDir(), "missing.crt")
+	c.Webhook.TLS.KeyFile = filepath.Join(t.TempDir(), "missing.key")
+	err = c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "webhook.tls.cert_file") {
+		t.Errorf("unreadable webhook TLS pair should fail on webhook.tls.cert_file, got %v", err)
 	}
 }
 

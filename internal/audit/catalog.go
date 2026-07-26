@@ -53,6 +53,15 @@ var (
 		Group:       groupNetwork,
 	}
 
+	docAuditSchemaDrift = metricdoc.Metric{
+		Name:        MetricAuditSchemaDrift,
+		Unit:        "{observation}",
+		Instrument:  metricdoc.Counter,
+		Description: "Configuration-audit schema vocabulary observations, by enum field and whether its value is known to this collector version.",
+		Attributes:  []string{"field", "status"},
+		Group:       groupNetwork,
+	}
+
 	docAuditLog = metricdoc.LogEvent{
 		Name:        auditEventName,
 		Severity:    "INFO",
@@ -70,7 +79,7 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docAuditEvents, docAuditChanges, docAuditDeferredDelay, docAuditProcessingDelay}
+	return []metricdoc.Metric{docAuditEvents, docAuditChanges, docAuditDeferredDelay, docAuditProcessingDelay, docAuditSchemaDrift}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

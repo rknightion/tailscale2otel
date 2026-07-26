@@ -55,6 +55,38 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
             "tailscale2otel:ingest_event_freshness_seconds",
         )
 
+    def test_ingest_integrity_metrics_are_operationally_visible(self):
+        network = json.dumps(
+            dashboard.build("test", "test", True, only="Network & Flows")
+        )
+        for expected in (
+            "Reporter trust & consistency",
+            "Observed field omissions",
+            "tailscale_network_reporter_observations_total",
+            "tailscale_network_field_observations_total",
+        ):
+            self.assertIn(expected, network)
+
+        events = json.dumps(
+            dashboard.build("test", "test", True, only="Events & Logs")
+        )
+        self.assertIn("Audit schema drift", events)
+        self.assertIn("tailscale_config_audit_schema_drift_total", events)
+
+    def test_integrity_alerts_are_paused_and_bounded(self):
+        all_rules = {
+            rule["uid"]: rule
+            for group in rules.build()["groups"]
+            for rule in group["rules"]
+        }
+        for uid, metric in (
+            ("ts2o-flow-reporter-mismatch", "tailscale_network_reporter_observations_total"),
+            ("ts2o-audit-schema-drift", "tailscale_config_audit_schema_drift_total"),
+        ):
+            rule = all_rules[uid]
+            self.assertTrue(rule["isPaused"])
+            self.assertIn(metric, rule["data"][0]["model"]["expr"])
+
 
 if __name__ == "__main__":
     unittest.main()

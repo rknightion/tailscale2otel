@@ -37,6 +37,12 @@ const (
 const (
 	MetricExitNodeIO      = "tailscale.exit_node.io"
 	MetricExitNodePackets = "tailscale.exit_node.packets"
+	// MetricReporterObservations classifies reporter trust and consistency once
+	// per processed flow record. It intentionally carries no reporter identity.
+	MetricReporterObservations = "tailscale.network.reporter.observations"
+	// MetricFieldObservations reports observed connection field completeness; it
+	// does not infer control-plane logging configuration from missing fields.
+	MetricFieldObservations = "tailscale.network.field.observations"
 )
 
 var (
@@ -105,6 +111,22 @@ var (
 		Unit:        unitRecord,
 		Instrument:  metricdoc.Counter,
 		Description: "Flow LOG records suppressed by the per-window volume guard (collectors.flowlogs.max_log_records_per_window); 0 unless truncating. Metrics are never dropped, only logs.",
+		Group:       groupNetwork,
+	}
+	docReporterObservations = metricdoc.Metric{
+		Name:        MetricReporterObservations,
+		Unit:        "{observation}",
+		Instrument:  metricdoc.Counter,
+		Description: "Flow-record reporter observations, classified by the configured trust policy and whether the verified reporter node ID agrees with the unverified embedded source reference. Carries no node ID.",
+		Attributes:  []string{"trust", "consistency"},
+		Group:       groupNetwork,
+	}
+	docFieldObservations = metricdoc.Metric{
+		Name:        MetricFieldObservations,
+		Unit:        "{observation}",
+		Instrument:  metricdoc.Counter,
+		Description: "Observed flow connection field completeness by traffic type, field class, and present or missing state. Missing fields are source evidence, not an inferred Destination Logging configuration setting.",
+		Attributes:  []string{semconv.AttrTrafficType, "field_class", "state"},
 		Group:       groupNetwork,
 	}
 
@@ -182,6 +204,7 @@ var (
 			semconv.AttrSrcUser, semconv.AttrDstUser, semconv.AttrSrcTags, semconv.AttrDstTags,
 			semconv.AttrSrcOS, semconv.AttrDstOS,
 			"tailscale.connections", // per_record summary only
+			"tailscale.reporter.trust", "tailscale.reporter.consistency",
 			"tailscale.tx.bytes", "tailscale.rx.bytes", "tailscale.tx.packets", "tailscale.rx.packets",
 		},
 		Group: groupNetwork,
@@ -192,6 +215,7 @@ var (
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docIO, docPackets, docFlows, docDedupConflicts, docStoreDropped, docDataQuality, docLogsDropped,
+		docReporterObservations, docFieldObservations,
 		docIORollup, docPacketsRollup, docUniqueDstPeers, docUniqueDstPorts,
 		docExitNodeIO, docExitNodePackets,
 	}

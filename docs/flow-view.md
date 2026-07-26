@@ -43,10 +43,23 @@ relationship. See [what the matrix can and cannot show](#what-the-identity-matri
 **Path quality.** Whether each peer was reached directly or had to be relayed through DERP, and which
 relay carried it — see [reading the path section](#reading-the-path-section).
 
-**Recent connections.** The newest individual connections, with their raw endpoints, the policy's
-reading of each one and how each underlay connection was carried, filterable by device, address, port,
-service, protocol, verdict or path. The aggregates cannot answer "what exactly was that", so a bounded
-number of raw connections are kept alongside them.
+**Recent connections.** The newest individual connections, with their raw endpoints, the verified
+reporter node ID, bounded trust/consistency diagnosis, the policy's reading of each one and how each
+underlay connection was carried, filterable by device, reporter, address, port, service, protocol,
+verdict or path. The aggregates cannot answer "what exactly was that", so a bounded number of raw
+connections are kept alongside them.
+
+The reporter is `FlowLog.NodeID`, which Tailscale's logging service verifies. Most other flow fields,
+including the embedded source reference, are written by the reporting node and are not independently
+verified. Reporter trust therefore uses only the configured node-ID allowlist or authoritative
+device-cache tags; embedded tags never grant it. `match`, `mismatch`, and `missing_reference` compare
+the verified reporter with the unverified embedded source reference without adding a raw node ID to
+high-volume metrics.
+
+Field presence is reported as **observed completeness**, not as a guessed Destination Logging setting.
+Missing exit destinations and ports can be expected privacy-driven omissions when Destination
+Logging is off, but the exporter has no authoritative settings API that can distinguish that from
+damaged input. One populated record does not prove that the setting is enabled.
 
 ## Enabling it
 

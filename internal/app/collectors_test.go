@@ -17,9 +17,31 @@ func TestWebhookOptionsPlumbsTolerance(t *testing.T) {
 		Path:      "/tailscale/webhook",
 		Secret:    "s",
 		Tolerance: config.Duration(7 * time.Minute),
+		TLS: config.StreamingTLS{
+			CertFile: "/run/tls/tls.crt",
+			KeyFile:  "/run/tls/tls.key",
+		},
 	})
 	if got.Tolerance != 7*time.Minute {
 		t.Fatalf("webhookOptions Tolerance = %v, want 7m (webhook.tolerance must be plumbed)", got.Tolerance)
+	}
+	if got.TLSCertFile != "/run/tls/tls.crt" || got.TLSKeyFile != "/run/tls/tls.key" {
+		t.Fatalf("webhookOptions TLS = (%q, %q), want configured cert/key",
+			got.TLSCertFile, got.TLSKeyFile)
+	}
+}
+
+func TestFlowOptionsPlumbsTrustedReporterPolicy(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Flowlogs.TrustedReporterNodeIDs = []string{"node-a"}
+	cfg.Collectors.Flowlogs.TrustedReporterTags = []string{"tag:router"}
+
+	got := flowOptions(cfg)
+	if len(got.TrustedReporterNodeIDs) != 1 || got.TrustedReporterNodeIDs[0] != "node-a" {
+		t.Fatalf("flowOptions TrustedReporterNodeIDs = %v, want [node-a]", got.TrustedReporterNodeIDs)
+	}
+	if len(got.TrustedReporterTags) != 1 || got.TrustedReporterTags[0] != "tag:router" {
+		t.Fatalf("flowOptions TrustedReporterTags = %v, want [tag:router]", got.TrustedReporterTags)
 	}
 }
 

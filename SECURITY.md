@@ -103,8 +103,10 @@ enabled by a configured secret; an empty credential is accepted only on a loopba
   loopback or tailnet-bound endpoint is silent.
 
 Always set these when exposing a receiver, especially on a wildcard/all-interfaces
-bind or without TLS. Tailscale requires HTTPS for the streaming sink; a
-`tailscale cert` works for private tailnet endpoints.
+bind or without TLS. Tailscale requires HTTPS for public streaming sinks and webhook
+destinations. The paired `streaming.tls.*` and `webhook.tls.*` files provide native
+TLS; leaving them empty preserves reverse-proxy deployments. A `tailscale cert` works
+for private tailnet endpoints.
 
 > Any field can be set via a `TS2OTEL_*` environment variable (the env layer
 > overrides the file). A mistyped variable name (`TS2OTEL_WEBHOOK__SECRT`) leaves

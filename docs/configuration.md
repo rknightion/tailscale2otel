@@ -556,6 +556,8 @@ Network flow logs → aggregated traffic counters + per-connection flow logs.
 | `collectors.flowlogs.max_window` | `1h` | Catch-up cap for one tick (poll only). |
 | `collectors.flowlogs.replay_overlap` | `5m` | Reread this much of completed poll history for late API records (`0` disables; maximum `1h`). Separate from the tail-safety `lag`. |
 | `collectors.flowlogs.replay_seen_capacity` | `131072` | Bounded durable hashed connection identities used to suppress the replay across restart (`1..1048576` while enabled). |
+| `collectors.flowlogs.trusted_reporter_node_ids` | `[]` | Optional allowlist of verified `FlowLog.NodeID` reporters, classified as `configured`. The reporter observation metric carries only the bounded trust/consistency classes, never these raw IDs. |
+| `collectors.flowlogs.trusted_reporter_tags` | `[]` | Optional authoritative device tags that classify a verified reporter as `tagged`. Only the devices collector's control-plane cache can grant tag trust; tags embedded in the flow record never do. Other reporters are `untrusted`; with both trust lists empty, reporter trust is `unconfigured`. |
 | `collectors.flowlogs.log_mode` | `per_connection` | Flow-log detail. One of `per_connection` (one log per 5-tuple), `per_record` (one summary log per node window), or `off` (no flow logs, metrics only). |
 | `collectors.flowlogs.max_log_records_per_window` | `0` | Cap on flow LOG records emitted (`0` = unlimited). Excess is counted into `tailscale.network.flow.logs_dropped`. Metrics are never capped. |
 
@@ -779,7 +781,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.path` | `/services/collector/event` | HEC event path. |
 | `streaming.token` | `""` | Shared secret for the receiver. Tailscale's log-streaming sender authenticates with **HTTP Basic auth** — `Authorization: Basic base64(<user>:<token>)`, where the password is this token (any username is accepted). The `Authorization: Splunk <token>` scheme is also accepted, as a fallback for other Splunk-HEC-compatible senders, but is not what Tailscale itself sends. Set via `TS2OTEL_STREAMING__TOKEN`. |
 | `streaming.token_file` | `""` | Read `streaming.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
-| `streaming.public_url` | `""` | Externally reachable receiver URL. **Required when `auto_configure: true`** (it is the sink URL registered with Tailscale). |
+| `streaming.public_url` | `""` | Externally reachable receiver URL. **Required when `auto_configure: true`**. Must be an absolute HTTP(S) URL with a valid host and port. HTTPS may use a public endpoint. Tailscale's private-HTTP contract accepts a shared-node hostname/FQDN or IPv6 literal but rejects every IPv4 literal; such HTTP URLs receive a startup warning because local validation cannot prove node sharing or policy. The configured path and query are preserved exactly. |
 | `streaming.tls.cert_file` / `.key_file` | `""` | HTTPS is required by Tailscale; a `tailscale cert` works for private tailnet endpoints. |
 | `streaming.decompress` | `auto` | Request-body decompression: `auto` \| `gzip` \| `zstd` \| `none`. |
 | `streaming.auto_configure` | `false` | On startup, PUT this receiver as a Splunk-HEC log-streaming sink. **Requires `enabled: true`, `public_url`, and an OAuth client with the `log_streaming` scope.** |
@@ -790,6 +792,10 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 > **Validation:** `auto_configure: true` errors at startup unless both `streaming.enabled: true` and
 > a non-empty `streaming.public_url` are set. Running the poller and this receiver for the same log
 > type triggers a dual-ingestion **WARN**.
+>
+> Private HTTP log streaming also needs the receiver node shared to Tailscale's logging service,
+> policy access for `logstream@tailscale`, and OAuth authority covering `device_invites` and
+> `policy_file`. The exporter warns because it cannot prove those control-plane prerequisites.
 
 > **The receiver fails closed without a token.** An empty `streaming.token` is accepted only when
 > `streaming.listen` is a **loopback** address (`127.0.0.1`, `::1`, `localhost`). On any other bind —
@@ -830,6 +836,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.path` | `/tailscale/webhook` | Webhook path. |
 | `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Empty is accepted only on a loopback `webhook.listen`; any network-reachable bind refuses requests with HTTP 403 before reading their bodies. Set via `TS2OTEL_WEBHOOK__SECRET`. |
 | `webhook.secret_file` | `""` | Read `webhook.secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `webhook.tls.cert_file` / `.key_file` | `""` | Serve the webhook listener over native HTTPS when both readable files are set. Tailscale webhook endpoints require HTTPS. Leave both empty for an HTTPS reverse proxy; setting only one is a startup error. Certificate issuance/ACME is out of scope. |
 | `webhook.tolerance` | `5m` | Allowed clock skew in **both** directions: a signed timestamp older than `now - tolerance` **or** newer than `now + tolerance` is rejected (the boundary itself is allowed). The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable until its future timestamp plus this window — turning a short skew allowance into a much longer one. `0` disables the timestamp check. |
 | `webhook.max_body_bytes` | `0` | Cap on the **raw** request body read before signature verification. `0` selects a 1 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413 and counted into `tailscale.webhook.rejected{reason="too_large"}`. Distinct from `streaming.max_body_bytes`, which caps a *decompressed* body. |
 | `webhook.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**, before the HMAC is verified. The signature covers the whole body, so buffering necessarily precedes authentication; `max_body_bytes` caps one body and this caps their sum, so unauthenticated senders cannot multiply it. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1` and counted into `tailscale.webhook.rejected{reason="overloaded"}`. Worst-case buffering is roughly this × `max_body_bytes`. |

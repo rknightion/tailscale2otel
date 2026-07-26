@@ -93,8 +93,8 @@ tolerations: []
 affinity: {}
 
 # -- Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding
-# TLS cert/key material for config.streaming.tls, since readOnlyRootFilesystem
-# leaves no other place to put arbitrary files). Paired with extraVolumeMounts
+# TLS cert/key material for config.streaming.tls or config.webhook.tls, since
+# readOnlyRootFilesystem leaves no other place to put arbitrary files). Paired with extraVolumeMounts
 # below by volume name. See the chart README for a worked TLS-cert example.
 extraVolumes: []
 # -- Extra volume mounts appended to the main container's volumeMounts, as-is.
@@ -490,6 +490,12 @@ config:
       # -- Maximum durable SHA-256 connection identities retained to suppress the intentional
       # replay across restart. Must be 1..1048576 while replay_overlap is enabled.
       replay_seen_capacity: 131072
+      # -- Verified FlowLog.NodeID values classified as `configured`. Empty together with
+      # trusted_reporter_tags leaves reporter trust `unconfigured`.
+      trusted_reporter_node_ids: []
+      # -- Authoritative device tags that classify a verified reporter as `tagged`. Tags embedded
+      # in the flow record are unverified and never grant trust; unmatched reporters are `untrusted`.
+      trusted_reporter_tags: []
       # -- Flow-log verbosity: per_connection | per_record | off (off = metrics only, no logs).
       log_mode: per_connection
       # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
@@ -740,6 +746,12 @@ config:
     # -- Read webhook.secret from this path instead of an inline value (mounted-Secret style).
     # Set the value or the file, not both; the file's content is whitespace-trimmed.
     secret_file: ""
+    tls:
+      # -- TLS certificate file; set with key_file for native webhook HTTPS. Leave both empty
+      # when an HTTPS reverse proxy terminates TLS.
+      cert_file: ""
+      # -- TLS private key file paired with cert_file.
+      key_file: ""
     # -- Allowed clock skew in BOTH directions on the signed timestamp: a request older than
     # now-tolerance or newer than now+tolerance is rejected. The two-sided check matters because a
     # correctly signed but future-dated request would otherwise stay replayable. 0 disables the
