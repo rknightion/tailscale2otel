@@ -602,10 +602,25 @@ and container deployments use a role. This is a deliberate omission, not a gap â
 [#238](https://github.com/rknightion/tailscale2otel/issues/238) for the reasoning and the binary-size
 measurement behind it.
 
-**Exactly-once.** A durable cursor records the newest object ingested; a durable set of recently
-ingested object keys makes the backwards overlap free; and the processor's own connection-level
-de-duplication, shared with the poll and stream paths, sits underneath both. All three survive a
-restart except the last, which does not need to.
+**At-least-once durability boundary.** With the file checkpoint store, successful object identities,
+bounded per-prefix listing progress, and failed-object gaps survive restart. A failed GET or stream
+read is retried independently with exponential backoff capped at one hour, even after later objects
+advance the timestamp cursor. Invalid gzip/zstd framing is deterministic for an immutable object and
+is quarantined immediately. The three gap gauges report unresolved count, oldest age, and health
+without object-key attributes; logs identify an object only by a 12-character SHA-256 digest.
+
+Malformed JSON and semantically invalid flow rows are record-level failures: good rows in the same
+NDJSON object are accepted and the object can complete. GET, decompressor, and scanner failures are
+object-level gaps. A scanner failure can occur after good rows were emitted, so retry can duplicate
+those rows after restart until object processing is atomic. OTLP/backend acknowledgement is outside
+this boundary. An in-memory checkpoint can replay successful objects and loses pending gaps on
+restart.
+
+**Quarantine and acknowledgement.** A quarantined gap is not retried automatically and keeps
+`tailscale2otel.objectstore.gap.healthy` at `0`. To acknowledge it, stop the process and remove only
+its `objectstore.flowlogs.gap/...` row from the owner-only checkpoint JSON; the paired seen row keeps
+the immutable object from being fetched again. To replace the object at the same key and retry it,
+remove both that gap row and its `objectstore.flowlogs.seen/...` row before restarting.
 
 
 ### `collectors.auditlogs`

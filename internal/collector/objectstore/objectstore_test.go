@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -48,13 +51,15 @@ func record(nodeID string, at time.Time) string {
 
 // fakeStore serves a fixed set of objects, recording what was fetched.
 type fakeStore struct {
-	objects   map[string][]byte // key -> body as stored (already compressed)
-	sizes     map[string]int64
-	fetched   []string
-	getCalls  []string
-	listCalls []listCall
-	listErr   error
-	getErr    map[string]error
+	objects    map[string][]byte // key -> body as stored (already compressed)
+	sizes      map[string]int64
+	fetched    []string
+	getCalls   []string
+	listCalls  []listCall
+	listErr    error
+	getErr     map[string]error
+	readErr    map[string]error
+	listHidden map[string]bool
 }
 
 type listCall struct {
@@ -64,7 +69,13 @@ type listCall struct {
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{objects: map[string][]byte{}, sizes: map[string]int64{}, getErr: map[string]error{}}
+	return &fakeStore{
+		objects:    map[string][]byte{},
+		sizes:      map[string]int64{},
+		getErr:     map[string]error{},
+		readErr:    map[string]error{},
+		listHidden: map[string]bool{},
+	}
 }
 
 func (f *fakeStore) put(key string, body []byte) {
@@ -79,7 +90,7 @@ func (f *fakeStore) List(_ context.Context, prefix, startAfter string, limit int
 	f.listCalls = append(f.listCalls, listCall{Prefix: prefix, StartAfter: startAfter, Limit: limit})
 	var out []s3.Object
 	for k := range f.objects {
-		if strings.HasPrefix(k, prefix) && k > startAfter {
+		if strings.HasPrefix(k, prefix) && k > startAfter && !f.listHidden[k] {
 			out = append(out, s3.Object{Key: k, Size: f.sizes[k]})
 		}
 	}
@@ -109,8 +120,26 @@ func (f *fakeStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("no such key %q", key)
 	}
 	f.fetched = append(f.fetched, key)
+	if err := f.readErr[key]; err != nil {
+		return &errorAfterReader{Reader: bytes.NewReader(body), err: err}, nil
+	}
 	return io.NopCloser(bytes.NewReader(body)), nil
 }
+
+type errorAfterReader struct {
+	*bytes.Reader
+	err error
+}
+
+func (r *errorAfterReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err == io.EOF {
+		return 0, r.err
+	}
+	return n, err
+}
+
+func (r *errorAfterReader) Close() error { return nil }
 
 // keyAt builds an export key for a given instant.
 func keyAt(at time.Time, ext string) string {
@@ -615,9 +644,11 @@ func TestCollect_OneBadObjectDoesNotStopTheRest(t *testing.T) {
 }
 
 func TestCollect_FailureAtPrefixStartKeepsScanGroundActive(t *testing.T) {
+	clock := now
 	h := newHarness(t, func(o *objectstore.Options) {
 		o.InitialLookback = 3 * time.Hour
 		o.Lookback = 5 * time.Minute
+		o.Now = func() time.Time { return clock }
 	})
 	badAt := now.Add(-2 * time.Hour)
 	goodAt := now.Add(-10 * time.Minute)
@@ -628,6 +659,7 @@ func TestCollect_FailureAtPrefixStartKeepsScanGroundActive(t *testing.T) {
 
 	h.collect(t)
 	delete(h.store.getErr, badKey)
+	clock = now.Add(time.Minute)
 	h.collect(t)
 
 	if got := h.flowRecords(); got != 2 {
@@ -641,6 +673,297 @@ func TestCollect_FailureAtPrefixStartKeepsScanGroundActive(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("failed-object attempts = %d, want an immediate retry from active scan ground", attempts)
+	}
+}
+
+func TestCollect_FailedGapSurvivesCursorAdvanceAndRestart(t *testing.T) {
+	clock := now
+	store := newFakeStore()
+	badAt := now.Add(-2 * time.Hour)
+	goodAt := now.Add(-10 * time.Minute)
+	badKey := officialKeyAt(badAt, ".json")
+	store.put(badKey, []byte(record("recovered", badAt)+"\n"))
+	store.getErr[badKey] = errors.New("temporary object-store failure")
+	store.put(officialKeyAt(goodAt, ".json"), []byte(record("newer", goodAt)+"\n"))
+
+	checkpointPath := t.TempDir() + "/checkpoints.json"
+	cp, err := collector.NewFileStore(checkpointPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := telemetrytest.New()
+	col := objectstore.New(
+		store,
+		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+		cp,
+		objectstore.Options{
+			Prefix:          "flow",
+			InitialLookback: 3 * time.Hour,
+			Lookback:        5 * time.Minute,
+			Now:             func() time.Time { return clock },
+			Logger:          discardLogger(),
+		},
+	)
+	if err := col.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(rec.LogRecords()); got != 1 {
+		t.Fatalf("first-cycle records = %d, want the newer object", got)
+	}
+	var hasGap bool
+	for _, key := range cp.Keys() {
+		if strings.HasPrefix(key, "objectstore.flowlogs.gap/") {
+			hasGap = true
+			break
+		}
+	}
+	if !hasGap {
+		t.Fatal("failed object was not persisted independently as a gap")
+	}
+
+	delete(store.getErr, badKey)
+	store.listHidden[badKey] = true
+	clock = now.Add(2 * time.Minute)
+	reopened, err := collector.NewFileStore(checkpointPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec2 := telemetrytest.New()
+	restarted := objectstore.New(
+		store,
+		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+		reopened,
+		objectstore.Options{
+			Prefix:          "flow",
+			InitialLookback: 3 * time.Hour,
+			Lookback:        5 * time.Minute,
+			Now:             func() time.Time { return clock },
+			Logger:          discardLogger(),
+		},
+	)
+	if err := restarted.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(rec2.LogRecords()); got != 1 {
+		t.Fatalf("restart records = %d, want the gap retried without rediscovery by listing", got)
+	}
+	for _, key := range reopened.Keys() {
+		if strings.HasPrefix(key, "objectstore.flowlogs.gap/") {
+			t.Fatalf("resolved gap row remains: %q", key)
+		}
+	}
+}
+
+func TestCollect_QuarantinedGapCanBeManuallyAcknowledged(t *testing.T) {
+	clock := now
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Now = func() time.Time { return clock }
+	})
+	at := now.Add(-10 * time.Minute)
+	key := officialKeyAt(at, ".json.gz")
+	h.store.put(key, []byte("not a gzip stream"))
+
+	h.collect(t)
+	if got := len(h.store.getCalls); got != 1 {
+		t.Fatalf("GET calls = %d, want one failed decompression attempt", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
+		t.Fatalf("gap count = %v, want one quarantined gap", got)
+	}
+	clock = now.Add(24 * time.Hour)
+	h.collect(t)
+	if got := len(h.store.getCalls); got != 1 {
+		t.Fatalf("GET calls after quarantine = %d, want no automatic retry", got)
+	}
+	for _, checkpointKey := range h.cp.Keys() {
+		if strings.HasPrefix(checkpointKey, "objectstore.flowlogs.gap/") {
+			if err := h.cp.Delete(checkpointKey); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	clock = clock.Add(time.Minute)
+	h.collect(t)
+	if got := len(h.store.getCalls); got != 1 {
+		t.Fatalf("GET calls after manual acknowledgement = %d, want no retry", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.healthy"); got != 1 {
+		t.Fatalf("gap healthy = %v, want 1 after acknowledgement", got)
+	}
+}
+
+func TestCollect_GapRetryBackoffIsBoundedButDoesNotAbandon(t *testing.T) {
+	clock := now
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Now = func() time.Time { return clock }
+	})
+	at := now.Add(-10 * time.Minute)
+	key := officialKeyAt(at, ".json")
+	h.store.put(key, []byte(record("eventual", at)+"\n"))
+	h.store.getErr[key] = errors.New("temporary object-store failure")
+
+	restartAndCollect := func() {
+		h.col = objectstore.New(
+			h.store,
+			flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+			h.cp,
+			objectstore.Options{
+				Prefix: "flow",
+				Now:    func() time.Time { return clock },
+				Logger: discardLogger(),
+			},
+		)
+		h.collect(t)
+	}
+
+	restartAndCollect()
+	clock = now.Add(time.Minute - time.Second)
+	restartAndCollect()
+	if got := len(h.store.getCalls); got != 1 {
+		t.Fatalf("GET calls before first retry boundary = %d, want 1", got)
+	}
+
+	clock = now
+	for _, delay := range []time.Duration{
+		time.Minute,
+		2 * time.Minute,
+		4 * time.Minute,
+		8 * time.Minute,
+		16 * time.Minute,
+		32 * time.Minute,
+		time.Hour,
+		time.Hour,
+	} {
+		clock = clock.Add(delay)
+		restartAndCollect()
+	}
+	if got := len(h.store.getCalls); got != 9 {
+		t.Fatalf("GET calls = %d, want initial attempt plus eight durable retries", got)
+	}
+	var hasGap bool
+	for _, checkpointKey := range h.cp.Keys() {
+		if strings.HasPrefix(checkpointKey, "objectstore.flowlogs.gap/") {
+			hasGap = true
+			break
+		}
+	}
+	if !hasGap {
+		t.Fatal("transient gap was abandoned after repeated capped retries")
+	}
+}
+
+func TestCollect_FailureDiagnosticsUseDigestNotRawKey(t *testing.T) {
+	var logs bytes.Buffer
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Prefix = "customer-private/flow"
+		o.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	at := now.Add(-10 * time.Minute)
+	key := "customer-private/flow/" + at.UTC().Format("2006/01/02/15:04:05") + ".json"
+	h.store.put(key, []byte(record("n", at)+"\n"))
+	h.store.getErr[key] = fmt.Errorf("backend could not fetch %s", key)
+
+	h.collect(t)
+
+	got := logs.String()
+	if strings.Contains(got, key) || strings.Contains(got, "customer-private") {
+		t.Fatalf("failure diagnostics leaked the raw object key: %s", got)
+	}
+	sum := sha256.Sum256([]byte(key))
+	wantDigest := hex.EncodeToString(sum[:6])
+	if !strings.Contains(got, wantDigest) {
+		t.Fatalf("failure diagnostics = %q, want digest %q", got, wantDigest)
+	}
+}
+
+func TestCollect_GapHealthTelemetryHasNoObjectAttributes(t *testing.T) {
+	clock := now
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Now = func() time.Time { return clock }
+	})
+	at := now.Add(-10 * time.Minute)
+	key := officialKeyAt(at, ".json")
+	h.store.put(key, []byte(record("recovered", at)+"\n"))
+	h.store.getErr[key] = errors.New("temporary read failure")
+
+	h.collect(t)
+	clock = now.Add(30 * time.Second)
+	h.collect(t)
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
+		t.Fatalf("gap count = %v, want 1", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.oldest.age"); got != 30 {
+		t.Fatalf("oldest gap age = %v, want 30 seconds", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.healthy"); got != 0 {
+		t.Fatalf("gap healthy = %v, want 0", got)
+	}
+	for _, name := range []string{
+		"tailscale2otel.objectstore.gaps",
+		"tailscale2otel.objectstore.gap.oldest.age",
+		"tailscale2otel.objectstore.gap.healthy",
+	} {
+		for _, point := range h.rec.MetricPoints(name) {
+			if len(point.Attrs) != 0 {
+				t.Fatalf("%s attributes = %v, want none", name, point.Attrs)
+			}
+		}
+	}
+
+	delete(h.store.getErr, key)
+	clock = now.Add(time.Minute)
+	h.collect(t)
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 0 {
+		t.Fatalf("resolved gap count = %v, want 0", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.oldest.age"); got != 0 {
+		t.Fatalf("resolved oldest gap age = %v, want 0", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.healthy"); got != 1 {
+		t.Fatalf("resolved gap healthy = %v, want 1", got)
+	}
+}
+
+func TestCollect_LateScannerErrorEntersDurableGapPath(t *testing.T) {
+	clock := now
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Now = func() time.Time { return clock }
+	})
+	at := now.Add(-10 * time.Minute)
+	key := officialKeyAt(at, ".json")
+	h.store.put(key, []byte(record("partially-emitted", at)+"\n"))
+	h.store.readErr[key] = errors.New("late object read failure")
+
+	h.collect(t)
+	if got := h.flowRecords(); got != 1 {
+		t.Fatalf("partial records = %d, want the valid row emitted before the read failure", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
+		t.Fatalf("gap count = %v, want the scanner failure retained", got)
+	}
+
+	delete(h.store.readErr, key)
+	clock = now.Add(time.Minute)
+	rec2 := telemetrytest.New()
+	h.col = objectstore.New(
+		h.store,
+		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+		h.cp,
+		objectstore.Options{
+			Prefix: "flow",
+			Now:    func() time.Time { return clock },
+			Logger: discardLogger(),
+		},
+	)
+	if err := h.col.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(rec2.LogRecords()); got != 1 {
+		t.Fatalf("retry records = %d, want the object replayed after restart", got)
+	}
+	if got := lastGauge(rec2, "tailscale2otel.objectstore.gaps"); got != 0 {
+		t.Fatalf("gap count after scanner recovery = %v, want 0", got)
 	}
 }
 
@@ -660,6 +983,25 @@ func TestCollect_MalformedLineCostsOneRecord(t *testing.T) {
 	}
 	if skippedByReason(h.rec)["decode_error"] != 1 {
 		t.Errorf("skipped = %v, want the malformed line counted", skippedByReason(h.rec))
+	}
+	h.col = objectstore.New(
+		h.store,
+		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+		h.cp,
+		objectstore.Options{
+			Prefix: "flow",
+			Now:    func() time.Time { return now },
+			Logger: discardLogger(),
+		},
+	)
+	h.collect(t)
+	if got := h.flowRecords(); got != 2 {
+		t.Fatalf("records after restart = %d, want no object replay for one malformed row", got)
+	}
+	for _, key := range h.cp.Keys() {
+		if strings.HasPrefix(key, "objectstore.flowlogs.gap/") {
+			t.Fatalf("record-level malformed JSON created an object gap: %q", key)
+		}
 	}
 }
 

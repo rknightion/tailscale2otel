@@ -15,6 +15,9 @@ const (
 	metricSkipped        = "tailscale2otel.objectstore.skipped"
 	metricBacklogObjects = "tailscale2otel.objectstore.backlog"
 	metricScanTruncated  = "tailscale2otel.objectstore.scan.truncated"
+	metricGaps           = "tailscale2otel.objectstore.gaps"
+	metricGapOldestAge   = "tailscale2otel.objectstore.gap.oldest.age"
+	metricGapHealthy     = "tailscale2otel.objectstore.gap.healthy"
 )
 
 // attrReason labels why an object or line was not ingested. It is the same
@@ -78,9 +81,40 @@ var (
 		Description: "Whether unexamined object-listing ground remains after the last cycle. One means an S3 page was truncated or a listed object was not yet durably handled; zero together with a zero backlog means the current listing window is caught up.",
 		Group:       "Object-store ingestion",
 	}
+	docGaps = metricdoc.Metric{
+		Name:        metricGaps,
+		Instrument:  metricdoc.Gauge,
+		Unit:        semconv.UnitDimensionless,
+		Description: "Failed object-store objects awaiting retry or operator acknowledgement. This count has no object-key attributes.",
+		Group:       "Object-store ingestion",
+	}
+	docGapOldestAge = metricdoc.Metric{
+		Name:        metricGapOldestAge,
+		Instrument:  metricdoc.Gauge,
+		Unit:        semconv.UnitSeconds,
+		Description: "Age in seconds of the oldest unresolved object-store gap. Zero when no gaps remain.",
+		Group:       "Object-store ingestion",
+	}
+	docGapHealthy = metricdoc.Metric{
+		Name:        metricGapHealthy,
+		Instrument:  metricdoc.Gauge,
+		Unit:        semconv.UnitDimensionless,
+		Description: "Whether object-store ingestion has no unresolved gaps. One is healthy; zero means at least one pending or quarantined object remains.",
+		Group:       "Object-store ingestion",
+	}
 )
 
 // Catalog returns this collector's metric descriptors.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docObjects, docRecords, docBytes, docSkipped, docBacklog, docScanTruncated}
+	return []metricdoc.Metric{
+		docObjects,
+		docRecords,
+		docBytes,
+		docSkipped,
+		docBacklog,
+		docScanTruncated,
+		docGaps,
+		docGapOldestAge,
+		docGapHealthy,
+	}
 }

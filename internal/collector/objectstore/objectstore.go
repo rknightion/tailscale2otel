@@ -11,21 +11,19 @@
 // backfill a long history: the objects are immutable, already batched, and cost
 // no API quota.
 //
-// # Exactly-once, and what guarantees it
+// # At-least-once durability boundary
 //
-// Three mechanisms, each covering what the others cannot:
+// With a file-backed checkpoint store, successful object identities, bounded
+// listing progress, and failed-object gaps survive restart. Those state changes
+// are persisted together before listing progress may pass an object. A memory
+// checkpoint can replay objects after restart.
 //
-//   - A durable CURSOR, the timestamp of the newest object ingested. It advances
-//     only over ground actually covered.
-//   - A durable SEEN SET of recently ingested object keys, held in the same
-//     checkpoint store. Listing overlaps backwards past the cursor by Lookback so
-//     late-arriving objects are found, and this set is what keeps that overlap
-//     from re-ingesting everything inside it.
-//   - The processor's own connection-level de-duplication, shared with the poll
-//     and stream paths, as the failsafe underneath both.
-//
-// The seen set is pruned to the overlap window on every cycle, so it stays a few
-// dozen entries rather than growing with the bucket.
+// Malformed or semantically invalid NDJSON lines are record-level failures: good
+// lines in that object are accepted and the object can be marked complete. GET,
+// decompressor, and scanner failures are object-level gaps. A scanner failure
+// can occur after valid rows were emitted, so retry may duplicate those rows
+// after restart until object processing becomes atomic. OTLP/backend
+// acknowledgement is outside this boundary.
 package objectstore
 
 import (
@@ -33,6 +31,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -77,7 +76,9 @@ const (
 	// maxSeenKeys bounds the durable seen set regardless of what pruning by time
 	// would keep, so a pathological bucket cannot grow the checkpoint file
 	// without limit.
-	maxSeenKeys = 5000
+	maxSeenKeys  = 5000
+	gapRetryBase = time.Minute
+	gapRetryMax  = time.Hour
 )
 
 // checkpoint key prefixes within the shared store. The cursor is one entry; the
@@ -181,54 +182,134 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if err != nil {
 		return err
 	}
-	seen := c.seenKeys()
-	listing, err := c.enumerate(ctx, from, now, seen, state.Positions, e)
+	gaps, err := loadGaps(c.cp)
 	if err != nil {
 		return err
 	}
-	candidates := listing.candidates
+	gapsByKey := make(map[string]gapState, len(gaps))
+	for _, gap := range gaps {
+		gapsByKey[gap.Key] = gap
+	}
+
 	batch := newCheckpointBatch()
 	for _, key := range state.StaleKeys {
 		batch.delete(key)
 	}
+	seen := c.seenKeys()
 
-	// Oldest first, so the cursor only ever advances over ground covered.
 	var (
-		newest   = cursor
-		objects  int
-		records  int
-		fetched  int64
-		budgeted = candidates
-		durable  = map[string]bool{}
+		newest    = cursor
+		objects   int
+		records   int
+		fetched   int64
+		durable   = map[string]bool{}
+		remaining = c.opts.MaxObjects
 	)
-	if len(budgeted) > c.opts.MaxObjects {
-		budgeted = budgeted[:c.opts.MaxObjects]
-	}
-	for _, cand := range budgeted {
-		n, err := c.ingest(ctx, cand.obj.Key, cand.comp, e)
+
+	attempt := func(key string, comp compression, at time.Time, size int64) {
+		n, err := c.ingest(ctx, key, comp, e)
 		if err != nil {
-			// Counted and logged, never fatal: one unreadable object must not
-			// stop every object behind it.
-			c.logger.Error("objectstore: ingest failed", "key", cand.obj.Key, "error", err)
+			failure := classifyObjectFailure(err)
+			gap, exists := gapsByKey[key]
+			if exists {
+				gap.Attempts++
+			} else {
+				gap = gapState{Key: key, FirstFailed: now, Attempts: 1}
+			}
+			gap.Quarantined = failure.quarantine
+			if gap.Quarantined {
+				gap.NextAttempt = time.Time{}
+			} else {
+				gap.NextAttempt = now.Add(gapRetryDelay(gap.Attempts))
+			}
+			gapsByKey[key] = gap
+			batch.persistGap(c.cp, gap)
+			if gap.Quarantined {
+				// Quarantine is terminal until an operator intervenes. Keep a
+				// normal seen identity beside the gap so deleting only the gap
+				// row is a durable manual acknowledgement rather than an
+				// immediate re-quarantine on the next prefix wrap.
+				seen[key] = struct{}{}
+				batch.updates[seenPrefix+key] = at
+			}
+			// The scan position may pass this object only because its retry
+			// identity is being persisted in the same checkpoint batch.
+			durable[key] = true
+			status := "pending"
+			if gap.Quarantined {
+				status = "quarantined"
+			}
+			c.logger.Error("objectstore: ingest failed",
+				"object_id", objectDigest(key),
+				"stage", failure.stage,
+				"gap_status", status,
+				"attempts", gap.Attempts)
 			e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, 1,
 				telemetry.Attrs{attrReason: reasonReadError})
-			continue
+			return
 		}
-		durable[cand.obj.Key] = true
+		if _, exists := gapsByKey[key]; exists {
+			delete(gapsByKey, key)
+			batch.resolveGap(c.cp, key)
+		}
+		durable[key] = true
+		seen[key] = struct{}{}
 		objects++
 		records += n
-		fetched += cand.obj.Size
-		if cand.at.After(newest) {
-			newest = cand.at
+		fetched += size
+		if at.After(newest) {
+			newest = at
 		}
-		batch.updates[seenPrefix+cand.obj.Key] = cand.at
+		batch.updates[seenPrefix+key] = at
 	}
 
-	if skipped := len(candidates) - len(budgeted); skipped > 0 {
+	gapDeferred := 0
+	for _, gap := range gaps {
+		if gap.Quarantined || now.Before(gap.NextAttempt) {
+			continue
+		}
+		if remaining == 0 {
+			gapDeferred++
+			continue
+		}
+		at, comp, parsed := parseKey(gap.Key)
+		if !parsed {
+			gap.Attempts++
+			gap.Quarantined = true
+			gap.NextAttempt = time.Time{}
+			gapsByKey[gap.Key] = gap
+			batch.persistGap(c.cp, gap)
+			c.logger.Error("objectstore: gap key no longer matches a supported export layout",
+				"object_id", objectDigest(gap.Key),
+				"gap_status", "quarantined",
+				"attempts", gap.Attempts)
+			continue
+		}
+		remaining--
+		attempt(gap.Key, comp, at, 0)
+	}
+
+	listing, err := c.enumerate(ctx, from, now, seen, gapsByKey, state.Positions, e)
+	if err != nil {
+		return err
+	}
+	candidates := listing.candidates
+	budgeted := candidates
+	if len(budgeted) > remaining {
+		budgeted = budgeted[:remaining]
+	}
+	for _, cand := range budgeted {
+		attempt(cand.obj.Key, cand.comp, cand.at, cand.obj.Size)
+	}
+	remaining -= len(budgeted)
+
+	if skipped := gapDeferred + len(candidates) - len(budgeted); skipped > 0 {
 		// Never a silent truncation: an operator whose bucket is outrunning the
 		// per-cycle cap needs to know before the backlog becomes days.
-		c.logger.Warn("objectstore: per-cycle object budget reached; the remainder will be picked up next cycle",
-			"attempted", len(budgeted), "deferred", skipped, "budget", c.opts.MaxObjects)
+		c.logger.Warn("objectstore: per-cycle object budget reached; work remains for a later cycle",
+			"attempted", c.opts.MaxObjects-remaining,
+			"deferred", skipped,
+			"budget", c.opts.MaxObjects)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(skipped),
 			telemetry.Attrs{attrReason: reasonBudget})
 	}
@@ -237,7 +318,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Counter(docRecords.Name, docRecords.Unit, docRecords.Description, float64(records), telemetry.Attrs{})
 	e.Counter(docBytes.Name, docBytes.Unit, docBytes.Description, float64(fetched), telemetry.Attrs{})
 	e.Gauge(docBacklog.Name, docBacklog.Unit, docBacklog.Description,
-		float64(len(candidates)-objects), telemetry.Attrs{})
+		float64(len(candidates)-len(budgeted)), telemetry.Attrs{})
 	if c.opts.OnIngest != nil && records > 0 {
 		c.opts.OnIngest("objectstore", "flow", records, int(fetched))
 	}
@@ -269,6 +350,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	e.Gauge(docScanTruncated.Name, docScanTruncated.Unit, docScanTruncated.Description,
 		boolFloat(scanTruncated), telemetry.Attrs{})
+	emitGapHealth(e, gapsByKey, now)
 
 	if err := batch.apply(c.cp); err != nil {
 		return fmt.Errorf("objectstore: persist collection state: %w", err)
@@ -307,6 +389,7 @@ func (c *Collector) enumerate(
 	ctx context.Context,
 	from, now time.Time,
 	seen map[string]struct{},
+	gaps map[string]gapState,
 	positions map[string]string,
 	e telemetry.Emitter,
 ) (enumeration, error) {
@@ -347,6 +430,10 @@ func (c *Collector) enumerate(
 				stale++
 				item.safe = true
 			default:
+				if _, pending := gaps[o.Key]; pending {
+					item.safe = true
+					break
+				}
 				if _, dup := seen[o.Key]; dup {
 					already++
 					item.safe = true
@@ -383,13 +470,13 @@ func (c *Collector) enumerate(
 func (c *Collector) ingest(ctx context.Context, key string, comp compression, e telemetry.Emitter) (int, error) {
 	body, err := c.api.Get(ctx, key)
 	if err != nil {
-		return 0, err
+		return 0, &objectIngestError{stage: "fetch", err: err}
 	}
 	defer body.Close()
 
 	r, closeFn, err := decompress(body, comp)
 	if err != nil {
-		return 0, err
+		return 0, &objectIngestError{stage: "decompress", quarantine: true, err: err}
 	}
 	defer closeFn()
 
@@ -430,16 +517,19 @@ func (c *Collector) ingest(ctx context.Context, key string, comp compression, e 
 		// Partial ingestion has already happened and its records are real. The
 		// error is returned so the object is NOT marked seen and is retried,
 		// which the processor's connection de-duplication makes safe.
-		return records, fmt.Errorf("read %s: %w", key, err)
+		return records, &objectIngestError{stage: "read", err: err}
 	}
 	if bad > 0 {
-		c.logger.Warn("objectstore: skipped malformed records", "key", key, "records", bad)
+		c.logger.Warn("objectstore: skipped malformed records",
+			"object_id", objectDigest(key),
+			"records", bad)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(bad),
 			telemetry.Attrs{attrReason: reasonDecodeError})
 	}
 	if semanticBad > 0 {
 		c.logger.Warn("objectstore: quarantined semantically invalid records",
-			"key", key, "records", semanticBad)
+			"object_id", objectDigest(key),
+			"records", semanticBad)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(semanticBad),
 			telemetry.Attrs{attrReason: reasonSemanticInvalid})
 	}
@@ -550,6 +640,57 @@ func boolFloat(v bool) float64 {
 		return 1
 	}
 	return 0
+}
+
+type objectIngestError struct {
+	stage      string
+	quarantine bool
+	err        error
+}
+
+func (e *objectIngestError) Error() string { return e.err.Error() }
+func (e *objectIngestError) Unwrap() error { return e.err }
+
+type objectFailure struct {
+	stage      string
+	quarantine bool
+}
+
+func classifyObjectFailure(err error) objectFailure {
+	var ingestErr *objectIngestError
+	if errors.As(err, &ingestErr) {
+		return objectFailure{stage: ingestErr.stage, quarantine: ingestErr.quarantine}
+	}
+	return objectFailure{stage: "unknown"}
+}
+
+func gapRetryDelay(attempts int) time.Duration {
+	delay := gapRetryBase
+	for attempt := 1; attempt < attempts && delay < gapRetryMax; attempt++ {
+		if delay >= gapRetryMax/2 {
+			return gapRetryMax
+		}
+		delay *= 2
+	}
+	if delay > gapRetryMax {
+		return gapRetryMax
+	}
+	return delay
+}
+
+func emitGapHealth(e telemetry.Emitter, gaps map[string]gapState, now time.Time) {
+	oldestAge := time.Duration(0)
+	for _, gap := range gaps {
+		age := now.Sub(gap.FirstFailed)
+		if age > oldestAge {
+			oldestAge = age
+		}
+	}
+	e.Gauge(docGaps.Name, docGaps.Unit, docGaps.Description, float64(len(gaps)), telemetry.Attrs{})
+	e.Gauge(docGapOldestAge.Name, docGapOldestAge.Unit, docGapOldestAge.Description,
+		max(0, oldestAge.Seconds()), telemetry.Attrs{})
+	e.Gauge(docGapHealthy.Name, docGapHealthy.Unit, docGapHealthy.Description,
+		boolFloat(len(gaps) == 0), telemetry.Attrs{})
 }
 
 func hasPosition(positions map[string]string, prefix string) bool {

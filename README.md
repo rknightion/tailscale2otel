@@ -177,8 +177,13 @@ flowlogs:
   objectstore: { endpoint: https://s3.eu-west-2.amazonaws.com, region: eu-west-2, bucket: my-flow-logs }
 ```
 
-Checkpoints persist how far each *polled* collector has read so restarts resume without gaps. Details
-on both paths, receiver auth, and `auto_configure` are in
+Object-store delivery is at-least-once. With the file checkpoint store, successful object identities
+and failed-object gaps survive restart; transient failures retry with bounded backoff, while invalid
+compressed objects are quarantined for operator acknowledgement. A scanner error after partial
+emission can replay already-emitted rows, and OTLP/backend acknowledgement is outside this boundary.
+
+Checkpoints persist how far poll and object-store collectors have read. Details on all paths,
+receiver auth, object-gap handling, and `auto_configure` are in
 [Streaming & webhooks](https://m7kni.io/tailscale2otel/streaming-webhooks/).
 
 ## Dashboards, alerts & the admin UI

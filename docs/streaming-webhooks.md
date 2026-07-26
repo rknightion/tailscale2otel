@@ -1,28 +1,65 @@
 ---
-title: Streaming & Webhooks
-description: Ingest Tailscale flow/audit logs via the Splunk-HEC stream receiver or HMAC-verified webhooks instead of polling
+title: Streaming, Object Store & Webhooks
+description: Ingest Tailscale flow and audit signals through push receivers or durable object-store exports instead of polling
 tags:
   - Streaming
 ---
 
 # Streaming & Webhooks
 
-`tailscale2otel` can receive logs in real time rather than polling. Two optional receivers cover the two Tailscale push mechanisms: a **Splunk-HEC-compatible stream receiver** for network flow and configuration audit logs, and an **HMAC-verified webhook receiver** for real-time Tailscale events. Both are off by default.
+`tailscale2otel` can receive logs in real time rather than polling, or read network flow exports from
+an object store. Two optional receivers cover the Tailscale push mechanisms: a
+**Splunk-HEC-compatible stream receiver** for network flow and configuration audit logs, and an
+**HMAC-verified webhook receiver** for real-time Tailscale events. Both are off by default.
 
 ## Poll vs. stream: pick one path per log type
 
-The `flowlogs` and `auditlogs` collectors each accept a `source` field with three options:
+`flowlogs` accepts `poll`, `stream`, `objectstore`, or `both`. `auditlogs` accepts `poll`, `stream`,
+or `both`:
 
 | `source` | Description |
 |---|---|
 | `poll` (default) | `tailscale2otel` pulls logs from the Tailscale API on a schedule |
 | `stream` | Tailscale pushes logs to the built-in HEC receiver; the windowing fields are ignored |
+| `objectstore` (flow only) | `tailscale2otel` reads Tailscale's partitioned flow-log export from an S3-compatible bucket |
 | `both` | Polls *and* accepts the stream — **discouraged** |
 
 !!! warning "Running both paths double-counts"
     Setting `source: both` — or enabling the streaming receiver while a collector still uses `source: poll` — means the same log record can be delivered and emitted twice. Cross-source deduplication is only a best-effort failsafe; the exporter logs a **WARN** at startup when it detects both paths are active for the same log type. Pick exactly one method per log type.
 
 Streamed log records pass through the same shared processors as polled records, so they produce identical OTEL metrics and log events regardless of which path delivers them.
+
+## Object-store durability and failed gaps
+
+Object-store flow records use the same processor as poll and stream. Listing is bounded and resumes
+per day prefix; after reaching the end it wraps so a late key sorted before the previous position is
+still found.
+
+The delivery boundary is at-least-once. With the file checkpoint store, successful object identities,
+listing progress, and failed-object gaps are persisted together and survive restart. Transient GET
+and stream-read failures retry with exponential backoff capped at one hour. Invalid gzip/zstd framing
+is deterministic for an immutable object and enters quarantine immediately. An in-memory checkpoint
+does not provide restart durability.
+
+Malformed JSON and semantically invalid rows are record-level failures: valid rows in the same
+NDJSON object are accepted and the object can complete. GET, decompressor, and scanner failures are
+object-level gaps. A scanner can fail after it emitted valid rows, so retry may duplicate those rows
+after restart until object processing is atomic. OTLP/backend acknowledgement is outside this
+boundary.
+
+Gap diagnostics do not expose bucket keys. Logs use a 12-character SHA-256 object digest, and these
+gauges have no attributes:
+
+| Metric | Description |
+|---|---|
+| `tailscale2otel.objectstore.gaps` | Pending plus quarantined object gaps |
+| `tailscale2otel.objectstore.gap.oldest.age` | Age in seconds of the oldest unresolved gap |
+| `tailscale2otel.objectstore.gap.healthy` | `1` only when no gaps remain |
+
+A quarantined object is not retried automatically and keeps gap health at `0`. To acknowledge it,
+stop the process and remove only its `objectstore.flowlogs.gap/...` row from the owner-only checkpoint
+JSON. The paired seen row prevents another fetch. To replace the object at the same key and retry,
+remove both that gap row and its `objectstore.flowlogs.seen/...` row before restarting.
 
 ## Splunk-HEC stream receiver
 

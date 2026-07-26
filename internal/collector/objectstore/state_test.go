@@ -140,3 +140,100 @@ func TestLoadScanStateReturnsRowsOutsideConfiguredPrefixAsStale(t *testing.T) {
 		t.Fatalf("state = %+v, want one stale row and no active position", got)
 	}
 }
+
+func TestGapStateRoundTripsUpdatesAndResolves(t *testing.T) {
+	cp := collector.NewMemoryStore()
+	firstFailed := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	key := "flow/2026/07/24/10:00:00 customer.json.zst"
+	pending := gapState{
+		Key:         key,
+		FirstFailed: firstFailed,
+		NextAttempt: firstFailed.Add(time.Minute),
+		Attempts:    1,
+	}
+
+	batch := newCheckpointBatch()
+	batch.persistGap(cp, pending)
+	if err := batch.apply(cp); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadGaps(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != pending {
+		t.Fatalf("pending gaps = %+v, want %+v", got, pending)
+	}
+
+	quarantined := pending
+	quarantined.Attempts = 2
+	quarantined.NextAttempt = time.Time{}
+	quarantined.Quarantined = true
+	batch = newCheckpointBatch()
+	batch.persistGap(cp, quarantined)
+	if err := batch.apply(cp); err != nil {
+		t.Fatal(err)
+	}
+	got, err = loadGaps(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != quarantined {
+		t.Fatalf("quarantined gaps = %+v, want one replacement %+v", got, quarantined)
+	}
+
+	if err := cp.Set(cursorKey, firstFailed); err != nil {
+		t.Fatal(err)
+	}
+	if err := cp.Set(seenPrefix+"other", firstFailed); err != nil {
+		t.Fatal(err)
+	}
+	scanBatch := newCheckpointBatch()
+	scanBatch.setScanPosition(cp, "flow/2026/07/24/", "flow/2026/07/24/09:00:00.json", firstFailed)
+	if err := scanBatch.apply(cp); err != nil {
+		t.Fatal(err)
+	}
+	batch = newCheckpointBatch()
+	batch.resolveGap(cp, key)
+	if err := batch.apply(cp); err != nil {
+		t.Fatal(err)
+	}
+	got, err = loadGaps(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("resolved gaps = %+v, want none", got)
+	}
+	for _, unaffected := range []string{cursorKey, seenPrefix + "other"} {
+		if _, ok := cp.Get(unaffected); !ok {
+			t.Fatalf("resolving a gap removed %q", unaffected)
+		}
+	}
+	state, err := loadScanState(cp, "flow")
+	if err != nil || len(state.Positions) != 1 {
+		t.Fatalf("scan state after gap resolution = %+v, err=%v", state, err)
+	}
+}
+
+func TestLoadGapsRejectsCorruptState(t *testing.T) {
+	cp := collector.NewMemoryStore()
+	if err := cp.Set(gapPrefix+"not-a-valid-row", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadGaps(cp); err == nil {
+		t.Fatal("loadGaps accepted corrupt state")
+	}
+}
+
+func TestObjectDigestIsStableAndDoesNotContainTheKey(t *testing.T) {
+	key := "flow/customer-private/2026/07/24/10:00:00.json"
+	first := objectDigest(key)
+	second := objectDigest(key)
+	if first != second || len(first) != 12 {
+		t.Fatalf("digest = %q then %q, want a stable 12-character identifier", first, second)
+	}
+	if strings.Contains(first, key) || strings.Contains(first, "customer-private") {
+		t.Fatalf("digest %q contains raw key material", first)
+	}
+}
