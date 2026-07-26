@@ -56,6 +56,7 @@ type fakeStore struct {
 	sizes      map[string]int64
 	fetched    []string
 	getCalls   []string
+	readBytes  int64
 	listCalls  []listCall
 	listErr    error
 	getErr     map[string]error
@@ -122,9 +123,26 @@ func (f *fakeStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	}
 	f.fetched = append(f.fetched, key)
 	if err := f.readErr[key]; err != nil {
-		return &errorAfterReader{Reader: bytes.NewReader(body), err: err}, nil
+		return &countedReadCloser{
+			ReadCloser: &errorAfterReader{Reader: bytes.NewReader(body), err: err},
+			n:          &f.readBytes,
+		}, nil
 	}
-	return io.NopCloser(bytes.NewReader(body)), nil
+	return &countedReadCloser{
+		ReadCloser: io.NopCloser(bytes.NewReader(body)),
+		n:          &f.readBytes,
+	}, nil
+}
+
+type countedReadCloser struct {
+	io.ReadCloser
+	n *int64
+}
+
+func (r *countedReadCloser) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	*r.n += int64(n)
+	return n, err
 }
 
 type errorAfterReader struct {
@@ -970,8 +988,8 @@ func TestCollect_LateScannerErrorEntersDurableGapPath(t *testing.T) {
 	h.store.readErr[key] = errors.New("late object read failure")
 
 	h.collect(t)
-	if got := h.flowRecords(); got != 1 {
-		t.Fatalf("partial records = %d, want the valid row emitted before the read failure", got)
+	if got := h.flowRecords(); got != 0 {
+		t.Fatalf("partial records = %d, want 0 before the staged object reaches clean EOF", got)
 	}
 	if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
 		t.Fatalf("gap count = %v, want the scanner failure retained", got)

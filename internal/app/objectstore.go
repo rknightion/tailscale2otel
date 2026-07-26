@@ -16,6 +16,22 @@ import (
 // the object store is only ever used when explicitly asked for.
 func objectStoreSource(s string) bool { return s == "objectstore" }
 
+func objectStoreOptions(cfg config.ObjectStoreConfig) objectstore.Options {
+	return objectstore.Options{
+		Prefix:                     cfg.Prefix,
+		Interval:                   cfg.Interval.D(),
+		Lookback:                   cfg.Lookback.D(),
+		InitialLookback:            cfg.InitialLookback.D(),
+		MaxObjects:                 cfg.MaxObjects,
+		MaxObjectWireBytes:         cfg.MaxObjectWireBytes,
+		MaxObjectDecompressedBytes: cfg.MaxObjectDecompressedBytes,
+		MaxObjectRecords:           cfg.MaxObjectRecords,
+		MaxCycleWireBytes:          cfg.MaxCycleWireBytes,
+		MaxCycleDecompressedBytes:  cfg.MaxCycleDecompressedBytes,
+		MaxCycleRecords:            cfg.MaxCycleRecords,
+	}
+}
+
 // newObjectStoreCollector builds the objectstore ingestion collector for one
 // runtime.
 //
@@ -62,23 +78,19 @@ func newObjectStoreCollector(
 		tailnetScope = rt.name
 	}
 
-	return objectstore.New(client, objectstore.NewFlowSignal(rt.flowProc), d.store, objectstore.Options{
-		Prefix:          os.Prefix,
-		Interval:        os.Interval.D(),
-		Lookback:        os.Lookback.D(),
-		InitialLookback: os.InitialLookback.D(),
-		MaxObjects:      os.MaxObjects,
-		Logger:          d.logger,
-		OnIngest:        onIngest,
-		OnAccepted:      onAccepted,
-		Scope: objectstore.CheckpointScope{
-			Tailnet:  tailnetScope,
-			Provider: "s3",
-			Signal:   "flow",
-			Feed:     objectstore.FeedID(os.Endpoint, os.Bucket, os.Prefix),
-		},
-		LegacyCheckpointNamespace: legacyNamespace,
-	})
+	opts := objectStoreOptions(os)
+	opts.Logger = d.logger
+	opts.OnIngest = onIngest
+	opts.OnAccepted = onAccepted
+	opts.Scope = objectstore.CheckpointScope{
+		Tailnet:  tailnetScope,
+		Provider: "s3",
+		Signal:   "flow",
+		Feed:     objectstore.FeedID(os.Endpoint, os.Bucket, os.Prefix),
+	}
+	opts.LegacyCheckpointNamespace = legacyNamespace
+
+	return objectstore.New(client, objectstore.NewFlowSignal(rt.flowProc), d.store, opts)
 }
 
 // ensure the config type stays referenced from here, so a rename of the config

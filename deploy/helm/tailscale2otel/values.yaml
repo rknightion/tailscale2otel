@@ -530,6 +530,21 @@ config:
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200
+        # -- Maximum GET response bytes read from one object. A breach quarantines that object.
+        max_object_wire_bytes: 67108864
+        # -- Maximum decompressed bytes accepted from one object. A breach quarantines that object.
+        max_object_decompressed_bytes: 33554432
+        # -- Maximum records accepted from one object. A breach quarantines that object.
+        max_object_records: 100000
+        # -- Maximum GET response bytes read in one cycle. The current and untouched objects are deferred.
+        # Must be at least max_object_wire_bytes.
+        max_cycle_wire_bytes: 536870912
+        # -- Maximum decompressed bytes processed in one cycle. Untouched objects are deferred.
+        # Must be at least max_object_decompressed_bytes.
+        max_cycle_decompressed_bytes: 268435456
+        # -- Maximum records processed in one cycle. Untouched objects are deferred.
+        # Must be at least max_object_records.
+        max_cycle_records: 500000
         # NOTE: LEAVE THE THREE CREDENTIAL VALUE KEYS BELOW EMPTY. Anything set there is rendered
         # into the config and routes it to a Secret. Empty selects the
         # ambient chain (environment, then IRSA/web identity via a service-account annotation, then

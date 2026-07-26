@@ -281,6 +281,24 @@
                                         "lookback": {
                                             "type": "string"
                                         },
+                                        "max_cycle_decompressed_bytes": {
+                                            "type": "integer"
+                                        },
+                                        "max_cycle_records": {
+                                            "type": "integer"
+                                        },
+                                        "max_cycle_wire_bytes": {
+                                            "type": "integer"
+                                        },
+                                        "max_object_decompressed_bytes": {
+                                            "type": "integer"
+                                        },
+                                        "max_object_records": {
+                                            "type": "integer"
+                                        },
+                                        "max_object_wire_bytes": {
+                                            "type": "integer"
+                                        },
                                         "max_objects": {
                                             "type": "integer"
                                         },

@@ -923,6 +923,36 @@ func (c *Config) Validate() error {
 					"will cross the network without TLS")
 			case os.MaxObjects < 0:
 				return fmt.Errorf("collectors.flowlogs.objectstore.max_objects must be >= 0 (got %d)", os.MaxObjects)
+			case os.MaxObjectWireBytes <= 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_object_wire_bytes must be positive "+
+					"(supplied %d; required >= 1)", os.MaxObjectWireBytes)
+			case os.MaxObjectDecompressedBytes <= 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_object_decompressed_bytes must be positive "+
+					"(supplied %d; required >= 1)", os.MaxObjectDecompressedBytes)
+			case os.MaxObjectRecords <= 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_object_records must be positive "+
+					"(supplied %d; required >= 1)", os.MaxObjectRecords)
+			case os.MaxCycleWireBytes <= 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_wire_bytes must be positive "+
+					"(supplied %d; required >= 1)", os.MaxCycleWireBytes)
+			case os.MaxCycleDecompressedBytes <= 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_decompressed_bytes must be positive "+
+					"(supplied %d; required >= 1)", os.MaxCycleDecompressedBytes)
+			case os.MaxCycleRecords <= 0:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_records must be positive "+
+					"(supplied %d; required >= 1)", os.MaxCycleRecords)
+			case os.MaxCycleWireBytes < os.MaxObjectWireBytes:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_wire_bytes must be at least "+
+					"max_object_wire_bytes (supplied %d; required >= %d)",
+					os.MaxCycleWireBytes, os.MaxObjectWireBytes)
+			case os.MaxCycleDecompressedBytes < os.MaxObjectDecompressedBytes:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_decompressed_bytes must be at least "+
+					"max_object_decompressed_bytes (supplied %d; required >= %d)",
+					os.MaxCycleDecompressedBytes, os.MaxObjectDecompressedBytes)
+			case os.MaxCycleRecords < os.MaxObjectRecords:
+				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_records must be at least "+
+					"max_object_records (supplied %d; required >= %d)",
+					os.MaxCycleRecords, os.MaxObjectRecords)
 			case os.Interval.D() < 0 || os.Lookback.D() < 0 || os.InitialLookback.D() < 0:
 				return fmt.Errorf("collectors.flowlogs.objectstore interval/lookback/initial_lookback must be >= 0")
 			}

@@ -9,21 +9,26 @@ import (
 // produce is emitted by the shared flowlog.Processor; these describe the
 // INGESTION, which is the part an operator cannot see any other way.
 const (
-	metricObjects        = "tailscale2otel.objectstore.objects"
-	metricRecords        = "tailscale2otel.objectstore.records"
-	metricBytes          = "tailscale2otel.objectstore.bytes"
-	metricSkipped        = "tailscale2otel.objectstore.skipped"
-	metricBacklogObjects = "tailscale2otel.objectstore.backlog"
-	metricScanTruncated  = "tailscale2otel.objectstore.scan.truncated"
-	metricGaps           = "tailscale2otel.objectstore.gaps"
-	metricGapOldestAge   = "tailscale2otel.objectstore.gap.oldest.age"
-	metricGapHealthy     = "tailscale2otel.objectstore.gap.healthy"
+	metricObjects                = "tailscale2otel.objectstore.objects"
+	metricRecords                = "tailscale2otel.objectstore.records"
+	metricBytes                  = "tailscale2otel.objectstore.bytes"
+	metricDecompressedBytes      = "tailscale2otel.objectstore.decompressed.bytes"
+	metricExpansionLimitFailures = "tailscale2otel.objectstore.expansion.limit_failures"
+	metricSkipped                = "tailscale2otel.objectstore.skipped"
+	metricBacklogObjects         = "tailscale2otel.objectstore.backlog"
+	metricScanTruncated          = "tailscale2otel.objectstore.scan.truncated"
+	metricGaps                   = "tailscale2otel.objectstore.gaps"
+	metricGapOldestAge           = "tailscale2otel.objectstore.gap.oldest.age"
+	metricGapHealthy             = "tailscale2otel.objectstore.gap.healthy"
 )
 
 // attrReason labels why an object or line was not ingested. It is the same
 // bare "reason" key the stream receiver uses for the same purpose, so one query
 // works across ingestion paths.
-const attrReason = "reason"
+const (
+	attrReason = "reason"
+	attrLimit  = "limit"
+)
 
 // Reasons. These are a closed set defined here, not free text from a bucket.
 const (
@@ -56,7 +61,22 @@ var (
 		Name:        metricBytes,
 		Instrument:  metricdoc.Counter,
 		Unit:        semconv.UnitBytes,
-		Description: "Compressed bytes fetched from the flow-log export bucket, as reported by the object listing.",
+		Description: "Compressed object bytes actually read from the export bucket, including unsuccessful ingestion attempts.",
+		Group:       "Object-store ingestion",
+	}
+	docDecompressedBytes = metricdoc.Metric{
+		Name:        metricDecompressedBytes,
+		Instrument:  metricdoc.Counter,
+		Unit:        semconv.UnitBytes,
+		Description: "Decompressed object bytes consumed by ingestion attempts, including attempts stopped by a configured expansion limit.",
+		Group:       "Object-store ingestion",
+	}
+	docExpansionLimitFailures = metricdoc.Metric{
+		Name:        metricExpansionLimitFailures,
+		Instrument:  metricdoc.Counter,
+		Unit:        semconv.UnitDimensionless,
+		Description: "Object-store ingestion attempts stopped by a configured wire-byte, decompressed-byte, or record-count limit. The bounded limit attribute identifies the object or cycle limit that was breached.",
+		Attributes:  []string{attrLimit},
 		Group:       "Object-store ingestion",
 	}
 	docSkipped = metricdoc.Metric{
@@ -110,6 +130,8 @@ func Catalog() []metricdoc.Metric {
 		docObjects,
 		docRecords,
 		docBytes,
+		docDecompressedBytes,
+		docExpansionLimitFailures,
 		docSkipped,
 		docBacklog,
 		docScanTruncated,

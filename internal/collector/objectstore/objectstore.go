@@ -21,20 +21,23 @@
 //
 // Malformed or semantically invalid NDJSON lines are record-level failures: good
 // lines in that object are accepted and the object can be marked complete. GET,
-// decompressor, and scanner failures are object-level gaps. A scanner failure
-// can occur after valid rows were emitted, so retry may duplicate those rows
-// after restart until object processing becomes atomic. OTLP/backend
-// acknowledgement is outside this boundary.
+// decompressor, and scanner failures are object-level gaps. Raw rows are staged
+// until clean EOF, so these failures emit no signal rows. An unexpected signal
+// processing failure can still occur after earlier staged rows were emitted;
+// generic prepare/commit is outside this package's current boundary.
+// OTLP/backend acknowledgement is outside this boundary.
 package objectstore
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -64,6 +67,15 @@ const (
 	// defaultMaxObjects bounds one cycle's work. Exceeding it is not an error —
 	// the remainder is counted, logged and picked up next cycle.
 	defaultMaxObjects = 200
+	// Expansion defaults bound both retained staging memory and per-cycle decode
+	// work. They remain configurable for exports that legitimately exceed the
+	// measured common-case object shape.
+	defaultMaxObjectDecompressedBytes = 32 << 20
+	defaultMaxObjectWireBytes         = 64 << 20
+	defaultMaxObjectRecords           = 100_000
+	defaultMaxCycleDecompressedBytes  = 256 << 20
+	defaultMaxCycleWireBytes          = 512 << 20
+	defaultMaxCycleRecords            = 500_000
 	// maxDayPrefixes bounds how many day partitions one cycle enumerates, so a
 	// corrupt or absurd cursor cannot turn a cycle into thousands of LIST calls.
 	maxDayPrefixes = 14
@@ -96,7 +108,18 @@ type Options struct {
 	Lookback        time.Duration
 	InitialLookback time.Duration
 	MaxObjects      int
-	Logger          *slog.Logger
+	// MaxObjectWireBytes, MaxObjectDecompressedBytes, and MaxObjectRecords bound
+	// one object's fetched and staged input. Blank rows consume both byte
+	// budgets but not the record budget.
+	MaxObjectWireBytes         int64
+	MaxObjectDecompressedBytes int64
+	MaxObjectRecords           int
+	// MaxCycleWireBytes, MaxCycleDecompressedBytes, and MaxCycleRecords bound
+	// aggregate fetch and decode work across attempts in one collection cycle.
+	MaxCycleWireBytes         int64
+	MaxCycleDecompressedBytes int64
+	MaxCycleRecords           int
+	Logger                    *slog.Logger
 	// Now is injectable so cursor arithmetic is testable without sleeping.
 	Now func() time.Time
 	// OnIngest, when non-nil, is called once per cycle with
@@ -167,6 +190,24 @@ func New(
 	if opts.MaxObjects <= 0 {
 		opts.MaxObjects = defaultMaxObjects
 	}
+	if opts.MaxObjectDecompressedBytes <= 0 {
+		opts.MaxObjectDecompressedBytes = defaultMaxObjectDecompressedBytes
+	}
+	if opts.MaxObjectWireBytes <= 0 {
+		opts.MaxObjectWireBytes = defaultMaxObjectWireBytes
+	}
+	if opts.MaxObjectRecords <= 0 {
+		opts.MaxObjectRecords = defaultMaxObjectRecords
+	}
+	if opts.MaxCycleDecompressedBytes <= 0 {
+		opts.MaxCycleDecompressedBytes = defaultMaxCycleDecompressedBytes
+	}
+	if opts.MaxCycleWireBytes <= 0 {
+		opts.MaxCycleWireBytes = defaultMaxCycleWireBytes
+	}
+	if opts.MaxCycleRecords <= 0 {
+		opts.MaxCycleRecords = defaultMaxCycleRecords
+	}
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -235,13 +276,45 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		objects   int
 		records   int
 		fetched   int64
+		wireUsed  int64
+		decoded   int64
+		rows      int
 		durable   = map[string]bool{}
 		remaining = c.opts.MaxObjects
 	)
 
-	attempt := func(obj storeapi.Object, comp compression, at time.Time) {
-		n, err := c.ingest(ctx, obj.Identity, comp, e)
+	attempt := func(obj storeapi.Object, comp compression, at time.Time) bool {
+		result, err := c.ingest(ctx, obj.Identity, comp, e, ingestLimits{
+			wireBytes:         c.opts.MaxCycleWireBytes - wireUsed,
+			decompressedBytes: c.opts.MaxCycleDecompressedBytes - decoded,
+			records:           c.opts.MaxCycleRecords - rows,
+		})
+		fetched += result.wireBytes
+		wireUsed += result.wireBytes
+		decoded += result.decompressedBytes
+		rows += result.rows
+		if result.decompressedBytes > 0 {
+			e.Counter(docDecompressedBytes.Name, docDecompressedBytes.Unit,
+				docDecompressedBytes.Description, float64(result.decompressedBytes), telemetry.Attrs{})
+		}
 		if err != nil {
+			var cycleErr *cycleLimitError
+			if errors.As(err, &cycleErr) {
+				e.Counter(docExpansionLimitFailures.Name, docExpansionLimitFailures.Unit,
+					docExpansionLimitFailures.Description, 1,
+					telemetry.Attrs{attrLimit: cycleErr.kind})
+				logArgs := []any{
+					"object_id", objectDigest(obj.Identity),
+					"limit", cycleErr.kind,
+					"configured_limit", cycleErr.limit,
+				}
+				logArgs = appendMeasured(logArgs, cycleErr.expansionLimitError)
+				c.logger.Warn(
+					"objectstore: per-cycle expansion budget reached; object deferred",
+					logArgs...,
+				)
+				return false
+			}
 			failure := classifyObjectFailure(err)
 			gap, exists := gapsByIdentity[obj.Identity]
 			if exists {
@@ -277,14 +350,26 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if gap.Quarantined {
 				status = "quarantined"
 			}
-			c.logger.Error("objectstore: ingest failed",
+			logArgs := []any{
 				"object_id", objectDigest(obj.Identity),
 				"stage", failure.stage,
 				"gap_status", status,
-				"attempts", gap.Attempts)
+				"attempts", gap.Attempts,
+			}
+			if failure.limitKind != "" {
+				e.Counter(docExpansionLimitFailures.Name, docExpansionLimitFailures.Unit,
+					docExpansionLimitFailures.Description, 1,
+					telemetry.Attrs{attrLimit: failure.limitKind})
+				logArgs = append(logArgs,
+					"limit", failure.limitKind,
+					"configured_limit", failure.configured,
+				)
+				logArgs = appendMeasured(logArgs, failure.expansionLimit)
+			}
+			c.logger.Error("objectstore: ingest failed", logArgs...)
 			e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, 1,
 				telemetry.Attrs{attrReason: reasonReadError})
-			return
+			return true
 		}
 		if _, exists := gapsByIdentity[obj.Identity]; exists {
 			delete(gapsByIdentity, obj.Identity)
@@ -293,20 +378,21 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		durable[obj.Identity] = true
 		seen[obj.Identity] = struct{}{}
 		objects++
-		records += n
-		fetched += obj.Size
+		records += result.acceptedRecords
 		if at.After(newest) {
 			newest = at
 		}
 		batch.updates[seenRow(obj.Identity)] = at
+		return true
 	}
 
 	gapDeferred := 0
+	cycleExhausted := false
 	for _, gap := range gaps {
 		if gap.Quarantined || now.Before(gap.NextAttempt) {
 			continue
 		}
-		if remaining == 0 {
+		if remaining == 0 || cycleExhausted || !c.canAttempt(wireUsed, decoded, rows) {
 			gapDeferred++
 			continue
 		}
@@ -324,7 +410,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			continue
 		}
 		remaining--
-		attempt(storeapi.Object{Identity: gap.Identity, Key: gap.Key}, comp, at)
+		if !attempt(storeapi.Object{Identity: gap.Identity, Key: gap.Key}, comp, at) {
+			cycleExhausted = true
+		}
 	}
 
 	listing, err := c.enumerate(ctx, from, now, seen, gapsByIdentity, state.Positions, e)
@@ -332,16 +420,20 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		return err
 	}
 	candidates := listing.candidates
-	budgeted := candidates
-	if len(budgeted) > remaining {
-		budgeted = budgeted[:remaining]
+	candidateBudget := min(len(candidates), remaining)
+	durableCandidates := 0
+	for _, cand := range candidates[:candidateBudget] {
+		if cycleExhausted || !c.canAttempt(wireUsed, decoded, rows) {
+			break
+		}
+		if !attempt(cand.obj, cand.comp, cand.at) {
+			break
+		}
+		durableCandidates++
 	}
-	for _, cand := range budgeted {
-		attempt(cand.obj, cand.comp, cand.at)
-	}
-	remaining -= len(budgeted)
+	remaining -= durableCandidates
 
-	if skipped := gapDeferred + len(candidates) - len(budgeted); skipped > 0 {
+	if skipped := gapDeferred + len(candidates) - durableCandidates; skipped > 0 {
 		// Never a silent truncation: an operator whose bucket is outrunning the
 		// per-cycle cap needs to know before the backlog becomes days.
 		c.logger.Warn("objectstore: per-cycle object budget reached; work remains for a later cycle",
@@ -356,7 +448,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Counter(docRecords.Name, docRecords.Unit, docRecords.Description, float64(records), telemetry.Attrs{})
 	e.Counter(docBytes.Name, docBytes.Unit, docBytes.Description, float64(fetched), telemetry.Attrs{})
 	e.Gauge(docBacklog.Name, docBacklog.Unit, docBacklog.Description,
-		float64(len(candidates)-len(budgeted)), telemetry.Attrs{})
+		float64(len(candidates)-durableCandidates), telemetry.Attrs{})
 	if c.opts.OnIngest != nil && records > 0 {
 		c.opts.OnIngest(semconv.IngestSourceObjectStore, c.signal.Signal(), records, int(fetched))
 	}
@@ -394,6 +486,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		return fmt.Errorf("objectstore: persist collection state: %w", err)
 	}
 	return nil
+}
+
+func (c *Collector) canAttempt(wire, decoded int64, rows int) bool {
+	return wire < c.opts.MaxCycleWireBytes &&
+		decoded < c.opts.MaxCycleDecompressedBytes &&
+		rows < c.opts.MaxCycleRecords
 }
 
 // candidate is one object that has passed the cursor and seen-set filters.
@@ -506,35 +604,138 @@ func (c *Collector) enumerate(
 	return result, nil
 }
 
-// ingest fetches, decompresses, and sends every row to the configured signal
-// processor. It returns the number of records accepted by that processor.
+type ingestLimits struct {
+	wireBytes         int64
+	decompressedBytes int64
+	records           int
+}
+
+type ingestResult struct {
+	acceptedRecords   int
+	rows              int
+	wireBytes         int64
+	decompressedBytes int64
+}
+
+// ingest fetches, decompresses, and stages every nonblank row before sending
+// any row to the configured signal processor.
 func (c *Collector) ingest(
 	ctx context.Context,
 	identity string,
 	comp compression,
 	e telemetry.Emitter,
-) (int, error) {
+	cycle ingestLimits,
+) (result ingestResult, err error) {
 	body, err := c.api.Get(ctx, identity)
 	if err != nil {
-		return 0, &objectIngestError{stage: "fetch", err: err}
+		return result, &objectIngestError{stage: "fetch", err: err}
 	}
 	defer body.Close()
 
-	r, closeFn, err := decompress(body, comp)
+	wireLimit, wireLimitKind := lowerLimit(
+		c.opts.MaxObjectWireBytes,
+		cycle.wireBytes,
+		"object_wire_bytes",
+		"cycle_wire_bytes",
+	)
+	overWireLimit := wireLimit
+	if overWireLimit < math.MaxInt64 {
+		overWireLimit++
+	}
+	wireSource := &io.LimitedReader{R: body, N: overWireLimit}
+	wire := &countingReader{r: wireSource}
+	byteLimit, byteLimitKind := lowerLimit(
+		c.opts.MaxObjectDecompressedBytes,
+		cycle.decompressedBytes,
+		"object_bytes",
+		"cycle_bytes",
+	)
+	recordLimit, recordLimitKind := lowerLimit(
+		int64(c.opts.MaxObjectRecords),
+		int64(cycle.records),
+		"object_records",
+		"cycle_records",
+	)
+	defer func() {
+		result.wireBytes = wire.n
+	}()
+
+	overByteLimit := byteLimit
+	if overByteLimit < math.MaxInt64 {
+		overByteLimit++
+	}
+	r, closeFn, err := decompress(wire, comp, byteLimit)
 	if err != nil {
-		return 0, &objectIngestError{stage: "decompress", quarantine: true, err: err}
+		if wire.n > wireLimit {
+			return result, expansionError(wireLimitKind, wire.n, wireLimit)
+		}
+		if isZstdExpansionLimit(err) {
+			return result, expansionLowerBoundError(
+				byteLimitKind,
+				overByteLimit,
+				byteLimit,
+			)
+		}
+		return result, &objectIngestError{stage: "decompress", quarantine: true, err: err}
 	}
 	defer closeFn()
 
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64<<10), maxLineBytes)
+	limited := &io.LimitedReader{R: r, N: overByteLimit}
+	sc := bufio.NewScanner(limited)
+	scanMax := int(min(int64(maxLineBytes), overByteLimit))
+	sc.Buffer(make([]byte, 0, min(64<<10, scanMax)), scanMax)
 
-	var records, bad, semanticBad int
+	var staged [][]byte
 	for sc.Scan() {
+		result.decompressedBytes = overByteLimit - limited.N
+		if result.decompressedBytes > byteLimit {
+			return result, expansionError(
+				byteLimitKind,
+				result.decompressedBytes,
+				byteLimit,
+			)
+		}
 		line := sc.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
+		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
+		result.rows++
+		if int64(result.rows) > recordLimit {
+			return result, expansionError(
+				recordLimitKind,
+				int64(result.rows),
+				recordLimit,
+			)
+		}
+		staged = append(staged, bytes.Clone(line))
+	}
+	result.decompressedBytes = overByteLimit - limited.N
+	if result.decompressedBytes > byteLimit {
+		return result, expansionError(
+			byteLimitKind,
+			result.decompressedBytes,
+			byteLimit,
+		)
+	}
+	if err := sc.Err(); err != nil {
+		if wire.n > wireLimit {
+			return result, expansionError(wireLimitKind, wire.n, wireLimit)
+		}
+		if isZstdExpansionLimit(err) {
+			return result, expansionLowerBoundError(
+				byteLimitKind,
+				max(result.decompressedBytes, overByteLimit),
+				byteLimit,
+			)
+		}
+		return result, &objectIngestError{stage: "read", err: err}
+	}
+	if wire.n > wireLimit {
+		return result, expansionError(wireLimitKind, wire.n, wireLimit)
+	}
+
+	var bad, semanticBad int
+	for _, line := range staged {
 		timestamps, err := c.signal.ProcessRecord(ctx, line, c.now(), e)
 		switch {
 		case errors.Is(err, ErrRecordDecode):
@@ -544,7 +745,7 @@ func (c *Collector) ingest(
 			semanticBad++
 			continue
 		case err != nil:
-			return records, &objectIngestError{stage: "process", err: err}
+			return result, &objectIngestError{stage: "process", err: err}
 		}
 		if c.opts.OnAccepted != nil {
 			c.opts.OnAccepted(ingest.AcceptedEvent{
@@ -555,13 +756,7 @@ func (c *Collector) ingest(
 				AcceptedAt:  c.now(),
 			})
 		}
-		records++
-	}
-	if err := sc.Err(); err != nil {
-		// Partial ingestion has already happened and its records are real. The
-		// error is returned so the object is NOT marked seen and is retried,
-		// which the processor's connection de-duplication makes safe.
-		return records, &objectIngestError{stage: "read", err: err}
+		result.acceptedRecords++
 	}
 	if bad > 0 {
 		c.logger.Warn("objectstore: skipped malformed records",
@@ -577,15 +772,31 @@ func (c *Collector) ingest(
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(semanticBad),
 			telemetry.Attrs{attrReason: reasonSemanticInvalid})
 	}
-	return records, nil
+	return result, nil
 }
 
 // decompress wraps r according to comp. The returned close function releases the
 // decoder's own resources; it never closes r, which the caller owns.
-func decompress(r io.Reader, comp compression) (io.Reader, func(), error) {
+func decompress(
+	r io.Reader,
+	comp compression,
+	maxDecompressedBytes int64,
+) (io.Reader, func(), error) {
 	switch comp {
 	case compZstd:
-		zr, err := zstd.NewReader(r)
+		if maxDecompressedBytes <= 0 {
+			return nil, nil, fmt.Errorf("zstd: maximum decompressed bytes must be positive")
+		}
+		// The caller and guard above establish that this is positive.
+		maxBytes := uint64(maxDecompressedBytes) //nolint:gosec // checked before conversion
+		decoderMemory := max(uint64(zstd.MinWindowSize), maxBytes)
+		zr, err := zstd.NewReader(
+			r,
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderLowmem(true),
+			zstd.WithDecoderMaxMemory(decoderMemory),
+			zstd.WithDecoderMaxWindow(decoderMemory),
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("zstd: %w", err)
 		}
@@ -599,6 +810,68 @@ func decompress(r io.Reader, comp compression) (io.Reader, func(), error) {
 	default:
 		return r, func() {}, nil
 	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	r.n += int64(n)
+	return n, err
+}
+
+func lowerLimit(
+	object, cycle int64,
+	objectKind, cycleKind string,
+) (int64, string) {
+	if cycle < object {
+		return cycle, cycleKind
+	}
+	return object, objectKind
+}
+
+func expansionError(kind string, measured, limit int64) error {
+	return newExpansionError(kind, measured, limit, false)
+}
+
+func expansionLowerBoundError(kind string, measuredAtLeast, limit int64) error {
+	return newExpansionError(kind, measuredAtLeast, limit, true)
+}
+
+func newExpansionError(
+	kind string,
+	measured, limit int64,
+	lowerBound bool,
+) error {
+	err := &expansionLimitError{
+		kind:       kind,
+		measured:   measured,
+		limit:      limit,
+		lowerBound: lowerBound,
+	}
+	if strings.HasPrefix(kind, "cycle_") {
+		return &cycleLimitError{expansionLimitError: err}
+	}
+	stage := "records_limit"
+	switch kind {
+	case "object_wire_bytes":
+		stage = "wire_bytes_limit"
+	case "object_bytes":
+		stage = "decompressed_bytes_limit"
+	}
+	return &objectIngestError{
+		stage:      stage,
+		quarantine: true,
+		err:        err,
+	}
+}
+
+func isZstdExpansionLimit(err error) bool {
+	return errors.Is(err, zstd.ErrDecoderSizeExceeded) ||
+		errors.Is(err, zstd.ErrWindowSizeExceeded)
 }
 
 // seenKeys reads the durable set of recently ingested opaque identities.
@@ -699,17 +972,62 @@ type objectIngestError struct {
 func (e *objectIngestError) Error() string { return e.err.Error() }
 func (e *objectIngestError) Unwrap() error { return e.err }
 
+type expansionLimitError struct {
+	kind       string
+	measured   int64
+	limit      int64
+	lowerBound bool
+}
+
+func (e *expansionLimitError) Error() string {
+	if e.lowerBound {
+		return fmt.Sprintf(
+			"%s measured value is at least %d and exceeds configured limit %d",
+			e.kind,
+			e.measured,
+			e.limit,
+		)
+	}
+	return fmt.Sprintf(
+		"%s measured value %d exceeds configured limit %d",
+		e.kind,
+		e.measured,
+		e.limit,
+	)
+}
+
+type cycleLimitError struct {
+	*expansionLimitError
+}
+
 type objectFailure struct {
-	stage      string
-	quarantine bool
+	stage          string
+	quarantine     bool
+	limitKind      string
+	configured     int64
+	expansionLimit *expansionLimitError
 }
 
 func classifyObjectFailure(err error) objectFailure {
 	var ingestErr *objectIngestError
 	if errors.As(err, &ingestErr) {
-		return objectFailure{stage: ingestErr.stage, quarantine: ingestErr.quarantine}
+		failure := objectFailure{stage: ingestErr.stage, quarantine: ingestErr.quarantine}
+		var limitErr *expansionLimitError
+		if errors.As(ingestErr, &limitErr) {
+			failure.limitKind = limitErr.kind
+			failure.configured = limitErr.limit
+			failure.expansionLimit = limitErr
+		}
+		return failure
 	}
 	return objectFailure{stage: "unknown"}
+}
+
+func appendMeasured(args []any, limit *expansionLimitError) []any {
+	if limit.lowerBound {
+		return append(args, "measured_at_least", limit.measured)
+	}
+	return append(args, "measured", limit.measured)
 }
 
 func gapRetryDelay(attempts int) time.Duration {

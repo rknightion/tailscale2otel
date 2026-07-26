@@ -592,6 +592,12 @@ Every field below applies **only** when `source: objectstore`.
 | `collectors.flowlogs.objectstore.lookback` | `1h` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Setting it below `interval` is warned about: the overlap would be smaller than the gap between listings, so an object landing between two cycles could be missed. |
 | `collectors.flowlogs.objectstore.initial_lookback` | `6h` | Cold-start reach-back, so a first run against a bucket holding months of exports does not try to ingest all of it. |
 | `collectors.flowlogs.objectstore.max_objects` | `200` | Objects ingested per cycle. Exceeding it is not an error: the remainder is counted into `tailscale2otel.objectstore.skipped{reason="per_cycle_budget"}`, logged at WARN, reported by the `tailscale2otel.objectstore.backlog` gauge, and picked up next cycle. |
+| `collectors.flowlogs.objectstore.max_object_wire_bytes` | `67108864` (64 MiB) | Maximum GET response bytes read from one object. A breach quarantines that object as a durable gap, including compressed objects that consume work without producing decoded rows. Must be positive. |
+| `collectors.flowlogs.objectstore.max_object_decompressed_bytes` | `33554432` (32 MiB) | Maximum decompressed bytes accepted from one object. A breach quarantines that object as a durable gap. Must be positive. |
+| `collectors.flowlogs.objectstore.max_object_records` | `100000` | Maximum records accepted from one object. A breach quarantines that object as a durable gap. Must be positive. |
+| `collectors.flowlogs.objectstore.max_cycle_wire_bytes` | `536870912` (512 MiB) | Maximum GET response bytes read in one cycle. Once reached, the current object and untouched objects are deferred without creating gaps. Must be positive and at least `max_object_wire_bytes`. |
+| `collectors.flowlogs.objectstore.max_cycle_decompressed_bytes` | `268435456` (256 MiB) | Maximum decompressed bytes processed in one cycle. Once reached, untouched objects are deferred to a later cycle without creating gaps. Must be positive and at least `max_object_decompressed_bytes`. |
+| `collectors.flowlogs.objectstore.max_cycle_records` | `500000` | Maximum records processed in one cycle. Once reached, untouched objects are deferred to a later cycle without creating gaps. Must be positive and at least `max_object_records`. |
 
 **Credentials.** The three credential values are `config.Secret` fields: config dumps, structured
 logs, validation errors, and the admin status surface redact or omit them. They are revealed only

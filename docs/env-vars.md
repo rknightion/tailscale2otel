@@ -135,6 +135,12 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_DECOMPRESSED_BYTES` | `33554432` | reject and quarantine one object that expands beyond 32 MiB |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_RECORDS` | `100000` | reject and quarantine one object containing more than this many records |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_CYCLE_WIRE_BYTES` | `536870912` | defer untouched objects after 512 MiB of GET response data in one cycle |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_CYCLE_DECOMPRESSED_BYTES` | `268435456` | defer untouched objects after 256 MiB of decoded data in one cycle |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_CYCLE_RECORDS` | `500000` | defer untouched objects after this many decoded records in one cycle |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__ENABLED` | `true` | configuration/audit events -> event logs + a counter |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__SOURCE` | `poll` | poll \| stream \| both (see flowlogs) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__INTERVAL` | `60s` | poll only |

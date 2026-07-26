@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.3](https://img.shields.io/badge/Version-0.14.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.4](https://img.shields.io/badge/Version-0.14.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -225,6 +225,12 @@ extraVolumeMounts:
 | config.collectors.flowlogs.objectstore.initial_lookback | string | `"6h"` | Cold-start reach-back, so a first run against a long history does not ingest all of it. |
 | config.collectors.flowlogs.objectstore.interval | string | `"60s"` | How often the bucket is listed. |
 | config.collectors.flowlogs.objectstore.lookback | string | `"1h"` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Keep it >= interval, or an object landing between two cycles can be missed. |
+| config.collectors.flowlogs.objectstore.max_cycle_decompressed_bytes | int | `268435456` | Maximum decompressed bytes processed in one cycle. Untouched objects are deferred. Must be at least max_object_decompressed_bytes. |
+| config.collectors.flowlogs.objectstore.max_cycle_records | int | `500000` | Maximum records processed in one cycle. Untouched objects are deferred. Must be at least max_object_records. |
+| config.collectors.flowlogs.objectstore.max_cycle_wire_bytes | int | `536870912` | Maximum GET response bytes read in one cycle. The current and untouched objects are deferred. Must be at least max_object_wire_bytes. |
+| config.collectors.flowlogs.objectstore.max_object_decompressed_bytes | int | `33554432` | Maximum decompressed bytes accepted from one object. A breach quarantines that object. |
+| config.collectors.flowlogs.objectstore.max_object_records | int | `100000` | Maximum records accepted from one object. A breach quarantines that object. |
+| config.collectors.flowlogs.objectstore.max_object_wire_bytes | int | `67108864` | Maximum GET response bytes read from one object. A breach quarantines that object. |
 | config.collectors.flowlogs.objectstore.max_objects | int | `200` | Objects ingested per cycle. The remainder is counted, logged and picked up next cycle. |
 | config.collectors.flowlogs.objectstore.path_style | bool | `false` | Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>. Required by most non-AWS implementations; getting it backwards is a DNS failure. |
 | config.collectors.flowlogs.objectstore.prefix | string | `""` | The export's root within the bucket, above the YYYY/MM/DD partitions. |

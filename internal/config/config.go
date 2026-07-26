@@ -784,6 +784,17 @@ type ObjectStoreConfig struct {
 	// MaxObjects bounds one cycle's work. Exceeding it is not an error: the
 	// remainder is counted, logged and picked up next cycle.
 	MaxObjects int `yaml:"max_objects"`
+	// MaxObjectWireBytes, MaxObjectDecompressedBytes, and MaxObjectRecords bound
+	// one exported object's input and expansion before any records are committed.
+	MaxObjectWireBytes         int64 `yaml:"max_object_wire_bytes"`
+	MaxObjectDecompressedBytes int64 `yaml:"max_object_decompressed_bytes"`
+	MaxObjectRecords           int   `yaml:"max_object_records"`
+	// MaxCycleWireBytes, MaxCycleDecompressedBytes, and MaxCycleRecords bound
+	// aggregate input and decode work across one collection cycle. Each must be
+	// at least its corresponding per-object bound.
+	MaxCycleWireBytes         int64 `yaml:"max_cycle_wire_bytes"`
+	MaxCycleDecompressedBytes int64 `yaml:"max_cycle_decompressed_bytes"`
+	MaxCycleRecords           int   `yaml:"max_cycle_records"`
 }
 
 // AuditlogsCollector configures the configuration/audit-events collector. Source
