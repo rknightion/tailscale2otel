@@ -131,6 +131,49 @@ func TestAddressing_PathStyleAndVirtualHost(t *testing.T) {
 	}
 }
 
+func TestNew_RejectsPlaintextRemoteEndpointByDefault(t *testing.T) {
+	_, err := New(Config{
+		Endpoint:    "http://storage.example.com:9000",
+		Region:      "eu-west-2",
+		Bucket:      "flows",
+		Credentials: staticCreds(),
+	})
+	if err == nil {
+		t.Fatal("New accepted a plaintext remote endpoint without explicit opt-in")
+	}
+	for _, want := range []string{"plaintext", "AllowInsecureHTTP"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestNew_AllowsPlaintextLoopbackOrExplicitOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+		override bool
+	}{
+		{"localhost", "http://localhost:9000", false},
+		{"IPv4 loopback", "http://127.0.0.1:9000", false},
+		{"IPv6 loopback", "http://[::1]:9000", false},
+		{"explicit remote override", "http://storage.example.com:9000", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := New(Config{
+				Endpoint:          tc.endpoint,
+				Region:            "eu-west-2",
+				Bucket:            "flows",
+				AllowInsecureHTTP: tc.override,
+				Credentials:       staticCreds(),
+			})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+		})
+	}
+}
+
 // A listing longer than one page must be followed, or ingestion silently stops
 // at the first 1000 objects — which on a busy tailnet is a few hours of flows.
 func TestList_FollowsPagination(t *testing.T) {

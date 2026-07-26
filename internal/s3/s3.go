@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -57,6 +58,9 @@ type Config struct {
 	// PathStyle addresses the bucket as <endpoint>/<bucket>/<key> rather than
 	// <bucket>.<endpoint>/<key>. Required by most non-AWS implementations.
 	PathStyle bool
+	// AllowInsecureHTTP permits a plaintext remote endpoint. Plain HTTP is
+	// otherwise accepted only for loopback development endpoints.
+	AllowInsecureHTTP bool
 	// Credentials supplies the signing keys. Required.
 	Credentials Provider
 	// HTTPClient is optional; nil selects one with a sane timeout.
@@ -93,6 +97,10 @@ func New(cfg Config) (*Client, error) {
 	if base.Scheme != "http" && base.Scheme != "https" {
 		return nil, fmt.Errorf("s3: endpoint scheme %q is not http or https", base.Scheme)
 	}
+	if base.Scheme == "http" && !loopbackHost(base.Hostname()) && !cfg.AllowInsecureHTTP {
+		return nil, errors.New("s3: plaintext remote endpoint requires Config.AllowInsecureHTTP; " +
+			"credentials and session tokens would cross the network without TLS")
+	}
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = &http.Client{Timeout: 60 * time.Second}
@@ -102,6 +110,14 @@ func New(cfg Config) (*Client, error) {
 		now = time.Now
 	}
 	return &Client{cfg: cfg, base: base, signer: signer{region: cfg.Region}, hc: hc, now: now}, nil
+}
+
+func loopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // listResponse is the subset of ListObjectsV2's XML that matters.

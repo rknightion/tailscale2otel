@@ -759,6 +759,9 @@ type ObjectStoreConfig struct {
 	// PathStyle addresses the bucket as <endpoint>/<bucket>/<key> rather than
 	// <bucket>.<endpoint>/<key>. Required by most non-AWS implementations.
 	PathStyle bool `yaml:"path_style"`
+	// AllowInsecureHTTP permits a plaintext remote endpoint. Plain HTTP is
+	// otherwise accepted only for loopback development endpoints.
+	AllowInsecureHTTP bool `yaml:"allow_insecure_http"`
 	// Static credentials. Env only.
 	AccessKeyID     string `yaml:"access_key_id"`
 	SecretAccessKey string `yaml:"secret_access_key"`

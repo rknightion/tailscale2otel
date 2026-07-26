@@ -581,6 +581,7 @@ Every field below applies **only** when `source: objectstore`.
 | `collectors.flowlogs.objectstore.bucket` | `""` | **Required.** The bucket Tailscale exports into. |
 | `collectors.flowlogs.objectstore.prefix` | `""` | The export's root within the bucket, above the `YYYY/MM/DD` partitions. |
 | `collectors.flowlogs.objectstore.path_style` | `false` | Address as `<endpoint>/<bucket>/<key>` rather than `<bucket>.<endpoint>/<key>`. Required by most non-AWS implementations. Getting it backwards shows up as a DNS failure, not an HTTP error. |
+| `collectors.flowlogs.objectstore.allow_insecure_http` | `false` | Permit plaintext HTTP to a **remote** object-store endpoint. HTTP loopback endpoints (`localhost`, `127.0.0.0/8`, `::1`) remain available without the override for local MinIO development. Enabling this sends signing credentials and temporary session tokens over the network without TLS and emits a startup warning; prefer HTTPS. |
 | `collectors.flowlogs.objectstore.access_key_id` | `""` | Static credential. **Set via `TS2OTEL_*` env only.** Leave empty to use the ambient chain (below). |
 | `collectors.flowlogs.objectstore.secret_access_key` | `""` | Static credential. **Env only.** |
 | `collectors.flowlogs.objectstore.session_token` | `""` | Static credential, temporary sessions only. **Env only.** |

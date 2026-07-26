@@ -517,6 +517,10 @@ config:
         # -- Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>.
         # Required by most non-AWS implementations; getting it backwards is a DNS failure.
         path_style: false
+        # -- Permit plaintext HTTP to a remote object-store endpoint. Loopback HTTP works without
+        # this flag for local MinIO development. Enabling it exposes signing credentials and
+        # temporary session tokens to the network; prefer HTTPS.
+        allow_insecure_http: false
         # -- How often the bucket is listed.
         interval: 60s
         # -- How far back past the cursor each listing reaches, so an object that arrived late is

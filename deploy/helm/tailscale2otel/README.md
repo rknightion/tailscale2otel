@@ -218,6 +218,7 @@ extraVolumeMounts:
 | config.collectors.flowlogs.max_log_records_per_window | int | `0` | Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into tailscale.network.flow.logs_dropped; METRICS are never capped, only logs. |
 | config.collectors.flowlogs.max_window | string | `"1h"` | Maximum width of a single poll window (caps catch-up after downtime). |
 | config.collectors.flowlogs.objectstore.access_key_id | string | `""` | Static S3 access key ID. Set via the TS2OTEL_* secret, not here. |
+| config.collectors.flowlogs.objectstore.allow_insecure_http | bool | `false` | Permit plaintext HTTP to a remote object-store endpoint. Loopback HTTP works without this flag for local MinIO development. Enabling it exposes signing credentials and temporary session tokens to the network; prefer HTTPS. |
 | config.collectors.flowlogs.objectstore.bucket | string | `""` | Bucket Tailscale exports into. REQUIRED when source is objectstore. |
 | config.collectors.flowlogs.objectstore.endpoint | string | `""` | Service URL of the S3-compatible store holding Tailscale's flow-log export, e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when source is objectstore; never derived from the region, because a non-AWS implementation would be derived wrong. Leave "" for any other source. |
 | config.collectors.flowlogs.objectstore.initial_lookback | string | `"6h"` | Cold-start reach-back, so a first run against a long history does not ingest all of it. |

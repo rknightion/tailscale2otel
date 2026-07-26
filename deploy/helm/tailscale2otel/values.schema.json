@@ -260,6 +260,9 @@
                                         "access_key_id": {
                                             "type": "string"
                                         },
+                                        "allow_insecure_http": {
+                                            "type": "boolean"
+                                        },
                                         "bucket": {
                                             "type": "string"
                                         },

@@ -77,6 +77,57 @@ func TestValidate_ObjectStoreRequiresItsTarget(t *testing.T) {
 	}
 }
 
+func TestValidate_ObjectStoreRejectsPlaintextRemoteEndpointByDefault(t *testing.T) {
+	c := objectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Endpoint = "http://storage.example.com:9000"
+	})
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate accepted a plaintext remote object-store endpoint")
+	}
+	for _, want := range []string{"allow_insecure_http", "plaintext", "credentials"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestValidate_ObjectStoreAllowsPlaintextLoopbackOrExplicitOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+		override bool
+	}{
+		{"localhost", "http://localhost:9000", false},
+		{"IPv4 loopback", "http://127.0.0.1:9000", false},
+		{"IPv6 loopback", "http://[::1]:9000", false},
+		{"explicit remote override", "http://storage.example.com:9000", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := objectStoreConfig(func(c *Config) {
+				c.Collectors.Flowlogs.ObjectStore.Endpoint = tc.endpoint
+				c.Collectors.Flowlogs.ObjectStore.AllowInsecureHTTP = tc.override
+			})
+			if err := c.Validate(); err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+		})
+	}
+}
+
+func TestWarnings_ObjectStorePlaintextRemoteOverrideNamesCredentialRisk(t *testing.T) {
+	c := objectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Endpoint = "http://storage.example.com:9000"
+		c.Collectors.Flowlogs.ObjectStore.AllowInsecureHTTP = true
+	})
+	warnings := c.Warnings()
+	for _, want := range []string{"plaintext", "credentials", "session tokens"} {
+		if !hasWarning(warnings, want) {
+			t.Errorf("warnings = %v, want %q", warnings, want)
+		}
+	}
+}
+
 // Audit logs are not exported to object storage. Accepting the value there would
 // configure a path that silently collects nothing at all.
 func TestValidate_ObjectStoreIsFlowLogsOnly(t *testing.T) {

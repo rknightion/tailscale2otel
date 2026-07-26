@@ -274,6 +274,13 @@ func (c *Config) Warnings() []string {
 			"between listings, so an object that lands between two cycles can be missed entirely.",
 			c.Collectors.Flowlogs.ObjectStore.Lookback.D(), c.Collectors.Flowlogs.ObjectStore.Interval.D()))
 	}
+	if os := c.Collectors.Flowlogs.ObjectStore; c.Collectors.Flowlogs.Enabled &&
+		objectStoreSource(c.Collectors.Flowlogs.Source) &&
+		os.AllowInsecureHTTP && plaintextRemoteObjectStoreEndpoint(os.Endpoint) {
+		w = append(w, "collectors.flowlogs.objectstore.allow_insecure_http=true sends S3 signing "+
+			"credentials and temporary session tokens over a plaintext remote connection. "+
+			"Use HTTPS unless this transport is isolated and explicitly trusted.")
+	}
 
 	// With the tailnet distinguisher dropped, per-tailnet Prometheus series become
 	// byte-identical and collapse on the pull path (the handler serves 200 via
@@ -569,6 +576,19 @@ func pollsSource(s string) bool {
 // objectStoreSource reports whether flow logs are ingested from the export
 // bucket. It mirrors app.objectStoreSource.
 func objectStoreSource(s string) bool { return s == "objectstore" }
+
+func plaintextRemoteObjectStoreEndpoint(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(u.Scheme, "http") {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
+}
 
 // validateReceiverPath checks that a non-empty HTTP receiver path is a rooted
 // absolute path with no whitespace, so it can be registered with
@@ -897,6 +917,10 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("collectors.%s.source=objectstore requires "+
 					"collectors.flowlogs.objectstore.region — it is part of the request signature, "+
 					"so a wrong or missing value fails every request with HTTP 403", col.name)
+			case plaintextRemoteObjectStoreEndpoint(os.Endpoint) && !os.AllowInsecureHTTP:
+				return fmt.Errorf("collectors.flowlogs.objectstore.endpoint uses plaintext HTTP for a remote " +
+					"host: set allow_insecure_http only when accepting that credentials and session tokens " +
+					"will cross the network without TLS")
 			case os.MaxObjects < 0:
 				return fmt.Errorf("collectors.flowlogs.objectstore.max_objects must be >= 0 (got %d)", os.MaxObjects)
 			case os.Interval.D() < 0 || os.Lookback.D() < 0 || os.InitialLookback.D() < 0:

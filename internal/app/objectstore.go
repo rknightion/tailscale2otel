@@ -45,11 +45,12 @@ func newObjectStoreCollector(
 	}
 
 	client, err := s3.New(s3.Config{
-		Endpoint:    os.Endpoint,
-		Region:      os.Region,
-		Bucket:      os.Bucket,
-		PathStyle:   os.PathStyle,
-		Credentials: creds,
+		Endpoint:          os.Endpoint,
+		Region:            os.Region,
+		Bucket:            os.Bucket,
+		PathStyle:         os.PathStyle,
+		AllowInsecureHTTP: os.AllowInsecureHTTP,
+		Credentials:       creds,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build object-store client: %w", err)

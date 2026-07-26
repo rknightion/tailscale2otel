@@ -197,6 +197,7 @@ collectors:
       bucket: ""                      # required — the bucket Tailscale exports into
       prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions
       path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
+      allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
       access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then EC2 instance profile
       secret_access_key: ""           # SET VIA ENV ONLY
       session_token: ""               # SET VIA ENV ONLY — temporary credentials only
