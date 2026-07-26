@@ -42,7 +42,8 @@ Rules are organised into four groups:
   `tailscale_acl_unrestricted_rules_ratio > 0` (any-to-any non-deny rules),
   `tailscale_acl_ssh_wildcard_ratio > 0` (wildcard SSH rules), or
   `increase(tailscale_config_audit_changes_total{tailscale_audit_change="auth_provider"}[1h]) > 0`.
-- **`tailscale2otel-integrations`** — MDM/EDR posture sync, log-stream delivery health
+- **`tailscale2otel-integrations`** — MDM/EDR posture sync, log-stream delivery health, and a
+  paused accepted-event staleness rule for continuously active source/signal pairs
 - **`tailscale2otel-network`** — DERP relay usage, region latency, flow data presence
 - **`tailscale2otel-recording`** — precomputed recording rules (DERP byte fraction, posture ratios,
   total active series)
@@ -58,6 +59,15 @@ Rules are organised into four groups:
     enable them in the Grafana UI once your tailnet has the relevant data. Optional signals
     (posture, log streaming, tailnet-lock, DERP rollups) use `noDataState: OK` so they don't fire
     until data actually exists.
+
+!!! tip "Alert on accepted data, not only a running receiver"
+    `AcceptedIngestDataStale` compares `time()` with
+    `tailscale2otel_ingest_last_event_timestamp_seconds`. It catches a receiver or poller that
+    remains healthy while delivering old events. The rule ships paused because audit and webhook
+    streams can be legitimately quiet. Enable it only for `source`/`signal` pairs expected to be
+    continuous, add label filters, and tune the one-hour threshold to that workload. The paused
+    `tailscale2otel:ingest_event_freshness_seconds` recording rule exposes the same calculation for
+    custom alerts.
 
 #### Importing the Grafana-managed file
 

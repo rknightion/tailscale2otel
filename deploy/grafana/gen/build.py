@@ -1212,6 +1212,36 @@ def tab_events():
                [prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI, legend="{{source}}")],
                unit="Bps", custom=ts_custom(), options=ts_opts()), 12, 7),
     ]
+    ingestfresh = [
+        (panel("Accepted event freshness", "timeseries",
+               [prom_t("clamp_min(time() - max by (source, signal) "
+                       "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
+                       legend="{{source}}/{{signal}}")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               desc="Seconds since the greatest event timestamp accepted from each source/signal. "
+                    "Unlike receiver liveness, this exposes stale-but-still-running ingestion."), 6, 7),
+        (panel("Accepted event age p95", "timeseries",
+               [prom_t("histogram_quantile(0.95, sum by (le, source, signal) "
+                       "(rate(tailscale2otel_ingest_event_age_seconds_bucket[%s])))" % RI,
+                       legend="{{source}}/{{signal}}")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               desc="p95 age at acceptance. Backfills and retries raise this without moving the "
+                    "last-event timestamp backwards."), 6, 7),
+        (panel("Capture delay p95", "timeseries",
+               [prom_t("histogram_quantile(0.95, sum by (le, source, signal) "
+                       "(rate(tailscale2otel_ingest_capture_delay_seconds_bucket[%s])))" % RI,
+                       legend="{{source}}/{{signal}}")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               desc="p95 upstream capture/observation delay where the wire format supplies a "
+                    "capture timestamp separately from event time."), 6, 7),
+        (panel("Timestamp skew/s", "timeseries",
+               [prom_t("sum by (source, signal) "
+                       "(rate(tailscale2otel_ingest_timestamp_skew_total[%s]))" % RI,
+                       legend="{{source}}/{{signal}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0",
+               desc="Events whose timestamp is later than local acceptance, or whose capture "
+                    "timestamp precedes event time. Negative derived durations are clamped to zero."), 6, 7),
+    ]
     dedup = [
         (panel("Dedup hits/s", "stat",
                [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_hits_total[%s]))" % RI, legend="{{dedup_set}}")],
@@ -1228,6 +1258,7 @@ def tab_events():
             row("Webhooks", webhook, present="has_webhook"),
             row("Receiver health", receiver, present="has_recv_dur"),
             row("Ingestion volume", ingestvol, present="has_ingest"),
+            row("Accepted-data freshness", ingestfresh, present="has_ingest"),
             row("Dedup effectiveness", dedup, present="has_selfobs"),
             row("Log explorer", logstream),
             row("Flow logs", flowlogs, present="has_flows"), row("Posture logs", posturelogs, present="has_posture")]

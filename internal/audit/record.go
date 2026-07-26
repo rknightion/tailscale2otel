@@ -32,7 +32,11 @@ func (r ConfigurationResponse) TailnetName() string {
 
 // Event is one configuration audit event.
 type Event struct {
-	EventTime    time.Time `json:"eventTime"`
+	EventTime time.Time `json:"eventTime"`
+	// DeferredAt is when Tailscale's audit rate limiter deferred the event. It
+	// is distinct from EventTime, which remains the time the underlying change
+	// happened.
+	DeferredAt   time.Time `json:"deferredAt"`
 	Type         string    `json:"type"`
 	EventGroupID string    `json:"eventGroupID"`
 	Origin       string    `json:"origin"`
@@ -59,9 +63,11 @@ type Actor struct {
 
 // Target identifies what was modified.
 type Target struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Property    string `json:"property"`
-	IsEphemeral bool   `json:"isEphemeral"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Property string `json:"property"`
+	// IsEphemeral is a pointer so an omitted upstream field stays distinct from
+	// an explicit false value.
+	IsEphemeral *bool `json:"isEphemeral"`
 }

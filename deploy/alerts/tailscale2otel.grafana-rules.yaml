@@ -4189,6 +4189,77 @@ groups:
           summary: "Stream-receiver p99 request latency is above 5s"
           description: "p99 stream-receiver request latency above 5s — receiver backpressure."
         isPaused: true
+      - uid: "ts2o-ingest-data-stale"
+        title: "Accepted ingest data stale"
+        condition: "C"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 2592000
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "clamp_min(time() - max by (source, signal) (last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+          - refId: "C"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "B"
+              type: "threshold"
+              conditions:
+                - type: "query"
+                  evaluator:
+                    type: "gt"
+                    params:
+                      - 3600
+                  operator:
+                    type: "and"
+                  query:
+                    params:
+                      - "C"
+                  reducer:
+                    type: "last"
+                    params: []
+              refId: "C"
+        noDataState: "OK"
+        execErrState: "OK"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Accepted {{ $labels.source }}/{{ $labels.signal }} events are over 1h stale"
+          description: "The receiver or poller may still be running, but the newest accepted event timestamp is over one hour old. This rule ships paused because quiet tailnets and sparse webhook/audit sources are legitimately idle; enable it only for source/signal pairs expected to deliver continuously, and add label filters or tune the threshold for that workload."
+        isPaused: true
       - uid: "ts2o-posture-match-low"
         title: "Posture integration match rate low"
         condition: "C"
@@ -5225,6 +5296,47 @@ groups:
         annotations:
           description: "Total active series across all tailscale2otel metrics — an ingest-cost proxy."
         isPaused: false
+      - uid: "ts2o-rec-ingest-freshness"
+        title: "tailscale2otel:ingest_event_freshness_seconds"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: "grafanacloud-prom"
+            model:
+              datasource:
+                type: "prometheus"
+                uid: "grafanacloud-prom"
+              editorMode: "code"
+              expr: "clamp_min(time() - max by (source, signal) (last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)"
+              instant: false
+              range: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: "A"
+          - refId: "B"
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              datasource:
+                type: "__expr__"
+                uid: "__expr__"
+              expression: "A"
+              reducer: "last"
+              type: "reduce"
+              refId: "B"
+        record:
+          metric: "tailscale2otel:ingest_event_freshness_seconds"
+          from: "B"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          description: "Seconds since the greatest accepted event timestamp per source/signal. Use only with workload-specific staleness thresholds; sparse sources can be legitimately idle."
+        isPaused: true
       - uid: "ts2o-rec-keys-expiring-7d"
         title: "tailscale:device_keys_expiring_7d:count"
         data:

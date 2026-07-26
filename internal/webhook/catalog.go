@@ -40,6 +40,15 @@ var (
 		Attributes:  []string{attrReason},
 		Group:       groupReceivers,
 	}
+	docWebhookDuplicates = metricdoc.Metric{
+		Name: MetricDuplicates, Unit: semconv.UnitEvents, Instrument: metricdoc.Counter,
+		Description: "Webhook events suppressed as duplicate deliveries.", Group: groupReceivers,
+	}
+	docWebhookSchemaDrift = metricdoc.Metric{
+		Name: MetricSchemaDrift, Unit: semconv.UnitEvents, Instrument: metricdoc.Counter,
+		Description: "Webhook event schema version observations, by known status.",
+		Attributes:  []string{attrSchemaField, attrSchemaStatus}, Group: groupReceivers,
+	}
 	docWebhookInflight = metricdoc.Metric{
 		Name:        "tailscale.webhook.inflight",
 		Unit:        semconv.UnitRequests,
@@ -61,14 +70,14 @@ var (
 		Name:        eventNameDoc,
 		Severity:    "INFO / WARN by type",
 		Description: "Per webhook event; `<type>` is the Tailscale event type. Emitted at **WARN** for attention-worthy types (node key expiry, needs-approval/authorization/signature, deletions), otherwise INFO. The client-misconfig health events `exitNodeIPForwardingNotEnabled`/`subnetIPForwardingNotEnabled` are INFO and surfaced via the `NodeIPForwardingMisconfigured` alert.",
-		Attributes:  []string{attrType, semconv.AttrTailnet},
+		Attributes:  []string{attrType, semconv.AttrTailnet, AttrNodeID, AttrDeviceName, AttrManagedBy, AttrActor, AttrURL, AttrKeyExpiration, AttrUser, AttrOldRoles, AttrNewRoles},
 		Group:       groupReceivers,
 	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docWebhookEvents, docWebhookRejected, docWebhookInflight, docWebhookRequestDuration}
+	return []metricdoc.Metric{docWebhookEvents, docWebhookRejected, docWebhookDuplicates, docWebhookSchemaDrift, docWebhookInflight, docWebhookRequestDuration}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

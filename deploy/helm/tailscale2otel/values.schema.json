@@ -295,6 +295,12 @@
                                         }
                                     }
                                 },
+                                "replay_overlap": {
+                                    "type": "string"
+                                },
+                                "replay_seen_capacity": {
+                                    "type": "integer"
+                                },
                                 "source": {
                                     "type": "string"
                                 }
@@ -520,6 +526,9 @@
                     "properties": {
                         "enabled": {
                             "type": "boolean"
+                        },
+                        "max_future_skew": {
+                            "type": "string"
                         },
                         "retention": {
                             "type": "string"
@@ -788,6 +797,9 @@
                         "public_url": {
                             "type": "string"
                         },
+                        "routes": {
+                            "type": "array"
+                        },
                         "tls": {
                             "type": "object",
                             "properties": {
@@ -958,6 +970,9 @@
                         },
                         "path": {
                             "type": "string"
+                        },
+                        "routes": {
+                            "type": "array"
                         },
                         "secret": {
                             "type": "string"

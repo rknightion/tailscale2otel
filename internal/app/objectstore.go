@@ -6,6 +6,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/s3"
 )
 
@@ -24,7 +25,12 @@ func objectStoreSource(s string) bool { return s == "objectstore" }
 // profile. Static credentials are the last resort by design: a container
 // deployment should be using a role, and the config fields exist for the
 // MinIO/Ceph case where there is no role to use.
-func newObjectStoreCollector(rt *tailnetRuntime, d runtimeDeps, ingest func(source, signal string, records, bytes int)) (*objectstore.Collector, error) {
+func newObjectStoreCollector(
+	rt *tailnetRuntime,
+	d runtimeDeps,
+	onIngest func(source, signal string, records, bytes int),
+	onAccepted ingest.AcceptedObserver,
+) (*objectstore.Collector, error) {
 	os := d.cfg.Collectors.Flowlogs.ObjectStore
 
 	var creds s3.Provider
@@ -65,7 +71,8 @@ func newObjectStoreCollector(rt *tailnetRuntime, d runtimeDeps, ingest func(sour
 		InitialLookback: os.InitialLookback.D(),
 		MaxObjects:      os.MaxObjects,
 		Logger:          d.logger,
-		OnIngest:        ingest,
+		OnIngest:        onIngest,
+		OnAccepted:      onAccepted,
 	}), nil
 }
 

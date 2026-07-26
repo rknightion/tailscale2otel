@@ -24,6 +24,12 @@ const (
 	MetricIO      = "tailscale.network.io"
 	MetricPackets = "tailscale.network.packets"
 	MetricFlows   = "tailscale.network.flows"
+	// MetricStoreDropped counts observations rejected only from the local
+	// in-memory flow view. OTLP metrics and logs remain unaffected.
+	MetricStoreDropped = "tailscale.network.store.dropped"
+	// MetricDedupConflicts counts replays whose identity matches an already
+	// emitted connection but whose counter values differ. The first values win.
+	MetricDedupConflicts = "tailscale.network.dedup.conflicts"
 	// MetricLogsDropped counts flow LOG records suppressed by the
 	// MaxLogRecordsPerWindow volume guard. Metrics are never dropped; only logs.
 	MetricLogsDropped = "tailscale.network.flow.logs_dropped"
@@ -123,6 +129,10 @@ type Options struct {
 // standing up the real one.
 type Recorder interface {
 	Record(flowstore.Observation)
+}
+
+type resultRecorder interface {
+	RecordResult(flowstore.Observation) flowstore.Admission
 }
 
 // PolicySource supplies the current compiled network policy. *aclpolicy.Store
@@ -300,8 +310,14 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 			// window re-delivered with a new connection still emits that connection
 			// while the already-seen connections are skipped. The first sighting
 			// (from poll or stream, which share this processor) wins.
-			if p.dedup != nil && !p.dedup.Add(connDedupKey(flow, cc)) {
-				continue
+			if p.dedup != nil {
+				result := CompareConnection(p.dedup, flow, set.typ, cc)
+				if result != DuplicateNew {
+					if result == DuplicateConflict {
+						ObserveDedupConflict(e, DedupScopeCrossSource, set.typ)
+					}
+					continue
+				}
 			}
 			p.processConn(flow, set.typ, cc, e, budget)
 
@@ -329,16 +345,6 @@ func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 		e.Counter(docLogsDropped.Name, docLogsDropped.Unit, docLogsDropped.Description,
 			float64(budget.dropped), telemetry.Attrs{})
 	}
-}
-
-// connDedupKey is the cross-source de-dup identity of one connection within a
-// flow window: nodeId|start|end|proto|src|dst. It matches the flowlogs
-// collector's per-connection boundary key so the two dedup layers are consistent.
-func connDedupKey(fl FlowLog, cc ConnectionCounts) string {
-	return fl.NodeID + "|" +
-		fl.Start.UTC().Format(time.RFC3339Nano) + "|" +
-		fl.End.UTC().Format(time.RFC3339Nano) + "|" +
-		strconv.Itoa(cc.Proto) + "|" + cc.Src + "|" + cc.Dst
 }
 
 // processConn emits metrics (and, in per_connection mode, a log) for one
@@ -474,12 +480,28 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	// describe, so it is fed from inside the dedup-guarded path and never from a
 	// second traversal.
 	if p.store != nil {
-		p.store.Record(p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService))
+		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService)
+		if store, ok := p.store.(resultRecorder); ok {
+			switch store.RecordResult(observation) {
+			case flowstore.AdmissionExpired:
+				p.observeStoreDrop(e, "expired")
+			case flowstore.AdmissionFuture:
+				p.observeStoreDrop(e, "future")
+			}
+		} else {
+			p.store.Record(observation)
+		}
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
 		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, e)
 	}
+}
+
+func (p *Processor) observeStoreDrop(e telemetry.Emitter, reason string) {
+	e.Counter(docStoreDropped.Name, docStoreDropped.Unit, docStoreDropped.Description, 1, telemetry.Attrs{
+		"reason": reason,
+	})
 }
 
 // observation builds the flow-store view of one connection.

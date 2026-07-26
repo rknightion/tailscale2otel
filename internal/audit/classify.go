@@ -10,17 +10,59 @@ var propertyCategories = map[string]string{
 	"KEY_EXPIRY":               "key_expiry",
 	"KEY_EXPIRY_TIME":          "key_expiry",
 	"EXIT_NODE":                "exit_node",
+	"NETWORK_FLOW_LOGGING":     "network_flow_logging",
+	"LOG_EXIT_FLOWS":           "exit_flow_logging",
 	"TKA":                      "tailnet_lock",
 	"USER_ROLE":                "user_role",
+	"MACHINE_APPROVAL_NEEDED":  "machine_approval",
+	"USER_APPROVAL_REQUIRED":   "user_approval",
 	"POSTURE_INTEGRATION":      "posture_integration",
 	"COLLECT_POSTURE_IDENTITY": "collect_posture_identity",
 	"MAGIC_DNS":                "magic_dns",
 	"DNS_CONFIG":               "dns_config",
 	"LOGSTREAM_ENDPOINT":       "logstream_endpoint",
+	"MAX_KEY_DURATION":         "key_duration",
+	"FILE_SHARING":             "file_sharing",
+	"HTTPS":                    "https",
+	"SCIM":                     "scim",
+	"SUBSCRIBED_EVENTS":        "webhook_subscription",
+	"SECURITY_EMAIL":           "security_contact",
 	"NODE_SHARE":               "node_share",
 	"TAILNET_INVITE":           "tailnet_invite",
 	"AUTH_PROVIDER":            "auth_provider",
 	"SECRET":                   "secret",
+}
+
+// propertyExclusions documents every current ConfigurationAuditLog target
+// property deliberately omitted from propertyCategories. Keeping the reason
+// adjacent to the allowlist makes upstream vocabulary drift explicit: the
+// schema guard in taxonomy_test.go fails when a new enum has neither a stable
+// category nor an intentional exclusion.
+//
+// Existing high-volume fields such as ACL_TAGS, MACHINE_NAME, and
+// POSTURE_IDENTITY remain excluded: they are routine node/self-report churn,
+// not a bounded security-or-lifecycle change signal.
+var propertyExclusions = map[string]string{
+	"ACL_TAGS":             "routine node tag churn; existing noisy exclusion",
+	"ACCOUNT_EMAIL":        "account identity detail is not a fleet change category",
+	"ADDRESS":              "per-node address churn is not a configuration posture signal",
+	"ALLOWED_IPS":          "route detail needs a dedicated route-level model",
+	"AUTO_APPROVED_ROUTES": "route approval policy needs a dedicated route-level model",
+	"ATTRIBUTES":           "opaque attribute payload lacks a stable semantic category",
+	"BILLING_OWNER":        "billing administration is outside collector scope",
+	"COLLECT_SERVICES":     "service discovery collection is operational noise",
+	"MULLVAD_VPN":          "product entitlement toggle is outside curated posture scope",
+	"EMAIL":                "identity detail is not a fleet change category",
+	"FEATURE":              "generic feature field is too broad for a stable category",
+	"MACHINE_AUTH_NEEDED":  "node lifecycle state is not an approval action",
+	"MACHINE_NAME":         "routine node rename; existing noisy exclusion",
+	"GEOSTEERING":          "routing policy needs a dedicated semantic model",
+	"PAYMENT_INFO":         "billing detail is outside collector scope",
+	"POSTURE_IDENTITY":     "node self-report churn; existing noisy exclusion",
+	"STRIPE_CUSTOMER_ID":   "billing identity is outside collector scope",
+	"SUBSCRIPTION":         "billing subscription detail is outside collector scope",
+	"SUPPORT_EMAIL":        "contact identity detail is not a fleet change category",
+	"TCD":                  "undocumented product-specific property lacks a stable category",
 }
 
 // knownOrigins is the complete set of origin values defined in the Tailscale

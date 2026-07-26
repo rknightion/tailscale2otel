@@ -25,10 +25,12 @@ import "net/http"
 // TestBoundedStatusDescriptionsCoverEveryLiteralSetStatus enforces that.
 var boundedStatusDescriptions = map[string]bool{
 	// internal/webhook (HMAC-verified webhook receiver).
-	"method not allowed":            true,
-	"request body exceeds max size": true,
-	"failed to read request body":   true,
-	"failed to parse webhook body":  true,
+	"method not allowed":                   true,
+	"request body exceeds max size":        true,
+	"failed to read request body":          true,
+	"failed to parse webhook body":         true,
+	"failed to parse webhook event":        true,
+	"failed to canonicalize webhook event": true,
 	// internal/webhook signature-verification reasons (Server.verify). Not string
 	// literals at the SetStatus call, so the source guard cannot see them.
 	"missing_signature":   true,
@@ -38,15 +40,17 @@ var boundedStatusDescriptions = map[string]bool{
 	"bad_signature":       true,
 
 	// internal/stream (Splunk-HEC receiver).
-	"auth required":         true,
-	"unauthorized":          true,
-	"overloaded":            true,
-	"body too large":        true,
-	"could not read body":   true,
-	"too many records":      true,
-	"could not parse body":  true,
-	"corrupt batch":         true,
-	"record decode failure": true,
+	"auth required":                true,
+	"unauthorized":                 true,
+	"overloaded":                   true,
+	"body too large":               true,
+	"could not read body":          true,
+	"too many records":             true,
+	"could not parse body":         true,
+	"corrupt batch":                true,
+	"record decode failure":        true,
+	"processing deadline exceeded": true,
+	"semantic validation failure":  true,
 	// Browser-deputy and nested-width refusals on the untokened receiver
 	// (GHSA-cvp7-f3mx-m68x, GHSA-7rg3-xj9w-2gm8). Both are closed-set verdicts
 	// naming the control that fired, carrying no request detail.

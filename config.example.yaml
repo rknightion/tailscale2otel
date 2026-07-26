@@ -185,6 +185,8 @@ collectors:
     lag: 120s                         # poll only — query only up to now-lag so late-arriving records aren't missed
     initial_lookback: 5m              # poll only — cold-start reach-back when there is no checkpoint yet
     max_window: 1h                    # poll only — cap one tick's window so a long outage catches up over several ticks
+    replay_overlap: 5m                # poll only — reread this completed-window overlap for records that became available late (0 disables)
+    replay_seen_capacity: 131072      # poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled)
     log_mode: per_connection          # per_connection | per_record | off — log detail level (applies to poll AND stream)
     max_log_records_per_window: 0     # cap flow LOG records per window (0 = unlimited); excess -> tailscale.network.flow.logs_dropped (metrics are never capped)
     objectstore:                      # source: objectstore only — read the flow-log export Tailscale writes to an S3-compatible bucket
@@ -301,18 +303,24 @@ streaming:
   auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope
   max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413)
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
+  # FILE-ONLY multi-tailnet routes. When non-empty, replace path/token/public_url/
+  # auto_configure above. Every route selects exactly one tailnets[].name.
+  routes: []
 
 # ── Webhook receiver (OPTIONAL: real-time Tailscale events) ─────────────────────
 webhook:
   enabled: false                      # run the receiver for real-time Tailscale webhook events
   listen: ":8089"                     # bind address for the webhook receiver
   path: /tailscale/webhook            # endpoint path Tailscale POSTs events to
-  secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN)
+  secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read
   secret_file: ""                     # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   tolerance: 5m                       # reject signed timestamps older than this (replay window); "0" disables the check
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
   max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413)
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
+  # FILE-ONLY multi-tailnet routes. When non-empty, replace path/secret above.
+  # A delivery is accepted only when every event names one matching tailnet.
+  routes: []
 
 # ── PII / identifier redaction (opt-out, all categories default true) ───────────
 # Set a category to false to drop those identifiers from metrics and logs at
@@ -356,6 +364,7 @@ admin:
 flows:
   enabled: true                       # keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise)
   retention: 6h                       # how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record
+  max_future_skew: 5m                 # local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged
 
 # ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
 prometheus:

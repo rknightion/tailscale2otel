@@ -81,6 +81,56 @@ func TestProcessSharedDedupProcessesDistinctRecords(t *testing.T) {
 	}
 }
 
+func TestProcessSharedDedupKeepsSameTupleInDifferentTrafficClasses(t *testing.T) {
+	// The same reporter/window/5-tuple is a different flow when the API places
+	// it in a different traffic class. Omitting traffic type from the cross-source
+	// identity makes the later class disappear.
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{Dedup: dedup.New(0)})
+
+	flow := virtualTCPFlow()
+	flow.SubnetTraffic = append([]flowlog.ConnectionCounts(nil), flow.VirtualTraffic...)
+	p.Process(flow, rec.Emitter())
+
+	if got, want := ioTotal(rec), float64(3600); got != want {
+		t.Fatalf("io total = %v, want %v (same tuple in virtual and subnet both emits)", got, want)
+	}
+}
+
+func TestProcessSharedDedupReportsConflictingCountersAndKeepsFirstValues(t *testing.T) {
+	// A replay with the same identity but different counters cannot safely be
+	// summed after the first values have been exported. The first values remain
+	// authoritative and the conflict is visible on a bounded metric.
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{Dedup: dedup.New(0)})
+
+	first := virtualTCPFlow()
+	p.Process(first, rec.Emitter())
+	changed := virtualTCPFlow()
+	changed.VirtualTraffic[0].TxBytes = 9000
+	p.Process(changed, rec.Emitter())
+
+	if got, want := ioTotal(rec), float64(1800); got != want {
+		t.Fatalf("io total = %v, want %v (first counters win)", got, want)
+	}
+	pts := rec.MetricPoints("tailscale.network.dedup.conflicts")
+	if len(pts) != 1 {
+		t.Fatalf("dedup conflict points = %d, want 1", len(pts))
+	}
+	if got, want := pts[0].Value, float64(1); got != want {
+		t.Fatalf("dedup conflict value = %v, want %v", got, want)
+	}
+	if got, want := pts[0].Attrs["scope"], "cross_source"; got != want {
+		t.Errorf("conflict scope = %q, want %q", got, want)
+	}
+	if got, want := pts[0].Attrs["tailscale.traffic_type"], "virtual"; got != want {
+		t.Errorf("conflict traffic type = %q, want %q", got, want)
+	}
+	if len(pts[0].Attrs) != 2 {
+		t.Errorf("conflict attrs = %#v, want exactly scope and traffic type", pts[0].Attrs)
+	}
+}
+
 func TestProcessSharedDedupEmitsNewConnectionInSeenWindow(t *testing.T) {
 	// Regression (review #5): dedup is per-CONNECTION, not per-window. A window
 	// re-delivered with a NEW connection (e.g. the poll collector forwarding only

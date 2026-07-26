@@ -26,6 +26,100 @@ func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
 }
 
+// validateReceiverRoutes freezes the receiver-routing boundary: a routes list
+// is a multi-tailnet-only replacement for legacy receiver identity. Listener,
+// TLS and request budgets remain shared process settings, while each route owns
+// its tailnet selector and credential.
+func (c *Config) validateReceiverRoutes() error {
+	multi := len(c.Tailnets) > 0
+	runtimeNames := make(map[string]struct{}, len(c.Tailnets))
+	for _, t := range c.Tailnets {
+		runtimeNames[t.Name] = struct{}{}
+	}
+
+	if routes := c.Streaming.Routes; len(routes) > 0 {
+		if !multi {
+			return fmt.Errorf("streaming.routes requires configured multi-tailnet mode (tailnets: list)")
+		}
+		if !c.Streaming.Enabled {
+			return fmt.Errorf("streaming.routes requires streaming.enabled: true")
+		}
+		// The default legacy path is retained to preserve single-tailnet defaults;
+		// only an operator override conflicts with routes.
+		if c.Streaming.Path != Default().Streaming.Path {
+			return fmt.Errorf("streaming.path and streaming.routes are mutually exclusive")
+		}
+		if c.Streaming.Token != "" || c.Streaming.TokenFile != "" || c.Streaming.PublicURL != "" || c.Streaming.AutoConfigure {
+			return fmt.Errorf("streaming.token/token_file/public_url/auto_configure and streaming.routes are mutually exclusive")
+		}
+		seenTailnet, seenPath := map[string]int{}, map[string]int{}
+		for i, r := range routes {
+			if strings.TrimSpace(r.Tailnet) == "" {
+				return fmt.Errorf("streaming.routes[%d].tailnet: required", i)
+			}
+			if _, ok := runtimeNames[r.Tailnet]; !ok {
+				return fmt.Errorf("streaming.routes[%d].tailnet %q does not match a configured runtime", i, r.Tailnet)
+			}
+			if j, ok := seenTailnet[r.Tailnet]; ok {
+				return fmt.Errorf("streaming.routes[%d].tailnet %q duplicates routes[%d]", i, r.Tailnet, j)
+			}
+			seenTailnet[r.Tailnet] = i
+			if err := validateReceiverPath(fmt.Sprintf("streaming.routes[%d].path", i), r.Path); err != nil || r.Path == "" {
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("streaming.routes[%d].path: required", i)
+			}
+			if j, ok := seenPath[r.Path]; ok {
+				return fmt.Errorf("streaming.routes[%d].path %q duplicates routes[%d]", i, r.Path, j)
+			}
+			seenPath[r.Path] = i
+			if r.Token != "" && r.TokenFile != "" {
+				return fmt.Errorf("streaming.routes[%d].token and token_file are mutually exclusive", i)
+			}
+			if r.AutoConfigure && r.PublicURL == "" {
+				return fmt.Errorf("streaming.routes[%d].auto_configure requires public_url", i)
+			}
+		}
+	} else if len(c.Tailnets) > 1 && c.Streaming.Enabled {
+		return fmt.Errorf("streaming.enabled in multi-tailnet mode requires streaming.routes")
+	}
+
+	if routes := c.Webhook.Routes; len(routes) > 0 {
+		if !multi {
+			return fmt.Errorf("webhook.routes requires configured multi-tailnet mode (tailnets: list)")
+		}
+		if !c.Webhook.Enabled {
+			return fmt.Errorf("webhook.routes requires webhook.enabled: true")
+		}
+		if c.Webhook.Path != Default().Webhook.Path {
+			return fmt.Errorf("webhook.path and webhook.routes are mutually exclusive")
+		}
+		if c.Webhook.Secret != "" || c.Webhook.SecretFile != "" {
+			return fmt.Errorf("webhook.secret/secret_file and webhook.routes are mutually exclusive")
+		}
+		seenTailnet := map[string]int{}
+		for i, r := range routes {
+			if strings.TrimSpace(r.Tailnet) == "" {
+				return fmt.Errorf("webhook.routes[%d].tailnet: required", i)
+			}
+			if _, ok := runtimeNames[r.Tailnet]; !ok {
+				return fmt.Errorf("webhook.routes[%d].tailnet %q does not match a configured runtime", i, r.Tailnet)
+			}
+			if j, ok := seenTailnet[r.Tailnet]; ok {
+				return fmt.Errorf("webhook.routes[%d].tailnet %q duplicates routes[%d]", i, r.Tailnet, j)
+			}
+			seenTailnet[r.Tailnet] = i
+			if r.Secret != "" && r.SecretFile != "" {
+				return fmt.Errorf("webhook.routes[%d].secret and secret_file are mutually exclusive", i)
+			}
+		}
+	} else if len(c.Tailnets) > 1 && c.Webhook.Enabled {
+		return fmt.Errorf("webhook.enabled in multi-tailnet mode requires webhook.routes")
+	}
+	return nil
+}
+
 // Warnings returns non-fatal configuration advisories. They never block startup
 // (Validate handles hard errors); the caller logs them at WARN. The goal is to
 // steer operators toward the safer choice without removing flexibility.
@@ -162,7 +256,17 @@ func (c *Config) Warnings() []string {
 	// lands here, so flag it rather than fail open quietly. (Unlike pprof, this is
 	// not hard-errored: a trusted-network or local-testing deployment behind an
 	// authenticating proxy is a legitimate use.)
-	if c.Webhook.Enabled && c.Webhook.Secret == "" {
+	webhookCredentialMissing := c.Webhook.Secret == ""
+	if len(c.Webhook.Routes) > 0 {
+		webhookCredentialMissing = false
+		for _, route := range c.Webhook.Routes {
+			if route.Secret == "" {
+				webhookCredentialMissing = true
+				break
+			}
+		}
+	}
+	if c.Webhook.Enabled && webhookCredentialMissing {
 		w = append(w, "webhook.enabled=true with an empty webhook.secret: HMAC signature "+
 			"verification is SKIPPED, so anyone who can reach "+c.Webhook.Listen+" can post "+
 			"forged webhook events (and inflate metric cardinality via attacker-chosen event "+
@@ -175,7 +279,17 @@ func (c *Config) Warnings() []string {
 	// a loud functional one, so the warning has to tell the operator ingestion is
 	// broken, not merely unauthenticated. A loopback bind stays open — only the
 	// local host can reach it — and is the supported credential-free setup.
-	if c.Streaming.Enabled && c.Streaming.Token == "" {
+	streamCredentialMissing := c.Streaming.Token == ""
+	if len(c.Streaming.Routes) > 0 {
+		streamCredentialMissing = false
+		for _, route := range c.Streaming.Routes {
+			if route.Token == "" {
+				streamCredentialMissing = true
+				break
+			}
+		}
+	}
+	if c.Streaming.Enabled && streamCredentialMissing {
 		if listenaddr.IsLoopback(c.Streaming.Listen) {
 			w = append(w, "streaming.enabled=true with an empty streaming.token on the loopback "+
 				"bind "+c.Streaming.Listen+": the HEC receiver authenticates no requests. Only the "+
@@ -560,6 +674,9 @@ func (c *Config) Validate() error {
 				"in-memory ring of one-minute buckets, not a database",
 				minFlowsRetention, maxFlowsRetention, d)
 		}
+		if d := c.Flows.MaxFutureSkew.D(); d < 0 || d > time.Hour {
+			return fmt.Errorf("flows.max_future_skew must be between 0 and 1h (got %v)", d)
+		}
 	}
 	// admin.tls / prometheus.tls: both-or-neither, and any configured file must
 	// exist and be readable now rather than surfacing as an opaque
@@ -623,14 +740,8 @@ func (c *Config) Validate() error {
 				"(e.g. \"example.com\") or \"-\" for the auth principal's default tailnet")
 		}
 	}
-	// Streaming/webhook receivers feed shared single-tailnet processors and a
-	// single enrichment cache; multi-tailnet routing is a follow-up. Checked for
-	// EVERY provider (not just tailscale — #117) so a headscale config can't slip
-	// a multi-entry list past it either; headscale has no tailnets list so it's a
-	// no-op there, and the unsupported-receiver advisory below covers headscale.
-	if len(c.Tailnets) > 1 && (c.Streaming.Enabled || c.Webhook.Enabled) {
-		return fmt.Errorf("streaming/webhook receivers require single-tailnet mode " +
-			"(use the single tailscale: block, not a multi-entry tailnets: list)")
+	if err := c.validateReceiverRoutes(); err != nil {
+		return err
 	}
 	if !oneOf(c.Checkpoint.Store, "memory", "file") {
 		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
@@ -671,9 +782,8 @@ func (c *Config) Validate() error {
 		}
 		// (a) A pure-stream collector needs an ingestion path that actually exists.
 		if col.source == "stream" {
-			if len(c.Tailnets) > 1 {
-				return fmt.Errorf("collectors.%s.source=stream is not supported in multi-tailnet mode "+
-					"(streaming receivers require single-tailnet mode); use source: poll", col.name)
+			if len(c.Tailnets) > 1 && len(c.Streaming.Routes) == 0 {
+				return fmt.Errorf("collectors.%s.source=stream in multi-tailnet mode requires streaming.routes", col.name)
 			}
 			if !c.Streaming.Enabled {
 				return fmt.Errorf("collectors.%s.source=stream requires streaming.enabled: true — "+
@@ -726,6 +836,17 @@ func (c *Config) Validate() error {
 					"at most max_window per tick, so with interval >= max_window the checkpoint falls "+
 					"further behind every tick without bound; set max_window > interval, or 0 for no cap",
 					col.name, col.maxWindow, col.interval)
+			}
+			if col.name == "flowlogs" {
+				overlap := c.Collectors.Flowlogs.ReplayOverlap.D()
+				capacity := c.Collectors.Flowlogs.ReplaySeenCapacity
+				if overlap < 0 || overlap > time.Hour {
+					return fmt.Errorf("collectors.flowlogs.replay_overlap must be between 0 and 1h (got %v)", overlap)
+				}
+				if overlap > 0 && (capacity < 1 || capacity > 1048576) {
+					return fmt.Errorf("collectors.flowlogs.replay_seen_capacity must be between 1 and 1048576 "+
+						"when replay_overlap is enabled (got %d)", capacity)
+				}
 			}
 		}
 	}
@@ -963,6 +1084,17 @@ func (c *Config) validateNoURLCredentials() error {
 			key:    fmt.Sprintf("collectors.node_metrics.targets[%d].url", i),
 			value:  t.URL,
 			useFmt: "use the target's bearer_token / bearer_token_file, or headers (e.g. an Authorization header — header values are Secret and redact themselves)",
+		})
+	}
+	for i, route := range c.Streaming.Routes {
+		checks = append(checks, struct {
+			key    string
+			value  string
+			useFmt string
+		}{
+			key:    fmt.Sprintf("streaming.routes[%d].public_url", i),
+			value:  route.PublicURL,
+			useFmt: "authenticate the receiver with that route's token/token_file; this URL is handed to Tailscale as the log-streaming destination",
 		})
 	}
 	for _, ch := range checks {

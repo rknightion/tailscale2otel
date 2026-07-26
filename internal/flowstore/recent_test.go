@@ -19,7 +19,7 @@ func conn(at time.Time, srcAddr, dstAddr string, tx int64) flowstore.Observation
 // Individual connections are not recoverable from the minute buckets, so the
 // store retains the most recent ones verbatim.
 func TestMemory_RetainsRecentConnections(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(conn(base, "100.64.0.1:52000", "100.64.0.2:443", 120))
 
 	got := s.Recent(10)
@@ -44,7 +44,7 @@ func TestMemory_RetainsRecentConnections(t *testing.T) {
 // Newest first: an operator opening the page wants what just happened, and the
 // limit must cut the oldest rather than the newest.
 func TestMemory_RecentIsNewestFirst(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for i := range 5 {
 		s.Record(conn(base.Add(time.Duration(i)*time.Second), "a:1", "b:2", int64(i)))
 	}
@@ -64,7 +64,7 @@ func TestMemory_RecentIsNewestFirst(t *testing.T) {
 // at risk from a flood on the stream ingress. It must be bounded by count, not
 // by time.
 func TestMemory_RecentRingIsBounded(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for i := range flowstore.MaxRecent + 500 {
 		s.Record(conn(base.Add(time.Duration(i)*time.Millisecond), "a:1", "b:2", int64(i)))
 	}
@@ -85,7 +85,7 @@ func TestMemory_RecentRingIsBounded(t *testing.T) {
 // A non-positive limit must not be read as "everything" by accident, and must
 // not panic.
 func TestMemory_RecentLimits(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for i := range 10 {
 		s.Record(conn(base.Add(time.Duration(i)*time.Second), "a:1", "b:2", 1))
 	}
@@ -102,14 +102,14 @@ func TestMemory_RecentLimits(t *testing.T) {
 
 // An empty store is the first thing an operator sees on a fresh start.
 func TestMemory_RecentOnEmptyStore(t *testing.T) {
-	if got := flowstore.NewMemory(0).Recent(10); len(got) != 0 {
+	if got := newMemory(0).Recent(10); len(got) != 0 {
 		t.Errorf("Recent on an empty store returned %d entries", len(got))
 	}
 }
 
 // Retaining raw connections must not disturb the aggregate answers.
 func TestMemory_RecentDoesNotAffectAggregates(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(conn(base, "a:1", "b:2", 100))
 	s.Record(conn(base, "a:1", "b:2", 100))
 

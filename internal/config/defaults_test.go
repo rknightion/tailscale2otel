@@ -120,6 +120,15 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.Collectors.Flowlogs.MaxWindow.D() != time.Hour {
 		t.Errorf("Flowlogs.MaxWindow = %v, want default 1h", cfg.Collectors.Flowlogs.MaxWindow.D())
 	}
+	if cfg.Collectors.Flowlogs.ReplayOverlap.D() != 5*time.Minute {
+		t.Errorf("Flowlogs.ReplayOverlap = %v, want default 5m", cfg.Collectors.Flowlogs.ReplayOverlap.D())
+	}
+	if cfg.Collectors.Flowlogs.ReplaySeenCapacity != 131072 {
+		t.Errorf("Flowlogs.ReplaySeenCapacity = %d, want default 131072", cfg.Collectors.Flowlogs.ReplaySeenCapacity)
+	}
+	if cfg.Flows.MaxFutureSkew.D() != 5*time.Minute {
+		t.Errorf("Flows.MaxFutureSkew = %v, want default 5m", cfg.Flows.MaxFutureSkew.D())
+	}
 	if cfg.Collectors.Auditlogs.MaxWindow.D() != 6*time.Hour {
 		t.Errorf("Auditlogs.MaxWindow = %v, want default 6h", cfg.Collectors.Auditlogs.MaxWindow.D())
 	}

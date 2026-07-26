@@ -1156,6 +1156,70 @@ func TestValidate_MaxWindowLEInterval(t *testing.T) {
 	}
 }
 
+func TestValidate_FlowlogsReplayBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		source   string
+		overlap  time.Duration
+		capacity int
+		wantErr  string
+	}{
+		{name: "disabled", source: "poll", overlap: 0, capacity: 0},
+		{name: "minimum capacity", source: "poll", overlap: time.Second, capacity: 1},
+		{name: "maximum bounds", source: "poll", overlap: time.Hour, capacity: 1048576},
+		{name: "negative overlap", source: "poll", overlap: -time.Second, capacity: 1, wantErr: "replay_overlap"},
+		{name: "overlap too large", source: "poll", overlap: time.Hour + time.Second, capacity: 1, wantErr: "replay_overlap"},
+		{name: "zero capacity while enabled", source: "poll", overlap: time.Minute, capacity: 0, wantErr: "replay_seen_capacity"},
+		{name: "capacity too large", source: "poll", overlap: time.Minute, capacity: 1048577, wantErr: "replay_seen_capacity"},
+		{name: "stream ignores poll replay fields", source: "stream", overlap: -time.Second, capacity: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Collectors.Flowlogs.Source = tc.source
+			if tc.source == "stream" {
+				c.Streaming.Enabled = true
+			}
+			c.Collectors.Flowlogs.ReplayOverlap = config.Duration(tc.overlap)
+			c.Collectors.Flowlogs.ReplaySeenCapacity = tc.capacity
+			err := c.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Validate() error = %v, want error containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidate_FlowStoreFutureSkew(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		skew    time.Duration
+		wantErr bool
+	}{
+		{name: "zero", skew: 0},
+		{name: "bounded", skew: time.Hour},
+		{name: "negative", skew: -time.Second, wantErr: true},
+		{name: "too large", skew: time.Hour + time.Second, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Flows.MaxFutureSkew = config.Duration(tc.skew)
+			err := c.Validate()
+			if tc.wantErr && (err == nil || !strings.Contains(err.Error(), "flows.max_future_skew")) {
+				t.Fatalf("Validate() error = %v, want flows.max_future_skew error", err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("Validate() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
 // TestValidate_ListenerCollisions pins #52(f): all four HTTP listeners are
 // bind-collision checked, not just admin/prometheus.
 func TestValidate_ListenerCollisions(t *testing.T) {

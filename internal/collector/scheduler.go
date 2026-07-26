@@ -313,6 +313,13 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 	if !ok {
 		return nil
 	}
+	replaying := false
+	if rc, ok := c.(ReplayWindowCollector); ok && hasLast {
+		if overlap := rc.ReplayOverlap(); overlap > 0 {
+			from = from.Add(-overlap)
+			replaying = true
+		}
+	}
 	hwm, err := c.CollectWindow(ctx, from, to, s.emitter)
 	if err != nil {
 		// Do not advance the checkpoint: the next tick retries the same window
@@ -322,7 +329,12 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 		}
 		return err
 	}
-	if hwm.IsZero() {
+	if replaying {
+		// The request intentionally started before the durable cursor, but a
+		// successful replay consumed the whole forward window through to. Never
+		// persist a rewound collector return or the next tick would move backward.
+		hwm = to
+	} else if hwm.IsZero() {
 		hwm = to
 	}
 	if err := s.store.Set(s.checkpointKey(c.Name()), hwm); err != nil {

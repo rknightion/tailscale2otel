@@ -209,7 +209,7 @@ const (
 	// (tailscale2otel.dedup.*): "flow", "audit", "webhook_cross".
 	AttrDedupSet = "dedup.set"
 	// AttrIngestSource names the ingestion path on tailscale2otel.ingest.*:
-	// "poll", "stream", or "webhook".
+	// "poll", "stream", "webhook", or "objectstore".
 	AttrIngestSource = "source"
 	// AttrIngestSignal names the record type on tailscale2otel.ingest.records:
 	// "flow", "audit", or "webhook".
@@ -240,9 +240,10 @@ const (
 // Ingestion-path (tailscale2otel.ingest.*) attribute values. A CLOSED set so the
 // source/signal label cardinality stays bounded.
 const (
-	IngestSourcePoll    = "poll"
-	IngestSourceStream  = "stream"
-	IngestSourceWebhook = "webhook"
+	IngestSourcePoll        = "poll"
+	IngestSourceStream      = "stream"
+	IngestSourceWebhook     = "webhook"
+	IngestSourceObjectStore = "objectstore"
 
 	IngestSignalFlow    = "flow"
 	IngestSignalAudit   = "audit"

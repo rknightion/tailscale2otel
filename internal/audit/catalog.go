@@ -37,6 +37,22 @@ var (
 		Group:       groupNetwork,
 	}
 
+	docAuditDeferredDelay = metricdoc.Metric{
+		Name:        MetricAuditDeferredDelay,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Distribution of time Tailscale deferred configuration-audit records before logging them, in seconds. Emitted only when both eventTime and deferredAt are present and ordered.",
+		Group:       groupNetwork,
+	}
+
+	docAuditProcessingDelay = metricdoc.Metric{
+		Name:        MetricAuditProcessingDelay,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Distribution of time from a configuration-audit record's deferredAt (or eventTime when not deferred) to local processor acceptance, in seconds. Emitted only for a present, non-future source timestamp.",
+		Group:       groupNetwork,
+	}
+
 	docAuditLog = metricdoc.LogEvent{
 		Name:        auditEventName,
 		Severity:    "INFO",
@@ -45,7 +61,8 @@ var (
 			attrAction, attrOrigin, attrEventGroupID, attrUserID,
 			attrUserName, attrUserFullName, attrActorType,
 			attrTargetID, attrTargetName, attrTargetType, attrTargetProperty,
-			attrOld, attrNew, attrDetails, attrError,
+			attrOld, attrNew, attrDetails, attrError, attrType, attrActorTags,
+			attrTargetEphemeral, attrDeferredAt,
 		},
 		Group: groupNetwork,
 	}
@@ -53,7 +70,7 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docAuditEvents, docAuditChanges}
+	return []metricdoc.Metric{docAuditEvents, docAuditChanges, docAuditDeferredDelay, docAuditProcessingDelay}
 }
 
 // LogCatalog returns the log events this package emits, for the doc generator.

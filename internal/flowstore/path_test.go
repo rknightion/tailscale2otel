@@ -36,7 +36,7 @@ func peerPaths(in []flowstore.PeerPathStat) map[string][2]int64 {
 }
 
 func TestPaths_BreakdownCountsEachPathSeparately(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(underlay("camden", flowstore.PathDirectIPv4, "", 100))
 	m.Record(underlay("camden", flowstore.PathDirectIPv6, "", 200))
 	m.Record(underlay("gfmbp", flowstore.PathDERP, "8", 50))
@@ -57,7 +57,7 @@ func TestPaths_BreakdownCountsEachPathSeparately(t *testing.T) {
 // Overlay traffic has no path. Counting it would put every tailnet connection
 // into the direct column and drown the underlay measurement the section is for.
 func TestPaths_IgnoreTrafficWithNoPath(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(evaluated(flowstore.VerdictPermitted, 0, false)) // virtual traffic
 	m.Record(underlay("camden", flowstore.PathDirectIPv4, "", 100))
 
@@ -73,7 +73,7 @@ func TestPaths_IgnoreTrafficWithNoPath(t *testing.T) {
 // The question the section answers is "which of my peers is being relayed", so
 // the per-peer split is the deliverable and the headline share is derived from it.
 func TestPeerPaths_SplitDirectFromRelayedPerPeer(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(underlay("camden", flowstore.PathDirectIPv4, "", 1000))
 	m.Record(underlay("camden", flowstore.PathDirectIPv6, "", 500))
 	m.Record(underlay("camden", flowstore.PathDERP, "8", 100))
@@ -91,7 +91,7 @@ func TestPeerPaths_SplitDirectFromRelayedPerPeer(t *testing.T) {
 // A peer being relayed is the finding; a peer moving bulk traffic directly is
 // not. Ranking by volume alone would bury the one worth acting on.
 func TestPeerPaths_RankRelayedFirst(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(underlay("bulk", flowstore.PathDirectIPv4, "", 1_000_000))
 	m.Record(underlay("relayed", flowstore.PathDERP, "8", 10))
 
@@ -107,7 +107,7 @@ func TestPeerPaths_RankRelayedFirst(t *testing.T) {
 // The region says WHERE traffic was relayed through, which is the difference
 // between "my peers relay via London" and "my peers relay via Sydney".
 func TestDERPRegions_CountedOnlyForRelayedTraffic(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(underlay("camden", flowstore.PathDERP, "8", 100))
 	m.Record(underlay("gfmbp", flowstore.PathDERP, "8", 50))
 	m.Record(underlay("oli", flowstore.PathDERP, "27", 25))
@@ -136,7 +136,7 @@ func TestDERPRegions_CountedOnlyForRelayedTraffic(t *testing.T) {
 // keyed on tags would merge every tagged server into one row and answer a
 // different question from the one being asked.
 func TestPeerPaths_NameThePeerNotItsTags(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	o := underlay("camden", flowstore.PathDERP, "8", 100)
 	o.SrcTags = "tag:servers"
 	m.Record(o)
@@ -153,7 +153,7 @@ func TestPeerPaths_NameThePeerNotItsTags(t *testing.T) {
 // An unresolved peer keeps its address: the collapse sentinels are not device
 // names, and a row called "external" tells an operator nothing they can act on.
 func TestPeerPaths_FallBackToTheAddress(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	o := underlay("external", flowstore.PathDERP, "8", 100)
 	o.SrcAddr = "100.64.0.9:0"
 	m.Record(o)
@@ -167,7 +167,7 @@ func TestPeerPaths_FallBackToTheAddress(t *testing.T) {
 // Physical traffic arrives from the same ingress as everything else, so the
 // per-peer dimension needs the same insert-time cap as the rest of the store.
 func TestPeerPaths_IsBounded(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	for i := range flowstore.MaxPeerPathsPerBucket * 2 {
 		o := underlay("", flowstore.PathDERP, "8", 1)
 		o.SrcAddr = fmtAddr(i)

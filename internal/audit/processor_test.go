@@ -2,6 +2,8 @@ package audit_test
 
 import (
 	"encoding/json"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +126,166 @@ func TestProcessEmitsLogAndCounter(t *testing.T) {
 		if _, ok := mp.Attrs[k]; ok {
 			t.Errorf("metric should not carry high-cardinality attr %q (=%q)", k, mp.Attrs[k])
 		}
+	}
+}
+
+func TestProcessPreservesDeferredAuditSemantics(t *testing.T) {
+	acceptedAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	eventTime := acceptedAt.Add(-12 * time.Minute)
+	deferredAt := acceptedAt.Add(-10 * time.Minute)
+	isEphemeral := false
+
+	ev := sampleEvent()
+	ev.Type = "CONFIG"
+	ev.EventTime = eventTime
+	ev.DeferredAt = deferredAt
+	ev.Actor.Tags = []string{" zeta ", "alpha", "", "alpha", " beta "}
+	ev.Target.IsEphemeral = &isEphemeral
+
+	rec := telemetrytest.New()
+	audit.NewProcessor(audit.WithClock(func() time.Time { return acceptedAt })).Process(ev, rec.Emitter())
+
+	logs := rec.LogRecords()
+	if len(logs) != 1 {
+		t.Fatalf("log records = %d, want 1", len(logs))
+	}
+	attrs := logs[0].Attrs
+	for key, want := range map[string]string{
+		"tailscale.audit.type":        "CONFIG",
+		"tailscale.actor.tags":        "alpha,beta,zeta",
+		"tailscale.target.ephemeral":  "false",
+		"tailscale.audit.deferred_at": deferredAt.Format(time.RFC3339Nano),
+	} {
+		if got := attrs[key]; got != want {
+			t.Errorf("log attr %q = %q, want %q", key, got, want)
+		}
+	}
+	if got, want := ev.Actor.Tags, []string{" zeta ", "alpha", "", "alpha", " beta "}; !slices.Equal(got, want) {
+		t.Errorf("Process mutated actor tags: got %q, want %q", got, want)
+	}
+
+	assertSingleDelayHistogram(t, rec, audit.MetricAuditDeferredDelay, 2*time.Minute)
+	assertSingleDelayHistogram(t, rec, audit.MetricAuditProcessingDelay, 10*time.Minute)
+}
+
+func TestProcessOmitsAbsentAuditSemantics(t *testing.T) {
+	ev := sampleEvent()
+	ev.Type = ""
+	rec := telemetrytest.New()
+	audit.NewProcessor(audit.WithClock(func() time.Time { return time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC) })).Process(ev, rec.Emitter())
+
+	attrs := rec.LogRecords()[0].Attrs
+	for _, key := range []string{
+		"tailscale.audit.type",
+		"tailscale.actor.tags",
+		"tailscale.target.ephemeral",
+		"tailscale.audit.deferred_at",
+	} {
+		if _, ok := attrs[key]; ok {
+			t.Errorf("unexpected absent-semantics attribute %q: %q", key, attrs[key])
+		}
+	}
+	if got := rec.MetricPoints(audit.MetricAuditDeferredDelay); len(got) != 0 {
+		t.Fatalf("deferred delay points = %d, want 0", len(got))
+	}
+	if got := rec.MetricPoints(audit.MetricAuditProcessingDelay); len(got) != 1 {
+		t.Fatalf("processing delay points = %d, want 1", len(got))
+	}
+}
+
+func TestProcessDecodedAuditRecordsHaveEquivalentSignals(t *testing.T) {
+	const body = `{
+		"eventTime":"2026-07-26T11:48:00Z",
+		"deferredAt":"2026-07-26T11:50:00Z",
+		"type":"CONFIG",
+		"eventGroupID":"group",
+		"origin":"ADMIN_CONSOLE",
+		"actor":{"id":"n1","type":"NODE","tags":["prod","edge"]},
+		"target":{"id":"n2","type":"NODE","isEphemeral":false,"property":"NETWORK_FLOW_LOGGING"},
+		"action":"UPDATE"
+	}`
+	var poll, hec audit.Event
+	if err := json.Unmarshal([]byte(body), &poll); err != nil {
+		t.Fatalf("decode poll event: %v", err)
+	}
+	if err := json.Unmarshal([]byte(body), &hec); err != nil {
+		t.Fatalf("decode HEC event: %v", err)
+	}
+	acceptedAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+
+	pollRec := telemetrytest.New()
+	hecRec := telemetrytest.New()
+	audit.NewProcessor(audit.WithClock(func() time.Time { return acceptedAt })).Process(poll, pollRec.Emitter())
+	audit.NewProcessor(audit.WithClock(func() time.Time { return acceptedAt })).Process(hec, hecRec.Emitter())
+
+	pollLogs := pollRec.LogRecords()
+	hecLogs := hecRec.LogRecords()
+	for i := range pollLogs {
+		// ObservedTimestamp is assigned by the OTEL SDK at export time, not by
+		// the shared audit processor's input record.
+		pollLogs[i].ObservedTimestamp = time.Time{}
+	}
+	for i := range hecLogs {
+		hecLogs[i].ObservedTimestamp = time.Time{}
+	}
+	if got, want := pollLogs, hecLogs; !reflect.DeepEqual(got, want) {
+		t.Errorf("log records differ for equivalently decoded records:\n poll: %#v\n  HEC: %#v", got, want)
+	}
+	for _, name := range []string{
+		audit.MetricAuditEvents,
+		audit.MetricAuditChanges,
+		audit.MetricAuditDeferredDelay,
+		audit.MetricAuditProcessingDelay,
+	} {
+		if got, want := pollRec.MetricPoints(name), hecRec.MetricPoints(name); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s differs for equivalently decoded records:\n poll: %#v\n  HEC: %#v", name, got, want)
+		}
+	}
+}
+
+func TestProcessDelayHistogramsRejectInvalidDurations(t *testing.T) {
+	acceptedAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	ev := sampleEvent()
+	ev.EventTime = acceptedAt.Add(-time.Minute)
+	ev.DeferredAt = ev.EventTime.Add(-time.Second)
+
+	rec := telemetrytest.New()
+	audit.NewProcessor(audit.WithClock(func() time.Time { return acceptedAt })).Process(ev, rec.Emitter())
+	if got := rec.MetricPoints(audit.MetricAuditDeferredDelay); len(got) != 0 {
+		t.Fatalf("deferred delay points = %d, want 0 for negative source duration", len(got))
+	}
+	assertSingleDelayHistogram(t, rec, audit.MetricAuditProcessingDelay, time.Minute)
+
+	ev.EventTime = acceptedAt.Add(time.Second)
+	ev.DeferredAt = time.Time{}
+	rec = telemetrytest.New()
+	audit.NewProcessor(audit.WithClock(func() time.Time { return acceptedAt })).Process(ev, rec.Emitter())
+	if got := rec.MetricPoints(audit.MetricAuditProcessingDelay); len(got) != 0 {
+		t.Fatalf("processing delay points = %d, want 0 for future source time", len(got))
+	}
+}
+
+func assertSingleDelayHistogram(t *testing.T, rec *telemetrytest.Recorder, name string, want time.Duration) {
+	t.Helper()
+	pts := rec.MetricPoints(name)
+	if len(pts) != 1 {
+		t.Fatalf("%s points = %d, want 1", name, len(pts))
+	}
+	pt := pts[0]
+	if pt.Kind != "histogram" {
+		t.Fatalf("%s kind = %q, want histogram", name, pt.Kind)
+	}
+	if pt.Unit != "s" {
+		t.Errorf("%s unit = %q, want s", name, pt.Unit)
+	}
+	if pt.Count != 1 {
+		t.Errorf("%s count = %d, want 1", name, pt.Count)
+	}
+	if pt.Value != want.Seconds() {
+		t.Errorf("%s sum = %v, want %v", name, pt.Value, want.Seconds())
+	}
+	if len(pt.Attrs) != 0 {
+		t.Errorf("%s attrs = %v, want none", name, pt.Attrs)
 	}
 }
 

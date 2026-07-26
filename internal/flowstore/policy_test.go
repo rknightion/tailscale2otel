@@ -45,7 +45,7 @@ func labelFlows(in []flowstore.LabelStat) map[string]int64 {
 // split out for display rather than lumped in with the establishing direction,
 // which would make the permitted share look like it came from rules it did not.
 func TestVerdicts_BreakdownSplitsReturnTraffic(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(evaluated(flowstore.VerdictPermitted, 0, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 0, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 1, true))
@@ -73,7 +73,7 @@ func TestVerdicts_BreakdownSplitsReturnTraffic(t *testing.T) {
 // Counting the two together would report a tailnet with no ACL collected as one
 // the evaluator is confused by.
 func TestVerdicts_UnevaluatedConnectionsAreNotCounted(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(evaluated("", -1, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 0, false))
 
@@ -90,7 +90,7 @@ func TestVerdicts_UnevaluatedConnectionsAreNotCounted(t *testing.T) {
 // The unexplained aggregate is the finding the page exists to surface: it turns
 // thousands of scattered rows into the handful of RELATIONSHIPS behind them.
 func TestUnexplained_AggregatesByRelationship(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	for range 3 {
 		o := evaluated(flowstore.VerdictNoRule, -1, false)
 		o.SrcTags, o.DstAddr = "tag:aws", "10.0.0.254:53"
@@ -122,7 +122,7 @@ func TestUnexplained_AggregatesByRelationship(t *testing.T) {
 // means the evaluator could not apply the policy — reporting it as unexplained
 // is exactly the confident-false-alarm failure the evaluator is built to avoid.
 func TestUnexplained_ExcludesEveryOtherVerdict(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(evaluated(flowstore.VerdictUndetermined, -1, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 0, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 0, true))
@@ -159,7 +159,7 @@ func TestUnexplained_NamesEndpointsByBestKnownIdentity(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := flowstore.NewMemory(0)
+			m := newMemory(0)
 			o := evaluated(flowstore.VerdictNoRule, -1, false)
 			tc.mutate(&o)
 			m.Record(o)
@@ -178,7 +178,7 @@ func TestUnexplained_NamesEndpointsByBestKnownIdentity(t *testing.T) {
 // "Which rules never fired" is the second half of the reconciliation, and it can
 // only be answered by counting the ones that did.
 func TestRules_CountsOnlyRulesThatPermittedSomething(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(evaluated(flowstore.VerdictPermitted, 3, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 3, false))
 	m.Record(evaluated(flowstore.VerdictPermitted, 7, true)) // return traffic still exercises its rule
@@ -210,7 +210,7 @@ func TestRules_CountsOnlyRulesThatPermittedSomething(t *testing.T) {
 // The connection list is where an operator goes after seeing a relationship in
 // the aggregate, so each connection carries its own verdict.
 func TestRecent_CarriesTheVerdict(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(evaluated(flowstore.VerdictPermitted, 4, true))
 
 	got := m.Recent(10)
@@ -226,7 +226,7 @@ func TestRecent_CarriesTheVerdict(t *testing.T) {
 // the stream ingress can mint unique addresses, and every one of them is a
 // relationship nothing explains.
 func TestUnexplained_IsBounded(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	for i := range flowstore.MaxUnexplainedPerBucket * 2 {
 		o := evaluated(flowstore.VerdictNoRule, -1, false)
 		o.SrcNode, o.DstNode = "attacker", ""
@@ -278,7 +278,7 @@ func itoa(i int) string {
 func TestUnexplained_PrefersAnAddressToACollapseSentinel(t *testing.T) {
 	for _, sentinel := range []string{"external", "unknown"} {
 		t.Run(sentinel, func(t *testing.T) {
-			m := flowstore.NewMemory(0)
+			m := newMemory(0)
 			o := evaluated(flowstore.VerdictNoRule, -1, false)
 			o.SrcNode, o.SrcAddr = "web", "100.64.0.1:41000"
 			o.DstNode, o.DstAddr = sentinel, "10.0.0.254:53"
@@ -299,7 +299,7 @@ func TestUnexplained_PrefersAnAddressToACollapseSentinel(t *testing.T) {
 // it is still the most that is known, and replacing it with "unidentified" would
 // lose the fact that the endpoint was outside the tailnet.
 func TestUnexplained_KeepsTheSentinelWhenNothingElseIsKnown(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	o := evaluated(flowstore.VerdictNoRule, -1, false)
 	o.DstNode, o.DstAddr = "external", ""
 	m.Record(o)

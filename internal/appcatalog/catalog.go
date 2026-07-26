@@ -131,6 +131,14 @@ const (
 	// (-> tailscale2otel_ingest_size_bytes_total), the same naming guard as
 	// MetricRuntimeAllocBytes.
 	MetricIngestBytes = "tailscale2otel.ingest.size"
+	// MetricIngestEventAge measures accepted-at minus event time.
+	MetricIngestEventAge = "tailscale2otel.ingest.event.age"
+	// MetricIngestCaptureDelay measures capture/observation time minus event time.
+	MetricIngestCaptureDelay = "tailscale2otel.ingest.capture.delay"
+	// MetricIngestLastEventTimestamp is the greatest accepted event timestamp.
+	MetricIngestLastEventTimestamp = "tailscale2otel.ingest.last_event_timestamp"
+	// MetricIngestTimestampSkew counts inverted timestamp relationships.
+	MetricIngestTimestampSkew = "tailscale2otel.ingest.timestamp_skew"
 )
 
 // MetricSeriesByGroup is the per-catalog-group active-series rollup: the sum of
@@ -401,6 +409,38 @@ var (
 		Attributes:  []string{semconv.AttrIngestSource},
 		Group:       GroupSelfObs,
 	}
+	DocIngestEventAge = metricdoc.Metric{
+		Name:        MetricIngestEventAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Age in seconds of each accepted event at ingestion time, by bounded source and signal. Future event timestamps are counted by ingest.timestamp_skew and clamped to zero.",
+		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
+	DocIngestCaptureDelay = metricdoc.Metric{
+		Name:        MetricIngestCaptureDelay,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Delay in seconds between an event and its upstream capture/observation timestamp, when the wire format supplies both. Inverted timestamps are counted by ingest.timestamp_skew and clamped to zero.",
+		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
+	DocIngestLastEventTimestamp = metricdoc.Metric{
+		Name:        MetricIngestLastEventTimestamp,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Greatest accepted event timestamp as Unix seconds, by bounded source and signal. Delayed retries and backfills do not move this gauge backwards.",
+		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
+	DocIngestTimestampSkew = metricdoc.Metric{
+		Name:        MetricIngestTimestampSkew,
+		Unit:        "{event}",
+		Instrument:  metricdoc.Counter,
+		Description: "Accepted events with an inverted timestamp relationship (event after local acceptance, or capture before event), by bounded source and signal.",
+		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
 )
 
 // DocSeriesByGroup is the per-group active-series rollup descriptor. A gauge whose
@@ -443,7 +483,8 @@ func Catalog() []metricdoc.Metric {
 		DocDedupSize, DocDedupEvictions, DocDedupHits,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
-		DocIngestRecords, DocIngestBytes,
+		DocIngestRecords, DocIngestBytes, DocIngestEventAge, DocIngestCaptureDelay,
+		DocIngestLastEventTimestamp, DocIngestTimestampSkew,
 		DocSeriesByGroup,
 		DocPIIFilterCategory,
 	}

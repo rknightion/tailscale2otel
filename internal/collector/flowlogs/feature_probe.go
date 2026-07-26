@@ -24,9 +24,9 @@ const defaultFeatureProbeInterval = 300 * time.Second
 // registered when flowlogs is enabled but ingestion is stream-only, emitting the
 // same gauge (same descriptor and tailscale.feature attribute) the poller emits.
 //
-// It mirrors the poller's feature-check semantics exactly: a check error fails
-// open (emit nothing, no error); on success it emits feature.enabled=1 when
-// enabled, else 0.
+// On a successful check it emits feature.enabled=1 when enabled, else 0. A
+// check error emits no gauge and is returned so scheduler status records the
+// failed probe; this does not affect the poll collector's fail-open behavior.
 type FeatureProbe struct {
 	check    FeatureCheck
 	interval time.Duration
@@ -55,18 +55,17 @@ func (p *FeatureProbe) DefaultInterval() time.Duration {
 
 // Collect runs the feature check and emits tailscale.feature.enabled.
 //
-// Semantics mirror the poller's (flowlogs.go CollectWindow): on a check error it
-// fails open — emits nothing and returns nil (no error). On success it emits the
-// gauge =1 when the feature is enabled, else =0, using the same descriptor and
-// tailscale.feature attribute the poller uses. A nil check is treated as
-// "always enabled".
+// On a check error it emits nothing and returns the original error, allowing
+// scheduler status to distinguish a failed probe from a disabled feature. On
+// success it emits the gauge =1 when the feature is enabled, else =0, using the
+// same descriptor and tailscale.feature attribute the poller uses. A nil check
+// is treated as "always enabled".
 func (p *FeatureProbe) Collect(ctx context.Context, e telemetry.Emitter) error {
 	enabled := true
 	if p.check != nil {
 		ok, err := p.check(ctx)
 		if err != nil {
-			// Fail open: emit nothing, not a failure.
-			return nil
+			return err
 		}
 		enabled = ok
 	}

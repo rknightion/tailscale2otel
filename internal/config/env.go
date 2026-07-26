@@ -17,7 +17,7 @@ import (
 // slice. A map field like otlp.headers is a different case: mapstructure decodes
 // a single nested key fine (TS2OTEL_OTLP__HEADERS__X_ORG=tenant-1 works, one env
 // var per map entry), so it needs no special handling here. A list-of-structs
-// field (tailnets, collectors.node_metrics.targets) is the genuinely unsupported
+// field (tailnets, receiver routes, collectors.node_metrics.targets) is the genuinely unsupported
 // case — indexing into one (e.g. TS2OTEL_TAILNETS__0__NAME) decodes into a
 // mostly-empty struct, silently corrupting the value, so Load rejects it outright
 // instead (see structSliceEnvKeys).
@@ -46,6 +46,8 @@ var listEnvKeys = map[string]bool{
 // actual []struct fields on Config by TestStructSliceEnvKeysMatchesStructSliceFields.
 var structSliceEnvKeys = map[string]bool{
 	"tailnets":                        true,
+	"streaming.routes":                true,
+	"webhook.routes":                  true,
 	"collectors.node_metrics.targets": true,
 }
 

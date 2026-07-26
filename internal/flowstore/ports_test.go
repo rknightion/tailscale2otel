@@ -41,7 +41,7 @@ func portKeys(in []flowstore.PortStat) map[flowstore.PortKey]int64 {
 // half — the two top rows of the section, by bytes, were ephemeral underlay
 // ports — and the second is the more obviously wrong one.
 func TestPorts_UnderlayPortsAreNotDestinationServices(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(obs(at, "web", "db", 100, 0))                                    // overlay: tcp/443 https
 	m.Record(underlayPort(flowstore.PathDirectIPv4, "", "41641", 6_750_000))  // ephemeral underlay port
 	m.Record(underlayPort(flowstore.PathDERP, "8", "8", 61))                  // a DERP region ID
@@ -58,7 +58,7 @@ func TestPorts_UnderlayPortsAreNotDestinationServices(t *testing.T) {
 // path breakdown is the section that reads physical traffic, and the totals,
 // devices and traffic-type split all still describe every byte.
 func TestPorts_PhysicalStillCountsEverywhereElse(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	m.Record(obs(at, "web", "db", 100, 0))
 	m.Record(underlayPort(flowstore.PathDERP, "8", "8", 900))
 
@@ -83,7 +83,7 @@ func TestPorts_PhysicalStillCountsEverywhereElse(t *testing.T) {
 // __other__ and the page reports partial coverage of a table it could have
 // covered completely.
 func TestPorts_UnderlayChurnCannotEvictRealServices(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	m := newMemory(0)
 	for i := range flowstore.MaxPortsPerBucket + 500 {
 		m.Record(underlayPort(flowstore.PathDirectIPv4, "", fmt.Sprint(20000+i), 1))
 	}

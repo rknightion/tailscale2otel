@@ -16,7 +16,7 @@ const defaultCapacity = 4096
 type Set struct {
 	mu        sync.Mutex
 	capacity  int
-	seen      map[string]struct{}
+	seen      map[string]string
 	order     []string // insertion order, used to evict the oldest key first
 	head      int      // index into order of the oldest live key
 	evictions uint64   // cumulative count of keys evicted for capacity
@@ -31,7 +31,7 @@ func New(capacity int) *Set {
 	}
 	return &Set{
 		capacity: capacity,
-		seen:     make(map[string]struct{}, capacity),
+		seen:     make(map[string]string, capacity),
 		order:    make([]string, 0, capacity),
 	}
 }
@@ -41,18 +41,43 @@ func New(capacity int) *Set {
 // already present. When adding a new key pushes the set beyond its capacity,
 // the oldest-inserted key is evicted.
 func (s *Set) Add(key string) bool {
+	return s.CompareAndAdd(key, "") == ResultNew
+}
+
+// Result is the outcome of comparing a value against the value first recorded
+// for a key.
+type Result uint8
+
+const (
+	// ResultNew reports that key was absent and value is now its remembered value.
+	ResultNew Result = iota
+	// ResultExact reports that key was present with the same remembered value.
+	ResultExact
+	// ResultConflict reports that key was present with a different remembered value.
+	// The original value remains authoritative.
+	ResultConflict
+)
+
+// CompareAndAdd records key and value when key has not been seen and otherwise
+// reports whether value matches the first value observed for that key. It keeps
+// the same bounded FIFO retention and duplicate-hit accounting as Add. A
+// conflicting value never replaces the first observed value.
+func (s *Set) CompareAndAdd(key, value string) Result {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.seen[key]; ok {
+	if prior, ok := s.seen[key]; ok {
 		s.hits++
-		return false
+		if prior == value {
+			return ResultExact
+		}
+		return ResultConflict
 	}
 
-	s.seen[key] = struct{}{}
+	s.seen[key] = value
 	s.order = append(s.order, key)
 	s.evictLocked()
-	return true
+	return ResultNew
 }
 
 // Len reports the number of keys currently remembered.

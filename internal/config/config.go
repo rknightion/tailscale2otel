@@ -138,6 +138,9 @@ type FlowsConfig struct {
 	// of tailnets, since each keeps its own store). Bounded to [1m, 24h]: this is
 	// an in-memory ring, not a database.
 	Retention Duration `yaml:"retention"`
+	// MaxFutureSkew is the largest amount a record may lead the local clock and
+	// still enter the in-memory view. It does not affect OTLP emission.
+	MaxFutureSkew Duration `yaml:"max_future_skew"`
 }
 
 // PrometheusConfig configures the optional Prometheus pull endpoint (GET /metrics)
@@ -712,6 +715,12 @@ type FlowlogsCollector struct {
 	Lag             Duration `yaml:"lag"`              // poll only
 	InitialLookback Duration `yaml:"initial_lookback"` // poll only
 	MaxWindow       Duration `yaml:"max_window"`       // poll only
+	// ReplayOverlap rereads this much of the most recently completed poll
+	// window so records that became available late can still be accepted.
+	// ReplaySeenCapacity bounds the durable connection identities retained to
+	// suppress the intentional overlap across process restarts.
+	ReplayOverlap      Duration `yaml:"replay_overlap"`       // poll only
+	ReplaySeenCapacity int      `yaml:"replay_seen_capacity"` // poll only
 	// LogMode sets the per-connection/per-record/off log detail (applies to poll
 	// AND stream).
 	LogMode string `yaml:"log_mode"`
@@ -921,6 +930,22 @@ type StreamingConfig struct {
 	// a default of 4; negative disables the limit. Raise it only alongside the
 	// process memory limit: the worst case is roughly this times max_body_bytes.
 	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
+	// Routes is the FILE-ONLY multi-tailnet receiver map. When non-empty it
+	// replaces the legacy path/token/public_url identity fields above; listener,
+	// TLS, decompression and resource limits remain process-wide.
+	Routes []StreamingRoute `yaml:"routes"`
+}
+
+// StreamingRoute identifies one multi-tailnet HEC destination. A route owns
+// the exact HTTP path and token used by that tailnet; it deliberately has no
+// listener or TLS knobs because all routes share one bounded HTTP server.
+type StreamingRoute struct {
+	Tailnet       string `yaml:"tailnet"`
+	Path          string `yaml:"path"`
+	Token         Secret `yaml:"token"`
+	TokenFile     string `yaml:"token_file"`
+	PublicURL     string `yaml:"public_url"`
+	AutoConfigure bool   `yaml:"auto_configure"`
 }
 
 // StreamingTLS configures TLS for the streaming receiver.
@@ -964,6 +989,18 @@ type WebhookConfig struct {
 	// 4; negative disables the limit. Worst-case buffered memory is roughly this
 	// times max_body_bytes.
 	MaxConcurrentRequests int `yaml:"max_concurrent_requests"`
+	// Routes is the FILE-ONLY multi-tailnet receiver map. The legacy path and
+	// secret fields remain the single-tailnet compatibility surface.
+	Routes []WebhookRoute `yaml:"routes"`
+}
+
+// WebhookRoute identifies the tailnet whose signed deliveries a secret
+// authenticates. All routes share webhook.listen/path and the existing body /
+// admission limits.
+type WebhookRoute struct {
+	Tailnet    string `yaml:"tailnet"`
+	Secret     Secret `yaml:"secret"`
+	SecretFile string `yaml:"secret_file"`
 }
 
 // TracingConfig configures the OTEL traces pillar. Off by default; reuses otlp.*

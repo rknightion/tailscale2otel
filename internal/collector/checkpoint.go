@@ -30,6 +30,34 @@ type CheckpointStore interface {
 	Delete(name string) error
 }
 
+// checkpointBatchStore is implemented by the built-in stores so a collector
+// can persist a related set of cursor/identity changes with one file rewrite.
+// It stays optional to preserve compatibility with external test stores.
+type checkpointBatchStore interface {
+	setBatch(updates map[string]time.Time, deletes []string) error
+}
+
+// UpdateCheckpointBatch applies deletes and updates as one persistence
+// operation when store supports it. Updates win when a key appears in both
+// collections. A third-party CheckpointStore falls back to the public
+// Delete/Set methods in the same order.
+func UpdateCheckpointBatch(store CheckpointStore, updates map[string]time.Time, deletes []string) error {
+	if batch, ok := store.(checkpointBatchStore); ok {
+		return batch.setBatch(updates, deletes)
+	}
+	for _, key := range deletes {
+		if err := store.Delete(key); err != nil {
+			return err
+		}
+	}
+	for key, value := range updates {
+		if err := store.Set(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // memoryStore keeps checkpoints in memory only (lost on restart).
 type memoryStore struct {
 	mu sync.Mutex
@@ -65,6 +93,18 @@ func (s *memoryStore) Delete(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.m, name)
+	return nil
+}
+
+func (s *memoryStore) setBatch(updates map[string]time.Time, deletes []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, key := range deletes {
+		delete(s.m, key)
+	}
+	for key, value := range updates {
+		s.m[key] = value
+	}
 	return nil
 }
 
@@ -151,6 +191,18 @@ func (s *fileStore) Delete(name string) error {
 	return s.persistLocked()
 }
 
+func (s *fileStore) setBatch(updates map[string]time.Time, deletes []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, key := range deletes {
+		delete(s.m, key)
+	}
+	for key, value := range updates {
+		s.m[key] = value
+	}
+	return s.persistLocked()
+}
+
 // checkpointFileMode is the intended permission of the checkpoint file:
 // owner-only, since it is exporter-private state.
 const checkpointFileMode os.FileMode = 0o600
@@ -201,6 +253,18 @@ type namespaced struct {
 func (n namespaced) Get(name string) (time.Time, bool)  { return n.store.Get(n.prefix + name) }
 func (n namespaced) Set(name string, t time.Time) error { return n.store.Set(n.prefix+name, t) }
 func (n namespaced) Delete(name string) error           { return n.store.Delete(n.prefix + name) }
+
+func (n namespaced) setBatch(updates map[string]time.Time, deletes []string) error {
+	prefixedUpdates := make(map[string]time.Time, len(updates))
+	for key, value := range updates {
+		prefixedUpdates[n.prefix+key] = value
+	}
+	prefixedDeletes := make([]string, len(deletes))
+	for i, key := range deletes {
+		prefixedDeletes[i] = n.prefix + key
+	}
+	return UpdateCheckpointBatch(n.store, prefixedUpdates, prefixedDeletes)
+}
 
 // Keys returns only this namespace's keys, with the prefix stripped, so a caller
 // enumerating its own state never sees another tailnet's.

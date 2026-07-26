@@ -113,6 +113,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__LAG` | `120s` | poll only — query only up to now-lag so late-arriving records aren't missed |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__INITIAL_LOOKBACK` | `5m` | poll only — cold-start reach-back when there is no checkpoint yet |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__MAX_WINDOW` | `1h` | poll only — cap one tick's window so a long outage catches up over several ticks |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_OVERLAP` | `5m` | poll only — reread this completed-window overlap for records that became available late (0 disables) |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_SEEN_CAPACITY` | `131072` | poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__LOG_MODE` | `per_connection` | per_connection \| per_record \| off — log detail level (applies to poll AND stream) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__MAX_LOG_RECORDS_PER_WINDOW` | `0` | cap flow LOG records per window (0 = unlimited); excess -> tailscale.network.flow.logs_dropped (metrics are never capped) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region) |
@@ -199,7 +201,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__ENABLED` | `false` | run the receiver for real-time Tailscale webhook events |
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | bind address for the webhook receiver |
 | `TS2OTEL_WEBHOOK__PATH` | `/tailscale/webhook` | endpoint path Tailscale POSTs events to |
-| `TS2OTEL_WEBHOOK__SECRET` | `""` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty = verification SKIPPED (WARN) |
+| `TS2OTEL_WEBHOOK__SECRET` | `""` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read |
 | `TS2OTEL_WEBHOOK__SECRET_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | reject signed timestamps older than this (replay window); "0" disables the check |
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | best-effort: drop a webhook event already counted via the audit logs |
@@ -230,6 +232,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ADMIN__TLS__KEY_FILE` | `""` | HTTPS key for admin.tls.cert_file |
 | `TS2OTEL_FLOWS__ENABLED` | `true` | keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_FLOWS__RETENTION` | `6h` | how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record |
+| `TS2OTEL_FLOWS__MAX_FUTURE_SKEW` | `5m` | local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |
 | `TS2OTEL_PROMETHEUS__LISTEN` | `:2112` | bind for /metrics (default :2112); keep distinct from admin.listen |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
@@ -255,6 +258,6 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_VERSION_CHECKS__CACHE_TTL` | `1h` | how long a fetched "latest version" is cached before re-fetching (minimum 5m) |
 | `TS2OTEL_VERSION_CHECKS__TIMEOUT` | `10s` | per-request timeout for the external version fetch |
 
-**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `collectors.node_metrics.targets`, `profiling.pyroscope.tags`.
+**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `collectors.node_metrics.targets`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`.
 
 <!-- END GENERATED: env-vars -->

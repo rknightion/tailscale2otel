@@ -31,6 +31,31 @@ func TestAdd_SameKeyReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestCompareAndAddPreservesFirstValueAndBoundsRetention(t *testing.T) {
+	s := dedup.New(1)
+	if got, want := s.CompareAndAdd("a", "first"), dedup.ResultNew; got != want {
+		t.Fatalf("first CompareAndAdd() = %v, want %v", got, want)
+	}
+	if got, want := s.CompareAndAdd("a", "first"), dedup.ResultExact; got != want {
+		t.Fatalf("exact CompareAndAdd() = %v, want %v", got, want)
+	}
+	if got, want := s.CompareAndAdd("a", "revised"), dedup.ResultConflict; got != want {
+		t.Fatalf("conflicting CompareAndAdd() = %v, want %v", got, want)
+	}
+	if got, want := s.Hits(), uint64(2); got != want {
+		t.Fatalf("Hits() = %d, want %d after exact and conflicting duplicates", got, want)
+	}
+	if got, want := s.CompareAndAdd("b", "other"), dedup.ResultNew; got != want {
+		t.Fatalf("second key CompareAndAdd() = %v, want %v", got, want)
+	}
+	if got, want := s.Evictions(), uint64(1); got != want {
+		t.Fatalf("Evictions() = %d, want %d after bounded insert", got, want)
+	}
+	if got, want := s.CompareAndAdd("a", "revised"), dedup.ResultNew; got != want {
+		t.Fatalf("evicted key CompareAndAdd() = %v, want %v", got, want)
+	}
+}
+
 func TestSet_Cap(t *testing.T) {
 	if got := dedup.New(16).Cap(); got != 16 {
 		t.Fatalf("New(16).Cap() = %d, want 16", got)

@@ -3,6 +3,8 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.14.2: add bounded flow replay/future-skew controls and file-only multi-tailnet
+# HEC/webhook routes; document fail-closed webhook authentication.
 # 0.14.1: GHSA-825f-hph6-x65w — remove every pod-template annotation that hashed secret
 # material. The Deployment used to publish `checksum/secret` (a SHA-256 of the inline
 # `secret:` map) and `checksum/config` unconditionally (including when the rendered
@@ -83,7 +85,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.14.1
+version: 0.14.2
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "2.0.2"
 home: https://m7kni.io/tailscale2otel/

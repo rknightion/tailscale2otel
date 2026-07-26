@@ -2,33 +2,39 @@ package pii
 
 // keyCategory maps a fixed-meaning attribute key to its category.
 var keyCategory = map[string]Category{
-	"tailscale.user":                   CatEmails,
-	"tailscale.src.user":               CatEmails, // flow endpoint identity, from the record's srcNode block
-	"tailscale.dst.user":               CatEmails, // flow endpoint identity, from the record's dstNodes block
-	"user.name":                        CatEmails, // audit actor + device-invite acceptor + users collector login
-	"user.full_name":                   CatUserDisplayNames,
-	"user.id":                          CatUserIDs,
-	"host.name":                        CatHostnames,
-	"tailscale.node.hostname":          CatHostnames,
-	"host.id":                          CatNodeIDs,
-	"tailscale.node.id":                CatNodeIDs,
-	"tailscale.service.name":           CatServiceAddrs,
-	"endpoint":                         CatEndpointPaths,
-	"tailscale.route.cidr":             CatNetworkTopology,
-	"tailscale.dns.resolver.domain":    CatNetworkTopology,
-	"tailscale.dns.search_path.domain": CatNetworkTopology, // J-A3 search-path info gauge
-	"tailscale.tailnet":                CatTailnetName,
-	"tailscale.audit.old":              CatFreeTextDetails,
-	"tailscale.audit.new":              CatFreeTextDetails,
-	"tailscale.audit.details":          CatFreeTextDetails,
-	"tailscale.device.posture.details": CatFreeTextDetails, // #56: dynamic posture-log attribute map
-	"error.message":                    CatFreeTextDetails,
-	"tailscale.target.name":            CatFreeTextDetails,
-	"tailscale.key.description":        CatFreeTextDetails,
-	"tailscale.oauth_app.name":         CatFreeTextDetails, // #167: operator-chosen app label (like key.description)
-	"tailscale.key.owner":              CatUserIDs,         // #165: key owner userId on per-key gauges + keys.by_owner
-	"value":                            CatFreeTextDetails,
-	"tailscale.acl.rule":               CatFreeTextDetails, // J-B1 risky-rule src/dst contents
+	"tailscale.user":                     CatEmails,
+	"tailscale.src.user":                 CatEmails, // flow endpoint identity, from the record's srcNode block
+	"tailscale.dst.user":                 CatEmails, // flow endpoint identity, from the record's dstNodes block
+	"user.name":                          CatEmails, // audit actor + device-invite acceptor + users collector login
+	"user.full_name":                     CatUserDisplayNames,
+	"user.id":                            CatUserIDs,
+	"host.name":                          CatHostnames,
+	"tailscale.node.hostname":            CatHostnames,
+	"host.id":                            CatNodeIDs,
+	"tailscale.node.id":                  CatNodeIDs,
+	"tailscale.service.name":             CatServiceAddrs,
+	"endpoint":                           CatEndpointPaths,
+	"tailscale.route.cidr":               CatNetworkTopology,
+	"tailscale.dns.resolver.domain":      CatNetworkTopology,
+	"tailscale.dns.search_path.domain":   CatNetworkTopology, // J-A3 search-path info gauge
+	"tailscale.tailnet":                  CatTailnetName,
+	"tailscale.audit.old":                CatFreeTextDetails,
+	"tailscale.audit.new":                CatFreeTextDetails,
+	"tailscale.audit.details":            CatFreeTextDetails,
+	"tailscale.device.posture.details":   CatFreeTextDetails, // #56: dynamic posture-log attribute map
+	"error.message":                      CatFreeTextDetails,
+	"tailscale.target.name":              CatFreeTextDetails,
+	"tailscale.key.description":          CatFreeTextDetails,
+	"tailscale.oauth_app.name":           CatFreeTextDetails, // #167: operator-chosen app label (like key.description)
+	"tailscale.key.owner":                CatUserIDs,         // #165: key owner userId on per-key gauges + keys.by_owner
+	"value":                              CatFreeTextDetails,
+	"tailscale.acl.rule":                 CatFreeTextDetails, // J-B1 risky-rule src/dst contents
+	"tailscale.webhook.node.id":          CatNodeIDs,
+	"tailscale.webhook.node.device.name": CatHostnames,
+	"tailscale.webhook.node.managed_by":  CatEmails,
+	"tailscale.webhook.actor":            CatEmails,
+	"tailscale.webhook.url":              CatEndpointPaths,
+	"tailscale.webhook.user":             CatEmails,
 
 	// Span-only keys (#212). Spans go through the same policy as metrics and logs
 	// via telemetry.piiSpanExporter, so these must be classified here too.
@@ -86,7 +92,9 @@ var nonIdentifier = map[string]bool{
 	"tailscale.dst.service": true, "tailscale.tags": true, "tailscale.collector": true,
 	"tailscale.feature": true, "metric.name": true, "component": true, "dedup.set": true,
 	"source": true, "signal": true, "outcome": true, "metric.group": true, "cpu.mode": true,
-	"tailscale.webhook.type": true, "reason": true, "type": true, "tailscale.logstream.type": true,
+	"tailscale.webhook.type": true, "reason": true, "type": true, "status": true, "field": true,
+	"scope": true, "tailscale.logstream.type": true,
+	"tailscale.webhook.key.expiration": true, "tailscale.webhook.old_roles": true, "tailscale.webhook.new_roles": true,
 	"tailscale.contact.type": true, "tailscale.posture.provider": true, "tailscale.setting.name": true,
 	"tailscale.setting.role": true, "tailscale.webhook_endpoint.provider": true,
 	"tailscale.dns.resolver.kind": true, "tailscale.dns.resolver.use_with_exit_node": true,
@@ -108,6 +116,8 @@ var nonIdentifier = map[string]bool{
 	"os": true, "os_version": true, "ts_version": true, "auto_update": true, "encrypted": true, "track": true,
 	"tailscale.service.approval": true, "tailscale.service.configured": true,
 	"tailscale.audit.action": true, "tailscale.audit.origin": true, "tailscale.audit.change": true,
+	"tailscale.audit.type": true, "tailscale.audit.deferred_at": true,
+	"tailscale.actor.tags": true, "tailscale.target.ephemeral": true,
 	"tailscale.actor.type": true, "tailscale.target.type": true, "tailscale.target.property": true,
 	"tailscale.tx.bytes": true, "tailscale.rx.bytes": true, "tailscale.tx.packets": true,
 	"tailscale.rx.packets": true, "tailscale.connections": true, "error.type": true,

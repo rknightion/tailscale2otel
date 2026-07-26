@@ -118,8 +118,10 @@ These make natural alert conditions — see [Alerts](alerts.md).
 In addition to the raw `tailscale.config.audit.events` counter (action + origin), a curated
 `tailscale.config.audit.changes` counter emits only **security- and lifecycle-relevant** events,
 categorized by the `tailscale.audit.change` attribute (Prometheus label `tailscale_audit_change`;
-values include `acl`, `key_expiry`, `exit_node`, `tailnet_lock`, `user_role`, `auth_provider`,
-`secret`, `device`, `api_key`, `posture_integration`, `magic_dns`, `dns_config`, …) and `actor.type`.
+values include `acl`, `key_expiry`, `network_flow_logging`, `exit_flow_logging`,
+`machine_approval`, `user_approval`, `key_duration`, `file_sharing`, `https`, `scim`,
+`webhook_subscription`, `security_contact`, `tailnet_lock`, `user_role`, `auth_provider`,
+`secret`, `device`, `api_key`, `posture_integration`, `magic_dns`, and `dns_config`) and `actor.type`.
 It is purpose-built for alerting on high-value change categories (and device churn) without the
 noise of the full audit stream.
 
@@ -136,13 +138,14 @@ environments.
 
 ## Receiver authentication footguns
 
-The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs. Their
-authentication is **opt-in by presence of a secret**, so an empty value silently disables
-it (these behaviours are also noted in
+The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs.
+Authentication is enabled by a configured secret; an empty credential is accepted only on
+loopback (these behaviours are also noted in
 [`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml)):
 
-- Leaving `webhook.secret` empty **skips HMAC verification entirely** — unauthenticated
-  POSTs are accepted.
+- Leaving `webhook.secret` empty skips HMAC verification only on a loopback
+  `webhook.listen`. On any other bind, requests are refused with HTTP 403 before their
+  bodies are read.
 - Leaving `streaming.token` empty is **refused rather than accepted** on a network-reachable
   bind: the HEC receiver answers every request with HTTP 403 and logs an ERROR at startup. It
   stays open only on a loopback `streaming.listen`. This fails closed, so a missing token

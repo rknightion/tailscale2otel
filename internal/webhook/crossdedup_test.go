@@ -123,7 +123,7 @@ func TestEmit_NoDedupSetEmitsAll(t *testing.T) {
 // event in the batch.
 func TestHandler_ArrayValuedDataDoesNotDropBatch(t *testing.T) {
 	rec := telemetrytest.New()
-	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard()) // empty secret -> verification skipped
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), discard()) // empty secret -> verification skipped
 	body := `[` +
 		`{"timestamp":"2026-06-02T10:00:00Z","version":1,"type":"nodeCreated","tailnet":"e.com","message":"m","data":{"nodeID":"n1"}},` +
 		`{"timestamp":"2026-06-02T10:00:01Z","version":1,"type":"userRoleUpdated","tailnet":"e.com","message":"m","data":{"user":"a@e.com","oldRoles":["member"],"newRoles":["admin"],"url":"https://x"}}` +
@@ -148,7 +148,7 @@ func TestHandler_ArrayValuedDataDoesNotDropBatch(t *testing.T) {
 func TestHandler_DistinctUserUpdatesNotSuppressed(t *testing.T) {
 	rec := telemetrytest.New()
 	set := dedup.New(0)
-	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
 	mk := func(typ string) string {
 		return `{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"` + typ + `","tailnet":"e.com","message":"m","data":{"user":"u1@e.com"}}`
 	}
@@ -165,7 +165,7 @@ func TestHandler_DistinctUserUpdatesNotSuppressed(t *testing.T) {
 func TestHandler_NodeAuthorizedAliasDedup(t *testing.T) {
 	rec := telemetrytest.New()
 	set := dedup.New(0)
-	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), discard(), WithDedup(set))
 	one := `{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeAuthorized","tailnet":"e.com","message":"m","data":{"nodeID":"n1"}}`
 	body := `[` + one + `,` + one + `]`
 	doPost(t, s.Handler(), "/webhook", body, "")

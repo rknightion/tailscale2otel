@@ -34,7 +34,10 @@ func newFlowStore(cfg *config.Config) *flowstore.Memory {
 	if !cfg.Flows.Enabled || !cfg.Admin.Enabled || !cfg.Admin.LandingPage {
 		return nil
 	}
-	return flowstore.NewMemory(int(cfg.Flows.Retention.D() / flowstore.Resolution))
+	return flowstore.NewMemory(
+		int(cfg.Flows.Retention.D()/flowstore.Resolution),
+		flowstore.WithMaxFutureSkew(cfg.Flows.MaxFutureSkew.D()),
+	)
 }
 
 // flowsEnabled reports whether any runtime is feeding a flow store, which is

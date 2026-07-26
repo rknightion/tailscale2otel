@@ -180,9 +180,9 @@ secret:
   # -- HEC token the streaming receiver expects ("Authorization: Splunk <token>").
   # Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op.
   TS2OTEL_STREAMING__TOKEN: ""
-  # -- Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. CRITICAL: leaving
-  # this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so
-  # unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook.
+  # -- Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. Empty is accepted
+  # only on a loopback config.webhook.listen; network-reachable binds refuse every request
+  # with HTTP 403 before reading its body.
   TS2OTEL_WEBHOOK__SECRET: ""
   # -- Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the
   # status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable
@@ -484,6 +484,12 @@ config:
       initial_lookback: 5m
       # -- Maximum width of a single poll window (caps catch-up after downtime).
       max_window: 1h
+      # -- Reread this much before the durable high-water mark so records that became available
+      # after the first completed query can still arrive. 0 disables; maximum 1h.
+      replay_overlap: 5m
+      # -- Maximum durable SHA-256 connection identities retained to suppress the intentional
+      # replay across restart. Must be 1..1048576 while replay_overlap is enabled.
+      replay_seen_capacity: 131072
       # -- Flow-log verbosity: per_connection | per_record | off (off = metrics only, no logs).
       log_mode: per_connection
       # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
@@ -714,6 +720,9 @@ config:
     # sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is
     # roughly this x max_body_bytes, so raise it together with resources.limits.memory.
     max_concurrent_requests: 0
+    # -- FILE-ONLY multi-tailnet routes. Each item has tailnet, exact path, token or token_file,
+    # optional public_url, and optional auto_configure. Non-empty replaces legacy path/token identity.
+    routes: []
 
   # Optional webhook receiver for real-time Tailscale events.
   # Secret: set via TS2OTEL_WEBHOOK__SECRET (secret).
@@ -724,8 +733,9 @@ config:
     listen: ":8089"
     # -- HTTP path the receiver serves.
     path: "/tailscale/webhook"
-    # -- HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs).
-    # Set via TS2OTEL_WEBHOOK__SECRET (secret).
+    # -- HMAC-SHA256 verification secret. Empty is accepted only on loopback; otherwise the
+    # receiver refuses every request with HTTP 403 before reading its body. Set via
+    # TS2OTEL_WEBHOOK__SECRET (secret).
     secret: ""
     # -- Read webhook.secret from this path instead of an inline value (mounted-Secret style).
     # Set the value or the file, not both; the file's content is whitespace-trimmed.
@@ -743,6 +753,9 @@ config:
     # default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffered memory is roughly
     # this x max_body_bytes, so raise it together with resources.limits.memory.
     max_concurrent_requests: 0
+    # -- FILE-ONLY multi-tailnet routes. Each item has tailnet and secret or secret_file.
+    # Non-empty replaces legacy path/secret identity; all events must name one route tailnet.
+    routes: []
     # -- Best-effort: drop a webhook event already counted via the audit logs (off by default).
     dedup_audit_events: false
 
@@ -845,6 +858,8 @@ config:
     enabled: true
     # -- How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store.
     retention: 6h
+    # -- Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged.
+    max_future_skew: 5m
 
   # Optional continuous/on-demand profiling. Everything here is OFF by default and
   # carries no Tailscale data. The pprof handlers mount on the admin server, so

@@ -26,10 +26,8 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/release"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/stream"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
-	"github.com/rknightion/tailscale2otel/v3/internal/webhook"
 )
 
 const heartbeatInterval = 15 * time.Second
@@ -79,15 +77,16 @@ type App struct {
 	checkpointEffective string
 	logger              *slog.Logger
 
-	flowDedup    *dedup.Set // runtimes[0] flow set, retained for the dedup self-obs reporter
-	auditDedup   *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
-	streamSrv    *stream.Server
-	webhookSrv   *webhook.Server
-	webhookDedup *dedup.Set // shared cross-source set (webhook<->audit); nil unless enabled
-	adminSrv     *http.Server
-	metricsSrv   *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
-	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
-	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
+	flowDedup     *dedup.Set // runtimes[0] flow set, retained for the dedup self-obs reporter
+	auditDedup    *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
+	streamSrv     receiver
+	webhookSrv    receiver
+	webhookDedup  *dedup.Set            // shared cross-source set (webhook<->audit); nil unless enabled
+	webhookDedups map[string]*dedup.Set // per-tailnet route sets in multi-tailnet mode
+	adminSrv      *http.Server
+	metricsSrv    *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
+	profiler      *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
+	rdnsCache     *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
 
 	selfRelease *release.Fetcher // nil unless version_checks.self.enabled
 	tsRelease   *release.Fetcher // nil unless version_checks.devices.enabled
@@ -96,6 +95,14 @@ type App struct {
 	// reports unready after a receiver fails to bind or stops unexpectedly (#57).
 	// Written by recordReceiverStop, read by the readyz handler.
 	readyState *receiverHealth
+}
+
+// receiver is the small common surface shared by legacy single-tailnet servers
+// and the multi-tailnet routers. Keeping it local prevents routing details from
+// leaking into the app lifecycle.
+type receiver interface {
+	Handler() http.Handler
+	Run(context.Context) error
 }
 
 // New assembles the service from cfg. The caller owns ctx for the lifetime of
@@ -318,10 +325,13 @@ func (a *App) buildProcessDeps() {
 		}
 		a.rdnsCache = rdns.New(ropts)
 	}
-	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents {
+	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents && len(cfg.Webhook.Routes) == 0 {
 		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook and
 		// the audit logs is counted once (single-tailnet only; webhook requires it).
 		a.webhookDedup = dedup.New(auditDedupCapacity)
+	}
+	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents && len(cfg.Webhook.Routes) > 0 {
+		a.webhookDedups = make(map[string]*dedup.Set, len(cfg.Webhook.Routes))
 	}
 	vc := cfg.VersionChecks
 	ua := "tailscale2otel/" + a.version
@@ -363,6 +373,11 @@ func (a *App) addRuntime(
 	if tc, ok := cp.Client.(*tsapi.Client); ok {
 		rt.client = tc
 	}
+	webhookDedup := a.webhookDedup
+	if a.webhookDedups != nil {
+		webhookDedup = dedup.New(auditDedupCapacity)
+		a.webhookDedups[name] = webhookDedup
+	}
 	newRuntime(rt, runtimeDeps{
 		cfg:          a.cfg,
 		logger:       a.logger,
@@ -370,7 +385,7 @@ func (a *App) addRuntime(
 		store:        a.store,
 		procEmitter:  a.procEmitter,
 		rdnsCache:    a.rdnsCache,
-		webhookDedup: a.webhookDedup,
+		webhookDedup: webhookDedup,
 		tsRelease:    a.tsRelease,
 		multi:        multi,
 		primary:      len(a.runtimes) == 0, // the first runtime owns process-global static targets
@@ -528,7 +543,7 @@ func (a *App) Run(ctx context.Context) error {
 			defer receiverWG.Done()
 			a.recordReceiverStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
-		if a.cfg.Streaming.AutoConfigure && a.runtimes[0].cp.Kind == provider.KindTailscale && a.runtimes[0].client != nil {
+		if a.hasAutoConfigureStreaming() {
 			// Off the hot path: registering the sink makes a network call to
 			// Tailscale, which must not block the scheduler/other receivers from
 			// starting. Bounded so a hung endpoint can't linger past shutdown.
@@ -599,24 +614,48 @@ func (a *App) Run(ctx context.Context) error {
 // and does not stop startup. It is only ever called when streaming is enabled and
 // public_url is set (enforced by config validation).
 func (a *App) autoConfigureStreaming(ctx context.Context) {
-	sink := tsapi.LogStreamConfig{
-		DestinationType: "splunk",
-		URL:             a.cfg.Streaming.PublicURL,
-		Token:           a.cfg.Streaming.Token.Reveal(),
+	type route struct {
+		rt         *tailnetRuntime
+		url, token string
 	}
-	for _, logType := range []string{"network", "configuration"} {
-		if err := a.runtimes[0].client.ConfigureLogStream(ctx, logType, sink); err != nil {
-			a.logger.Error("streaming auto_configure failed", "log_type", logType, "error", err)
-			a.componentError(appcatalog.ComponentAutoConfigure)
+	routes := []route{{rt: a.runtimes[0], url: a.cfg.Streaming.PublicURL, token: a.cfg.Streaming.Token.Reveal()}}
+	if len(a.cfg.Streaming.Routes) > 0 {
+		routes = routes[:0]
+		for _, configured := range a.cfg.Streaming.Routes {
+			if !configured.AutoConfigure {
+				continue
+			}
+			if rt := a.runtimeFor(configured.Tailnet); rt != nil {
+				routes = append(routes, route{rt: rt, url: configured.PublicURL, token: configured.Token.Reveal()})
+			}
+		}
+	}
+	for _, route := range routes {
+		if route.rt == nil || route.rt.cp.Kind != provider.KindTailscale || route.rt.client == nil {
 			continue
 		}
-		// The destination URL is deliberately NOT logged (GHSA-rm3x-hhrj-94v4):
-		// streaming.public_url can embed userinfo or a signed query, and this
-		// line would hand that reusable credential to anything reading the
-		// process log. The type and the outcome are what an operator needs; the
-		// URL is already in their config.
-		a.logger.Info("streaming auto_configure registered sink", "log_type", logType)
+		sink := tsapi.LogStreamConfig{DestinationType: "splunk", URL: route.url, Token: route.token}
+		for _, logType := range []string{"network", "configuration"} {
+			if err := route.rt.client.ConfigureLogStream(ctx, logType, sink); err != nil {
+				a.logger.Error("streaming auto_configure failed", "tailnet", a.runtimeName(route.rt), "log_type", logType, "error", err)
+				a.componentError(appcatalog.ComponentAutoConfigure)
+				continue
+			}
+			a.logger.Info("streaming auto_configure registered sink", "tailnet", a.runtimeName(route.rt), "log_type", logType)
+		}
 	}
+}
+
+func (a *App) hasAutoConfigureStreaming() bool {
+	if len(a.cfg.Streaming.Routes) == 0 {
+		return a.cfg.Streaming.AutoConfigure && a.runtimes[0].cp.Kind == provider.KindTailscale && a.runtimes[0].client != nil
+	}
+	for _, route := range a.cfg.Streaming.Routes {
+		if route.AutoConfigure {
+			return true
+		}
+	}
+	return false
 }
 
 // newReleaseHTTPClient builds the http.Client used by the external release

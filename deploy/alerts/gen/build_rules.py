@@ -691,6 +691,16 @@ def groups():
               "Stream-receiver p99 request latency is above 5s",
               "p99 stream-receiver request latency above 5s — receiver backpressure.",
               domain="observability", paused=True, nodata="OK"),
+        alert("ts2o-ingest-data-stale", "Accepted ingest data stale",
+              "clamp_min(time() - max by (source, signal) "
+              "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
+              "gt", 3600, "15m", "warning",
+              "Accepted {{ $labels.source }}/{{ $labels.signal }} events are over 1h stale",
+              "The receiver or poller may still be running, but the newest accepted event timestamp is "
+              "over one hour old. This rule ships paused because quiet tailnets and sparse webhook/audit "
+              "sources are legitimately idle; enable it only for source/signal pairs expected to deliver "
+              "continuously, and add label filters or tune the threshold for that workload.",
+              domain="observability", paused=True, nodata="OK", lookback=2592000),
         # --- WU12b: posture integration match rate ---
         alert("ts2o-posture-match-low", "Posture integration match rate low",
               "min(tailscale_posture_integration_matched_ratio / "
@@ -806,6 +816,12 @@ def groups():
                "sum(max by (metric_name) (tailscale2otel_series_active))",
                "Total active series across all tailscale2otel metrics — an ingest-cost proxy.",
                domain="observability", paused=False),
+        record("ts2o-rec-ingest-freshness", "tailscale2otel:ingest_event_freshness_seconds",
+               "clamp_min(time() - max by (source, signal) "
+               "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
+               "Seconds since the greatest accepted event timestamp per source/signal. Use only with "
+               "workload-specific staleness thresholds; sparse sources can be legitimately idle.",
+               domain="observability", paused=True),
         record("ts2o-rec-keys-expiring-7d", "tailscale:device_keys_expiring_7d:count",
                "count((max by (host_id) (tailscale_device_key_expiry_seconds) - time() < 7*86400) and "
                "(max by (host_id) (tailscale_device_key_expiry_seconds) - time() > 0))",

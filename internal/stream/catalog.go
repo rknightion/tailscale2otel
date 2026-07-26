@@ -24,7 +24,7 @@ var (
 		Name:        MetricRejected,
 		Unit:        "{rejection}",
 		Instrument:  metricdoc.Counter,
-		Description: "Whole requests rejected by the stream receiver, by reason (`auth` = bad token; `auth_required` = network-reachable with no token; `cross_site` = browser-originated request to the untokened receiver; `too_large` = body over the byte cap; `too_many_records` = over the per-request record cap; `too_many_connections` = over the per-request flow-connection cap; `overloaded` = admission budget full; `unparsable` = nothing JSON-like; `malformed` = structurally corrupt batch; `decode_error` = a known record failed typed decoding).",
+		Description: "Whole requests rejected by the stream receiver, by reason (`auth` = bad token; `auth_required` = network-reachable with no token; `cross_site` = browser-originated request to the untokened receiver; `too_large` = body over the byte cap; `too_many_records` = over the per-request record cap; `too_many_connections` = over the per-request flow-connection cap; `overloaded` = admission budget full; `unparsable` = nothing JSON-like; `malformed` = structurally corrupt batch; `decode_error` = a known record failed typed decoding; `semantic_invalid` = a decoded flow failed bounded semantic validation).",
 		Attributes:  []string{attrReason},
 		Group:       groupReceivers,
 	}

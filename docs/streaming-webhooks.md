@@ -59,6 +59,19 @@ collectors:
 
 **Auto-configure.** Setting `auto_configure: true` (with `enabled: true`, a `public_url`, and an OAuth client carrying the `log_streaming` scope) causes `tailscale2otel` to register itself as the tailnet's log-streaming sink on startup.
 
+### Multi-tailnet routes
+
+For a `tailnets:` deployment, configure a file-only `streaming.routes` list instead of the legacy
+`path`, `token`, `public_url`, and `auto_configure` identity fields. Each route has an exact rooted
+`path`, one `tailnet`, one token source, optional `public_url`, and its own `auto_configure` flag.
+The path picks the matching runtime before token verification; an unknown path or token never falls
+back to another tailnet. Auto-configure iterates only routes that opt in.
+
+Webhook routes are file-only `webhook.routes` entries with `tailnet` and `secret`/`secret_file`.
+The shared webhook endpoint reads a bounded request only far enough to require one identical,
+non-empty tailnet on every event, selects that route, and then verifies its HMAC. Missing, unknown,
+or mixed-tailnet batches are rejected without processor, dedup, or receiver-telemetry effects.
+
 !!! warning "`auto_configure` overwrites the existing sink"
     When `auto_configure: true`, the service **overwrites** whatever log-streaming sink is already configured for the tailnet. Never enable it against a tailnet whose streaming configuration you do not intend to replace.
 
@@ -67,11 +80,18 @@ collectors:
 | Metric | Description |
 |---|---|
 | `tailscale.stream.records` | Records successfully routed to a processor (`type`: `flow` or `audit`) |
-| `tailscale.stream.rejected` | Requests/records not ingested (`reason`: `auth`, `unparsable`, or `too_large`) |
+| `tailscale.stream.rejected` | Whole requests not ingested (`reason` includes authentication/exposure failures, size/admission limits, malformed/decode failures, and `semantic_invalid`) |
 | `tailscale.stream.decode_errors` | Records classified as a known type but whose typed decode failed |
 | `tailscale.stream.skipped` | Records extracted from an otherwise-valid request body but never routed to a processor (`reason`: `unclassified` = matched neither the flow nor audit shape, `unwrap_drop` = a non-object value was dropped while unwrapping the envelope before classification) |
 | `tailscale.stream.inflight` | In-flight HTTP requests currently being processed (UpDownCounter) — useful for backpressure monitoring |
 | `tailscale.stream.request.duration` | Wall-clock duration of HEC request handling, in seconds (histogram) |
+
+All accepted ingestion paths also feed bounded cross-source freshness telemetry:
+`tailscale2otel.ingest.event.age`, `capture.delay`, `last_event_timestamp`, and
+`timestamp_skew`, keyed only by `source` and `signal`. Event time remains distinct from upstream
+capture/observation time and local acceptance time. The Events & Logs dashboard shows current
+freshness plus p95 event/capture delay; the Grafana-managed stale-data rule is paused by default
+because webhook and audit sources can be legitimately quiet.
 
 ## Webhook receiver
 
@@ -82,7 +102,7 @@ webhook:
   enabled: false
   listen: ":8089"                    # bind address for the webhook receiver
   path: /tailscale/webhook           # endpoint path Tailscale POSTs events to
-  secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty = verification SKIPPED, WARN)
+  secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty works only on loopback, otherwise requests get 403)
   tolerance: 5m                      # reject signed timestamps older than this (replay window); "0" disables
   dedup_audit_events: false          # best-effort, bidirectional: audit and webhook events sharing a normalized key are deduplicated against a shared set, first-arrival-wins (either copy can be the one that survives)
 ```
@@ -93,14 +113,29 @@ webhook:
     [Tailscale admin console](https://login.tailscale.com/admin/webhooks), pointed at this
     receiver's `listen`/`path`, with the same secret configured on both sides.
 
-**HMAC verification.** Tailscale signs each webhook request with a `Tailscale-Webhook-Signature` header containing a Unix timestamp and one or more HMAC-SHA256 signatures (`t=<seconds>,v1=<hex>`). The receiver verifies the signature by computing `HMAC-SHA256(secret, "<seconds>.<body>")` and comparing against each `v1` value using a constant-time comparison. Multiple `v1` entries are accepted — a match against any one is sufficient, which supports secret rotation without downtime. The `tolerance` field (default `5m`) rejects requests whose timestamp is older than the window, limiting replay attacks.
+**HMAC verification.** Tailscale signs each webhook request with a `Tailscale-Webhook-Signature` header containing a Unix timestamp and an HMAC-SHA256 signature (`t=<seconds>,v1=<hex>`). The receiver verifies the signature by computing `HMAC-SHA256(secret, "<seconds>.<body>")` and comparing it in constant time. The parser tolerates repeated `v1` entries for forward compatibility, but the public sender contract does not promise old/new-secret overlap during rotation; update the receiver secret immediately after rotating it in Tailscale. The `tolerance` field (default `5m`) rejects requests whose timestamp is outside the allowed past or future clock-skew window.
+
+For version-1 events, the emitted log carries a typed allowlist of documented structured fields:
+node ID, device name, owner/actor, admin URL, key expiration, user, and old/new roles where the
+event type defines them. Unknown, null, or wrong-typed values are omitted. Policy `oldPolicy` and
+`newPolicy` blobs are never emitted. The identity and URL fields pass through the same `pii_filter`
+categories as equivalent collector data.
+
+Authenticated events are also deduplicated per event using a canonical JSON digest. The in-memory
+set is bounded to 65,536 entries and retains them for 25 hours, covering the documented 24-hour
+retry horizon. A duplicate still receives HTTP 200 and increments `tailscale.webhook.duplicates`;
+the set is intentionally not persisted, so a process restart can admit a retry again. This is
+separate from the optional audit/webhook cross-source deduplication.
 
 **Event severity.** Most event types are emitted at INFO. The following are emitted at WARN: `nodeKeyExpired`, `nodeKeyExpiringInOneDay`, `nodeNeedsApproval`, `userNeedsApproval`, `nodeNeedsAuthorization`, `nodeNeedsSignature`, `nodeDeleted`, `webhookDeleted`, `userSuspended`, `userDeleted`.
 
 ## Security notes
 
-!!! danger "An empty webhook secret silently disables auth; an empty streaming token breaks ingestion"
-    The two receivers behave differently. An empty `webhook.secret` **skips HMAC verification entirely**, so unauthenticated POSTs are accepted — set it before exposing the webhook. An empty `streaming.token` **fails closed** instead: on any non-loopback `streaming.listen` the HEC receiver refuses every request with HTTP 403 and logs an ERROR at startup, so the symptom is "no logs arriving", not silent acceptance of forged records. An empty token is honoured only on a loopback bind.
+!!! danger "Empty receiver credentials are loopback-only"
+    An empty `webhook.secret` skips HMAC verification only on a loopback `webhook.listen`. On any
+    other bind the receiver refuses every request with HTTP 403 before reading its body. The HEC
+    receiver applies the same fail-closed boundary to an empty `streaming.token`. Use an
+    authenticating proxy if either receiver must listen on loopback without its native credential.
 
     These values are set most safely via environment variables (`TS2OTEL_STREAMING__TOKEN`, `TS2OTEL_WEBHOOK__SECRET`). A mistyped variable name (e.g. `TS2OTEL_WEBHOOK__SECRT`) leaves the value empty rather than failing loudly — the startup log WARNs on any `TS2OTEL_*` variable that matches no config key, so double-check that the credentials are actually set.
 

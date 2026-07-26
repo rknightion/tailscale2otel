@@ -717,10 +717,11 @@ func (b *bucket) addNode(name string, c Counts, sending bool) {
 // which is acceptable because the OTLP backend, not this, is the system of
 // record. Safe for concurrent use.
 type Memory struct {
-	mu       sync.Mutex
-	buckets  map[int64]*bucket
-	capacity int
-	now      func() time.Time
+	mu            sync.Mutex
+	buckets       map[int64]*bucket
+	capacity      int
+	now           func() time.Time
+	maxFutureSkew time.Duration
 
 	// recent is a fixed-size circular buffer of the newest raw connections.
 	// next is where the following write lands; filled counts how much of the
@@ -731,6 +732,38 @@ type Memory struct {
 
 	recorded int64
 	dropped  int64
+}
+
+// Admission reports whether an observation entered the store.
+type Admission uint8
+
+const (
+	// AdmissionAccepted means the observation was recorded.
+	AdmissionAccepted Admission = iota
+	// AdmissionExpired means the observation predates the store's retention window.
+	AdmissionExpired
+	// AdmissionFuture means the observation is too far ahead of the current time.
+	AdmissionFuture
+)
+
+// Option configures a Memory store.
+type Option func(*Memory)
+
+// WithClock supplies the store clock. A nil clock is ignored.
+func WithClock(now func() time.Time) Option {
+	return func(m *Memory) {
+		if now != nil {
+			m.now = now
+		}
+	}
+}
+
+// WithMaxFutureSkew allows observations up to skew ahead of the current time.
+// Negative values normalize to zero, so they never widen admission.
+func WithMaxFutureSkew(skew time.Duration) Option {
+	return func(m *Memory) {
+		m.maxFutureSkew = max(skew, 0)
+	}
 }
 
 // Recent is one raw connection, retained verbatim. The minute buckets answer
@@ -769,17 +802,25 @@ type Recent struct {
 }
 
 // NewMemory returns a store retaining at most capacity one-minute buckets.
-// A non-positive capacity selects six hours.
-func NewMemory(capacity int) *Memory {
+// A non-positive capacity selects six hours. Observations up to five minutes
+// ahead of the clock are admitted by default.
+func NewMemory(capacity int, opts ...Option) *Memory {
 	if capacity <= 0 {
 		capacity = int((6 * time.Hour) / Resolution)
 	}
-	return &Memory{
-		buckets:  map[int64]*bucket{},
-		capacity: capacity,
-		recent:   make([]Recent, MaxRecent),
-		now:      time.Now,
+	m := &Memory{
+		buckets:       map[int64]*bucket{},
+		capacity:      capacity,
+		recent:        make([]Recent, MaxRecent),
+		now:           time.Now,
+		maxFutureSkew: 5 * time.Minute,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(m)
+		}
+	}
+	return m
 }
 
 // bucketKey is the minute-aligned Unix timestamp a time falls in.
@@ -787,12 +828,28 @@ func bucketKey(t time.Time) int64 {
 	return t.UTC().Truncate(Resolution).Unix()
 }
 
-// Record accumulates one observation. Observations with no timestamp are
-// stamped with the current time: a record we cannot place in time is still real
-// traffic, and dropping it would understate totals.
+// Record attempts to accumulate one observation and discards its admission
+// result. Observations with no timestamp are stamped with the current time: a
+// record we cannot place in time is still real traffic, and dropping it would
+// understate totals.
 func (m *Memory) Record(o Observation) {
+	_ = m.RecordResult(o)
+}
+
+// RecordResult admits and accumulates one observation. An observation outside
+// the retained time window is rejected before it can change the store.
+func (m *Memory) RecordResult(o Observation) Admission {
+	now := m.now()
 	if o.Time.IsZero() {
-		o.Time = m.now()
+		o.Time = now
+	} else {
+		oldest := now.Add(-time.Duration(m.capacity) * Resolution)
+		if o.Time.Before(oldest) {
+			return AdmissionExpired
+		}
+		if o.Time.After(now.Add(m.maxFutureSkew)) {
+			return AdmissionFuture
+		}
 	}
 	key := bucketKey(o.Time)
 
@@ -810,6 +867,7 @@ func (m *Memory) Record(o Observation) {
 	m.recordRecentLocked(o)
 	m.recorded++
 	m.dropped += b.dropped - before
+	return AdmissionAccepted
 }
 
 // recordRecentLocked appends o to the raw-connection ring, overwriting the

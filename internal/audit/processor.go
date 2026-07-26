@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
@@ -21,18 +24,37 @@ const MetricAuditEvents = "tailscale.config.audit.events"
 // bounded enum, never actor identity). See classify.go for the curated set.
 const MetricAuditChanges = "tailscale.config.audit.changes"
 
+// MetricAuditDeferredDelay records how long Tailscale deferred audit records
+// before logging them. It has no attributes, preserving a single fleet-level
+// bounded histogram.
+const MetricAuditDeferredDelay = "tailscale.config.audit.deferred.delay"
+
+// MetricAuditProcessingDelay records the time from the best upstream audit
+// timestamp (DeferredAt when present, otherwise EventTime) to acceptance by
+// this processor. It has no attributes, preserving a single fleet-level
+// bounded histogram.
+const MetricAuditProcessingDelay = "tailscale.config.audit.processing.delay"
+
 // auditEventName is the OTEL LogRecord EventName for configuration audit logs.
 const auditEventName = "tailscale.config.audit"
 
+// auditDelayBucketsSeconds cover immediate processing through the rate-limited
+// delivery delays that configuration audit records can incur.
+var auditDelayBucketsSeconds = []float64{1, 5, 30, 60, 300, 900, 3600, 21600, 86400}
+
 // Audit log attribute keys (namespaced under "tailscale.").
 const (
-	attrAction       = "tailscale.audit.action"
-	attrOrigin       = "tailscale.audit.origin"
-	attrEventGroupID = "tailscale.audit.event_group_id"
-	attrOld          = "tailscale.audit.old"
-	attrNew          = "tailscale.audit.new"
-	attrDetails      = "tailscale.audit.details"
-	attrChange       = "tailscale.audit.change"
+	attrAction          = "tailscale.audit.action"
+	attrOrigin          = "tailscale.audit.origin"
+	attrEventGroupID    = "tailscale.audit.event_group_id"
+	attrOld             = "tailscale.audit.old"
+	attrNew             = "tailscale.audit.new"
+	attrDetails         = "tailscale.audit.details"
+	attrChange          = "tailscale.audit.change"
+	attrType            = "tailscale.audit.type"
+	attrActorTags       = "tailscale.actor.tags"
+	attrTargetEphemeral = "tailscale.target.ephemeral"
+	attrDeferredAt      = "tailscale.audit.deferred_at"
 
 	// Actor identity now uses the stable OTel user.* registry (the deprecated
 	// enduser.* namespace is gone as of v2.0.0); actor TYPE stays tailscale.*
@@ -63,6 +85,7 @@ const (
 type Processor struct {
 	dedup      *dedup.Set
 	crossDedup *dedup.Set
+	now        func() time.Time
 }
 
 // Option configures a Processor at construction time.
@@ -88,10 +111,20 @@ func WithCrossDedup(set *dedup.Set) Option {
 	return func(p *Processor) { p.crossDedup = set }
 }
 
+// WithClock overrides the acceptance-time source used for audit-delay
+// histograms. It is intended for deterministic tests; nil retains time.Now.
+func WithClock(now func() time.Time) Option {
+	return func(p *Processor) {
+		if now != nil {
+			p.now = now
+		}
+	}
+}
+
 // NewProcessor returns an audit Processor. With no options it behaves exactly
 // as before: every event produces one log record and one counter increment.
 func NewProcessor(opts ...Option) *Processor {
-	p := &Processor{}
+	p := &Processor{now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -157,6 +190,7 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 			return
 		}
 	}
+	acceptedAt := p.now()
 
 	severity := telemetry.SeverityInfo
 	if ev.Error != "" {
@@ -188,6 +222,18 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	if ev.ActionDetails != "" {
 		attrs[attrDetails] = ev.ActionDetails
 	}
+	if ev.Type != "" {
+		attrs[attrType] = ev.Type
+	}
+	if tags := canonicalTags(ev.Actor.Tags); tags != "" {
+		attrs[attrActorTags] = tags
+	}
+	if ev.Target.IsEphemeral != nil {
+		attrs[attrTargetEphemeral] = strconv.FormatBool(*ev.Target.IsEphemeral)
+	}
+	if !ev.DeferredAt.IsZero() {
+		attrs[attrDeferredAt] = ev.DeferredAt.UTC().Format(time.RFC3339Nano)
+	}
 
 	e.LogEvent(telemetry.Event{
 		Name:      docAuditLog.Name,
@@ -214,6 +260,55 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 			attrAction:    normalizeAction(ev.Action),
 			attrActorType: normalizeActorType(ev.Actor.Type),
 		})
+	}
+
+	emitDelayHistograms(ev, acceptedAt, e)
+}
+
+// canonicalTags returns a stable, comma-joined representation of an audit
+// actor's tags. It never mutates the event's input slice: tags are wire data
+// that can also be observed by callers after Process returns.
+func canonicalTags(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	seen := make(map[string]struct{}, len(tags))
+	canonical := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		canonical = append(canonical, tag)
+	}
+	slices.Sort(canonical)
+	return strings.Join(canonical, ",")
+}
+
+func emitDelayHistograms(ev Event, acceptedAt time.Time, e telemetry.Emitter) {
+	if !ev.DeferredAt.IsZero() && !ev.EventTime.IsZero() {
+		if delay := ev.DeferredAt.Sub(ev.EventTime); delay >= 0 {
+			e.Histogram(docAuditDeferredDelay.Name, docAuditDeferredDelay.Unit,
+				docAuditDeferredDelay.Description, delay.Seconds(), auditDelayBucketsSeconds, nil)
+		}
+	}
+
+	sourceTime := ev.EventTime
+	// A deferred timestamp before the underlying event cannot describe a
+	// deferral. Fall back to EventTime for processing delay while deliberately
+	// leaving drift accounting to #270's bounded diagnostic signal.
+	if !ev.DeferredAt.IsZero() && (ev.EventTime.IsZero() || !ev.DeferredAt.Before(ev.EventTime)) {
+		sourceTime = ev.DeferredAt
+	}
+	if !sourceTime.IsZero() {
+		if delay := acceptedAt.Sub(sourceTime); delay >= 0 {
+			e.Histogram(docAuditProcessingDelay.Name, docAuditProcessingDelay.Unit,
+				docAuditProcessingDelay.Description, delay.Seconds(), auditDelayBucketsSeconds, nil)
+		}
 	}
 }
 

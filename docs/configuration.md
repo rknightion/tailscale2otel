@@ -305,10 +305,11 @@ single-tailnet `tailscale:` block above is used instead.
 > used everywhere else in this exporter: `["all:read"]` — never an unscoped token covering every scope
 > the OAuth client holds.
 >
-> **`streaming`/`webhook` are single-tailnet only.** Both receivers feed shared processors and one
-> enrichment cache, so more than one `tailnets[]` entry combined with `streaming.enabled: true` or
-> `webhook.enabled: true` is rejected at startup. Use `source: poll` on `flowlogs`/`auditlogs` in
-> multi-tailnet mode instead (`source: stream` is likewise rejected for the same reason).
+> **Multi-tailnet receivers use explicit routes.** Set `streaming.routes[]` and/or `webhook.routes[]`
+> in the YAML file; every route names exactly one `tailnets[].name`, so its request is routed to that
+> runtime's processor, cache, emitter, token/secret, and cross-source dedup set. Route lists replace
+> the legacy receiver identity fields and cannot be set through environment variables. A receiver
+> without routes remains the compatible single-tailnet configuration.
 >
 > **Checkpoint namespacing.** Poll checkpoint keys are `<name>` (collector name only) in single-tailnet
 > mode and `<tailnet>/<name>` in multi-tailnet mode. Switching between single- and multi-tailnet mode,
@@ -509,6 +510,8 @@ Pick exactly one method per log type. Which fields are honored depends on `sourc
 | `lag` | both | ✓ | — | Query only up to `now − lag`, so late-arriving records aren't missed. Must be **≥ 0** (a negative lag pushes the window end into the future and permanently skips records that arrive within it — rejected at startup). |
 | `initial_lookback` | both | ✓ | — | Cold-start reach-back when there is no checkpoint yet. Must be **> 0** — `0` (or negative) leaves the poll window's `from ≥ to` forever, so the collector never polls and never checkpoints; rejected at startup rather than silently stalling. |
 | `max_window` | both | ✓ | — | Cap a single tick's window so a long outage catches up over several ticks. `0` (or negative) means **no cap** (the explicit sentinel). A *positive* `max_window ≤ interval` can never catch up (each tick advances at most `max_window`, so a backlog grows or stalls forever), and is now **rejected at startup** as a hard validation error — use `max_window > interval`, or `0` for no cap. Stream-only collectors are unaffected (they have no catch-up window). **Must be tuned together with [`tailscale.http.timeout`](#tailscalehttp)**: a catch-up window that takes longer to fetch+decode than the timeout fails every attempt identically and never advances (see the note under `tailscale.http`). |
+| `replay_overlap` | `flowlogs` | ✓ | — | Reread this much before the durable high-water mark so a record that became available after the first completed query can still arrive. Default `5m`; `0` disables; maximum `1h`. This is distinct from `lag`: lag delays closing the newest window, while replay deliberately revisits already completed time. |
+| `replay_seen_capacity` | `flowlogs` | ✓ | — | Maximum durable SHA-256 connection identities retained to suppress the intentional replay across restart. Default `131072`; `1..1048576` while replay is enabled. Raw node IDs and endpoints are never checkpoint keys. |
 | `log_mode` | `flowlogs` | ✓ | ✓ | Log detail level — output shaping in the shared processor. |
 | `max_log_records_per_window` | `flowlogs` | ✓ | ✓¹ | Cap on emitted flow LOG records (see below). |
 
@@ -520,9 +523,9 @@ received record. Either way, **metrics are never capped — only logs.**
 > which is why `log_mode` and the `cardinality.*` knobs apply on every path.
 >
 > **`source: stream` requires a live ingestion path.** It is rejected at startup unless
-> `streaming.enabled: true`, and it is not supported in multi-tailnet mode (streaming receivers are
-> single-tailnet only) — otherwise the collector would have no way to receive records and would
-> silently ingest nothing. Use `source: poll` (the default) or `both` when the receiver is off.
+> `streaming.enabled: true`; in multi-tailnet mode it additionally requires `streaming.routes` so the
+> collector has an unambiguous receiving runtime. Otherwise the collector would have no way to receive
+> records and would silently ingest nothing. Use `source: poll` (the default) or `both` when the receiver is off.
 
 ### `collectors.devices`
 
@@ -551,6 +554,8 @@ Network flow logs → aggregated traffic counters + per-connection flow logs.
 | `collectors.flowlogs.lag` | `120s` | Tail-safety margin; query up to `now − lag` (poll only). Flow logs have a noticeable tail, hence the larger default than audit. |
 | `collectors.flowlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
 | `collectors.flowlogs.max_window` | `1h` | Catch-up cap for one tick (poll only). |
+| `collectors.flowlogs.replay_overlap` | `5m` | Reread this much of completed poll history for late API records (`0` disables; maximum `1h`). Separate from the tail-safety `lag`. |
+| `collectors.flowlogs.replay_seen_capacity` | `131072` | Bounded durable hashed connection identities used to suppress the replay across restart (`1..1048576` while enabled). |
 | `collectors.flowlogs.log_mode` | `per_connection` | Flow-log detail. One of `per_connection` (one log per 5-tuple), `per_record` (one summary log per node window), or `off` (no flow logs, metrics only). |
 | `collectors.flowlogs.max_log_records_per_window` | `0` | Cap on flow LOG records emitted (`0` = unlimited). Excess is counted into `tailscale.network.flow.logs_dropped`. Metrics are never capped. |
 
@@ -780,6 +785,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.auto_configure` | `false` | On startup, PUT this receiver as a Splunk-HEC log-streaming sink. **Requires `enabled: true`, `public_url`, and an OAuth client with the `log_streaming` scope.** |
 | `streaming.max_body_bytes` | `0` | Cap on the **decompressed** request body. `0` selects a 64 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413. |
 | `streaming.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**. `max_body_bytes` caps one body; this caps their sum, so N simultaneous in-limit POSTs cannot exceed the process memory budget. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1`. Raise it only alongside the container/process memory limit — worst-case buffering is roughly this × `max_body_bytes`. |
+| `streaming.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, exact rooted `path`, `token` or `token_file`, optional `public_url`, and per-route `auto_configure`. Every route tailnet must match one configured `tailnets[]` runtime; paths and tailnets are unique. Non-empty routes replace legacy `path`/token/public-url/auto-configure identity. |
 
 > **Validation:** `auto_configure: true` errors at startup unless both `streaming.enabled: true` and
 > a non-empty `streaming.public_url` are set. Running the poller and this receiver for the same log
@@ -822,12 +828,13 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.enabled` | `false` | Run the webhook receiver. |
 | `webhook.listen` | `:8089` | Listen address. |
 | `webhook.path` | `/tailscale/webhook` | Webhook path. |
-| `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Set via `TS2OTEL_WEBHOOK__SECRET`. |
+| `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Empty is accepted only on a loopback `webhook.listen`; any network-reachable bind refuses requests with HTTP 403 before reading their bodies. Set via `TS2OTEL_WEBHOOK__SECRET`. |
 | `webhook.secret_file` | `""` | Read `webhook.secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `webhook.tolerance` | `5m` | Allowed clock skew in **both** directions: a signed timestamp older than `now - tolerance` **or** newer than `now + tolerance` is rejected (the boundary itself is allowed). The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable until its future timestamp plus this window — turning a short skew allowance into a much longer one. `0` disables the timestamp check. |
 | `webhook.max_body_bytes` | `0` | Cap on the **raw** request body read before signature verification. `0` selects a 1 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413 and counted into `tailscale.webhook.rejected{reason="too_large"}`. Distinct from `streaming.max_body_bytes`, which caps a *decompressed* body. |
 | `webhook.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**, before the HMAC is verified. The signature covers the whole body, so buffering necessarily precedes authentication; `max_body_bytes` caps one body and this caps their sum, so unauthenticated senders cannot multiply it. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1` and counted into `tailscale.webhook.rejected{reason="overloaded"}`. Worst-case buffering is roughly this × `max_body_bytes`. |
 | `webhook.dedup_audit_events` | `false` | Best-effort: drop a webhook event already counted via the audit logs (shares a cross-source de-dup set with the audit processor). |
+| `webhook.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, `secret` or `secret_file`. Every route tailnet must match one configured `tailnets[]` runtime and is unique. A delivery is routed only when every event carries the same non-empty matching tailnet, before that route's HMAC is verified; non-empty routes replace legacy `path`/secret identity. |
 
 ---
 
@@ -988,6 +995,7 @@ OTLP remains the system of record, and the store is lost on restart.
 |-----|---------|-------------|
 | `flows.enabled` | `true` | Build the store and serve `/flows`. Requires `admin.enabled` **and** `admin.landing_page`; with either off the store is not built at all and a startup advisory says so. |
 | `flows.retention` | `6h` | How far back `/flows` can see, as a ring of one-minute buckets. Must be between `1m` and `24h` — this sizes process memory, not a database. |
+| `flows.max_future_skew` | `5m` | Largest amount a record may lead the process clock and still enter the local view (`0`–`1h`). Rejection is counted by `tailscale.network.store.dropped`; OTLP emission is unchanged. |
 
 Notes:
 

@@ -43,7 +43,9 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/s3"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
@@ -107,6 +109,9 @@ type Options struct {
 	// ("objectstore", "flow", <records accepted>, <bytes fetched>). The app
 	// supplies it, gated on self-observability.
 	OnIngest func(source, signal string, records, bytes int)
+	// OnAccepted, when non-nil, observes each semantically valid flow record
+	// immediately after it is handed to the shared processor.
+	OnAccepted ingest.AcceptedObserver
 }
 
 // Collector ingests exported flow-log objects and feeds them to the shared
@@ -317,7 +322,7 @@ func (c *Collector) ingest(ctx context.Context, key string, comp compression, e 
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), maxLineBytes)
 
-	var records, bad int
+	var records, bad, semanticBad int
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(strings.TrimSpace(string(line))) == 0 {
@@ -330,7 +335,21 @@ func (c *Collector) ingest(ctx context.Context, key string, comp compression, e 
 			bad++
 			continue
 		}
+		if violations := flowlog.Validate(fl, flowlog.ValidationOptions{Now: c.now}); len(violations) != 0 {
+			semanticBad++
+			flowlog.ObserveDataQuality(e, "objectstore", violations)
+			continue
+		}
 		c.proc.Process(fl, e)
+		if c.opts.OnAccepted != nil {
+			c.opts.OnAccepted(ingest.AcceptedEvent{
+				Source:      semconv.IngestSourceObjectStore,
+				Signal:      semconv.IngestSignalFlow,
+				EventTime:   flowlog.EventTimestamp(fl),
+				CaptureTime: flowlog.CaptureTimestamp(fl),
+				AcceptedAt:  c.now(),
+			})
+		}
 		records++
 	}
 	if err := sc.Err(); err != nil {
@@ -343,6 +362,12 @@ func (c *Collector) ingest(ctx context.Context, key string, comp compression, e 
 		c.logger.Warn("objectstore: skipped malformed records", "key", key, "records", bad)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(bad),
 			telemetry.Attrs{attrReason: reasonDecodeError})
+	}
+	if semanticBad > 0 {
+		c.logger.Warn("objectstore: quarantined semantically invalid records",
+			"key", key, "records", semanticBad)
+		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(semanticBad),
+			telemetry.Attrs{attrReason: reasonSemanticInvalid})
 	}
 	return records, nil
 }

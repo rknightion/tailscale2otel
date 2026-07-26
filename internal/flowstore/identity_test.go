@@ -36,7 +36,7 @@ func cells(rows []flowstore.MatrixCell) map[string]int64 {
 // "tag:servers" invisible whenever it appears alongside another tag, which is
 // exactly the question an operator is asking.
 func TestMemory_TagsBreakDownIndividually(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(tagged("tag:servers,tag:sshrecorder", "tag:laptops", 100))
 
 	got := labels(s.Query(flowstore.Query{End: base.Add(time.Minute)}).Tags)
@@ -55,7 +55,7 @@ func TestMemory_TagsBreakDownIndividually(t *testing.T) {
 
 // A tag on both ends of one flow describes one flow, not two.
 func TestMemory_TagOnBothEndpointsCountsOnce(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(tagged("tag:servers,tag:prod", "tag:servers", 100))
 
 	got := labels(s.Query(flowstore.Query{End: base.Add(time.Minute)}).Tags)
@@ -69,7 +69,7 @@ func TestMemory_TagOnBothEndpointsCountsOnce(t *testing.T) {
 
 // Whitespace and empty entries in a joined set are formatting, not tags.
 func TestMemory_TagSplittingIsTolerant(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(tagged("tag:a, tag:b,,  ,tag:c ", "", 10))
 
 	got := labels(s.Query(flowstore.Query{End: base.Add(time.Minute)}).Tags)
@@ -86,7 +86,7 @@ func TestMemory_TagSplittingIsTolerant(t *testing.T) {
 // The matrix is the cross product of the two endpoints' tags: a flow from a
 // two-tagged device to a one-tagged device populates two cells.
 func TestMemory_TagMatrixIsTheCrossProduct(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(tagged("tag:servers,tag:prod", "tag:laptops", 100))
 
 	got := cells(s.Query(flowstore.Query{End: base.Add(time.Minute)}).TagMatrix)
@@ -107,7 +107,7 @@ func TestMemory_TagMatrixIsTheCrossProduct(t *testing.T) {
 // Direction is preserved here for the same reason it is in the pair table: a
 // flow is reported once, by one node, and which way it went is real.
 func TestMemory_TagMatrixKeepsDirection(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(tagged("tag:a", "tag:b", 100))
 	s.Record(tagged("tag:b", "tag:a", 300))
 
@@ -121,7 +121,7 @@ func TestMemory_TagMatrixKeepsDirection(t *testing.T) {
 // be invented into one — the page states matrix coverage against the window
 // total, and a fabricated cell would make that statement wrong.
 func TestMemory_MatrixOmitsFlowsMissingAnEndpoint(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(tagged("tag:servers", "", 100)) // untagged (user-owned) destination
 	s.Record(tagged("", "tag:laptops", 50))  // untagged source
 
@@ -141,7 +141,7 @@ func TestMemory_MatrixOmitsFlowsMissingAnEndpoint(t *testing.T) {
 // The same machinery serves users and operating systems, which are single values
 // rather than sets.
 func TestMemory_UserAndOSMatrices(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	o := obs(base, "a", "b", 100, 0)
 	o.SrcUser, o.DstUser = "rob@example.com", "sam@example.com"
 	o.SrcOS, o.DstOS = "linux", "macOS"
@@ -160,7 +160,7 @@ func TestMemory_UserAndOSMatrices(t *testing.T) {
 // flow — the diagonal of the matrix is meaningful and must not be suppressed the
 // way the single-dimension breakdown deduplicates it.
 func TestMemory_MatrixKeepsTheDiagonal(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	o := obs(base, "laptop", "desktop", 100, 0)
 	o.SrcUser, o.DstUser = "rob@example.com", "rob@example.com"
 	s.Record(o)
@@ -178,7 +178,7 @@ func TestMemory_MatrixKeepsTheDiagonal(t *testing.T) {
 // The cross product is where a matrix can blow up, and tags come from the
 // control plane rather than from us. Cap it like every other dimension.
 func TestMemory_MatrixIsBoundedAndReportsTruncation(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for i := range flowstore.MaxMatrixCellsPerBucket + 200 {
 		s.Record(tagged("tag:s"+time.Duration(i).String(), "tag:d"+time.Duration(i).String(), 10))
 	}
@@ -199,7 +199,7 @@ func TestMemory_MatrixIsBoundedAndReportsTruncation(t *testing.T) {
 // Ranked like every other list, with a tiebreak so equal-volume cells do not
 // reshuffle between polls.
 func TestMemory_MatrixRankingIsStable(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for _, tag := range []string{"tag:zulu", "tag:alpha", "tag:mike"} {
 		s.Record(tagged(tag, "tag:dst", 100))
 	}
@@ -219,7 +219,7 @@ func TestMemory_MatrixRankingIsStable(t *testing.T) {
 // Identity on the connection ring is what lets the flow list answer "show me
 // what this user's devices actually did", which no aggregate can.
 func TestMemory_RecentCarriesIdentity(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	o := conn(base, "100.64.0.1:52000", "100.64.0.2:443", 120)
 	o.SrcUser, o.DstUser = "rob@example.com", "sam@example.com"
 	o.SrcTags, o.DstTags = "tag:servers", "tag:laptops"
@@ -245,7 +245,7 @@ func TestMemory_RecentCarriesIdentity(t *testing.T) {
 // Redaction upstream leaves identity empty; that must stay empty rather than
 // becoming a placeholder the operator could mistake for a real value.
 func TestMemory_RecentIdentityAbsentStaysAbsent(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(conn(base, "100.64.0.1:1", "100.64.0.2:2", 10))
 
 	r := s.Recent(1)[0]

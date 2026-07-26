@@ -149,11 +149,11 @@ func TestProcess_PortlessProtocolIsNotADistinctPort(t *testing.T) {
 // gain a row for a protocol that contacted no service, and the traffic must
 // still count everywhere else.
 func TestProcess_PortlessProtocolAddsNoServicesRow(t *testing.T) {
-	m := flowstore.NewMemory(0)
+	flow := portlessRecord(protoICMP)
+	m := flowstore.NewMemory(0, flowstore.WithClock(func() time.Time { return flow.Start }))
 	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{Store: m})
 	rec := telemetrytest.New()
 
-	flow := portlessRecord(protoICMP)
 	p.Process(flow, rec.Emitter())
 
 	res := m.Query(flowstore.Query{Start: flow.Start.Add(-time.Hour), End: flow.Start.Add(time.Hour)})
@@ -195,14 +195,14 @@ func TestProcess_PortlessUnexplainedRelationshipHasNoPort(t *testing.T) {
 	const narrowPolicy = `{"grants": [
 		{"src": ["tag:servers"], "dst": ["tag:ntp"], "ip": ["udp:123"]}
 	]}`
-	m := flowstore.NewMemory(0)
+	flow := portlessRecord(protoICMP)
+	m := flowstore.NewMemory(0, flowstore.WithClock(func() time.Time { return flow.Start }))
 	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{
 		Store:  m,
 		Policy: policyStore(t, narrowPolicy),
 	})
 	rec := telemetrytest.New()
 
-	flow := portlessRecord(protoICMP)
 	p.Process(flow, rec.Emitter())
 
 	res := m.Query(flowstore.Query{Start: flow.Start.Add(-time.Hour), End: flow.Start.Add(time.Hour)})

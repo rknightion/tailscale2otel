@@ -105,7 +105,12 @@ func Default() *Config {
 				Lag:             dur(120 * time.Second),
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(1 * time.Hour),
-				LogMode:         "per_connection",
+				ReplayOverlap:   dur(5 * time.Minute),
+				// A busy tailnet can return many connection identities inside a
+				// five-minute replay window. Keep the durable guard bounded but
+				// comfortably above the normal per-window volume.
+				ReplaySeenCapacity: 131072,
+				LogMode:            "per_connection",
 				ObjectStore: ObjectStoreConfig{
 					Interval:        dur(60 * time.Second),
 					Lookback:        dur(1 * time.Hour),
@@ -229,7 +234,8 @@ func Default() *Config {
 			StatusRefreshInterval: dur(5 * time.Second),
 		},
 		Flows: FlowsConfig{
-			Enabled: true,
+			Enabled:       true,
+			MaxFutureSkew: dur(5 * time.Minute),
 			// Six hours of one-minute buckets (360). Long enough to cover a shift and
 			// see a diurnal shape, short enough that the ring stays small on a real
 			// tailnet.

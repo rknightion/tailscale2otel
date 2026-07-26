@@ -14,13 +14,17 @@ package flowlogs
 
 import (
 	"context"
-	"strconv"
+	"crypto/sha256"
+	"encoding/hex"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
@@ -36,6 +40,9 @@ const (
 	// boundary de-duplication. A window holds at most a couple of ticks' worth of
 	// connections, so a few thousand keys covers the overlap with margin.
 	dedupCapacity = 16384
+	// replayKeyPrefix is the private checkpoint namespace used for durable replay
+	// identities. Keys contain only a SHA-256 digest, never a raw flow identity.
+	replayKeyPrefix = "flowlogs/replay/seen/"
 )
 
 // metricFeatureEnabled is the gauge reporting whether the network-flow-logging
@@ -85,11 +92,21 @@ type Collector struct {
 	// ("poll","flow", <records accepted>, 0). The app supplies it (gated on
 	// self-observability); the collector stays agnostic to how it's emitted.
 	onIngest func(source, signal string, records, bytes int)
+	// acceptedObserver, when non-nil, observes each semantically valid,
+	// collector-deduplicated source record after it is handed to the processor.
+	acceptedObserver ingest.AcceptedObserver
 	// tracker records per-operation availability for the admin status page
 	// (#420). A nil *apistate.Tracker is a no-op.
 	tracker *apistate.Tracker
 	// now is the clock, injectable from tests.
 	now func() time.Time
+	// replayStore holds digest-only identities across a process restart. It is
+	// supplied already namespaced by the app for multi-tailnet isolation.
+	replayStore    collector.CheckpointStore
+	replayOverlap  time.Duration
+	replayCapacity int
+	replaySeen     map[string]time.Time // SHA-256 hex digest -> inclusive expiry
+	replayLoadErr  error
 }
 
 // Option configures optional Collector behavior.
@@ -100,6 +117,37 @@ type Option func(*Collector)
 // introspection copy the admin status page reads.
 func WithAPIState(t *apistate.Tracker) Option {
 	return func(c *Collector) { c.tracker = t }
+}
+
+// WithAcceptedObserver observes each semantically valid, intra-source-deduped
+// flow record after it is handed to the processor.
+func WithAcceptedObserver(observer ingest.AcceptedObserver) Option {
+	return func(c *Collector) { c.acceptedObserver = observer }
+}
+
+// WithReplay enables durable replay suppression for a bounded scheduler
+// overlap. The supplied store must already be namespaced for this tailnet.
+// Invalid settings deliberately disable the feature, preserving the legacy
+// in-memory boundary-deduplication behavior.
+func WithReplay(overlap time.Duration, capacity int, store collector.CheckpointStore) Option {
+	return func(c *Collector) {
+		if overlap <= 0 || capacity <= 0 || store == nil {
+			return
+		}
+		c.replayOverlap = overlap
+		c.replayCapacity = capacity
+		c.replayStore = store
+		c.replaySeen = make(map[string]time.Time, capacity)
+	}
+}
+
+// withClock exists only to make replay retention tests deterministic.
+func withClock(now func() time.Time) Option {
+	return func(c *Collector) {
+		if now != nil {
+			c.now = now
+		}
+	}
 }
 
 // New returns a flowlogs Collector that fetches windows via a, converts them
@@ -124,6 +172,7 @@ func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureChe
 	for _, o := range opts {
 		o(c)
 	}
+	c.loadReplayState()
 	return c
 }
 
@@ -146,6 +195,16 @@ func (c *Collector) Lag() time.Duration {
 	return defaultLag
 }
 
+// ReplayOverlap opts this window collector into a warm replay only when
+// durable replay state is fully configured. The scheduler keeps cold-start
+// lookback unchanged and advances the forward high-water mark after a replay.
+func (c *Collector) ReplayOverlap() time.Duration {
+	if !c.replayEnabled() {
+		return 0
+	}
+	return c.replayOverlap
+}
+
 // CollectWindow fetches flow logs for [from, to] and processes them.
 //
 // When a featureCheck is configured it runs first: a disabled feature emits
@@ -164,6 +223,9 @@ func (c *Collector) Lag() time.Duration {
 // Connections already seen on a previous tick (boundary overlap) are filtered
 // out before processing so their metrics are emitted only once.
 func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e telemetry.Emitter) (time.Time, error) {
+	if c.replayLoadErr != nil {
+		return time.Time{}, c.replayLoadErr
+	}
 	if c.featureCheck != nil {
 		enabled, err := c.featureCheck(ctx)
 		switch {
@@ -194,45 +256,99 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		return time.Time{}, err
 	}
 
-	deduped := c.dedupe(resp)
+	// Expired durable identities must not suppress a late record. Deletions are
+	// held until after processing so a failed API request does not turn startup
+	// cleanup into a durable side effect.
+	stale := c.pruneExpiredReplay(c.now())
+	resp = c.validRecords(resp, e)
+	deduped, additions := c.dedupe(resp, e)
 	c.proc.ProcessAll(deduped, e)
+	if c.acceptedObserver != nil {
+		acceptedAt := c.now()
+		for i := range deduped.Logs {
+			c.acceptedObserver(ingest.AcceptedEvent{
+				Source:      semconv.IngestSourcePoll,
+				Signal:      semconv.IngestSignalFlow,
+				EventTime:   flowlog.EventTimestamp(deduped.Logs[i]),
+				CaptureTime: flowlog.CaptureTimestamp(deduped.Logs[i]),
+				AcceptedAt:  acceptedAt,
+			})
+		}
+	}
 	if c.onIngest != nil {
 		c.onIngest(semconv.IngestSourcePoll, semconv.IngestSignalFlow, len(deduped.Logs), 0)
+	}
+	if err := c.persistReplay(additions, stale, to); err != nil {
+		// The processor has already emitted accepted data. Returning an error is
+		// intentional: the scheduler must not advance its high-water mark when
+		// the durable replay guard was not persisted.
+		return time.Time{}, err
 	}
 	return to, nil
 }
 
+func (c *Collector) validRecords(resp flowlog.NetworkResponse, e telemetry.Emitter) flowlog.NetworkResponse {
+	out := resp
+	out.Logs = make([]flowlog.FlowLog, 0, len(resp.Logs))
+	for i := range resp.Logs {
+		violations := flowlog.Validate(resp.Logs[i], flowlog.ValidationOptions{Now: c.now})
+		if len(violations) != 0 {
+			flowlog.ObserveDataQuality(e, semconv.IngestSourcePoll, violations)
+			continue
+		}
+		out.Logs = append(out.Logs, resp.Logs[i])
+	}
+	return out
+}
+
 // dedupe returns a copy of resp with already-seen connections removed and any
 // FlowLog left with zero connections dropped. A connection's identity is its
-// node, window, protocol, and 5-tuple endpoints; the first sighting wins.
-func (c *Collector) dedupe(resp flowlog.NetworkResponse) flowlog.NetworkResponse {
+// node, window, bounded traffic class, protocol, and 5-tuple endpoints; the
+// first sighting wins.
+func (c *Collector) dedupe(resp flowlog.NetworkResponse, e telemetry.Emitter) (flowlog.NetworkResponse, map[string]struct{}) {
 	out := flowlog.NetworkResponse{Logs: make([]flowlog.FlowLog, 0, len(resp.Logs))}
+	additions := make(map[string]struct{})
 	for i := range resp.Logs {
 		fl := resp.Logs[i]
 		filtered := fl
-		filtered.VirtualTraffic = c.keepNew(fl, fl.VirtualTraffic)
-		filtered.SubnetTraffic = c.keepNew(fl, fl.SubnetTraffic)
-		filtered.ExitTraffic = c.keepNew(fl, fl.ExitTraffic)
-		filtered.PhysicalTraffic = c.keepNew(fl, fl.PhysicalTraffic)
+		filtered.VirtualTraffic = c.keepNew(fl, semconv.TrafficVirtual, fl.VirtualTraffic, e, additions)
+		filtered.SubnetTraffic = c.keepNew(fl, semconv.TrafficSubnet, fl.SubnetTraffic, e, additions)
+		filtered.ExitTraffic = c.keepNew(fl, semconv.TrafficExit, fl.ExitTraffic, e, additions)
+		filtered.PhysicalTraffic = c.keepNew(fl, semconv.TrafficPhysical, fl.PhysicalTraffic, e, additions)
 		if len(filtered.VirtualTraffic)+len(filtered.SubnetTraffic)+
 			len(filtered.ExitTraffic)+len(filtered.PhysicalTraffic) == 0 {
 			continue
 		}
 		out.Logs = append(out.Logs, filtered)
 	}
-	return out
+	return out, additions
 }
 
 // keepNew returns the subset of counts whose connection key has not been seen
 // before, marking each kept connection as seen.
-func (c *Collector) keepNew(fl flowlog.FlowLog, counts []flowlog.ConnectionCounts) []flowlog.ConnectionCounts {
+func (c *Collector) keepNew(fl flowlog.FlowLog, trafficType string, counts []flowlog.ConnectionCounts, e telemetry.Emitter, additions map[string]struct{}) []flowlog.ConnectionCounts {
 	if len(counts) == 0 {
 		return nil
 	}
 	kept := make([]flowlog.ConnectionCounts, 0, len(counts))
 	for i := range counts {
-		if c.seen.Add(connKey(fl, counts[i])) {
+		digest := replayDigest(flowlog.ConnectionKey(fl, trafficType, counts[i]))
+		if c.replayEnabled() && c.replayContains(digest) {
+			// Across a restart only the connection identity is durable, not
+			// counters. Suppress any replay of that identity intentionally and
+			// do not seed the in-process value comparator from an event that was
+			// not emitted in this process.
+			continue
+		}
+		result := flowlog.CompareConnection(c.seen, fl, trafficType, counts[i])
+		switch result {
+		case flowlog.DuplicateNew:
 			kept = append(kept, counts[i])
+			if c.replayEnabled() {
+				additions[digest] = struct{}{}
+			}
+		case flowlog.DuplicateConflict:
+			flowlog.ObserveDedupConflict(e, flowlog.DedupScopePollBoundary, trafficType)
 		}
 	}
 	if len(kept) == 0 {
@@ -241,23 +357,150 @@ func (c *Collector) keepNew(fl flowlog.FlowLog, counts []flowlog.ConnectionCount
 	return kept
 }
 
-// connKey builds the boundary de-dup identity for a connection:
-// nodeId|start|end|proto|src|dst. The window timestamps are included so an
-// identical 5-tuple in a different window is still counted.
-func connKey(fl flowlog.FlowLog, cc flowlog.ConnectionCounts) string {
-	var b strings.Builder
-	b.WriteString(fl.NodeID)
-	b.WriteByte('|')
-	b.WriteString(fl.Start.Format(time.RFC3339Nano))
-	b.WriteByte('|')
-	b.WriteString(fl.End.Format(time.RFC3339Nano))
-	b.WriteByte('|')
-	b.WriteString(strconv.Itoa(cc.Proto))
-	b.WriteByte('|')
-	b.WriteString(cc.Src)
-	b.WriteByte('|')
-	b.WriteString(cc.Dst)
-	return b.String()
+func (c *Collector) replayEnabled() bool {
+	return c.replayStore != nil && c.replayOverlap > 0 && c.replayCapacity > 0 && c.replaySeen != nil
+}
+
+func replayDigest(identity string) string {
+	sum := sha256.Sum256([]byte(identity))
+	return hex.EncodeToString(sum[:])
+}
+
+func replayKey(digest string) string { return replayKeyPrefix + digest }
+
+func (c *Collector) replayContains(digest string) bool {
+	_, ok := c.replaySeen[digest]
+	return ok
+}
+
+// loadReplayState restores only this collector's digest-only state, pruning
+// malformed, expired, and over-capacity entries deterministically. New cannot
+// return an error, so a cleanup failure is carried into CollectWindow where it
+// prevents a scheduler checkpoint advance.
+func (c *Collector) loadReplayState() {
+	if !c.replayEnabled() {
+		return
+	}
+	now := c.now()
+	deletes := make([]string, 0)
+	for _, key := range c.replayStore.Keys() {
+		digest, ok := strings.CutPrefix(key, replayKeyPrefix)
+		if !ok {
+			continue
+		}
+		expiry, exists := c.replayStore.Get(key)
+		if !exists || !validReplayDigest(digest) || expiry.Before(now) {
+			deletes = append(deletes, key)
+			continue
+		}
+		c.replaySeen[digest] = expiry
+	}
+	for _, digest := range c.trimReplayCapacity() {
+		deletes = append(deletes, replayKey(digest))
+	}
+	if len(deletes) == 0 {
+		return
+	}
+	if err := collector.UpdateCheckpointBatch(c.replayStore, nil, uniqueSorted(deletes)); err != nil {
+		c.replayLoadErr = err
+	}
+}
+
+func validReplayDigest(digest string) bool {
+	if len(digest) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(digest)
+	return err == nil
+}
+
+// pruneExpiredReplay drops identities strictly after their inclusive expiry.
+// Equality remains valid so an overlap exactly at its configured horizon is
+// still protected.
+func (c *Collector) pruneExpiredReplay(now time.Time) []string {
+	if !c.replayEnabled() {
+		return nil
+	}
+	deletes := make([]string, 0)
+	for digest, expiry := range c.replaySeen {
+		if expiry.Before(now) {
+			delete(c.replaySeen, digest)
+			deletes = append(deletes, replayKey(digest))
+		}
+	}
+	return deletes
+}
+
+// persistReplay records newly accepted identities only after the processor has
+// emitted them. Built-in checkpoint stores apply the supplied updates and
+// deletes with one durable rewrite through collector.UpdateCheckpointBatch.
+func (c *Collector) persistReplay(additions map[string]struct{}, deletes []string, to time.Time) error {
+	if !c.replayEnabled() {
+		return nil
+	}
+	updates := make(map[string]time.Time, len(additions))
+	expiry := to.Add(c.replayOverlap)
+	for digest := range additions {
+		if expiry.Before(c.now()) {
+			continue
+		}
+		c.replaySeen[digest] = expiry
+	}
+	for _, digest := range c.trimReplayCapacity() {
+		deletes = append(deletes, replayKey(digest))
+	}
+	for digest := range additions {
+		if retained, ok := c.replaySeen[digest]; ok {
+			updates[replayKey(digest)] = retained
+		}
+	}
+	if len(updates) == 0 && len(deletes) == 0 {
+		return nil
+	}
+	return collector.UpdateCheckpointBatch(c.replayStore, updates, uniqueSorted(deletes))
+}
+
+// trimReplayCapacity retains identities with the latest expiry, using the
+// digest as a stable tie-breaker. That makes startup pruning independent of a
+// checkpoint map's randomized iteration order.
+func (c *Collector) trimReplayCapacity() []string {
+	if !c.replayEnabled() || len(c.replaySeen) <= c.replayCapacity {
+		return nil
+	}
+	type entry struct {
+		digest string
+		expiry time.Time
+	}
+	entries := make([]entry, 0, len(c.replaySeen))
+	for digest, expiry := range c.replaySeen {
+		entries = append(entries, entry{digest: digest, expiry: expiry})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].expiry.Equal(entries[j].expiry) {
+			return entries[i].digest < entries[j].digest
+		}
+		return entries[i].expiry.After(entries[j].expiry)
+	})
+	dropped := make([]string, 0, len(entries)-c.replayCapacity)
+	for _, entry := range entries[c.replayCapacity:] {
+		delete(c.replaySeen, entry.digest)
+		dropped = append(dropped, entry.digest)
+	}
+	return dropped
+}
+
+func uniqueSorted(keys []string) []string {
+	if len(keys) < 2 {
+		return keys
+	}
+	sort.Strings(keys)
+	out := keys[:0]
+	for _, key := range keys {
+		if len(out) == 0 || key != out[len(out)-1] {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 // emitFeature records the feature.enabled gauge for network-flow-logging.

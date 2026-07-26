@@ -124,6 +124,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -154,8 +155,9 @@ const (
 	// carries a low-cardinality "reason" attribute: "auth", "auth_required",
 	// "cross_site", "too_large", "too_many_records", "too_many_connections",
 	// "overloaded", "unparsable" (nothing JSON-like), "malformed" (the body was
-	// structurally corrupt/truncated), or "decode_error" (a known record failed
-	// typed decoding). The last two are the #201 atomic-batch rejections — a
+	// structurally corrupt/truncated), "decode_error" (a known record failed
+	// typed decoding), or "semantic_invalid" (a decoded flow failed bounded
+	// semantic validation). These are #201 atomic-batch rejections — a
 	// corrupt or partially undecodable batch is rejected whole rather than
 	// partially ACKed.
 	MetricRejected = "tailscale.stream.rejected"
@@ -207,6 +209,7 @@ const (
 	// type (which is skipped, not rejected — see reasonUnclassified below).
 	reasonMalformed   = "malformed"
 	reasonDecodeError = "decode_error"
+	reasonSemantic    = "semantic_invalid"
 
 	// reasonUnclassified and reasonUnwrapDrop are the "reason" values for
 	// MetricSkipped (#67): the two ways a record extracted from a valid
@@ -327,7 +330,7 @@ const (
 // deadline's 503 actually reach the client (#232).
 //
 // The two clocks do not start together. http.Server arms the write deadline when
-// a request's headers START arriving; http.TimeoutHandler arms its own when
+// a request's headers START arriving; the handler derives its deadline when
 // ServeHTTP is ENTERED, which is up to readHeaderTimeout later. So the deadline
 // can fire as late as readHeaderTimeout+d on the connection's clock, and a write
 // window merely equal to d (the pre-#232 30s/30s pairing) is always closed first
@@ -382,6 +385,10 @@ type Options struct {
 	// once for the decompressed body size (records=0, bytes=len(raw)). Supplied by
 	// the app, gated on self-observability.
 	OnIngest func(source, signal string, records, bytes int)
+	// OnAccepted, when non-nil, observes each source record immediately after it
+	// is handed to its shared processor. It is supplied by the app's freshness
+	// tracking and is deliberately independent of processor-level deduplication.
+	OnAccepted ingest.AcceptedObserver
 }
 
 // Server is the streaming receiver. It is safe to share its Handler across
@@ -408,12 +415,87 @@ type Server struct {
 	// milliseconds instead of waiting out the real 30s budget.
 	processDeadline time.Duration
 
-	flowProc  *flowlog.Processor
-	auditProc *audit.Processor
-	emitter   telemetry.Emitter
-	logger    *slog.Logger
-	onIngest  func(source, signal string, records, bytes int)
-	tracer    trace.Tracer
+	flowProc   *flowlog.Processor
+	auditProc  *audit.Processor
+	emitter    telemetry.Emitter
+	logger     *slog.Logger
+	onIngest   func(source, signal string, records, bytes int)
+	onAccepted ingest.AcceptedObserver
+	tracer     trace.Tracer
+}
+
+// Route binds one exact HEC path to the processor/emitter pair for one
+// tailnet. It is intentionally constructed by the app composition root rather
+// than from request data: the path selects the tailnet before authentication.
+type Route struct {
+	Path   string
+	Server *Server
+}
+
+// Router serves several isolated HEC Servers on one listener. It contains no
+// fallback route: an unknown path reaches no receiver, and therefore cannot
+// authenticate against or emit into a different tailnet.
+type Router struct {
+	routes map[string]*Server
+	base   *Server
+}
+
+// NewRouter composes already-configured per-tailnet servers. All routes share
+// the listener/TLS/budget settings carried by their base server; callers must
+// supply at least one route.
+func NewRouter(routes []Route) *Router {
+	r := &Router{routes: make(map[string]*Server, len(routes))}
+	for _, route := range routes {
+		if route.Server == nil || route.Path == "" {
+			continue
+		}
+		r.routes[route.Path] = route.Server
+		if r.base == nil {
+			r.base = route.Server
+		}
+	}
+	return r
+}
+
+// Handler routes only exact paths before delegating to a fully isolated Server.
+func (r *Router) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		s, ok := r.routes[req.URL.Path]
+		if !ok {
+			http.NotFound(w, req)
+			return
+		}
+		s.Handler().ServeHTTP(w, req)
+	})
+}
+
+// Run binds the shared listener and gracefully shuts it down. Its timeout/TLS
+// values are the same ones used by an individual Server.
+func (r *Router) Run(ctx context.Context) error {
+	if r.base == nil {
+		return errors.New("stream: router has no routes")
+	}
+	srv := r.base.httpServer()
+	srv.Handler = r.Handler()
+	errCh := make(chan error, 1)
+	go func() {
+		if r.base.tlsCert != "" && r.base.tlsKey != "" {
+			errCh <- srv.ListenAndServeTLS(r.base.tlsCert, r.base.tlsKey)
+			return
+		}
+		errCh <- srv.ListenAndServe()
+	}()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
 }
 
 // New returns a Server that converts received records via flowProc and
@@ -466,6 +548,7 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		emitter:         e,
 		logger:          logger,
 		onIngest:        opts.OnIngest,
+		onAccepted:      opts.OnAccepted,
 	}
 	for _, o := range options {
 		o(s)
@@ -483,8 +566,8 @@ func (s *Server) Handler() http.Handler {
 	d := s.processDeadline
 	if d <= 0 {
 		// A zero-value Server (constructed literally rather than via New) would
-		// otherwise get a 0 deadline, which TimeoutHandler treats as "expire
-		// immediately" and would 503 every request.
+		// otherwise get an immediately-expired context and would 503 every
+		// request.
 		d = handlerProcessDeadline
 	}
 	return withProcessDeadline(mux, d)
@@ -510,17 +593,30 @@ func (s *Server) httpServer() *http.Server {
 	}
 }
 
-// withProcessDeadline bounds how long the receiver takes to ANSWER a request.
-//
-// Be precise about what this buys: http.TimeoutHandler cannot preempt a
-// CPU-bound goroutine. When the deadline elapses it writes a 503 to the client
-// and abandons the in-flight handler, which keeps running to completion. It
-// therefore bounds the RESPONSE, not the work. The real bounds on the work are
-// the unwrap depth cap (maxUnwrapDepth) and the record cap
-// (maxRecordsPerRequest); this is defense in depth for anything they miss, not
-// the fix for #228.
+// withProcessDeadline derives a processing deadline for one request and runs
+// the receiver synchronously. Unlike http.TimeoutHandler, it never writes a
+// response while the handler it started can still perform side effects. The
+// receiver observes the derived context at its Phase-2 boundaries and returns a
+// 503 only after any in-flight effect has returned (#278).
 func withProcessDeadline(h http.Handler, d time.Duration) http.Handler {
-	return http.TimeoutHandler(h, d, `{"text":"request processing deadline exceeded","code":503}`)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), d)
+		defer cancel()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// phase2DeadlineExceeded is checked before every externally-visible Phase-2
+// action. It intentionally does not try to interrupt an action already in
+// flight: the synchronous handler waits for that action to return, then writes
+// the retryable error without beginning another one.
+func (s *Server) phase2DeadlineExceeded(ctx context.Context, w http.ResponseWriter, span trace.Span) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	span.SetStatus(codes.Error, "processing deadline exceeded")
+	s.writeError(w, http.StatusServiceUnavailable, "request processing deadline exceeded")
+	return true
 }
 
 // acquire takes an admission slot (#209), returning a release func. It tries a
@@ -697,8 +793,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// fails typed decoding is tallied so the whole request can be rejected below
 	// (nothing emitted). Genuinely-unknown record types are counted as skips and
 	// do NOT fail the batch (forward compatibility).
-	pendingFlows := make([]flowlog.FlowLog, 0, len(records))
-	pendingAudits := make([]audit.Event, 0, len(records))
+	type pendingFlow struct {
+		log flowlog.FlowLog
+	}
+	type pendingAudit struct {
+		event       audit.Event
+		captureTime time.Time
+	}
+	pendingFlows := make([]pendingFlow, 0, len(records))
+	pendingAudits := make([]pendingAudit, 0, len(records))
 	var classifyUnknown, flowDecodeErr, auditDecodeErr int
 	// GHSA-7rg3-xj9w-2gm8: the per-request nested-connection budget. It is spent
 	// across every flow record in the batch, and it is checked from the record's
@@ -729,7 +832,7 @@ classifyLoop:
 				flowDecodeErr++
 				continue
 			}
-			pendingFlows = append(pendingFlows, f)
+			pendingFlows = append(pendingFlows, pendingFlow{log: f})
 		case kindAudit:
 			var ev audit.Event
 			if err := json.Unmarshal(rec.raw, &ev); err != nil {
@@ -745,7 +848,7 @@ classifyLoop:
 			if ev.EventTime.IsZero() && !rec.envTime.IsZero() {
 				ev.EventTime = rec.envTime
 			}
-			pendingAudits = append(pendingAudits, ev)
+			pendingAudits = append(pendingAudits, pendingAudit{event: ev, captureTime: rec.captureTime})
 		default:
 			classifyUnknown++
 		}
@@ -786,17 +889,72 @@ classifyLoop:
 		return
 	}
 
-	// Phase 2: the batch is fully understood (every record either decoded cleanly
-	// or is a forward-compatible unknown). NOW emit — route the staged records,
-	// count skips, and ack success. Nothing above this point touched a processor.
+	// A typed decode can still be semantically impossible (negative counters,
+	// inverted windows, malformed endpoints, implausibly future timestamps, or
+	// an out-of-range protocol). Validate the complete staged batch before any
+	// processor side effect so one invalid flow cannot be partially ACKed.
+	semanticInvalid := false
+	for i := range pendingFlows {
+		violations := flowlog.Validate(pendingFlows[i].log, flowlog.ValidationOptions{})
+		if len(violations) == 0 {
+			continue
+		}
+		semanticInvalid = true
+		flowlog.ObserveDataQuality(s.emitter, semconv.IngestSourceStream, violations)
+	}
+	if semanticInvalid {
+		span.SetStatus(codes.Error, "semantic validation failure")
+		s.logger.Warn("stream: rejecting batch with semantically invalid flow record(s) (no partial emit)")
+		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
+			telemetry.Attrs{attrReason: reasonSemantic})
+		s.writeError(w, http.StatusBadRequest, "batch contains a semantically invalid flow record")
+		return
+	}
+
+	// Phase 2: the batch is fully understood and semantically valid (every record
+	// either decoded cleanly or is a forward-compatible unknown). NOW emit —
+	// route the staged records, count skips, and ack success. Nothing above this
+	// point touched a processor.
+	if s.phase2DeadlineExceeded(r.Context(), w, span) {
+		return
+	}
 	if s.onIngest != nil && len(raw) > 0 {
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
 		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
 	}
 	for i := range pendingFlows {
-		s.flowProc.Process(pendingFlows[i], s.emitter)
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
+		flow := pendingFlows[i].log
+		s.flowProc.Process(flow, s.emitter)
+		if s.onAccepted != nil {
+			s.onAccepted(ingest.AcceptedEvent{
+				Source:      semconv.IngestSourceStream,
+				Signal:      semconv.IngestSignalFlow,
+				EventTime:   flowlog.EventTimestamp(flow),
+				CaptureTime: flowlog.CaptureTimestamp(flow),
+				AcceptedAt:  time.Now(),
+			})
+		}
 	}
 	for i := range pendingAudits {
-		s.auditProc.Process(pendingAudits[i], s.emitter)
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
+		auditRecord := pendingAudits[i]
+		s.auditProc.Process(auditRecord.event, s.emitter)
+		if s.onAccepted != nil {
+			s.onAccepted(ingest.AcceptedEvent{
+				Source:      semconv.IngestSourceStream,
+				Signal:      semconv.IngestSignalAudit,
+				EventTime:   auditRecord.event.EventTime,
+				CaptureTime: auditRecord.captureTime,
+				AcceptedAt:  time.Now(),
+			})
+		}
 	}
 	flows := len(pendingFlows)
 	audits := len(pendingAudits)
@@ -808,24 +966,42 @@ classifyLoop:
 	skipped := classifyUnknown + outcome.unwrapDropped
 
 	if flows > 0 {
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
 		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
 			telemetry.Attrs{attrType: typeFlow})
 		if s.onIngest != nil {
+			if s.phase2DeadlineExceeded(r.Context(), w, span) {
+				return
+			}
 			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalFlow, flows, 0)
 		}
 	}
 	if audits > 0 {
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
 		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
 			telemetry.Attrs{attrType: typeAudit})
 		if s.onIngest != nil {
+			if s.phase2DeadlineExceeded(r.Context(), w, span) {
+				return
+			}
 			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
 		}
 	}
 	if classifyUnknown > 0 {
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
 		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
 			float64(classifyUnknown), telemetry.Attrs{attrReason: reasonUnclassified})
 	}
 	if outcome.unwrapDropped > 0 {
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
 		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
 			float64(outcome.unwrapDropped), telemetry.Attrs{attrReason: reasonUnwrapDrop})
 	}
@@ -836,6 +1012,9 @@ classifyLoop:
 
 	// Record aggregate counts and body size on the span before the success ack.
 	if span.IsRecording() {
+		if s.phase2DeadlineExceeded(r.Context(), w, span) {
+			return
+		}
 		span.SetAttributes(
 			attribute.Int("tailscale.stream.flows", flows),
 			attribute.Int("tailscale.stream.audits", audits),
@@ -844,6 +1023,9 @@ classifyLoop:
 		)
 	}
 
+	if s.phase2DeadlineExceeded(r.Context(), w, span) {
+		return
+	}
 	s.writeAck(w)
 }
 
@@ -1138,8 +1320,9 @@ func countConnections(sh shape, limit int) (int, error) {
 // as a FALLBACK for streamed audit records that lack an inner eventTime (S4-10):
 // flow records ignore it (they carry their own start/end).
 type extractedRecord struct {
-	raw     json.RawMessage
-	envTime time.Time
+	raw         json.RawMessage
+	envTime     time.Time
+	captureTime time.Time
 }
 
 // extractOutcome reports structural facts about a parsed request body that the
@@ -1340,6 +1523,10 @@ func (e envelope) logsShapeOK() bool {
 // deliberately forward-compatible — over-deep nesting is an unrecognized shape,
 // not evidence the batch is corrupt, so it must not fail the whole request.
 func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) []extractedRecord {
+	return unwrapWithCapture(v, inherited, time.Time{}, depth, st)
+}
+
+func unwrapWithCapture(v json.RawMessage, inherited, inheritedCapture time.Time, depth int, st *unwrapState) []extractedRecord {
 	if depth > maxUnwrapDepth {
 		st.dropped++
 		return nil
@@ -1349,7 +1536,7 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 		// Not a JSON object (e.g. an array or scalar at top level); ignore.
 		if len(trimmed) > 0 && trimmed[0] == '[' {
 			// A bare JSON array of records, visited INCREMENTALLY (see unwrapArray).
-			if out, _, ok := unwrapArray(trimmed, inherited, depth, st); ok {
+			if out, _, ok := unwrapArrayWithCapture(trimmed, inherited, inheritedCapture, depth, st); ok {
 				return out
 			}
 		}
@@ -1363,12 +1550,16 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 		// time; prefer it over an inherited time when propagating down to the
 		// record(s) it carries. Applied to BOTH the {"logs":[...]} and {"event":...}
 		// wrappers so the two shapes behave consistently.
-		t := env.envelopeTime()
-		if t.IsZero() {
-			t = inherited
+		eventTime := env.envelopeTime()
+		if eventTime.IsZero() {
+			eventTime = inherited
+		}
+		captureTime := env.recordedTime()
+		if captureTime.IsZero() {
+			captureTime = inheritedCapture
 		}
 		if arr := bytes.TrimSpace(env.Logs); len(arr) > 0 && arr[0] == '[' {
-			out, elements, ok := unwrapArray(arr, t, depth, st)
+			out, elements, ok := unwrapArrayWithCapture(arr, eventTime, captureTime, depth, st)
 			if st.overflow {
 				return nil
 			}
@@ -1380,14 +1571,14 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 			}
 		}
 		if len(bytes.TrimSpace(env.Event)) > 0 {
-			return unwrap(env.Event, t, depth+1, st)
+			return unwrapWithCapture(env.Event, eventTime, captureTime, depth+1, st)
 		}
 	}
 	// Plain record object.
 	if !st.take() {
 		return nil
 	}
-	return []extractedRecord{{raw: trimmed, envTime: inherited}}
+	return []extractedRecord{{raw: trimmed, envTime: inherited, captureTime: inheritedCapture}}
 }
 
 // unwrapArray walks the elements of a JSON array ONE AT A TIME, unwrapping each
@@ -1410,6 +1601,10 @@ func unwrap(v json.RawMessage, inherited time.Time, depth int, st *unwrapState) 
 // not a well-formed lone array, which both callers treat exactly as the old
 // whole-value decode failure did.
 func unwrapArray(arr []byte, inherited time.Time, depth int, st *unwrapState) (out []extractedRecord, elements int, ok bool) {
+	return unwrapArrayWithCapture(arr, inherited, time.Time{}, depth, st)
+}
+
+func unwrapArrayWithCapture(arr []byte, inherited, inheritedCapture time.Time, depth int, st *unwrapState) (out []extractedRecord, elements int, ok bool) {
 	dec := json.NewDecoder(bytes.NewReader(arr))
 	open, err := dec.Token()
 	if err != nil {
@@ -1431,7 +1626,7 @@ func unwrapArray(arr []byte, inherited time.Time, depth int, st *unwrapState) (o
 			return nil, elements, false
 		}
 		elements++
-		out = append(out, unwrap(e, inherited, depth+1, st)...)
+		out = append(out, unwrapWithCapture(e, inherited, inheritedCapture, depth+1, st)...)
 		if st.overflow {
 			return nil, elements, true
 		}
@@ -1471,6 +1666,12 @@ func (e envelope) envelopeTime() time.Time {
 	if t := parseHECTime(e.Time); !t.IsZero() {
 		return t
 	}
+	return e.recordedTime()
+}
+
+// recordedTime returns the publisher's record/ship time from fields.recorded.
+// Unlike envelopeTime, it never treats the HEC occurrence time as capture time.
+func (e envelope) recordedTime() time.Time {
 	if len(bytes.TrimSpace(e.Fields)) > 0 {
 		var fields struct {
 			Recorded string `json:"recorded"`

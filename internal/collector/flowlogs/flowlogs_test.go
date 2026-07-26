@@ -210,6 +210,90 @@ func TestCollectWindow_BoundaryDedup(t *testing.T) {
 	}
 }
 
+func TestCollectWindow_BoundaryDedupKeepsSameTupleInDifferentTrafficClasses(t *testing.T) {
+	// Poll-boundary de-duplication uses the same identity as cross-source
+	// de-duplication, including the bounded traffic class.
+	resp := oneTCPResponse()
+	resp.Logs[0].SubnetTraffic = append([]flowlog.ConnectionCounts(nil), resp.Logs[0].VirtualTraffic...)
+	c := New(&fakeAPI{resp: resp}, newProcessor(), 0, 0, nil, nil)
+	rec := telemetrytest.New()
+
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	if _, err := c.CollectWindow(context.Background(), from, from.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() error = %v", err)
+	}
+
+	if got, want := sumIO(rec), float64(3600); got != want {
+		t.Fatalf("io total = %v, want %v (virtual and subnet both emit)", got, want)
+	}
+}
+
+func TestCollectWindow_BoundaryDedupReportsConflictingCounters(t *testing.T) {
+	// An overlapping poll response can repeat a connection with revised counts.
+	// It must retain the first exported counters and make the discrepancy visible
+	// without adding the raw identity or counter values as metric labels.
+	first := oneTCPResponse()
+	changed := oneTCPResponse()
+	changed.Logs[0].VirtualTraffic[0].RxBytes = 9000
+	c := New(&fakeAPI{responses: []flowlog.NetworkResponse{first, changed}}, newProcessor(), 0, 0, nil, nil)
+	rec := telemetrytest.New()
+
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	if _, err := c.CollectWindow(context.Background(), from, from.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() first window: %v", err)
+	}
+	if _, err := c.CollectWindow(context.Background(), from.Add(time.Minute), from.Add(2*time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() second window: %v", err)
+	}
+
+	if got, want := sumIO(rec), float64(1800); got != want {
+		t.Fatalf("io total = %v, want %v (first poll values win)", got, want)
+	}
+	pts := rec.MetricPoints(flowlog.MetricDedupConflicts)
+	if len(pts) != 1 {
+		t.Fatalf("dedup conflict points = %d, want 1", len(pts))
+	}
+	if got, want := pts[0].Attrs["scope"], flowlog.DedupScopePollBoundary; got != want {
+		t.Errorf("conflict scope = %q, want %q", got, want)
+	}
+	if got, want := pts[0].Attrs[semconv.AttrTrafficType], semconv.TrafficVirtual; got != want {
+		t.Errorf("conflict traffic type = %q, want %q", got, want)
+	}
+	if len(pts[0].Attrs) != 2 {
+		t.Errorf("conflict attrs = %#v, want exactly scope and traffic type", pts[0].Attrs)
+	}
+}
+
+func TestCollectWindow_DropsOnlySemanticallyInvalidRecords(t *testing.T) {
+	resp := oneTCPResponse()
+	invalid := resp.Logs[0]
+	invalid.NodeID = "invalid-node"
+	invalid.VirtualTraffic = append([]flowlog.ConnectionCounts(nil), invalid.VirtualTraffic...)
+	invalid.VirtualTraffic[0].TxBytes = -1
+	resp.Logs = append([]flowlog.FlowLog{invalid}, resp.Logs...)
+	c := New(&fakeAPI{resp: resp}, newProcessor(), 0, 0, nil, nil)
+	rec := telemetrytest.New()
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+
+	if _, err := c.CollectWindow(context.Background(), from, from.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() error = %v", err)
+	}
+
+	if got, want := sumIO(rec), float64(1800); got != want {
+		t.Fatalf("io total = %v, want %v from the valid record only", got, want)
+	}
+	points := rec.MetricPoints(flowlog.MetricDataQuality)
+	if len(points) != 1 {
+		t.Fatalf("data-quality points = %d, want 1", len(points))
+	}
+	if got := points[0].Attrs["source"]; got != "poll" {
+		t.Errorf("source = %q, want poll", got)
+	}
+	if got := points[0].Attrs["reason"]; got != string(flowlog.ViolationNegativeCounters) {
+		t.Errorf("reason = %q, want %q", got, flowlog.ViolationNegativeCounters)
+	}
+}
+
 func TestCollectWindow_BoundaryDedupPreservesEmbeddedIdentity(t *testing.T) {
 	first := oneTCPResponse()
 	firstLog := &first.Logs[0]

@@ -23,6 +23,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/stream"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
@@ -47,6 +48,7 @@ const (
 	reasonUnwrapDrop   = "unwrap_drop"
 	reasonMalformed    = "malformed"
 	reasonDecodeError  = "decode_error"
+	reasonSemantic     = "semantic_invalid"
 )
 
 const testToken = "s3cr3t-token"
@@ -720,6 +722,35 @@ func TestHandler_MalformedKnownRecordRejectsBatch(t *testing.T) {
 	}
 }
 
+func TestHandler_SemanticallyInvalidFlowRejectsWholeBatch(t *testing.T) {
+	s, rec := newServer(t, stream.Options{Token: testToken})
+
+	invalid := strings.Replace(captureFlowRecord, `"txBytes":6420`, `"txBytes":-1`, 1)
+	body := captureFlowRecord + "\n" + invalid + "\n"
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%q", w.Code, w.Body.String())
+	}
+	if got := rec.MetricPoints(flowlog.MetricIO); len(got) != 0 {
+		t.Fatalf("flow IO points = %d, want 0 (semantic rejection must be atomic)", len(got))
+	}
+	if got := rec.MetricPoints(metricRecords); len(got) != 0 {
+		t.Fatalf("stream record points = %d, want 0 (semantic rejection must be atomic)", len(got))
+	}
+	if got := findPoint(t, rec.MetricPoints(metricRejected), map[string]string{
+		attrReason: reasonSemantic,
+	}).Value; got != 1 {
+		t.Fatalf("%s{reason=%q} = %v, want 1", metricRejected, reasonSemantic, got)
+	}
+	if got := findPoint(t, rec.MetricPoints(flowlog.MetricDataQuality), map[string]string{
+		"source": "stream",
+		"reason": "negative_counters",
+	}).Value; got != 1 {
+		t.Fatalf("%s{source=stream,reason=negative_counters} = %v, want 1", flowlog.MetricDataQuality, got)
+	}
+}
+
 // TestHandler_UnknownRecordTypeSkippedBatchSucceeds pins the forward-compatible
 // side of the #201 contract: a genuinely-UNKNOWN record type (an object that
 // classifies to neither the flow nor the audit shape) is SKIPPED and counted, and
@@ -1044,6 +1075,103 @@ func TestHandleCallsIngestHook(t *testing.T) {
 	// Signal calls: one per non-empty signal.
 	findCall(semconv.IngestSourceStream, semconv.IngestSignalFlow, 1, 0)
 	findCall(semconv.IngestSourceStream, semconv.IngestSignalAudit, 1, 0)
+}
+
+// TestHandleAcceptedObserver_ReportsDistinctHECTimes guards #282's freshness
+// contract: HEC occurrence time and publisher-recorded time are not aliases.
+// It would catch a regression that reports acceptance before the processor,
+// omits a signal, or collapses fields.recorded into EventTime.
+func TestHandleAcceptedObserver_ReportsDistinctHECTimes(t *testing.T) {
+	const recorded = "2026-06-03T15:34:47.809040387Z"
+	body := `{"time":1780500887.356,"event":` + captureFlowRecord + `,"fields":{"recorded":"` + recorded + `"}}` +
+		`{"time":1780500887.356,"event":` + captureAuditRecord + `,"fields":{"recorded":"` + recorded + `"}}` +
+		`{"time":1780500887.356,"event":` + strings.Replace(captureAuditRecord, `"eventTime":"2026-06-02T19:00:05.558444283Z",`, "", 1) + `,"fields":{"recorded":"` + recorded + `"}}`
+
+	var got []ingest.AcceptedEvent
+	s, _ := newServer(t, stream.Options{
+		Listen: loopbackListen,
+		OnAccepted: func(event ingest.AcceptedEvent) {
+			got = append(got, event)
+		},
+	})
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", resp.Code, resp.Body.String())
+	}
+	if len(got) != 3 {
+		t.Fatalf("accepted events = %d, want 3: %+v", len(got), got)
+	}
+
+	flowEvent, err := time.Parse(time.RFC3339Nano, "2026-06-02T18:59:59.279306235Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	flowCapture, err := time.Parse(time.RFC3339Nano, "2026-06-02T19:00:01.346001489Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditEvent, err := time.Parse(time.RFC3339Nano, "2026-06-02T19:00:05.558444283Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditCapture, err := time.Parse(time.RFC3339Nano, recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ingest.AcceptedEvent{
+		{Source: semconv.IngestSourceStream, Signal: semconv.IngestSignalFlow, EventTime: flowEvent, CaptureTime: flowCapture},
+		{Source: semconv.IngestSourceStream, Signal: semconv.IngestSignalAudit, EventTime: auditEvent, CaptureTime: auditCapture},
+		{Source: semconv.IngestSourceStream, Signal: semconv.IngestSignalAudit, EventTime: time.Unix(1780500887, 356_000_000).UTC(), CaptureTime: auditCapture},
+	}
+	for i := range want {
+		eventMatches := got[i].EventTime.Equal(want[i].EventTime)
+		if i == 2 { // HEC epoch seconds are parsed through a float.
+			eventMatches = got[i].EventTime.Sub(want[i].EventTime).Abs() <= time.Microsecond
+		}
+		if got[i].Source != want[i].Source || got[i].Signal != want[i].Signal || !eventMatches || !got[i].CaptureTime.Equal(want[i].CaptureTime) {
+			t.Errorf("accepted event %d = %+v, want source=%q signal=%q event=%s capture=%s", i, got[i], want[i].Source, want[i].Signal, want[i].EventTime, want[i].CaptureTime)
+		}
+		if got[i].AcceptedAt.IsZero() {
+			t.Errorf("accepted event %d has zero AcceptedAt", i)
+		}
+	}
+}
+
+// TestHandleAcceptedObserver_SkipsRejectedAndUnknownBatches ensures only records
+// in a fully valid atomic batch create freshness evidence.
+func TestHandleAcceptedObserver_SkipsRejectedAndUnknownBatches(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		code int
+	}{
+		{
+			name: "semantic rejection discards valid prefix",
+			body: captureFlowRecord + "\n" + strings.Replace(captureFlowRecord, `"txBytes":6420`, `"txBytes":-1`, 1),
+			code: http.StatusBadRequest,
+		},
+		{
+			name: "unknown record is skipped",
+			body: `{"future":"record"}`,
+			code: http.StatusOK,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []ingest.AcceptedEvent
+			s, _ := newServer(t, stream.Options{
+				Listen:     loopbackListen,
+				OnAccepted: func(event ingest.AcceptedEvent) { got = append(got, event) },
+			})
+			resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(tt.body))
+			if resp.Code != tt.code {
+				t.Fatalf("status = %d, want %d; body=%q", resp.Code, tt.code, resp.Body.String())
+			}
+			if len(got) != 0 {
+				t.Fatalf("accepted events = %+v, want none", got)
+			}
+		})
+	}
 }
 
 // TestHandler_InflightAndDuration asserts that a successful POST:

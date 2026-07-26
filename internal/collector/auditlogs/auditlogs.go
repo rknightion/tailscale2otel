@@ -10,6 +10,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
@@ -46,15 +47,25 @@ type Collector struct {
 	// onIngest, when non-nil, is called once per successful poll window with
 	// ("poll","audit", <records accepted>, 0). The app supplies it (gated on
 	// self-observability); the collector stays agnostic to how it's emitted.
-	onIngest func(source, signal string, records, bytes int)
+	onIngest         func(source, signal string, records, bytes int)
+	acceptedObserver ingest.AcceptedObserver
+}
+
+// Option configures optional Collector behavior.
+type Option func(*Collector)
+
+// WithAcceptedObserver reports each event accepted by the poller's source-level
+// de-duplication after it has been handed to the shared processor.
+func WithAcceptedObserver(observer ingest.AcceptedObserver) Option {
+	return func(c *Collector) { c.acceptedObserver = observer }
 }
 
 // New returns an auditlogs Collector that fetches via a and converts via proc.
 // A non-positive interval defaults to 60s; a non-positive lag defaults to 60s.
 // onIngest, when non-nil, is called after each successful window with the
 // post-dedup record count; pass nil to disable.
-func New(a api, proc *audit.Processor, interval, lag time.Duration, onIngest func(source, signal string, records, bytes int)) *Collector {
-	return &Collector{
+func New(a api, proc *audit.Processor, interval, lag time.Duration, onIngest func(source, signal string, records, bytes int), opts ...Option) *Collector {
+	c := &Collector{
 		api:      a,
 		proc:     proc,
 		interval: interval,
@@ -62,6 +73,10 @@ func New(a api, proc *audit.Processor, interval, lag time.Duration, onIngest fun
 		seen:     dedup.New(dedupCapacity),
 		onIngest: onIngest,
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Name returns the stable collector identifier and checkpoint key.
@@ -108,7 +123,17 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		}
 		resp.Logs = kept
 	}
-	c.proc.ProcessAll(resp, e)
+	for _, ev := range resp.Logs {
+		c.proc.Process(ev, e)
+		if c.acceptedObserver != nil {
+			c.acceptedObserver(ingest.AcceptedEvent{
+				Source:     semconv.IngestSourcePoll,
+				Signal:     semconv.IngestSignalAudit,
+				EventTime:  ev.EventTime,
+				AcceptedAt: time.Now(),
+			})
+		}
+	}
 	if c.onIngest != nil {
 		c.onIngest(semconv.IngestSourcePoll, semconv.IngestSignalAudit, len(resp.Logs), 0)
 	}

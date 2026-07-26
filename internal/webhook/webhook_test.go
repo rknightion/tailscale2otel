@@ -203,7 +203,8 @@ func TestHandler_MaxBodyBytesTooLargeRejectedBeforeSignature(t *testing.T) {
 func TestHandler_DefaultMaxBodyBytesIsOneMiB(t *testing.T) {
 	rec := telemetrytest.New()
 	s := New(Options{
-		Path: "/webhook",
+		Listen: "127.0.0.1:0",
+		Path:   "/webhook",
 	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	resp := doPost(t, s.Handler(), "/webhook", strings.Repeat("x", (1<<20)+1), "")
@@ -411,7 +412,7 @@ func TestHandler_RejectsNonPOST(t *testing.T) {
 
 func TestHandler_NoSecretSkipsVerification(t *testing.T) {
 	rec := telemetrytest.New()
-	s := New(Options{Path: "/webhook"}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	// No signature header at all, but Secret == "" so verification is skipped.
 	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, "")
@@ -644,7 +645,7 @@ func TestWebhookHandle_EmitsSpan(t *testing.T) {
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 
 	rec := telemetrytest.New()
-	s := New(Options{Path: "/webhook"}, rec.Emitter(), discard(), WithTracer(tp.Tracer("test")))
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), discard(), WithTracer(tp.Tracer("test")))
 
 	// POST with no signature — body will be accepted (Secret == ""), parsed as
 	// an empty event array, and the span recorded on the success path.

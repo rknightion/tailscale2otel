@@ -54,7 +54,7 @@ stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`doma
 label (`security` / `infra` / `observability`); rules not worthy of automatic
 investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
 "true"` so IRM routing / auto-investigation stays focused. The generated set currently
-has **68 alert rules + 11 recording rules** across five groups (`-health`, `-security`,
+has **71 alert rules + 12 recording rules** across five groups (`-health`, `-security`,
 `-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
 `gen/build_rules.py` is the source of truth.
 
@@ -123,6 +123,7 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 | `LogStreamStalled` | warning | ⏸ off | a configured stream has no delivery activity for >1h |
 | `LogStreamBackpressure` | info | ⏸ off | delivery requests hitting the max body size |
 | `LogStreamSpoofedEntries` | warning | ⏸ off | log entries rejected as spoofed |
+| `AcceptedIngestDataStale` | warning | ⏸ off | newest accepted event timestamp is >1h old; enable only for source/signal pairs expected to be continuous |
 
 ### `tailscale2otel-network` — connectivity
 
@@ -142,6 +143,7 @@ data, so their rules use `noDataState: OK` (absent ⇒ not firing).
 | `tailscale:derp_relay:byte_fraction` | ✅ on | fleet DERP byte fraction (precomputes the heavy 4-rate query) |
 | `tailscale:flow_throughput:bytes:rate5m` | ⏸ off | total flow throughput (rollup or raw) |
 | `tailscale2otel:series_active:sum` | ✅ on | total active series (ingest-cost proxy) |
+| `tailscale2otel:ingest_event_freshness_seconds` | ⏸ off | seconds since the greatest accepted event timestamp per source/signal |
 | `tailscale:device_keys_expiring_7d:count` | ⏸ off | device keys expiring within 7 days |
 
 > **Heads-up on recording rules:** Grafana-managed recording rules need the

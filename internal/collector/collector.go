@@ -37,6 +37,16 @@ type WindowCollector interface {
 	Lag() time.Duration
 }
 
+// ReplayWindowCollector opts a WindowCollector into rereading a bounded slice
+// before its durable high-water mark. The scheduler applies the overlap only
+// after a checkpoint exists, so a cold start still uses InitialLookback exactly
+// once. A successful replay always persists the forward window end rather than
+// any rewound value returned by the collector.
+type ReplayWindowCollector interface {
+	WindowCollector
+	ReplayOverlap() time.Duration
+}
+
 // Entry is a registered collector with its resolved poll interval. The window
 // fields apply only to WindowCollectors.
 type Entry struct {

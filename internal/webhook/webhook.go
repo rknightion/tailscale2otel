@@ -27,6 +27,7 @@
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -37,6 +38,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +51,8 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
+	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
@@ -79,6 +83,10 @@ const (
 	MetricEvents = "tailscale.webhook.events"
 	// MetricRejected counts rejected webhook requests, keyed by rejection reason.
 	MetricRejected = "tailscale.webhook.rejected"
+	// MetricDuplicates counts webhook events suppressed by per-receiver delivery deduplication.
+	MetricDuplicates = "tailscale.webhook.duplicates"
+	// MetricSchemaDrift records the known/unknown state of the webhook wire version.
+	MetricSchemaDrift = "tailscale.webhook.schema_drift"
 
 	// defaultMaxBodyBytes caps webhook request bodies when Options.MaxBodyBytes is
 	// 0. Real Tailscale webhook payloads are KB-scale (a handful of JSON events
@@ -95,6 +103,9 @@ const (
 	// MaxBodyBytes rather than by how many senders show up.
 	defaultMaxConcurrentRequests = 4
 
+	defaultDeliveryDedupTTL      = 25 * time.Hour
+	defaultDeliveryDedupCapacity = 65536
+
 	// eventNamePrefix is prepended to the Tailscale event type to form the OTEL
 	// LogRecord EventName, e.g. "tailscale.webhook.nodeCreated".
 	eventNamePrefix = "tailscale.webhook."
@@ -102,7 +113,22 @@ const (
 	// attrType is the low-cardinality event-type attribute.
 	attrType = "tailscale.webhook.type"
 	// attrReason labels a rejection by cause.
-	attrReason = "reason"
+	attrReason       = "reason"
+	attrSchemaField  = "field"
+	attrSchemaStatus = "status"
+
+	// AttrNodeID through AttrNewRoles are the bounded typed allowlist for
+	// version-1 webhook event data. The PII registry classifies these keys at the
+	// application boundary; webhook never emits arbitrary data fields.
+	AttrNodeID        = "tailscale.webhook.node.id"
+	AttrDeviceName    = "tailscale.webhook.node.device.name"
+	AttrManagedBy     = "tailscale.webhook.node.managed_by"
+	AttrActor         = "tailscale.webhook.actor"
+	AttrURL           = "tailscale.webhook.url"
+	AttrKeyExpiration = "tailscale.webhook.key.expiration"
+	AttrUser          = "tailscale.webhook.user"
+	AttrOldRoles      = "tailscale.webhook.old_roles"
+	AttrNewRoles      = "tailscale.webhook.new_roles"
 
 	// maxDistinctEventTypes caps how many distinct event-type values are used as a
 	// metric attribute / log EventName before further new types collapse into
@@ -185,29 +211,205 @@ type Options struct {
 	// (IngestSourceWebhook, IngestSignalWebhook, len(events), len(body)).
 	// Supplied by the app, gated on self-observability.
 	OnIngest func(source, signal string, records, bytes int)
+	// OnAccepted, when non-nil, observes each authenticated, delivery-dedup
+	// surviving event after it is handed to the webhook processor.
+	OnAccepted ingest.AcceptedObserver
 }
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
 type Server struct {
-	opts     Options
-	e        telemetry.Emitter
-	logger   *slog.Logger
-	now      func() time.Time // injectable clock; defaults to time.Now
-	dedup    *dedup.Set       // optional cross-source de-dup set (see WithDedup)
-	onIngest func(source, signal string, records, bytes int)
-	tracer   trace.Tracer
+	opts       Options
+	e          telemetry.Emitter
+	logger     *slog.Logger
+	now        func() time.Time // injectable clock; defaults to time.Now
+	dedup      *dedup.Set       // optional cross-source de-dup set (see WithDedup)
+	onIngest   func(source, signal string, records, bytes int)
+	onAccepted ingest.AcceptedObserver
+	tracer     trace.Tracer
 
 	// admit is the aggregate admission semaphore (GHSA-9547-8jpc-48h6): a
 	// buffered channel whose capacity is the number of handlers allowed to
 	// buffer a body — and thus be pending HMAC verification — at once. nil
 	// when the limit is disabled.
 	admit chan struct{}
+	// insecureOpen is true only for an empty secret on a non-loopback bind. It
+	// fails closed before buffering or parsing attacker-supplied input.
+	insecureOpen bool
+	delivery     *deliveryDeduper
 
 	// typesMu guards seenTypes, the bounded set of distinct event types already
 	// admitted as a telemetry dimension. handle (and thus emit) runs concurrently
 	// per request, so access is mutex-guarded. See boundType / maxDistinctEventTypes.
 	typesMu   sync.Mutex
 	seenTypes map[string]struct{}
+}
+
+// Route binds one configured tailnet to its isolated signing-secret receiver.
+// Routing is deliberately by the signed payload's tailnet identity, never by a
+// shared secret or first configured runtime.
+type Route struct {
+	Tailnet string
+	Server  *Server
+}
+
+// Router selects a webhook receiver only after every event in a bounded body
+// proves the same non-empty tailnet. Unknown, missing and mixed batches are
+// refused before an individual receiver's metrics, dedup state or processors
+// are touched.
+type Router struct {
+	routes map[string]*Server
+	base   *Server
+	admit  chan struct{}
+}
+
+// NewRouter composes per-tailnet webhook servers sharing one listener/path.
+func NewRouter(routes []Route) *Router {
+	r := &Router{routes: make(map[string]*Server, len(routes))}
+	for _, route := range routes {
+		if route.Tailnet == "" || route.Server == nil {
+			continue
+		}
+		r.routes[route.Tailnet] = route.Server
+		if r.base == nil {
+			r.base = route.Server
+		}
+	}
+	if r.base != nil && r.base.admit != nil {
+		r.admit = make(chan struct{}, cap(r.base.admit))
+	}
+	return r
+}
+
+// Handler reads no more than the existing receiver cap, inspects only each
+// event's tailnet field, then hands the untouched bytes to the selected Server
+// for normal HMAC verification and emission.
+func (r *Router) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if r.base != nil && req.URL.Path != r.base.opts.Path {
+			http.NotFound(w, req)
+			return
+		}
+		if req.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.base == nil {
+			http.Error(w, "receiver unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		release, admitted := r.acquire(req.Context())
+		if !admitted {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+			return
+		}
+		defer release()
+		limit := r.base.opts.MaxBodyBytes
+		if limit == 0 {
+			limit = defaultMaxBodyBytes
+		}
+		reader := io.Reader(req.Body)
+		if limit >= 0 {
+			reader = http.MaxBytesReader(w, req.Body, limit)
+		}
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		tailnet, ok := webhookTailnet(body)
+		s, found := r.routes[tailnet]
+		if !ok || !found {
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		s.Handler().ServeHTTP(w, req)
+	})
+}
+
+func (r *Router) acquire(ctx context.Context) (func(), bool) {
+	if r.admit == nil {
+		return func() {}, true
+	}
+	select {
+	case r.admit <- struct{}{}:
+		return func() { <-r.admit }, true
+	default:
+	}
+	timer := time.NewTimer(admissionWait)
+	defer timer.Stop()
+	select {
+	case r.admit <- struct{}{}:
+		return func() { <-r.admit }, true
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	}
+}
+
+// Run binds the shared listener; all per-tailnet Servers have identical listen
+// settings because the config exposes one webhook listener.
+func (r *Router) Run(ctx context.Context) error {
+	if r.base == nil {
+		return errors.New("webhook: router has no routes")
+	}
+	srv := &http.Server{
+		Addr:              r.base.opts.Listen,
+		Handler:           r.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		err := srv.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		errCh <- err
+	}()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		return err
+	}
+}
+
+// webhookTailnet performs the minimum parsing required for safe attribution.
+func webhookTailnet(body []byte) (string, bool) {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil || len(raw) == 0 {
+		return "", false
+	}
+	var tailnet string
+	for _, event := range raw {
+		var identity struct {
+			Tailnet string `json:"tailnet"`
+		}
+		if err := json.Unmarshal(event, &identity); err != nil || strings.TrimSpace(identity.Tailnet) == "" {
+			return "", false
+		}
+		if tailnet == "" {
+			tailnet = identity.Tailnet
+			continue
+		}
+		if tailnet != identity.Tailnet {
+			return "", false
+		}
+	}
+	return tailnet, true
 }
 
 // Option configures a Server at construction time.
@@ -226,6 +428,23 @@ func WithDedup(set *dedup.Set) Option {
 // WithTracer sets the tracer for one span per received webhook request. A nil
 // tracer disables span emission (the server falls back to the noop tracer).
 func WithTracer(tr trace.Tracer) Option { return func(s *Server) { s.tracer = tr } }
+
+// WithClock overrides the receiver clock. It is used by deterministic replay
+// and signature-tolerance tests; production callers should use the default.
+func WithClock(now func() time.Time) Option {
+	return func(s *Server) {
+		if now != nil {
+			s.now = now
+		}
+	}
+}
+
+// withDeliveryDedup overrides the delivery dedup settings for package tests.
+// The production receiver deliberately exposes no user-configurable replay
+// window: 25 hours covers the documented webhook retry horizon.
+func withDeliveryDedup(ttl time.Duration, capacity int) Option {
+	return func(s *Server) { s.delivery = newDeliveryDeduper(ttl, capacity, s.now) }
+}
 
 // event mirrors a single Tailscale webhook event. Field names and types match
 // Tailscale's documented payload and official example consumer.
@@ -262,15 +481,20 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 		admit = make(chan struct{}, maxConcurrent)
 	}
 	s := &Server{
-		opts:     opts,
-		e:        e,
-		logger:   logger,
-		now:      time.Now,
-		onIngest: opts.OnIngest,
-		admit:    admit,
+		opts:         opts,
+		e:            e,
+		logger:       logger,
+		now:          time.Now,
+		onIngest:     opts.OnIngest,
+		onAccepted:   opts.OnAccepted,
+		admit:        admit,
+		insecureOpen: opts.Secret == "" && !listenaddr.IsLoopback(opts.Listen),
 	}
 	for _, o := range options {
 		o(s)
+	}
+	if s.delivery == nil {
+		s.delivery = newDeliveryDeduper(defaultDeliveryDedupTTL, defaultDeliveryDedupCapacity, s.now)
 	}
 	return s
 }
@@ -345,6 +569,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if s.insecureOpen {
+		span.SetStatus(codes.Error, "auth required")
+		s.rejectStatus(w, http.StatusForbidden, "auth_required",
+			"webhook receiver refuses unauthenticated requests on a network-reachable bind", nil)
+		return
+	}
 	defer r.Body.Close()
 
 	// Aggregate admission control (GHSA-9547-8jpc-48h6): the per-request byte
@@ -385,19 +615,47 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var events []event
-	if err := json.Unmarshal(body, &events); err != nil {
+	var rawEvents []json.RawMessage
+	if err := json.Unmarshal(body, &rawEvents); err != nil {
 		span.SetStatus(codes.Error, "failed to parse webhook body")
 		s.reject(w, "invalid_body", "failed to parse webhook body", err)
 		return
+	}
+	events := make([]event, 0, len(rawEvents))
+	for _, raw := range rawEvents {
+		ev, err := decodeEvent(raw)
+		if err != nil {
+			span.SetStatus(codes.Error, "failed to parse webhook event")
+			s.reject(w, "invalid_body", "failed to parse webhook event", err)
+			return
+		}
+		events = append(events, ev)
 	}
 
 	if s.onIngest != nil {
 		s.onIngest(semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(events), len(body))
 	}
 
-	for _, ev := range events {
+	for i, ev := range events {
+		key, err := canonicalDigest(rawEvents[i])
+		if err != nil {
+			span.SetStatus(codes.Error, "failed to canonicalize webhook event")
+			s.reject(w, "invalid_body", "failed to canonicalize webhook event", err)
+			return
+		}
+		if !s.delivery.Add(key) {
+			s.e.Counter(docWebhookDuplicates.Name, docWebhookDuplicates.Unit, docWebhookDuplicates.Description, 1, nil)
+			continue
+		}
 		s.emit(ev)
+		if s.onAccepted != nil {
+			s.onAccepted(ingest.AcceptedEvent{
+				Source:     semconv.IngestSourceWebhook,
+				Signal:     semconv.IngestSignalWebhook,
+				EventTime:  parseTimestamp(ev.Timestamp),
+				AcceptedAt: s.now(),
+			})
+		}
 	}
 
 	// Record aggregate counts and body size on the span before the success response.
@@ -521,6 +779,15 @@ func (s *Server) emit(ev event) {
 	// derived from the ORIGINAL type (its lookup table is itself bounded), so a
 	// legitimately new WARN type is classified correctly even if it overflows.
 	dim := s.boundType(ev.Type)
+	attrs := telemetry.Attrs{
+		attrType:            dim,
+		semconv.AttrTailnet: ev.Tailnet,
+	}
+	if ev.Version == 1 {
+		for key, value := range typedDataAttrs(ev) {
+			attrs[key] = value
+		}
+	}
 
 	s.e.LogEvent(telemetry.Event{
 		Name:      eventNamePrefix + dim,
@@ -530,15 +797,177 @@ func (s *Server) emit(ev event) {
 		// The body is the attacker/upstream-supplied free-text message; classify it
 		// so a disabled free_text_details drops it from the body, not just attrs (#197).
 		BodyPII: []pii.Category{pii.CatFreeTextDetails},
-		Attrs: telemetry.Attrs{
-			attrType:            dim,
-			semconv.AttrTailnet: ev.Tailnet,
-		},
+		Attrs:   attrs,
 	})
 
 	s.e.Counter(docWebhookEvents.Name, docWebhookEvents.Unit, docWebhookEvents.Description, 1, telemetry.Attrs{
 		attrType: dim,
 	})
+	status := "known"
+	if ev.Version != 1 {
+		status = "unknown"
+	}
+	s.e.Counter(docWebhookSchemaDrift.Name, docWebhookSchemaDrift.Unit, docWebhookSchemaDrift.Description, 1, telemetry.Attrs{
+		attrSchemaField: "version", attrSchemaStatus: status,
+	})
+}
+
+func decodeEvent(raw json.RawMessage) (event, error) {
+	var wire struct {
+		Timestamp string          `json:"timestamp"`
+		Version   int             `json:"version"`
+		Type      string          `json:"type"`
+		Tailnet   string          `json:"tailnet"`
+		Message   string          `json:"message"`
+		Data      json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return event{}, err
+	}
+	ev := event{
+		Timestamp: wire.Timestamp,
+		Version:   wire.Version,
+		Type:      wire.Type,
+		Tailnet:   wire.Tailnet,
+		Message:   wire.Message,
+	}
+	if len(wire.Data) != 0 && !bytes.Equal(bytes.TrimSpace(wire.Data), []byte("null")) {
+		_ = json.Unmarshal(wire.Data, &ev.Data) // wrong-shaped data is deliberately omitted.
+	}
+	return ev, nil
+}
+
+func typedDataAttrs(ev event) telemetry.Attrs {
+	attrs := telemetry.Attrs{}
+	addString := func(dataKey, attrKey string) {
+		if value, ok := eventDataString(ev, dataKey); ok {
+			attrs[attrKey] = value
+		}
+	}
+	switch ev.Type {
+	case "nodeCreated", "nodeNeedsApproval", "nodeApproved", "nodeKeyExpiringInOneDay", "nodeKeyExpired", "nodeDeleted", "nodeSigned", "nodeNeedsSignature":
+		addString("nodeID", AttrNodeID)
+		addString("deviceName", AttrDeviceName)
+		addString("managedBy", AttrManagedBy)
+		addString("actor", AttrActor)
+		addString("url", AttrURL)
+		if ev.Type == "nodeKeyExpiringInOneDay" || ev.Type == "nodeKeyExpired" {
+			addString("expiration", AttrKeyExpiration)
+		}
+	case "policyUpdate":
+		addString("actor", AttrActor)
+		addString("url", AttrURL)
+	case "userRoleUpdated":
+		addString("user", AttrUser)
+		addString("actor", AttrActor)
+		addString("url", AttrURL)
+		if roles, ok := eventDataStrings(ev, "oldRoles"); ok {
+			attrs[AttrOldRoles] = roles
+		}
+		if roles, ok := eventDataStrings(ev, "newRoles"); ok {
+			attrs[AttrNewRoles] = roles
+		}
+	}
+	return attrs
+}
+
+func eventDataString(ev event, key string) (string, bool) {
+	raw, ok := ev.Data[key]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+func eventDataStrings(ev event, key string) ([]string, bool) {
+	raw, ok := ev.Data[key]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, false
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, false
+	}
+	return values, true
+}
+
+func canonicalDigest(raw json.RawMessage) (string, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return "", err
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return "", errors.New("trailing JSON value")
+		}
+		return "", err
+	}
+	var out bytes.Buffer
+	if err := writeCanonicalJSON(&out, value); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(out.Bytes())
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func writeCanonicalJSON(out *bytes.Buffer, value any) error {
+	switch value := value.(type) {
+	case nil, bool, json.Number:
+		b, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		out.Write(b)
+	case string:
+		b, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		out.Write(b)
+	case []any:
+		out.WriteByte('[')
+		for i, item := range value {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			if err := writeCanonicalJSON(out, item); err != nil {
+				return err
+			}
+		}
+		out.WriteByte(']')
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out.WriteByte('{')
+		for i, key := range keys {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			b, err := json.Marshal(key)
+			if err != nil {
+				return err
+			}
+			out.Write(b)
+			out.WriteByte(':')
+			if err := writeCanonicalJSON(out, value[key]); err != nil {
+				return err
+			}
+		}
+		out.WriteByte('}')
+	default:
+		return errors.New("unsupported JSON value")
+	}
+	return nil
 }
 
 // boundType maps an event type to the value used as a telemetry dimension,

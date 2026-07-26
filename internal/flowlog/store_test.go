@@ -206,15 +206,15 @@ func TestProcess_NoStoreConfigured(t *testing.T) {
 // So this drives the REAL store, end to end, rather than the fake the other
 // tests use.
 func TestProcess_UnderlayPortsNeverReachTheServicesTable(t *testing.T) {
-	m := flowstore.NewMemory(0)
-	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{Store: m})
-	rec := telemetrytest.New()
-
 	flow := physicalRecord("127.3.3.40:8") // relayed: the port field holds the region
 	flow.PhysicalTraffic = append(flow.PhysicalTraffic, flowlog.ConnectionCounts{
 		Src: "100.119.137.81:0", Dst: "81.187.237.31:41641", TxBytes: 90, TxPkts: 1,
 	}) // direct: the port field holds an ephemeral underlay port
 	flow.Start = time.Date(2026, 7, 24, 9, 30, 0, 0, time.UTC)
+	m := flowstore.NewMemory(0, flowstore.WithClock(func() time.Time { return flow.Start }))
+	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{Store: m})
+	rec := telemetrytest.New()
+
 	p.Process(flow, rec.Emitter())
 
 	res := m.Query(flowstore.Query{Start: flow.Start.Add(-time.Hour), End: flow.Start.Add(time.Hour)})

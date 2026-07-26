@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/acl"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/auditlogs"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/contacts"
@@ -20,9 +21,11 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/webhooks"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/stream"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
 	"github.com/rknightion/tailscale2otel/v3/internal/webhook"
 )
@@ -100,7 +103,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	c := &cfg.Collectors
 	cp := rt.cp
 	logger := d.logger
-	ingest := ingestObserver(rt.emitter, cfg.SelfObservability.Enabled)
+	onIngest := ingestObserver(rt.emitter, cfg.SelfObservability.Enabled)
+	onAccepted := acceptedEventObserver(rt.emitter, cfg.SelfObservability.Enabled)
 
 	if c.Devices.Enabled && cp.Supports("devices") {
 		devOpts := []devices.Option{
@@ -230,8 +234,14 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		}
 	}
 	if c.Flowlogs.Enabled && cp.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
-		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), ingest,
-			flowlogs.WithAPIState(rt.apiState))
+		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), onIngest,
+			flowlogs.WithAPIState(rt.apiState),
+			flowlogs.WithAcceptedObserver(onAccepted),
+			flowlogs.WithReplay(
+				c.Flowlogs.ReplayOverlap.D(),
+				c.Flowlogs.ReplaySeenCapacity,
+				replayStoreForRuntime(d.store, rt.name, d.multi),
+			))
 		rt.registry.RegisterWindow(fc, c.Flowlogs.Interval.D(), c.Flowlogs.InitialLookback.D(), c.Flowlogs.MaxWindow.D())
 	} else if c.Flowlogs.Enabled && cp.Supports("flowlogs") {
 		// Stream-only or objectstore-only: the poller isn't registered, so the
@@ -241,7 +251,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(fp, fp.DefaultInterval())
 	}
 	if c.Flowlogs.Enabled && objectStoreSource(c.Flowlogs.Source) {
-		if oc, err := newObjectStoreCollector(rt, d, ingest); err != nil {
+		if oc, err := newObjectStoreCollector(rt, d, onIngest, onAccepted); err != nil {
 			// Not fatal: the rest of the exporter is still useful, and a bucket
 			// that cannot be reached at startup is usually a credential or
 			// endpoint problem an operator fixes without a restart being the
@@ -253,44 +263,101 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		}
 	}
 	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
-		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), ingest)
+		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), onIngest,
+			auditlogs.WithAcceptedObserver(onAccepted))
 		rt.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
 	}
 }
 
-// buildReceivers constructs the optional HTTP receivers (off by default). The
-// receivers feed the FIRST runtime's processors/emitter: config validation
-// guarantees streaming/webhook are only enabled in single-tailnet mode, so
-// runtimes[0] is the sole tailnet.
+// replayStoreForRuntime mirrors the scheduler's checkpoint key shape: legacy
+// bare keys for a single tailnet, and tailnet-prefixed keys when runtimes share
+// one checkpoint store.
+func replayStoreForRuntime(store collector.CheckpointStore, tailnet string, multi bool) collector.CheckpointStore {
+	if !multi {
+		return store
+	}
+	return collector.Namespaced(store, tailnet)
+}
+
+// buildReceivers constructs the optional HTTP receivers. Legacy configuration
+// feeds the sole runtime; route lists construct one isolated receiver per
+// configured tailnet and compose them behind a single listener.
 func (a *App) buildReceivers() {
 	rt := a.runtimes[0]
-	ingest := ingestObserver(rt.emitter, a.cfg.SelfObservability.Enabled)
 	if a.cfg.Streaming.Enabled {
-		a.streamSrv = stream.New(stream.Options{
-			Listen:       a.cfg.Streaming.Listen,
-			Path:         a.cfg.Streaming.Path,
-			Token:        a.cfg.Streaming.Token.Reveal(),
-			Decompress:   a.cfg.Streaming.Decompress,
-			TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
-			TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
-			MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
-			// Aggregate admission control (#209): MaxBodyBytes bounds one body,
-			// this bounds how many are buffered at once.
-			MaxConcurrentRequests: a.cfg.Streaming.MaxConcurrentRequests,
-			OnIngest:              ingest,
-		}, rt.flowProc, rt.auditProc, rt.emitter, withComponent(a.logger, appcatalog.ComponentStream),
-			stream.WithTracer(a.tracer))
+		streamOptions := func(path, token string, e telemetry.Emitter) stream.Options {
+			return stream.Options{
+				Listen:       a.cfg.Streaming.Listen,
+				Path:         path,
+				Token:        token,
+				Decompress:   a.cfg.Streaming.Decompress,
+				TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
+				TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
+				MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
+				// Aggregate admission control (#209): MaxBodyBytes bounds one body,
+				// this bounds how many are buffered at once.
+				MaxConcurrentRequests: a.cfg.Streaming.MaxConcurrentRequests,
+				OnIngest:              ingestObserver(e, a.cfg.SelfObservability.Enabled),
+				OnAccepted:            acceptedEventObserver(e, a.cfg.SelfObservability.Enabled),
+			}
+		}
+		if len(a.cfg.Streaming.Routes) == 0 {
+			a.streamSrv = stream.New(streamOptions(a.cfg.Streaming.Path, a.cfg.Streaming.Token.Reveal(), rt.emitter), rt.flowProc, rt.auditProc, rt.emitter, withComponent(a.logger, appcatalog.ComponentStream), stream.WithTracer(a.tracer))
+		} else {
+			routes := make([]stream.Route, 0, len(a.cfg.Streaming.Routes))
+			for _, route := range a.cfg.Streaming.Routes {
+				routeRT := a.runtimeFor(route.Tailnet)
+				if routeRT == nil { // Validate prevents this; keep startup fail-closed.
+					continue
+				}
+				srv := stream.New(streamOptions(route.Path, route.Token.Reveal(), routeRT.emitter), routeRT.flowProc, routeRT.auditProc, routeRT.emitter, withComponent(a.logger, appcatalog.ComponentStream), stream.WithTracer(a.tracer))
+				routes = append(routes, stream.Route{Path: route.Path, Server: srv})
+			}
+			a.streamSrv = stream.NewRouter(routes)
+		}
 	}
 	if a.cfg.Webhook.Enabled {
-		var wopts []webhook.Option
-		if a.webhookDedup != nil {
-			wopts = append(wopts, webhook.WithDedup(a.webhookDedup))
+		newWebhook := func(routeRT *tailnetRuntime, secret string) *webhook.Server {
+			wopts := []webhook.Option{webhook.WithTracer(a.tracer)}
+			if set := a.webhookDedupFor(routeRT); set != nil {
+				wopts = append(wopts, webhook.WithDedup(set))
+			}
+			wh := webhookOptions(a.cfg.Webhook)
+			wh.Secret = secret
+			wh.OnIngest = ingestObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
+			wh.OnAccepted = acceptedEventObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
+			return webhook.New(wh, routeRT.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
 		}
-		wopts = append(wopts, webhook.WithTracer(a.tracer))
-		wh := webhookOptions(a.cfg.Webhook)
-		wh.OnIngest = ingest
-		a.webhookSrv = webhook.New(wh, rt.emitter, withComponent(a.logger, appcatalog.ComponentWebhook), wopts...)
+		if len(a.cfg.Webhook.Routes) == 0 {
+			a.webhookSrv = newWebhook(rt, a.cfg.Webhook.Secret.Reveal())
+		} else {
+			routes := make([]webhook.Route, 0, len(a.cfg.Webhook.Routes))
+			for _, route := range a.cfg.Webhook.Routes {
+				routeRT := a.runtimeFor(route.Tailnet)
+				if routeRT == nil {
+					continue
+				}
+				routes = append(routes, webhook.Route{Tailnet: route.Tailnet, Server: newWebhook(routeRT, route.Secret.Reveal())})
+			}
+			a.webhookSrv = webhook.NewRouter(routes)
+		}
 	}
+}
+
+func (a *App) runtimeFor(name string) *tailnetRuntime {
+	for _, rt := range a.runtimes {
+		if a.runtimeName(rt) == name {
+			return rt
+		}
+	}
+	return nil
+}
+
+func (a *App) webhookDedupFor(rt *tailnetRuntime) *dedup.Set {
+	if a.webhookDedups != nil {
+		return a.webhookDedups[a.runtimeName(rt)]
+	}
+	return a.webhookDedup
 }
 
 // webhookOptions maps the webhook config block to the receiver's Options. Kept as

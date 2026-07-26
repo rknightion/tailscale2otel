@@ -286,6 +286,18 @@ func TestFlowStore_NotBuiltWithoutTheAdminPage(t *testing.T) {
 	}
 }
 
+func TestNewFlowStoreWiresConfiguredFutureSkew(t *testing.T) {
+	cfg := config.Default()
+	cfg.Flows.MaxFutureSkew = config.Duration(time.Minute)
+	store := newFlowStore(cfg)
+	if store == nil {
+		t.Fatal("newFlowStore returned nil")
+	}
+	if got := store.RecordResult(flowstore.Observation{Time: time.Now().Add(30 * time.Minute)}); got != flowstore.AdmissionFuture {
+		t.Fatalf("RecordResult() = %v, want future rejection from configured skew", got)
+	}
+}
+
 // The page and its API sit behind the same gate as everything else on the admin
 // server. #227 is why this is asserted rather than assumed.
 func TestFlowsRoutes_RequireAdminAuth(t *testing.T) {

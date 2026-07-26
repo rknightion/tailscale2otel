@@ -10,6 +10,16 @@ import (
 
 var base = time.Date(2026, 7, 24, 9, 0, 0, 0, time.UTC)
 
+// The aggregation suite deliberately exercises synthetic timelines spanning
+// hours and days. Keep that coverage separate from admission, which has its
+// own fixed-clock tests in the flowstore package.
+func newMemory(capacity int) *flowstore.Memory {
+	return flowstore.NewMemory(capacity,
+		flowstore.WithClock(func() time.Time { return base }),
+		flowstore.WithMaxFutureSkew(7*24*time.Hour),
+	)
+}
+
 func obs(at time.Time, src, dst string, tx, rx int64) flowstore.Observation {
 	return flowstore.Observation{
 		Time:        at,
@@ -24,7 +34,7 @@ func obs(at time.Time, src, dst string, tx, rx int64) flowstore.Observation {
 }
 
 func TestMemory_AggregatesWithinAndAcrossBuckets(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	// Two observations in the same minute, one in the next.
 	s.Record(obs(base, "a", "b", 100, 50))
 	s.Record(obs(base.Add(30*time.Second), "a", "b", 100, 50))
@@ -54,7 +64,7 @@ func TestMemory_AggregatesWithinAndAcrossBuckets(t *testing.T) {
 // survive aggregation — collapsing them, or dropping receive as a presumed
 // duplicate, would discard real measurement.
 func TestMemory_PreservesBothDirections(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(obs(base, "a", "b", 1000, 700))
 
 	res := s.Query(flowstore.Query{End: base.Add(time.Minute)})
@@ -69,7 +79,7 @@ func TestMemory_PreservesBothDirections(t *testing.T) {
 // A node's received total is what its peers sent to it, so the counters mirror
 // per role rather than being copied.
 func TestMemory_NodeRolesMirrorCounters(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(obs(base, "sender", "receiver", 900, 100))
 
 	res := s.Query(flowstore.Query{End: base.Add(time.Minute)})
@@ -93,7 +103,7 @@ func TestMemory_NodeRolesMirrorCounters(t *testing.T) {
 // Direction is real information here: a flow is reported once, by one node.
 // Normalising pairs into unordered edges would lose who initiated.
 func TestMemory_PairsKeepDirection(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(obs(base, "a", "b", 100, 0))
 	s.Record(obs(base, "b", "a", 300, 0))
 
@@ -110,7 +120,7 @@ func TestMemory_PairsKeepDirection(t *testing.T) {
 // An observation missing an endpoint (exit traffic never carries a destination)
 // must still count toward totals while contributing no topology edge.
 func TestMemory_AbsentEndpointCountsButFormsNoEdge(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(flowstore.Observation{
 		Time:        base,
 		TrafficType: "exit",
@@ -134,7 +144,7 @@ func TestMemory_AbsentEndpointCountsButFormsNoEdge(t *testing.T) {
 // Empty is "not carried", not a label value — it must not become a bar in a
 // breakdown chart.
 func TestMemory_EmptyLabelsAreNotCounted(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(flowstore.Observation{
 		Time: base, TrafficType: "virtual", Transport: "tcp",
 		SrcNode: "a", DstNode: "b",
@@ -155,7 +165,7 @@ func TestMemory_EmptyLabelsAreNotCounted(t *testing.T) {
 // Identity is deduplicated when both endpoints share a value, so a flow between
 // two devices owned by one user counts once for that user.
 func TestMemory_IdentityCountedOncePerSharedValue(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	o := obs(base, "a", "b", 100, 0)
 	o.SrcUser, o.DstUser = "rob@example.com", "rob@example.com"
 	s.Record(o)
@@ -171,7 +181,7 @@ func TestMemory_IdentityCountedOncePerSharedValue(t *testing.T) {
 
 // The ring must not grow without bound; old buckets age out.
 func TestMemory_EvictsBeyondCapacity(t *testing.T) {
-	s := flowstore.NewMemory(3)
+	s := newMemory(3)
 	for i := range 10 {
 		s.Record(obs(base.Add(time.Duration(i)*time.Minute), "a", "b", 10, 0))
 	}
@@ -193,7 +203,7 @@ func TestMemory_EvictsBeyondCapacity(t *testing.T) {
 // and must be reported as truncation rather than silently implying full
 // coverage. This is the unauthenticated-stream-ingress case.
 func TestMemory_BoundsPairCardinalityAndReportsIt(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for i := range flowstore.MaxPairsPerBucket + 500 {
 		s.Record(obs(base, "src", string(rune('a'+i%26))+time.Duration(i).String(), 10, 0))
 	}
@@ -213,7 +223,7 @@ func TestMemory_BoundsPairCardinalityAndReportsIt(t *testing.T) {
 
 // A wide window must not produce an unbounded series; the step is raised to fit.
 func TestMemory_TimelineIsBounded(t *testing.T) {
-	s := flowstore.NewMemory(5000)
+	s := newMemory(5000)
 	for i := range 3000 {
 		s.Record(obs(base.Add(time.Duration(i)*time.Minute), "a", "b", 10, 0))
 	}
@@ -233,7 +243,7 @@ func TestMemory_TimelineIsBounded(t *testing.T) {
 // Ranked output must be stable between polls, or equal-volume rows reshuffle in
 // the UI on every refresh.
 func TestMemory_RankingIsStableOnTies(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	for _, n := range []string{"zulu", "alpha", "mike"} {
 		s.Record(obs(base, n, "dst", 100, 0))
 	}
@@ -252,7 +262,7 @@ func TestMemory_RankingIsStableOnTies(t *testing.T) {
 // The window reported back is the span actually covered, so the UI does not
 // claim history the store never had.
 func TestMemory_ReportsCoveredWindow(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	s.Record(obs(base, "a", "b", 10, 0))
 
 	res := s.Query(flowstore.Query{End: base.Add(time.Hour)})
@@ -266,7 +276,7 @@ func TestMemory_ReportsCoveredWindow(t *testing.T) {
 
 // The emit path is concurrent: poll and stream share one processor.
 func TestMemory_ConcurrentRecord(t *testing.T) {
-	s := flowstore.NewMemory(0)
+	s := newMemory(0)
 	var wg sync.WaitGroup
 	for w := range 8 {
 		wg.Add(1)

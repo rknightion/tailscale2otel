@@ -584,6 +584,7 @@ func TestNewApp_WiresWebhookAuditCrossDedup(t *testing.T) {
 	cfg := config.Default()
 	cfg.Tailscale.Tailnet = "example.com"
 	cfg.Webhook.Enabled = true
+	cfg.Webhook.Listen = "127.0.0.1:0"
 	cfg.Webhook.Path = "/webhook"
 	cfg.Webhook.DedupAuditEvents = true
 	rec := telemetrytest.New()
@@ -625,6 +626,7 @@ func TestNewApp_WebhookCrossDedupOffByDefault(t *testing.T) {
 	cfg := config.Default()
 	cfg.Tailscale.Tailnet = "example.com"
 	cfg.Webhook.Enabled = true
+	cfg.Webhook.Listen = "127.0.0.1:0"
 	cfg.Webhook.Path = "/webhook"
 	rec := telemetrytest.New()
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)

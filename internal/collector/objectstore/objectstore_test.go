@@ -16,9 +16,12 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/s3"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
@@ -181,6 +184,109 @@ func TestCollect_IngestsObjectsThroughTheSharedProcessor(t *testing.T) {
 	}
 }
 
+func TestCollect_ReportsAcceptedFreshnessAfterProcessorHandoff(t *testing.T) {
+	var got []ingest.AcceptedEvent
+	var h *harness
+	h = newHarness(t, func(o *objectstore.Options) {
+		o.OnAccepted = func(event ingest.AcceptedEvent) {
+			if records := h.flowRecords(); records != 1 {
+				t.Errorf("flow records at freshness handoff = %d, want 1", records)
+			}
+			got = append(got, event)
+		}
+	})
+	keyTime := now.Add(-10 * time.Minute)
+	eventTime := now.Add(-2 * time.Minute)
+	h.store.put(keyAt(keyTime, ".ndjson"), []byte(record("n1", eventTime)+"\n"))
+
+	h.collect(t)
+
+	if len(got) != 1 {
+		t.Fatalf("accepted events = %d, want 1", len(got))
+	}
+	event := got[0]
+	if event.Source != semconv.IngestSourceObjectStore {
+		t.Errorf("source = %q, want %q", event.Source, semconv.IngestSourceObjectStore)
+	}
+	if event.Signal != semconv.IngestSignalFlow {
+		t.Errorf("signal = %q, want %q", event.Signal, semconv.IngestSignalFlow)
+	}
+	if !event.EventTime.Equal(eventTime.Add(5 * time.Second)) {
+		t.Errorf("event time = %v, want record end %v", event.EventTime, eventTime.Add(5*time.Second))
+	}
+	if !event.CaptureTime.Equal(eventTime.Add(7 * time.Second)) {
+		t.Errorf("capture time = %v, want record logged %v", event.CaptureTime, eventTime.Add(7*time.Second))
+	}
+	if event.EventTime.Equal(keyTime) || event.CaptureTime.Equal(keyTime) {
+		t.Errorf("freshness timestamps = (%v, %v), must come from the record rather than object key %v", event.EventTime, event.CaptureTime, keyTime)
+	}
+	if event.AcceptedAt.IsZero() {
+		t.Error("accepted at is zero")
+	}
+}
+
+func TestCollect_AcceptedFreshnessSkipsRejectedAndReplayedRecords(t *testing.T) {
+	var got []ingest.AcceptedEvent
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.OnAccepted = func(event ingest.AcceptedEvent) { got = append(got, event) }
+	})
+	validAt := now.Add(-10 * time.Minute)
+	h.store.put(keyAt(validAt, ".ndjson"), []byte(record("good", validAt)+"\n"))
+	invalidAt := validAt.Add(time.Minute)
+	var invalid map[string]any
+	if err := json.Unmarshal([]byte(record("bad", invalidAt)), &invalid); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	invalid["virtualTraffic"].([]any)[0].(map[string]any)["txBytes"] = float64(-1)
+	invalidLine, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatalf("encode invalid fixture: %v", err)
+	}
+	h.store.put(keyAt(invalidAt, ".ndjson"), append(invalidLine, '\n'))
+	h.store.put(keyAt(now.Add(6*time.Minute), ".ndjson"), []byte(record("future", now)+"\n"))
+
+	h.collect(t)
+	h.collect(t)
+
+	if len(got) != 1 {
+		t.Fatalf("accepted events = %d, want 1; semantic rejection, future key, and replay must add none", len(got))
+	}
+}
+
+func TestCollect_AcceptedFreshnessSurvivesProcessorCrossSourceDedup(t *testing.T) {
+	store := newFakeStore()
+	cp := collector.NewMemoryStore()
+	rec := telemetrytest.New()
+	proc := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{Dedup: dedup.New(8)})
+	var got []ingest.AcceptedEvent
+	col := objectstore.New(store, proc, cp, objectstore.Options{
+		Prefix: "flow",
+		Now:    func() time.Time { return now },
+		Logger: discardLogger(),
+		OnAccepted: func(event ingest.AcceptedEvent) {
+			got = append(got, event)
+		},
+	})
+	at := now.Add(-10 * time.Minute)
+	var fl flowlog.FlowLog
+	if err := json.Unmarshal([]byte(record("n1", at)), &fl); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	proc.Process(fl, rec.Emitter()) // accepted previously by another source.
+	store.put(keyAt(at, ".ndjson"), []byte(record("n1", at)+"\n"))
+
+	if err := col.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if records := len(rec.LogRecords()); records != 1 {
+		t.Fatalf("flow log records = %d, want 1; the object-store copy should be processor-deduped", records)
+	}
+	if len(got) != 1 {
+		t.Fatalf("accepted events = %d, want 1 despite processor cross-source dedup", len(got))
+	}
+}
+
 // The export is zstd; gzip appears when an operator re-compresses while copying
 // between buckets. Both, and plain, must decode.
 func TestCollect_DecodesEveryCompression(t *testing.T) {
@@ -206,6 +312,42 @@ func TestCollect_DecodesEveryCompression(t *testing.T) {
 				t.Errorf("records = %d, want 1 from a %s object", got, tc.name)
 			}
 		})
+	}
+}
+
+func TestCollect_QuarantinesSemanticallyInvalidLinesAndContinues(t *testing.T) {
+	h := newHarness(t, nil)
+	at := now.Add(-10 * time.Minute)
+	var invalid map[string]any
+	if err := json.Unmarshal([]byte(record("bad", at)), &invalid); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	traffic := invalid["virtualTraffic"].([]any)
+	traffic[0].(map[string]any)["txBytes"] = float64(-1)
+	invalidLine, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatalf("encode invalid fixture: %v", err)
+	}
+	body := string(invalidLine) + "\n" + record("good", at) + "\n"
+	h.store.put(keyAt(at, ".ndjson"), []byte(body))
+
+	h.collect(t)
+
+	if got := h.flowRecords(); got != 1 {
+		t.Fatalf("flow records = %d, want only the valid line", got)
+	}
+	if got := skippedByReason(h.rec)["semantic_invalid"]; got != 1 {
+		t.Fatalf("semantic-invalid skipped = %v, want 1", got)
+	}
+	points := h.rec.MetricPoints(flowlog.MetricDataQuality)
+	if len(points) != 1 {
+		t.Fatalf("data-quality points = %d, want 1", len(points))
+	}
+	if got := points[0].Attrs["source"]; got != "objectstore" {
+		t.Errorf("source = %q, want objectstore", got)
+	}
+	if got := points[0].Attrs["reason"]; got != string(flowlog.ViolationNegativeCounters) {
+		t.Errorf("reason = %q, want %q", got, flowlog.ViolationNegativeCounters)
 	}
 }
 
@@ -503,7 +645,9 @@ func TestCollect_ClockSkewAllowanceBoundary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, nil)
-			h.store.put(keyAt(tc.at, ".ndjson"), []byte(record("n1", tc.at)+"\n"))
+			// Keep the record timestamp valid so this test isolates object-key
+			// clock-skew admission at the exact allowance boundary.
+			h.store.put(keyAt(tc.at, ".ndjson"), []byte(record("n1", now)+"\n"))
 
 			h.collect(t)
 

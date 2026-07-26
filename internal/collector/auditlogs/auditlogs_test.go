@@ -3,12 +3,15 @@ package auditlogs_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/auditlogs"
+	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
@@ -375,5 +378,133 @@ func TestCollectWindow_NilOnIngestHookDoesNotPanic(t *testing.T) {
 
 	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
 		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+}
+
+// TestCollectWindow_AcceptedObserverReportsEverySourceAcceptedEvent proves the
+// freshness hook follows each source-level accepted event immediately after it
+// is handed to the shared processor. Removing either the per-event handoff or
+// the poll/audit routing dimensions must fail this test.
+func TestCollectWindow_AcceptedObserverReportsEverySourceAcceptedEvent(t *testing.T) {
+	ev1 := audit.Event{
+		EventTime:    from.Add(10 * time.Second),
+		EventGroupID: "freshness-1",
+		Type:         "CONFIG",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:       audit.Target{ID: "n1", Name: "node-a.ts.net", Type: "NODE"},
+		Action:       "CREATE",
+	}
+	ev2 := audit.Event{
+		EventTime:    from.Add(20 * time.Second),
+		EventGroupID: "freshness-2",
+		Type:         "CONFIG",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:       audit.Target{ID: "n2", Name: "node-b.ts.net", Type: "NODE"},
+		Action:       "DELETE",
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{Logs: []audit.Event{ev1, ev2}}}
+	rec := telemetrytest.New()
+	var got []ingest.AcceptedEvent
+	var logsAtObservation []int
+	observer := func(event ingest.AcceptedEvent) {
+		got = append(got, event)
+		logsAtObservation = append(logsAtObservation, len(rec.LogRecords()))
+	}
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil,
+		auditlogs.WithAcceptedObserver(observer))
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("accepted observer calls = %d, want 2", len(got))
+	}
+	for i, wantTime := range []time.Time{ev1.EventTime, ev2.EventTime} {
+		if got[i].Source != semconv.IngestSourcePoll {
+			t.Errorf("event %d source = %q, want %q", i, got[i].Source, semconv.IngestSourcePoll)
+		}
+		if got[i].Signal != semconv.IngestSignalAudit {
+			t.Errorf("event %d signal = %q, want %q", i, got[i].Signal, semconv.IngestSignalAudit)
+		}
+		if !got[i].EventTime.Equal(wantTime) {
+			t.Errorf("event %d event time = %v, want %v", i, got[i].EventTime, wantTime)
+		}
+		if !got[i].CaptureTime.IsZero() {
+			t.Errorf("event %d capture time = %v, want zero", i, got[i].CaptureTime)
+		}
+		if got[i].AcceptedAt.IsZero() {
+			t.Errorf("event %d accepted at is zero, want non-zero", i)
+		}
+	}
+	if want := []int{1, 2}; !slices.Equal(logsAtObservation, want) {
+		t.Fatalf("log records at observer calls = %v, want %v", logsAtObservation, want)
+	}
+}
+
+// TestCollectWindow_AcceptedObserverSkipsBoundaryDuplicates proves an
+// inclusive-window repeat is not reported as a newly accepted source event.
+func TestCollectWindow_AcceptedObserverSkipsBoundaryDuplicates(t *testing.T) {
+	boundary := audit.Event{
+		EventTime:    to,
+		EventGroupID: "freshness-boundary",
+		Type:         "CONFIG",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:       audit.Target{ID: "n1", Name: "node.ts.net", Type: "NODE"},
+		Action:       "CREATE",
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{Logs: []audit.Event{boundary}}}
+	var got []ingest.AcceptedEvent
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil,
+		auditlogs.WithAcceptedObserver(func(event ingest.AcceptedEvent) { got = append(got, event) }))
+	rec := telemetrytest.New()
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow (first window): %v", err)
+	}
+	if _, err := c.CollectWindow(context.Background(), to, to.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow (second window): %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("accepted observer calls = %d, want 1", len(got))
+	}
+}
+
+// TestCollectWindow_AcceptedObserverSurvivesCrossSourceSuppression proves
+// source freshness records accepted poll data even when the shared processor
+// suppresses its telemetry because that change arrived through another source.
+func TestCollectWindow_AcceptedObserverSurvivesCrossSourceSuppression(t *testing.T) {
+	ev := audit.Event{
+		EventTime: from.Add(30 * time.Second),
+		Type:      "CONFIG",
+		Origin:    "admin-console",
+		Actor:     audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:    audit.Target{ID: "n1", Name: "node.ts.net", Type: "NODE"},
+		Action:    "CREATE",
+	}
+	set := dedup.New(8)
+	key, ok := audit.CrossSourceKey(ev)
+	if !ok || !set.Add(key) {
+		t.Fatal("seed cross-source dedup key")
+	}
+	api := &fakeAPI{resp: audit.ConfigurationResponse{Logs: []audit.Event{ev}}}
+	var got []ingest.AcceptedEvent
+	c := auditlogs.New(api, audit.NewProcessor(audit.WithCrossDedup(set)), 0, 0, nil,
+		auditlogs.WithAcceptedObserver(func(event ingest.AcceptedEvent) { got = append(got, event) }))
+	rec := telemetrytest.New()
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+
+	if len(rec.LogRecords()) != 0 {
+		t.Fatalf("log records = %d, want 0 after cross-source suppression", len(rec.LogRecords()))
+	}
+	if len(got) != 1 {
+		t.Fatalf("accepted observer calls = %d, want 1", len(got))
 	}
 }

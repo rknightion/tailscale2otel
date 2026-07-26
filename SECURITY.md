@@ -86,12 +86,12 @@ only degrades IP→name enrichment, so flow/audit records fall back to
 ## Receiver authentication footguns
 
 The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs, and
-the optional `prometheus` pull endpoint serves `GET /metrics`. Their auth is **opt-in by
-presence of a secret**, so an empty value silently disables it (these behaviours are also
-noted in `config.example.yaml`):
+the optional `prometheus` pull endpoint serves `GET /metrics`. Receiver authentication is
+enabled by a configured secret; an empty credential is accepted only on a loopback bind:
 
-- Leaving `webhook.secret` empty **skips HMAC verification entirely** —
-  unauthenticated POSTs are accepted.
+- Leaving `webhook.secret` empty skips HMAC verification only on a loopback
+  `webhook.listen`. On any network-reachable bind, every request is refused with HTTP 403
+  before its body is read.
 - Leaving `streaming.token` empty is **refused rather than accepted** on a
   network-reachable bind: the HEC receiver answers every request with HTTP 403 and logs an
   ERROR at startup. It stays open only on a loopback `streaming.listen`. This fails closed,
@@ -107,9 +107,9 @@ bind or without TLS. Tailscale requires HTTPS for the streaming sink; a
 `tailscale cert` works for private tailnet endpoints.
 
 > Any field can be set via a `TS2OTEL_*` environment variable (the env layer
-> overrides the file), and an **empty credential silently disables auth** — for
-> example a mistyped variable name (`TS2OTEL_WEBHOOK__SECRT`) leaves the secret
-> empty rather than failing loudly. The startup log WARNs on a `TS2OTEL_*`
+> overrides the file). A mistyped variable name (`TS2OTEL_WEBHOOK__SECRT`) leaves
+> the secret empty; the receiver then fails closed on a network-reachable bind.
+> The startup log WARNs on a `TS2OTEL_*`
 > variable that matches no config key, but double-check that auth credentials are
 > actually set.
 

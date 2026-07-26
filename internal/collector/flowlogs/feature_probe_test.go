@@ -53,16 +53,18 @@ func TestFeatureProbe_Disabled(t *testing.T) {
 	}
 }
 
-// TestFeatureProbe_ErrorFailsOpen verifies that a check error fails open: the
-// probe emits NO points and returns nil (mirroring the poller's semantics).
-func TestFeatureProbe_ErrorFailsOpen(t *testing.T) {
+// TestFeatureProbe_ErrorReportsFailureWithoutFeatureGauge verifies that a check
+// error leaves the poll collector's fail-open behavior alone but makes the
+// independent probe failure visible to the scheduler status tracker.
+func TestFeatureProbe_ErrorReportsFailureWithoutFeatureGauge(t *testing.T) {
+	wantErr := errors.New("transient settings error")
 	p := NewFeatureProbe(func(context.Context) (bool, error) {
-		return false, errors.New("transient settings error")
+		return false, wantErr
 	}, 0)
 	rec := telemetrytest.New()
 
-	if err := p.Collect(context.Background(), rec.Emitter()); err != nil {
-		t.Fatalf("Collect() error = %v, want nil (fail-open)", err)
+	if err := p.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
+		t.Fatalf("Collect() error = %v, want original %v", err, wantErr)
 	}
 	if pts := rec.MetricPoints(metricFeatureEnabled); len(pts) != 0 {
 		t.Fatalf("MetricPoints(%q) = %d, want 0 (no gauge on check error)", metricFeatureEnabled, len(pts))

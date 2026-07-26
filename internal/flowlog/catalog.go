@@ -76,6 +76,30 @@ var (
 		Attributes:  []string{semconv.NetworkTransport, semconv.AttrTrafficType},
 		Group:       groupNetwork,
 	}
+	docDedupConflicts = metricdoc.Metric{
+		Name:        MetricDedupConflicts,
+		Unit:        "{conflict}",
+		Instrument:  metricdoc.Counter,
+		Description: "Duplicate flow connections whose counters conflict with the first observation; first observed counters remain authoritative.",
+		Attributes:  []string{"scope", semconv.AttrTrafficType},
+		Group:       groupNetwork,
+	}
+	docStoreDropped = metricdoc.Metric{
+		Name:        MetricStoreDropped,
+		Unit:        unitRecord,
+		Instrument:  metricdoc.Counter,
+		Description: "Flow observations rejected from the local in-memory flow view because their timestamps are outside its retention or future-skew bounds. OTLP emission is unaffected.",
+		Attributes:  []string{"reason"},
+		Group:       groupNetwork,
+	}
+	docDataQuality = metricdoc.Metric{
+		Name:        MetricDataQuality,
+		Unit:        "{violation}",
+		Instrument:  metricdoc.Counter,
+		Description: "Semantically invalid flow records rejected before processor side effects, classified by a closed ingestion source and validation reason.",
+		Attributes:  []string{"source", "reason"},
+		Group:       groupNetwork,
+	}
 	docLogsDropped = metricdoc.Metric{
 		Name:        MetricLogsDropped,
 		Unit:        unitRecord,
@@ -167,7 +191,7 @@ var (
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		docIO, docPackets, docFlows, docLogsDropped,
+		docIO, docPackets, docFlows, docDedupConflicts, docStoreDropped, docDataQuality, docLogsDropped,
 		docIORollup, docPacketsRollup, docUniqueDstPeers, docUniqueDstPorts,
 		docExitNodeIO, docExitNodePackets,
 	}

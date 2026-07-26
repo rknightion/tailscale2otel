@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.1](https://img.shields.io/badge/Version-0.14.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.2](https://img.shields.io/badge/Version-0.14.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -223,6 +223,8 @@ extraVolumeMounts:
 | config.collectors.flowlogs.objectstore.region | string | `""` | Bucket region. REQUIRED when source is objectstore: it is part of the request signature, so a wrong value fails every request with HTTP 403. |
 | config.collectors.flowlogs.objectstore.secret_access_key | string | `""` | Static S3 secret access key. Set via the TS2OTEL_* secret, not here. |
 | config.collectors.flowlogs.objectstore.session_token | string | `""` | Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here. |
+| config.collectors.flowlogs.replay_overlap | string | `"5m"` | Reread this much before the durable high-water mark so records that became available after the first completed query can still arrive. 0 disables; maximum 1h. |
+| config.collectors.flowlogs.replay_seen_capacity | int | `131072` | Maximum durable SHA-256 connection identities retained to suppress the intentional replay across restart. Must be 1..1048576 while replay_overlap is enabled. |
 | config.collectors.flowlogs.source | string | `"poll"` | Ingestion source: poll | stream | objectstore | both. PICK ONE method per log type: `both` runs poll AND the `streaming` receiver and risks double-counting — cross-source de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter logs a WARN at startup when streaming is enabled while this collector still polls or reads the export bucket. Set `stream` (not poll/both) when config.streaming.enabled is true; set `objectstore` and fill in the objectstore block below to read Tailscale's S3 export instead of calling the API. |
 | config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
@@ -276,6 +278,7 @@ extraVolumeMounts:
 | config.enrichment.reverse_dns.server | string | `""` | Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver. |
 | config.enrichment.reverse_dns.timeout | string | `"2s"` | Per-lookup timeout. |
 | config.flows.enabled | bool | `true` | Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page. |
+| config.flows.max_future_skew | string | `"5m"` | Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged. |
 | config.flows.retention | string | `"6h"` | How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store. |
 | config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
 | config.headscale.api_key_file | string | `""` | Read headscale.api_key from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
@@ -340,6 +343,7 @@ extraVolumeMounts:
 | config.streaming.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.streaming.path | string | `"/services/collector/event"` | HTTP path the receiver serves (the Splunk-HEC event endpoint). |
 | config.streaming.public_url | string | `""` | Externally reachable receiver URL; REQUIRED when auto_configure: true. |
+| config.streaming.routes | list | `[]` | FILE-ONLY multi-tailnet routes. Each item has tailnet, exact path, token or token_file, optional public_url, and optional auto_configure. Non-empty replaces legacy path/token identity. |
 | config.streaming.tls.cert_file | string | `""` | TLS certificate file; set with key_file to serve the receiver over HTTPS. |
 | config.streaming.tls.key_file | string | `""` | TLS private key file paired with cert_file. |
 | config.streaming.token | string | `""` | Expected as 'Authorization: Splunk <token>'. Set via TS2OTEL_STREAMING__TOKEN (secret). |
@@ -377,7 +381,8 @@ extraVolumeMounts:
 | config.webhook.max_body_bytes | int | `0` | Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body. |
 | config.webhook.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE, before the HMAC is verified. max_body_bytes caps one body; this caps their sum, so unauthenticated senders cannot multiply it. 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffered memory is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.webhook.path | string | `"/tailscale/webhook"` | HTTP path the receiver serves. |
-| config.webhook.secret | string | `""` | HMAC-SHA256 verification secret. Empty SKIPS verification (accepts unsigned POSTs). Set via TS2OTEL_WEBHOOK__SECRET (secret). |
+| config.webhook.routes | list | `[]` | FILE-ONLY multi-tailnet routes. Each item has tailnet and secret or secret_file. Non-empty replaces legacy path/secret identity; all events must name one route tailnet. |
+| config.webhook.secret | string | `""` | HMAC-SHA256 verification secret. Empty is accepted only on loopback; otherwise the receiver refuses every request with HTTP 403 before reading its body. Set via TS2OTEL_WEBHOOK__SECRET (secret). |
 | config.webhook.secret_file | string | `""` | Read webhook.secret from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.webhook.tolerance | string | `"5m"` | Allowed clock skew in BOTH directions on the signed timestamp: a request older than now-tolerance or newer than now+tolerance is rejected. The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable. 0 disables the timestamp check entirely. |
 | configStorage.mode | string | `"auto"` | Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`. `auto` (default) renders it into a ConfigMap while it is credential-free, and into Secret `<fullname>-config` as soon as any credential-bearing key is set inline under `config:` (`tailscale.auth.oauth.client_secret`, `tailscale.auth.apikey`, `headscale.api_key`, `otlp.grafana_cloud.token`, `otlp.headers`, the three `collectors.flowlogs.objectstore.*` keys, `streaming.token`, `webhook.secret`, `prometheus.auth.token`, `admin.auth.token`, `profiling.pyroscope.basic_auth_password`, any `tailnets[]` entry, or a `collectors.node_metrics.targets[]` entry with `bearer_token`/`headers`). A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which is routinely granted far more widely than `get secrets`. `secret` always uses the Secret. `configmap` forces the ConfigMap and makes `helm template` FAIL, naming the offending keys, if a credential is set inline. |
@@ -421,7 +426,7 @@ extraVolumeMounts:
 | secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID | string | `""` | OAuth client ID (recommended auth; needs the "all:read" scope). Used when config.tailscale.auth.method=oauth. |
 | secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET | string | `""` | OAuth client secret paired with TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID. |
 | secret.TS2OTEL_TAILSCALE__TAILNET | string | `""` | Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet. |
-| secret.TS2OTEL_WEBHOOK__SECRET | string | `""` | Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. CRITICAL: leaving this empty makes config.webhook.secret empty, which SKIPS HMAC verification entirely, so unauthenticated webhook POSTs are accepted. Always set a secret when exposing the webhook. |
+| secret.TS2OTEL_WEBHOOK__SECRET | string | `""` | Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. Empty is accepted only on a loopback config.webhook.listen; network-reachable binds refuse every request with HTTP 403 before reading its body. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsGroup":65532,"runAsUser":65532}` | Container-level security context. Drops all capabilities and runs with a read-only root filesystem (the app writes only to the optional checkpoint volume). Runs as the distroless `nonroot` uid/gid 65532 (a high, non-system id > 10000) to satisfy hardened-cluster policy. |
 | serviceAccount.annotations | object | `{}` | Annotations to add to the ServiceAccount. |
 | serviceAccount.automountServiceAccountToken | bool | `false` | Automount the ServiceAccount API token into the pod. The exporter makes no Kubernetes API calls, so this defaults to false to drop an unused, attacker-useful credential from the network-facing pod. |

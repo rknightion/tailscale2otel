@@ -334,11 +334,17 @@
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.Tags[]",
       "type": "audit.ConfigurationResponse",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.Type",
+      "type": "audit.ConfigurationResponse",
+      "disposition": "emitted"
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].DeferredAt",
       "type": "audit.ConfigurationResponse",
       "disposition": "emitted"
     },
@@ -388,7 +394,7 @@
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Target.IsEphemeral",
       "type": "audit.ConfigurationResponse",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
@@ -412,7 +418,7 @@
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Type",
       "type": "audit.ConfigurationResponse",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",

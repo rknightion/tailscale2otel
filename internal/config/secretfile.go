@@ -55,6 +55,22 @@ func (c *Config) resolveSecretFiles() error {
 			secretFileField{fmt.Sprintf("tailnets[%d].auth.oauth.client_secret", i), &t.Auth.OAuth.ClientSecret, t.Auth.OAuth.ClientSecretFile},
 		)
 	}
+	for i := range c.Streaming.Routes {
+		r := &c.Streaming.Routes[i]
+		fields = append(fields, secretFileField{
+			name:  fmt.Sprintf("streaming.routes[%d].token", i),
+			value: &r.Token,
+			file:  r.TokenFile,
+		})
+	}
+	for i := range c.Webhook.Routes {
+		r := &c.Webhook.Routes[i]
+		fields = append(fields, secretFileField{
+			name:  fmt.Sprintf("webhook.routes[%d].secret", i),
+			value: &r.Secret,
+			file:  r.SecretFile,
+		})
+	}
 
 	for _, f := range fields {
 		if f.file == "" {

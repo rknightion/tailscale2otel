@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
+	"github.com/rknightion/tailscale2otel/v3/internal/collector/flowlogs"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
@@ -114,6 +115,27 @@ func TestScheduler_StatusTrackerRecordsOutcomes(t *testing.T) {
 	}
 	if s["boom"].LastSuccess || !strings.Contains(s["boom"].LastError, "kaboom") {
 		t.Errorf("boom = %+v, want panic error containing %q", s["boom"], "kaboom")
+	}
+}
+
+func TestScheduler_StatusTrackerRecordsFeatureProbeError(t *testing.T) {
+	// The independent feature probe must surface a failed check as a scheduler
+	// failure instead of looking like a successful disabled-feature sample.
+	tr := collector.NewStatusTracker()
+	r := collector.NewRegistry()
+	r.Register(flowlogs.NewFeatureProbe(func(context.Context) (bool, error) {
+		return false, errors.New("feature check unavailable")
+	}, time.Millisecond), time.Millisecond)
+
+	runScheduler(t, r, collector.NewMemoryStore(), collector.WithStatusTracker(tr))
+	waitFor(t, func() bool {
+		s, ok := tr.Snapshot()["flowlogs-feature"]
+		return ok && s.Runs > 0
+	}, 2*time.Second)
+
+	s := tr.Snapshot()["flowlogs-feature"]
+	if s.LastSuccess || s.LastError != "feature check unavailable" {
+		t.Fatalf("feature probe status = %+v, want failed original check error", s)
 	}
 }
 
