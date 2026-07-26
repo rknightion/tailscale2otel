@@ -36,15 +36,12 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/objectstore"
 )
 
-// Object is one listed object. Size and LastModified come from the listing, so
-// enumerating a prefix needs no per-object call.
-type Object struct {
-	Key          string
-	Size         int64
-	LastModified time.Time
-}
+// Object is retained as a source-compatible alias for objectstore.Object.
+type Object = objectstore.Object
 
 // Config describes one bucket and how to reach it.
 type Config struct {
@@ -132,12 +129,8 @@ type listResponse struct {
 	} `xml:"Contents"`
 }
 
-// ListResult is one bounded listing result. Truncated reports that the client
-// stopped at its local limit while the server still had more objects.
-type ListResult struct {
-	Objects   []Object
-	Truncated bool
-}
+// ListResult is retained as a source-compatible alias for objectstore.ListResult.
+type ListResult = objectstore.ListResult
 
 // List returns objects under prefix, in the lexicographic order S3 lists them —
 // which for a zero-padded date-partitioned layout is also chronological order.
@@ -180,7 +173,12 @@ func (c *Client) List(ctx context.Context, prefix, startAfter string, limit int)
 			return ListResult{}, fmt.Errorf("s3: decode list response: %w", err)
 		}
 		for _, o := range page.Contents {
-			result.Objects = append(result.Objects, Object{Key: o.Key, Size: o.Size, LastModified: o.LastModified})
+			result.Objects = append(result.Objects, Object{
+				Identity:     o.Key,
+				Key:          o.Key,
+				Size:         o.Size,
+				LastModified: o.LastModified,
+			})
 		}
 		if !page.IsTruncated || page.NextContinuationToken == "" {
 			result.Truncated = false

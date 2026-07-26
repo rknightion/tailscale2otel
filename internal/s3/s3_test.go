@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/objectstore"
 )
 
 func staticCreds() Provider {
@@ -81,6 +83,11 @@ func TestList_DecodesObjects(t *testing.T) {
 	if len(objs) != 2 {
 		t.Fatalf("objects = %+v, want 2", objs)
 	}
+	for _, obj := range objs {
+		if obj.Identity != obj.Key {
+			t.Errorf("object identity = %q, want key %q", obj.Identity, obj.Key)
+		}
+	}
 	if objs[0].Key != "flow/2026/07/24/a.ndjson" || objs[0].Size != 120 {
 		t.Errorf("first object = %+v", objs[0])
 	}
@@ -96,6 +103,10 @@ func TestList_DecodesObjects(t *testing.T) {
 	if q.Get("prefix") != "flow/2026/07/24/" {
 		t.Errorf("prefix = %q", q.Get("prefix"))
 	}
+}
+
+func TestClient_ImplementsObjectStoreBackend(t *testing.T) {
+	var _ objectstore.Backend = (*Client)(nil)
 }
 
 // Most non-AWS implementations only support path-style addressing, and getting

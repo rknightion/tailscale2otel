@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
@@ -56,16 +55,14 @@ func newObjectStoreCollector(
 		return nil, fmt.Errorf("build object-store client: %w", err)
 	}
 
-	// In multi-tailnet mode each runtime needs its own checkpoint namespace,
-	// exactly as the window collectors get one: two tailnets exporting to
-	// different buckets would otherwise share a cursor and each skip the other's
-	// objects.
-	ns := ""
+	legacyNamespace := ""
+	tailnetScope := d.cfg.Tailscale.Tailnet
 	if d.multi {
-		ns = rt.name
+		legacyNamespace = rt.name
+		tailnetScope = rt.name
 	}
 
-	return objectstore.New(client, rt.flowProc, collector.Namespaced(d.store, ns), objectstore.Options{
+	return objectstore.New(client, objectstore.NewFlowSignal(rt.flowProc), d.store, objectstore.Options{
 		Prefix:          os.Prefix,
 		Interval:        os.Interval.D(),
 		Lookback:        os.Lookback.D(),
@@ -74,7 +71,14 @@ func newObjectStoreCollector(
 		Logger:          d.logger,
 		OnIngest:        onIngest,
 		OnAccepted:      onAccepted,
-	}), nil
+		Scope: objectstore.CheckpointScope{
+			Tailnet:  tailnetScope,
+			Provider: "s3",
+			Signal:   "flow",
+			Feed:     objectstore.FeedID(os.Endpoint, os.Bucket, os.Prefix),
+		},
+		LegacyCheckpointNamespace: legacyNamespace,
+	})
 }
 
 // ensure the config type stays referenced from here, so a rename of the config

@@ -24,6 +24,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
+	storeapi "github.com/rknightion/tailscale2otel/v3/internal/objectstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/s3"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
@@ -91,7 +92,7 @@ func (f *fakeStore) List(_ context.Context, prefix, startAfter string, limit int
 	var out []s3.Object
 	for k := range f.objects {
 		if strings.HasPrefix(k, prefix) && k > startAfter && !f.listHidden[k] {
-			out = append(out, s3.Object{Key: k, Size: f.sizes[k]})
+			out = append(out, s3.Object{Identity: k, Key: k, Size: f.sizes[k]})
 		}
 	}
 	// Real S3 lists lexicographically; matching that is what the cursor scheme
@@ -188,6 +189,29 @@ type harness struct {
 	rec   *telemetrytest.Recorder
 }
 
+func newFlowCollector(
+	t *testing.T,
+	api storeapi.Backend,
+	proc *flowlog.Processor,
+	cp collector.CheckpointStore,
+	opts objectstore.Options,
+) *objectstore.Collector {
+	t.Helper()
+	if opts.Scope == (objectstore.CheckpointScope{}) {
+		opts.Scope = objectstore.CheckpointScope{
+			Tailnet:  "test.example",
+			Provider: "s3",
+			Signal:   semconv.IngestSignalFlow,
+			Feed:     objectstore.FeedID("test", opts.Prefix),
+		}
+	}
+	col, err := objectstore.New(api, objectstore.NewFlowSignal(proc), cp, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return col
+}
+
 func newHarness(t *testing.T, tune func(*objectstore.Options)) *harness {
 	t.Helper()
 	h := &harness{store: newFakeStore(), cp: collector.NewMemoryStore(), rec: telemetrytest.New()}
@@ -199,7 +223,13 @@ func newHarness(t *testing.T, tune func(*objectstore.Options)) *harness {
 	if tune != nil {
 		tune(&opts)
 	}
-	h.col = objectstore.New(h.store, flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), h.cp, opts)
+	h.col = newFlowCollector(
+		t,
+		h.store,
+		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+		h.cp,
+		opts,
+	)
 	return h
 }
 
@@ -304,7 +334,7 @@ func TestCollect_AcceptedFreshnessSurvivesProcessorCrossSourceDedup(t *testing.T
 	rec := telemetrytest.New()
 	proc := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{Dedup: dedup.New(8)})
 	var got []ingest.AcceptedEvent
-	col := objectstore.New(store, proc, cp, objectstore.Options{
+	col := newFlowCollector(t, store, proc, cp, objectstore.Options{
 		Prefix: "flow",
 		Now:    func() time.Time { return now },
 		Logger: discardLogger(),
@@ -543,7 +573,8 @@ func TestCollect_DrainsBusyPrefixAcrossCyclesAndRestart(t *testing.T) {
 			}
 		}
 		if cycle == 1 {
-			h.col = objectstore.New(
+			h.col = newFlowCollector(
+				t,
 				h.store,
 				flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
 				h.cp,
@@ -692,7 +723,8 @@ func TestCollect_FailedGapSurvivesCursorAdvanceAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := telemetrytest.New()
-	col := objectstore.New(
+	col := newFlowCollector(
+		t,
 		store,
 		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
 		cp,
@@ -712,7 +744,7 @@ func TestCollect_FailedGapSurvivesCursorAdvanceAndRestart(t *testing.T) {
 	}
 	var hasGap bool
 	for _, key := range cp.Keys() {
-		if strings.HasPrefix(key, "objectstore.flowlogs.gap/") {
+		if strings.Contains(key, "/gap/") {
 			hasGap = true
 			break
 		}
@@ -729,7 +761,8 @@ func TestCollect_FailedGapSurvivesCursorAdvanceAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec2 := telemetrytest.New()
-	restarted := objectstore.New(
+	restarted := newFlowCollector(
+		t,
 		store,
 		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
 		reopened,
@@ -748,7 +781,7 @@ func TestCollect_FailedGapSurvivesCursorAdvanceAndRestart(t *testing.T) {
 		t.Fatalf("restart records = %d, want the gap retried without rediscovery by listing", got)
 	}
 	for _, key := range reopened.Keys() {
-		if strings.HasPrefix(key, "objectstore.flowlogs.gap/") {
+		if strings.Contains(key, "/gap/") {
 			t.Fatalf("resolved gap row remains: %q", key)
 		}
 	}
@@ -776,7 +809,7 @@ func TestCollect_QuarantinedGapCanBeManuallyAcknowledged(t *testing.T) {
 		t.Fatalf("GET calls after quarantine = %d, want no automatic retry", got)
 	}
 	for _, checkpointKey := range h.cp.Keys() {
-		if strings.HasPrefix(checkpointKey, "objectstore.flowlogs.gap/") {
+		if strings.Contains(checkpointKey, "/gap/") {
 			if err := h.cp.Delete(checkpointKey); err != nil {
 				t.Fatal(err)
 			}
@@ -804,7 +837,8 @@ func TestCollect_GapRetryBackoffIsBoundedButDoesNotAbandon(t *testing.T) {
 	h.store.getErr[key] = errors.New("temporary object-store failure")
 
 	restartAndCollect := func() {
-		h.col = objectstore.New(
+		h.col = newFlowCollector(
+			t,
 			h.store,
 			flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
 			h.cp,
@@ -843,7 +877,7 @@ func TestCollect_GapRetryBackoffIsBoundedButDoesNotAbandon(t *testing.T) {
 	}
 	var hasGap bool
 	for _, checkpointKey := range h.cp.Keys() {
-		if strings.HasPrefix(checkpointKey, "objectstore.flowlogs.gap/") {
+		if strings.Contains(checkpointKey, "/gap/") {
 			hasGap = true
 			break
 		}
@@ -946,7 +980,8 @@ func TestCollect_LateScannerErrorEntersDurableGapPath(t *testing.T) {
 	delete(h.store.readErr, key)
 	clock = now.Add(time.Minute)
 	rec2 := telemetrytest.New()
-	h.col = objectstore.New(
+	h.col = newFlowCollector(
+		t,
 		h.store,
 		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
 		h.cp,
@@ -984,7 +1019,8 @@ func TestCollect_MalformedLineCostsOneRecord(t *testing.T) {
 	if skippedByReason(h.rec)["decode_error"] != 1 {
 		t.Errorf("skipped = %v, want the malformed line counted", skippedByReason(h.rec))
 	}
-	h.col = objectstore.New(
+	h.col = newFlowCollector(
+		t,
 		h.store,
 		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
 		h.cp,
@@ -999,7 +1035,7 @@ func TestCollect_MalformedLineCostsOneRecord(t *testing.T) {
 		t.Fatalf("records after restart = %d, want no object replay for one malformed row", got)
 	}
 	for _, key := range h.cp.Keys() {
-		if strings.HasPrefix(key, "objectstore.flowlogs.gap/") {
+		if strings.Contains(key, "/gap/") {
 			t.Fatalf("record-level malformed JSON created an object gap: %q", key)
 		}
 	}
@@ -1065,7 +1101,7 @@ func TestCollect_CursorSurvivesARestart(t *testing.T) {
 	// A fresh collector over the SAME checkpoint store and bucket: this is what a
 	// process restart looks like.
 	rec2 := telemetrytest.New()
-	restarted := objectstore.New(h.store,
+	restarted := newFlowCollector(t, h.store,
 		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), h.cp,
 		objectstore.Options{Prefix: "flow", Now: func() time.Time { return now }, Logger: discardLogger()})
 	if err := restarted.Collect(context.Background(), rec2.Emitter()); err != nil {
@@ -1197,7 +1233,7 @@ func TestCollect_FutureKeyDoesNotPoisonTheCursorAcrossARestart(t *testing.T) {
 	later := now.Add(-5 * time.Minute)
 	h.store.put(keyAt(later, ".ndjson"), []byte(record("nLater", later)+"\n"))
 	rec2 := telemetrytest.New()
-	restarted := objectstore.New(h.store,
+	restarted := newFlowCollector(t, h.store,
 		flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), h.cp,
 		objectstore.Options{
 			Prefix: "flow", Lookback: time.Hour,

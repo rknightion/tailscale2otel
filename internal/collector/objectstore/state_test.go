@@ -146,6 +146,7 @@ func TestGapStateRoundTripsUpdatesAndResolves(t *testing.T) {
 	firstFailed := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
 	key := "flow/2026/07/24/10:00:00 customer.json.zst"
 	pending := gapState{
+		Identity:    key,
 		Key:         key,
 		FirstFailed: firstFailed,
 		NextAttempt: firstFailed.Add(time.Minute),
@@ -185,7 +186,7 @@ func TestGapStateRoundTripsUpdatesAndResolves(t *testing.T) {
 	if err := cp.Set(cursorKey, firstFailed); err != nil {
 		t.Fatal(err)
 	}
-	if err := cp.Set(seenPrefix+"other", firstFailed); err != nil {
+	if err := cp.Set(seenRow("other"), firstFailed); err != nil {
 		t.Fatal(err)
 	}
 	scanBatch := newCheckpointBatch()
@@ -205,7 +206,7 @@ func TestGapStateRoundTripsUpdatesAndResolves(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("resolved gaps = %+v, want none", got)
 	}
-	for _, unaffected := range []string{cursorKey, seenPrefix + "other"} {
+	for _, unaffected := range []string{cursorKey, seenRow("other")} {
 		if _, ok := cp.Get(unaffected); !ok {
 			t.Fatalf("resolving a gap removed %q", unaffected)
 		}

@@ -13,9 +13,9 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 )
 
-const scanPrefix = "objectstore.flowlogs.scan/"
+const scanPrefix = "scan/"
 const scanStartMarker = "-"
-const gapPrefix = "objectstore.flowlogs.gap/"
+const gapPrefix = "gap/"
 
 type scanState struct {
 	Positions map[string]string
@@ -139,6 +139,7 @@ func scanRowPrefix(prefix string) string {
 }
 
 type gapState struct {
+	Identity    string
 	Key         string
 	FirstFailed time.Time
 	NextAttempt time.Time
@@ -161,15 +162,15 @@ func loadGaps(cp collector.CheckpointStore) ([]gapState, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, duplicate := seen[gap.Key]; duplicate {
+		if _, duplicate := seen[gap.Identity]; duplicate {
 			return nil, fmt.Errorf("objectstore: duplicate gap checkpoint")
 		}
-		seen[gap.Key] = struct{}{}
+		seen[gap.Identity] = struct{}{}
 		gaps = append(gaps, gap)
 	}
 	sort.Slice(gaps, func(i, j int) bool {
 		if gaps[i].FirstFailed.Equal(gaps[j].FirstFailed) {
-			return gaps[i].Key < gaps[j].Key
+			return gaps[i].Identity < gaps[j].Identity
 		}
 		return gaps[i].FirstFailed.Before(gaps[j].FirstFailed)
 	})
@@ -177,15 +178,15 @@ func loadGaps(cp collector.CheckpointStore) ([]gapState, error) {
 }
 
 func (b *checkpointBatch) persistGap(cp collector.CheckpointStore, gap gapState) {
-	b.removeGapRows(cp, gap.Key)
+	b.removeGapRows(cp, gap.Identity)
 	b.updates[encodeGapRow(gap)] = gap.FirstFailed
 }
 
-func (b *checkpointBatch) resolveGap(cp collector.CheckpointStore, key string) {
-	b.removeGapRows(cp, key)
+func (b *checkpointBatch) resolveGap(cp collector.CheckpointStore, identity string) {
+	b.removeGapRows(cp, identity)
 }
 
-func (b *checkpointBatch) removeGapRows(cp collector.CheckpointStore, key string) {
+func (b *checkpointBatch) removeGapRows(cp collector.CheckpointStore, identity string) {
 	for _, row := range cp.Keys() {
 		if !strings.HasPrefix(row, gapPrefix) {
 			continue
@@ -195,7 +196,7 @@ func (b *checkpointBatch) removeGapRows(cp collector.CheckpointStore, key string
 			continue
 		}
 		gap, err := decodeGapRow(row, firstFailed)
-		if err == nil && gap.Key == key {
+		if err == nil && gap.Identity == identity {
 			b.delete(row)
 		}
 	}
@@ -204,7 +205,7 @@ func (b *checkpointBatch) removeGapRows(cp collector.CheckpointStore, key string
 			continue
 		}
 		gap, err := decodeGapRow(row, firstFailed)
-		if err == nil && gap.Key == key {
+		if err == nil && gap.Identity == identity {
 			delete(b.updates, row)
 		}
 	}
@@ -221,6 +222,7 @@ func encodeGapRow(gap gapState) string {
 		status + "/" +
 		strconv.Itoa(gap.Attempts) + "/" +
 		strconv.FormatInt(next, 10) + "/" +
+		base64.RawURLEncoding.EncodeToString([]byte(gap.Identity)) + "/" +
 		base64.RawURLEncoding.EncodeToString([]byte(gap.Key))
 }
 
@@ -229,8 +231,8 @@ func decodeGapRow(row string, firstFailed time.Time) (gapState, error) {
 	if !ok {
 		return gapState{}, fmt.Errorf("objectstore: invalid gap checkpoint")
 	}
-	parts := strings.SplitN(encoded, "/", 4)
-	if len(parts) != 4 {
+	parts := strings.SplitN(encoded, "/", 5)
+	if len(parts) != 5 {
 		return gapState{}, fmt.Errorf("objectstore: invalid gap checkpoint")
 	}
 	attempts, err := strconv.Atoi(parts[1])
@@ -241,11 +243,16 @@ func decodeGapRow(row string, firstFailed time.Time) (gapState, error) {
 	if err != nil {
 		return gapState{}, fmt.Errorf("objectstore: invalid gap retry time")
 	}
-	keyBytes, err := base64.RawURLEncoding.DecodeString(parts[3])
-	if err != nil || len(keyBytes) == 0 {
+	identityBytes, err := base64.RawURLEncoding.DecodeString(parts[3])
+	if err != nil || len(identityBytes) == 0 {
 		return gapState{}, fmt.Errorf("objectstore: invalid gap object identity")
 	}
+	keyBytes, err := base64.RawURLEncoding.DecodeString(parts[4])
+	if err != nil || len(keyBytes) == 0 {
+		return gapState{}, fmt.Errorf("objectstore: invalid gap object key")
+	}
 	gap := gapState{
+		Identity:    string(identityBytes),
 		Key:         string(keyBytes),
 		FirstFailed: firstFailed.UTC(),
 		Attempts:    attempts,
@@ -270,4 +277,16 @@ func decodeGapRow(row string, firstFailed time.Time) (gapState, error) {
 func objectDigest(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:6])
+}
+
+func seenRow(identity string) string {
+	return seenPrefix + base64.RawURLEncoding.EncodeToString([]byte(identity))
+}
+
+func decodeIdentity(encoded string) (string, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(raw) == 0 {
+		return "", fmt.Errorf("objectstore: invalid seen object identity")
+	}
+	return string(raw), nil
 }

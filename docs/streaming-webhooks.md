@@ -57,9 +57,12 @@ gauges have no attributes:
 | `tailscale2otel.objectstore.gap.healthy` | `1` only when no gaps remain |
 
 A quarantined object is not retried automatically and keeps gap health at `0`. To acknowledge it,
-stop the process and remove only its `objectstore.flowlogs.gap/...` row from the owner-only checkpoint
-JSON. The paired seen row prevents another fetch. To replace the object at the same key and retry,
-remove both that gap row and its `objectstore.flowlogs.seen/...` row before restarting.
+stop the process and remove only its
+`objectstore/v1/<tailnet>/<provider>/<signal>/<feed>/gap/...` row from the owner-only checkpoint JSON.
+The paired `.../seen/...` row prevents another fetch. The tailnet is base64url-encoded and the feed is
+a digest, so raw provider identifiers do not enter checkpoint paths. To replace the object at the same
+key and retry, remove both the gap row and its paired seen row before restarting. The first startup
+after upgrade atomically migrates the previous `objectstore.flowlogs.*` rows into this scoped layout.
 
 ## Splunk-HEC stream receiver
 

@@ -1,5 +1,6 @@
-// Package objectstore implements the "objectstore" ingestion path for Tailscale
-// network flow logs: the export Tailscale writes into an S3-compatible bucket.
+// Package objectstore implements provider-neutral, multi-signal object-store
+// ingestion. Providers supply immutable objects; signal adapters decode and
+// hand records to the existing shared processors.
 //
 // It is the third source alongside poll (the API) and stream (the HEC receiver),
 // and it converges with them completely — objects hold the SAME record shape the
@@ -30,7 +31,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -42,9 +42,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
-	"github.com/rknightion/tailscale2otel/v3/internal/s3"
+	storeapi "github.com/rknightion/tailscale2otel/v3/internal/objectstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
@@ -84,16 +83,9 @@ const (
 // checkpoint key prefixes within the shared store. The cursor is one entry; the
 // seen set is one entry per recently ingested object.
 const (
-	cursorKey  = "objectstore.flowlogs.cursor"
-	seenPrefix = "objectstore.flowlogs.seen/"
+	cursorKey  = "cursor"
+	seenPrefix = "seen/"
 )
-
-// objectAPI is the subset of the object store this collector needs. Narrow by
-// design so tests can fake it without an S3 server. *s3.Client satisfies it.
-type objectAPI interface {
-	List(ctx context.Context, prefix, startAfter string, limit int) (s3.ListResult, error)
-	Get(ctx context.Context, key string) (io.ReadCloser, error)
-}
 
 // Options configures a Collector. Zero values select the defaults above.
 type Options struct {
@@ -114,13 +106,19 @@ type Options struct {
 	// OnAccepted, when non-nil, observes each semantically valid flow record
 	// immediately after it is handed to the shared processor.
 	OnAccepted ingest.AcceptedObserver
+	// Scope isolates the durable state for one tailnet/provider/signal/feed.
+	Scope CheckpointScope
+	// LegacyCheckpointNamespace is the pre-v1 namespace used by this runtime:
+	// empty for single-tailnet mode, or the tailnet name for multi-tailnet mode.
+	// New migrates that state atomically before the collector starts.
+	LegacyCheckpointNamespace string
 }
 
 // Collector ingests exported flow-log objects and feeds them to the shared
 // processor.
 type Collector struct {
-	api    objectAPI
-	proc   *flowlog.Processor
+	api    storeapi.Backend
+	signal SignalProcessor
 	cp     collector.CheckpointStore
 	opts   Options
 	logger *slog.Logger
@@ -129,9 +127,34 @@ type Collector struct {
 
 var _ collector.SnapshotCollector = (*Collector)(nil)
 
-// New returns a Collector reading from api, converting with proc, and keeping
-// its cursor and seen set in cp.
-func New(api objectAPI, proc *flowlog.Processor, cp collector.CheckpointStore, opts Options) *Collector {
+// New returns a Collector reading from api, converting records through signal,
+// and keeping its state in a fully isolated checkpoint namespace.
+func New(
+	api storeapi.Backend,
+	signal SignalProcessor,
+	cp collector.CheckpointStore,
+	opts Options,
+) (*Collector, error) {
+	if api == nil {
+		return nil, fmt.Errorf("objectstore: backend is required")
+	}
+	if signal == nil {
+		return nil, fmt.Errorf("objectstore: signal processor is required")
+	}
+	namespace, err := opts.Scope.Namespace()
+	if err != nil {
+		return nil, err
+	}
+	if opts.Scope.Signal != signal.Signal() {
+		return nil, fmt.Errorf(
+			"objectstore: checkpoint scope signal %q does not match processor signal %q",
+			opts.Scope.Signal,
+			signal.Signal(),
+		)
+	}
+	if err := migrateLegacyState(cp, opts.LegacyCheckpointNamespace, namespace); err != nil {
+		return nil, err
+	}
 	if opts.Interval <= 0 {
 		opts.Interval = defaultInterval
 	}
@@ -152,7 +175,14 @@ func New(api objectAPI, proc *flowlog.Processor, cp collector.CheckpointStore, o
 	if now == nil {
 		now = time.Now
 	}
-	return &Collector{api: api, proc: proc, cp: cp, opts: opts, logger: logger, now: now}
+	return &Collector{
+		api:    api,
+		signal: signal,
+		cp:     collector.Namespaced(cp, namespace),
+		opts:   opts,
+		logger: logger,
+		now:    now,
+	}, nil
 }
 
 // Name implements collector.SnapshotCollector.
@@ -186,16 +216,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if err != nil {
 		return err
 	}
-	gapsByKey := make(map[string]gapState, len(gaps))
+	gapsByIdentity := make(map[string]gapState, len(gaps))
 	for _, gap := range gaps {
-		gapsByKey[gap.Key] = gap
+		gapsByIdentity[gap.Identity] = gap
 	}
 
 	batch := newCheckpointBatch()
 	for _, key := range state.StaleKeys {
 		batch.delete(key)
 	}
-	seen := c.seenKeys()
+	seen, err := c.seenKeys()
+	if err != nil {
+		return err
+	}
 
 	var (
 		newest    = cursor
@@ -206,15 +239,20 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		remaining = c.opts.MaxObjects
 	)
 
-	attempt := func(key string, comp compression, at time.Time, size int64) {
-		n, err := c.ingest(ctx, key, comp, e)
+	attempt := func(obj storeapi.Object, comp compression, at time.Time) {
+		n, err := c.ingest(ctx, obj.Identity, comp, e)
 		if err != nil {
 			failure := classifyObjectFailure(err)
-			gap, exists := gapsByKey[key]
+			gap, exists := gapsByIdentity[obj.Identity]
 			if exists {
 				gap.Attempts++
 			} else {
-				gap = gapState{Key: key, FirstFailed: now, Attempts: 1}
+				gap = gapState{
+					Identity:    obj.Identity,
+					Key:         obj.Key,
+					FirstFailed: now,
+					Attempts:    1,
+				}
 			}
 			gap.Quarantined = failure.quarantine
 			if gap.Quarantined {
@@ -222,25 +260,25 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			} else {
 				gap.NextAttempt = now.Add(gapRetryDelay(gap.Attempts))
 			}
-			gapsByKey[key] = gap
+			gapsByIdentity[obj.Identity] = gap
 			batch.persistGap(c.cp, gap)
 			if gap.Quarantined {
 				// Quarantine is terminal until an operator intervenes. Keep a
 				// normal seen identity beside the gap so deleting only the gap
 				// row is a durable manual acknowledgement rather than an
 				// immediate re-quarantine on the next prefix wrap.
-				seen[key] = struct{}{}
-				batch.updates[seenPrefix+key] = at
+				seen[obj.Identity] = struct{}{}
+				batch.updates[seenRow(obj.Identity)] = at
 			}
 			// The scan position may pass this object only because its retry
 			// identity is being persisted in the same checkpoint batch.
-			durable[key] = true
+			durable[obj.Identity] = true
 			status := "pending"
 			if gap.Quarantined {
 				status = "quarantined"
 			}
 			c.logger.Error("objectstore: ingest failed",
-				"object_id", objectDigest(key),
+				"object_id", objectDigest(obj.Identity),
 				"stage", failure.stage,
 				"gap_status", status,
 				"attempts", gap.Attempts)
@@ -248,19 +286,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				telemetry.Attrs{attrReason: reasonReadError})
 			return
 		}
-		if _, exists := gapsByKey[key]; exists {
-			delete(gapsByKey, key)
-			batch.resolveGap(c.cp, key)
+		if _, exists := gapsByIdentity[obj.Identity]; exists {
+			delete(gapsByIdentity, obj.Identity)
+			batch.resolveGap(c.cp, obj.Identity)
 		}
-		durable[key] = true
-		seen[key] = struct{}{}
+		durable[obj.Identity] = true
+		seen[obj.Identity] = struct{}{}
 		objects++
 		records += n
-		fetched += size
+		fetched += obj.Size
 		if at.After(newest) {
 			newest = at
 		}
-		batch.updates[seenPrefix+key] = at
+		batch.updates[seenRow(obj.Identity)] = at
 	}
 
 	gapDeferred := 0
@@ -277,19 +315,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			gap.Attempts++
 			gap.Quarantined = true
 			gap.NextAttempt = time.Time{}
-			gapsByKey[gap.Key] = gap
+			gapsByIdentity[gap.Identity] = gap
 			batch.persistGap(c.cp, gap)
 			c.logger.Error("objectstore: gap key no longer matches a supported export layout",
-				"object_id", objectDigest(gap.Key),
+				"object_id", objectDigest(gap.Identity),
 				"gap_status", "quarantined",
 				"attempts", gap.Attempts)
 			continue
 		}
 		remaining--
-		attempt(gap.Key, comp, at, 0)
+		attempt(storeapi.Object{Identity: gap.Identity, Key: gap.Key}, comp, at)
 	}
 
-	listing, err := c.enumerate(ctx, from, now, seen, gapsByKey, state.Positions, e)
+	listing, err := c.enumerate(ctx, from, now, seen, gapsByIdentity, state.Positions, e)
 	if err != nil {
 		return err
 	}
@@ -299,7 +337,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		budgeted = budgeted[:remaining]
 	}
 	for _, cand := range budgeted {
-		attempt(cand.obj.Key, cand.comp, cand.at, cand.obj.Size)
+		attempt(cand.obj, cand.comp, cand.at)
 	}
 	remaining -= len(budgeted)
 
@@ -320,7 +358,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Gauge(docBacklog.Name, docBacklog.Unit, docBacklog.Description,
 		float64(len(candidates)-len(budgeted)), telemetry.Attrs{})
 	if c.opts.OnIngest != nil && records > 0 {
-		c.opts.OnIngest("objectstore", "flow", records, int(fetched))
+		c.opts.OnIngest(semconv.IngestSourceObjectStore, c.signal.Signal(), records, int(fetched))
 	}
 
 	if newest.After(cursor) {
@@ -333,7 +371,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		lastSafe := progress.startAfter
 		allSafe := true
 		for _, object := range progress.objects {
-			if !object.safe && !durable[object.key] {
+			if !object.safe && !durable[object.identity] {
 				allSafe = false
 				break
 			}
@@ -350,7 +388,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	e.Gauge(docScanTruncated.Name, docScanTruncated.Unit, docScanTruncated.Description,
 		boolFloat(scanTruncated), telemetry.Attrs{})
-	emitGapHealth(e, gapsByKey, now)
+	emitGapHealth(e, gapsByIdentity, now)
 
 	if err := batch.apply(c.cp); err != nil {
 		return fmt.Errorf("objectstore: persist collection state: %w", err)
@@ -360,14 +398,15 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 // candidate is one object that has passed the cursor and seen-set filters.
 type candidate struct {
-	obj  s3.Object
+	obj  storeapi.Object
 	at   time.Time
 	comp compression
 }
 
 type listedObject struct {
-	key  string
-	safe bool
+	key      string
+	identity string
+	safe     bool
 }
 
 type prefixProgress struct {
@@ -416,8 +455,10 @@ func (c *Collector) enumerate(
 		}
 		for _, o := range page.Objects {
 			at, comp, ok := parseKey(o.Key)
-			item := listedObject{key: o.Key}
+			item := listedObject{key: o.Key, identity: o.Identity}
 			switch {
+			case o.Identity == "":
+				return enumeration{}, fmt.Errorf("objectstore: provider returned an object with an empty identity")
 			case !ok:
 				unparsed++
 				item.safe = true
@@ -430,11 +471,11 @@ func (c *Collector) enumerate(
 				stale++
 				item.safe = true
 			default:
-				if _, pending := gaps[o.Key]; pending {
+				if _, pending := gaps[o.Identity]; pending {
 					item.safe = true
 					break
 				}
-				if _, dup := seen[o.Key]; dup {
+				if _, dup := seen[o.Identity]; dup {
 					already++
 					item.safe = true
 					break
@@ -465,10 +506,15 @@ func (c *Collector) enumerate(
 	return result, nil
 }
 
-// ingest fetches, decompresses and decodes one object, feeding every record to
-// the shared processor. It returns the number of records handed over.
-func (c *Collector) ingest(ctx context.Context, key string, comp compression, e telemetry.Emitter) (int, error) {
-	body, err := c.api.Get(ctx, key)
+// ingest fetches, decompresses, and sends every row to the configured signal
+// processor. It returns the number of records accepted by that processor.
+func (c *Collector) ingest(
+	ctx context.Context,
+	identity string,
+	comp compression,
+	e telemetry.Emitter,
+) (int, error) {
+	body, err := c.api.Get(ctx, identity)
 	if err != nil {
 		return 0, &objectIngestError{stage: "fetch", err: err}
 	}
@@ -489,25 +535,23 @@ func (c *Collector) ingest(ctx context.Context, key string, comp compression, e 
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
 		}
-		var fl flowlog.FlowLog
-		if err := json.Unmarshal(line, &fl); err != nil {
-			// One malformed line does not condemn the object: the export is
-			// line-delimited precisely so a bad record costs one record.
+		timestamps, err := c.signal.ProcessRecord(ctx, line, c.now(), e)
+		switch {
+		case errors.Is(err, ErrRecordDecode):
 			bad++
 			continue
-		}
-		if violations := flowlog.Validate(fl, flowlog.ValidationOptions{Now: c.now}); len(violations) != 0 {
+		case errors.Is(err, ErrRecordInvalid):
 			semanticBad++
-			flowlog.ObserveDataQuality(e, "objectstore", violations)
 			continue
+		case err != nil:
+			return records, &objectIngestError{stage: "process", err: err}
 		}
-		c.proc.Process(fl, e)
 		if c.opts.OnAccepted != nil {
 			c.opts.OnAccepted(ingest.AcceptedEvent{
 				Source:      semconv.IngestSourceObjectStore,
-				Signal:      semconv.IngestSignalFlow,
-				EventTime:   flowlog.EventTimestamp(fl),
-				CaptureTime: flowlog.CaptureTimestamp(fl),
+				Signal:      c.signal.Signal(),
+				EventTime:   timestamps.EventTime,
+				CaptureTime: timestamps.CaptureTime,
 				AcceptedAt:  c.now(),
 			})
 		}
@@ -521,14 +565,14 @@ func (c *Collector) ingest(ctx context.Context, key string, comp compression, e 
 	}
 	if bad > 0 {
 		c.logger.Warn("objectstore: skipped malformed records",
-			"object_id", objectDigest(key),
+			"object_id", objectDigest(identity),
 			"records", bad)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(bad),
 			telemetry.Attrs{attrReason: reasonDecodeError})
 	}
 	if semanticBad > 0 {
 		c.logger.Warn("objectstore: quarantined semantically invalid records",
-			"object_id", objectDigest(key),
+			"object_id", objectDigest(identity),
 			"records", semanticBad)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(semanticBad),
 			telemetry.Attrs{attrReason: reasonSemanticInvalid})
@@ -557,15 +601,19 @@ func decompress(r io.Reader, comp compression) (io.Reader, func(), error) {
 	}
 }
 
-// seenKeys reads the durable set of recently ingested object keys.
-func (c *Collector) seenKeys() map[string]struct{} {
+// seenKeys reads the durable set of recently ingested opaque identities.
+func (c *Collector) seenKeys() (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 	for _, k := range c.cp.Keys() {
-		if key, ok := strings.CutPrefix(k, seenPrefix); ok {
-			out[key] = struct{}{}
+		if encoded, ok := strings.CutPrefix(k, seenPrefix); ok {
+			identity, err := decodeIdentity(encoded)
+			if err != nil {
+				return nil, err
+			}
+			out[identity] = struct{}{}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // pruneSeen drops entries older than the overlap window. Anything that old can
