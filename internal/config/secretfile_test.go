@@ -9,7 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 )
 
-// secretFileCase describes one of the nine "*_file" secret siblings from the
+// secretFileCase describes one of the "*_file" secret siblings from the
 // #169 seam freeze. yamlFile/yamlConflict build a minimal, otherwise-valid
 // config document exercising just that field; get extracts the resolved
 // Secret so the trim/read behavior can be asserted.
@@ -112,7 +112,56 @@ func secretFileCases() []secretFileCase {
 			},
 			get: func(c *config.Config) config.Secret { return c.Profiling.Pyroscope.BasicAuthPassword },
 		},
+		{
+			name: "collectors.flowlogs.objectstore.access_key_id",
+			yamlFile: func(p string) string {
+				return objectStoreSecretYAML("access_key_id_file: "+p, "")
+			},
+			yamlConflict: func(v, p string) string {
+				return objectStoreSecretYAML("access_key_id: "+v, "access_key_id_file: "+p)
+			},
+			get: func(c *config.Config) config.Secret {
+				return c.Collectors.Flowlogs.ObjectStore.AccessKeyID
+			},
+		},
+		{
+			name: "collectors.flowlogs.objectstore.secret_access_key",
+			yamlFile: func(p string) string {
+				return objectStoreSecretYAML("secret_access_key_file: "+p, "")
+			},
+			yamlConflict: func(v, p string) string {
+				return objectStoreSecretYAML("secret_access_key: "+v, "secret_access_key_file: "+p)
+			},
+			get: func(c *config.Config) config.Secret {
+				return c.Collectors.Flowlogs.ObjectStore.SecretAccessKey
+			},
+		},
+		{
+			name: "collectors.flowlogs.objectstore.session_token",
+			yamlFile: func(p string) string {
+				return objectStoreSecretYAML("session_token_file: "+p, "")
+			},
+			yamlConflict: func(v, p string) string {
+				return objectStoreSecretYAML("session_token: "+v, "session_token_file: "+p)
+			},
+			get: func(c *config.Config) config.Secret {
+				return c.Collectors.Flowlogs.ObjectStore.SessionToken
+			},
+		},
 	}
+}
+
+func objectStoreSecretYAML(lines ...string) string {
+	var b strings.Builder
+	b.WriteString("collectors:\n  flowlogs:\n    source: objectstore\n    objectstore:\n")
+	b.WriteString("      endpoint: https://s3.eu-west-2.amazonaws.com\n")
+	b.WriteString("      region: eu-west-2\n      bucket: flows\n")
+	for _, line := range lines {
+		if line != "" {
+			b.WriteString("      " + line + "\n")
+		}
+	}
+	return b.String()
 }
 
 // writeSecretFile writes content to a file in a fresh temp dir and returns its
@@ -203,6 +252,19 @@ func TestSecretFile_SettableViaEnvVar(t *testing.T) {
 	}
 	if got, want := cfg.OTLP.GrafanaCloud.Token.Reveal(), "from-env-var"; got != want {
 		t.Errorf("otlp.grafana_cloud.token = %q, want %q", got, want)
+	}
+}
+
+func TestSecretFile_ObjectStoreSettableViaEnvVar(t *testing.T) {
+	secretPath := writeSecretFile(t, "  from-objectstore-env-file  \n")
+	t.Setenv("TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY_FILE", secretPath)
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := cfg.Collectors.Flowlogs.ObjectStore.SecretAccessKey.Reveal(), "from-objectstore-env-file"; got != want {
+		t.Errorf("objectstore.secret_access_key = %q, want %q", got, want)
 	}
 }
 

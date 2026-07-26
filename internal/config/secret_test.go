@@ -86,12 +86,16 @@ func TestConfigDoesNotLeakSecretsWhenFormatted(t *testing.T) {
 		BearerToken: "BEARER-leak-canary",
 		Headers:     map[string]Secret{"X-Scope-OrgID": "NMHEADER-leak-canary"},
 	}}
+	c.Collectors.Flowlogs.ObjectStore.AccessKeyID = "S3ACCESS-leak-canary"
+	c.Collectors.Flowlogs.ObjectStore.SecretAccessKey = "S3SECRET-leak-canary"
+	c.Collectors.Flowlogs.ObjectStore.SessionToken = "S3SESSION-leak-canary"
 
 	dump := fmt.Sprintf("%+v\n%#v", c, c)
 	for _, secret := range []string{
 		"APIKEY-leak-canary", "OAUTHSECRET-leak-canary", "GCLOUDTOKEN-leak-canary",
 		"STREAMTOKEN-leak-canary", "WEBHOOKSECRET-leak-canary", "ADMINTOKEN-leak-canary",
 		"PYROPASS-leak-canary", "BEARER-leak-canary", "OTLPHEADER-leak-canary", "NMHEADER-leak-canary",
+		"S3ACCESS-leak-canary", "S3SECRET-leak-canary", "S3SESSION-leak-canary",
 	} {
 		if strings.Contains(dump, secret) {
 			t.Errorf("config dump leaked secret %q", secret)
@@ -106,5 +110,14 @@ func TestConfigDoesNotLeakSecretsWhenFormatted(t *testing.T) {
 	}
 	if got := c.Collectors.NodeMetrics.Targets[0].Headers["X-Scope-OrgID"].Reveal(); got != "NMHEADER-leak-canary" {
 		t.Errorf("node-metrics header Reveal() = %q, want the real value preserved", got)
+	}
+
+	var logs bytes.Buffer
+	slog.New(slog.NewTextHandler(&logs, nil)).Info("config",
+		"objectstore", c.Collectors.Flowlogs.ObjectStore)
+	for _, secret := range []string{"S3ACCESS-leak-canary", "S3SECRET-leak-canary", "S3SESSION-leak-canary"} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("object-store config log leaked secret %q: %s", secret, logs.String())
+		}
 	}
 }

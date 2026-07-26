@@ -199,8 +199,11 @@ collectors:
       path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
       allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
       access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then EC2 instance profile
+      access_key_id_file: ""          # read the access key ID from this path instead; value XOR file
       secret_access_key: ""           # SET VIA ENV ONLY
+      secret_access_key_file: ""      # read the secret access key from this path instead; value XOR file
       session_token: ""               # SET VIA ENV ONLY — temporary credentials only
+      session_token_file: ""          # read the temporary session token from this path instead; value XOR file
       interval: 60s                   # how often the bucket is listed
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
       initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it

@@ -260,6 +260,9 @@
                                         "access_key_id": {
                                             "type": "string"
                                         },
+                                        "access_key_id_file": {
+                                            "type": "string"
+                                        },
                                         "allow_insecure_http": {
                                             "type": "boolean"
                                         },
@@ -293,7 +296,13 @@
                                         "secret_access_key": {
                                             "type": "string"
                                         },
+                                        "secret_access_key_file": {
+                                            "type": "string"
+                                        },
                                         "session_token": {
+                                            "type": "string"
+                                        },
+                                        "session_token_file": {
                                             "type": "string"
                                         }
                                     }

@@ -44,6 +44,9 @@ func (c *Config) resolveSecretFiles() error {
 		{"streaming.token", &c.Streaming.Token, c.Streaming.TokenFile},
 		{"webhook.secret", &c.Webhook.Secret, c.Webhook.SecretFile},
 		{"profiling.pyroscope.basic_auth_password", &c.Profiling.Pyroscope.BasicAuthPassword, c.Profiling.Pyroscope.BasicAuthPasswordFile},
+		{"collectors.flowlogs.objectstore.access_key_id", &c.Collectors.Flowlogs.ObjectStore.AccessKeyID, c.Collectors.Flowlogs.ObjectStore.AccessKeyIDFile},
+		{"collectors.flowlogs.objectstore.secret_access_key", &c.Collectors.Flowlogs.ObjectStore.SecretAccessKey, c.Collectors.Flowlogs.ObjectStore.SecretAccessKeyFile},
+		{"collectors.flowlogs.objectstore.session_token", &c.Collectors.Flowlogs.ObjectStore.SessionToken, c.Collectors.Flowlogs.ObjectStore.SessionTokenFile},
 	}
 	// tailnets[] entries embed TailscaleAuth, so their apikey_file /
 	// oauth.client_secret_file siblings get the same resolution for free (per

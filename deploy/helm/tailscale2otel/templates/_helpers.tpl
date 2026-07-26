@@ -81,8 +81,10 @@ Deliberately NOT listed:
     profiling.pyroscope.basic_auth_user. They are identifiers, not secrets, and
     listing them would push credential-free installs off the ConfigMap path.
   * every *_file key (client_secret_file, apikey_file, token_file, secret_file,
-    basic_auth_password_file, tls cert/key/ca files) — those are PATHS to material
-    mounted from elsewhere, so the config file itself stays credential-free.
+    basic_auth_password_file, object-store access_key_id_file /
+    secret_access_key_file / session_token_file, tls cert/key/ca files) — those
+    are PATHS to material mounted from elsewhere, so the config file itself
+    stays credential-free.
 otlp.headers IS listed (as a whole map): raw OTLP headers are where an Authorization
 header goes, so any non-empty value there is treated as a credential.
 Structural carriers that are lists — config.tailnets[] and

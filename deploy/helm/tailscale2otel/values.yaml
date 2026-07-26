@@ -530,18 +530,28 @@ config:
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200
-        # NOTE: LEAVE THE THREE CREDENTIAL KEYS BELOW EMPTY. Anything set here is rendered into
-        # the ConfigMap, which is readable by anyone with namespace get access. Empty selects the
+        # NOTE: LEAVE THE THREE CREDENTIAL VALUE KEYS BELOW EMPTY. Anything set there is rendered
+        # into the config and routes it to a Secret. Empty selects the
         # ambient chain (environment, then IRSA/web identity via a service-account annotation, then
         # an EC2 instance profile) — the right answer on EKS. For a MinIO/Ceph bucket with no role
         # to assume, set the TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__* keys under `secret:`
-        # instead; the env layer overrides this file.
+        # instead, or set the matching *_file path to a mounted Secret; the env layer overrides
+        # this file.
         # -- Static S3 access key ID. Set via the TS2OTEL_* secret, not here.
         access_key_id: ""
+        # -- Read the S3 access key ID from this mounted file instead of an inline value.
+        # Set the value or the file, never both.
+        access_key_id_file: ""
         # -- Static S3 secret access key. Set via the TS2OTEL_* secret, not here.
         secret_access_key: ""
+        # -- Read the S3 secret access key from this mounted file instead of an inline value.
+        # Set the value or the file, never both.
+        secret_access_key_file: ""
         # -- Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here.
         session_token: ""
+        # -- Read the temporary S3 session token from this mounted file instead of an inline value.
+        # Set the value or the file, never both.
+        session_token_file: ""
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true

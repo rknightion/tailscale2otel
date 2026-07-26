@@ -762,10 +762,16 @@ type ObjectStoreConfig struct {
 	// AllowInsecureHTTP permits a plaintext remote endpoint. Plain HTTP is
 	// otherwise accepted only for loopback development endpoints.
 	AllowInsecureHTTP bool `yaml:"allow_insecure_http"`
-	// Static credentials. Env only.
-	AccessKeyID     string `yaml:"access_key_id"`
-	SecretAccessKey string `yaml:"secret_access_key"`
-	SessionToken    string `yaml:"session_token"`
+	// Static credentials. Prefer workload identity. Each value has a
+	// Docker-secrets-style file sibling; set the value or the file, never both.
+	AccessKeyID     Secret `yaml:"access_key_id"`
+	AccessKeyIDFile string `yaml:"access_key_id_file"`
+
+	SecretAccessKey     Secret `yaml:"secret_access_key"`
+	SecretAccessKeyFile string `yaml:"secret_access_key_file"`
+
+	SessionToken     Secret `yaml:"session_token"`
+	SessionTokenFile string `yaml:"session_token_file"`
 	// Interval is how often the bucket is listed.
 	Interval Duration `yaml:"interval"`
 	// Lookback is how far back past the cursor each listing reaches, so an

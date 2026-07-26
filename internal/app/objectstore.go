@@ -36,9 +36,9 @@ func newObjectStoreCollector(
 	var creds s3.Provider
 	if os.AccessKeyID != "" || os.SecretAccessKey != "" {
 		creds = s3.StaticProvider{Credentials: s3.Credentials{
-			AccessKeyID:     os.AccessKeyID,
-			SecretAccessKey: os.SecretAccessKey,
-			SessionToken:    os.SessionToken,
+			AccessKeyID:     os.AccessKeyID.Reveal(),
+			SecretAccessKey: os.SecretAccessKey.Reveal(),
+			SessionToken:    os.SessionToken.Reveal(),
 		}}
 	} else {
 		creds = s3.AmbientProvider(nil, nil)

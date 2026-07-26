@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -222,5 +223,27 @@ func TestBuildStatus_RedactsNodeMetricsTargetURLs(t *testing.T) {
 	}
 	if nd.Targets[0].Instance != "node-a" {
 		t.Errorf("Instance = %q, want node-a (redaction must not disturb identity)", nd.Targets[0].Instance)
+	}
+}
+
+func TestBuildStatus_DoesNotExposeObjectStoreCredentials(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Flowlogs.ObjectStore.AccessKeyID = "S3ACCESS-status-canary"
+	cfg.Collectors.Flowlogs.ObjectStore.SecretAccessKey = "S3SECRET-status-canary"
+	cfg.Collectors.Flowlogs.ObjectStore.SessionToken = "S3SESSION-status-canary"
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+
+	body, err := json.Marshal(a.buildStatus())
+	if err != nil {
+		t.Fatalf("marshal status: %v", err)
+	}
+	for _, secret := range []string{
+		"S3ACCESS-status-canary",
+		"S3SECRET-status-canary",
+		"S3SESSION-status-canary",
+	} {
+		if strings.Contains(string(body), secret) {
+			t.Errorf("status JSON leaked %q: %s", secret, body)
+		}
 	}
 }

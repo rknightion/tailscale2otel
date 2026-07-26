@@ -128,6 +128,28 @@ func TestWarnings_ObjectStorePlaintextRemoteOverrideNamesCredentialRisk(t *testi
 	}
 }
 
+func TestValidate_ObjectStoreErrorDoesNotLeakCredentials(t *testing.T) {
+	c := objectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.AccessKeyID = "S3ACCESS-validation-canary"
+		c.Collectors.Flowlogs.ObjectStore.SecretAccessKey = "S3SECRET-validation-canary"
+		c.Collectors.Flowlogs.ObjectStore.SessionToken = "S3SESSION-validation-canary"
+		c.Collectors.Flowlogs.ObjectStore.MaxObjects = -1
+	})
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate accepted a negative object-store budget")
+	}
+	for _, secret := range []string{
+		"S3ACCESS-validation-canary",
+		"S3SECRET-validation-canary",
+		"S3SESSION-validation-canary",
+	} {
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("validation error leaked %q: %v", secret, err)
+		}
+	}
+}
+
 // Audit logs are not exported to object storage. Accepting the value there would
 // configure a path that silently collects nothing at all.
 func TestValidate_ObjectStoreIsFlowLogsOnly(t *testing.T) {

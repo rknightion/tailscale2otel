@@ -126,8 +126,11 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ALLOW_INSECURE_HTTP` | `false` | remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID` | `""` | SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then EC2 instance profile |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID_FILE` | `""` | read the access key ID from this path instead; value XOR file |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY` | `""` | SET VIA ENV ONLY |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY_FILE` | `""` | read the secret access key from this path instead; value XOR file |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN` | `""` | SET VIA ENV ONLY — temporary credentials only |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN_FILE` | `""` | read the temporary session token from this path instead; value XOR file |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INTERVAL` | `60s` | how often the bucket is listed |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it |

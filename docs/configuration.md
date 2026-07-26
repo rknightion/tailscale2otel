@@ -583,14 +583,22 @@ Every field below applies **only** when `source: objectstore`.
 | `collectors.flowlogs.objectstore.path_style` | `false` | Address as `<endpoint>/<bucket>/<key>` rather than `<bucket>.<endpoint>/<key>`. Required by most non-AWS implementations. Getting it backwards shows up as a DNS failure, not an HTTP error. |
 | `collectors.flowlogs.objectstore.allow_insecure_http` | `false` | Permit plaintext HTTP to a **remote** object-store endpoint. HTTP loopback endpoints (`localhost`, `127.0.0.0/8`, `::1`) remain available without the override for local MinIO development. Enabling this sends signing credentials and temporary session tokens over the network without TLS and emits a startup warning; prefer HTTPS. |
 | `collectors.flowlogs.objectstore.access_key_id` | `""` | Static credential. **Set via `TS2OTEL_*` env only.** Leave empty to use the ambient chain (below). |
+| `collectors.flowlogs.objectstore.access_key_id_file` | `""` | Read the static access key ID from this path instead of an inline value. Set value **or** file, never both; content is whitespace-trimmed at startup. |
 | `collectors.flowlogs.objectstore.secret_access_key` | `""` | Static credential. **Env only.** |
+| `collectors.flowlogs.objectstore.secret_access_key_file` | `""` | Read the static secret access key from this path instead of an inline value. Set value **or** file, never both; content is whitespace-trimmed at startup. |
 | `collectors.flowlogs.objectstore.session_token` | `""` | Static credential, temporary sessions only. **Env only.** |
+| `collectors.flowlogs.objectstore.session_token_file` | `""` | Read the temporary session token from this path instead of an inline value. Set value **or** file, never both; content is whitespace-trimmed at startup. |
 | `collectors.flowlogs.objectstore.interval` | `60s` | How often the bucket is listed. |
 | `collectors.flowlogs.objectstore.lookback` | `1h` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Setting it below `interval` is warned about: the overlap would be smaller than the gap between listings, so an object landing between two cycles could be missed. |
 | `collectors.flowlogs.objectstore.initial_lookback` | `6h` | Cold-start reach-back, so a first run against a bucket holding months of exports does not try to ingest all of it. |
 | `collectors.flowlogs.objectstore.max_objects` | `200` | Objects ingested per cycle. Exceeding it is not an error: the remainder is counted into `tailscale2otel.objectstore.skipped{reason="per_cycle_budget"}`, logged at WARN, reported by the `tailscale2otel.objectstore.backlog` gauge, and picked up next cycle. |
 
-**Credentials.** Leave the three static fields empty and the ambient chain is used, in this order:
+**Credentials.** The three credential values are `config.Secret` fields: config dumps, structured
+logs, validation errors, and the admin status surface redact or omit them. They are revealed only
+when the S3 provider client is constructed. Each has a `_file` sibling for a mounted Secret; setting
+both a value and its file is a startup error.
+
+Leave all three values and files empty and the ambient chain is used, in this order:
 the environment (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`), then **web
 identity** (`AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE` — this is IRSA on EKS), then the **EC2
 instance profile** via IMDSv2. Set `AWS_EC2_METADATA_DISABLED=true` off EC2 to skip the last probe,
