@@ -491,7 +491,7 @@ var (
 			"requirement, `0` when they demonstrably do not (a **flag**, despite the `_ratio` suffix). " +
 			"**Advisory startup preflight, not a server answer**: it compares `tailscale.auth.oauth.scopes` " +
 			"against a static map of upstream's documented scopes, so it never blocks collection and a `1` is " +
-			"not a guarantee. Emitted only for capabilities whose scope is modelled AND when the credential is " +
+			"not a guarantee. Emitted only for capabilities whose scope is modeled AND when the credential is " +
 			"an OAuth client — an API key carries no scope list, and a `0` there would read as a real permission " +
 			"gap. The authoritative signal is `tailscale2otel.capability.status` / " +
 			"`tailscale2otel.api.availability` reaching `scope_denied`.",

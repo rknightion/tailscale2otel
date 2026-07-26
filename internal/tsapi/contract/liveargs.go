@@ -37,7 +37,7 @@ type LiveArgs struct {
 	ServiceName string
 }
 
-// Has reports whether r was resolved. An unrecognised resource reports false:
+// Has reports whether r was resolved. An unrecognized resource reports false:
 // a mistyped LiveRequires entry must exclude the op, never let it run with a
 // zero-valued path parameter (which is exactly the placeholder bug this file
 // exists to remove).

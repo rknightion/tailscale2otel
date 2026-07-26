@@ -78,7 +78,7 @@ func TestOperationInventory_CoversEveryVerb(t *testing.T) {
 
 // TestValidateOperationDispositions_FlagsNewReadOperation is the core regression:
 // a read-capable operation appearing upstream with no baseline row must be
-// reported, and reported as read-capable so the lane can prioritise it.
+// reported, and reported as read-capable so the lane can prioritize it.
 func TestValidateOperationDispositions_FlagsNewReadOperation(t *testing.T) {
 	base := &contract.OperationDispositionBaseline{
 		Operations: []contract.OperationDisposition{

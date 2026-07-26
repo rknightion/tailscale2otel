@@ -46,7 +46,7 @@ type tailnetRuntime struct {
 	// introspection only — they emit no OTLP themselves (#420, #421, #430).
 	apiState *apistate.Tracker
 	coverage *apistate.Coverage
-	flowProc    *flowlog.Processor
+	flowProc *flowlog.Processor
 	// flowStore backs the /flows view for THIS tailnet. One per runtime, not one
 	// process-wide: a device name is unique only within its tailnet, so a shared
 	// store would merge two different machines into one vertex of the topology.

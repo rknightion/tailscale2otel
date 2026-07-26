@@ -40,6 +40,13 @@ jobs:
           go run -C tools/apidrift . -old "$PWD/spec/tailscale-api.json" -new /tmp/live.json -format md > /tmp/drift.md
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
+      - name: Classify upstream operation-set drift
+        id: operation_drift
+        run: |
+          set +e
+          go run -C tools/apidrift . -operations -new /tmp/live.json -format md > /tmp/operation-drift.md
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
       - name: Fail on tool error (any non-zero that is not the drift signal '3')
         if: steps.drift.outputs.code != '0' && steps.drift.outputs.code != '3'
         run: |
@@ -49,8 +56,18 @@ jobs:
         env:
           STEPS_DRIFT_OUTPUTS_CODE: ${{ steps.drift.outputs.code }}
 
-      - name: Report + fail on drift
+      - name: Fail on operation classifier error
+        if: steps.operation_drift.outputs.code != '0' && steps.operation_drift.outputs.code != '3'
+        run: |
+          echo "operation classifier errored (exit ${STEPS_OPERATION_DRIFT_OUTPUTS_CODE}) — not treated as a clean run"
+          cat /tmp/operation-drift.md || true
+          exit 1
+        env:
+          STEPS_OPERATION_DRIFT_OUTPUTS_CODE: ${{ steps.operation_drift.outputs.code }}
+
+      - name: Report consumed-operation schema drift
         if: steps.drift.outputs.code == '3'
+        continue-on-error: true
         uses: ./.github/actions/report-drift
         with:
           lane-label: api-drift
@@ -63,8 +80,29 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-      - name: Resolve tracking issue on clean run
+      - name: Report upstream operation-set drift
+        if: steps.operation_drift.outputs.code == '3'
+        continue-on-error: true
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: api-operation-drift
+          title: "Tailscale published an unclassified API operation"
+          report-path: /tmp/operation-drift.md
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Resolve consumed-operation tracking issue on clean run
         if: steps.drift.outputs.code == '0'
         uses: ./.github/actions/resolve-drift
         with:
           lane-label: api-drift
+
+      - name: Resolve operation-set tracking issue on clean run
+        if: steps.operation_drift.outputs.code == '0'
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: api-operation-drift
+
+      - name: Fail when drift was detected
+        if: steps.drift.outputs.code == '3' || steps.operation_drift.outputs.code == '3'
+        run: exit 1

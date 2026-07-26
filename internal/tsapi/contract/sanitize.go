@@ -39,7 +39,7 @@ var sanitizeRules = []struct {
 	repl string
 }{
 	// Credentials first: an Authorization header value can contain anything, and
-	// redacting it wholesale is safer than pattern-matching each token flavour.
+	// redacting it wholesale is safer than pattern-matching each token flavor.
 	{regexp.MustCompile(`(?i)(authorization:\s*(?:bearer|basic|token)\s+)\S+`), "${1}" + redactedSecret},
 	// Tailscale API/auth keys wherever else they appear (logs, URLs, error text).
 	{regexp.MustCompile(`\btskey-[A-Za-z0-9_-]+`), redactedSecret},
@@ -77,7 +77,7 @@ var sanitizeRules = []struct {
 // destined for a public issue, while preserving the diagnostic content.
 //
 // extra holds caller-supplied literals to redact as well — in practice the
-// tailnet name, which the tool cannot recognise by shape. Blank and
+// tailnet name, which the tool cannot recognize by shape. Blank and
 // whitespace-only entries are IGNORED: the CI call site interpolates an
 // environment variable, and redacting "" would replace every position in the
 // string and destroy the whole report.

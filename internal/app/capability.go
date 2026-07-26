@@ -34,7 +34,7 @@ import (
 //     hands in CollectorDecisions.
 //
 //  2. **Preflight warns, never blocks.** The scope map below is a model of
-//     upstream's documentation, and upstream adds scopes. A modelling bug must
+//     upstream's documentation, and upstream adds scopes. A modeling bug must
 //     cost a spurious WARN line, never a collector that refuses to start. The
 //     server stays authoritative: a real permission problem shows up as
 //     apistate.StateScopeDenied in the State column regardless of what the
@@ -422,7 +422,7 @@ func EmitCapabilityStatus(e telemetry.Emitter, rows []statusdata.CapabilityRow) 
 }
 
 // EmitScopePreflight writes the advisory scope-preflight flag, one datapoint per
-// capability whose requirement is both modelled and checkable.
+// capability whose requirement is both modeled and checkable.
 //
 // Rows with an unknown or not-applicable scope emit NOTHING rather than `0`: a
 // `0` there would be indistinguishable from a real permission gap on a dashboard.
@@ -456,7 +456,7 @@ func EmitScopePreflight(e telemetry.Emitter, rows []statusdata.CapabilityRow) {
 // scopes do not cover its documented requirement.
 //
 // Only active rows produce a warning. A collector the operator disabled, one the
-// control plane does not support, or one whose scope is unmodelled would
+// control plane does not support, or one whose scope is unmodeled would
 // otherwise make every deployment warn about things it correctly is not doing.
 func ScopeWarnings(rows []statusdata.CapabilityRow) []string {
 	var out []string
@@ -480,7 +480,7 @@ func ScopeWarnings(rows []statusdata.CapabilityRow) []string {
 //
 // Advisory by design (#425). It never returns an error and never gates startup:
 // the scope map models upstream documentation, upstream adds scopes, and a
-// modelling bug must not be able to take down collection. The authoritative
+// modeling bug must not be able to take down collection. The authoritative
 // answer arrives at runtime as apistate.StateScopeDenied.
 func LogScopeWarnings(logger *slog.Logger, rows []statusdata.CapabilityRow) {
 	if logger == nil {

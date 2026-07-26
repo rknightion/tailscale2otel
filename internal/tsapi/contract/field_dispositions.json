@@ -16,1285 +16,1297 @@
       "op": "getContacts",
       "path": "Account.Email",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: account contact email address is PII and the collector deliberately emits verification state only"
     },
     {
       "op": "getContacts",
       "path": "Account.FallbackEmail",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: account fallback email address is PII and the collector deliberately emits verification state only"
     },
     {
       "op": "getContacts",
       "path": "Account.NeedsVerification",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getContacts",
       "path": "Security.Email",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: security contact email address is PII and the collector deliberately emits verification state only"
     },
     {
       "op": "getContacts",
       "path": "Security.FallbackEmail",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: security fallback email address is PII and the collector deliberately emits verification state only"
     },
     {
       "op": "getContacts",
       "path": "Security.NeedsVerification",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getContacts",
       "path": "Support.Email",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: support contact email address is PII and the collector deliberately emits verification state only"
     },
     {
       "op": "getContacts",
       "path": "Support.FallbackEmail",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: support fallback email address is PII and the collector deliberately emits verification state only"
     },
     {
       "op": "getContacts",
       "path": "Support.NeedsVerification",
       "type": "tsclient.Contacts",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDevicePostureAttributes",
       "path": "Attributes{}",
       "type": "tsapi.DeviceAttributes",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDevicePostureAttributes",
       "path": "Expiries{}",
       "type": "tsapi.DeviceAttributes",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "MagicDNS",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "Nameservers[].Address",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "Nameservers[].UseWithExitNode",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "OverrideLocalDNS",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "SearchPaths[]",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "SplitDNS{}[].Address",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getDnsConfiguration",
       "path": "SplitDNS{}[].UseWithExitNode",
       "type": "tsapi.DNSConfig",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "LastActivity",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "LastError",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "MaxBodySize",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "MaxNumEntries",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "NumBytesSent",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "NumEntriesSent",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "NumFailedRequests",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "NumMaxBodyRequests",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "NumSpoofedEntries",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getLogStreamingStatus",
       "path": "NumTotalRequests",
       "type": "tsapi.LogStreamStatus",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPolicyFile",
       "path": "(whole response)",
       "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) — an opaque string we never structurally decode; disposition is recorded at op level",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "ID",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "Provider",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "Status.Error",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "Status.LastSync",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "Status.MatchedCount",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "Status.PossibleMatchedCount",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getPostureIntegrations",
       "path": "Status.ProviderHostCount",
       "type": "tsapi.PostureIntegration",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "ACLsExternalLink",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "ACLsExternallyManagedOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "DevicesApprovalOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "DevicesAutoUpdatesOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "DevicesKeyDurationDays",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "HTTPSEnabled",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "NetworkFlowLoggingOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "PostureIdentityCollectionOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "RegionalRoutingOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "UsersApprovalOn",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "getTailnetSettings",
       "path": "UsersRoleAllowedToJoinExternalTailnets",
       "type": "tsapi.TailnetSettings",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Action",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].ActionDetails",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.DisplayName",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.ID",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.LoginName",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.Tags[]",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Actor.Type",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Error",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].EventGroupID",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].EventTime",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].New",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Old",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Origin",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Target.ID",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Target.IsEphemeral",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Target.Name",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Target.Property",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Target.Type",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Logs[].Type",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Tailnet",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "TailnetID",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listConfigurationAuditLogs",
       "path": "Version",
       "type": "audit.ConfigurationResponse",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listDeviceInvites",
       "path": "Accepted",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listDeviceInvites",
       "path": "AcceptedByLogin",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listDeviceInvites",
       "path": "AllowExitNode",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listDeviceInvites",
       "path": "Created",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listDeviceInvites",
       "path": "Email",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listDeviceInvites",
       "path": "LastEmailSentAt",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listDeviceInvites",
       "path": "MultiUse",
       "type": "tsapi.DeviceInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].DstNodes[].Addresses[]",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].DstNodes[].Name",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].DstNodes[].NodeID",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].DstNodes[].OS",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].DstNodes[].Tags[]",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].DstNodes[].User",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].End",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].Dst",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].Proto",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].RxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].RxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].Src",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].TxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].ExitTraffic[].TxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].Logged",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].NodeID",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].Dst",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].Proto",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].RxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].RxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].Src",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].TxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].PhysicalTraffic[].TxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SrcNode.Addresses[]",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SrcNode.Name",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SrcNode.NodeID",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SrcNode.OS",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SrcNode.Tags[]",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SrcNode.User",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].Start",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].Dst",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].Proto",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].RxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].RxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].Src",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].TxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].SubnetTraffic[].TxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].Dst",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].Proto",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].RxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].RxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].Src",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].TxBytes",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listNetworkFlowLogs",
       "path": "Logs[].VirtualTraffic[].TxPkts",
       "type": "flowlog.NetworkResponse",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "AllowedNodeAttributes[]",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "Created",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "Description",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listOAuthApps",
       "path": "ID",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "Name",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "RedirectURIs[]",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "Scopes[]",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listOAuthApps",
       "path": "Updated",
       "type": "tsapi.OAuthApp",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listServiceHosts",
       "path": "ApprovalLevel",
       "type": "tsapi.ServiceHost",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listServiceHosts",
       "path": "Configured",
       "type": "tsapi.ServiceHost",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listServiceHosts",
       "path": "NodeID",
       "type": "tsapi.ServiceHost",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listServices",
       "path": "Name",
       "type": "tsapi.VIPService",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listServices",
       "path": "Ports[]",
       "type": "tsapi.VIPService",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listServices",
       "path": "Tags[]",
       "type": "tsapi.VIPService",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listTailnetDevices",
       "path": "Addresses[]",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listTailnetDevices",
       "path": "AdvertisedRoutes[]",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Authorized",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "BlocksIncomingConnections",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ClientSupports.IPv6",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ClientSupports.PCP",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ClientSupports.PMP",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ClientSupports.UDP",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ClientSupports.UPnP",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ClientVersion",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ConnectedToControl",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Created",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "DERPLatency{}.LatencyMs",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "DERPLatency{}.Preferred",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Distro.CodeName",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Distro.Name",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Distro.Version",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "EnabledRoutes[]",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Endpoints[]",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy, cardinality: raw magicsock endpoint IP:port candidates expose local network topology and create unbounded label values"
     },
     {
       "op": "listTailnetDevices",
       "path": "Expires",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "HardNAT",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Hostname",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "ID",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "IsEphemeral",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "IsExternal",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "KeyExpiryDisabled",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "LastSeen",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "MultipleConnections",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Name",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listTailnetDevices",
       "path": "NodeID",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "enrichment"
     },
     {
       "op": "listTailnetDevices",
       "path": "OS",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "PostureIdentity.Disabled",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "SSHEnabled",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "Tags[]",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "TailnetLockError",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "TailnetLockKey",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listTailnetDevices",
       "path": "UpdateAvailable",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
       "path": "User",
       "type": "tsapi.RichDevice",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "AllowedTags[]",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Created",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Description",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Ephemeral",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Expires",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "ID",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Invalid",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Preauthorized",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Reusable",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Revoked",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Scopes[]",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Tags[]",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Type",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetKeys",
       "path": "Updated",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listTailnetKeys",
       "path": "UserID",
       "type": "tsapi.Key",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUserInvites",
       "path": "Email",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: invitee email address is PII and is deliberately omitted in favor of bounded delivery state"
     },
     {
       "op": "listUserInvites",
       "path": "ID",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listUserInvites",
       "path": "InviteURL",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: bearer invite URL is an acceptance credential; anyone possessing it can accept the invite"
     },
     {
       "op": "listUserInvites",
       "path": "InviterID",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listUserInvites",
       "path": "LastEmailSentAt",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUserInvites",
       "path": "Role",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUserInvites",
       "path": "TailnetID",
       "type": "tsapi.UserInvite",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listUsers",
       "path": "Created",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "CurrentlyConnected",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "DeviceCount",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "DisplayName",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listUsers",
       "path": "ID",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "LastSeen",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "LoginName",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "ProfilePicURL",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listUsers",
       "path": "Role",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "Status",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listUsers",
       "path": "TailnetID",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listUsers",
       "path": "Type",
       "type": "tsclient.User",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listWebhooks",
       "path": "Created",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listWebhooks",
       "path": "CreatorLoginName",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: webhook creator login identifies a user and may be an email address"
     },
     {
       "op": "listWebhooks",
       "path": "EndpointID",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listWebhooks",
       "path": "EndpointURL",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: webhook destination URL is sensitive endpoint identity and may disclose internal routing"
     },
     {
       "op": "listWebhooks",
       "path": "LastModified",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "unhandled"
     },
     {
       "op": "listWebhooks",
       "path": "ProviderType",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "emitted"
     },
     {
       "op": "listWebhooks",
       "path": "Secret",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "excluded",
+      "note": "privacy: webhook HMAC signing credential must never enter telemetry"
     },
     {
       "op": "listWebhooks",
       "path": "Subscriptions[]",
       "type": "tsclient.Webhook",
-      "disposition": ""
+      "disposition": "emitted"
     }
   ]
 }

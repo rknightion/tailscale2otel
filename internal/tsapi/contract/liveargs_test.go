@@ -12,7 +12,7 @@ import (
 )
 
 // newFakeAPI stands up a server that routes on the request path, so the
-// path-parameter behaviour under test is actually observable (contract.Decode's
+// path-parameter behavior under test is actually observable (contract.Decode's
 // echo-everything server deliberately is not).
 func newFakeAPI(t *testing.T, routes map[string]string) (*tsapi.Client, *[]string) {
 	t.Helper()
@@ -44,7 +44,7 @@ func newFakeAPI(t *testing.T, routes map[string]string) (*tsapi.Client, *[]strin
 
 func TestResolveLiveArgs_PicksDeterministicIDsFromListCalls(t *testing.T) {
 	c, _ := newFakeAPI(t, map[string]string{
-		"/devices": `{"devices":[{"id":"zzz-9","nodeId":"n9CNTRL"},{"id":"aaa-1","nodeId":"n1CNTRL"}]}`,
+		"/devices":  `{"devices":[{"id":"zzz-9","nodeId":"n9CNTRL"},{"id":"aaa-1","nodeId":"n1CNTRL"}]}`,
 		"/services": `{"vipServices":[{"name":"svc:zebra"},{"name":"svc:alpha"}]}`,
 	})
 	args, unavailable := contract.ResolveLiveArgs(context.Background(), c)

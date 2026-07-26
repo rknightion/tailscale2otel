@@ -425,7 +425,7 @@ func (a *App) Run(ctx context.Context) error {
 	// config against each enabled collector's documented requirement, so it can
 	// only ever warn: the server stays authoritative, and a real gap still shows
 	// up at runtime as apistate.StateScopeDenied. It must never block startup —
-	// a modelling bug in our scope map would otherwise take down collection.
+	// a modeling bug in our scope map would otherwise take down collection.
 	LogScopeWarnings(a.logger, a.capabilityMatrix(a.primaryAPIState()))
 	if a.profiler != nil {
 		defer func() { _ = a.profiler.Stop() }()

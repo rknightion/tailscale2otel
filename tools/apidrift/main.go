@@ -1,13 +1,16 @@
-// Command apidrift diffs a Tailscale OpenAPI spec against a newer one, restricted
-// to the operations tailscale2otel consumes, and reports drift.
+// Command apidrift reports either response-schema drift on operations
+// tailscale2otel consumes or operation-set drift against the committed upstream
+// classification baseline.
 //
 //	apidrift -old vendored.json -new live.json [-format md|json]
+//	apidrift -operations -new live.json [-format md|json]
 //
 // Exit codes: 0 = no actionable drift (clean or info-only); 3 = Breaking/Warning
 // changes present; 2 = usage/IO error.
 //
-// The operation set is not configurable: it is always contract.ConsumedOpIDs(),
-// so the tool and the runtime can never diverge on what "consumed" means.
+// Response-schema classification always uses contract.ConsumedOpIDs(), so the
+// tool and runtime cannot diverge on what "consumed" means. Operation discovery
+// separately inventories every verb in the candidate spec.
 package main
 
 import (
@@ -25,27 +28,68 @@ func main() {
 	oldPath := flag.String("old", "", "path to baseline OpenAPI JSON")
 	newPath := flag.String("new", "", "path to candidate OpenAPI JSON")
 	format := flag.String("format", "md", "output format: md|json")
+	operations := flag.Bool("operations", false, "classify the candidate's operation set against the committed baseline")
 	flag.Parse()
 
-	if *oldPath == "" || *newPath == "" {
-		fmt.Fprintln(os.Stderr, "both -old and -new are required")
+	if *newPath == "" || (!*operations && *oldPath == "") {
+		fmt.Fprintln(os.Stderr, "-new is always required; -old is also required unless -operations is set")
 		os.Exit(2)
+	}
+
+	newSpec, err := loadSpec(*newPath)
+	if err != nil {
+		check(fmt.Errorf("loading -new: %w", err))
+	}
+
+	if *operations {
+		base, err := contract.EmbeddedOperationDispositions()
+		if err != nil {
+			check(fmt.Errorf("loading operation baseline: %w", err))
+		}
+		problems := contract.ValidateOperationDispositions(
+			base,
+			contract.OperationInventory(newSpec),
+			contract.ConsumedOpIDs(),
+		)
+		renderOperationProblems(*format, problems)
+		if len(problems) > 0 {
+			os.Exit(3)
+		}
+		return
 	}
 
 	oldSpec, err := loadSpec(*oldPath)
 	if err != nil {
 		check(fmt.Errorf("loading -old: %w", err))
 	}
-	newSpec, err := loadSpec(*newPath)
-	if err != nil {
-		check(fmt.Errorf("loading -new: %w", err))
-	}
-
 	changes := oas.Classify(oldSpec, newSpec, contract.ConsumedOpIDs())
 	render(*format, changes)
 
 	if oas.HasActionable(changes) {
 		os.Exit(3)
+	}
+}
+
+// renderOperationProblems prints operation-set drift separately from response
+// schema drift so scheduled CI can maintain a distinct deduplicated issue.
+func renderOperationProblems(format string, problems []string) {
+	if len(problems) == 0 {
+		fmt.Println("No drift detected in the upstream operation set.")
+		return
+	}
+	if format == "json" {
+		out, err := json.MarshalIndent(problems, "", "  ")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "apidrift: marshal operation problems:", err)
+			os.Exit(2)
+		}
+		fmt.Println(string(out))
+		return
+	}
+	fmt.Println("## Upstream operation-set drift")
+	fmt.Println()
+	for _, problem := range problems {
+		fmt.Printf("- %s\n", problem)
 	}
 }
 

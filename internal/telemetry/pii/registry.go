@@ -173,9 +173,11 @@ var nonIdentifier = map[string]bool{
 	"tailscale.peer_relay.transport_out": true,
 	"tailscale.peer_relay.state":         true,
 
-	// Invite delivery state (#412/#413): emailed | manual_link | unknown. The
-	// invite's email address and its bearer inviteUrl remain excluded entirely —
-	// this key carries only HOW the invite was delivered, never to whom.
+	// Invite delivery state (#412/#413): emailed | manual_link | unknown. User
+	// invite emails and bearer inviteUrl values remain excluded entirely. Device
+	// invite email can appear on its separately PII-gated log, while its bearer
+	// inviteUrl is never decoded. These keys carry only HOW an invite was
+	// delivered, never to whom.
 	"tailscale.user_invite.delivery":   true,
 	"tailscale.device_invite.delivery": true,
 

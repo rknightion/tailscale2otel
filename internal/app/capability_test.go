@@ -28,7 +28,7 @@ func rowFor(t *testing.T, rows []statusdata.CapabilityRow, collector, subrequest
 
 // TestCapabilityScopesCoverEveryProviderFeature pins the join key between the
 // scope map and the provider capability set: every gateable feature name must be
-// modelled, or a newly added collector would silently preflight as "unknown"
+// modeled, or a newly added collector would silently preflight as "unknown"
 // forever.
 func TestCapabilityScopesCoverEveryProviderFeature(t *testing.T) {
 	for _, f := range provider.AllFeatures {
@@ -84,12 +84,12 @@ func TestScopePreflight(t *testing.T) {
 			scopes: []string{"all"},
 			known:  true,
 			want: map[string]string{
-				"devices":                 statusdata.ScopeSatisfied,
-				"devices/device_invites":  statusdata.ScopeSatisfied,
-				"flowlogs":                statusdata.ScopeSatisfied,
-				"acl":                     statusdata.ScopeSatisfied,
-				"nodemetrics":             statusdata.ScopeNotApplicable,
-				"services":                statusdata.ScopeUnknown,
+				"devices":                statusdata.ScopeSatisfied,
+				"devices/device_invites": statusdata.ScopeSatisfied,
+				"flowlogs":               statusdata.ScopeSatisfied,
+				"acl":                    statusdata.ScopeSatisfied,
+				"nodemetrics":            statusdata.ScopeNotApplicable,
+				"services":               statusdata.ScopeUnknown,
 			},
 		},
 		{
@@ -164,7 +164,7 @@ func TestScopePreflight(t *testing.T) {
 
 // TestScopeWarningsOnlyForActionableGaps: a warning is produced only for a row
 // that is actually RUNNING with an insufficient scope. Rows that are disabled,
-// unsupported, unmodelled, or scope-irrelevant must stay silent, or every
+// unsupported, unmodeled, or scope-irrelevant must stay silent, or every
 // deployment would warn about collectors it deliberately turned off.
 func TestScopeWarningsOnlyForActionableGaps(t *testing.T) {
 	rows := BuildCapabilityMatrix(CapabilityInputs{
@@ -175,7 +175,7 @@ func TestScopeWarningsOnlyForActionableGaps(t *testing.T) {
 			{Collector: "acl", Capability: "acl", ConfigEnabled: false, ProviderSupported: true},
 			// Provider does not support it -> silent.
 			{Collector: "dns", Capability: "dns", ConfigEnabled: true, ProviderSupported: false},
-			// Unmodelled scope -> silent.
+			// Unmodeled scope -> silent.
 			{Collector: "services", Capability: "services", ConfigEnabled: true, ProviderSupported: true, Registered: true},
 			// No Tailscale scope needed -> silent.
 			{Collector: "nodemetrics", Capability: "nodemetrics", ConfigEnabled: true, ProviderSupported: true, Registered: true},
@@ -353,7 +353,7 @@ func TestEmitCapabilityStatusZeroSeeds(t *testing.T) {
 	}
 }
 
-// TestEmitScopePreflight: one bounded 1/0 datapoint per modelled capability, and
+// TestEmitScopePreflight: one bounded 1/0 datapoint per modeled capability, and
 // nothing at all for capabilities whose scope is unknown or not applicable — a
 // 0 there would read as a real permission gap.
 func TestEmitScopePreflight(t *testing.T) {

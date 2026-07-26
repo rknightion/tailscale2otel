@@ -526,8 +526,8 @@ func TestAvailability403IsDisabledNot401(t *testing.T) {
 			if tc.wantErr != (err != nil) {
 				t.Fatalf("CollectWindow() err = %v, wantErr = %v", err, tc.wantErr)
 			}
-			if tc.wantAdvance != (hwm == to) {
-				t.Fatalf("high-water mark = %v (advance=%v), want advance=%v", hwm, hwm == to, tc.wantAdvance)
+			if tc.wantAdvance != hwm.Equal(to) {
+				t.Fatalf("high-water mark = %v (advance=%v), want advance=%v", hwm, hwm.Equal(to), tc.wantAdvance)
 			}
 
 			states := availabilityStates(t, rec)

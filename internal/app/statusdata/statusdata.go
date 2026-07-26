@@ -441,7 +441,7 @@ type LogRow struct {
 const (
 	// ScopeSatisfied means the configured scopes cover the requirement.
 	ScopeSatisfied = "satisfied"
-	// ScopeInsufficient means they demonstrably do not. Advisory: a modelling
+	// ScopeInsufficient means they demonstrably do not. Advisory: a modeling
 	// error here must never stop collection, only warn.
 	ScopeInsufficient = "insufficient"
 	// ScopeUnknown means the answer is not knowable: either the credential is not
@@ -484,7 +484,7 @@ type CapabilityRow struct {
 	// rows, so a subrequest row carries its own capability key.
 	Capability string `json:"capability"`
 	// RequiredScopes are the OAuth scopes upstream documents for this capability.
-	// Empty when none are needed or none are modelled — see ScopeStatus.
+	// Empty when none are needed or none are modeled — see ScopeStatus.
 	RequiredScopes []string `json:"required_scopes,omitempty"`
 	// MissingScopes lists the required scopes the configured set does not cover.
 	// Populated only when ScopeStatus is ScopeInsufficient.
