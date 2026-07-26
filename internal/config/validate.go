@@ -876,6 +876,12 @@ func (c *Config) Validate() error {
 		// (b) The object-store path needs a bucket to read, and pointing at one
 		// that does not exist would look like a tailnet with no traffic.
 		if objectStoreSource(col.source) {
+			if len(c.Tailnets) > 1 {
+				return fmt.Errorf("collectors.%s.source=objectstore is unsafe in multi-tailnet mode: "+
+					"the current destination is global, so every runtime would read the same objects "+
+					"and attribute a copy to its own tailnet; use one tailnet until #284 adds explicit "+
+					"per-tailnet object-store destinations", col.name)
+			}
 			os := c.Collectors.Flowlogs.ObjectStore
 			switch {
 			case os.Bucket == "":

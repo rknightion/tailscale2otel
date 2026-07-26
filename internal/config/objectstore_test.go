@@ -29,6 +29,30 @@ func TestValidate_ObjectStoreSourceIsAccepted(t *testing.T) {
 	}
 }
 
+// The object-store destination is process-global today. Starting two runtimes
+// against it would read every object twice and attribute one copy to each
+// tailnet, so validation must hold the safety boundary until #284 supplies
+// explicit per-tailnet destinations.
+func TestValidate_ObjectStoreRejectsMultiTailnetAttribution(t *testing.T) {
+	c := objectStoreConfig(func(c *Config) {
+		c.Tailscale.Tailnet = ""
+		c.Tailnets = []TailnetConfig{
+			{Name: "alpha.example.com", Auth: TailscaleAuth{Method: "apikey", APIKey: "alpha-key"}},
+			{Name: "beta.example.com", Auth: TailscaleAuth{Method: "apikey", APIKey: "beta-key"}},
+		}
+	})
+
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate accepted one global object-store destination for two tailnets")
+	}
+	for _, want := range []string{"objectstore", "multi-tailnet", "#284"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to explain the %q safety boundary", err, want)
+		}
+	}
+}
+
 // Each of the three required fields fails a request in a different, confusing
 // way if left empty, so each is rejected by name at startup instead.
 func TestValidate_ObjectStoreRequiresItsTarget(t *testing.T) {
