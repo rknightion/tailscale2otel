@@ -209,16 +209,11 @@ func (c *Collector) dedupe(resp flowlog.NetworkResponse) flowlog.NetworkResponse
 	out := flowlog.NetworkResponse{Logs: make([]flowlog.FlowLog, 0, len(resp.Logs))}
 	for i := range resp.Logs {
 		fl := resp.Logs[i]
-		filtered := flowlog.FlowLog{
-			Logged:          fl.Logged,
-			NodeID:          fl.NodeID,
-			Start:           fl.Start,
-			End:             fl.End,
-			VirtualTraffic:  c.keepNew(fl, fl.VirtualTraffic),
-			SubnetTraffic:   c.keepNew(fl, fl.SubnetTraffic),
-			ExitTraffic:     c.keepNew(fl, fl.ExitTraffic),
-			PhysicalTraffic: c.keepNew(fl, fl.PhysicalTraffic),
-		}
+		filtered := fl
+		filtered.VirtualTraffic = c.keepNew(fl, fl.VirtualTraffic)
+		filtered.SubnetTraffic = c.keepNew(fl, fl.SubnetTraffic)
+		filtered.ExitTraffic = c.keepNew(fl, fl.ExitTraffic)
+		filtered.PhysicalTraffic = c.keepNew(fl, fl.PhysicalTraffic)
 		if len(filtered.VirtualTraffic)+len(filtered.SubnetTraffic)+
 			len(filtered.ExitTraffic)+len(filtered.PhysicalTraffic) == 0 {
 			continue

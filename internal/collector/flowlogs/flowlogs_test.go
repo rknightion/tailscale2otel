@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
@@ -26,17 +28,29 @@ var (
 // fakeAPI is a canned NetworkFlowLogs source recording the window it was asked
 // for, so tests can assert delegation and error propagation.
 type fakeAPI struct {
-	resp  flowlog.NetworkResponse
-	err   error
-	calls int
-	start time.Time
-	end   time.Time
+	resp      flowlog.NetworkResponse
+	responses []flowlog.NetworkResponse
+	err       error
+	calls     int
+	start     time.Time
+	end       time.Time
 }
 
 func (f *fakeAPI) NetworkFlowLogs(_ context.Context, start, end time.Time) (flowlog.NetworkResponse, error) {
 	f.calls++
 	f.start, f.end = start, end
+	if f.calls <= len(f.responses) {
+		return f.responses[f.calls-1], f.err
+	}
 	return f.resp, f.err
+}
+
+type captureStore struct {
+	observations []flowstore.Observation
+}
+
+func (s *captureStore) Record(o flowstore.Observation) {
+	s.observations = append(s.observations, o)
 }
 
 // newProcessor builds a real flowlog.Processor over an empty cache with node
@@ -193,6 +207,85 @@ func TestCollectWindow_BoundaryDedup(t *testing.T) {
 	// Both fetches still happen; only emission is suppressed.
 	if a.calls != 2 {
 		t.Fatalf("NetworkFlowLogs calls = %d, want 2", a.calls)
+	}
+}
+
+func TestCollectWindow_BoundaryDedupPreservesEmbeddedIdentity(t *testing.T) {
+	first := oneTCPResponse()
+	firstLog := &first.Logs[0]
+	firstLog.SrcNode = &flowlog.NodeRef{
+		NodeID:    "n-laptop",
+		Name:      "laptop.example.ts.net",
+		Addresses: []string{"100.64.0.1"},
+		Tags:      []string{"tag:workstations"},
+	}
+	firstLog.DstNodes = []flowlog.NodeRef{{
+		NodeID:    "n-server",
+		Name:      "server.example.ts.net",
+		Addresses: []string{"100.64.0.2"},
+		User:      "operator@example.com",
+		OS:        "linux",
+	}}
+
+	second := first
+	second.Logs = append([]flowlog.FlowLog(nil), first.Logs...)
+	second.Logs[0].VirtualTraffic = append(
+		append([]flowlog.ConnectionCounts(nil), firstLog.VirtualTraffic...),
+		flowlog.ConnectionCounts{
+			Proto:   6,
+			Src:     "100.64.0.1:23456",
+			Dst:     "100.64.0.2:443",
+			TxPkts:  5,
+			TxBytes: 500,
+			RxPkts:  4,
+			RxBytes: 400,
+		},
+	)
+
+	store := &captureStore{}
+	proc := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{
+		NodeDims: true,
+		Store:    store,
+	})
+	c := New(&fakeAPI{responses: []flowlog.NetworkResponse{first, second}}, proc, 0, 0, nil, nil)
+	rec := telemetrytest.New()
+
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	if _, err := c.CollectWindow(context.Background(), from, from.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() first window: %v", err)
+	}
+	if _, err := c.CollectWindow(context.Background(), from.Add(time.Minute), from.Add(2*time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() second window: %v", err)
+	}
+
+	logs := rec.LogRecords()
+	if len(logs) != 2 {
+		t.Fatalf("log records = %d, want 2 (boundary duplicate suppressed and new connection emitted)", len(logs))
+	}
+	if got := logs[1].Attrs[semconv.AttrSrcTags]; got != "tag:workstations" {
+		t.Errorf("new connection %s = %q, want tag:workstations", semconv.AttrSrcTags, got)
+	}
+	if got := logs[1].Attrs[semconv.AttrDstUser]; got != "operator@example.com" {
+		t.Errorf("new connection %s = %q, want operator@example.com", semconv.AttrDstUser, got)
+	}
+
+	directStore := &captureStore{}
+	direct := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{
+		NodeDims: true,
+		Store:    directStore,
+	})
+	directFlow := second.Logs[0]
+	directFlow.VirtualTraffic = directFlow.VirtualTraffic[1:]
+	direct.Process(directFlow, telemetrytest.New().Emitter())
+
+	if len(store.observations) != 2 {
+		t.Fatalf("store observations = %d, want 2", len(store.observations))
+	}
+	if len(directStore.observations) != 1 {
+		t.Fatalf("direct store observations = %d, want 1", len(directStore.observations))
+	}
+	if got, want := store.observations[1], directStore.observations[0]; !reflect.DeepEqual(got, want) {
+		t.Errorf("deduped store observation differs from direct processing:\n got: %+v\nwant: %+v", got, want)
 	}
 }
 
