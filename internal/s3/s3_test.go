@@ -73,10 +73,11 @@ const listOnePage = `<?xml version="1.0" encoding="UTF-8"?>
 
 func TestList_DecodesObjects(t *testing.T) {
 	srv, got := serve(t, listOnePage, http.StatusOK)
-	objs, err := newClient(t, srv.URL, true).List(context.Background(), "flow/2026/07/24/", "", 0)
+	result, err := newClient(t, srv.URL, true).List(context.Background(), "flow/2026/07/24/", "", 0)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
+	objs := result.Objects
 	if len(objs) != 2 {
 		t.Fatalf("objects = %+v, want 2", objs)
 	}
@@ -148,10 +149,11 @@ func TestList_FollowsPagination(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	objs, err := newClient(t, srv.URL, true).List(context.Background(), "", "", 0)
+	result, err := newClient(t, srv.URL, true).List(context.Background(), "", "", 0)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
+	objs := result.Objects
 	if len(objs) != 2 || objs[0].Key != "a" || objs[1].Key != "b" {
 		t.Errorf("objects = %+v, want both pages in order", objs)
 	}
@@ -172,12 +174,29 @@ func TestList_HonoursTheLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	objs, err := newClient(t, srv.URL, true).List(context.Background(), "", "", 2)
+	got, err := newClient(t, srv.URL, true).List(context.Background(), "", "", 2)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(objs) != 2 {
-		t.Errorf("objects = %d, want the limit of 2", len(objs))
+	if len(got.Objects) != 2 || !got.Truncated {
+		t.Errorf("List = %+v, want two objects and Truncated=true", got)
+	}
+}
+
+func TestList_ExactFinalPageIsNotTruncated(t *testing.T) {
+	srv, _ := serve(t, listOnePage, http.StatusOK)
+
+	got, err := newClient(t, srv.URL, true).List(
+		context.Background(),
+		"flow/2026/07/24/",
+		"",
+		2,
+	)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got.Objects) != 2 || got.Truncated {
+		t.Errorf("List = %+v, want two objects and Truncated=false", got)
 	}
 }
 

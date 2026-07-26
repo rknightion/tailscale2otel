@@ -48,11 +48,19 @@ func record(nodeID string, at time.Time) string {
 
 // fakeStore serves a fixed set of objects, recording what was fetched.
 type fakeStore struct {
-	objects map[string][]byte // key -> body as stored (already compressed)
-	sizes   map[string]int64
-	fetched []string
-	listErr error
-	getErr  map[string]error
+	objects   map[string][]byte // key -> body as stored (already compressed)
+	sizes     map[string]int64
+	fetched   []string
+	getCalls  []string
+	listCalls []listCall
+	listErr   error
+	getErr    map[string]error
+}
+
+type listCall struct {
+	Prefix     string
+	StartAfter string
+	Limit      int
 }
 
 func newFakeStore() *fakeStore {
@@ -64,13 +72,14 @@ func (f *fakeStore) put(key string, body []byte) {
 	f.sizes[key] = int64(len(body))
 }
 
-func (f *fakeStore) List(_ context.Context, prefix, _ string, limit int) ([]s3.Object, error) {
+func (f *fakeStore) List(_ context.Context, prefix, startAfter string, limit int) (s3.ListResult, error) {
 	if f.listErr != nil {
-		return nil, f.listErr
+		return s3.ListResult{}, f.listErr
 	}
+	f.listCalls = append(f.listCalls, listCall{Prefix: prefix, StartAfter: startAfter, Limit: limit})
 	var out []s3.Object
 	for k := range f.objects {
-		if strings.HasPrefix(k, prefix) {
+		if strings.HasPrefix(k, prefix) && k > startAfter {
 			out = append(out, s3.Object{Key: k, Size: f.sizes[k]})
 		}
 	}
@@ -83,13 +92,15 @@ func (f *fakeStore) List(_ context.Context, prefix, _ string, limit int) ([]s3.O
 			}
 		}
 	}
-	if limit > 0 && len(out) > limit {
+	truncated := limit > 0 && len(out) > limit
+	if truncated {
 		out = out[:limit]
 	}
-	return out, nil
+	return s3.ListResult{Objects: out, Truncated: truncated}, nil
 }
 
 func (f *fakeStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	f.getCalls = append(f.getCalls, key)
 	if err, ok := f.getErr[key]; ok {
 		return nil, err
 	}
@@ -104,6 +115,10 @@ func (f *fakeStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
 // keyAt builds an export key for a given instant.
 func keyAt(at time.Time, ext string) string {
 	return "flow/" + at.UTC().Format("2006/01/02") + "/" + at.UTC().Format("2006-01-02-15-04-05") + ext
+}
+
+func officialKeyAt(at time.Time, ext string) string {
+	return "flow/" + at.UTC().Format("2006/01/02/15:04:05") + ext
 }
 
 func zstdBytes(t *testing.T, s string) []byte {
@@ -484,6 +499,83 @@ func TestCollect_BudgetDefersRatherThanDropping(t *testing.T) {
 	}
 }
 
+func TestCollect_DrainsBusyPrefixAcrossCyclesAndRestart(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) { o.MaxObjects = 2 })
+	for i := 10; i >= 1; i-- {
+		at := now.Add(-time.Duration(i) * time.Minute)
+		h.store.put(officialKeyAt(at, ".json"), []byte(record("n", at)+"\n"))
+	}
+
+	for cycle := range 5 {
+		h.collect(t)
+		if cycle == 0 {
+			if got := lastGauge(h.rec, "tailscale2otel.objectstore.scan.truncated"); got != 1 {
+				t.Fatalf("scan truncated after first cycle = %v, want 1", got)
+			}
+		}
+		if cycle == 1 {
+			h.col = objectstore.New(
+				h.store,
+				flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}),
+				h.cp,
+				objectstore.Options{
+					Prefix:     "flow",
+					MaxObjects: 2,
+					Now:        func() time.Time { return now },
+					Logger:     discardLogger(),
+				},
+			)
+		}
+	}
+
+	if got := h.flowRecords(); got != 10 {
+		t.Fatalf("flow records = %d, want all 10", got)
+	}
+	var resumed bool
+	for _, call := range h.store.listCalls {
+		if call.StartAfter != "" {
+			resumed = true
+			break
+		}
+	}
+	if !resumed {
+		t.Fatal("no list call resumed from a durable start-after position")
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.scan.truncated"); got != 0 {
+		t.Fatalf("scan truncated after drain = %v, want 0", got)
+	}
+}
+
+func TestCollect_LateKeyBeforeScanPositionIsFoundAfterWrap(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) { o.MaxObjects = 2 })
+	for i := 10; i >= 1; i-- {
+		at := now.Add(-time.Duration(i) * time.Minute)
+		h.store.put(officialKeyAt(at, ".json"), []byte(record("n", at)+"\n"))
+	}
+
+	h.collect(t)
+	lateAt := now.Add(-10*time.Minute - 30*time.Second)
+	lateKey := officialKeyAt(lateAt, ".json")
+	h.store.put(lateKey, []byte(record("late", lateAt)+"\n"))
+
+	for range 5 {
+		h.collect(t)
+	}
+
+	if got := h.flowRecords(); got != 11 {
+		t.Fatalf("flow records = %d, want the ten original objects plus the late key", got)
+	}
+	var fetched int
+	for _, key := range h.store.fetched {
+		if key == lateKey {
+			fetched++
+		}
+	}
+	if fetched != 1 {
+		t.Fatalf("late key fetches = %d, want exactly one after the scan wrapped", fetched)
+	}
+}
+
 // The oldest objects go first, so the cursor only ever advances over ground
 // actually covered. Ingesting newest-first would strand everything behind it.
 func TestCollect_IngestsOldestFirst(t *testing.T) {
@@ -519,6 +611,36 @@ func TestCollect_OneBadObjectDoesNotStopTheRest(t *testing.T) {
 	}
 	if skippedByReason(h.rec)["read_error"] != 1 {
 		t.Errorf("skipped = %v, want the failure counted", skippedByReason(h.rec))
+	}
+}
+
+func TestCollect_FailureAtPrefixStartKeepsScanGroundActive(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.InitialLookback = 3 * time.Hour
+		o.Lookback = 5 * time.Minute
+	})
+	badAt := now.Add(-2 * time.Hour)
+	goodAt := now.Add(-10 * time.Minute)
+	badKey := officialKeyAt(badAt, ".json")
+	h.store.put(badKey, []byte(record("bad", badAt)+"\n"))
+	h.store.getErr[badKey] = errors.New("temporary read failure")
+	h.store.put(officialKeyAt(goodAt, ".json"), []byte(record("good", goodAt)+"\n"))
+
+	h.collect(t)
+	delete(h.store.getErr, badKey)
+	h.collect(t)
+
+	if got := h.flowRecords(); got != 2 {
+		t.Fatalf("flow records = %d, want the later success and recovered failed object", got)
+	}
+	var attempts int
+	for _, key := range h.store.getCalls {
+		if key == badKey {
+			attempts++
+		}
+	}
+	if attempts != 2 {
+		t.Fatalf("failed-object attempts = %d, want an immediate retry from active scan ground", attempts)
 	}
 }
 

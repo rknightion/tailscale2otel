@@ -14,6 +14,7 @@ const (
 	metricBytes          = "tailscale2otel.objectstore.bytes"
 	metricSkipped        = "tailscale2otel.objectstore.skipped"
 	metricBacklogObjects = "tailscale2otel.objectstore.backlog"
+	metricScanTruncated  = "tailscale2otel.objectstore.scan.truncated"
 )
 
 // attrReason labels why an object or line was not ingested. It is the same
@@ -67,12 +68,19 @@ var (
 		Name:        metricBacklogObjects,
 		Instrument:  metricdoc.Gauge,
 		Unit:        semconv.UnitDimensionless,
-		Description: "Objects listed but not yet ingested at the end of the last cycle. Zero means ingestion is caught up with the bucket.",
+		Description: "Objects listed but not yet ingested at the end of the last cycle. This is a lower bound when tailscale2otel.objectstore.scan.truncated is 1; zero means the examined listing ground is caught up, not necessarily the whole bucket.",
+		Group:       "Object-store ingestion",
+	}
+	docScanTruncated = metricdoc.Metric{
+		Name:        metricScanTruncated,
+		Instrument:  metricdoc.Gauge,
+		Unit:        semconv.UnitDimensionless,
+		Description: "Whether unexamined object-listing ground remains after the last cycle. One means an S3 page was truncated or a listed object was not yet durably handled; zero together with a zero backlog means the current listing window is caught up.",
 		Group:       "Object-store ingestion",
 	}
 )
 
 // Catalog returns this collector's metric descriptors.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docObjects, docRecords, docBytes, docSkipped, docBacklog}
+	return []metricdoc.Metric{docObjects, docRecords, docBytes, docSkipped, docBacklog, docScanTruncated}
 }

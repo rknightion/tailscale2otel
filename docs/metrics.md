@@ -534,10 +534,11 @@ the end of the last cycle. A sustained non-zero value means the bucket is being 
 <!-- BEGIN GENERATED: metrics groups="Object-store ingestion" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
 |---|---|---|---|---|---|
-| `tailscale2otel.objectstore.backlog` | `1` | gauge | `tailscale2otel_objectstore_backlog_ratio` | — | Objects listed but not yet ingested at the end of the last cycle. Zero means ingestion is caught up with the bucket. |
+| `tailscale2otel.objectstore.backlog` | `1` | gauge | `tailscale2otel_objectstore_backlog_ratio` | — | Objects listed but not yet ingested at the end of the last cycle. This is a lower bound when tailscale2otel.objectstore.scan.truncated is 1; zero means the examined listing ground is caught up, not necessarily the whole bucket. |
 | `tailscale2otel.objectstore.bytes` | `By` | counter | `tailscale2otel_objectstore_bytes_bytes_total` | — | Compressed bytes fetched from the flow-log export bucket, as reported by the object listing. |
 | `tailscale2otel.objectstore.objects` | `1` | counter | `tailscale2otel_objectstore_objects_total` | — | Objects successfully ingested from the flow-log export bucket. |
 | `tailscale2otel.objectstore.records` | `1` | counter | `tailscale2otel_objectstore_records_total` | — | Flow-log records decoded from ingested objects. Compare against the flow metrics to see what de-duplication removed. |
+| `tailscale2otel.objectstore.scan.truncated` | `1` | gauge | `tailscale2otel_objectstore_scan_truncated_ratio` | — | Whether unexamined object-listing ground remains after the last cycle. One means an S3 page was truncated or a listed object was not yet durably handled; zero together with a zero backlog means the current listing window is caught up. |
 | `tailscale2otel.objectstore.skipped` | `1` | counter | `tailscale2otel_objectstore_skipped_total` | `reason` | Objects or lines not ingested, by reason. A sustained non-zero `per_cycle_budget` means the per-cycle object cap is holding ingestion behind the bucket. `semantic_invalid` marks quarantined flow records; inspect tailscale.network.data_quality for the bounded reason. A non-zero `future_timestamp` means objects are named beyond the 5-minute clock-skew allowance and were skipped so they could not push the ingestion cursor past the wall clock; check the exporter's clock. |
 <!-- END GENERATED -->
 

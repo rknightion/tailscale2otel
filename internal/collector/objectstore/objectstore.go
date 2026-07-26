@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -89,7 +90,7 @@ const (
 // objectAPI is the subset of the object store this collector needs. Narrow by
 // design so tests can fake it without an S3 server. *s3.Client satisfies it.
 type objectAPI interface {
-	List(ctx context.Context, prefix, startAfter string, limit int) ([]s3.Object, error)
+	List(ctx context.Context, prefix, startAfter string, limit int) (s3.ListResult, error)
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
@@ -176,10 +177,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// timestamp is still found. The seen set is what makes this free.
 	from := cursor.Add(-c.opts.Lookback)
 
-	seen := c.seenKeys()
-	candidates, listed, err := c.enumerate(ctx, from, now, seen, e)
+	state, err := loadScanState(c.cp, c.opts.Prefix)
 	if err != nil {
 		return err
+	}
+	seen := c.seenKeys()
+	listing, err := c.enumerate(ctx, from, now, seen, state.Positions, e)
+	if err != nil {
+		return err
+	}
+	candidates := listing.candidates
+	batch := newCheckpointBatch()
+	for _, key := range state.StaleKeys {
+		batch.delete(key)
 	}
 
 	// Oldest first, so the cursor only ever advances over ground covered.
@@ -189,6 +199,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		records  int
 		fetched  int64
 		budgeted = candidates
+		durable  = map[string]bool{}
 	)
 	if len(budgeted) > c.opts.MaxObjects {
 		budgeted = budgeted[:c.opts.MaxObjects]
@@ -203,23 +214,21 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				telemetry.Attrs{attrReason: reasonReadError})
 			continue
 		}
+		durable[cand.obj.Key] = true
 		objects++
 		records += n
 		fetched += cand.obj.Size
 		if cand.at.After(newest) {
 			newest = cand.at
 		}
-		if err := c.cp.Set(seenPrefix+cand.obj.Key, cand.at); err != nil {
-			c.logger.Warn("objectstore: could not record an ingested object; it may be re-read after a restart",
-				"key", cand.obj.Key, "error", err)
-		}
+		batch.updates[seenPrefix+cand.obj.Key] = cand.at
 	}
 
 	if skipped := len(candidates) - len(budgeted); skipped > 0 {
 		// Never a silent truncation: an operator whose bucket is outrunning the
 		// per-cycle cap needs to know before the backlog becomes days.
 		c.logger.Warn("objectstore: per-cycle object budget reached; the remainder will be picked up next cycle",
-			"ingested", len(budgeted), "deferred", skipped, "budget", c.opts.MaxObjects)
+			"attempted", len(budgeted), "deferred", skipped, "budget", c.opts.MaxObjects)
 		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(skipped),
 			telemetry.Attrs{attrReason: reasonBudget})
 	}
@@ -228,18 +237,42 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Counter(docRecords.Name, docRecords.Unit, docRecords.Description, float64(records), telemetry.Attrs{})
 	e.Counter(docBytes.Name, docBytes.Unit, docBytes.Description, float64(fetched), telemetry.Attrs{})
 	e.Gauge(docBacklog.Name, docBacklog.Unit, docBacklog.Description,
-		float64(len(candidates)-len(budgeted)), telemetry.Attrs{})
+		float64(len(candidates)-objects), telemetry.Attrs{})
 	if c.opts.OnIngest != nil && records > 0 {
 		c.opts.OnIngest("objectstore", "flow", records, int(fetched))
 	}
 
 	if newest.After(cursor) {
-		if err := c.cp.Set(cursorKey, newest); err != nil {
-			return fmt.Errorf("objectstore: persist cursor: %w", err)
+		batch.updates[cursorKey] = newest
+	}
+	c.stagePruneSeen(batch, newest)
+
+	scanTruncated := false
+	for _, progress := range listing.prefixes {
+		lastSafe := progress.startAfter
+		allSafe := true
+		for _, object := range progress.objects {
+			if !object.safe && !durable[object.key] {
+				allSafe = false
+				break
+			}
+			lastSafe = object.key
+		}
+		if allSafe && !progress.truncated {
+			batch.clearScanPosition(c.cp, progress.prefix)
+			continue
+		}
+		scanTruncated = true
+		if lastSafe != progress.startAfter || !progress.active {
+			batch.setScanPosition(c.cp, progress.prefix, lastSafe, now)
 		}
 	}
-	c.pruneSeen(newest)
-	_ = listed
+	e.Gauge(docScanTruncated.Name, docScanTruncated.Unit, docScanTruncated.Description,
+		boolFloat(scanTruncated), telemetry.Attrs{})
+
+	if err := batch.apply(c.cp); err != nil {
+		return fmt.Errorf("objectstore: persist collection state: %w", err)
+	}
 	return nil
 }
 
@@ -250,39 +283,80 @@ type candidate struct {
 	comp compression
 }
 
+type listedObject struct {
+	key  string
+	safe bool
+}
+
+type prefixProgress struct {
+	prefix     string
+	startAfter string
+	active     bool
+	objects    []listedObject
+	truncated  bool
+}
+
+type enumeration struct {
+	candidates []candidate
+	prefixes   []prefixProgress
+}
+
 // enumerate lists the day partitions spanning [from, now] and returns the
 // objects worth fetching, oldest first.
-func (c *Collector) enumerate(ctx context.Context, from, now time.Time, seen map[string]struct{}, e telemetry.Emitter) (out []candidate, listed int, err error) {
+func (c *Collector) enumerate(
+	ctx context.Context,
+	from, now time.Time,
+	seen map[string]struct{},
+	positions map[string]string,
+	e telemetry.Emitter,
+) (enumeration, error) {
+	prefixes, err := listingPrefixes(positions, dayPrefixes(c.opts.Prefix, from, now, maxDayPrefixes))
+	if err != nil {
+		return enumeration{}, err
+	}
+	var result enumeration
 	var unparsed, already, stale, future int
-	for _, prefix := range dayPrefixes(c.opts.Prefix, from, now, maxDayPrefixes) {
+	for _, prefix := range prefixes {
 		// Listing is bounded per cycle even before the ingest budget: a day's
 		// partition on a large tailnet is hundreds of objects, and there is no
 		// value in walking further than one cycle could ever consume.
-		objs, err := c.api.List(ctx, prefix, "", c.opts.MaxObjects*4)
+		startAfter := positions[prefix]
+		page, err := c.api.List(ctx, prefix, startAfter, c.opts.MaxObjects*4)
 		if err != nil {
-			return nil, 0, fmt.Errorf("objectstore: list %s: %w", prefix, err)
+			return enumeration{}, fmt.Errorf("objectstore: list %s: %w", prefix, err)
 		}
-		listed += len(objs)
-		for _, o := range objs {
+		progress := prefixProgress{
+			prefix:     prefix,
+			startAfter: startAfter,
+			active:     hasPosition(positions, prefix),
+			truncated:  page.Truncated,
+		}
+		for _, o := range page.Objects {
 			at, comp, ok := parseKey(o.Key)
+			item := listedObject{key: o.Key}
 			switch {
 			case !ok:
 				unparsed++
+				item.safe = true
 			case isFutureKey(at, now):
 				// Checked before every other filter so a future timestamp can
 				// never become a candidate: a candidate is what advances the
 				// cursor, and the cursor is the next cycle's lower bound.
 				future++
-			case at.Before(from):
+			case at.Before(from) && !progress.active:
 				stale++
+				item.safe = true
 			default:
 				if _, dup := seen[o.Key]; dup {
 					already++
-					continue
+					item.safe = true
+					break
 				}
-				out = append(out, candidate{obj: o, at: at, comp: comp})
+				result.candidates = append(result.candidates, candidate{obj: o, at: at, comp: comp})
 			}
+			progress.objects = append(progress.objects, item)
 		}
+		result.prefixes = append(result.prefixes, progress)
 	}
 	if future > 0 {
 		// Bounded and name-free: the count is the signal, and an object key is
@@ -300,8 +374,8 @@ func (c *Collector) enumerate(ctx context.Context, from, now time.Time, seen map
 	// Chronological order across day prefixes. Within one prefix the listing is
 	// already ordered, but a stable sort over all of them is what makes the
 	// cursor safe to advance to the newest ingested object.
-	sortCandidates(out)
-	return out, listed, nil
+	sortCandidates(result.candidates)
+	return result, nil
 }
 
 // ingest fetches, decompresses and decodes one object, feeding every record to
@@ -406,7 +480,7 @@ func (c *Collector) seenKeys() map[string]struct{} {
 
 // pruneSeen drops entries older than the overlap window. Anything that old can
 // no longer be re-listed, so remembering it costs storage and buys nothing.
-func (c *Collector) pruneSeen(cursor time.Time) {
+func (c *Collector) stagePruneSeen(batch *checkpointBatch, cursor time.Time) {
 	cutoff := cursor.Add(-2 * c.opts.Lookback)
 	var kept []seenEntry
 	for _, k := range c.cp.Keys() {
@@ -415,10 +489,26 @@ func (c *Collector) pruneSeen(cursor time.Time) {
 		}
 		at, _ := c.cp.Get(k)
 		if at.Before(cutoff) {
-			_ = c.cp.Delete(k)
+			batch.delete(k)
 			continue
 		}
 		kept = append(kept, seenEntry{key: k, at: at})
+	}
+	for k, at := range batch.updates {
+		if !strings.HasPrefix(k, seenPrefix) {
+			continue
+		}
+		found := false
+		for i := range kept {
+			if kept[i].key == k {
+				kept[i].at = at
+				found = true
+				break
+			}
+		}
+		if !found {
+			kept = append(kept, seenEntry{key: k, at: at})
+		}
 	}
 	// A hard cap underneath the time-based pruning, so a bucket writing objects
 	// faster than the window assumes cannot grow the checkpoint file without
@@ -426,9 +516,45 @@ func (c *Collector) pruneSeen(cursor time.Time) {
 	if len(kept) > maxSeenKeys {
 		sortEntriesByTime(kept)
 		for _, ent := range kept[:len(kept)-maxSeenKeys] {
-			_ = c.cp.Delete(ent.key)
+			batch.delete(ent.key)
 		}
 	}
+}
+
+func listingPrefixes(positions map[string]string, current []string) ([]string, error) {
+	if len(positions) > maxDayPrefixes {
+		return nil, fmt.Errorf("objectstore: %d active scan prefixes exceed limit %d", len(positions), maxDayPrefixes)
+	}
+	seen := make(map[string]struct{}, maxDayPrefixes)
+	out := make([]string, 0, maxDayPrefixes)
+	for prefix := range positions {
+		out = append(out, prefix)
+		seen[prefix] = struct{}{}
+	}
+	sort.Strings(out)
+	for _, prefix := range current {
+		if len(out) == maxDayPrefixes {
+			break
+		}
+		if _, ok := seen[prefix]; ok {
+			continue
+		}
+		out = append(out, prefix)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func boolFloat(v bool) float64 {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func hasPosition(positions map[string]string, prefix string) bool {
+	_, ok := positions[prefix]
+	return ok
 }
 
 // countSkips emits one skipped counter per non-zero reason.

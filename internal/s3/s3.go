@@ -116,6 +116,13 @@ type listResponse struct {
 	} `xml:"Contents"`
 }
 
+// ListResult is one bounded listing result. Truncated reports that the client
+// stopped at its local limit while the server still had more objects.
+type ListResult struct {
+	Objects   []Object
+	Truncated bool
+}
+
 // List returns objects under prefix, in the lexicographic order S3 lists them —
 // which for a zero-padded date-partitioned layout is also chronological order.
 //
@@ -123,8 +130,8 @@ type listResponse struct {
 // need not re-list what it has done. limit bounds the total returned across all
 // pages; a non-positive limit means "everything under the prefix", which is only
 // safe when the caller has bounded the prefix itself.
-func (c *Client) List(ctx context.Context, prefix, startAfter string, limit int) ([]Object, error) {
-	var out []Object
+func (c *Client) List(ctx context.Context, prefix, startAfter string, limit int) (ListResult, error) {
+	var result ListResult
 	token := ""
 	for {
 		q := url.Values{"list-type": {"2"}}
@@ -140,29 +147,33 @@ func (c *Client) List(ctx context.Context, prefix, startAfter string, limit int)
 			q.Set("start-after", startAfter)
 		}
 		if limit > 0 {
-			remaining := limit - len(out)
+			remaining := limit - len(result.Objects)
 			if remaining <= 0 {
-				return out, nil
+				result.Truncated = true
+				return result, nil
 			}
 			q.Set("max-keys", itoa(min(remaining, 1000)))
 		}
 
 		body, err := c.do(ctx, "/", q.Encode())
 		if err != nil {
-			return nil, err
+			return ListResult{}, err
 		}
 		var page listResponse
 		if err := xml.Unmarshal(body, &page); err != nil {
-			return nil, fmt.Errorf("s3: decode list response: %w", err)
+			return ListResult{}, fmt.Errorf("s3: decode list response: %w", err)
 		}
 		for _, o := range page.Contents {
-			out = append(out, Object{Key: o.Key, Size: o.Size, LastModified: o.LastModified})
+			result.Objects = append(result.Objects, Object{Key: o.Key, Size: o.Size, LastModified: o.LastModified})
 		}
 		if !page.IsTruncated || page.NextContinuationToken == "" {
-			return out, nil
+			result.Truncated = false
+			return result, nil
 		}
-		if limit > 0 && len(out) >= limit {
-			return out[:limit], nil
+		if limit > 0 && len(result.Objects) >= limit {
+			result.Objects = result.Objects[:limit]
+			result.Truncated = true
+			return result, nil
 		}
 		token = page.NextContinuationToken
 	}
