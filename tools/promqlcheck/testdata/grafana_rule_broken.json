@@ -1,0 +1,45 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "name": "fx-bad-promql",
+    "annotations": {"grafana.app/folder": "fixture"},
+    "labels": {"grafana.app/folder": "fixture"}
+  },
+  "spec": {
+    "title": "Bad PromQL",
+    "noDataState": "Ok",
+    "execErrState": "Error",
+    "for": "5m0s",
+    "trigger": {"interval": "1m"},
+    "labels": {"severity": "warning"},
+    "annotations": {"summary": "fixture"},
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "relativeTimeRange": {"from": "15m0s", "to": "0s"},
+        "model": {
+          "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+          "expr": "sum by (tailscale_tailnet) (rate(tailscale_network_io_bytes_total[5m])",
+          "refId": "A"
+        }
+      },
+      "V": {
+        "datasourceUID": "grafanacloud-prom",
+        "relativeTimeRange": {"from": "15m0s", "to": "0s"},
+        "model": {
+          "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+          "expr": "sum(tailscale_devices_count_ratio{tailnet=~\"$tailnet\"})",
+          "refId": "V"
+        }
+      },
+      "C": {
+        "model": {
+          "datasource": {"type": "__expr__", "uid": "__expr__"},
+          "expression": "A", "type": "", "refId": "C"
+        },
+        "source": true
+      }
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-device-attribute-expiring-14d"
+  },
+  "spec": {
+    "annotations": {
+      "description": "One or more device posture attributes (set with an expiry, e.g. a custom: namespace attribute) expire within 14 days (and are not already expired) \u2014 an expired attribute silently breaks posture-based ACLs. Matches the tailscale.device.attribute.expiring WARN log lead. Computed from the per-device-attribute expiry gauge (expiry - now within (0, 14d]), so it clears once the attribute is refreshed. Gated by collect_posture and attribute_namespaces; absent when no attribute carries an expiry.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry",
+      "summary": "Device posture attributes are expiring within 14 days"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and (max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() > 0))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "1h0m0s",
+    "labels": {
+      "domain": "security",
+      "service": "tailscale2otel",
+      "severity": "warning"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Device posture attribute expiring (<14d)",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

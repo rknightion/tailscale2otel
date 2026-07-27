@@ -577,8 +577,17 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	}
 	body := script.String()
 	if !strings.Contains(body, "promtool check rules") {
-		t.Error("dashboards-drift never runs `promtool check rules`, so no PromQL expression in " +
-			"deploy/alerts/tailscale2otel.rules.yaml is ever parsed")
+		t.Error("dashboards-drift never runs `promtool check rules`, so no rule expression is " +
+			"ever parsed by a Prometheus-native checker")
+	}
+	// The shipped rules are Grafana-managed manifests, which promtool cannot read.
+	// The generator re-renders them as throwaway Prometheus rules purely so the
+	// fixtures can EXECUTE them. Without this step `promtool test rules` has no
+	// rule file: it either errors confusingly, or worse, silently uses a stale one
+	// left behind locally.
+	if !strings.Contains(body, "--prom-out") {
+		t.Error("dashboards-drift never renders the test-only Prometheus rules " +
+			"(build_rules.py --prom-out), so `promtool test rules` has nothing to execute")
 	}
 	// The tarball is verified against the release's own published sums rather than
 	// a checksum pasted here, which would silently rot on the next version bump.

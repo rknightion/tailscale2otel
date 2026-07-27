@@ -13,14 +13,27 @@ consumed by operators or by the release pipelines.
   now only builds cross-compiled binaries (see Release/publish pipelines below).
 - `docker-compose.yaml` — local/single-host run (this is how it's deployed on `node-a`).
 - `helm/tailscale2otel/` — Helm chart (see below).
-- `grafana/tailscale2otel.json` — the **flagship** dashboard: one comprehensive multi-tab
-  dashboard using the Grafana **v2 schema** (`dashboard.grafana.app/v2`, Grafana 13+) with
-  conditional rendering. **Generated** from `grafana/gen/build.py` (dashboards-as-code, stdlib
-  Python) — edit the generator, not the JSON; regenerate with `python3 grafana/gen/build.py --out
-  grafana/tailscale2otel.json`. Plus four **legacy** standalone classic-schema dashboards
-  (`tailscale-{fleet,network,audit-events,exporter-health}.json`, datasource-agnostic via
-  `${DS_PROM}`/`${DS_LOKI}`). See `grafana/README.md`.
-- `alerts/tailscale2otel.rules.yaml` — Prometheus/Grafana alert rules. See `alerts/README.md`.
+- `grafana/tailscale2otel.json` — the **flagship** dashboard, and since #394 the **only** one:
+  one comprehensive multi-tab dashboard using the Grafana **v2 schema**
+  (`dashboard.grafana.app/v2`, Grafana 13+) with conditional rendering. **Generated** from
+  `grafana/gen/` — edit the generator, not the JSON; regenerate with `python3
+  grafana/gen/build.py --out grafana/tailscale2otel.json`. The generator is modular:
+  `builder.py` (primitives + the sentinel registry), `variables.py`, `maps.py`, `tabs/*.py`
+  (one module per tab), `build.py` (orchestrator). See `grafana/README.md`.
+- `alerts/grafana-managed/` — **Grafana-managed** alert and recording rules as
+  `rules.alerting.grafana.app/v0alpha1` manifests plus a folder manifest, pushed with
+  `gcx resources push`. **Generated** from `alerts/gen/build_rules.py`. See `alerts/README.md`.
+
+> **v2 only, Grafana 13+ only, and that is a hard product decision — do not add a v1/Classic
+> path.** The four legacy classic-schema dashboards
+> (`tailscale-{fleet,network,audit-events,exporter-health}.json`) were **deleted** in #394, and
+> the Prometheus-ruler-format `alerts/tailscale2otel.rules.yaml` was deleted with the move to
+> Grafana-managed rules. Both were hand-maintained and excluded from every drift gate, so they
+> rotted unnoticed. A classic-schema copy of the flagship is not merely redundant: v1 cannot
+> express `conditionalRendering`, so every feature-gated tab would render permanently EMPTY
+> instead of hiding, which is worse than not shipping it. This is also why #409
+> (publish to the Grafana community catalog, which requires a Classic export) closed as
+> unsupported.
 
 ## Helm chart — config is single-source
 

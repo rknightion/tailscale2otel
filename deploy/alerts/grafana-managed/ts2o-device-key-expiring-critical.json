@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-device-key-expiring-critical"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel",
+      "__panelId__": "86",
+      "description": "The Tailscale node key for the TAGGED device {{ $labels.host_name }} (tags {{ $labels.tailscale_tags }}) expires within 48h. When it expires the device drops off the tailnet until re-authed, and a tagged node is typically headless/unattended \u2014 nobody is sitting in front of it to answer the client's reauth prompt, so this needs a human to go and re-auth it. Deliberately restricted to tagged devices: Tailscale disables key expiry on tagged devices by default, so a tagged device with a live expiry has had it re-enabled explicitly and is a real impending outage. UNTAGGED (user-owned) devices are excluded on purpose \u2014 there the Tailscale client warns the signed-in user and the fix is an interactive browser reauth, which is routine rather than pageable; they are covered by the warning-tier DeviceKeysExpiring7d instead. Note the underlying gauge is only emitted for devices WITHOUT key expiry disabled, so devices in the normal tagged default state never produce a series at all.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry",
+      "summary": "Tagged device node key for {{ $labels.host_name }} expires in <48h"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (host_name, host_id, tailscale_user, tailscale_tags) (tailscale_device_key_expiry_seconds{tailscale_tags!=\"\"}) - time()",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0,
+                  172800
+                ],
+                "type": "within_range"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "1h0m0s",
+    "labels": {
+      "domain": "security",
+      "service": "tailscale2otel",
+      "severity": "critical"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Tagged device key expiring (<48h)",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

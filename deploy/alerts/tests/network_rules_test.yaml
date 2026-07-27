@@ -1,0 +1,198 @@
+# promtool unit tests for the tailscale2otel-network rule group.
+#
+# These three rules were the entire alerting coverage of three signals in the
+# deleted hand-maintained ruler file, so they get executed cases rather than a
+# syntax check: per-target isolation on the node-up gauge, counter-reset safety
+# on the flow-log drop counter, and the two-value regex selector that is the
+# whole point of the IP-forwarding rule.
+#
+# THE RULE FILE IS GENERATED AND NOT COMMITTED — see health_rules_test.yaml for
+# the two commands. In short:
+#
+#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   promtool test rules deploy/alerts/tests/*.yaml
+rule_files:
+  - ../.generated-prom-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # --- NodeMetricsTargetDown: per-target isolation ---------------------------
+  # One node down out of three fires exactly ONE alert, naming that node. An
+  # expression that aggregated tailscale_node away (a bare `min(...)`) would
+  # fire a single anonymous alert here and nobody would know which host to go
+  # to — and the two healthy nodes must not appear as extra instances either.
+  #
+  # Note the label is `tailscale_node`, NOT `instance`. The deleted
+  # datasource-managed rule templated {{ $labels.instance }} into its summary,
+  # which this metric does not carry, so its page would have rendered blank.
+  - name: one node down out of three alerts only for that node
+    interval: 1m
+    input_series:
+      - series: 'tailscale_node_up_ratio{tailscale_node="build-runner"}'
+        values: '1+0x30'
+      - series: 'tailscale_node_up_ratio{tailscale_node="db-primary"}'
+        values: '0+0x30'
+      - series: 'tailscale_node_up_ratio{tailscale_node="edge-gw"}'
+        values: '1+0x30'
+    alert_rule_test:
+      # Below the 10m `for` the alert is pending, not firing.
+      - eval_time: 5m
+        alertname: NodeMetricsTargetDown
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: NodeMetricsTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+              tailscale_node: db-primary
+            exp_annotations:
+              summary: "Node-metrics target db-primary is down"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets"
+
+  # A target that recovers must clear. The gauge is the live scrape verdict, so
+  # there is nothing latched to keep it firing.
+  - name: a node that recovers stops firing
+    interval: 1m
+    input_series:
+      - series: 'tailscale_node_up_ratio{tailscale_node="db-primary"}'
+        values: '0+0x20 1+0x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: NodeMetricsTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+              tailscale_node: db-primary
+            exp_annotations:
+              summary: "Node-metrics target db-primary is down"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets"
+      - eval_time: 40m
+        alertname: NodeMetricsTargetDown
+        exp_alerts: []
+
+  # The scraper is off by default, so no series at all is the NORMAL state and
+  # must stay silent. This is what pins the rule's `optional` policy (noDataState
+  # Ok) as correct, and stops a future `or vector(0)` turning "not configured"
+  # into a permanent page.
+  - name: node-up gauge absent entirely stays silent
+    interval: 1m
+    input_series:
+      - series: 'tailscale_devices_count_ratio'
+        values: '3+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NodeMetricsTargetDown
+        exp_alerts: []
+
+  # --- FlowLogsDropped: counter-reset safety ---------------------------------
+  # An exporter restart drops flow_logs_dropped_total back to 0. rate() must
+  # absorb the reset rather than reading it as a spike: an exporter that was
+  # truncating, restarts, and then keeps up must go quiet and stay quiet across
+  # the full 10m `for` after the reset.
+  - name: flow-log drop counter reset by a restart does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_network_flow_logs_dropped_total'
+        values: '9+0x12 0+0x48'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: FlowLogsDropped
+        exp_alerts: []
+
+  # Sustained truncation fires. sum() aggregates everything away on purpose:
+  # this is one exporter-wide statement about its own volume guard, not a
+  # per-series one.
+  - name: sustained flow-log dropping fires exporter-wide
+    interval: 1m
+    input_series:
+      - series: 'tailscale_network_flow_logs_dropped_total'
+        values: '0+25x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FlowLogsDropped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Tailscale flow log records being dropped by the volume guard"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
+
+  # --- NodeIPForwardingMisconfigured: the selector IS the rule ---------------
+  # tailscale_webhook_events_total carries every accepted webhook type. Without
+  # the two-value regex this would be a generic "webhooks are arriving" alert,
+  # firing on nodeCreated on a healthy tailnet. One matching type and one
+  # ordinary type in, exactly one alert out.
+  - name: only the IP-forwarding webhook types fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_webhook_events_total{tailscale_webhook_type="exitNodeIPForwardingNotEnabled"}'
+        values: '0+1x60'
+      - series: 'tailscale_webhook_events_total{tailscale_webhook_type="nodeCreated"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NodeIPForwardingMisconfigured
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+              tailscale_webhook_type: exitNodeIPForwardingNotEnabled
+            exp_annotations:
+              summary: "Tailscale node IP forwarding misconfigured (exitNodeIPForwardingNotEnabled)"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+
+  # Both routing types are covered, and they alert separately: an exit node and
+  # a subnet router are different hosts with the same fix, and collapsing them
+  # into one alert would hide the second.
+  - name: subnet-router and exit-node forwarding faults alert separately
+    interval: 1m
+    input_series:
+      - series: 'tailscale_webhook_events_total{tailscale_webhook_type="exitNodeIPForwardingNotEnabled"}'
+        values: '0+1x60'
+      - series: 'tailscale_webhook_events_total{tailscale_webhook_type="subnetIPForwardingNotEnabled"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NodeIPForwardingMisconfigured
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+              tailscale_webhook_type: exitNodeIPForwardingNotEnabled
+            exp_annotations:
+              summary: "Tailscale node IP forwarding misconfigured (exitNodeIPForwardingNotEnabled)"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+              tailscale_webhook_type: subnetIPForwardingNotEnabled
+            exp_annotations:
+              summary: "Tailscale node IP forwarding misconfigured (subnetIPForwardingNotEnabled)"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+
+  # The receiver is off by default, so absence is the normal state.
+  - name: webhook events absent entirely stays silent
+    interval: 1m
+    input_series:
+      - series: 'tailscale_webhook_rejected_total{reason="hmac"}'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NodeIPForwardingMisconfigured
+        exp_alerts: []

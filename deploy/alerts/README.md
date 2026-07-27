@@ -1,22 +1,29 @@
 # tailscale2otel — Alerting rules
 
 Alerting + recording rules that complement the Grafana dashboards in
-[`../grafana/`](../grafana/). Two delivery models, two files — pick one (don't
-load overlapping rules into both, or they fire twice):
+[`../grafana/`](../grafana/).
 
-- [`tailscale2otel.grafana-rules.yaml`](tailscale2otel.grafana-rules.yaml) —
-  **Grafana-managed** rules (Grafana evaluates them: `noDataState`/`execErrState`,
-  `isPaused`, mixed Prometheus+Loki in one ruleset). Grafana *file-provisioning*
-  format (`apiVersion: 1` + `groups:`). **Generated** — see
-  [Grafana-managed rules](#grafana-managed-rules-recommended) below.
-- [`tailscale2otel.rules.yaml`](tailscale2otel.rules.yaml) — the
-  **datasource-managed** equivalent: standard Prometheus/Mimir/Loki *ruler*
-  `groups:` / `rules:` YAML (`alert:` / `expr:` / `for:` …). Hand-maintained; the
-  original baseline set.
+**One delivery model: Grafana-managed rules, as `rules.alerting.grafana.app`
+manifests.** [`grafana-managed/`](grafana-managed/) holds one JSON manifest per
+rule plus a folder manifest, and the whole directory is pushed with
+[`gcx`](https://github.com/grafana/gcx):
 
-> *Grafana-managed* rules are evaluated by Grafana itself and can span datasources;
-> *datasource-managed* rules are loaded into the datasource's own ruler
-> (Mimir/Cortex/Loki). The two files overlap in intent.
+```bash
+gcx resources push -p deploy/alerts/grafana-managed
+```
+
+Grafana evaluates these itself, so they can span Prometheus and Loki in one
+ruleset and carry `noDataState` / `execErrState` / `paused`.
+
+> **This repo no longer ships a Prometheus/Mimir *ruler* rules file.** The old
+> hand-maintained `tailscale2otel.rules.yaml` and the generated
+> `tailscale2otel.grafana-rules.yaml` (Grafana *file-provisioning*,
+> `apiVersion: 1`) are both gone. File provisioning is not what
+> `gcx resources push` consumes, and maintaining a second, drifting,
+> ruler-compatible copy of the same catalogue was not worth it. If you need
+> datasource-managed rules, render them yourself from the generator — see
+> [the test-only Prometheus rendering](#the-test-only-prometheus-rendering) —
+> and own the result.
 
 ## Important: metric names assume OTLP → Prometheus normalization
 
@@ -38,29 +45,71 @@ the metric names accordingly.
 
 ## Grafana-managed rules (recommended)
 
-[`tailscale2otel.grafana-rules.yaml`](tailscale2otel.grafana-rules.yaml) is
-**generated** by [`gen/build_rules.py`](gen/build_rules.py) (stdlib Python, no
-PyYAML) — edit the generator, not the YAML:
+[`grafana-managed/`](grafana-managed/) is **generated** by
+[`gen/build_rules.py`](gen/build_rules.py) (stdlib Python, no PyYAML) — edit the
+generator, not the JSON:
 
 ```bash
-python3 gen/build_rules.py --out tailscale2otel.grafana-rules.yaml
+python3 gen/build_rules.py --out grafana-managed
 ```
 
+One manifest per rule (`<uid>.json`), plus `_folder.json`. Every `*.json` in the
+directory is **deleted before writing**, so a renamed or removed rule cannot
+linger as a stale file that `gcx resources push` keeps re-creating. Output is
+sorted-key JSON with a trailing newline, so two runs are byte-identical and the
+CI drift gate is meaningful.
+
+| kind | apiVersion | file |
+|---|---|---|
+| `Folder` | `folder.grafana.app/v1beta1` | `_folder.json` |
+| `AlertRule` | `rules.alerting.grafana.app/v0alpha1` | `ts2o-*.json` |
+| `RecordingRule` | `rules.alerting.grafana.app/v0alpha1` | `ts2o-rec-*.json` |
+
+`metadata.name` is the rule uid — that becomes the Grafana UID, so it is capped
+at 40 chars and `[A-Za-z0-9_-]`. The folder is named in `metadata.labels` **and**
+`metadata.annotations` (`grafana.app/folder`); push the folder first.
+
 Every rule is the canonical Grafana 3-node pipeline — **A** (datasource query) →
-**B** (reduce, `last`) → **C** (threshold), `condition: C` — so it round-trips
-cleanly through the Grafana UI/API. Datasource UIDs are the portable Grafana Cloud
-defaults (`grafanacloud-prom` / `grafanacloud-logs`); swap them for a self-hosted
-stack. Every rule carries `service: tailscale2otel`, a `severity`, and a **`domain`**
-label (`security` / `infra` / `observability`); rules not worthy of automatic
-investigation (non-critical, non-paging, non-security) also carry `skipinvestigation:
-"true"` so IRM routing / auto-investigation stays focused. The generated set currently
-has **73 alert rules + 12 recording rules** across five groups (`-health`, `-security`,
-`-integrations`, `-network`, `-recording`); the tables below are an illustrative guide —
-`gen/build_rules.py` is the source of truth.
+**B** (reduce, `last`) → **C** (threshold) — expressed as the `spec.expressions`
+MAP keyed by refId, with `C` marked `"source": true`. This API has no separate
+`condition` field: the `source` marker is what makes the threshold the verdict.
+Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
+`grafanacloud-logs`); swap them for a self-hosted stack. Every rule carries
+`service: tailscale2otel`, a `severity`, and a **`domain`** label (`security` /
+`infra` / `observability`); rules not worthy of automatic investigation
+(non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
+so IRM routing / auto-investigation stays focused. The generated set currently
+has **78 alert rules + 12 recording rules** across five groups (`-health`,
+`-security`, `-integrations`, `-network`, `-recording`); the tables below are an
+illustrative guide — `gen/build_rules.py` is the source of truth.
 
 **Default-disabled by design.** Only a high-signal *starter set* ships enabled
-(`isPaused: false`); the rest are `isPaused: true` — enable them in the UI when you
-want them.
+(`spec.paused: false`); the rest are `spec.paused: true` — enable them in the UI
+when you want them.
+
+### Format traps (why this is worth reading before editing)
+
+Three of these are silent: the manifest looks fine everywhere locally and the API
+rejects it — or accepts it and ignores the field — at push time.
+
+- **`noDataState` spells its OK value `"Ok"`. `execErrState` spells its own
+  `"OK"`.** The asymmetry is real. The old `apiVersion: 1` provisioning format
+  used `"OK"` for both, so a mechanical port produces un-deployable rules.
+- **Durations are Go-style strings** — `"30m0s"`, `"1h0m0s"`, `"0s"`. `"5m"` is
+  not accepted, and `relativeTimeRange.from`/`to` are durations here rather than
+  the integer seconds provisioning took.
+- **Panel links are the paired `__dashboardUid__` / `__panelId__` annotations**,
+  and `__panelId__` is a **string**. The top-level `dashboardUid`/`panelId`
+  fields are provisioning-only; `additionalProperties: false` rejects them.
+- **`RecordingRule` has no `annotations`, `for`, `condition`, `noDataState` or
+  `execErrState`.** Its spec is exactly
+  `{title, trigger, metric, expressions, targetDatasourceUID, labels, paused}`.
+  Each recorded metric's written reason therefore lives in the generator's
+  internal `_desc` and is deliberately not emitted.
+
+[`gen/validate_manifests.py`](gen/validate_manifests.py) enforces all four (and
+the UID charset/length rule) over the emitted directory, and runs as part of the
+generator test suite.
 
 **Every alert declares an evaluation policy** (#388), which fixes its
 `noDataState`/`execErrState` pair. There is no global default — the generator's
@@ -71,38 +120,55 @@ semantics:
 |---|---|---|---|---|
 | `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
 | `core` | `NoData` | `Error` | always emitted while the exporter runs | 7 |
-| `optional` | `OK` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 47 |
-| `advisory` | `OK` | `OK` | hygiene; neither absence nor a transient error is actionable | 18 |
+| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 52 |
+| `advisory` | `Ok` | `OK` | hygiene; neither absence nor a transient error is actionable | 18 |
 
-Before this, *all* 73 rules shipped `execErrState: OK`, so a broken datasource
-read as "healthy" across the whole pack. Only the `advisory` class is still
-fail-open on both axes, and that is a per-rule decision.
+Before this, *every* rule was fail-open on error, so a broken datasource read
+as "healthy" across the whole pack. Only the `advisory` class still is, and that
+is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 72 of the 73 carry a
-`dashboardUid`/`panelId` pair for their canonical panel in the generated flagship
-dashboard. Both are resolved and validated **at generation time**: an unknown
-runbook slug, an unreferenced runbook section, a missing panel title, or a title
-matching more than one panel each **fail the build**. Panels are resolved by
-**title**, never by a literal id — ids come from a counter in
+[`docs/runbooks.md`](../../docs/runbooks.md), and 77 of the 78 carry the
+`__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
+generated flagship dashboard. Both are resolved and validated **at generation
+time**: an unknown runbook slug, an unreferenced runbook section, a missing panel
+title, or a title matching more than one panel each **fail the build**. Panels
+are resolved by **title**, never by a literal id — ids come from a counter in
 `../grafana/gen/build.py` and renumber whenever a panel is inserted. This is why
 `build.py` must run before `build_rules.py` (`scripts/regen-generated.sh
 dashboards` already does, in that order).
-
-> Grafana file provisioning takes `dashboardUid`/`panelId` as **top-level** rule
-> fields. The `__dashboardUid__`/`__panelId__` *annotations* are the HTTP-API
-> form of the same thing and Grafana materializes them itself — emitting both
-> conflicts, so this generator emits only the top-level pair, and only ever as a
-> pair.
 
 Nothing in this repo monitors Grafana's own ruler or datasource health, and a
 rule structurally cannot alert on its own non-evaluation. See
 [the runbook page](../../docs/runbooks.md) for the honest version and the three
 external mechanisms that do cover it.
 
+### The test-only Prometheus rendering
+
+`promtool test rules` is the only thing in the repo that **executes** a rule
+against synthetic series — it already caught a rule that was valid PromQL and
+semantically wrong (dropping the lower bound on the key-expiry window makes every
+long-dead host alert forever). promtool understands no format but Prometheus's,
+so the generator can re-render the same catalogue as plain rule groups:
+
+```bash
+python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+promtool test rules deploy/alerts/tests/*.yaml
+```
+
+**That file is a fixture, not a deliverable: gitignored, never committed, never
+shipped.** Do not load it into a ruler. It omits the Loki-backed rules (promtool
+cannot parse LogQL), carries only the `summary` and `runbook_url` annotations
+(promtool matches annotations exactly, and panel ids renumber on any dashboard
+edit), and renders `coverage_critical`'s "absence is the alert" semantics as an
+explicit `or absent(...)` arm, which Grafana expresses as `noDataState: Alerting`.
+Fixture alert names are the CamelCased rule titles.
+
 Generator tests live in [`gen/test_rules.py`](gen/test_rules.py) — they pin the
-policy matrix, the `coverage_critical` allowlist (with a written reason per
-member), the recording-rule field contract, and both link contracts:
+manifest format (including the two state casings), the policy matrix, the
+`coverage_critical` allowlist (with a written reason per member), the
+recording-rule field contract, both link contracts, emit determinism, and the
+Prometheus rendering:
 
 ```bash
 python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
@@ -115,6 +181,8 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `ExporterDown` | critical | ✅ on | `tailscale2otel_up_ratio` is `0` **or absent** for 5m — the exporter process died or stopped emitting entirely. The pack's only `coverage_critical` rule: a query error pages too |
 | `CollectorScrapeFailing` | warning | ✅ on | `tailscale2otel_scrape_success_ratio == 0` (per collector) for 15m — the last scrape failed and hasn't recovered |
 | `CollectorScrapeStale` | warning | ✅ on | a collector hasn't completed a scrape in >1h (wedged; success gauge can stay stale at 1) |
+| `CollectorScrapeErrorRateHigh` | warning | ✅ on | `rate(scrape_errors_total[5m]) > 0` per collector for 15m — catches a **flapping** collector, whose last-scrape success gauge reads `1` at every evaluation so `CollectorScrapeFailing` never fires |
+| `OTLPExportFailures` | warning | ✅ on | `rate(export_failures_total[10m]) > 0` by `error_type` for 15m — the OTEL SDK's global error handler is seeing export failures; broader than `ExportFailures` (which reads the per-signal export decorators) |
 | `MetricCardinalityCapped` | warning | ✅ on | `series_overflowing_ratio` > 0 → a metric is collapsing excess series (silent per-series loss) |
 | `SeriesBudgetHigh` | warning | ✅ on | a metric's active-series / `series_limit` headroom ratio > 0.8 (approaching its cap) |
 | `TailscaleAPIAuthFailing` | critical | ✅ on | API returns 401/403 → credentials broken, all polling fails |
@@ -178,6 +246,9 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `NoFlowData` | info | ⏸ off | ~0 flow records for an hour while flow logging is on |
 | `FlowReporterIdentityMismatch` | warning | ⏸ off | the verified reporter node ID disagrees with the unverified embedded source reference |
 | `AuditSchemaDriftDetected` | warning | ⏸ off | an audit enum field carries a value unknown to this collector version |
+| `FlowLogsDropped` | warning | ✅ on | the per-window flow-log volume guard is truncating log records (metrics are never capped, so nothing else shows the loss) |
+| `NodeMetricsTargetDown` | warning | ⏸ off | `tailscale_node_up_ratio == 0` for a target for 10m — tailscaled's metrics endpoint is unreachable. Paused: a sleeping laptop in the target list fires it nightly |
+| `NodeIPForwardingMisconfigured` | warning | ✅ on | an exit node or subnet router reported IP forwarding disabled on the host. Webhook-only signal (no poll/log-stream equivalent) and emitted at INFO, so this rule is the only thing that surfaces it |
 
 ### `tailscale2otel-recording` — recording rules
 
@@ -197,101 +268,49 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 > they write `tailscale:*` series back to it. Leave them paused if your stack
 > doesn't support them.
 
-### Importing the Grafana-managed file
+### Deploying the manifests
 
-- **File provisioning** (self-hosted / Alloy): drop the file in
-  `/etc/grafana/provisioning/alerting/` and restart Grafana. It creates a
-  `tailscale2otel` folder and the rule groups.
-- **HTTP provisioning API:** `POST /api/v1/provisioning/alert-rules` per rule (or
-  use Terraform `grafana_rule_group` / [Grizzly](https://grafana.github.io/grizzly/)
-  which consume this same model).
-- **Grafana Cloud UI:** the file-provisioning format isn't importable via the UI's
-  "Import alert rules" (that path takes Prometheus rules — use the
-  `tailscale2otel.rules.yaml` file there instead). For Cloud, prefer Terraform/Grizzly
-  or the provisioning API.
+```bash
+# whole directory in one go (the folder manifest sorts first, so it lands first)
+gcx resources push -p deploy/alerts/grafana-managed
 
-Wire the `severity` label (`critical` / `warning` / `info`) into your notification
-policy. Thresholds, `for:` windows and the enabled/paused split all live in
-`gen/build_rules.py`.
-
-## Datasource-managed baseline (`tailscale2otel.rules.yaml`)
-
-| Alert | Severity | Fires when | Dashboard |
-|---|---|---|---|
-| `ExporterDown` | critical | `tailscale2otel_up_ratio` absent or `0` for 5m | ts2otel-exporter-health |
-| `CollectorScrapeFailing` | warning | `tailscale2otel_scrape_success_ratio == 0` (per `tailscale_collector`) for 15m | ts2otel-exporter-health |
-| `CollectorScrapeErrorRateHigh` | warning | `rate(tailscale2otel_scrape_errors_total[5m]) > 0` (per collector) for 15m | ts2otel-exporter-health |
-| `OTLPExportFailures` | warning | `rate(tailscale2otel_export_failures_total[10m]) > 0` for 15m | ts2otel-exporter-health |
-| `DeviceKeyExpiringSoon` | warning | a device node key expires within 7 days (`tailscale_device_key_expiry_seconds - time()`) for 1h | ts2otel-fleet |
-| `AuthKeyExpiringSoon` | warning | an auth/API key expires within 7 days (`tailscale_key_expiry_seconds - time()`) for 1h | ts2otel-fleet |
-| `FlowLoggingDisabled` | warning | `tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"} == 0` for 30m | ts2otel-network / ts2otel-audit-events |
-| `NodeMetricsTargetDown` | warning | `tailscale_node_up_ratio == 0` (per `instance`) for 10m | docs/metrics.md (node scraper) |
-| `FlowLogsDropped` | warning | `rate(tailscale_network_flow_logs_dropped_total[10m]) > 0` for 10m | ts2otel-audit-events |
-| `NodeIPForwardingMisconfigured` | warning | `rate(tailscale_webhook_events_total{tailscale_webhook_type=~"exitNodeIPForwardingNotEnabled\|subnetIPForwardingNotEnabled"}[15m]) > 0` for 5m | — (webhook receiver) |
-
-Notes:
-
-- `ExporterDown` uses `absent()`, so it fires even when the exporter never came
-  up. Scope it to your environment (add label matchers / a per-tenant
-  external-label filter) if you run more than one instance.
-- The key-expiry alerts intentionally exclude already-expired keys
-  (`... > 0`) so an expired-and-abandoned key doesn't alert forever; adjust the
-  `7 * 24 * 3600` threshold to taste.
-- `FlowLogsDropped` surfaces the S4-7 volume guard
-  (`max_log_records_per_window`) actually truncating flow **logs**. Metrics are
-  never capped — only log records are dropped — so this alert means the flow log
-  stream is incomplete, not that metric counters are wrong.
-- `NodeIPForwardingMisconfigured` depends on the **webhook receiver** (off by
-  default). The `exitNodeIPForwardingNotEnabled` / `subnetIPForwardingNotEnabled`
-  health events have no log-streaming or polling equivalent, so they are emitted
-  at INFO log severity and this alert is the way to surface them; without the
-  webhook receiver the series never appears and the alert never fires. Subscribe
-  to the events at <https://tailscale.com/kb/1213/webhooks#events>.
-
-## Loading the rules
-
-### Grafana-managed alerting (recommended on Grafana Cloud)
-
-Grafana can import Prometheus-style rule groups as Grafana-managed (or
-data-source-managed) alert rules.
-
-- UI: **Alerting → Alert rules → New alert rule → Import** (or **More →
-  Import alert rules from a Prometheus rules file**), upload
-  `tailscale2otel.rules.yaml`, and pick the Prometheus/Mimir data source that
-  holds the `tailscale*` series.
-- API / IaC: convert with [`mimirtool`](https://grafana.com/docs/mimir/latest/manage/tools/mimirtool/)
-  (`mimirtool rules ...`) against the Grafana Cloud ruler, or manage the file
-  via Terraform (`grafana_rule_group` / cloud Mimir rules).
-
-Routing/severity: the rules set a `severity` label (`critical` / `warning`);
-wire those into your notification policy / contact points.
-
-### Prometheus / Mimir / Cortex ruler
-
-Drop the file in the ruler's rule path and reference it from the Prometheus
-config, e.g.:
-
-```yaml
-# prometheus.yml
-rule_files:
-  - /etc/prometheus/rules/tailscale2otel.rules.yaml
+# client-side sanity check before pushing
+gcx resources validate -p deploy/alerts/grafana-managed
 ```
 
-then reload (`SIGHUP` or `POST /-/reload`). For Mimir/Cortex, load it with
-`mimirtool rules load tailscale2otel.rules.yaml` (set `--address` /
-`--id` for your tenant).
+> `gcx resources validate` reports that `alertrules.rules.alerting.grafana.app`
+> **does not support server-side dry-run** — it only confirms the manifests parse
+> and that the kind is served by the target instance. It does not check the spec.
+> `gen/validate_manifests.py` is what checks the spec, offline, and it is the one
+> wired into CI.
+
+Anything that speaks the Grafana app-platform API works too — `kubectl` against
+the Grafana API server, or the Terraform
+`grafana_apps_rules_alertrule_v0alpha1` / `..._recordingrule_v0alpha1` resources,
+which take the same spec.
+
+Wire the `severity` label (`critical` / `warning` / `info`) into your
+notification policy. Thresholds, `for:` windows and the enabled/paused split all
+live in `gen/build_rules.py`.
 
 ## Validating locally
 
-The file is plain YAML plus the Prometheus rule schema.
-
 ```bash
-# YAML well-formedness (no yamllint required)
-python3 -c "import yaml; yaml.safe_load(open('deploy/alerts/tailscale2otel.rules.yaml'))"
+# 1. regenerate + validate the shipped manifests
+python3 deploy/alerts/gen/build_rules.py --out deploy/alerts/grafana-managed
+python3 deploy/alerts/gen/validate_manifests.py
 
-# Prometheus rule schema + PromQL expression check (if promtool is installed)
-promtool check rules deploy/alerts/tailscale2otel.rules.yaml
+# 2. generator + manifest contract tests
+python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
+
+# 3. EXECUTE the rules (test-only rendering; the .yaml is gitignored)
+python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+promtool check rules deploy/alerts/.generated-prom-rules.yaml
+promtool test rules deploy/alerts/tests/*.yaml
 ```
 
-`promtool` is the authoritative check (it parses each `expr` as PromQL); run it
-in CI if it isn't available locally.
+Step 3 is the only one that runs the expressions rather than reading them. Add a
+case to [`tests/`](tests/) whenever a rule's *semantics* — not just its threshold
+— are the thing that could be wrong: absence handling, counter resets, label
+preservation, and "healthy zero versus absent" are the four classes already
+covered.

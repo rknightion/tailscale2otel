@@ -2,10 +2,7 @@ module github.com/rknightion/tailscale2otel/v3/tools/promqlcheck
 
 go 1.26.5
 
-require (
-	github.com/prometheus/prometheus v0.313.1
-	gopkg.in/yaml.v3 v3.0.1
-)
+require github.com/prometheus/prometheus v0.313.1
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

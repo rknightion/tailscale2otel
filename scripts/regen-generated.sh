@@ -185,13 +185,21 @@ regen_dashboards() {
   fi
   note "deploy/grafana/tailscale2otel.json (grafana/gen/build.py)"
   python3 "$ROOT/deploy/grafana/gen/build.py" --out "$ROOT/deploy/grafana/tailscale2otel.json" >/dev/null
-  note "deploy/alerts/tailscale2otel.grafana-rules.yaml (alerts/gen/build_rules.py)"
-  python3 "$ROOT/deploy/alerts/gen/build_rules.py" --out "$ROOT/deploy/alerts/tailscale2otel.grafana-rules.yaml" >/dev/null
-  # deploy/alerts/tailscale2otel.rules.yaml and the four legacy standalone
-  # dashboards are HAND-MAINTAINED, not generated — do not add them here. Both
-  # generators are stdlib-only and deterministic (no time/random/set ordering), so
-  # rerunning them is a no-op on a clean tree, which is what makes the CI
-  # fail-on-diff gate possible.
+  # MUST run after build.py: build_rules.py resolves each alert's canonical panel
+  # BY TITLE against the generated dashboard, and hard-fails on a title that
+  # matches zero or more than one panel.
+  note "deploy/alerts/grafana-managed/ (alerts/gen/build_rules.py)"
+  python3 "$ROOT/deploy/alerts/gen/build_rules.py" --out "$ROOT/deploy/alerts/grafana-managed" >/dev/null
+  # Nothing under deploy/grafana or deploy/alerts is hand-maintained any more —
+  # the four legacy classic-schema dashboards and the Prometheus-ruler rules file
+  # were deleted (#394) precisely because sitting outside this gate let them rot.
+  # Both generators are stdlib-only and deterministic (no time/random/set
+  # ordering), so rerunning them is a no-op on a clean tree, which is what makes
+  # the CI fail-on-diff gate possible.
+  #
+  # The test-only Prometheus rendering (--prom-out) is deliberately NOT produced
+  # here: it is never committed, exists only so promtool can execute the rules in
+  # CI, and is gitignored.
 }
 
 main() {

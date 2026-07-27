@@ -43,7 +43,7 @@ from tabs.cardinality import tab_cardinality
 def build(uid, title, flat, only=None, folder=None):
     builder.ELEMENTS = {}
     builder._id = 0
-    variables = build_variables()
+    builder.reset_sentinels()
 
     tab_defs = [
         ("Overview", tab_overview, None),
@@ -64,6 +64,9 @@ def build(uid, title, flat, only=None, folder=None):
         flat = True
     # build only the selected tabs so previews don't carry orphan elements from other tabs
     tabs = [(ttl, fn(), present) for (ttl, fn, present) in tab_defs]
+    # Sentinels are declared as a side effect of the fn() calls above (#495), so
+    # build_variables() must run AFTER tabs are built, not before.
+    variables = build_variables()
 
     if flat:
         allrows = []

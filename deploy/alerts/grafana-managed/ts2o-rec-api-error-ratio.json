@@ -1,0 +1,63 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "RecordingRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-rec-api-error-ratio"
+  },
+  "spec": {
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(tailscale2otel_api_requests_total[5m])), 1)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        },
+        "source": true
+      }
+    },
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel"
+    },
+    "metric": "tailscale2otel:api_requests:error_ratio",
+    "paused": true,
+    "targetDatasourceUID": "grafanacloud-prom",
+    "title": "tailscale2otel:api_requests:error_ratio",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

@@ -21,10 +21,10 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 
 | | |
 |---|---|
-| **186** metrics + **13** log-event types | across **15** collectors |
+| **255** metrics + **15** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
-| **95** shipped alert rules | 85 Grafana-managed + 10 Prometheus |
-| **5** Grafana dashboards | 1 flagship 10-tab + 4 legacy-schema |
+| **90** shipped rules | **78** alert + **12** recording, Grafana-managed |
+| **1** Grafana dashboard | flagship, 10 tabs, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
 ## Why this exists
@@ -204,11 +204,16 @@ receiver auth, object-gap handling, and `auto_configure` are in
 - **Dashboards** — [`deploy/grafana/`](./deploy/grafana/) ships a flagship **10-tab** dashboard
   (Overview, Fleet & Devices, Network & Flows, Events & Logs, Security & Audit, Policy & Config, Node
   Metrics, Tailnets, Exporter Diagnostics, Cardinality & Cost) on Grafana's **v2 schema** (Grafana
-  13+), with dynamic rendering so a section only appears when its data is present — plus 4 standalone
-  legacy-schema dashboards for older stacks. See
+  13+), with dynamic rendering so a section only appears when its data is present. **Grafana 13+ is a
+  hard requirement** — 12.4 accepts the file with a `200` and renders nothing, and 11.5 rejects it
+  with the misleading `Dashboard title cannot be empty`. Push it with `gcx resources push -f`. See
   [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
-- **Alerts** — [`deploy/alerts/`](./deploy/alerts/) ships 85 Grafana-managed rules and 10 Prometheus
-  rules. See [Alerts](https://m7kni.io/tailscale2otel/alerts/).
+- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **78 alert
+  rules and 12 recording rules** (90 total) as `rules.alerting.grafana.app` manifests, one JSON per
+  rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
+  `runbook_url`, and 77 of 78 link a canonical dashboard panel. See
+  [Alerts](https://m7kni.io/tailscale2otel/alerts/) and
+  [Runbooks](https://m7kni.io/tailscale2otel/runbooks/).
 - **Admin status page** — on by default at `:9091`. Liveness/readiness probes at `/healthz` and
   `/readyz` (never auth-gated), a live status page at `/`, and the same snapshot at
   `/api/status.json`: per-collector health, **active-series cardinality** with per-label breakdown,

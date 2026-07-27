@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
 )
 
@@ -75,40 +73,62 @@ func dashboardExprs(t *testing.T) []string {
 	return out
 }
 
-// ruleExprs splits a rule file's expressions into the ones an ALERT evaluates and
-// the ones a RECORDING rule evaluates. Both formats nest rules the same way
-// (groups[].rules[]); a recording rule is the one carrying a `record` key.
-func ruleExprs(t *testing.T, path string) (alerting, recording []string) {
+// ruleExprs splits the shipped rule manifests' expressions into the ones an ALERT
+// evaluates and the ones a RECORDING rule evaluates.
+//
+// The rules are Grafana-managed `rules.alerting.grafana.app/v0alpha1` manifests,
+// one JSON file per rule, so the split is by `kind` (AlertRule vs RecordingRule)
+// rather than by the presence of a `record` key the way the old provisioning and
+// Prometheus formats nested it.
+func ruleExprs(t *testing.T, dir string) (alerting, recording []string) {
 	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	var doc struct {
-		Groups []struct {
-			Rules []map[string]any `yaml:"rules"`
-		} `yaml:"groups"`
-	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
-	rules := 0
-	for _, g := range doc.Groups {
-		for _, r := range g.Rules {
-			rules++
-			var exprs []string
-			collectStrings(r, exprKeys, "", &exprs)
-			if _, isRecording := r["record"]; isRecording {
-				recording = append(recording, exprs...)
-			} else {
-				alerting = append(alerting, exprs...)
-			}
+	for _, path := range ruleManifests(t, dir) {
+		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(b, &doc); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		var exprs []string
+		collectStrings(doc, exprKeys, "", &exprs)
+		switch doc["kind"] {
+		case "AlertRule":
+			alerting = append(alerting, exprs...)
+		case "RecordingRule":
+			recording = append(recording, exprs...)
+		default:
+			t.Errorf("%s has kind %v, expected AlertRule or RecordingRule", path, doc["kind"])
 		}
 	}
-	if rules == 0 {
-		t.Fatalf("%s parsed to zero rules; the extraction is broken", path)
-	}
 	return alerting, recording
+}
+
+// ruleManifests lists the shipped rule manifests, excluding the folder manifest.
+//
+// It fails on an empty result rather than returning one: every assertion built on
+// these files would otherwise pass vacuously if the directory moved or the
+// generator's output naming changed.
+func ruleManifests(t *testing.T, dir string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		t.Fatalf("glob %s: %v", dir, err)
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if filepath.Base(m) == "_folder.json" {
+			continue
+		}
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s holds no rule manifests; either the directory moved or the generator's "+
+			"output changed, and every assertion built on it is vacuous", dir)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // refSet turns a batch of query strings into the set of catalog-owned signal
@@ -137,12 +157,11 @@ func refSet(texts []string) map[string]bool {
 // only evidence the gate accepts for a visualized/alertable/recorded claim.
 func artifactRefs(t *testing.T) catalog.ArtifactRefs {
 	t.Helper()
-	gAlert, gRecord := ruleExprs(t, grafanaRules)
-	pAlert, pRecord := ruleExprs(t, promRules)
+	alerting, recording := ruleExprs(t, rulesDir)
 	return catalog.ArtifactRefs{
 		Dashboard: refSet(dashboardExprs(t)),
-		Alerting:  refSet(append(gAlert, pAlert...)),
-		Recording: refSet(append(gRecord, pRecord...)),
+		Alerting:  refSet(alerting),
+		Recording: refSet(recording),
 	}
 }
 

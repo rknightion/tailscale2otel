@@ -134,11 +134,49 @@ def tab_cardinality():
                     "Rising DPM driven by a single source → check that group in 'Active series by group'."), 24, 8),
     ]
 
+    # #405: the node-metrics DISTINCT-NAME budget. This lives here rather than on the
+    # Node Metrics tab because the thing being exhausted is a cardinality budget, and
+    # the loss it causes is silent: over-budget samples are dropped, the scrape still
+    # succeeds, and the target never learns.
+    #
+    # There is no accepted-sample counter to pair the drop rate against — the scraper
+    # forwards verbatim and counts nothing — so the honest denominator is the active
+    # series the budget actually governs: forwarded passthrough names are uncataloged
+    # and therefore bucket under metric_group="other".
+    namebudget = [
+        (panel("Forwarded metric-name drops/s by reason", "timeseries",
+               [prom_t("sum by (reason) (rate(tailscale2otel_nodemetrics_metric_names_dropped_total[%s]))" % RI,
+                       legend="dropped {{reason}}"),
+                prom_t("sum(last_over_time(tailscale2otel_series_by_group{metric_group=\"other\"}[%s]))" % WIN_FAST,
+                       legend="forwarded/uncataloged series active", refid="B")],
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               novalue="No node-metrics name-budget series. Requires node_metrics.enabled with at "
+                       "least one target, and self_observability.enabled.",
+               desc="Samples dropped because their metric NAME had not been seen before and the "
+                    "distinct-name budget (node_metrics.max_distinct_metrics, default 2000) was "
+                    "already exhausted. Targets choose their own names and each new one creates a "
+                    "permanent instrument, so the budget is a hard bound on a node-controlled "
+                    "input. Read the drop rate against the active uncataloged series count on the "
+                    "right axis: that is the population the budget governs. Sustained drops mean "
+                    "raising max_distinct_metrics or tightening metric_allow/metric_deny."), 12, 7),
+        (panel("Metric names dropped over the window", "stat",
+               [prom_t("sum(increase(tailscale2otel_nodemetrics_metric_names_dropped_total[$__range])) or vector(0)",
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               novalue="No node-metrics name-budget series. Requires node_metrics.enabled with at "
+                       "least one target, and self_observability.enabled.",
+               desc="Total forwarded samples lost to the distinct-name budget over the dashboard's "
+                    "time range. Any non-zero value means a scrape target is presenting more "
+                    "distinct metric names than the budget allows."), 12, 7),
+    ]
+
     return [
         row("Cardinality cap & overflow", overflow),
         row("Active series by group", bygroup),
         row("Series budget", budget),
         row("Ingest vs export cost", cost, present="has_selfobs"),
+        row("Node-metrics name budget", namebudget),
         row("Flow cardinality drivers", flow),
         row("Cross-source dedup", dedup),
     ]

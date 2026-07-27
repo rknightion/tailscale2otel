@@ -72,6 +72,13 @@ todos.txt
 __pycache__/
 *.py[cod]
 
+# TEST-ONLY Prometheus rendering of the alert catalogue, written by
+# `deploy/alerts/gen/build_rules.py --prom-out`. tailscale2otel ships
+# Grafana-managed manifests only (deploy/alerts/grafana-managed/); this file
+# exists purely so `promtool test rules` can EXECUTE the expressions, since
+# promtool understands no other format. It must never be committed or shipped.
+deploy/alerts/.generated-prom-rules.yaml
+
 # Superpowers visual-companion scratch (brainstorming mockups)
 .superpowers/
 

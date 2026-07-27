@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Contract tests for the Grafana-managed rule generator.
 
-Three things this file exists to pin down, none of which any other gate covers:
+What this file exists to pin down, none of which any other gate covers:
 
+  * **The manifest format.** The generator emits `rules.alerting.grafana.app`
+    manifests consumed by `gcx resources push`, NOT the `apiVersion: 1` file-
+    provisioning document it used to emit. The two formats disagree on nearly
+    every field name and on the CASING of the state enums, and a wrong value is
+    accepted by every local check and then rejected by the API at push time.
   * **The evaluation-policy matrix (#388).** Every alert rule must declare one of
     four named policies, and the ``(noDataState, execErrState)`` pair it emits
     must be exactly that policy's pair. The old generator defaulted every rule to
-    ``execErrState: OK``, so a broken datasource read as "healthy" fleet-wide.
+    a fail-open error state, so a broken datasource read as "healthy" fleet-wide.
   * **The ``coverage_critical`` allowlist.** A rule in that class alerts on
     *absence*, which is the one policy that can page on a Grafana-side problem
     rather than a tailnet-side one. Membership is asserted as an exact set with a
@@ -15,8 +20,11 @@ Three things this file exists to pin down, none of which any other gate covers:
     whose anchor exists in ``docs/runbooks.md`` (and every anchored section in
     that file is referenced by at least one rule — the reverse direction, which is
     what catches a renamed rule leaving a dead section behind). Panel links are
-    emitted as the file-provisioning top-level ``dashboardUid``/``panelId`` pair,
-    never one without the other, and always resolve in the generated dashboard.
+    emitted as the paired ``__dashboardUid__``/``__panelId__`` ANNOTATIONS, which
+    is the only form this API has, and always resolve in the generated dashboard.
+  * **The test-only Prometheus rendering.** It is the only thing that can be
+    EXECUTED (by ``promtool test rules``), so its alert names must be unique and
+    its expressions must be renderable for every non-Loki rule.
 
 Run: ``python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen``
 """
@@ -25,12 +33,14 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[3]
 RUNBOOKS = ROOT / "docs" / "runbooks.md"
 DASHBOARD = ROOT / "deploy" / "grafana" / "tailscale2otel.json"
+MANIFEST_DIR = ROOT / "deploy" / "alerts" / "grafana-managed"
 
 
 def load_module(name, path):
@@ -41,22 +51,26 @@ def load_module(name, path):
 
 
 rules = load_module("tailscale2otel_rules", Path(__file__).with_name("build_rules.py"))
+validate = load_module("tailscale2otel_validate", Path(__file__).with_name("validate_manifests.py"))
 
 
 # The four documented policies, restated here rather than imported. A test that
 # reads its expectations out of the code under test proves only self-consistency;
 # this copy fails if the frozen seam is edited without a deliberate test change.
+#
+# CASING IS THE POINT. rules.alerting.grafana.app spells the no-data "OK" state
+# "Ok", and the exec-error one "OK". The asymmetry is real, it is not a typo here,
+# and getting it wrong makes every rule un-deployable via `gcx resources push`
+# while every local check still passes.
 EXPECTED_POLICY_PAIRS = {
     "coverage_critical": ("Alerting", "Alerting"),
     "core": ("NoData", "Error"),
-    "optional": ("OK", "Error"),
-    "advisory": ("OK", "OK"),
+    "optional": ("Ok", "Error"),
+    "advisory": ("Ok", "OK"),
 }
 
-# Grafana file provisioning accepts exactly these values; KeepLast is an HTTP-API
-# / UI concept and is NOT valid here.
-VALID_NODATA = {"NoData", "Alerting", "OK"}
-VALID_EXECERR = {"Error", "Alerting", "OK"}
+VALID_NODATA = {"NoData", "Alerting", "Ok", "KeepLast"}
+VALID_EXECERR = {"Error", "Alerting", "OK", "KeepLast"}
 
 # Rules allowed to alert on absence. Keep this SMALL: a coverage_critical rule
 # treats "no data" as a fault, so anything whose series is legitimately absent in
@@ -75,21 +89,11 @@ COVERAGE_CRITICAL = {
 
 
 def alert_rules():
-    out = []
-    for _, group in rules.groups():
-        for rule in group:
-            if "record" not in rule:
-                out.append(rule)
-    return out
+    return [r for _, group in rules.groups() for r in group if not rules.is_recording(r)]
 
 
 def recording_rules():
-    out = []
-    for _, group in rules.groups():
-        for rule in group:
-            if "record" in rule:
-                out.append(rule)
-    return out
+    return [r for _, group in rules.groups() for r in group if rules.is_recording(r)]
 
 
 def runbook_anchors():
@@ -106,6 +110,14 @@ def runbook_anchors():
 class PolicyMatrixTest(unittest.TestCase):
     def test_every_policy_pair_is_a_documented_pair(self):
         self.assertEqual(EXPECTED_POLICY_PAIRS, rules.POLICY)
+
+    def test_nodata_ok_is_spelled_Ok_not_OK(self):
+        # The single most expensive mistake available in this file: "OK" is the
+        # provisioning-format spelling and the API rejects it, but nothing local
+        # catches it. Assert the exact byte sequence.
+        self.assertEqual("Ok", rules.POLICY["optional"][0])
+        self.assertEqual("Ok", rules.POLICY["advisory"][0])
+        self.assertEqual("OK", rules.POLICY["advisory"][1])
 
     def test_emitted_states_are_valid_grafana_values(self):
         for rule in alert_rules():
@@ -131,10 +143,10 @@ class PolicyMatrixTest(unittest.TestCase):
                 )
 
     def test_no_rule_is_globally_fail_open_by_accident(self):
-        # The pre-#388 state: everything OK/OK. Only the advisory class may be.
+        # The pre-#388 state: everything fail-open. Only the advisory class may be.
         declared = rules.POLICY_BY_UID
         for rule in alert_rules():
-            if (rule["noDataState"], rule["execErrState"]) == ("OK", "OK"):
+            if (rule["noDataState"], rule["execErrState"]) == ("Ok", "OK"):
                 with self.subTest(uid=rule["uid"]):
                     self.assertEqual("advisory", declared[rule["uid"]])
 
@@ -164,25 +176,39 @@ class PolicyMatrixTest(unittest.TestCase):
 
 class RecordingRuleTest(unittest.TestCase):
     def test_recording_rules_carry_no_alerting_fields(self):
-        # Grafana-managed recording rules do not support condition, noDataState,
-        # execErrState or notification_settings; a provisioning file that sets
-        # them is rejected or silently ignored depending on version.
+        # rules.alerting.grafana.app/v0alpha1 RecordingRule declares
+        # additionalProperties: false, and its property set is exactly
+        # {title, trigger, metric, expressions, targetDatasourceUID, labels,
+        # paused}. Anything else is rejected outright — including `annotations`,
+        # which is why a recording rule's prose description is generator-internal
+        # (`_desc`) and never emitted.
         for rule in recording_rules():
             with self.subTest(uid=rule["uid"]):
-                for field in ("condition", "noDataState", "execErrState", "notification_settings"):
+                for field in ("condition", "noDataState", "execErrState",
+                              "notificationSettings", "annotations", "for"):
                     self.assertNotIn(field, rule)
 
-    def test_recording_rules_have_zero_for(self):
+    def test_recording_rules_carry_the_required_spec_fields(self):
         for rule in recording_rules():
             with self.subTest(uid=rule["uid"]):
-                self.assertEqual("0s", rule["for"])
+                for field in ("title", "trigger", "metric", "expressions",
+                              "targetDatasourceUID"):
+                    self.assertIn(field, rule)
 
     def test_recording_rules_carry_no_runbook_or_panel_link(self):
         for rule in recording_rules():
             with self.subTest(uid=rule["uid"]):
-                self.assertNotIn("runbook_url", rule["annotations"])
                 self.assertNotIn("dashboardUid", rule)
                 self.assertNotIn("panelId", rule)
+                self.assertTrue(rule["_desc"], "a recorded metric still needs a written reason")
+
+    def test_recording_rule_source_node_is_marked(self):
+        # Grafana records the value of the refId marked `source`. Without it the
+        # rule imports but records nothing.
+        for rule in recording_rules():
+            with self.subTest(uid=rule["uid"]):
+                sources = [k for k, v in rule["expressions"].items() if v.get("source")]
+                self.assertEqual(1, len(sources), sources)
 
 
 class RunbookLinkTest(unittest.TestCase):
@@ -216,10 +242,13 @@ class RunbookLinkTest(unittest.TestCase):
         # The runbook URL is the project's public docs site; nothing else in an
         # annotation may name a stack, org or tenant.
         banned = re.compile(r"grafana\.net|grafana\.com|orgId|/a/grafana-|\bstack[-_]?id\b", re.I)
-        for rule in alert_rules() + recording_rules():
+        for rule in alert_rules():
             for key, value in rule["annotations"].items():
                 with self.subTest(uid=rule["uid"], annotation=key):
                     self.assertIsNone(banned.search(value), value)
+        for rule in recording_rules():
+            with self.subTest(uid=rule["uid"]):
+                self.assertIsNone(banned.search(rule["_desc"]), rule["_desc"])
 
 
 class PanelLinkTest(unittest.TestCase):
@@ -233,31 +262,35 @@ class PanelLinkTest(unittest.TestCase):
             if element.get("kind") == "Panel"
         }
 
-    def test_panel_link_fields_are_emitted_as_a_pair(self):
+    def test_panel_link_annotations_are_emitted_as_a_pair(self):
         for rule in alert_rules():
+            ann = rule["annotations"]
             with self.subTest(uid=rule["uid"]):
-                self.assertEqual("dashboardUid" in rule, "panelId" in rule,
-                                 "Grafana requires dashboardUid and panelId together")
+                self.assertEqual("__dashboardUid__" in ann, "__panelId__" in ann,
+                                 "Grafana requires __dashboardUid__ and __panelId__ together")
 
     def test_panel_links_resolve_in_the_generated_dashboard(self):
         linked = 0
         for rule in alert_rules():
-            if "panelId" not in rule:
+            ann = rule["annotations"]
+            if "__panelId__" not in ann:
                 continue
             linked += 1
             with self.subTest(uid=rule["uid"]):
-                self.assertEqual(self.uid, rule["dashboardUid"])
-                self.assertIn(rule["panelId"], self.ids)
+                self.assertEqual(self.uid, ann["__dashboardUid__"])
+                # Annotation values are strings; a bare int is silently dropped.
+                self.assertIsInstance(ann["__panelId__"], str)
+                self.assertIn(int(ann["__panelId__"]), self.ids)
         self.assertGreater(linked, 0, "no rule links a panel; the resolver is not wired up")
 
-    def test_panel_annotations_are_not_used(self):
-        # Top-level fields are the file-provisioning form. Grafana materializes
-        # the __dashboardUid__/__panelId__ annotations itself; emitting both is a
-        # conflict.
+    def test_provisioning_only_top_level_panel_fields_are_not_used(self):
+        # dashboardUid/panelId as TOP-LEVEL rule fields belong to the apiVersion: 1
+        # provisioning format. rules.alerting.grafana.app declares
+        # additionalProperties: false, so emitting them is a hard rejection.
         for rule in alert_rules():
             with self.subTest(uid=rule["uid"]):
-                self.assertNotIn("__dashboardUid__", rule["annotations"])
-                self.assertNotIn("__panelId__", rule["annotations"])
+                self.assertNotIn("dashboardUid", rule)
+                self.assertNotIn("panelId", rule)
 
     def test_ambiguous_panel_title_is_rejected(self):
         # "Updates available" is used by three panels across three tabs.
@@ -282,8 +315,321 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(73, len(alert_rules()))
+        self.assertEqual(78, len(alert_rules()))
         self.assertEqual(12, len(recording_rules()))
+
+    def test_durations_are_go_style_strings(self):
+        # `for` and relativeTimeRange are Go duration STRINGS in this API, not the
+        # integer seconds the provisioning format used. "5m" alone is accepted by
+        # nothing here; it has to be "5m0s".
+        pattern = re.compile(r"^(?:0s|(?:\d+h)?(?:\d+m)?\d+s)$")
+        for rule in alert_rules():
+            with self.subTest(uid=rule["uid"]):
+                self.assertRegex(rule["for"], pattern)
+                for ref, node in rule["expressions"].items():
+                    if "relativeTimeRange" in node:
+                        self.assertRegex(node["relativeTimeRange"]["from"], pattern, ref)
+                        self.assertRegex(node["relativeTimeRange"]["to"], pattern, ref)
+
+    def test_expressions_are_a_map_keyed_by_refid_with_one_source(self):
+        for rule in alert_rules():
+            with self.subTest(uid=rule["uid"]):
+                self.assertIsInstance(rule["expressions"], dict)
+                self.assertEqual(["A", "B", "C"], sorted(rule["expressions"]))
+                for ref, node in rule["expressions"].items():
+                    self.assertEqual(ref, node["model"]["refId"])
+                sources = [k for k, v in rule["expressions"].items() if v.get("source")]
+                self.assertEqual(["C"], sources)
+
+    def test_every_rule_has_a_trigger_interval(self):
+        for _, group in rules.groups():
+            for rule in group:
+                with self.subTest(uid=rule["uid"]):
+                    self.assertEqual({"interval": rules.INTERVAL}, rule["trigger"])
+
+
+class AlertableSignalCoverageTest(unittest.TestCase):
+    """Signals that must stay referenced by at least one alert expression.
+
+    These five were the entire alerting coverage of the hand-maintained
+    Prometheus-ruler file (`deploy/alerts/tailscale2otel.rules.yaml`) that the
+    move to Grafana-managed manifests deleted. Deleting that file silently took
+    five behaviours with it while the signals kept claiming `alertable` in
+    `internal/catalog`'s disposition data — a coverage regression no format,
+    link or policy check above could see, because every remaining rule stayed
+    perfectly valid.
+
+    The Go-side disposition gate catches the same thing from the other end; this
+    is the generator-side half, so a rule deleted here fails in the file that
+    deleted it rather than three packages away.
+    """
+
+    # metric -> the uid that is expected to carry it.
+    REQUIRED = {
+        "tailscale2otel_scrape_errors_total": "ts2o-collector-scrape-error-rate",
+        "tailscale2otel_export_failures_total": "ts2o-otlp-export-failures",
+        "tailscale_node_up_ratio": "ts2o-nodemetrics-target-down",
+        "tailscale_network_flow_logs_dropped_total": "ts2o-flow-logs-dropped",
+        "tailscale_webhook_events_total": "ts2o-node-ip-forwarding",
+    }
+
+    def test_each_signal_is_referenced_by_its_rule(self):
+        by_uid = {r["uid"]: r for r in alert_rules()}
+        for metric, uid in self.REQUIRED.items():
+            with self.subTest(metric=metric, uid=uid):
+                self.assertIn(uid, by_uid, "the rule restoring %s is gone" % metric)
+                self.assertIn(metric, rules.rule_expr(by_uid[uid]))
+
+    def test_each_signal_reaches_a_shipped_manifest(self):
+        # The end-to-end form of the check the disposition gate performs:
+        # `rg -l <metric> deploy/alerts/grafana-managed/` must be non-empty.
+        blobs = [p.read_text() for p in MANIFEST_DIR.glob("*.json")]
+        for metric in self.REQUIRED:
+            with self.subTest(metric=metric):
+                self.assertTrue(any(metric in b for b in blobs),
+                                "%s is referenced by no shipped manifest" % metric)
+
+    def test_the_webhook_rule_still_selects_both_ip_forwarding_types(self):
+        # The rule's whole value is the two-type selector: these health events
+        # arrive ONLY by webhook and are emitted at INFO, so nothing else
+        # surfaces them. A widened selector would make it a generic webhook-rate
+        # alert; a narrowed one would silently drop exit nodes or subnet routers.
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-node-ip-forwarding"])
+        self.assertIn("exitNodeIPForwardingNotEnabled", expr)
+        self.assertIn("subnetIPForwardingNotEnabled", expr)
+
+
+class ManifestEmitTest(unittest.TestCase):
+    """The emit layer, exercised into a temp dir so it never touches the tree."""
+
+    def test_emitted_manifests_validate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            errors = validate.validate_dir(Path(tmp))
+        self.assertEqual([], errors)
+
+    def test_committed_manifests_validate(self):
+        # The shipped directory, not a fresh render: a hand-edited or stale file
+        # is exactly what this catches. Drift against the generator is the CI
+        # dashboards-drift job's job, not this one's.
+        self.assertTrue(MANIFEST_DIR.is_dir(), f"{MANIFEST_DIR} is missing")
+        self.assertEqual([], validate.validate_dir(MANIFEST_DIR))
+
+    def test_one_file_per_rule_plus_the_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            names = sorted(p.name for p in Path(tmp).glob("*.json"))
+        expected = sorted(
+            ["_folder.json"]
+            + [f"{r['uid']}.json" for _, g in rules.groups() for r in g]
+        )
+        self.assertEqual(expected, names)
+
+    def test_stale_manifests_are_deleted_before_writing(self):
+        # A renamed or removed rule must not linger as a file that still pushes.
+        with tempfile.TemporaryDirectory() as tmp:
+            stale = Path(tmp) / "ts2o-rule-that-no-longer-exists.json"
+            stale.write_text("{}\n")
+            rules.emit_grafana_managed(tmp)
+            self.assertFalse(stale.exists())
+
+    def test_output_is_deterministic(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            rules.emit_grafana_managed(a)
+            rules.emit_grafana_managed(b)
+            for pa in sorted(Path(a).glob("*.json")):
+                pb = Path(b) / pa.name
+                with self.subTest(name=pa.name):
+                    self.assertEqual(pa.read_bytes(), pb.read_bytes())
+
+    def test_every_manifest_ends_with_a_newline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            for p in Path(tmp).glob("*.json"):
+                with self.subTest(name=p.name):
+                    self.assertTrue(p.read_bytes().endswith(b"}\n"))
+
+    def test_folder_manifest_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            doc = json.loads((Path(tmp) / "_folder.json").read_text())
+        self.assertEqual("folder.grafana.app/v1beta1", doc["apiVersion"])
+        self.assertEqual("Folder", doc["kind"])
+        self.assertEqual(rules.FOLDER, doc["metadata"]["name"])
+        self.assertTrue(doc["spec"]["title"])
+
+    def test_every_rule_manifest_declares_its_folder_both_ways(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            for p in sorted(Path(tmp).glob("*.json")):
+                if p.name == "_folder.json":
+                    continue
+                doc = json.loads(p.read_text())
+                with self.subTest(name=p.name):
+                    self.assertEqual(rules.FOLDER, doc["metadata"]["annotations"]["grafana.app/folder"])
+                    self.assertEqual(rules.FOLDER, doc["metadata"]["labels"]["grafana.app/folder"])
+
+    def test_internal_keys_never_reach_a_manifest(self):
+        # The catalogue dicts carry generator-internal keys (`uid`, `_prom`,
+        # `_desc`) that the API's additionalProperties: false would reject.
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            for p in Path(tmp).glob("*.json"):
+                doc = json.loads(p.read_text())
+                with self.subTest(name=p.name):
+                    self.assertNotIn("uid", doc)
+                    for key in doc.get("spec", {}):
+                        self.assertFalse(key.startswith("_"), key)
+                        self.assertNotEqual("uid", key)
+
+
+class ValidatorTest(unittest.TestCase):
+    """The validator must actually reject the things it claims to."""
+
+    def _write(self, tmp, name, doc):
+        p = Path(tmp) / name
+        p.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+        return p
+
+    def _good_alert(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            return json.loads((Path(tmp) / "ts2o-exporter-down.json").read_text())
+
+    def _good_recording(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            return json.loads((Path(tmp) / "ts2o-rec-devices-online.json").read_text())
+
+    def _errors_for(self, mutate, base=None, name="probe.json"):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            doc = base if base is not None else self._good_alert()
+            mutate(doc)
+            self._write(tmp, name, doc)
+            return validate.validate_dir(Path(tmp))
+
+    def test_rejects_uppercase_OK_nodatastate(self):
+        errors = self._errors_for(lambda d: d["spec"].update(noDataState="OK"))
+        self.assertTrue(any("noDataState" in e for e in errors), errors)
+
+    def test_rejects_lowercase_ok_execerrstate(self):
+        errors = self._errors_for(lambda d: d["spec"].update(execErrState="Ok"))
+        self.assertTrue(any("execErrState" in e for e in errors), errors)
+
+    def test_rejects_bad_apiversion(self):
+        errors = self._errors_for(lambda d: d.update(apiVersion="rules.alerting.grafana.app/v1"))
+        self.assertTrue(any("apiVersion" in e for e in errors), errors)
+
+    def test_rejects_unknown_kind(self):
+        errors = self._errors_for(lambda d: d.update(kind="RuleGroup"))
+        self.assertTrue(any("kind" in e for e in errors), errors)
+
+    def test_rejects_overlong_metadata_name(self):
+        errors = self._errors_for(lambda d: d["metadata"].update(name="x" * 41))
+        self.assertTrue(any("metadata.name" in e for e in errors), errors)
+
+    def test_rejects_illegal_metadata_name_charset(self):
+        errors = self._errors_for(lambda d: d["metadata"].update(name="not a uid!"))
+        self.assertTrue(any("metadata.name" in e for e in errors), errors)
+
+    def test_rejects_a_lone_panel_annotation(self):
+        errors = self._errors_for(lambda d: d["spec"]["annotations"].pop("__panelId__", None)
+                                  or d["spec"]["annotations"].update(__dashboardUid__="x"))
+        self.assertTrue(any("__panelId__" in e or "__dashboardUid__" in e for e in errors), errors)
+
+    def test_rejects_non_string_panel_id(self):
+        def mutate(d):
+            d["spec"]["annotations"]["__dashboardUid__"] = "x"
+            d["spec"]["annotations"]["__panelId__"] = 12
+        errors = self._errors_for(mutate)
+        self.assertTrue(any("__panelId__" in e for e in errors), errors)
+
+    def test_rejects_alert_only_fields_on_a_recording_rule(self):
+        errors = self._errors_for(lambda d: d["spec"].update(noDataState="Ok"),
+                                  base=self._good_recording())
+        self.assertTrue(any("RecordingRule" in e for e in errors), errors)
+
+    def test_rejects_a_missing_folder_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            (Path(tmp) / "_folder.json").unlink()
+            errors = validate.validate_dir(Path(tmp))
+        self.assertTrue(any("_folder.json" in e for e in errors), errors)
+
+    def test_rejects_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp)
+            (Path(tmp) / "broken.json").write_text("{not json")
+            errors = validate.validate_dir(Path(tmp))
+        self.assertTrue(any("broken.json" in e for e in errors), errors)
+
+    def test_empty_directory_is_an_error_not_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertNotEqual([], validate.validate_dir(Path(tmp)))
+
+
+class PrometheusRenderingTest(unittest.TestCase):
+    """The TEST-ONLY rendering. Never committed, never shipped — but promtool is
+    the only thing in the repo that EXECUTES a rule, so it has to be renderable."""
+
+    def test_alert_names_are_unique_and_identifier_shaped(self):
+        names = [rules.prom_alertname(r["title"]) for r in alert_rules()]
+        self.assertEqual(len(names), len(set(names)), "duplicate promtool alertname")
+        for n in names:
+            with self.subTest(name=n):
+                self.assertRegex(n, r"^[A-Za-z][A-Za-z0-9]*$")
+
+    def test_loki_rules_are_excluded(self):
+        doc = rules.build_prom_rules()
+        rendered = json.dumps(doc)
+        self.assertNotIn("count_over_time({", rendered,
+                         "a LogQL expression reached the Prometheus rendering; promtool "
+                         "cannot parse it and the whole file fails to load")
+        loki = [r for r in alert_rules() if r["_prom"]["ds"] == rules.LOKI]
+        self.assertTrue(loki, "no Loki-backed rule left, so this exclusion is untested")
+
+    def test_every_prometheus_backed_rule_is_rendered(self):
+        doc = rules.build_prom_rules()
+        rendered = {r.get("alert") for g in doc["groups"] for r in g["rules"]}
+        for rule in alert_rules():
+            if rule["_prom"]["ds"] != rules.PROM:
+                continue
+            with self.subTest(uid=rule["uid"]):
+                self.assertIn(rules.prom_alertname(rule["title"]), rendered)
+
+    def test_recording_rules_are_rendered(self):
+        doc = rules.build_prom_rules()
+        recorded = {r.get("record") for g in doc["groups"] for r in g["rules"]}
+        for rule in recording_rules():
+            with self.subTest(uid=rule["uid"]):
+                self.assertIn(rule["metric"], recorded)
+
+    def test_coverage_critical_rules_gain_an_absent_arm(self):
+        # Grafana expresses "absence is the alert" with noDataState: Alerting.
+        # Prometheus has no such concept, so the only faithful rendering is an
+        # explicit `or absent(...)`. Without it the test-only file would quietly
+        # drop the exact semantics the absent() fixture case exists to prove.
+        doc = rules.build_prom_rules()
+        by_name = {r.get("alert"): r for g in doc["groups"] for r in g["rules"]}
+        for uid in COVERAGE_CRITICAL:
+            rule = next(r for r in alert_rules() if r["uid"] == uid)
+            with self.subTest(uid=uid):
+                self.assertIn("absent(", by_name[rules.prom_alertname(rule["title"])]["expr"])
+
+    def test_non_coverage_rules_do_not_gain_an_absent_arm(self):
+        doc = rules.build_prom_rules()
+        by_name = {r["alert"]: r for g in doc["groups"] for r in g["rules"] if "alert" in r}
+        for rule in alert_rules():
+            if rule["uid"] in COVERAGE_CRITICAL or rule["_prom"]["ds"] != rules.PROM:
+                continue
+            name = rules.prom_alertname(rule["title"])
+            with self.subTest(uid=rule["uid"]):
+                self.assertNotIn("absent(", by_name[name]["expr"])
+
+    def test_rendering_is_deterministic(self):
+        self.assertEqual(rules.yamlify(rules.build_prom_rules()),
+                         rules.yamlify(rules.build_prom_rules()))
 
 
 if __name__ == "__main__":

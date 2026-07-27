@@ -177,8 +177,10 @@ jobs:
   # time, random or set-ordering source), so regenerating on a clean tree is a
   # no-op and any diff here is real drift.
   #
-  # deploy/alerts/tailscale2otel.rules.yaml and the four legacy standalone
-  # dashboards are HAND-MAINTAINED — deliberately not regenerated or diffed.
+  # Nothing under deploy/grafana or deploy/alerts is hand-maintained any more: the
+  # four legacy classic-schema dashboards and the Prometheus-ruler rules file were
+  # both deleted (#394), precisely because being excluded from this gate let them
+  # rot unnoticed for months.
   dashboards-drift:
     name: generated dashboards and rules are in sync
     runs-on: ubuntu-latest
@@ -259,8 +261,16 @@ jobs:
       - name: promqlcheck (dashboard + rule expressions)
         run: go run -C tools/promqlcheck . -root "$PWD"
 
+      # The shipped rules are Grafana-managed manifests, which promtool cannot
+      # read. promtool is still the only thing that EXECUTES a rule, so the
+      # generator re-renders the same catalogue as throwaway Prometheus rules
+      # purely for the fixtures below. This file is never committed and never
+      # shipped — see the header comment in deploy/alerts/tests/.
+      - name: render the test-only Prometheus rules (never committed)
+        run: python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+
       - name: promtool check rules
-        run: promtool check rules deploy/alerts/tailscale2otel.rules.yaml
+        run: promtool check rules deploy/alerts/.generated-prom-rules.yaml
 
       # `check rules` only proves the expressions parse. These execute them
       # against synthetic series and assert what actually fires — the only way to

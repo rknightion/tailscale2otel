@@ -9,7 +9,7 @@ tags:
 # Alert runbooks
 
 Every alert rule in
-[`deploy/alerts/tailscale2otel.grafana-rules.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alerts/tailscale2otel.grafana-rules.yaml)
+[`deploy/alerts/grafana-managed/`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/alerts/grafana-managed)
 carries a `runbook_url` annotation pointing at a section of this page. The sections are per **rule
 family**, not per rule — rules in a family share a cause, a first diagnostic step and a definition
 of "resolved", and splitting them would produce twenty-five near-identical pages nobody maintains.
@@ -25,7 +25,8 @@ Each family states what the alert means, what causes it *legitimately* (the reas
 anyone), what causes it illegitimately, the first thing to look at, and what "resolved" looks like.
 Panel names in the **First step** lines refer to the flagship dashboard
 (`deploy/grafana/tailscale2otel.json`, uid `tailscale2otel`); most alerts also carry a
-`dashboardUid`/`panelId` pair so Grafana links you straight there from the alert itself.
+`__dashboardUid__`/`__panelId__` annotation pair so Grafana links you straight there from the
+alert itself.
 
 ## Evaluation policy: what "no data" and "error" mean here
 
@@ -36,8 +37,8 @@ Every alert declares one of four evaluation policies, which fixes its `noDataSta
 |---|---|---|---|
 | `coverage_critical` | `Alerting` | `Alerting` | Absence **is** the fault. A query error must never read as healthy. |
 | `core` | `NoData` | `Error` | The exporter always emits this while running, so absence is abnormal and surfaces as a distinct `DatasourceNoData` alert. |
-| `optional` | `OK` | `Error` | The series is legitimately absent in a healthy deployment (gated collector, optional source, a counter that has not incremented). Absence is fine; a datasource error is not. |
-| `advisory` | `OK` | `OK` | Hygiene. Neither absence nor a transient error is actionable at this severity. |
+| `optional` | `Ok` | `Error` | The series is legitimately absent in a healthy deployment (gated collector, optional source, a counter that has not incremented). Absence is fine; a datasource error is not. |
+| `advisory` | `Ok` | `OK` | Hygiene. Neither absence nor a transient error is actionable at this severity. |
 
 If you see a `DatasourceError` alert instead of the rule you expected, the rule did not evaluate —
 treat it as an outage of that signal, not as an all-clear.
@@ -99,13 +100,18 @@ intervals — a single scrape recovering during a crash loop is not a resolution
 ## Collector scrape health {#collector-scrape-health}
 
 **Rules:** `ts2o-collector-scrape-failing`, `ts2o-collector-scrape-stale`,
-`ts2o-scrape-staleness-high`, `ts2o-scrape-budget-overrun`
+`ts2o-scrape-staleness-high`, `ts2o-scrape-budget-overrun`, `ts2o-collector-scrape-error-rate`
 
-**What it means.** One collector is not completing successful scrapes. The four rules attack it from
+**What it means.** One collector is not completing successful scrapes. The five rules attack it from
 different angles because a wedged collector can look healthy from any single one: *failing* is the
 last scrape erroring, *stale* / *staleness-high* is no scrape completing at all (the success gauge
-can sit at `1` forever while nothing runs), and *budget overrun* is scrapes taking longer than their
-interval, so the collector can never catch up.
+can sit at `1` forever while nothing runs), *budget overrun* is scrapes taking longer than their
+interval, so the collector can never catch up, and *scrape-error-rate* is the flapping case: a
+collector that fails and recovers on alternating scrapes leaves `scrape_success` sitting at `1`
+whenever the rule happens to evaluate, so `scrape-failing` never sees a sustained zero — but the
+error counter keeps climbing and half the data is missing. `scrape-failing` answers "is the last
+scrape broken", `scrape-error-rate` answers "how often is it breaking"; a flapping collector fires
+only the second.
 
 **Legitimate causes.** A collector whose API endpoint the tailnet plan does not include will show as
 failing until you disable it. A large tailnet can legitimately overrun a short poll interval — that
@@ -182,10 +188,21 @@ have completed a successful scrape.
 
 ## OTLP export health {#otlp-export-health}
 
-**Rules:** `ts2o-export-latency-high`, `ts2o-export-failures`
+**Rules:** `ts2o-export-latency-high`, `ts2o-export-failures`, `ts2o-otlp-export-failures`
 
 **What it means.** Data is being collected but is not reaching the OTLP backend, or is reaching it
 slowly enough to back up. Everything upstream can look perfectly healthy while this is broken.
+
+**Two failure counters, deliberately.** `ts2o-export-failures` reads
+`tailscale2otel_export_duration_seconds_count{outcome="failure"}` — the export *decorators*, one
+observation per `Export()` call per signal, so it tells you which signal is failing.
+`ts2o-otlp-export-failures` reads `tailscale2otel_export_failures_total`, incremented from the OTEL
+SDK's **global error handler**, so it also catches errors that never came from a decorated export
+call, and breaks them down by `error_type` (`timeout` vs `export`) instead of by signal. The handler
+counter is the canonical one — `internal/telemetry/selfobs.go` is written against the assumption that
+alerts watch it, and it deliberately excludes `ErrInstrumentName`, which is not a lost datapoint.
+Neither is a superset of the other, so widening one to cover both would drop a dimension a responder
+needs; if only one fires, that difference is itself the diagnosis.
 
 **Legitimate causes.** A brief spike during a backend deploy or a network blip. Sustained high
 latency on a deliberately distant/underprovisioned collector endpoint.
@@ -367,7 +384,7 @@ for this fleet and adjusted it in the generator.
 
 **Legitimate causes.** Almost all of them. Pinned versions on appliances, devices that have been off
 for a while, a staged rollout in progress, and platforms whose app-store updates lag. This family is
-`advisory` — `OK` on both no-data and error — because it is drift reporting, not an incident.
+`advisory` — fail-open on both no-data and error — because it is drift reporting, not an incident.
 
 **Not legitimate.** Nothing here is an incident. Treat a persistent high skew as a fleet-management
 backlog item, not a page.
@@ -627,50 +644,82 @@ a threshold from your own history rather than assuming 50% is meaningful for you
 
 ## Flow data pipeline {#flow-data-pipeline}
 
-**Rules:** `ts2o-no-flow-data`, `ts2o-flow-reporter-mismatch`
+**Rules:** `ts2o-no-flow-data`, `ts2o-flow-reporter-mismatch`, `ts2o-flow-logs-dropped`
 
-**What it means.** No network flow records have arrived for an hour while flow logging is on, or flow
+**What it means.** No network flow records have arrived for an hour while flow logging is on, flow
 records are arriving where the Tailscale-**verified** reporter node ID disagrees with the unverified
-embedded source reference.
+embedded source reference, or the exporter's own per-window volume guard is **truncating** flow log
+records.
+
+**Dropped records are a local cap, not an upstream fault.** `flow-logs-dropped` counts records
+suppressed by `collectors.flowlogs.max_log_records_per_window`. Only *log records* are ever dropped —
+flow **metrics** are never capped, so the throughput panels stay complete and correct while the log
+stream silently loses records. That asymmetry is the reason this rule exists at all: nothing else in
+the pack makes the truncation visible, and the guard is doing exactly what it was configured to do,
+so there is no error anywhere to find.
 
 **Legitimate causes.** A genuinely idle tailnet produces no flows — which is why `no-flow-data` is
 info-tier, paused and `advisory`. Reporter/source disagreement can be a benign artefact of how a
 particular relay path attributes a record; the rule ships paused so you enable it only where agreement
-is actually expected.
+is actually expected. Dropping is legitimate on a deliberately tight cap on a busy tailnet — but it
+should be a decision you made, not a surprise.
 
 **Not legitimate.** Zero flows on a tailnet you know is busy. That means the flow pipeline is stalled
 — check whether flow logging is still enabled upstream (see
-[Tailnet settings drift](#tailnet-settings-drift)) before suspecting the exporter.
+[Tailnet settings drift](#tailnet-settings-drift)) before suspecting the exporter. Sustained dropping
+you did not intend is likewise not legitimate: your flow log search results are incomplete and
+nothing in the query says so.
 
 **First step.** **Flows/s (now)** and **Flow log stream** on the Flow View tab; **Reporter trust &
-consistency** for the mismatch case. Confirm the ingestion path: for `flowlogs` you must choose
-*exactly one* of `source: poll` or `source: stream` — running both double-counts.
+consistency** for the mismatch case; **Flow log records dropped/s** for the truncation case. Confirm
+the ingestion path: for `flowlogs` you must choose *exactly one* of `source: poll` or
+`source: stream` — running both double-counts.
 
 **Resolved when.** Flow records resume at the expected rate, or the tailnet's idleness is confirmed
-and the threshold tuned.
+and the threshold tuned. For dropping: the dropped rate is back to zero, either by raising
+`max_log_records_per_window` (costs log ingest) or by narrowing the flow-log scope
+(`per_connection` instead of `per_record`).
 
 ## Subnet routing and services {#subnet-routing-and-services}
 
-**Rules:** `ts2o-subnet-routes-unapproved`, `ts2o-exit-node-no-failover`, `ts2o-vip-service-no-ha`
+**Rules:** `ts2o-subnet-routes-unapproved`, `ts2o-exit-node-no-failover`, `ts2o-vip-service-no-ha`,
+`ts2o-node-ip-forwarding`
 
 **What it means.** A device is advertising subnet routes an admin has not approved (so those subnets
 are **not reachable** — the advertisement is inert until approved), a CIDR is served by exactly one
-router (no failover), or a Tailscale VIP service is backed by a single host (no HA).
+router (no failover), a Tailscale VIP service is backed by a single host (no HA), or a node that is
+supposed to route traffic has **IP forwarding disabled on the host OS**, so its routing is broken
+even though the tailnet side of the configuration is correct.
+
+**The IP-forwarding case is webhook-only.** Tailscale reports
+`exitNodeIPForwardingNotEnabled` / `subnetIPForwardingNotEnabled` as node-health *events*, delivered
+**only** through the webhook receiver — there is no polling or log-streaming equivalent — and the
+exporter emits them at INFO severity, so nothing surfaces them by default. That makes
+`ts2o-node-ip-forwarding` the only mechanism in the pack that reports a silently broken exit node or
+subnet router. The receiver is off by default, so `tailscale_webhook_events_total` is absent (and the
+rule cannot fire) unless you have configured it.
 
 **Legitimate causes.** Single-router and single-host are correct for a lab, a home network, or any
 service whose availability target does not justify a second node. These two are `advisory` for that
 reason — they report a redundancy fact, not a fault. An unapproved route may simply be waiting for a
-change window.
+change window. An IP-forwarding event during a node's first few minutes of provisioning is normal and
+stops once the sysctl is applied.
 
 **Not legitimate.** An unapproved route that has been pending for days: someone is being told "the
-subnet is broken" while the fix is one click in the admin console.
+subnet is broken" while the fix is one click in the admin console. Nor is a repeating IP-forwarding
+event: the route is advertised, approved and *dead*, which looks like a network fault to everyone
+downstream.
 
 **First step.** **Subnet routes — advertised vs enabled** and **Subnet-route redundancy by CIDR** on
 the Network tab; **Backing hosts by service** for VIP services. Approve or reject the route in the
-Tailscale admin console.
+Tailscale admin console. For IP forwarding, **Webhook events/s by type** identifies the event type;
+fix it on the node itself — `net.ipv4.ip_forward=1` and `net.ipv6.conf.all.forwarding=1`, persisted
+in `/etc/sysctl.d/`, not just set for the current boot.
 
-**Resolved when.** Routes are approved (or the advertisement withdrawn), and any CIDR/service that
-warrants redundancy has a second router/host.
+**Resolved when.** Routes are approved (or the advertisement withdrawn), any CIDR/service that
+warrants redundancy has a second router/host, and the IP-forwarding events stop arriving — this last
+one clears by *absence* of new events, so allow a full `15m` rate window plus the `for` period before
+calling it fixed.
 
 ## Node client health {#node-client-health}
 
@@ -695,3 +744,37 @@ identify the node and the warning type. Then go to that node: `tailscale status`
 node-metrics scraper — without it the series is absent and nothing fires.
 
 **Resolved when.** The node reports no active health warnings for a full evaluation window.
+
+## Node-metrics scrape targets {#nodemetrics-scrape-targets}
+
+**Rules:** `ts2o-nodemetrics-target-down`
+
+**What it means.** The node-metrics scraper could not reach `tailscaled`'s metrics endpoint on a
+target, so `tailscale_node_up_ratio` is `0` for it and every forwarded `tailscaled_*` series from that
+node is frozen at its last value. This is scrape *reachability*, not the client's opinion of itself —
+a node can be perfectly healthy and simply not be scrapeable, and it can be unreachable while
+reporting no health warnings at all. That is why it is a separate family from
+[Node client health](#node-client-health), and separate again from
+[Enrichment and discovery](#enrichment-and-discovery), which covers the target *list* rather than the
+targets on it.
+
+**Legitimate causes.** The scraper is off by default, so the gauge is absent in most deployments
+(`optional`). Where it is on, a laptop or workstation target that sleeps overnight goes down every
+night and comes back every morning; `tailscaled` also only serves `/metrics` when the node has the
+debug metrics endpoint enabled and reachable over the tailnet. **This rule therefore ships paused** —
+enable it once your target list is servers you expect to be up continuously.
+
+**Not legitimate.** A server target that stays down while the device still shows online in the
+control-plane view. That combination means the node is on the tailnet but its metrics endpoint is not
+answering — a local `tailscaled`, firewall or bind-address problem, not a tailnet one.
+
+**First step.** **Node up** and **Targets up** on the Node Metrics tab name the target
+(`tailscale_node`). Then, from a host on the tailnet, curl that node's metrics endpoint directly: a
+connection refused points at the endpoint, a timeout points at reachability. If *every* target is
+down at once, suspect the scraper's config rather than the fleet, and check
+[Enrichment and discovery](#enrichment-and-discovery) for a stale or empty target list.
+
+**Resolved when.** `tailscale_node_up_ratio` is `1` for that target across a full evaluation window.
+Note that decommissioning a target does **not** resolve it by clearing the alert to OK — the series
+goes absent, which this rule treats as `Ok` (no alert) rather than as a fault; remove it from the
+target list so it stops being expected.

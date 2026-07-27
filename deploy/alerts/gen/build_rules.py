@@ -1,24 +1,50 @@
 #!/usr/bin/env python3
 """Generate the tailscale2otel **Grafana-managed** alerting + recording rules.
 
-Emits a Grafana *file-provisioning* document (``apiVersion: 1`` + ``groups:``) of
-Grafana-managed rules — i.e. rules Grafana itself evaluates (multi-datasource,
-``noDataState``/``execErrState``, ``isPaused``), NOT Prometheus/Loki *ruler*
-("datasource-managed") rules. The committed sibling file
-``tailscale2otel.rules.yaml`` is the datasource-managed equivalent for a
-Mimir/Cortex/Prometheus ruler; this generator targets Grafana alerting.
+Emits one ``rules.alerting.grafana.app/v0alpha1`` manifest per rule (plus a
+``folder.grafana.app/v1beta1`` folder manifest) into ``../grafana-managed/``. That
+is the resource form ``gcx resources push`` consumes. Grafana evaluates these
+itself (multi-datasource, ``noDataState``/``execErrState``, ``paused``); they are
+NOT Prometheus/Loki *ruler* ("datasource-managed") rules, and this repo
+deliberately no longer ships a ruler-compatible file.
 
-Dashboards-as-code style: edit this generator, regenerate, commit both. Only the
-Python standard library is required (PyYAML is intentionally NOT a dependency —
-a tiny block-YAML emitter lives in ``yamlify`` below).
+Dashboards-as-code style: edit this generator, regenerate, commit the manifests.
+Only the Python standard library is required (PyYAML is intentionally NOT a
+dependency — a tiny block-YAML emitter lives in ``yamlify`` below, used solely by
+the throwaway ``--prom-out`` rendering).
 
 Usage:
-    python3 build_rules.py --out ../tailscale2otel.grafana-rules.yaml
+    python3 build_rules.py --out ../grafana-managed          # the shipped artifact
+    python3 build_rules.py --prom-out /tmp/prom-rules.yaml   # TEST-ONLY, never committed
+
+Deploy with (folder first, so the rules resolve it)::
+
+    gcx resources push -p deploy/alerts/grafana-managed
+
+**The two format traps this file exists to get right.** The manifest format is
+NOT the ``apiVersion: 1`` file-provisioning format an earlier version of this
+generator emitted, and the differences are silent ones:
+
+  * ``noDataState`` spells its OK value ``"Ok"``; ``execErrState`` spells its own
+    ``"OK"``. The asymmetry is real. The provisioning format used ``"OK"`` for
+    both, so a mechanical port produces manifests every local check accepts and
+    the API rejects at push time.
+  * Durations are Go-style strings (``"30m0s"``, ``"0s"``, ``"1h0m0s"``), not the
+    integer seconds ``relativeTimeRange`` took in the provisioning format.
+  * Panel links are the paired ``__dashboardUid__``/``__panelId__`` ANNOTATIONS
+    (``__panelId__`` a string). The top-level ``dashboardUid``/``panelId`` fields
+    are provisioning-only, and this API declares ``additionalProperties: false``,
+    so emitting them is a hard rejection.
+  * ``expressions`` is a MAP keyed by refId, and the node the rule reads carries
+    ``"source": true`` — there is no separate ``condition`` field.
+  * ``RecordingRule`` has no ``annotations``, ``for``, ``condition``,
+    ``noDataState`` or ``execErrState`` at all. Its required spec is
+    ``{title, trigger, metric, expressions, targetDatasourceUID}``.
 
 Conventions baked in here:
   * Every rule is a 3-node Grafana pipeline: A (datasource query, range) ->
-    B (reduce, last) -> C (threshold). ``condition: C``. This is exactly what the
-    Grafana UI produces, so the rules round-trip cleanly through the API/UI.
+    B (reduce, last) -> C (threshold), C marked ``source``. This is exactly what
+    the Grafana UI produces, so the rules round-trip cleanly through the UI.
   * Metric names are the OTLP->Prometheus *normalized* names (see ../README.md).
   * Gauge reads are wrapped in ``max by (<real dims>)`` so an alert instance is
     keyed only by the dimensions it is about, aggregating away the exporter's
@@ -37,9 +63,15 @@ Conventions baked in here:
     dead link (#387).
   * Datasource UIDs are the portable Grafana Cloud defaults (grafanacloud-prom /
     grafanacloud-logs); swap them for a self-hosted stack.
-  * Rules NOT in the recommended starter set ship ``isPaused: true`` (enable in
+  * Rules NOT in the recommended starter set ship ``paused: true`` (enable in
     the UI when you want them). Starter-set + the explicitly-requested 48h key
     tiers ship enabled.
+
+``--prom-out`` renders the SAME catalogue as a plain Prometheus rule file. It is
+a **test fixture, not a deliverable**: it is never committed and never shipped.
+It exists because ``promtool test rules`` is the only thing in this repo that
+EXECUTES a rule against synthetic series, and promtool understands no other
+format. Loki-backed rules are omitted from it (promtool cannot parse LogQL).
 """
 
 import argparse
@@ -69,6 +101,12 @@ RUNBOOK_BASE = "https://m7kni.io/tailscale2otel/runbooks/#"
 
 # Evaluation policy: how a rule behaves when its query returns nothing, and when
 # the query itself fails. (noDataState, execErrState).
+#
+# CASING. rules.alerting.grafana.app/v0alpha1 spells the no-data OK state "Ok"
+# and the exec-error OK state "OK". That is not a typo below and must not be
+# "tidied": the provisioning format this generator used to emit spelled both
+# "OK", and pushing that spelling makes every affected rule un-deployable while
+# every offline check still passes. test_rules.py asserts the exact bytes.
 POLICY = {
     # The rule's entire job is to notice that something stopped. Absence IS the
     # alert, and a query error must never read as healthy.
@@ -80,10 +118,10 @@ POLICY = {
     # Gated on an optional collector, source or provider capability. Absence
     # means "not configured", which is not a fault -- but a datasource error
     # still is.
-    "optional":         ("OK",       "Error"),
+    "optional":         ("Ok",       "Error"),
     # Hygiene/advisory. Neither absence nor a transient error is actionable at
     # this rule's severity, and surfacing them would be pure noise.
-    "advisory":         ("OK",       "OK"),
+    "advisory":         ("Ok",       "OK"),
 }
 
 # uid -> declared policy name. Populated by alert() as the catalogue is built, so
@@ -155,33 +193,72 @@ def _ds(uid):
     return {"type": ("loki" if uid == LOKI else ("__expr__" if uid == "__expr__" else "prometheus")), "uid": uid}
 
 
+# --- durations -------------------------------------------------------------
+# rules.alerting.grafana.app takes Go duration STRINGS everywhere the
+# provisioning format took integer seconds or a bare Prometheus duration. "5m"
+# is not accepted; "5m0s" is. Round-tripping through seconds keeps the catalogue
+# authored in the short form a human reads.
+
+_DUR_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+_DUR_RE = re.compile(r"^(\d+)([smhd])$")
+
+
+def _seconds(dur):
+    """Seconds for a short Prometheus-style duration string ("5m", "1h", "0m")."""
+    if isinstance(dur, (int, float)):
+        return int(dur)
+    m = _DUR_RE.match(dur)
+    if not m:
+        raise ValueError("cannot parse duration %r; use <int><s|m|h|d>" % (dur,))
+    return int(m.group(1)) * _DUR_UNITS[m.group(2)]
+
+
+def godur(dur):
+    """Go duration string, formatted the way Grafana itself writes them."""
+    total = _seconds(dur)
+    if total <= 0:
+        return "0s"
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return "%dh%dm%ds" % (h, m, s)
+    if m:
+        return "%dm%ds" % (m, s)
+    return "%ds" % s
+
+
 def _query_node(expr, ds_uid, lookback=3600):
     model = {"datasource": _ds(ds_uid), "editorMode": "code", "expr": expr,
              "instant": False, "range": True, "intervalMs": 1000,
              "maxDataPoints": 43200, "refId": "A"}
     if ds_uid == LOKI:
         model["queryType"] = "range"
-    return {"refId": "A", "relativeTimeRange": {"from": lookback, "to": 0},
-            "datasourceUid": ds_uid, "model": model}
+    return {"datasourceUID": ds_uid,
+            "relativeTimeRange": {"from": godur(lookback), "to": "0s"},
+            "model": model}
 
 
 def _reduce_node():
-    return {"refId": "B", "relativeTimeRange": {"from": 0, "to": 0},
-            "datasourceUid": "__expr__",
-            "model": {"datasource": _ds("__expr__"), "expression": "A",
-                      "reducer": "last", "type": "reduce", "refId": "B"}}
+    # Server-side expression nodes carry no datasourceUID or relativeTimeRange of
+    # their own — the __expr__ datasource inside the model is the whole story.
+    return {"model": {"datasource": _ds("__expr__"), "expression": "A",
+                      "reducer": "last", "type": "reduce", "refId": "B",
+                      "intervalMs": 1000, "maxDataPoints": 43200}}
 
 
 def _threshold_node(op, thr):
     # op: "gt" | "lt" | "within_range" (thr is [lo, hi] for within_range)
-    params = thr if isinstance(thr, list) else [thr]
+    params = list(thr) if isinstance(thr, list) else [thr]
     cond = {"type": "query", "evaluator": {"type": op, "params": params},
-            "operator": {"type": "and"}, "query": {"params": ["C"]},
+            "operator": {"type": "and"}, "query": {"params": []},
             "reducer": {"type": "last", "params": []}}
-    return {"refId": "C", "relativeTimeRange": {"from": 0, "to": 0},
-            "datasourceUid": "__expr__",
-            "model": {"datasource": _ds("__expr__"), "expression": "B",
-                      "type": "threshold", "conditions": [cond], "refId": "C"}}
+    # `source: true` marks the node whose result IS the rule's verdict. This API
+    # has no separate `condition` field, so without it the rule imports with no
+    # condition at all.
+    return {"model": {"datasource": _ds("__expr__"), "expression": "B",
+                      "type": "threshold", "conditions": [cond], "refId": "C",
+                      "intervalMs": 1000, "maxDataPoints": 43200},
+            "source": True}
 
 
 def _labels(severity, domain, page, hygiene):
@@ -290,41 +367,79 @@ def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
                          % (policy, uid, ", ".join(sorted(POLICY))))
     nodata, execerr = POLICY[policy]
     POLICY_BY_UID[uid] = policy
-    rule = {
-        "uid": uid, "title": title, "condition": "C",
-        "data": [_query_node(expr, ds, lookback), _reduce_node(), _threshold_node(op, thr)],
-        "noDataState": nodata, "execErrState": execerr, "for": dur,
-        "labels": _labels(severity, domain, page, hygiene),
-        "annotations": {"summary": summary, "description": desc,
-                        "runbook_url": runbook_url(runbook)},
-        "isPaused": paused,
-    }
+    annotations = {"summary": summary, "description": desc,
+                   "runbook_url": runbook_url(runbook)}
     if panel is not None:
-        # File provisioning takes dashboardUid/panelId as TOP-LEVEL fields, always
-        # paired. Grafana materializes the __dashboardUid__/__panelId__ annotations
-        # from them itself — emitting both forms conflicts.
-        rule["dashboardUid"], rule["panelId"] = panel_ref(panel)
-    return rule
+        # This API has no top-level dashboardUid/panelId — those are the
+        # apiVersion: 1 provisioning form, and `additionalProperties: false`
+        # rejects them outright. The paired __dashboardUid__/__panelId__
+        # annotations are the mechanism here, and __panelId__ must be a STRING:
+        # annotation values are typed as strings, so an int is dropped silently.
+        dash_uid, panel_id = panel_ref(panel)
+        annotations["__dashboardUid__"] = dash_uid
+        annotations["__panelId__"] = str(panel_id)
+    return {
+        # `uid` and `_prom` are GENERATOR-INTERNAL. `uid` becomes metadata.name;
+        # `_prom` carries what the test-only Prometheus rendering needs and what
+        # `rule_expr()` reads. Neither is emitted into a manifest.
+        "uid": uid,
+        "title": title,
+        "trigger": {"interval": INTERVAL},
+        "noDataState": nodata, "execErrState": execerr,
+        "for": godur(dur),
+        "labels": _labels(severity, domain, page, hygiene),
+        "annotations": annotations,
+        "paused": paused,
+        "expressions": {"A": _query_node(expr, ds, lookback),
+                        "B": _reduce_node(),
+                        "C": _threshold_node(op, thr)},
+        "_prom": {"expr": expr, "op": op, "thr": thr, "ds": ds,
+                  "dur": dur, "policy": policy},
+    }
 
 
 def record(uid, metric, expr, desc, ds=PROM, paused=True, domain="observability"):
     # Grafana-managed recording rules must resolve to a single value per series, either via an
-    # instant query or a range query + Reduce node. A (range) -> B (reduce, last) -> record from B,
+    # instant query or a range query + Reduce node. A (range) -> B (reduce, last) -> record B,
     # mirroring alert()'s pipeline; recording from a raw range node (no reduce) is invalid.
     #
-    # Recording rules support NEITHER condition, noDataState, execErrState nor
-    # notification_settings — they have no alert state to be in — and their `for`
-    # is always 0s. None of the #387/#388 fields apply to them either: there is no
-    # alert to run a runbook for, and no panel to jump to.
+    # The v0alpha1 RecordingRule spec is `additionalProperties: false` over exactly
+    # {title, trigger, metric, expressions, targetDatasourceUID, labels, paused}.
+    # So: no condition, no noDataState/execErrState, no notificationSettings, no
+    # `for` — and, unlike the provisioning format, no `annotations` either. The
+    # written reason for each recorded metric therefore lives in the internal
+    # `_desc` key: it stays in the source (and in test_rules.py's checks) but is
+    # never emitted.
+    reduce_node = _reduce_node()
+    reduce_node["source"] = True
     return {
-        "uid": uid, "title": metric,
-        "data": [_query_node(expr, ds), _reduce_node()],
-        "record": {"metric": metric, "from": "B"},
-        "for": "0s",
+        "uid": uid,
+        "title": metric,
+        "metric": metric,
+        "targetDatasourceUID": ds,
+        "trigger": {"interval": INTERVAL},
         "labels": {"service": "tailscale2otel", "domain": domain},
-        "annotations": {"description": desc},
-        "isPaused": paused,
+        "paused": paused,
+        "expressions": {"A": _query_node(expr, ds), "B": reduce_node},
+        "_desc": desc,
+        "_prom": {"expr": expr, "ds": ds},
     }
+
+
+def is_recording(rule):
+    """True for a RecordingRule entry in the catalogue."""
+    return "metric" in rule
+
+
+def rules_by_uid():
+    """uid -> catalogue entry, across every group. The stable read API for other
+    generators' tests, which must not have to know how a rule is shaped."""
+    return {r["uid"]: r for _, group in groups() for r in group}
+
+
+def rule_expr(rule):
+    """The datasource expression a rule queries (the A node's PromQL/LogQL)."""
+    return rule["_prom"]["expr"]
 
 
 def _derp_byte_fraction(win="10m"):
@@ -380,6 +495,27 @@ def groups():
               "so that collector's series are not refreshing. Complements CollectorScrapeFailing.",
               domain="observability", paused=False,
               policy="core", runbook="collector-scrape-health", panel="Last scrape age"),
+        # The flapping half of collector scrape health. NOT redundant with
+        # ts2o-collector-scrape-failing above: that rule reads the LAST scrape's
+        # success gauge, so a collector alternating fail/succeed presents a `1`
+        # to most evaluations and never sustains the 15m `for` — while half its
+        # scrapes are being lost. This counter only moves on a failure, so it
+        # sees the flap, and `error_type` says what kind. Restored from the
+        # deleted datasource-managed CollectorScrapeErrorRateHigh, which shipped
+        # alongside CollectorScrapeFailing for exactly this reason.
+        alert("ts2o-collector-scrape-error-rate", "Collector scrape error rate high",
+              "sum by (tailscale_collector) (rate(tailscale2otel_scrape_errors_total[5m]))",
+              "gt", 0, "15m", "warning",
+              "Collector {{ $labels.tailscale_collector }} scrape errors elevated",
+              "rate(tailscale2otel_scrape_errors_total[5m]) > 0 for collector "
+              "{{ $labels.tailscale_collector }} for 15m — it is logging scrape errors. Distinct from "
+              "ts2o-collector-scrape-failing, which reads the last-scrape success gauge and therefore "
+              "goes quiet for a collector that fails and recovers on alternating scrapes; this one "
+              "catches that flap. Break down by error_type on \"Scrape errors/s by collector / type\". "
+              "The counter is absent until the first error, so the policy is optional, not core.",
+              domain="observability", paused=False,
+              policy="optional", runbook="collector-scrape-health",
+              panel="Scrape errors/s by collector / type"),
         alert("ts2o-metric-cardinality-capped", "Metric cardinality capped",
               "max(tailscale2otel_series_overflowing_ratio)",
               "gt", 0, "5m", "warning",
@@ -525,6 +661,28 @@ def groups():
               "Complements export.failures; check OTLP endpoint/credentials.",
               domain="observability", paused=True,
               policy="optional", runbook="otlp-export-health", panel="Export failures/s by type"),
+        # The SDK-handler half of export health, restored from the deleted
+        # datasource-managed OTLPExportFailures. ts2o-export-failures above reads
+        # the export DECORATORS (export.duration{outcome="failure"}, keyed by
+        # signal); this reads tailscale2otel.export.failures, incremented from
+        # the OTEL global error handler, so it also sees failures that never came
+        # from a decorated Export() call and classifies them by error_type
+        # (timeout vs export) rather than by signal. selfobs.go is written
+        # against the assumption that alerts watch THIS counter. Neither is a
+        # superset of the other, so this is an addition, not a widening.
+        alert("ts2o-otlp-export-failures", "OTLP export failures",
+              "sum by (error_type) (rate(tailscale2otel_export_failures_total[10m]))",
+              "gt", 0, "15m", "warning",
+              "tailscale2otel OTLP export failures ({{ $labels.error_type }})",
+              "rate(tailscale2otel_export_failures_total[10m]) > 0 for 15m — the exporter is failing "
+              "to push OTLP to the collector/backend (error_type {{ $labels.error_type }}: `timeout` "
+              "is a deadline, `export` is everything else), so metrics and logs are being lost in "
+              "transit. This counter is fed by the OTEL SDK's global error handler, which deliberately "
+              "does NOT count ErrInstrumentName (nothing is dropped there). Ships ENABLED: silent "
+              "telemetry loss has no other symptom, and the counter is absent until the first failure, "
+              "so a healthy deployment never sees it.",
+              domain="observability", paused=False,
+              policy="optional", runbook="otlp-export-health", panel="Export failures/s"),
         alert("ts2o-scrape-staleness-high", "Scrape staleness high",
               "max by (tailscale_collector) (tailscale2otel_scrape_staleness_seconds)",
               "gt", 1800, "10m", "warning",
@@ -1026,6 +1184,60 @@ def groups():
               "the Node Metrics tab.",
               domain="infra", paused=True,
               policy="optional", runbook="node-client-health", panel="Active health warnings by type"),
+        # Restored from the deleted datasource-managed NodeMetricsTargetDown.
+        # Nothing else in the pack covers per-target scrape reachability:
+        # ts2o-nodemetrics-discovery-failing covers the target LIST, and
+        # ts2o-node-health-warnings covers tailscaled's opinion of ITSELF, which
+        # a node cannot report at all when we cannot reach it. Keyed on
+        # tailscale_node, NOT `instance` — the deleted rule templated
+        # {{ $labels.instance }}, which this metric does not carry (see
+        # docs/metrics.md), so its summary would have rendered blank.
+        alert("ts2o-nodemetrics-target-down", "Node-metrics target down",
+              "min by (tailscale_node) (tailscale_node_up_ratio)",
+              "lt", 1, "10m", "warning",
+              "Node-metrics target {{ $labels.tailscale_node }} is down",
+              "tailscale_node_up_ratio == 0 for target {{ $labels.tailscale_node }} for 10m — the "
+              "node-metrics scraper could not reach tailscaled's metrics endpoint on that node, so "
+              "every forwarded tailscaled_* series from it is frozen at its last value. Ships PAUSED: "
+              "a sleeping laptop in the target list would fire this every night, so enable it once "
+              "your targets are hosts expected to be up continuously. Gated on the node-metrics "
+              "scraper (off by default) => the gauge is absent and the rule cannot fire without it.",
+              domain="infra", paused=True,
+              policy="optional", runbook="nodemetrics-scrape-targets", panel="Node up"),
+        # Restored from the deleted datasource-managed FlowLogsDropped.
+        alert("ts2o-flow-logs-dropped", "Flow logs dropped",
+              "sum(rate(tailscale_network_flow_logs_dropped_total[10m]))",
+              "gt", 0, "10m", "warning",
+              "Tailscale flow log records being dropped by the volume guard",
+              "rate(tailscale_network_flow_logs_dropped_total[10m]) > 0 for 10m — the per-window "
+              "flow-log volume guard (collectors.flowlogs.max_log_records_per_window) is truncating "
+              "flow LOG records. Metrics are NEVER capped, so throughput panels stay complete and "
+              "correct while the log stream silently loses records; this rule is the only thing that "
+              "makes that visible. Ships ENABLED for the same reason as the cardinality cap: the loss "
+              "is silent and the counter is absent until the guard actually truncates. Raise the cap "
+              "or narrow the flow-log scope (per_connection vs per_record) if this is unexpected.",
+              domain="infra", paused=False,
+              policy="optional", runbook="flow-data-pipeline", panel="Flow log records dropped/s"),
+        # Restored from the deleted datasource-managed NodeIPForwardingMisconfigured.
+        # No other rule reads tailscale_webhook_events_total: ts2o-receiver-rejections
+        # counts webhooks we REFUSED, which is the opposite population.
+        alert("ts2o-node-ip-forwarding", "Node IP forwarding misconfigured",
+              "sum by (tailscale_webhook_type) (rate(tailscale_webhook_events_total"
+              '{tailscale_webhook_type=~"exitNodeIPForwardingNotEnabled|'
+              'subnetIPForwardingNotEnabled"}[15m]))',
+              "gt", 0, "5m", "warning",
+              "Tailscale node IP forwarding misconfigured ({{ $labels.tailscale_webhook_type }})",
+              "Tailscale delivered {{ $labels.tailscale_webhook_type }} webhook events in the last "
+              "15m — a node that should route traffic (exit node or subnet router) has IP forwarding "
+              "disabled on the host OS, so that routing is silently broken until it is fixed "
+              "(net.ipv4.ip_forward=1 / net.ipv6.conf.all.forwarding=1 on the node). This signal "
+              "exists ONLY as a webhook — there is no log-streaming or polling equivalent — and it is "
+              "emitted at INFO severity, so this rule is the only thing that surfaces it. Ships "
+              "ENABLED: the webhook receiver is off by default, so the series is absent and the rule "
+              "is inert for anyone not using it. It clears once the events stop arriving.",
+              domain="infra", paused=False,
+              policy="optional", runbook="subnet-routing-and-services",
+              panel="Webhook events/s by type"),
         # --- Task 2.5: per-tailnet API errors (F) ---
         alert("ts2o-tailnet-api-errors", "Per-tailnet API errors",
               "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total"
@@ -1105,16 +1317,14 @@ def groups():
     ]
 
 
-def build():
-    grps = [{"orgId": 1, "name": name, "folder": FOLDER, "interval": INTERVAL, "rules": rules}
-            for (name, rules) in groups()]
-    # The reverse of runbook_url()'s check: a section nobody links is dead weight
-    # that reads as coverage. Renaming or deleting a rule is the usual way one
-    # appears, and only this direction catches it.
+def check_runbook_coverage():
+    """The reverse of runbook_url()'s check: a section nobody links is dead weight
+    that reads as coverage. Renaming or deleting a rule is the usual way one
+    appears, and only this direction catches it."""
     used = set()
-    for group in grps:
-        for rule in group["rules"]:
-            url = rule["annotations"].get("runbook_url")
+    for _, group in groups():
+        for rule in group:
+            url = rule.get("annotations", {}).get("runbook_url")
             if url:
                 used.add(url[len(RUNBOOK_BASE):])
     orphans = sorted(runbook_slugs() - used)
@@ -1122,33 +1332,222 @@ def build():
         raise ValueError(
             "docs/runbooks.md has %d section(s) no rule links to: %s. Either a rule was renamed or "
             "removed, or the section should go." % (len(orphans), ", ".join(orphans)))
-    return {"apiVersion": 1, "groups": grps}
+
+
+# ---------------------------------------------------------------------------
+# emit: the shipped artifact — one manifest per rule under grafana-managed/
+# ---------------------------------------------------------------------------
+
+RULE_API = "rules.alerting.grafana.app/v0alpha1"
+FOLDER_API = "folder.grafana.app/v1beta1"
+FOLDER_TITLE = "tailscale2otel Alerts"
+
+# Keys in a catalogue entry that are generator-internal and must never be emitted.
+_INTERNAL = ("uid", "_prom", "_desc")
+
+
+def _manifest(rule):
+    kind = "RecordingRule" if is_recording(rule) else "AlertRule"
+    spec = {k: v for k, v in rule.items() if k not in _INTERNAL}
+    return {
+        "apiVersion": RULE_API,
+        "kind": kind,
+        "metadata": {
+            "name": rule["uid"],
+            # The folder is addressed twice on purpose: gcx routes on the label,
+            # the API stores the annotation. Emitting only one lands the rule in
+            # the default folder without complaint.
+            "annotations": {"grafana.app/folder": FOLDER},
+            "labels": {"grafana.app/folder": FOLDER},
+        },
+        "spec": spec,
+    }
+
+
+def _write_json(path, doc):
+    # sort_keys + a trailing newline: two runs must be byte-identical, and a
+    # file without a final newline makes every future diff touch the last line.
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+
+def emit_grafana_managed(outdir):
+    """Write the manifest directory. Returns the list of paths written."""
+    check_runbook_coverage()
+    os.makedirs(outdir, exist_ok=True)
+    # Clear first, so a renamed or deleted rule cannot linger as a stale file
+    # that `gcx resources push` would happily keep re-creating.
+    for stale in os.listdir(outdir):
+        if stale.endswith(".json"):
+            os.remove(os.path.join(outdir, stale))
+
+    written = []
+    folder_path = os.path.join(outdir, "_folder.json")
+    _write_json(folder_path, {
+        "apiVersion": FOLDER_API, "kind": "Folder",
+        "metadata": {"name": FOLDER},
+        "spec": {"title": FOLDER_TITLE},
+    })
+    written.append(folder_path)
+
+    for _, group in groups():
+        for rule in group:
+            path = os.path.join(outdir, "%s.json" % rule["uid"])
+            _write_json(path, _manifest(rule))
+            written.append(path)
+    return written
+
+
+# ---------------------------------------------------------------------------
+# emit: the TEST-ONLY Prometheus rendering (--prom-out)
+# ---------------------------------------------------------------------------
+#
+# NEVER COMMITTED, NEVER SHIPPED. The project ships Grafana-managed rules only.
+# This rendering exists for exactly one reason: `promtool test rules` is the only
+# thing in the repo that EXECUTES a rule against synthetic series, and promtool
+# understands no format but Prometheus's. It has already earned its keep — it is
+# what proved that dropping the `> 0` guard on a key-expiry rule makes every
+# long-dead host alert forever.
+
+_WORD = re.compile(r"[A-Za-z0-9]+")
+
+
+def prom_alertname(title):
+    """CamelCase alert name for a rule title.
+
+    promtool fixtures address a rule by name, and the manifest `title` ("Exporter
+    down") is prose. Derived rather than hand-listed so a retitled rule cannot
+    quietly stop being covered by its fixture — the fixture fails to match instead.
+    """
+    parts = []
+    for word in _WORD.findall(title):
+        parts.append(word if word[:1].isupper() else word[:1].upper() + word[1:])
+    name = "".join(parts)
+    if not name or not name[0].isalpha():
+        raise ValueError("cannot derive a promtool alert name from %r" % (title,))
+    return name
+
+
+def _num(v):
+    return str(int(v)) if isinstance(v, (int, float)) and float(v).is_integer() else repr(v)
+
+
+def _prom_expr(rule):
+    p = rule["_prom"]
+    expr, op, thr = p["expr"], p["op"], p["thr"]
+    if op == "gt":
+        out = "(%s) > %s" % (expr, _num(thr))
+    elif op == "lt":
+        out = "(%s) < %s" % (expr, _num(thr))
+    elif op == "within_range":
+        lo, hi = thr
+        out = "((%s) > %s) < %s" % (expr, _num(lo), _num(hi))
+    else:
+        raise ValueError("no Prometheus rendering for threshold op %r" % (op,))
+    if p["policy"] == "coverage_critical":
+        # Grafana says "absence is the alert" with noDataState: Alerting, which
+        # Prometheus has no equivalent for. `or absent(...)` is the faithful
+        # translation; without it the rendering silently drops the semantics the
+        # absent() fixture case exists to prove.
+        out = "(%s) or absent(%s)" % (out, expr)
+    return out
+
+
+def build_prom_rules():
+    check_runbook_coverage()
+    out = []
+    for name, group in groups():
+        rendered = []
+        for rule in group:
+            if rule["_prom"]["ds"] != PROM:
+                continue  # LogQL: promtool cannot parse it
+            if is_recording(rule):
+                rendered.append({"record": rule["metric"],
+                                 "expr": rule["_prom"]["expr"],
+                                 "labels": rule["labels"]})
+            else:
+                # Only `summary` and `runbook_url` are carried. promtool's
+                # exp_annotations is an EXACT match over the whole map, so every
+                # annotation here has to be restated verbatim in every fixture:
+                #  * the panel links renumber whenever a panel is inserted into
+                #    the generated dashboard, which would break every fixture on
+                #    an unrelated dashboard edit;
+                #  * `description` is a paragraph of prose, and pasting it into a
+                #    fixture buys nothing the summary does not already prove
+                #    (both carry the same `{{ $labels.* }}` templating).
+                # The shipped manifests keep all of it; this file is a fixture.
+                annotations = {k: v for k, v in rule["annotations"].items()
+                               if k in ("summary", "runbook_url")}
+                rendered.append({"alert": prom_alertname(rule["title"]),
+                                 "expr": _prom_expr(rule),
+                                 "for": rule["_prom"]["dur"],
+                                 "labels": rule["labels"],
+                                 "annotations": annotations})
+        if rendered:
+            out.append({"name": name, "rules": rendered})
+    return {"groups": out}
+
+
+_PROM_HEADER = """\
+# TEST FIXTURE — GENERATED, NEVER COMMITTED, NEVER SHIPPED.
+#
+# tailscale2otel ships Grafana-managed rule manifests only
+# (deploy/alerts/grafana-managed/, pushed with `gcx resources push`). This file
+# is a throwaway Prometheus rendering of the same catalogue, produced by
+#   python3 deploy/alerts/gen/build_rules.py --prom-out <path>
+# purely so `promtool test rules` can EXECUTE the expressions. Do not load it
+# into a ruler, do not add it to git, do not link to it from the docs.
+#
+# Loki-backed rules are omitted: promtool cannot parse LogQL.
+"""
+
+
+def emit_prom_rules(path):
+    doc = build_prom_rules()
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(_PROM_HEADER)
+        f.write(yamlify(doc) + "\n")
+    return doc
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--json", action="store_true", help="emit JSON instead (for validation)")
+    ap = argparse.ArgumentParser(
+        description="Generate the tailscale2otel Grafana-managed rule manifests.")
+    ap.add_argument("--out", metavar="DIR",
+                    help="directory to write the rules.alerting.grafana.app manifests into "
+                         "(one JSON per rule + _folder.json). Existing *.json are deleted first.")
+    ap.add_argument("--prom-out", metavar="FILE",
+                    help="ALSO render a TEST-ONLY Prometheus rule file to FILE. This artifact is "
+                         "never committed and never shipped — it exists only so `promtool test "
+                         "rules` can execute the expressions. Loki rules are omitted from it.")
     args = ap.parse_args()
-    doc = build()
-    with open(args.out, "w") as f:
-        if args.json:
-            json.dump(doc, f, indent=2)
-        else:
-            f.write("# GENERATED by deploy/alerts/gen/build_rules.py — do not edit by hand.\n")
-            f.write("# Grafana-managed alerting + recording rules (file provisioning).\n")
-            f.write(yamlify(doc) + "\n")
-    n_alert = sum(1 for _, rs in groups() for r in rs if "record" not in r)
-    n_rec = sum(1 for _, rs in groups() for r in rs if "record" in r)
-    n_paused = sum(1 for _, rs in groups() for r in rs if r["isPaused"])
-    n_panel = sum(1 for g in doc["groups"] for r in g["rules"] if "panelId" in r)
-    tally = {name: 0 for name in POLICY}
-    for policy in POLICY_BY_UID.values():
-        tally[policy] += 1
-    print("wrote %s  (%d alert rules, %d recording rules, %d paused)" % (args.out, n_alert, n_rec, n_paused))
-    print("  policy: %s" % ", ".join("%s=%d" % (k, tally[k]) for k in POLICY))
-    print("  links:  runbook=%d/%d over %d sections, panel=%d/%d"
-          % (n_alert, n_alert, len(runbook_slugs()), n_panel, n_alert))
+    if not args.out and not args.prom_out:
+        ap.error("nothing to do: pass --out (the shipped manifests) and/or --prom-out (test fixture)")
+
+    n_alert = sum(1 for _, rs in groups() for r in rs if not is_recording(r))
+    n_rec = sum(1 for _, rs in groups() for r in rs if is_recording(r))
+    n_paused = sum(1 for _, rs in groups() for r in rs if r["paused"])
+
+    if args.out:
+        written = emit_grafana_managed(args.out)
+        n_panel = sum(1 for _, rs in groups() for r in rs
+                      if "__panelId__" in r.get("annotations", {}))
+        tally = {name: 0 for name in POLICY}
+        for policy in POLICY_BY_UID.values():
+            tally[policy] += 1
+        print("wrote %d manifests to %s  (%d alert rules, %d recording rules, %d paused)"
+              % (len(written), args.out, n_alert, n_rec, n_paused))
+        print("  policy: %s" % ", ".join("%s=%d" % (k, tally[k]) for k in POLICY))
+        print("  links:  runbook=%d/%d over %d sections, panel=%d/%d"
+              % (n_alert, n_alert, len(runbook_slugs()), n_panel, n_alert))
+        print("  push:   gcx resources push -p %s" % args.out)
+
+    if args.prom_out:
+        doc = emit_prom_rules(args.prom_out)
+        n = sum(len(g["rules"]) for g in doc["groups"])
+        print("wrote %s  (%d rules, TEST-ONLY — not shipped, not committed)"
+              % (args.prom_out, n))
 
 
 if __name__ == "__main__":

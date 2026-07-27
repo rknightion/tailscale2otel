@@ -1,0 +1,51 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "name": "fx-good",
+    "annotations": {"grafana.app/folder": "fixture"},
+    "labels": {"grafana.app/folder": "fixture"}
+  },
+  "spec": {
+    "title": "Good rule",
+    "noDataState": "Ok",
+    "execErrState": "Error",
+    "for": "5m0s",
+    "trigger": {"interval": "1m"},
+    "labels": {"severity": "warning"},
+    "annotations": {"summary": "fixture"},
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "relativeTimeRange": {"from": "15m0s", "to": "0s"},
+        "model": {
+          "datasource": {"type": "prometheus", "uid": "grafanacloud-prom"},
+          "expr": "sum by (tailscale_tailnet) (rate(tailscale_network_io_bytes_total[5m]))",
+          "instant": false, "range": true, "refId": "A"
+        }
+      },
+      "L": {
+        "datasourceUID": "grafanacloud-logs",
+        "relativeTimeRange": {"from": "15m0s", "to": "0s"},
+        "model": {
+          "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+          "expr": "count_over_time({service_name=\"tailscale2otel\"} |= `x` [5m])",
+          "refId": "L"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {"type": "__expr__", "uid": "__expr__"},
+          "expression": "A", "type": "reduce", "reducer": "last", "refId": "B"
+        }
+      },
+      "C": {
+        "model": {
+          "datasource": {"type": "__expr__", "uid": "__expr__"},
+          "expression": "B", "type": "threshold", "refId": "C"
+        },
+        "source": true
+      }
+    }
+  }
+}

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
 )
 
@@ -27,8 +25,11 @@ import (
 
 const (
 	dashboardPath = "../../deploy/grafana/tailscale2otel.json"
-	grafanaRules  = "../../deploy/alerts/tailscale2otel.grafana-rules.yaml"
-	promRules     = "../../deploy/alerts/tailscale2otel.rules.yaml"
+	// The shipped rules are Grafana-managed `rules.alerting.grafana.app/v0alpha1`
+	// manifests, one JSON file per rule plus a folder manifest, pushed with
+	// `gcx resources push`. The former provisioning-format and Prometheus-ruler
+	// files are gone — see deploy/alerts/README.md.
+	rulesDir = "../../deploy/alerts/grafana-managed"
 )
 
 // metricRef matches a bare Prometheus metric identifier in a PromQL expression.
@@ -104,14 +105,41 @@ func catalogLabelNames(t *testing.T) map[string]bool {
 // and treating one as a metric name reports a defect that is not there.
 var matcherValue = regexp.MustCompile(`(?:=~|!~|!=|=)\s*\\?"[^"\\]*\\?"`)
 
-// referencedMetrics extracts every catalog-owned metric name mentioned in a file.
+// readArtifact returns an artifact's bytes. When path is a DIRECTORY it returns
+// every rule manifest in it concatenated, so the rules read as one artifact the
+// way the single provisioning file used to. Per-file extraction would be wrong
+// here: a Loki-backed rule references no `tailscale_*` metric at all, and the
+// empty-result guard below would fire on it.
+func readArtifact(t *testing.T, path string) []byte {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if !info.IsDir() {
+		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return b
+	}
+	var buf []byte
+	for _, m := range ruleManifests(t, path) {
+		b, err := os.ReadFile(m) //nolint:gosec // fixed repo-relative artifact path
+		if err != nil {
+			t.Fatalf("read %s: %v", m, err)
+		}
+		buf = append(buf, b...)
+		buf = append(buf, '\n')
+	}
+	return buf
+}
+
+// referencedMetrics extracts every catalog-owned metric name mentioned in a file
+// or, for the rule manifests, in a directory.
 func referencedMetrics(t *testing.T, path string) []string {
 	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	body := matcherValue.ReplaceAllString(string(b), "=<value>")
+	body := matcherValue.ReplaceAllString(string(readArtifact(t, path)), "=<value>")
 	seen := map[string]bool{}
 	for _, m := range metricRef.FindAllString(body, -1) {
 		seen[m] = true
@@ -128,21 +156,34 @@ func referencedMetrics(t *testing.T, path string) []string {
 	return out
 }
 
-// recordingRuleNames are series the rule files DEFINE rather than consume, so a
-// later expression referencing one is legitimate even though the catalog has no
-// such metric.
-func recordingRuleNames(t *testing.T, paths ...string) map[string]bool {
+// recordingRuleNames are series the rules DEFINE rather than consume, so a later
+// expression referencing one is legitimate even though the catalog has no such
+// metric. In the Grafana-managed manifests a RecordingRule names its output series
+// in `spec.metric`, not in the Prometheus formats' `record:` key.
+func recordingRuleNames(t *testing.T) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	record := regexp.MustCompile(`(?m)^\s*(?:-\s+)?record:\s*"?([a-zA-Z_:][a-zA-Z0-9_:]*)"?`)
-	for _, p := range paths {
-		b, err := os.ReadFile(p)
+	for _, path := range ruleManifests(t, rulesDir) {
+		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
 		if err != nil {
-			t.Fatalf("read %s: %v", p, err)
+			t.Fatalf("read %s: %v", path, err)
 		}
-		for _, m := range record.FindAllStringSubmatch(string(b), -1) {
-			out[m[1]] = true
+		var doc struct {
+			Kind string `json:"kind"`
+			Spec struct {
+				Metric string `json:"metric"`
+			} `json:"spec"`
 		}
+		if err := json.Unmarshal(b, &doc); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		if doc.Kind == "RecordingRule" && doc.Spec.Metric != "" {
+			out[doc.Spec.Metric] = true
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("no RecordingRule manifest declares a spec.metric; either the manifests moved " +
+			"or the shape changed, and every downstream reference check is over-strict")
 	}
 	return out
 }
@@ -169,15 +210,11 @@ func assertReferencesExist(t *testing.T, path string, extra map[string]bool) {
 }
 
 func TestFlagshipDashboardQueriesOnlyCatalogMetrics(t *testing.T) {
-	assertReferencesExist(t, dashboardPath, recordingRuleNames(t, grafanaRules, promRules))
+	assertReferencesExist(t, dashboardPath, recordingRuleNames(t))
 }
 
 func TestGrafanaRulesQueryOnlyCatalogMetrics(t *testing.T) {
-	assertReferencesExist(t, grafanaRules, recordingRuleNames(t, grafanaRules, promRules))
-}
-
-func TestPrometheusRulesQueryOnlyCatalogMetrics(t *testing.T) {
-	assertReferencesExist(t, promRules, recordingRuleNames(t, grafanaRules, promRules))
+	assertReferencesExist(t, rulesDir, recordingRuleNames(t))
 }
 
 // A duplicate panel ID makes Grafana's behavior undefined — links, repeats and
@@ -312,8 +349,7 @@ func TestFlagshipDashboardDatasourceRefsAreDeclared(t *testing.T) {
 // added — exactly how it came to claim 79 Grafana-managed rules against a
 // generated file holding 85 (#438). Derive them from the files instead.
 func TestReadmeRuleCountsMatchTheShippedFiles(t *testing.T) {
-	grafana := countRules(t, grafanaRules)
-	prom := countRules(t, promRules)
+	alerts, recordings := countRules(t)
 
 	readme, err := os.ReadFile("../../README.md")
 	if err != nil {
@@ -325,9 +361,9 @@ func TestReadmeRuleCountsMatchTheShippedFiles(t *testing.T) {
 		count int
 		what  string
 	}{
-		{grafana, "Grafana-managed rules"},
-		{prom, "Prometheus rules"},
-		{grafana + prom, "total shipped rules"},
+		{alerts, "alert rules"},
+		{recordings, "recording rules"},
+		{alerts + recordings, "total shipped rules"},
 	} {
 		if !strings.Contains(body, itoa(want.count)) {
 			t.Errorf("README never states %d, the actual number of %s. A count stated in prose "+
@@ -337,120 +373,154 @@ func TestReadmeRuleCountsMatchTheShippedFiles(t *testing.T) {
 	}
 }
 
-// countRules totals the rules across every group in a provisioning file. Both the
-// Grafana-managed and Prometheus formats nest rules the same way (`groups[].rules[]`).
-func countRules(t *testing.T, path string) int {
+// countRules totals the shipped rule manifests by kind. One JSON file per rule,
+// so the count is a file count split on `kind` — there are no groups any more.
+func countRules(t *testing.T) (alerts, recordings int) {
 	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
+	for _, path := range ruleManifests(t, rulesDir) {
+		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var doc struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(b, &doc); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		switch doc.Kind {
+		case "AlertRule":
+			alerts++
+		case "RecordingRule":
+			recordings++
+		}
 	}
-	var doc struct {
-		Groups []struct {
-			Rules []any `yaml:"rules"`
-		} `yaml:"groups"`
+	if alerts == 0 || recordings == 0 {
+		t.Fatalf("counted %d alert and %d recording manifests; the shape changed and every "+
+			"count here is vacuous", alerts, recordings)
 	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
-	total := 0
-	for _, g := range doc.Groups {
-		total += len(g.Rules)
-	}
-	if total == 0 {
-		t.Fatalf("%s parsed to zero rules; the format changed and every count here is vacuous", path)
-	}
-	return total
+	return alerts, recordings
 }
 
-// Structural validation of the Grafana-managed provisioning file. promtool cannot
-// check it — it does not understand Grafana's schema — so nothing validated its
-// shape at all, and a generator change that dropped a required field would import
-// as a broken or silently-paused rule (#438).
+// Structural validation of the shipped Grafana-managed rule manifests.
 //
-// Only fields whose absence breaks provisioning or makes a rule useless are
-// required, so ordinary rule authoring does not trip this.
-func TestGrafanaRulesAreStructurallyValid(t *testing.T) {
-	b, err := os.ReadFile(grafanaRules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		APIVersion int `yaml:"apiVersion"`
-		Groups     []struct {
-			Name     string `yaml:"name"`
-			Folder   string `yaml:"folder"`
-			Interval string `yaml:"interval"`
-			Rules    []struct {
-				Title       string            `yaml:"title"`
-				UID         string            `yaml:"uid"`
-				Condition   string            `yaml:"condition"`
-				Data        []any             `yaml:"data"`
-				For         string            `yaml:"for"`
-				Labels      map[string]string `yaml:"labels"`
-				Annotations map[string]string `yaml:"annotations"`
-				// Record marks a RECORDING rule, which computes a series instead of
-				// alerting. Those carry no condition and no summary by design, so
-				// requiring either of a recording rule reports twelve defects that
-				// are not there — which is what a first version of this test did.
-				Record map[string]string `yaml:"record"`
-			} `yaml:"rules"`
-		} `yaml:"groups"`
-	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
-		t.Fatalf("parse %s: %v", grafanaRules, err)
-	}
+// deploy/alerts/gen/validate_manifests.py is the stricter, primary gate and it
+// rides the Python unittest CI step. This is deliberate defense in depth in the
+// language that always runs: the checks below are the ones whose failure mode is
+// SILENT — a manifest that parses, validates client-side, and is simply never
+// applied or never fires.
+//
+// `gcx resources validate` cannot substitute for either. It reports
+// "does not support server-side dry-run ... It did not validate the spec", and
+// all 25 noDataState x execErrState casing combinations pass through it.
+func TestGrafanaRuleManifestsAreStructurallyValid(t *testing.T) {
+	// The casing is asymmetric and neither half announces a mistake: a rule with
+	// noDataState "OK" is rejected on apply while every local check passes.
+	validNoData := map[string]bool{"NoData": true, "Ok": true, "Alerting": true, "KeepLast": true}
+	validExecErr := map[string]bool{"OK": true, "Error": true, "Alerting": true, "KeepLast": true}
 
-	if doc.APIVersion != 1 {
-		t.Errorf("apiVersion = %d, want 1 — Grafana rejects a provisioning file it cannot version",
-			doc.APIVersion)
-	}
-	if len(doc.Groups) == 0 {
-		t.Fatal("no rule groups parsed; every assertion below would be vacuous")
-	}
-
-	uids := map[string]string{}
+	names := map[string]string{}
 	titles := map[string]bool{}
-	for _, g := range doc.Groups {
-		if g.Name == "" || g.Folder == "" || g.Interval == "" {
-			t.Errorf("group %+v is missing name, folder or interval — provisioning needs all three",
-				struct{ Name, Folder, Interval string }{g.Name, g.Folder, g.Interval})
+	var alerts int
+	for _, path := range ruleManifests(t, rulesDir) {
+		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
 		}
-		if len(g.Rules) == 0 {
-			t.Errorf("group %q has no rules", g.Name)
+		var doc struct {
+			APIVersion string `json:"apiVersion"`
+			Kind       string `json:"kind"`
+			Metadata   struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Spec struct {
+				Title        string            `json:"title"`
+				Metric       string            `json:"metric"`
+				NoDataState  string            `json:"noDataState"`
+				ExecErrState string            `json:"execErrState"`
+				Annotations  map[string]string `json:"annotations"`
+				Expressions  map[string]any    `json:"expressions"`
+			} `json:"spec"`
 		}
-		for _, r := range g.Rules {
-			recording := len(r.Record) > 0
-			switch {
-			case r.Title == "":
-				t.Errorf("group %q has a rule with no title", g.Name)
-				continue
-			case r.UID == "":
-				t.Errorf("rule %q has no uid; provisioning keys updates off it, so an absent uid "+
-					"recreates the rule (and loses its silences) on every apply", r.Title)
-			case len(r.Data) == 0:
-				t.Errorf("rule %q has no data queries, so it references nothing", r.Title)
-			case recording && r.Record["metric"] == "":
-				t.Errorf("recording rule %q names no target metric", r.Title)
-			case recording && r.Record["from"] == "":
-				t.Errorf("recording rule %q does not say which query refId to record from", r.Title)
-			case !recording && r.Condition == "":
-				t.Errorf("alert rule %q has no condition, so it can never fire", r.Title)
-			}
-			if prev, dup := uids[r.UID]; dup && r.UID != "" {
-				t.Errorf("uid %q is used by both %q and %q; the second silently overwrites the first "+
-					"on provisioning", r.UID, prev, r.Title)
-			}
-			uids[r.UID] = r.Title
-			if titles[r.Title] {
-				t.Errorf("rule title %q appears twice; alert notifications become ambiguous", r.Title)
-			}
-			titles[r.Title] = true
-			// A summary is what a responder reads first; an ALERT without one pages
-			// someone with nothing but its title. Recording rules page nobody.
-			if !recording && r.Annotations["summary"] == "" {
-				t.Errorf("alert rule %q has no summary annotation", r.Title)
-			}
+		if err := json.Unmarshal(b, &doc); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
 		}
+
+		if doc.APIVersion != "rules.alerting.grafana.app/v0alpha1" {
+			t.Errorf("%s has apiVersion %q, which gcx will not route to the rules API",
+				path, doc.APIVersion)
+		}
+		// Grafana caps rule UIDs at 40 characters and restricts the charset. Over
+		// the cap the apply fails; the generator compacts recording-rule slugs for
+		// exactly this reason.
+		if n := doc.Metadata.Name; n == "" || len(n) > 40 || !ruleUID.MatchString(n) {
+			t.Errorf("%s has metadata.name %q, which is not a legal Grafana rule uid "+
+				"(<=40 chars, letters/digits/hyphen/underscore)", path, n)
+		}
+		if prev, dup := names[doc.Metadata.Name]; dup {
+			t.Errorf("uid %q is used by both %s and %s; the second silently overwrites the first",
+				doc.Metadata.Name, prev, path)
+		}
+		names[doc.Metadata.Name] = path
+		if doc.Spec.Title == "" {
+			t.Errorf("%s has no spec.title", path)
+		}
+		if titles[doc.Spec.Title] {
+			t.Errorf("rule title %q appears twice; alert notifications become ambiguous",
+				doc.Spec.Title)
+		}
+		titles[doc.Spec.Title] = true
+		if len(doc.Spec.Expressions) == 0 {
+			t.Errorf("%s has no spec.expressions, so it references nothing", path)
+		}
+
+		switch doc.Kind {
+		case "AlertRule":
+			alerts++
+			if !validNoData[doc.Spec.NoDataState] {
+				t.Errorf("%s has noDataState %q. Valid: NoData, Ok, Alerting, KeepLast — note "+
+					"\"Ok\", NOT \"OK\". The wrong casing makes the rule un-deployable while "+
+					"every offline check passes.", path, doc.Spec.NoDataState)
+			}
+			if !validExecErr[doc.Spec.ExecErrState] {
+				t.Errorf("%s has execErrState %q. Valid: OK, Error, Alerting, KeepLast — note "+
+					"this axis really does spell it \"OK\", unlike noDataState.",
+					path, doc.Spec.ExecErrState)
+			}
+			// A responder reads the summary first; without one they get a title.
+			if doc.Spec.Annotations["summary"] == "" {
+				t.Errorf("alert rule %q has no summary annotation", doc.Spec.Title)
+			}
+			// Runbook links are generated for every rule (#387), so a missing one
+			// means the generator silently skipped it.
+			if doc.Spec.Annotations["runbook_url"] == "" {
+				t.Errorf("alert rule %q has no runbook_url annotation", doc.Spec.Title)
+			}
+			// Grafana requires the pair. One without the other is a dead link that
+			// renders as a broken panel reference rather than an error.
+			_, hasDash := doc.Spec.Annotations["__dashboardUid__"]
+			_, hasPanel := doc.Spec.Annotations["__panelId__"]
+			if hasDash != hasPanel {
+				t.Errorf("alert rule %q sets only one of __dashboardUid__/__panelId__; Grafana "+
+					"needs both or neither", doc.Spec.Title)
+			}
+		case "RecordingRule":
+			if doc.Spec.Metric == "" {
+				t.Errorf("recording rule %q names no target metric", doc.Spec.Title)
+			}
+			// The v0alpha1 RecordingRule spec is additionalProperties:false and has
+			// no such fields; emitting them fails the apply.
+			if doc.Spec.NoDataState != "" || doc.Spec.ExecErrState != "" {
+				t.Errorf("recording rule %q carries alert-only state fields", doc.Spec.Title)
+			}
+		default:
+			t.Errorf("%s has kind %q, expected AlertRule or RecordingRule", path, doc.Kind)
+		}
+	}
+	if alerts == 0 {
+		t.Fatal("no AlertRule manifests parsed; every assertion above is vacuous")
 	}
 }
+
+// ruleUID is Grafana's accepted rule-uid charset.
+var ruleUID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)

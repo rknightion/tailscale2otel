@@ -1,61 +1,99 @@
 # promtool unit tests for the tailnet-scoped rule groups.
 #
 # The cases here are the ones a syntax check cannot reach: multi-tailnet label
-# preservation, and the "healthy zero versus absent" distinction that #385 found
-# rendered backwards on the dashboards.
+# preservation, the already-expired-key guard, and the "healthy zero versus
+# absent" distinction that #385 found rendered backwards on the dashboards.
 #
-# Run: promtool test rules deploy/alerts/tests/*.yaml
+# THE RULE FILE IS GENERATED AND NOT COMMITTED — see health_rules_test.yaml for
+# the two commands. In short:
+#
+#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   promtool test rules deploy/alerts/tests/*.yaml
 rule_files:
-  - ../tailscale2otel.rules.yaml
+  - ../.generated-prom-rules.yaml
 
 evaluation_interval: 1m
 
 tests:
   # --- multi-tailnet identity ------------------------------------------------
-  # Two tailnets, one with an expiring device key. The alert must fire once, for
-  # the right tailnet, and must carry tailscale_tailnet through so a responder
-  # can tell which tailnet to act on. An expression that aggregated the label
-  # away would fire a single anonymous alert here, and this test is what says so.
-  - name: device key expiry keeps tailnet identity and does not fire for the healthy tailnet
+  # Two tailnets, one of them failing its API polls. The alert must fire once,
+  # for the right tailnet, and must carry tailscale_tailnet through so a
+  # responder can tell which tailnet to act on. An expression that aggregated the
+  # label away would fire a single anonymous alert here — which is the whole
+  # reason this rule exists alongside the fleet-wide API rules — and this test is
+  # what says so.
+  - name: per-tailnet API errors keep tailnet identity and stay quiet for the healthy tailnet
     interval: 1m
     input_series:
-      # Expires ~3 days out: inside the 7-day window. Series is a wall-clock
-      # epoch, so it stays flat while time() advances.
-      - series: 'tailscale_device_key_expiry_seconds{tailscale_tailnet="alpha.ts.net",host_name="laptop-a",tailscale_user="rob"}'
-        values: '259200+0x120'
-      # Expires ~30 days out: outside the window, must stay quiet.
-      - series: 'tailscale_device_key_expiry_seconds{tailscale_tailnet="beta.ts.net",host_name="laptop-b",tailscale_user="rob"}'
-        values: '2592000+0x120'
+      - series: 'tailscale2otel_api_requests_total{tailscale_tailnet="alpha.ts.net",http_response_status_code="403",http_route="/devices"}'
+        values: '0+1x60'
+      - series: 'tailscale2otel_api_requests_total{tailscale_tailnet="beta.ts.net",http_response_status_code="200",http_route="/devices"}'
+        values: '0+1x60'
     alert_rule_test:
-      - eval_time: 90m
-        alertname: DeviceKeyExpiringSoon
+      - eval_time: 45m
+        alertname: PerTailnetAPIErrors
         exp_alerts:
           - exp_labels:
               severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
               tailscale_tailnet: alpha.ts.net
-              host_name: laptop-a
-              tailscale_user: rob
             exp_annotations:
-              summary: "Device node key expiring soon: laptop-a"
-              description: >-
-                The Tailscale node key for device laptop-a (user rob) expires in under 7
-                days. When it expires the device drops off the tailnet until re-authed.
-                See the "Device key expiry" panel on the Fleet dashboard (uid
-                ts2otel-fleet). Note: auth/API keys are tracked separately as
-                tailscale_key_expiry_seconds (label tailscale_key_id) — see
-                AuthKeyExpiringSoon.
+              summary: "Tailscale API errors for tailnet alpha.ts.net"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
 
-  # An ALREADY-expired key must not fire this alert. The rule's `> 0` arm exists
-  # for exactly this: without it every long-dead device would alert forever as
+  # --- the already-expired guard ---------------------------------------------
+  # A tagged device whose key expires inside 48h pages, and the alert keeps the
+  # device identity labels the responder needs.
+  - name: tagged device key expiring inside 48h pages with device identity
+    interval: 1m
+    input_series:
+      # Wall-clock epoch of expiry. promtool's clock starts at 0, so a flat
+      # 86400 is "expires 24h from the start of the test" and stays inside the
+      # 48h window for the whole run.
+      - series: 'tailscale_device_key_expiry_seconds{tailscale_tailnet="alpha.ts.net",host_name="build-runner",host_id="n1",tailscale_user="tagged-devices",tailscale_tags="tag:ci"}'
+        values: '86400+0x180'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: TaggedDeviceKeyExpiring48h
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: tailscale2otel
+              domain: security
+              host_name: build-runner
+              host_id: n1
+              tailscale_user: tagged-devices
+              tailscale_tags: "tag:ci"
+            exp_annotations:
+              summary: "Tagged device node key for build-runner expires in <48h"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+
+  # An ALREADY-expired key must not fire. The rule's within-range lower bound is
+  # exactly this: without it every long-dead device would alert forever as
   # "expiring soon", drowning the devices that are genuinely about to expire.
+  # This is the case that caught a real regression, so do not fold it away.
   - name: an already expired key does not fire expiring-soon
     interval: 1m
     input_series:
-      - series: 'tailscale_device_key_expiry_seconds{tailscale_tailnet="alpha.ts.net",host_name="dead-host",tailscale_user="rob"}'
-        values: '1+0x120'
+      - series: 'tailscale_device_key_expiry_seconds{tailscale_tailnet="alpha.ts.net",host_name="dead-host",host_id="n2",tailscale_user="tagged-devices",tailscale_tags="tag:ci"}'
+        values: '1+0x180'
     alert_rule_test:
       - eval_time: 90m
-        alertname: DeviceKeyExpiringSoon
+        alertname: TaggedDeviceKeyExpiring48h
+        exp_alerts: []
+
+  # An untagged device is out of scope by design (the selector is
+  # tailscale_tags!=""); it is covered by the warning-tier 7-day rule instead.
+  - name: an untagged device expiring inside 48h does not page
+    interval: 1m
+    input_series:
+      - series: 'tailscale_device_key_expiry_seconds{tailscale_tailnet="alpha.ts.net",host_name="rob-laptop",host_id="n3",tailscale_user="rob",tailscale_tags=""}'
+        values: '86400+0x180'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: TaggedDeviceKeyExpiring48h
         exp_alerts: []
 
   # --- healthy zero versus absent -------------------------------------------
@@ -67,25 +105,26 @@ tests:
         values: '0+0x60'
     alert_rule_test:
       - eval_time: 45m
-        alertname: FlowLoggingDisabled
+        alertname: NetworkFlowLoggingDisabled
         exp_alerts:
+          # min() aggregates every label away on purpose — this is a tailnet-wide
+          # posture statement, not a per-series one.
           - exp_labels:
               severity: warning
-              tailscale_feature: network_flow_logging
-              tailscale_tailnet: alpha.ts.net
+              service: tailscale2otel
+              domain: security
+              skipinvestigation: "true"
             exp_annotations:
-              summary: "Tailscale network flow logging is disabled"
-              description: >-
-                tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"} == 0
-                for 30m — network flow logging is OFF (or plan-gated) on the tailnet, so the
-                flowlogs collector is idle and the Network dashboard (uid ts2otel-network) and
-                flow log panels on the Audit Events dashboard (uid ts2otel-audit-events) will
-                have no flow data.
+              summary: "Tailnet network flow logging is disabled"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift"
 
   # The absent case is deliberately DIFFERENT: no series at all means the probe
   # never ran (collector disabled, capability unsupported), which this rule does
   # not treat as "flow logging is off". Asserting the silence keeps a future
   # `or vector(0)` from quietly turning "we do not know" into a firing alert.
+  # It is also what pins the rule's `optional` evaluation policy (noDataState:
+  # Ok) as the correct one — if this ever had to fire on absence it would need
+  # the coverage_critical treatment instead.
   - name: flow logging feature probe absent stays silent
     interval: 1m
     input_series:
@@ -93,7 +132,7 @@ tests:
         values: '1+0x60'
     alert_rule_test:
       - eval_time: 45m
-        alertname: FlowLoggingDisabled
+        alertname: NetworkFlowLoggingDisabled
         exp_alerts: []
 
   # A feature that is ON must not fire, which also pins the polarity: this is a
@@ -106,32 +145,5 @@ tests:
         values: '1+0x60'
     alert_rule_test:
       - eval_time: 45m
-        alertname: FlowLoggingDisabled
+        alertname: NetworkFlowLoggingDisabled
         exp_alerts: []
-
-  # --- per-target isolation --------------------------------------------------
-  # One node down out of three fires exactly one alert, for that instance.
-  - name: one node down alerts only for that node
-    interval: 1m
-    input_series:
-      - series: 'tailscale_node_up_ratio{instance="node-a",tailscale_tailnet="alpha.ts.net"}'
-        values: '1+0x30'
-      - series: 'tailscale_node_up_ratio{instance="node-b",tailscale_tailnet="alpha.ts.net"}'
-        values: '0+0x30'
-      - series: 'tailscale_node_up_ratio{instance="node-c",tailscale_tailnet="beta.ts.net"}'
-        values: '1+0x30'
-    alert_rule_test:
-      - eval_time: 20m
-        alertname: NodeMetricsTargetDown
-        exp_alerts:
-          - exp_labels:
-              severity: warning
-              instance: node-b
-              tailscale_tailnet: alpha.ts.net
-            exp_annotations:
-              summary: "Node-metrics target down: node-b"
-              description: >-
-                tailscale_node_up_ratio == 0 for target node-b for 10m — the node-metrics
-                scraper could not reach tailscaled's metrics endpoint on that node, so its
-                forwarded tailscaled series are stale. (Forwarded node series are not on the
-                curated dashboards; see docs/metrics.md "Node metrics scraper".)

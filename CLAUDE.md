@@ -39,7 +39,7 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
 | `deploy/grafana/tailscale2otel.json` | `deploy/grafana/gen/build.py` | `python3 build.py --out …` (stdlib only) |
-| `deploy/alerts/tailscale2otel.grafana-rules.yaml` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
+| `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
 
 > **The two helm tools are version-pinned — install them with `scripts/regen-generated.sh tools`.**
 > CI pins the *actions*, and each action installs one specific tool binary; a local tool of any other
@@ -84,11 +84,27 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > empty disposition always fails the gate. Choosing `raw_only` vs `omitted`, with an honest note, is a
 > human decision. Regenerating after changing the dashboards or rules is expected and correct.
 
-> **`deploy/alerts/tailscale2otel.rules.yaml` and the four legacy standalone dashboards are
-> HAND-MAINTAINED, not generated** — do not add them to `regen_dashboards` or the drift gate.
+> **Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained any more.** The four legacy
+> classic-schema dashboards and the Prometheus-ruler `tailscale2otel.rules.yaml` were **deleted**
+> (#394) — sitting outside the drift gate is exactly why they rotted. The project is **Grafana v2 /
+> Grafana 13+ only and will never ship a Classic export**; do not reintroduce a v1 path (v1 cannot
+> express `conditionalRendering`, so every feature-gated tab would render permanently EMPTY rather
+> than hiding). Alert rules are **Grafana-managed `rules.alerting.grafana.app/v0alpha1` manifests**,
+> one JSON per rule, pushed with `gcx resources push -p deploy/alerts/grafana-managed`.
+>
+> Two casing traps in those manifests, both silent: `noDataState` spells its OK value **`"Ok"`**
+> while `execErrState` spells its own **`"OK"`**, and durations are Go-style strings (`"30m0s"`, not
+> `"5m"`). The wrong casing makes a rule un-deployable while every offline check passes, and
+> `gcx resources validate` will NOT catch it — it reports "does not support server-side dry-run …
+> did not validate the spec". `deploy/alerts/gen/validate_manifests.py` is the real gate.
+>
+> `build_rules.py --prom-out` renders the same catalogue as throwaway Prometheus rules **purely so
+> `promtool test rules` can execute them** against the fixtures in `deploy/alerts/tests/`. That file
+> is gitignored and never shipped. Parsing proves an expression is well-formed; only execution
+> proves it fires when it should.
 >
 > Separately, `internal/catalog/dashboardrefs_test.go` checks every metric name the generated dashboard
-> and both rule files QUERY against the in-code catalog's normalized Prometheus spellings. Nothing else
+> and the rule manifests QUERY against the in-code catalog's normalized Prometheus spellings. Nothing else
 > connects those artifacts to the catalog, so a renamed metric leaves a panel silently empty — it still
 > loads, it just shows "No data". That test found the flagship dashboard grouping by
 > `tailscale_user_invite_accepted`, a label emitted nowhere (#438). Note it has to subtract the catalog's

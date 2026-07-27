@@ -68,29 +68,35 @@ gcx dashboards create -f /tmp/t.json && gcx dashboards snapshot t2-prev-network-
 > dashboard defect — the panels populate normally in the live UI. Render a single
 > tab (`--tab`) for clean previews.
 
-## Legacy standalone dashboards (Grafana ≤12 friendly)
+## Removed: the four legacy standalone dashboards
 
-The original four single-purpose dashboards remain for older Grafana or simpler
-use. They are classic schema (`schemaVersion: 39`), importable, and datasource-
-agnostic via `${DS_PROM}` / `${DS_LOKI}`.
+`tailscale-fleet.json`, `tailscale-network.json`, `tailscale-audit-events.json` and
+`tailscale-exporter-health.json` are **gone**. They were classic schema
+(`schemaVersion: 39`), hand-maintained, duplicated flagship content, and were excluded
+from `scripts/regen-generated.sh` and the `dashboards-drift` gate — so nothing regenerated
+them, nothing tested them, and nothing noticed when they drifted.
 
-| File | UID | Purpose |
-| --- | --- | --- |
-| `tailscale-fleet.json` | `ts2otel-fleet` | Device fleet & inventory. |
-| `tailscale-network.json` | `ts2otel-network` | Network flow throughput & top talkers. |
-| `tailscale-audit-events.json` | `ts2otel-audit-events` | Audit + webhook events and log streams. |
-| `tailscale-exporter-health.json` | `ts2otel-exporter-health` | Exporter self-observability. |
+This project targets **Grafana 13+ and the v2 dashboard schema only**. The dynamic layout
+the flagship relies on — nested tabs and `conditionalRendering` — has no classic-schema
+equivalent, so a v1 copy would render every feature-gated area permanently empty rather
+than hiding it. Shipping one would have been worse than shipping nothing.
 
-## Importing (UI / API / provisioning)
+Replacement tabs on the flagship (`tailscale2otel`): fleet → **Fleet & Devices**, network →
+**Network & Flows**, audit events → **Events & Logs** and **Security & Audit**, exporter
+health → **Exporter Diagnostics** and **Cardinality & Cost**.
 
-UI: **Dashboards → New → Import → Upload JSON file**, then map the datasources.
+## Importing (gcx / UI / provisioning)
+
+`tailscale2otel.json` is a **v2 resource** (`apiVersion: dashboard.grafana.app/v2`) and needs
+**Grafana 13+**. Both older-version failures are misleading: 12.4 returns `200` and renders a
+blank dashboard, 11.5 rejects it with `Dashboard title cannot be empty`. The classic
+`POST /api/dashboards/db` endpoint takes a v1 body and does **not** accept this file.
 
 ```bash
-# HTTP API (wrap in {"dashboard": <json>, "overwrite": true})
-curl -sS -H "Authorization: Bearer $GRAFANA_TOKEN" -H "Content-Type: application/json" \
-  -d "$(jq '{dashboard: ., overwrite: true}' tailscale-fleet.json)" \
-  "$GRAFANA_URL/api/dashboards/db"
+gcx resources push -f tailscale2otel.json
 ```
+
+UI: **Dashboards → New → Import → Upload JSON file**, then map the datasources.
 
 For file-based provisioning, drop the JSON into a path referenced by a
 `dashboards` provider. Logs are matched on `service_name="tailscale2otel"`, and

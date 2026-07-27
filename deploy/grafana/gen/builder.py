@@ -206,6 +206,27 @@ def barchart_opts(legend=False):
             "tooltip": {"mode": "single", "sort": "none"}}
 
 
+# --- top-talker category axis (#391) -----------------------------------------
+#
+# A Prometheus instant query in `table` format returns one wide frame: a Time column,
+# one column per label (including the OTLP resource labels), and Value. A barchart
+# with no explicit xField takes the FIRST string field as its category axis, so an
+# un-excluded Time or `instance` column silently becomes the category — which is
+# exactly what the live top-talker panels rendered (#391: "no device labels, a
+# time-like category"). Excluding the noise is not enough on its own: pin xField too,
+# so the category is stated rather than inferred from column order.
+BAR_NOISE = ["Time", "__name__", "job", "instance", "service_instance_id",
+             "service_name", "service_namespace", "tailscale_tailnet",
+             "tailscale2otel_provider"]
+
+
+def category_bar_opts(xfield):
+    """barchart_opts() with the category axis pinned to a named (post-transform) field."""
+    opts = barchart_opts()
+    opts["xField"] = xfield
+    return opts
+
+
 def logs_opts():
     return {"showTime": True, "showLabels": False, "wrapLogMessage": True,
             "prettifyLogMessage": False, "enableLogDetails": True,
@@ -264,6 +285,140 @@ def cond_group(items, condition="and"):
 
 def cond_present(var):  # back-compat: show when presence var is non-empty
     return cond_group([cond_item(var)])
+
+
+# ---------------------------------------------------------------------------
+# sentinel (presence-variable) registry (#495)
+# ---------------------------------------------------------------------------
+#
+# Feature-gated rows/tabs reference a hidden presence variable by name via
+# row(present=...)/row(hide_when=...)/tab(present=...). Before #495 every
+# sentinel was declared in one place (variables.py's build_variables()), so
+# two agents adding gated rows to different tabs both had to edit that same
+# function. Sentinels are now declared where they are consumed: each tab
+# module calls sentinel()/pii_sentinel()/raw_sentinel() for the names ITS
+# rows reference, as a side effect of building that tab (see tabs/*.py).
+# build() resets the registry (alongside ELEMENTS/_id) before (re-)building
+# the tabs; build_variables() collects everything registered afterwards.
+#
+# A sentinel consumed by more than one tab still needs exactly one declaring
+# module — see the comment at each such call site for which tab won and why.
+
+_SENTINEL_ORDER = [
+    # The exact order build_variables() emitted these before #495 — frozen so
+    # a pure declaration-order refactor cannot reorder the rendered variables
+    # array. Extend at the END for a brand-new sentinel; never reorder
+    # existing entries to match a new declaration site.
+    "has_flows", "has_raw_flow", "has_rollup_flow", "has_unique", "has_posture",
+    "has_routes", "has_derp", "has_nodemetrics", "has_stream", "has_webhook",
+    "has_keys", "has_users_pe", "has_invites", "has_api_retry", "has_scrape_err",
+    "has_path", "has_audit", "has_posture_integration", "has_logstream",
+    "has_services", "has_tailnet_lock", "has_derp_rollup", "has_connectivity",
+    "has_exit", "has_subnet", "has_exit_io", "has_acl_risk", "has_audit_changes",
+    "has_invites_dev", "has_key_scopes", "has_dns_resolver", "has_version_skew",
+    "has_selfobs", "has_api_hist", "has_export_hist", "has_recv_dur", "has_ingest",
+    "has_staleness", "has_pii", "has_key_expiry_hist", "has_rdns", "has_device_attr",
+    "has_svc", "has_posture_int", "has_dropped", "has_node_curated",
+    "has_device_flags", "has_multitailnet",
+    "pii_host", "pii_node", "pii_perdevice", "pii_emails", "pii_usernames",
+    "pii_actor", "pii_int_ips", "pii_ext_ips", "pii_ts_ips", "pii_topology",
+]
+
+_sentinels = {}  # name -> QueryVariable dict, keyed by registration order (not emission order)
+
+
+def reset_sentinels():
+    """Clear the sentinel registry. Called at the start of build() alongside
+    ELEMENTS/_id: tab modules re-declare their sentinels every build() call
+    (they are ordinary statements inside tab_xxx(), executed each time that
+    function runs), so without a reset a second build() in the same process
+    — every test file here does this — would raise spurious "already
+    registered" errors."""
+    _sentinels.clear()
+
+
+def _claim_sentinel(name):
+    """Reserve a sentinel name, or raise if it is already taken.
+
+    Must raise, not silently dedupe: a silent dedupe would let a name be
+    registered twice with two different queries, with whichever call wins
+    silently gating unrelated rows on the wrong metric.
+    """
+    if name in _sentinels:
+        raise ValueError(
+            "sentinel %r is already registered; two presence variables cannot "
+            "share a name (give the second one its own)" % name)
+
+
+def sentinel(name, metric):
+    """Register a hidden presence QueryVariable: non-empty when <metric> has series.
+
+    Structural on purpose — callers pass a metric name, never a hand-written
+    query string, so the query shape (label_values(...)) lives in exactly one
+    place and no call site can invent a divergent one. Returns `name`, so a
+    call site can optionally capture it: `HAS_X = sentinel("has_x", "...")`.
+    """
+    _claim_sentinel(name)
+    _sentinels[name] = {"kind": "QueryVariable", "spec": {
+        "name": name, "label": name, "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": "label_values(%s, __name__)" % metric, "refId": name}},
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}}
+    return name
+
+
+def pii_sentinel(name, expr):
+    """Register a hidden PII-redaction sentinel: non-empty ONLY when <expr> returns
+    series, i.e. when the redaction condition holds. Used with row(hide_when=[...])
+    -> notMatches so panels hide only on explicit redaction and stay visible when
+    the pii_filter gauge is absent."""
+    _claim_sentinel(name)
+    _sentinels[name] = {"kind": "QueryVariable", "spec": {
+        "name": name, "label": name, "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": "query_result(%s)" % expr, "refId": name}},
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}}
+    return name
+
+
+def raw_sentinel(name, query):
+    """Register a hidden presence sentinel from an already-formed query string.
+
+    For the one case that is neither a plain metric-presence check nor a PII
+    expr: has_multitailnet gates on ">1 distinct tailnet observed", not a
+    metric existing, so its query has no single metric name to hand to
+    sentinel().
+    """
+    _claim_sentinel(name)
+    _sentinels[name] = {"kind": "QueryVariable", "spec": {
+        "name": name, "label": name, "hide": "hideVariable",
+        "query": {"kind": "DataQuery", "version": "v0", "group": "",
+                  "datasource": {"name": "${ds_prometheus}"},
+                  "spec": {"query": query, "refId": name}},
+        "current": {"text": "", "value": ""}, "options": [], "multi": False,
+        "includeAll": False, "allowCustomValue": False, "refresh": "onDashboardLoad",
+        "regex": "", "skipUrlSync": True, "sort": "disabled"}}
+    return name
+
+
+def registered_sentinels():
+    """Every registered sentinel's QueryVariable dict, in the FROZEN historical
+    order (_SENTINEL_ORDER) rather than registration order — registration order
+    is now a function of which tabs got built and in what sequence, and must
+    not leak into the emitted variables array (#495)."""
+    unordered = [n for n in _sentinels if n not in _SENTINEL_ORDER]
+    if unordered:
+        raise ValueError(
+            "sentinel(s) %r registered but missing from _SENTINEL_ORDER — add "
+            "them there (at the end, unless intentionally matching a specific "
+            "historical position)" % unordered)
+    return [_sentinels[n] for n in _SENTINEL_ORDER if n in _sentinels]
 
 
 def row(title, panel_specs, present=None, hide_when=None, collapse=False):

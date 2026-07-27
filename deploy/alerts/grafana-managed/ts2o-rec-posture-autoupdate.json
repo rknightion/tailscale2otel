@@ -1,0 +1,63 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "RecordingRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-rec-posture-autoupdate"
+  },
+  "spec": {
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        },
+        "source": true
+      }
+    },
+    "labels": {
+      "domain": "security",
+      "service": "tailscale2otel"
+    },
+    "metric": "tailscale:posture_autoupdate:ratio",
+    "paused": false,
+    "targetDatasourceUID": "grafanacloud-prom",
+    "title": "tailscale:posture_autoupdate:ratio",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

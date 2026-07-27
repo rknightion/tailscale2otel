@@ -1,0 +1,10 @@
+{
+  "apiVersion": "folder.grafana.app/v1beta1",
+  "kind": "Folder",
+  "metadata": {
+    "name": "tailscale2otel"
+  },
+  "spec": {
+    "title": "tailscale2otel Alerts"
+  }
+}

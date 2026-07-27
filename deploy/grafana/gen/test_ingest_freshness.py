@@ -37,21 +37,17 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
             self.assertIn(expected, rendered)
 
     def test_rules_ship_paused_staleness_guidance_and_recording_rule(self):
-        all_rules = {
-            rule["uid"]: rule
-            for group in rules.build()["groups"]
-            for rule in group["rules"]
-        }
+        all_rules = rules.rules_by_uid()
         stale = all_rules["ts2o-ingest-data-stale"]
-        self.assertTrue(stale["isPaused"])
+        self.assertTrue(stale["paused"])
         self.assertIn(
             "tailscale2otel_ingest_last_event_timestamp_seconds",
-            stale["data"][0]["model"]["expr"],
+            rules.rule_expr(stale),
         )
         recording = all_rules["ts2o-rec-ingest-freshness"]
-        self.assertTrue(recording["isPaused"])
+        self.assertTrue(recording["paused"])
         self.assertEqual(
-            recording["record"]["metric"],
+            recording["metric"],
             "tailscale2otel:ingest_event_freshness_seconds",
         )
 
@@ -74,18 +70,14 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
         self.assertIn("tailscale_config_audit_schema_drift_total", events)
 
     def test_integrity_alerts_are_paused_and_bounded(self):
-        all_rules = {
-            rule["uid"]: rule
-            for group in rules.build()["groups"]
-            for rule in group["rules"]
-        }
+        all_rules = rules.rules_by_uid()
         for uid, metric in (
             ("ts2o-flow-reporter-mismatch", "tailscale_network_reporter_observations_total"),
             ("ts2o-audit-schema-drift", "tailscale_config_audit_schema_drift_total"),
         ):
             rule = all_rules[uid]
-            self.assertTrue(rule["isPaused"])
-            self.assertIn(metric, rule["data"][0]["model"]["expr"])
+            self.assertTrue(rule["paused"])
+            self.assertIn(metric, rules.rule_expr(rule))
 
 
 if __name__ == "__main__":

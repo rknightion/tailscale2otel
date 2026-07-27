@@ -1,0 +1,63 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "RecordingRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-rec-derp-byte-fraction"
+  },
+  "spec": {
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        },
+        "source": true
+      }
+    },
+    "labels": {
+      "domain": "infra",
+      "service": "tailscale2otel"
+    },
+    "metric": "tailscale:derp_relay:byte_fraction",
+    "paused": false,
+    "targetDatasourceUID": "grafanacloud-prom",
+    "title": "tailscale:derp_relay:byte_fraction",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

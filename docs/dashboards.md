@@ -43,39 +43,45 @@ python3 gen/build.py --out tailscale2otel.json
 | **Exporter Diagnostics** | Per-collector scrape duration/success/errors, API request stats, cardinality, enrichment cache, and Go runtime. |
 | **Cardinality & Cost** | Per-metric series vs cap, overflow table, series-by-group cost driver, per-metric headroom, flow-cardinality drivers, dedup sets, and an ingest-vs-export DPM/LPM cost view. |
 
-## Legacy dashboards (Grafana ≤12 friendly)
+## Removed: the four classic-schema dashboards
 
-Four classic-schema dashboards (`schemaVersion: 39`) remain for older Grafana or simpler
-deployments. They use `${DS_PROM}` / `${DS_LOKI}` template variables so they are datasource-agnostic.
+`tailscale-fleet.json` (`ts2otel-fleet`), `tailscale-network.json` (`ts2otel-network`),
+`tailscale-audit-events.json` (`ts2otel-audit-events`) and `tailscale-exporter-health.json`
+(`ts2otel-exporter-health`) have been **removed**. They were hand-maintained `schemaVersion: 39`
+JSON, duplicated content the flagship already covers, and were excluded from every generator and
+drift gate — so they drifted silently and were the only dashboards nothing tested.
 
-| File | UID | Purpose |
-|---|---|---|
-| [`tailscale-fleet.json`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/grafana/tailscale-fleet.json) | `ts2otel-fleet` | Device fleet & inventory |
-| [`tailscale-network.json`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/grafana/tailscale-network.json) | `ts2otel-network` | Network flow throughput & top talkers |
-| [`tailscale-audit-events.json`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/grafana/tailscale-audit-events.json) | `ts2otel-audit-events` | Audit + webhook events and log streams |
-| [`tailscale-exporter-health.json`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/grafana/tailscale-exporter-health.json) | `ts2otel-exporter-health` | Exporter self-observability |
+tailscale2otel targets **Grafana 13+ and the v2 dashboard schema only**. The v2 dynamic layout
+(tabs, nested navigation, conditional rendering) cannot be expressed in the classic schema, so a
+compatibility copy could not have shown the same thing anyway.
+
+If you had one of those UIDs provisioned, point at the flagship (`tailscale2otel`) instead. The
+tab that replaces each is: fleet → **Fleet & Devices**, network → **Network & Flows**, audit events
+→ **Events & Logs** plus **Security & Audit**, exporter health → **Exporter Diagnostics** plus
+**Cardinality & Cost**. The flagship's tabs hide themselves when their backing signal is absent, so
+you see less than the old dashboards showed only where the old ones were rendering empty panels.
 
 ## Importing
 
+!!! warning "Grafana 13+ only"
+    `tailscale2otel.json` is a **v2 resource** (`apiVersion: dashboard.grafana.app/v2`), not a
+    classic dashboard. Grafana 12.4 accepts it with a `200` and then **renders nothing**, and
+    Grafana 11.5 rejects it with the misleading error `Dashboard title cannot be empty`. Neither
+    failure mode says "your Grafana is too old", so check the version first.
+
+    This also means the **classic `POST /api/dashboards/db` endpoint does not apply** — it takes a
+    v1 dashboard body. Use one of the paths below.
+
+**`gcx` (recommended):**
+
+```bash
+gcx resources push -f tailscale2otel.json
+```
+
 **Grafana UI:** Dashboards → New → Import → Upload JSON file, then map the datasources.
 
-**HTTP API:**
-
-```bash
-curl -sS -H "Authorization: Bearer $GRAFANA_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "$(jq '{dashboard: ., overwrite: true}' tailscale-fleet.json)" \
-  "$GRAFANA_URL/api/dashboards/db"
-```
-
-**File provisioning:** drop the JSON into a path referenced by a `dashboards` provider and restart Grafana.
-
-**`gcx` (Grafana Cloud):**
-
-```bash
-gcx dashboards create -f tailscale2otel.json       # first time
-gcx dashboards update tailscale2otel -f tailscale2otel.json  # subsequent
-```
+**File provisioning:** drop the JSON into a path referenced by a `dashboards` provider and restart
+Grafana.
 
 ## Datasource variables
 

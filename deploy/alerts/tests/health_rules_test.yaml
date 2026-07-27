@@ -1,21 +1,33 @@
-# promtool unit tests for the tailscale2otel.health group.
+# promtool unit tests for the tailscale2otel-health rule group.
 #
 # `promtool check rules` only proves the expressions PARSE. These execute them
 # against synthetic series and assert what actually fires, which is the only way
 # to catch a rule that is syntactically valid and semantically wrong (#407).
 #
-# Run: promtool test rules deploy/alerts/tests/*.yaml
+# THE RULE FILE IS GENERATED AND NOT COMMITTED. tailscale2otel ships
+# Grafana-managed manifests (deploy/alerts/grafana-managed/), which promtool
+# cannot read, so the catalogue is re-rendered as throwaway Prometheus rules
+# first. Generate it before running:
+#
+#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   promtool test rules deploy/alerts/tests/*.yaml
+#
+# Alert names are the CamelCased rule titles (`prom_alertname` in the generator),
+# derived rather than hand-listed — a retitled rule fails to match here instead of
+# quietly losing its coverage.
 rule_files:
-  - ../tailscale2otel.rules.yaml
+  - ../.generated-prom-rules.yaml
 
 evaluation_interval: 1m
 
 tests:
   # --- ExporterDown: absent() is the whole point of this rule -----------------
-  # The exporter emitting a healthy 1 must never fire, and — more importantly —
-  # the series going away entirely MUST fire. A rule written as
-  # `tailscale2otel_up_ratio == 0` alone would go silent exactly when the
-  # exporter dies, which is the failure it exists to catch.
+  # This is the pack's only `coverage_critical` rule. Grafana expresses "absence
+  # is the alert" with noDataState: Alerting; the generated Prometheus rendering
+  # translates that to an explicit `or absent(...)` arm, and these three cases are
+  # what prove the translation still says the same thing. A rule written as
+  # `tailscale2otel_up_ratio < 1` alone would go silent exactly when the exporter
+  # dies, which is the failure it exists to catch.
   - name: exporter up and healthy does not fire
     interval: 1m
     input_series:
@@ -41,18 +53,16 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
+              service: tailscale2otel
+              domain: observability
               job: tailscale2otel
             exp_annotations:
               summary: "tailscale2otel exporter is down"
-              description: >-
-                tailscale2otel_up_ratio is 0 or absent for 5m — the exporter is not
-                running or not emitting telemetry, so no Tailscale metrics or logs
-                are flowing. All dashboards will be stale. Check the "Up state" /
-                build-info panels on the Exporter Health dashboard (uid
-                ts2otel-exporter-health).
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-down"
 
-  # The absent() arm. No input series at all for this metric.
-  - name: exporter series absent entirely fires with no labels
+  # The absent() arm. No input series at all for this metric, so the alert fires
+  # carrying only the rule's own labels — absent() synthesises a label-less vector.
+  - name: exporter series absent entirely fires with no series labels
     interval: 1m
     input_series:
       - series: 'tailscale_devices_count_ratio'
@@ -63,50 +73,187 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
+              service: tailscale2otel
+              domain: observability
             exp_annotations:
               summary: "tailscale2otel exporter is down"
-              description: >-
-                tailscale2otel_up_ratio is 0 or absent for 5m — the exporter is not
-                running or not emitting telemetry, so no Tailscale metrics or logs
-                are flowing. All dashboards will be stale. Check the "Up state" /
-                build-info panels on the Exporter Health dashboard (uid
-                ts2otel-exporter-health).
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-down"
 
-  # --- CollectorScrapeErrorRateHigh: counter-reset safety ---------------------
+  # --- CheckpointPersistErrors: counter-reset safety --------------------------
   # A process restart resets the counter to 0. rate() must absorb that rather
   # than reading the drop as a huge negative or the recovery as a spike. A
-  # steady, error-free collector that restarts must stay quiet.
-  - name: counter reset on a healthy collector does not fire
+  # collector that was erroring, restarts, and then behaves must go quiet and
+  # stay quiet — the `for: 15m` window has to elapse cleanly after the reset.
+  - name: counter reset on a recovered collector does not fire
     interval: 1m
     input_series:
       # Errors counter sits flat at 7, resets to 0 at the restart, stays flat.
-      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices"}'
-        values: '7+0x10 0+0x20'
+      - series: 'tailscale2otel_checkpoint_persist_errors_total{tailscale_collector="devices"}'
+        values: '7+0x10 0+0x40'
     alert_rule_test:
-      - eval_time: 30m
-        alertname: CollectorScrapeErrorRateHigh
+      - eval_time: 50m
+        alertname: CheckpointPersistErrors
         exp_alerts: []
 
-  - name: sustained scrape errors fire per collector
+  - name: sustained checkpoint errors fire per collector
     interval: 1m
     input_series:
-      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices"}'
-        values: '0+1x40'
-      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="acl"}'
-        values: '0+0x40'
+      - series: 'tailscale2otel_checkpoint_persist_errors_total{tailscale_collector="devices"}'
+        values: '0+1x60'
+      - series: 'tailscale2otel_checkpoint_persist_errors_total{tailscale_collector="acl"}'
+        values: '0+0x60'
     alert_rule_test:
-      - eval_time: 30m
-        alertname: CollectorScrapeErrorRateHigh
+      - eval_time: 45m
+        alertname: CheckpointPersistErrors
         exp_alerts:
           # Only the failing collector alerts; the healthy one must not be
-          # swept in by the sum.
+          # swept in by the sum, and must not appear as a second zero-valued
+          # instance either.
           - exp_labels:
               severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              tailscale_collector: devices
+            exp_annotations:
+              summary: "Collector devices cannot persist its checkpoint"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+
+  # --- CollectorScrapeErrorRateHigh: why it is NOT CollectorScrapeFailing -----
+  # These two rules look redundant until you model a FLAPPING collector, which
+  # is the case that deleted the datasource-managed rule's coverage. The success
+  # gauge reports the LAST scrape only, so a collector that errors and recovers
+  # presents a `1` to every evaluation and `CollectorScrapeFailing` never
+  # sustains its 15m `for` — while the error counter climbs the whole time and
+  # half the scrapes are being lost. If a future edit ever makes one of these
+  # rules subsume the other, this test is what fails.
+  - name: a flapping collector fires the error-rate rule while the success gauge stays healthy
+    interval: 1m
+    input_series:
+      # The gauge never once reads 0: every evaluation lands on a good scrape.
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="devices"}'
+        values: '1+0x60'
+      # ...but errors accrue continuously behind it.
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices",error_type="timeout"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: CollectorScrapeFailing
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: CollectorScrapeErrorRateHigh
+        exp_alerts:
+          # error_type is summed away on purpose: one alert per collector, with
+          # the breakdown left to the panel. Two error classes on one collector
+          # must not page twice.
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
               tailscale_collector: devices
             exp_annotations:
               summary: "Collector devices scrape errors elevated"
-              description: >-
-                Collector devices has been logging scrape errors
-                (rate(tailscale2otel_scrape_errors_total[5m]) > 0) for 15m. Break down
-                by error_type on the "scrape errors by collector" panel of the Exporter
-                Health dashboard (uid ts2otel-exporter-health).
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+
+  # Counter-reset safety. A restart drops scrape_errors_total to 0; rate() must
+  # absorb that rather than reading the drop as a spike. A collector that was
+  # erroring, restarts, and then behaves must go quiet and STAY quiet across the
+  # full 15m `for` after the reset.
+  - name: scrape error counter reset by a restart does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices",error_type="timeout"}'
+        values: '7+0x10 0+0x50'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: CollectorScrapeErrorRateHigh
+        exp_alerts: []
+
+  # And the isolation direction: one erroring collector out of three must not
+  # sweep the healthy two in as zero-valued instances.
+  - name: one erroring collector alerts only for that collector
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices",error_type="timeout"}'
+        values: '0+0x60'
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="acl",error_type="http_403"}'
+        values: '0+1x60'
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="users",error_type="timeout"}'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: CollectorScrapeErrorRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              tailscale_collector: acl
+            exp_annotations:
+              summary: "Collector acl scrape errors elevated"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+
+  # --- OTLPExportFailures: counter-reset safety + the error_type dimension ----
+  # This is the SDK-global-error-handler counter, not the per-signal export
+  # decorator (ExportFailures). It keys on error_type, so a timeout and a
+  # generic export failure are separate alerts a responder can act on
+  # differently.
+  - name: export failure counter reset by a restart does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_export_failures_total{error_type="export"}'
+        values: '5+0x15 0+0x50'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: OTLPExportFailures
+        exp_alerts: []
+
+  - name: sustained export failures fire per error type
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_export_failures_total{error_type="timeout"}'
+        values: '0+1x60'
+      - series: 'tailscale2otel_export_failures_total{error_type="export"}'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: OTLPExportFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              error_type: timeout
+            exp_annotations:
+              summary: "tailscale2otel OTLP export failures (timeout)"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+
+  # --- per-collector isolation on a gauge ------------------------------------
+  # One collector failing out of three fires exactly one alert. An expression
+  # that aggregated tailscale_collector away would fire a single anonymous alert
+  # here and nobody would know which collector to look at.
+  - name: one failing collector alerts only for that collector
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="devices"}'
+        values: '1+0x30'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="acl"}'
+        values: '0+0x30'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="users"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CollectorScrapeFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              tailscale_collector: acl
+            exp_annotations:
+              summary: "Collector acl scrape failing"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"

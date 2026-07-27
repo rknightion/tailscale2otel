@@ -3,11 +3,11 @@
 // expression fails CI instead of shipping as a panel that silently shows an
 // error (or worse, "No data") in someone's Grafana.
 //
-// It walks three files:
+// It walks:
 //
-//	deploy/grafana/tailscale2otel.json               Grafana dashboard schema v2
-//	deploy/alerts/tailscale2otel.grafana-rules.yaml  Grafana provisioning rules
-//	deploy/alerts/tailscale2otel.rules.yaml          plain Prometheus rules
+//	deploy/grafana/tailscale2otel.json    Grafana dashboard schema v2
+//	deploy/alerts/grafana-managed/*.json  Grafana-managed rule manifests
+//	                                      (rules.alerting.grafana.app/v0alpha1)
 //
 // and for each expression it (1) substitutes Grafana templating tokens for
 // stand-ins that parse in the position they appear (see substitute.go), (2)
@@ -47,15 +47,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 )
 
 // The artifacts to walk, repo-relative. Adding one here is the whole change
 // needed to bring another generated file under the gate.
 const (
-	dashboardPath    = "deploy/grafana/tailscale2otel.json"
-	grafanaRulesPath = "deploy/alerts/tailscale2otel.grafana-rules.yaml"
-	promRulesPath    = "deploy/alerts/tailscale2otel.rules.yaml"
+	dashboardPath = "deploy/grafana/tailscale2otel.json"
+	// The rules are Grafana-managed manifests, one JSON file per rule, plus a
+	// folder manifest that carries no expressions and is skipped.
+	rulesDir       = "deploy/alerts/grafana-managed"
+	folderManifest = "_folder.json"
 )
 
 func main() {
@@ -73,6 +77,30 @@ func main() {
 	}
 }
 
+// ruleManifests lists the shipped rule manifests, repo-relative, excluding the
+// folder manifest. It errors on an empty result rather than returning one: with
+// no manifests the tool would print "0 failures" having parsed nothing, which is
+// indistinguishable from a clean run.
+func ruleManifests(root string) ([]string, error) {
+	dir := filepath.Join(root, filepath.FromSlash(rulesDir))
+	matches, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return nil, fmt.Errorf("glob %s: %w", dir, err)
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if filepath.Base(m) == folderManifest {
+			continue
+		}
+		out = append(out, path.Join(rulesDir, filepath.Base(m)))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s holds no rule manifests; nothing to check", rulesDir)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // run checks every artifact under root, writes the report to w, and returns the
 // failure count. A returned error means an artifact could not be read or
 // structurally understood; per-expression problems come back as failures.
@@ -84,9 +112,23 @@ func run(w io.Writer, root string, verbose bool) (int, error) {
 		fn   func(*Report, string, []byte) error
 	}{
 		{dashboardPath, checkDashboard},
-		{grafanaRulesPath, checkGrafanaRules},
-		{promRulesPath, checkPromRules},
 	}
+
+	// One manifest per rule, so the rule leg is a directory walk rather than a
+	// fixed path. An empty directory is an ERROR, not a clean run: the tool would
+	// otherwise report "0 failures" having checked no rule at all, which reads as
+	// a pass.
+	manifests, err := ruleManifests(root)
+	if err != nil {
+		return 0, err
+	}
+	for _, m := range manifests {
+		checks = append(checks, struct {
+			path string
+			fn   func(*Report, string, []byte) error
+		}{m, checkGrafanaRules})
+	}
+
 	for _, c := range checks {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(c.path)))
 		if err != nil {

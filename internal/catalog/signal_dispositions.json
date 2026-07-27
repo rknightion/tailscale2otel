@@ -31,9 +31,8 @@
       "name": "tailscale.acl.validation_issue",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "WARN log carrying per-kind ACL validation issues; nothing charts or alerts on ACL policy health yet — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "log_event",
@@ -124,9 +123,8 @@
       "name": "tailscale.oauth_app.info",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Per-application INFO inventory log; no OAuth-application signal has a curated surface — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "log_event",
@@ -142,9 +140,8 @@
       "name": "tailscale.webhook_endpoints.event_mismatch",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "WARN log naming each desired-but-uncovered webhook event; read when reconciling collectors.webhooks.desired_events — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -237,9 +234,8 @@
       "prom_name": "tailscale_acl_validation_errors_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "ACL policy-validation summary; nothing charts or alerts on ACL policy health yet — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -247,9 +243,8 @@
       "prom_name": "tailscale_acl_validation_ok_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "ACL policy-validation summary; nothing charts or alerts on ACL policy health yet — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -257,9 +252,8 @@
       "prom_name": "tailscale_acl_validation_test_failures_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "ACL policy-validation summary; nothing charts or alerts on ACL policy health yet — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -267,9 +261,8 @@
       "prom_name": "tailscale_acl_validation_warnings_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "ACL policy-validation summary; nothing charts or alerts on ACL policy health yet — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -296,9 +289,8 @@
       "prom_name": "tailscale_config_audit_deferred_delay_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Audit-pipeline delivery-latency histogram for ad-hoc quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -315,9 +307,8 @@
       "prom_name": "tailscale_config_audit_processing_delay_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Audit-pipeline processing-latency histogram for ad-hoc quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -400,7 +391,7 @@
       "prom_name": "tailscale_device_blocks_incoming_connections_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -410,7 +401,7 @@
       "prom_name": "tailscale_device_connectivity_direct_capable_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP."
     },
@@ -420,7 +411,7 @@
       "prom_name": "tailscale_device_connectivity_endpoints_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP."
     },
@@ -439,7 +430,7 @@
       "prom_name": "tailscale_device_connectivity_ipv6_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP."
     },
@@ -449,7 +440,7 @@
       "prom_name": "tailscale_device_connectivity_udp_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP."
     },
@@ -498,7 +489,7 @@
       "prom_name": "tailscale_device_key_expiry_disabled_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -517,7 +508,7 @@
       "prom_name": "tailscale_device_multiple_connections_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -548,7 +539,7 @@
       "prom_name": "tailscale_device_posture_identity_disabled_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -576,7 +567,7 @@
       "prom_name": "tailscale_device_ssh_enabled_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -616,9 +607,8 @@
       "prom_name": "tailscale_device_invites_pending_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -626,9 +616,8 @@
       "prom_name": "tailscale_devices_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -636,9 +625,8 @@
       "prom_name": "tailscale_devices_by_distro_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Fleet-wide roll-up count with no curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -722,9 +710,8 @@
       "prom_name": "tailscale_devices_key_expiry_disabled_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Fleet-wide roll-up count with no curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -742,9 +729,8 @@
       "prom_name": "tailscale_devices_ssh_enabled_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Fleet-wide roll-up count with no curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -879,9 +865,8 @@
       "prom_name": "tailscale_key_allowed_tags_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Key-inventory breakdown carrying per-key or per-owner labels; queried ad-hoc during a credential audit — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -935,9 +920,8 @@
       "prom_name": "tailscale_keys_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -945,9 +929,8 @@
       "prom_name": "tailscale_keys_by_owner_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Key-inventory breakdown carrying per-key or per-owner labels; queried ad-hoc during a credential audit — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1020,9 +1003,8 @@
       "prom_name": "tailscale_logstream_requests_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1050,9 +1032,8 @@
       "prom_name": "tailscale_network_data_quality_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1060,9 +1041,8 @@
       "prom_name": "tailscale_network_dedup_conflicts_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1147,9 +1127,8 @@
       "prom_name": "tailscale_network_store_dropped_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1175,9 +1154,8 @@
       "prom_name": "tailscale_node_derp_home_region_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Carries a DERP region id as the gauge VALUE, which charts badly; used ad-hoc to see where a node homes — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1204,7 +1182,7 @@
       "prom_name": "tailscale_node_packets_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "Packet counterpart of the visualized tailscale.node.io / tailscale.node.peer_relay.io byte counters; kept for ad-hoc PromQL rather than doubling every traffic panel."
     },
@@ -1241,7 +1219,7 @@
       "prom_name": "tailscale_node_peer_relay_packets_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "Packet counterpart of the visualized tailscale.node.io / tailscale.node.peer_relay.io byte counters; kept for ad-hoc PromQL rather than doubling every traffic panel."
     },
@@ -1261,9 +1239,8 @@
       "prom_name": "tailscale_oauth_app_node_attributes_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "OAuth-application inventory; no OAuth-application signal has a curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1271,9 +1248,8 @@
       "prom_name": "tailscale_oauth_app_redirect_uris_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "OAuth-application inventory; no OAuth-application signal has a curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1281,9 +1257,8 @@
       "prom_name": "tailscale_oauth_app_scope_class_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "OAuth-application inventory; no OAuth-application signal has a curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1291,9 +1266,8 @@
       "prom_name": "tailscale_oauth_app_scopes_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "OAuth-application inventory; no OAuth-application signal has a curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1301,9 +1275,8 @@
       "prom_name": "tailscale_oauth_apps_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1311,9 +1284,8 @@
       "prom_name": "tailscale_oauth_apps_count_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "OAuth-application inventory; no OAuth-application signal has a curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1414,9 +1386,8 @@
       "prom_name": "tailscale_rdns_cache_overflows_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1536,9 +1507,8 @@
       "prom_name": "tailscale_stream_skipped_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1555,9 +1525,8 @@
       "prom_name": "tailscale_subnet_routes_enabled",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Fleet-wide roll-up count with no curated panel or alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1631,9 +1600,8 @@
       "prom_name": "tailscale_user_invites_pending_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1641,9 +1609,8 @@
       "prom_name": "tailscale_users_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1660,9 +1627,8 @@
       "prom_name": "tailscale_webhook_duplicates_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-receiver internal; the receiver has no curated panel or alert of its own — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1699,9 +1665,8 @@
       "prom_name": "tailscale_webhook_request_duration_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-receiver internal; the receiver has no curated panel or alert of its own — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1709,9 +1674,8 @@
       "prom_name": "tailscale_webhook_schema_drift_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-receiver internal; the receiver has no curated panel or alert of its own — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1719,9 +1683,8 @@
       "prom_name": "tailscale_webhook_endpoint_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Bounded age distribution meant for ad-hoc histogram_quantile queries; no curated panel plots it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1729,9 +1692,8 @@
       "prom_name": "tailscale_webhook_endpoint_subscriptions_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-endpoint inventory/reconciliation gauge; nothing charts or alerts on webhook subscription coverage — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1748,9 +1710,8 @@
       "prom_name": "tailscale_webhook_endpoints_desired_unrecognized_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-endpoint inventory/reconciliation gauge; nothing charts or alerts on webhook subscription coverage — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1758,9 +1719,8 @@
       "prom_name": "tailscale_webhook_endpoints_event_desired_covered_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-endpoint inventory/reconciliation gauge; nothing charts or alerts on webhook subscription coverage — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1768,9 +1728,8 @@
       "prom_name": "tailscale_webhook_endpoints_event_subscriptions_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Webhook-endpoint inventory/reconciliation gauge; nothing charts or alerts on webhook subscription coverage — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1788,6 +1747,7 @@
       "prom_name": "tailscale2otel_api_availability_ratio",
       "surface": "self_obs",
       "dispositions": [
+        "visualized",
         "alertable"
       ]
     },
@@ -1806,9 +1766,8 @@
       "prom_name": "tailscale2otel_api_last_probe_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Unix timestamp of the last probe per API operation, meant to be read as time() - value in an ad-hoc query — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1816,9 +1775,8 @@
       "prom_name": "tailscale2otel_api_rate_limit_wait_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Client-side rate-limiter wait histogram; queried ad-hoc when the exporter looks slow — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1856,9 +1814,8 @@
       "prom_name": "tailscale2otel_capability_scope_satisfied_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Capability/scope readiness gauge; the same state is shown on the admin status page, and nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -1866,9 +1823,8 @@
       "prom_name": "tailscale2otel_capability_status_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Capability/scope readiness gauge; the same state is shown on the admin status page, and nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2077,9 +2033,8 @@
       "prom_name": "tailscale2otel_ingress_wal_completion_markers_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingress-WAL durability internal, useful when diagnosing a stuck or growing WAL; no curated panel — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2087,9 +2042,8 @@
       "prom_name": "tailscale2otel_ingress_wal_orphan_size_bytes",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingress-WAL durability internal, useful when diagnosing a stuck or growing WAL; no curated panel — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2097,9 +2051,8 @@
       "prom_name": "tailscale2otel_ingress_wal_orphan_stages_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingress-WAL durability internal, useful when diagnosing a stuck or growing WAL; no curated panel — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2107,9 +2060,8 @@
       "prom_name": "tailscale2otel_ingress_wal_pending_entries_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingress-WAL durability internal, useful when diagnosing a stuck or growing WAL; no curated panel — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2117,9 +2069,8 @@
       "prom_name": "tailscale2otel_ingress_wal_pending_size_bytes",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingress-WAL durability internal, useful when diagnosing a stuck or growing WAL; no curated panel — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2146,9 +2097,8 @@
       "prom_name": "tailscale2otel_nodemetrics_metric_names_dropped_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Ingestion-hygiene counter: non-zero means records were dropped or reshaped on the way in. Nothing charts or alerts on it — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2156,9 +2106,8 @@
       "prom_name": "tailscale2otel_objectstore_backlog_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2166,9 +2115,8 @@
       "prom_name": "tailscale2otel_objectstore_bytes_bytes_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2176,9 +2124,8 @@
       "prom_name": "tailscale2otel_objectstore_cursor_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2186,9 +2133,8 @@
       "prom_name": "tailscale2otel_objectstore_decompressed_bytes_bytes_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2196,9 +2142,8 @@
       "prom_name": "tailscale2otel_objectstore_discovered_newest_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2206,9 +2151,8 @@
       "prom_name": "tailscale2otel_objectstore_expansion_limit_failures_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2216,9 +2160,8 @@
       "prom_name": "tailscale2otel_objectstore_gap_healthy_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2226,9 +2169,8 @@
       "prom_name": "tailscale2otel_objectstore_gap_oldest_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2236,9 +2178,8 @@
       "prom_name": "tailscale2otel_objectstore_gaps_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2246,9 +2187,8 @@
       "prom_name": "tailscale2otel_objectstore_objects_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2256,9 +2196,8 @@
       "prom_name": "tailscale2otel_objectstore_pending_oldest_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2266,9 +2205,8 @@
       "prom_name": "tailscale2otel_objectstore_records_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2276,9 +2214,8 @@
       "prom_name": "tailscale2otel_objectstore_request_duration_seconds",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2286,9 +2223,8 @@
       "prom_name": "tailscale2otel_objectstore_requests_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2296,9 +2232,8 @@
       "prom_name": "tailscale2otel_objectstore_retries_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2306,9 +2241,8 @@
       "prom_name": "tailscale2otel_objectstore_scan_truncated_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2316,9 +2250,8 @@
       "prom_name": "tailscale2otel_objectstore_skipped_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Object-store (S3 flow-log export bucket) ingestion pipeline; the shipped dashboard and alerts do not cover that ingestion path at all — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2553,9 +2486,8 @@
       "prom_name": "tailscale2otel_subrequest_attempts_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Per-collector subrequest fan-out counter; no curated panel, though coverage is a plausible alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2563,9 +2495,8 @@
       "prom_name": "tailscale2otel_subrequest_coverage_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Per-collector subrequest fan-out counter; no curated panel, though coverage is a plausible alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",
@@ -2573,9 +2504,8 @@
       "prom_name": "tailscale2otel_subrequest_failures_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
-      ],
-      "note": "Per-collector subrequest fan-out counter; no curated panel, though coverage is a plausible alert — needs a curation decision."
+        "visualized"
+      ]
     },
     {
       "kind": "metric",

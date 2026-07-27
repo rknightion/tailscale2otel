@@ -1,12 +1,29 @@
 """tab_security() — moved out of build.py in the module split."""
 
-from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, lot, merge, organize,
-                     panel, PII, prom_t, RI, row, stat_opts, thr, ts_custom, ts_opts,
-                     WIN_FAST, WIN_SLOW)
+from builder import (barchart_opts, bargauge_opts, hq, logs_opts, loki_t, lot, merge, organize,
+                     panel, PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr,
+                     ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import BOOL_HEALTHY_OFF
+
+# Scrape-transport columns, excluded from every operator-facing table (#392).
+_INFRA = ["Time", "__name__", "job", "instance",
+          "service_instance_id", "service_name", "service_namespace"]
 
 
 def tab_security():
+    # Presence sentinels this tab declares (moved from variables.py, #495).
+    sentinel("has_audit", "tailscale_config_audit_events_total")  # also consumed by events.py
+    sentinel("has_posture_integration", "tailscale_posture_integrations_count_ratio")
+    sentinel("has_tailnet_lock", "tailscale_tailnet_lock_errors_ratio")
+    sentinel("has_acl_risk", "tailscale_acl_unrestricted_rules_ratio")  # also consumed by overview.py
+    sentinel("has_audit_changes", "tailscale_config_audit_changes_total")
+    sentinel("has_invites_dev", "tailscale_device_invites_count_ratio")
+    sentinel("has_device_attr", "tailscale_device_attribute_ratio")
+    sentinel("has_posture_int", "tailscale_posture_integration_matched_ratio")  # dead: no row gates on it
+    pii_sentinel("pii_actor",
+                 '(%s{category="emails"} == 0) and ignoring(category) (%s{category="user_display_names"} == 0)'
+                 % (PII, PII))
+
     AUD = "{service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit`"
     POS = lot("tailscale_device_posture_ratio", WIN_FAST)  # posture is emitted every scrape
 
@@ -350,6 +367,94 @@ def tab_security():
                desc="Whether any tailnet contact address requires re-verification (admin/security/billing)."), 6, 5),
     ]
 
+    # -----------------------------------------------------------------------
+    # #392/#401: credential inventory. Both signals are fleet aggregates that stay
+    # available when cardinality.per_entity.key is off, so the row is ungated and
+    # each panel names the collector it needs instead.
+    # -----------------------------------------------------------------------
+    keyinv = [
+        (panel("Key age (p50 / p90)", "timeseries",
+               [prom_t(hq("0.5", "tailscale_keys_age_seconds"), legend="p50"),
+                prom_t(hq("0.9", "tailscale_keys_age_seconds"), legend="p90")],
+               unit="s", custom=ts_custom(fill=10), options=ts_opts(),
+               novalue="No key age data — needs the keys collector (collectors.keys). "
+                       "Keys whose creation time the API omits are skipped.",
+               desc="How old the tailnet's credentials are. A rising p90 means long-lived keys "
+                    "nobody is rotating, which expiry panels alone cannot show."), 12, 6),
+        (panel("Keys by owner and type", "bargauge",
+               [prom_t("sum by (tailscale_key_owner, tailscale_key_type) (%s)"
+                       % lot("tailscale_keys_by_owner_ratio", WIN_SLOW),
+                       legend="{{tailscale_key_owner}} / {{tailscale_key_type}}")],
+               unit="short", options=bargauge_opts(),
+               novalue="No key ownership data — needs the keys collector (collectors.keys). "
+                       "Keys with no owning user are excluded.",
+               desc="Who holds the tailnet's credentials, by owning user id and key type. Concentration "
+                    "on one owner is a departure risk; the owner is an opaque user id, not an email."), 12, 6),
+    ]
+
+    # #401 key-owner half: how tightly each OAuth client is scoped. 0 allowed tags
+    # means unrestricted, which is the security-relevant reading — the exporter
+    # emits it at 0 rather than omitting it for exactly that reason.
+    #
+    # Gated on has_key_scopes: tailscale.key.scopes and tailscale.key.allowed_tags
+    # are both emitted only under cardinality.per_entity.key, so the scopes gauge is
+    # the closest available presence proxy for "per-key series exist".
+    # PII: tailscale.key.description is operator free text and routinely names a
+    # person, so the row hides under the same actor-redaction gate as the audit rows.
+    oauthscope = [
+        (panel("Unrestricted OAuth clients", "stat",
+               [prom_t("count(%s == 0)" % lot("tailscale_key_allowed_tags_ratio", WIN_SLOW),
+                       instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+               options=stat_opts(color="background"),
+               novalue="No OAuth client data — needs the keys collector (collectors.keys) and "
+                       "cardinality.per_entity.key.",
+               desc="OAuth clients whose device-create capability is restricted to no tags at all, "
+                    "so any device they register can claim any tag."), 6, 6),
+        (panel("OAuth client tag restrictions", "table",
+               [prom_t(lot("tailscale_key_allowed_tags_ratio", WIN_SLOW), instant=True, fmt="table")],
+               transformations=[organize(
+                   exclude=_INFRA,
+                   rename={"tailscale_key_id": "Key", "tailscale_key_owner": "Owner",
+                           "tailscale_key_description": "Description",
+                           "tailscale_key_type": "Type", "Value": "Allowed tags"})],
+               novalue="No OAuth client data — needs the keys collector (collectors.keys) and "
+                       "cardinality.per_entity.key.",
+               desc="Allowed-tag count per OAuth client credential. 0 is unrestricted."), 18, 6),
+    ]
+
+    # -----------------------------------------------------------------------
+    # #392/#401: how long identities and outstanding invites have been sitting
+    # around. All three are bounded fleet histograms with no per-entity labels, so
+    # the row is ungated and each panel names its own prerequisite.
+    # -----------------------------------------------------------------------
+    identityage = [
+        (panel("User account age (p50 / p90)", "timeseries",
+               [prom_t(hq("0.5", "tailscale_users_age_seconds"), legend="p50"),
+                prom_t(hq("0.9", "tailscale_users_age_seconds"), legend="p90")],
+               unit="s", custom=ts_custom(fill=10), options=ts_opts(),
+               novalue="No user age data — needs the users collector (collectors.users). "
+                       "Users with no reported creation time are skipped.",
+               desc="Age of the tailnet's user accounts. Users with no creation time are omitted "
+                    "rather than reported as age zero."), 8, 6),
+        (panel("Pending user-invite age (p50 / p90)", "timeseries",
+               [prom_t(hq("0.5", "tailscale_user_invites_pending_age_seconds"), legend="p50"),
+                prom_t(hq("0.9", "tailscale_user_invites_pending_age_seconds"), legend="p90")],
+               unit="s", custom=ts_custom(fill=10), options=ts_opts(),
+               novalue="No pending user-invite age data — needs the users collector "
+                       "(collectors.users) and at least one emailed invite.",
+               desc="Time since Tailscale last emailed each unaccepted user invite. Manual-link "
+                    "invites carry no delivery timestamp and are omitted."), 8, 6),
+        (panel("Pending device-invite age (p50 / p90)", "timeseries",
+               [prom_t(hq("0.5", "tailscale_device_invites_pending_age_seconds"), legend="p50"),
+                prom_t(hq("0.9", "tailscale_device_invites_pending_age_seconds"), legend="p90")],
+               unit="s", custom=ts_custom(fill=10), options=ts_opts(),
+               novalue="No pending device-invite age data — needs collect_device_invites. "
+                       "Accepted invites are excluded.",
+               desc="How long unaccepted device shares have been outstanding. A long tail is a "
+                    "standing offer of access nobody took up and nobody revoked."), 8, 6),
+    ]
+
     return [
         row("ACL risk indicators", aclrisk, present="has_acl_risk"),
         row("Audit changes", changes, present="has_audit_changes"),
@@ -366,4 +471,8 @@ def tab_security():
         row("Tailnet lock", tlock, present="has_tailnet_lock", hide_when=["pii_perdevice"]),
         row("Contact verification", contact),
         row("Key & access expiry risk", expiry),
+        row("Key inventory & age", keyinv),
+        row("OAuth client tag scope", oauthscope,
+            present="has_key_scopes", hide_when=["pii_actor"]),
+        row("Identity & invite hygiene", identityage),
     ]

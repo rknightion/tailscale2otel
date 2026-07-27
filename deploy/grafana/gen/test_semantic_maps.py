@@ -44,6 +44,12 @@ BOOL_PANELS = {
     ("MagicDNS", "stat"): HEALTHY_ON,
     ("Override local DNS", "stat"): HEALTHY_ON,
     ("Config valid", "stat"): HEALTHY_ON,
+    # #393/#403 — audit-pipeline and inventory flags. All three are "1 is the
+    # state you want": the poll scrape succeeded, the policy validated, the
+    # desired webhook category has a subscriber.
+    ("Audit poll collector", "stat"): HEALTHY_ON,
+    ("ACL policy validated", "stat"): HEALTHY_ON,
+    ("Desired-event coverage", "table"): HEALTHY_ON,
     # --- 0 is healthy (inverse risk) ---------------------------------------
     ("SSH wildcard", "stat"): HEALTHY_OFF,
     # --- neither is good or bad --------------------------------------------
@@ -59,6 +65,13 @@ BOOL_PANELS = {
                                             "1": ("update available", "yellow")},
     ("Last delivery error", "stat"): {"0": ("OK", "green"), "1": ("ERROR", "red")},
     ("PII filter status", "table"): {"0": ("REDACTED", "red"), "1": ("emitted", "green")},
+    # object-store feed health: gap.healthy is 1-is-healthy, scan.truncated is inverse
+    # risk, and they sit side by side — the pair is exactly the shape #385 got wrong.
+    ("Object-store gaps clear", "stat"): {"0": ("GAPS", "red"), "1": ("CLEAN", "green")},
+    ("Object listing complete", "stat"): {"0": ("complete", "green"),
+                                          "1": ("truncated", "red")},
+    ("OAuth scope preflight by capability", "table"): {"0": ("NOT SATISFIED", "red"),
+                                                       "1": ("satisfied", "green")},
 }
 
 # Metrics whose absence means "we do not know", not "zero". No query anywhere in the
