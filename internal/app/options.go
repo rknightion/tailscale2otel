@@ -46,6 +46,7 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		CertFile:                 cfg.OTLP.TLS.CertFile,
 		KeyFile:                  cfg.OTLP.TLS.KeyFile,
 		MetricInterval:           cfg.OTLP.MetricInterval.D(),
+		MetricExportBatchSize:    cfg.OTLP.MetricExportBatchSize,
 		SelfObsEnabled:           cfg.SelfObservability.Enabled,
 		CardinalityLimit:         cfg.Cardinality.MetricLimit,
 		CardinalityLabelValueCap: cfg.Cardinality.LabelValueSampleCap,

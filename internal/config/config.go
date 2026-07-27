@@ -455,6 +455,9 @@ type OTLPConfig struct {
 	Headers        map[string]Secret `yaml:"headers"`
 	TLS            TLSConfig         `yaml:"tls"`
 	MetricInterval Duration          `yaml:"metric_interval"`
+	// MetricExportBatchSize bounds the number of datapoints in each OTLP metric
+	// request. This is a count, not a serialized-byte limit.
+	MetricExportBatchSize int `yaml:"metric_export_batch_size"`
 }
 
 // GrafanaCloudConfig holds Grafana Cloud OTLP credentials.

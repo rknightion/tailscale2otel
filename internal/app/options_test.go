@@ -98,6 +98,14 @@ func TestTelemetryOptions_CardinalityCapsWired(t *testing.T) {
 	}
 }
 
+func TestTelemetryOptions_MetricExportBatchSizeWired(t *testing.T) {
+	cfg := config.Default()
+	cfg.OTLP.MetricExportBatchSize = 4321
+	if got := telemetryOptions(cfg, "v1").MetricExportBatchSize; got != 4321 {
+		t.Fatalf("MetricExportBatchSize = %d, want 4321", got)
+	}
+}
+
 func TestTelemetryOptions_GrafanaCloudBasicAuth(t *testing.T) {
 	cfg := config.Default()
 	cfg.OTLP.Protocol = "http"

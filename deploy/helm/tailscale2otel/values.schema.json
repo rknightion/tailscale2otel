@@ -659,6 +659,9 @@
                         "headers": {
                             "type": "object"
                         },
+                        "metric_export_batch_size": {
+                            "type": "integer"
+                        },
                         "metric_interval": {
                             "type": "string"
                         },

@@ -1117,6 +1117,26 @@ func TestValidateOTLPMetricIntervalMustBePositive(t *testing.T) {
 	}
 }
 
+func TestValidateOTLPMetricExportBatchSizeMustBePositive(t *testing.T) {
+	for _, value := range []int{0, -1} {
+		c := config.Default()
+		c.OTLP.MetricExportBatchSize = value
+		err := c.Validate()
+		if err == nil {
+			t.Fatalf("metric_export_batch_size=%d: expected Validate() error, got nil", value)
+		}
+		if !strings.Contains(err.Error(), "metric_export_batch_size") {
+			t.Errorf("error %q should mention metric_export_batch_size", err.Error())
+		}
+	}
+
+	c := config.Default()
+	c.OTLP.MetricExportBatchSize = 1
+	if err := c.Validate(); err != nil {
+		t.Errorf("positive metric_export_batch_size should be valid: %v", err)
+	}
+}
+
 // --- Issue #52: config validation gaps ---
 
 // TestValidate_StreamSourceNeedsStreaming pins #52(a): source: stream with the

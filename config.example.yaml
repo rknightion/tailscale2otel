@@ -118,6 +118,7 @@ otlp:
     cert_file: ""                     # client certificate path (for mutual TLS)
     key_file: ""                      # client private key path (for mutual TLS)
   metric_interval: 60s                # how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape)
+  metric_export_batch_size: 10000     # maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels)
 
 # ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
 enrichment:

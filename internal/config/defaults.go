@@ -46,7 +46,8 @@ func Default() *Config {
 			TLS:      TLSConfig{Insecure: false},
 			// 60s aligns the OTLP push cadence with the default collector scrape
 			// interval (1 data-point-per-minute), avoiding Grafana Cloud DPM churn.
-			MetricInterval: dur(60 * time.Second),
+			MetricInterval:        dur(60 * time.Second),
+			MetricExportBatchSize: 10000,
 		},
 		Enrichment: EnrichmentConfig{
 			CacheTTL: dur(5 * time.Minute),

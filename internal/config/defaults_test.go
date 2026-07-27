@@ -48,6 +48,9 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if cfg.OTLP.MetricInterval.D() != 60*time.Second {
 		t.Errorf("MetricInterval = %v, want default 60s", cfg.OTLP.MetricInterval.D())
 	}
+	if cfg.OTLP.MetricExportBatchSize != 10000 {
+		t.Errorf("MetricExportBatchSize = %d, want default 10000", cfg.OTLP.MetricExportBatchSize)
+	}
 	if cfg.Enrichment.CacheTTL.D() != 5*time.Minute {
 		t.Errorf("Enrichment.CacheTTL = %v, want default 5m", cfg.Enrichment.CacheTTL.D())
 	}

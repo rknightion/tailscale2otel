@@ -103,9 +103,10 @@ func (a *App) buildStatus() statusdata.Status {
 			// not echo credentials an operator embedded in it (GHSA-qch3-gwff-r6pf).
 			// Validate() rejects URL userinfo outright; this is the second line of
 			// defense and also strips query values and the fragment.
-			Endpoint:        redact.URL(a.cfg.OTLP.Endpoint),
-			Insecure:        a.cfg.OTLP.TLS.Insecure,
-			MetricIntervalS: int64(a.cfg.OTLP.MetricInterval.D().Seconds()),
+			Endpoint:              redact.URL(a.cfg.OTLP.Endpoint),
+			Insecure:              a.cfg.OTLP.TLS.Insecure,
+			MetricIntervalS:       int64(a.cfg.OTLP.MetricInterval.D().Seconds()),
+			MetricExportBatchSize: a.cfg.OTLP.MetricExportBatchSize,
 		},
 		Tailnets:      a.tailnetStatuses(now),
 		Collectors:    a.collectorStatuses(now),

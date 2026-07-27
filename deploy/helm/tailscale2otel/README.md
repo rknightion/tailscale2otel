@@ -352,6 +352,7 @@ extraVolumeMounts:
 | config.otlp.grafana_cloud.token | string | `""` | Grafana Cloud OTLP token paired with instance_id. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN (secret). |
 | config.otlp.grafana_cloud.token_file | string | `""` | Read the Grafana Cloud token from this path instead of an inline value. Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.otlp.headers | object | `{}` | Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend). |
+| config.otlp.metric_export_batch_size | int | `10000` | Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads. |
 | config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed (the metric export interval). |
 | config.otlp.protocol | string | `"http"` | Export protocol: http | grpc | stdout (stdout = local debug). |
 | config.otlp.tls.ca_file | string | `""` | Path to a CA bundle to verify the server certificate. |

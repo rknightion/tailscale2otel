@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,10 @@ type Options struct {
 	KeyFile            string
 
 	MetricInterval time.Duration // PeriodicReader interval (default 60s)
+	// MetricExportBatchSize bounds each OTLP metric request by datapoint count.
+	// The application default is 10000; zero leaves the pinned SDK feature unset
+	// for direct package callers.
+	MetricExportBatchSize int
 
 	// CardinalityLimit is the hard per-instrument limit on the number of distinct
 	// attribute sets collected per cycle; sets beyond it collapse into the SDK's
@@ -287,9 +292,13 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
+	metricReader, err := newPeriodicMetricReader(metricExp, interval, opts.MetricExportBatchSize)
+	if err != nil {
+		return nil, err
+	}
 	mpOpts := append(
 		metricProviderOptions(metricRes, opts.CardinalityLimit, opts.TracingEnabled),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(interval))),
+		sdkmetric.WithReader(metricReader),
 	)
 	var promReg *prometheus.Registry
 	if opts.PrometheusEnabled {
@@ -367,6 +376,35 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 		promReg: promReg,
 	}, nil
+}
+
+const metricExportBatchSizeEnv = "OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE"
+
+// newPeriodicMetricReader configures otel-go's pinned metric export batching
+// feature for reader construction, then restores the process environment. The
+// SDK reads the feature once in NewPeriodicReader, so the setting does not need
+// to leak into unrelated readers constructed later in the process.
+func newPeriodicMetricReader(exp sdkmetric.Exporter, interval time.Duration, batchSize int) (*sdkmetric.PeriodicReader, error) {
+	if batchSize <= 0 {
+		return sdkmetric.NewPeriodicReader(exp, sdkmetric.WithInterval(interval)), nil
+	}
+
+	previous, existed := os.LookupEnv(metricExportBatchSizeEnv)
+	if err := os.Setenv(metricExportBatchSizeEnv, strconv.Itoa(batchSize)); err != nil {
+		return nil, fmt.Errorf("configure metric export batch size: %w", err)
+	}
+	reader := sdkmetric.NewPeriodicReader(exp, sdkmetric.WithInterval(interval))
+
+	var err error
+	if existed {
+		err = os.Setenv(metricExportBatchSizeEnv, previous)
+	} else {
+		err = os.Unsetenv(metricExportBatchSizeEnv)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("restore metric export batch size environment: %w", err)
+	}
+	return reader, nil
 }
 
 // ExportStats returns the cumulative count of data points and log records handed

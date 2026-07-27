@@ -744,6 +744,9 @@ func (c *Config) Validate() error {
 	if c.OTLP.MetricInterval.D() <= 0 {
 		return fmt.Errorf("otlp.metric_interval must be > 0 (got %v); a zero or negative interval panics time.NewTicker at startup", c.OTLP.MetricInterval.D())
 	}
+	if c.OTLP.MetricExportBatchSize < 1 {
+		return fmt.Errorf("otlp.metric_export_batch_size must be > 0 (got %d); unbounded cumulative metric requests can exceed backend ingest limits", c.OTLP.MetricExportBatchSize)
+	}
 	// Every enabled HTTP listener needs its own bind address. Two enabled servers
 	// on the same address race on net.Listen: one binds, the other logs an ERROR
 	// and the process keeps running with that surface silently dead. Check ALL

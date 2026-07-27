@@ -346,6 +346,8 @@ config:
       key_file: ""
     # -- How often metrics are pushed (the metric export interval).
     metric_interval: 60s
+    # -- Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads.
+    metric_export_batch_size: 10000
 
   enrichment:
     # -- Staleness alarm threshold for the device-enrichment cache (drives the

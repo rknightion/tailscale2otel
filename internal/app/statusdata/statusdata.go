@@ -123,10 +123,11 @@ type ServiceInfo struct {
 
 // TelemetryInfo describes the OTLP export target (never any credentials).
 type TelemetryInfo struct {
-	Protocol        string `json:"protocol"`
-	Endpoint        string `json:"endpoint"`
-	Insecure        bool   `json:"insecure"`
-	MetricIntervalS int64  `json:"metric_interval_seconds"`
+	Protocol              string `json:"protocol"`
+	Endpoint              string `json:"endpoint"`
+	Insecure              bool   `json:"insecure"`
+	MetricIntervalS       int64  `json:"metric_interval_seconds"`
+	MetricExportBatchSize int    `json:"metric_export_batch_size"`
 }
 
 // CollectorStatus is one row of the collector status table.

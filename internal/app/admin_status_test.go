@@ -71,6 +71,7 @@ func TestStatusPage_UnknownPath404(t *testing.T) {
 
 func TestStatusJSON_Shape(t *testing.T) {
 	cfg := config.Default()
+	cfg.OTLP.MetricExportBatchSize = 4321
 	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	srv := a.buildAdminServer()
@@ -92,6 +93,9 @@ func TestStatusJSON_Shape(t *testing.T) {
 	}
 	if got.Service.Name != serviceName || got.Service.Version != "vtest" {
 		t.Errorf("service = %+v, want name=%s version=vtest", got.Service, serviceName)
+	}
+	if got.Telemetry.MetricExportBatchSize != 4321 {
+		t.Errorf("metric export batch size = %d, want 4321", got.Telemetry.MetricExportBatchSize)
 	}
 	if len(got.Collectors) != len(a.runtimes[0].registry.Entries()) {
 		t.Errorf("collectors = %d, want %d (one per registered collector)", len(got.Collectors), len(a.runtimes[0].registry.Entries()))

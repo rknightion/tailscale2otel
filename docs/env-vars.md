@@ -70,6 +70,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TLS__CERT_FILE` | `""` | client certificate path (for mutual TLS) |
 | `TS2OTEL_OTLP__TLS__KEY_FILE` | `""` | client private key path (for mutual TLS) |
 | `TS2OTEL_OTLP__METRIC_INTERVAL` | `60s` | how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape) |
+| `TS2OTEL_OTLP__METRIC_EXPORT_BATCH_SIZE` | `10000` | maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels) |
 | `TS2OTEL_ENRICHMENT__CACHE_TTL` | `5m` | staleness alarm threshold for the IP/nodeID -> name device cache |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ENABLED` | `false` | off by default (can add ~one flow-metric series per external IP when on) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__SERVER` | `""` | resolver "ip" or "ip:port" (default :53); empty = system/container resolver |

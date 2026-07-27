@@ -63,6 +63,7 @@ otlp:
     insecure: true
     ca_file: "/etc/ca.pem"
   metric_interval: 15s
+  metric_export_batch_size: 4321
 enrichment:
   cache_ttl: 10m
   reverse_dns:
@@ -160,6 +161,9 @@ func TestLoadNestedValues(t *testing.T) {
 	}
 	if cfg.OTLP.MetricInterval.D() != 15*time.Second {
 		t.Errorf("MetricInterval = %v, want 15s", cfg.OTLP.MetricInterval.D())
+	}
+	if cfg.OTLP.MetricExportBatchSize != 4321 {
+		t.Errorf("MetricExportBatchSize = %d, want 4321", cfg.OTLP.MetricExportBatchSize)
 	}
 	if cfg.Enrichment.CacheTTL.D() != 10*time.Minute {
 		t.Errorf("Enrichment.CacheTTL = %v, want 10m", cfg.Enrichment.CacheTTL.D())
