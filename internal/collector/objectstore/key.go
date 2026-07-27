@@ -159,7 +159,7 @@ func dayPrefixes(base string, from, to time.Time, maxDays int) []string {
 	if to.Before(from) {
 		return nil
 	}
-	base = strings.TrimSuffix(base, "/")
+	base = scanBase(base)
 	from, to = from.UTC(), to.UTC()
 
 	// Walk backwards from the newest day so that a capped span keeps the RECENT
@@ -183,3 +183,20 @@ func dayPrefixes(base string, from, to time.Time, maxDays int) []string {
 	}
 	return out
 }
+
+// scanBase turns a configured object-store prefix into the base every listing
+// prefix is built from, by trimming exactly one trailing slash.
+//
+// A LEADING slash is deliberately preserved. It is meaningless in an S3 key
+// prefix, but it is part of the value that goes into the feed digest keying the
+// frozen #453 checkpoint namespace, and that digest applies no normalization. So
+// trimming it here would move an existing "/flow" deployment's cursor and seen
+// set, cold-start it from initial_lookback and re-emit everything it had already
+// ingested — a wasted-LIST-calls bug turned into a data-duplication bug (#498).
+//
+// This is the ONE definition. dayPrefixes builds day partitions from it,
+// flatPrefix builds the single flat prefix from it, and isConfiguredDayPrefix
+// recognizes a persisted row against it. When those disagreed, a persisted scan
+// position was classified stale and DELETED on the cycle that loaded it, so
+// enumeration restarted at the beginning of every day partition forever.
+func scanBase(prefix string) string { return strings.TrimSuffix(prefix, "/") }

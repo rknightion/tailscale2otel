@@ -660,7 +660,7 @@ func (c *Collector) scanPrefixes(from, now time.Time) []string {
 // on what "the configured prefix" is. An empty base stays empty, which lists the
 // whole bucket.
 func flatPrefix(base string) string {
-	base = strings.TrimSuffix(base, "/")
+	base = scanBase(base)
 	if base == "" {
 		return ""
 	}

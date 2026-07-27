@@ -87,7 +87,13 @@ func isConfiguredScanPrefix(prefix, configuredBasePrefix string, layout Layout) 
 }
 
 func isConfiguredDayPrefix(prefix, configuredBasePrefix string) bool {
-	base := strings.Trim(configuredBasePrefix, "/")
+	// scanBase, NOT strings.Trim: this must derive the base exactly the way
+	// dayPrefixes does when it builds the prefix being tested. Trimming both ends
+	// here while the builder trimmed only the trailing slash meant a configured
+	// "/flow" listed "/flow/2026/07/24/" and then looked for a row under
+	// "flow/", so every persisted scan position was classified stale and DELETED
+	// by the cycle that loaded it (#498).
+	base := scanBase(configuredBasePrefix)
 	datePart := prefix
 	if base != "" {
 		want := base + "/"

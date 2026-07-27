@@ -123,7 +123,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__BUCKET` | `""` | required — the bucket Tailscale exports into |
-| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions; NO leading slash (it becomes part of this feed's durable checkpoint identity, so removing it later re-emits history) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LAYOUT` | `partitioned` | partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) \| flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ALLOW_INSECURE_HTTP` | `false` | remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development |
@@ -152,7 +152,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__BUCKET` | `""` | required — the bucket Tailscale exports configuration logs into |
-| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket. NO leading slash (see flowlogs) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__LAYOUT` | `partitioned` | partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) \| flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ALLOW_INSECURE_HTTP` | `false` | remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development |

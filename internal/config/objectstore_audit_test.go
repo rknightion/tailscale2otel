@@ -169,3 +169,19 @@ func TestAuditObjectStoreBoundsDefaults(t *testing.T) {
 			audit, flow)
 	}
 }
+
+// A leading slash on the prefix is accepted (it is part of the frozen feed
+// digest, so it cannot be normalized away without orphaning durable state) but it
+// is not part of any key Tailscale writes, and removing it later re-emits history.
+// Advise now, while there is no state to lose (#498).
+func TestWarnings_LeadingSlashPrefix(t *testing.T) {
+	c := objectStoreConfig(func(c *Config) { c.Collectors.Flowlogs.ObjectStore.Prefix = "/flow" })
+	if !hasWarning(c.Warnings(), "starts with") {
+		t.Errorf("warnings = %v, want one about the leading slash", c.Warnings())
+	}
+	// A normal prefix must not trip it.
+	clean := objectStoreConfig(func(c *Config) { c.Collectors.Flowlogs.ObjectStore.Prefix = "flow/" })
+	if hasWarning(clean.Warnings(), "starts with") {
+		t.Errorf("warnings = %v, want no leading-slash advisory for %q", clean.Warnings(), "flow/")
+	}
+}

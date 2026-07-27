@@ -137,7 +137,8 @@ configStorage:
   # Secret `<fullname>-config` as soon as any credential-bearing key is set inline under
   # `config:` (`tailscale.auth.oauth.client_secret`, `tailscale.auth.apikey`,
   # `headscale.api_key`, `otlp.grafana_cloud.token`, `otlp.headers`, the three
-  # `collectors.flowlogs.objectstore.*` keys, `streaming.token`, `webhook.secret`,
+  # `collectors.flowlogs.objectstore.*` and three `collectors.auditlogs.objectstore.*`
+  # credential keys, `streaming.token`, `webhook.secret`,
   # `prometheus.auth.token`, `admin.auth.token`,
   # `profiling.pyroscope.basic_auth_password`, any `tailnets[]` entry, or a
   # `collectors.node_metrics.targets[]` entry with `bearer_token`/`headers`). A
@@ -521,7 +522,9 @@ config:
         region: ""
         # -- Bucket Tailscale exports into. REQUIRED when source is objectstore.
         bucket: ""
-        # -- The export's root within the bucket, above the YYYY/MM/DD partitions.
+        # -- The export's root within the bucket, above the YYYY/MM/DD partitions. No leading
+        # slash: it becomes part of this feed's durable checkpoint identity, so removing one later
+        # reads as a brand-new feed and re-emits already-ingested objects.
         prefix: ""
         # -- How objects are arranged under prefix: `partitioned` (the default, and what Tailscale's
         # own export writes: objects under prefix/YYYY/MM/DD/) or `flat` (a COPIED or mirrored export

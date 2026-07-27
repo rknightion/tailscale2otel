@@ -3,6 +3,12 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.14.7: add collectors.auditlogs.objectstore — Tailscale's CONFIGURATION-log export as an
+# ingestion source, a destination of its own with nothing inherited from the flow block. Its three
+# credential keys join tailscale2otel.credentialPaths, so setting one inline routes the rendered
+# config to the Secret exactly as the flow keys do.
+# 0.14.6: add collectors.flowlogs.objectstore.layout (partitioned | flat) for reading a copied or
+# mirrored export whose self-contained basenames sit directly under the prefix.
 # 0.14.5: add opt-in bounded ingress-WAL configuration and process-state
 # persistence guidance for durable local receiver acceptance.
 # 0.14.4: expose configurable per-object and per-cycle object-store ingestion bounds.

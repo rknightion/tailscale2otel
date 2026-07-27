@@ -195,8 +195,16 @@ func objectStoreDestinationDeclared(os ObjectStoreConfig) bool {
 //
 // Normalization is deliberately conservative in the direction of catching MORE
 // duplicates: an endpoint differing only in case, trailing slash or a prefix
-// differing only in leading/trailing slashes is the SAME feed (the ingestion
-// engine trims the prefix the same way, see collector/objectstore/state.go).
+// differing only in leading/trailing slashes is the SAME feed.
+//
+// This is knowingly STRICTER than the ingestion engine, which trims only a
+// trailing slash (objectstore.scanBase) because a leading slash is part of the
+// value feeding the frozen checkpoint digest and cannot be normalized away
+// without orphaning state. So "/flow" and "flow" are two durable namespaces but
+// are rejected here as one feed. That asymmetry is intentional and errs safe:
+// refusing an ambiguous pair of spellings is the right direction for a
+// duplicate-feed check to fail in (#498). Do not "fix" it by trimming in the
+// engine instead.
 // Bucket case is preserved — S3 requires lower case but a non-AWS
 // implementation may not, so two spellings could be two buckets.
 func objectStoreFeedKey(os ObjectStoreConfig) string {
@@ -408,6 +416,14 @@ func objectStoreWarnings(key string, os ObjectStoreConfig) []string {
 			"interval (%v): the overlap that catches a late-arriving object is smaller than the gap "+
 			"between listings, so an object that lands between two cycles can be missed entirely.",
 			key, os.Lookback.D(), os.Interval.D()))
+	}
+	if strings.HasPrefix(strings.TrimSpace(os.Prefix), "/") {
+		w = append(w, fmt.Sprintf("%s.prefix starts with \"/\", which is not part of any key "+
+			"Tailscale writes — an S3 key prefix has no leading slash. Ingestion works, but the "+
+			"leading slash is part of this feed's durable checkpoint identity, so removing it later "+
+			"looks like a brand-new feed: the cursor and seen set start over and up to "+
+			"initial_lookback of already-ingested objects are re-emitted. Drop it now, before there "+
+			"is any state to lose.", key))
 	}
 	if os.Layout == ObjectStoreLayoutFlat {
 		w = append(w, fmt.Sprintf("%s.layout=flat is for copied or mirrored exports, not for "+

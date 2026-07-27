@@ -91,13 +91,15 @@ tailscale:
 # single-tailnet mode (use the tailscale: block instead). Default: empty (single
 # tailnet from the tailscale: block above).
 #
-# objectstore.flow (OPTIONAL, and REQUIRED on every entry when
-# collectors.flowlogs.source: objectstore): each tailnet's own export bucket. Same
-# fields as collectors.flowlogs.objectstore below. With a tailnets: list NOTHING is
-# inherited from that global block — a runtime without its own complete destination
-# (endpoint + region + bucket) is a startup error, and two entries may not name the
-# same feed, because both runtimes would ingest every object and attribute a copy
-# to their own tailnet. Because the list is file-only, a static S3 credential must
+# objectstore.flow / objectstore.audit (OPTIONAL, and REQUIRED on every entry when
+# the matching collectors.{flowlogs,auditlogs}.source is objectstore): each tailnet's
+# own export bucket per signal. Same fields as collectors.flowlogs.objectstore below.
+# With a tailnets: list NOTHING is inherited from the global blocks — a runtime
+# without its own complete destination (endpoint + region + bucket) for a signal it
+# reads is a startup error. No two destinations this process reads may name the same
+# feed, whether they belong to two tailnets (each would attribute a copy of every
+# record to its own tailnet) or two signals (each would fetch every object and then
+# fail to decode the other's records). Because the list is file-only, a static S3 credential must
 # come from a *_file sibling (a mounted Secret) or the ambient chain; only the
 # tuning fields (interval/lookback/max_*) fall back to the built-in defaults.
 tailnets: []
@@ -225,7 +227,7 @@ collectors:
       endpoint: ""                    # required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)
       region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
       bucket: ""                      # required — the bucket Tailscale exports into
-      prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions
+      prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions; NO leading slash (it becomes part of this feed's durable checkpoint identity, so removing it later re-emits history)
       layout: partitioned             # partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) | flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk)
       path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
       allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
@@ -256,7 +258,7 @@ collectors:
       endpoint: ""                    # required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)
       region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
       bucket: ""                      # required — the bucket Tailscale exports configuration logs into
-      prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket
+      prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket. NO leading slash (see flowlogs)
       layout: partitioned             # partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) | flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk)
       path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
       allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
