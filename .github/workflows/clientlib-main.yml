@@ -13,8 +13,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: clientlib-main
+  cancel-in-progress: false
+
 jobs:
   build-against:
+    timeout-minutes: 20
     permissions:
       contents: read
       issues: write # report-drift creates/comments on the tracking issue
@@ -73,6 +78,7 @@ jobs:
   # other ref legitimately just (re)opened. `needs` + default `if: success()` runs
   # this only if all build-against legs succeeded.
   resolve:
+    timeout-minutes: 5
     needs: build-against
     runs-on: ubuntu-latest
     permissions:

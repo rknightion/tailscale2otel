@@ -3,6 +3,10 @@ on:
   pull_request:
     branches: [main]
 permissions: {}
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dependency-review:
     permissions:

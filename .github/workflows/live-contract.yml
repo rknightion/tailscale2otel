@@ -21,6 +21,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: live-contract
+  cancel-in-progress: false
+
 jobs:
   live:
     runs-on: ubuntu-latest

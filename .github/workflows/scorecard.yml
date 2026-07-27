@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '41 7 * * 3'
 permissions: {}
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   scorecard:
     permissions:

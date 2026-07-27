@@ -9,8 +9,13 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: api-drift
+  cancel-in-progress: false
+
 jobs:
   spec-drift:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -26,7 +31,8 @@ jobs:
       - name: Fetch live OAS, normalize to JSON
         run: |
           set -euo pipefail
-          curl -fsSL "https://api.tailscale.com/api/v2?outputOpenapiSchema=true" -o /tmp/live.raw
+          scripts/ci-retry.sh curl -fsSL --max-time 60 \
+            "https://api.tailscale.com/api/v2?outputOpenapiSchema=true" -o /tmp/live.raw
           if head -c1 /tmp/live.raw | grep -q '{'; then
             cp /tmp/live.raw /tmp/live.json
           else

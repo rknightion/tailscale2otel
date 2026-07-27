@@ -24,6 +24,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   image:
     permissions:
@@ -41,6 +45,7 @@ jobs:
   # go-licenses third-party notices (Go-specific; migrates to the shared binaries
   # reusable later). Releases only.
   notices:
+    timeout-minutes: 15
     if: inputs.release_tag != ''
     runs-on: ubuntu-24.04
     permissions:

@@ -6,6 +6,10 @@ on:
     - cron: '33 5 * * 2'
   workflow_dispatch:
 permissions: {}
+concurrency:
+  group: docker-security-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   docker-security:
     permissions:

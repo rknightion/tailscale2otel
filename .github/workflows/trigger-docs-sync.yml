@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   trigger-sync:
+    timeout-minutes: 5
     permissions:
       contents: read
     runs-on: ubuntu-latest

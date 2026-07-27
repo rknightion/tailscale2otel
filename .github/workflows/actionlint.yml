@@ -5,6 +5,10 @@ on:
   pull_request:
     branches: ['**']
 permissions: {}
+concurrency:
+  group: actionlint-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   actionlint:
     permissions:

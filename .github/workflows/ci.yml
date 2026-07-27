@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   build-test:
+    timeout-minutes: 20
     name: build / vet / test
     runs-on: ubuntu-latest
     steps:
@@ -51,6 +52,7 @@ jobs:
           fi
 
   lint:
+    timeout-minutes: 10
     name: golangci-lint
     runs-on: ubuntu-latest
     strategy:
@@ -93,6 +95,7 @@ jobs:
   # TestEveryGoModuleIsCoveredByCIVerification enforces that every OTHER module
   # appears here, so a fifth module cannot be added and silently go unverified.
   module-verify:
+    timeout-minutes: 15
     name: verify (${{ matrix.module }})
     runs-on: ubuntu-latest
     strategy:
@@ -147,6 +150,7 @@ jobs:
         run: govulncheck ./...
 
   docs-catalog:
+    timeout-minutes: 10
     name: docs/metrics.md is generated from the code catalog
     runs-on: ubuntu-latest
     steps:
@@ -182,6 +186,7 @@ jobs:
   # both deleted (#394), precisely because being excluded from this gate let them
   # rot unnoticed for months.
   dashboards-drift:
+    timeout-minutes: 15
     name: generated dashboards and rules are in sync
     runs-on: ubuntu-latest
     steps:
@@ -243,8 +248,8 @@ jobs:
           set -euo pipefail
           base="https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}"
           archive="prometheus-${PROM_VERSION}.linux-amd64.tar.gz"
-          curl -fsSL -o "/tmp/${archive}" "${base}/${archive}"
-          curl -fsSL -o /tmp/sha256sums.txt "${base}/sha256sums.txt"
+          scripts/ci-retry.sh curl -fsSL --max-time 120 -o "/tmp/${archive}" "${base}/${archive}"
+          scripts/ci-retry.sh curl -fsSL --max-time 60 -o /tmp/sha256sums.txt "${base}/sha256sums.txt"
           (cd /tmp && sha256sum --check --ignore-missing sha256sums.txt)
           tar -xzf "/tmp/${archive}" -C /tmp
           sudo install -m 0755 "/tmp/prometheus-${PROM_VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
@@ -282,6 +287,7 @@ jobs:
         run: promtool test rules deploy/alerts/tests/*.yaml
 
   govulncheck:
+    timeout-minutes: 10
     name: govulncheck
     runs-on: ubuntu-latest
     steps:
@@ -301,6 +307,7 @@ jobs:
         run: govulncheck ./...
 
   goreleaser-snapshot:
+    timeout-minutes: 20
     name: goreleaser build (snapshot)
     runs-on: ubuntu-latest
     steps:
@@ -326,6 +333,7 @@ jobs:
           args: release --snapshot --clean --skip=publish,sign,sbom
 
   docker-build:
+    timeout-minutes: 25
     name: docker image builds
     runs-on: ubuntu-latest
     steps:
@@ -382,6 +390,7 @@ jobs:
   # Renovate automerge. Builds a coverage profile over the root module and uploads it via the
   # pinned official reporter action (no curl|bash, which zizmor flags as a remote-script hazard).
   coverage:
+    timeout-minutes: 15
     name: coverage (Codacy)
     runs-on: ubuntu-latest
     env:
@@ -424,6 +433,7 @@ jobs:
   # for NEW ones, which is nondeterministic. Gating on it would let an unrelated PR randomly trip
   # a latent crasher and block Renovate automerge. A failure here is a real bug — read the log.
   fuzz:
+    timeout-minutes: 15
     name: fuzz (${{ matrix.package }} ${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
@@ -504,6 +514,7 @@ jobs:
   # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
   # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.
   ci-success:
+    timeout-minutes: 5
     name: ci-success
     runs-on: ubuntu-latest
     if: always()

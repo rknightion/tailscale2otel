@@ -27,6 +27,7 @@ env:
 
 jobs:
   lint-template:
+    timeout-minutes: 15
     name: helm lint + template + schema + docs
     runs-on: ubuntu-latest
     steps:
@@ -82,6 +83,7 @@ jobs:
           fail-on-diff: true
 
   configcheck:
+    timeout-minutes: 15
     name: config.Load validates example + rendered config
     runs-on: ubuntu-latest
     steps:
@@ -119,6 +121,7 @@ jobs:
   # protection. The pull_request trigger above has no path filter on purpose, so this always reports
   # on every PR. Fails if any leg failed or was cancelled. Renovate's automerge waits for it to go green.
   helm-success:
+    timeout-minutes: 5
     name: helm-success
     runs-on: ubuntu-latest
     if: always()

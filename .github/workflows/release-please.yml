@@ -33,6 +33,7 @@ concurrency:
 
 jobs:
   release-please:
+    timeout-minutes: 10
     name: release-please (maintain release PR / cut release)
     runs-on: ubuntu-latest
     permissions:

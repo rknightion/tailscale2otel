@@ -12,8 +12,10 @@
 package ci_test
 
 import (
+	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -849,4 +851,319 @@ func fuzzMatrixTargets(t *testing.T, workflow, job string) map[string]bool {
 		out[pkg+" "+target] = true
 	}
 	return out
+}
+
+// --- runaway-job containment (#439) ------------------------------------------
+//
+// A job with no `timeout-minutes` inherits GitHub's implicit 360-minute default.
+// That is not merely untidy: a hung job holds a runner slot against the
+// ACCOUNT-WIDE concurrency cap, which is shared across every repository on the
+// account. A wedged job in a sibling repo has previously starved this repo's CI
+// into a queue that looks green-but-never-starts, and the workflows most exposed
+// to it are the ones that fetch untrusted upstream code on a schedule.
+//
+// So the contract is: every job that this repository can actually bound, is
+// bounded.
+
+// workflowFiles returns every workflow filename, so a NEW workflow is covered by
+// these assertions the day it is added rather than the day someone remembers.
+func workflowFiles(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir(workflowDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", workflowDir, err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if n := e.Name(); strings.HasSuffix(n, ".yml") || strings.HasSuffix(n, ".yaml") {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("found no workflow files under %s", workflowDir)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// jobsOf returns a workflow's jobs mapping.
+func jobsOf(t *testing.T, doc map[string]any, name string) map[string]any {
+	t.Helper()
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no jobs mapping", name)
+	}
+	return jobs
+}
+
+// reusableCallJobs are the jobs this repository CANNOT bound, because they are
+// `uses:` calls to a reusable workflow and GitHub rejects `timeout-minutes` on
+// that job form — the key is simply not part of the schema for a job with
+// `uses:`. Six of these target rknightion/.github, so bounding them means
+// editing that repository, not this one.
+//
+// This set is frozen deliberately. It is not a suppression list to grow when a
+// test is inconvenient: converting a `uses:` job into a `steps:` job removes the
+// exemption's only justification, and TestExemptionsAreOnlyForReusableCallJobs
+// below fails in that direction too.
+var reusableCallJobs = map[string]bool{
+	"actionlint.yml/actionlint":               true,
+	"codeql.yml/codeql":                       true,
+	"dependency-review.yml/dependency-review": true,
+	"docker-security.yml/docker-security":     true,
+	"publish.yml/image":                       true,
+	"release-please.yml/publish":              true,
+	"release-please.yml/edge":                 true,
+	"release-please.yml/binaries":             true,
+	"scorecard.yml/scorecard":                 true,
+	"zizmor.yml/zizmor":                       true,
+}
+
+// maxJobTimeout bounds the bound. A timeout of 360 is the implicit default
+// written out longhand and containment nothing; anything above this is a
+// misunderstanding of what the field is for.
+const maxJobTimeout = 60
+
+func TestEveryBoundableJobHasATimeout(t *testing.T) {
+	for _, wf := range workflowFiles(t) {
+		doc := readWorkflow(t, wf)
+		for job, raw := range jobsOf(t, doc, wf) {
+			def, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("%s/%s is %T, want a mapping", wf, job, raw)
+			}
+			key := wf + "/" + job
+			if _, isUses := def["uses"]; isUses {
+				continue // covered by TestExemptionsAreOnlyForReusableCallJobs
+			}
+			timeout, ok := def["timeout-minutes"]
+			if !ok {
+				t.Errorf("%s has no timeout-minutes; a job with steps CAN be bounded, and an "+
+					"unbounded job that hangs holds a runner slot against the account-wide "+
+					"concurrency cap for up to 6 hours", key)
+				continue
+			}
+			n, ok := timeout.(int)
+			if !ok {
+				t.Errorf("%s timeout-minutes is %T (%v), want an integer", key, timeout, timeout)
+				continue
+			}
+			if n < 1 || n > maxJobTimeout {
+				t.Errorf("%s timeout-minutes is %d, want 1..%d; %d is long enough that the "+
+					"timeout stops being containment", key, n, maxJobTimeout, n)
+			}
+		}
+	}
+}
+
+func TestExemptionsAreOnlyForReusableCallJobs(t *testing.T) {
+	seen := map[string]bool{}
+	for _, wf := range workflowFiles(t) {
+		doc := readWorkflow(t, wf)
+		for job, raw := range jobsOf(t, doc, wf) {
+			def, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("%s/%s is %T, want a mapping", wf, job, raw)
+			}
+			key := wf + "/" + job
+			_, isUses := def["uses"]
+			if isUses {
+				seen[key] = true
+				if !reusableCallJobs[key] {
+					t.Errorf("%s is a `uses:` job but is not in reusableCallJobs; add it there "+
+						"WITH the reason, so the set stays a record of what cannot be bounded "+
+						"rather than a list of what someone skipped", key)
+				}
+				continue
+			}
+			if reusableCallJobs[key] {
+				t.Errorf("%s is exempted from the timeout rule but is no longer a `uses:` job — "+
+					"it has steps, so it CAN take timeout-minutes. Remove the exemption and "+
+					"bound it", key)
+			}
+		}
+	}
+	for key := range reusableCallJobs {
+		if !seen[key] {
+			t.Errorf("reusableCallJobs lists %q, which no longer exists; a stale exemption "+
+				"silently widens the rule's blind spot", key)
+		}
+	}
+}
+
+// TestSupersedableLanesCancelOrSerialize asserts every workflow declares how
+// concurrent runs of itself behave.
+//
+// The two correct answers differ by trigger, and the distinction matters:
+//
+//   - A pull_request lane SHOULD cancel superseded runs. Pushing three times to a
+//     branch should not burn three full CI runs against the shared cap.
+//   - A scheduled or release lane MUST NOT cancel; it should serialize. Killing a
+//     drift scan or a release mid-flight loses the run's signal, and two
+//     overlapping scans of the same lane race to file the same tracking issue.
+func TestSupersedableLanesCancelOrSerialize(t *testing.T) {
+	for _, wf := range workflowFiles(t) {
+		doc := readWorkflow(t, wf)
+		conc, ok := doc["concurrency"].(map[string]any)
+		if !ok {
+			t.Errorf("%s has no top-level concurrency block; without one, overlapping runs of "+
+				"the same lane both consume runner slots and can race each other", wf)
+			continue
+		}
+		if group, _ := conc["group"].(string); group == "" {
+			t.Errorf("%s concurrency has no group expression", wf)
+		}
+		cancel, ok := conc["cancel-in-progress"].(bool)
+		if !ok {
+			t.Errorf("%s concurrency has no explicit cancel-in-progress; leave nothing to the "+
+				"default here, the right answer differs per trigger", wf)
+			continue
+		}
+		trigger := triggerBlock(t, doc, wf)
+		_, scheduled := trigger["schedule"]
+		_, isPR := trigger["pull_request"]
+		switch {
+		case scheduled && cancel:
+			t.Errorf("%s is a scheduled lane with cancel-in-progress: true; canceling a "+
+				"half-finished scan discards its signal and can leave a tracking issue "+
+				"half-written", wf)
+		case isPR && !cancel:
+			t.Errorf("%s is a pull_request lane with cancel-in-progress: false; superseded "+
+				"pushes should not each burn a full run against the shared cap", wf)
+		}
+	}
+}
+
+// TestCIRetryIsFailClosed exercises scripts/ci-retry.sh directly.
+//
+// A retry wrapper is exactly the kind of helper that is never noticed until the
+// day it is wrong, and the dangerous failure is silent: a wrapper that exits 0
+// after exhausting its attempts converts every gate it wraps into a no-op while
+// the logs still look busy. So the load-bearing assertion here is the FAILING
+// case, not the succeeding one.
+func TestCIRetryIsFailClosed(t *testing.T) {
+	script, err := filepath.Abs(filepath.Join(repoDir, "scripts", "ci-retry.sh"))
+	if err != nil {
+		t.Fatalf("resolve script: %v", err)
+	}
+	if _, err := os.Stat(script); err != nil {
+		t.Fatalf("scripts/ci-retry.sh is missing: %v", err)
+	}
+
+	run := func(t *testing.T, attempts string, args ...string) (string, int) {
+		t.Helper()
+		cmd := exec.Command(script, args...)
+		cmd.Env = append(os.Environ(),
+			"CI_RETRY_ATTEMPTS="+attempts,
+			"CI_RETRY_DELAY=0",
+		)
+		out, err := cmd.CombinedOutput()
+		code := 0
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("run %s: %v", script, err)
+		}
+		return string(out), code
+	}
+
+	t.Run("a command that never succeeds still fails the step", func(t *testing.T) {
+		out, code := run(t, "3", "sh", "-c", "exit 7")
+		if code != 7 {
+			t.Errorf("exit status = %d, want 7 (the last attempt's status); a retry helper "+
+				"that swallows the failure silently disables every gate it wraps\n%s", code, out)
+		}
+		if !strings.Contains(out, "giving up after 3 attempt(s)") {
+			t.Errorf("output does not say it gave up, so a run that burned its attempts is "+
+				"indistinguishable from a clean pass in the log:\n%s", out)
+		}
+	})
+
+	t.Run("it retries rather than giving up on the first failure", func(t *testing.T) {
+		// Fails on attempt 1, succeeds on attempt 2, via a marker file that
+		// only exists after the first run.
+		marker := filepath.Join(t.TempDir(), "attempted")
+		out, code := run(t, "3", "sh", "-c",
+			"if [ -e "+marker+" ]; then exit 0; else touch "+marker+"; exit 1; fi")
+		if code != 0 {
+			t.Errorf("exit status = %d, want 0: the second attempt succeeds\n%s", code, out)
+		}
+		if !strings.Contains(out, "succeeded on attempt 2/3") {
+			t.Errorf("a run that only passed on retry must say so, otherwise a persistently "+
+				"flaky dependency looks healthy:\n%s", out)
+		}
+	})
+
+	t.Run("one attempt means one attempt", func(t *testing.T) {
+		out, code := run(t, "1", "sh", "-c", "exit 3")
+		if code != 3 {
+			t.Errorf("exit status = %d, want 3\n%s", code, out)
+		}
+		if strings.Contains(out, "retrying") {
+			t.Errorf("CI_RETRY_ATTEMPTS=1 must not retry:\n%s", out)
+		}
+	})
+
+	t.Run("a missing command is a usage error, not a retried one", func(t *testing.T) {
+		out, code := run(t, "3")
+		if code != 2 {
+			t.Errorf("exit status = %d, want 2 for no command\n%s", code, out)
+		}
+	})
+}
+
+// TestTransientFetchesAreRetried keeps the wrapper attached to the operations it
+// was added for. Wrapping is easy to lose in a later edit of the surrounding
+// script, and nothing else would notice.
+func TestTransientFetchesAreRetried(t *testing.T) {
+	for _, tc := range []struct{ workflow, job, needle string }{
+		{"api-drift.yml", "spec-drift", "api.tailscale.com/api/v2?outputOpenapiSchema=true"},
+		{"ci.yml", "dashboards-drift", "prometheus/releases/download"},
+	} {
+		t.Run(tc.workflow, func(t *testing.T) {
+			doc := readWorkflow(t, tc.workflow)
+			def, ok := jobsOf(t, doc, tc.workflow)[tc.job].(map[string]any)
+			if !ok {
+				t.Fatalf("%s has no %q job", tc.workflow, tc.job)
+			}
+			steps, ok := def["steps"].([]any)
+			if !ok {
+				t.Fatalf("%s/%s has no steps", tc.workflow, tc.job)
+			}
+			var found bool
+			for _, raw := range steps {
+				step, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				script, _ := step["run"].(string)
+				if !strings.Contains(script, tc.needle) {
+					continue
+				}
+				found = true
+				for _, line := range strings.Split(script, "\n") {
+					if !strings.Contains(line, "curl ") {
+						continue
+					}
+					if !strings.Contains(line, "ci-retry.sh") {
+						t.Errorf("%s/%s fetches over the network without scripts/ci-retry.sh:\n\t%s",
+							tc.workflow, tc.job, strings.TrimSpace(line))
+					}
+					if !strings.Contains(line, "--max-time") {
+						t.Errorf("%s/%s curl has no --max-time, so a stalled connection hangs "+
+							"until the job timeout rather than failing fast into a retry:\n\t%s",
+							tc.workflow, tc.job, strings.TrimSpace(line))
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("%s/%s no longer contains a step fetching %q; this guard is now "+
+					"asserting nothing", tc.workflow, tc.job, tc.needle)
+			}
+		})
+	}
 }
