@@ -157,10 +157,16 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 `config.example.yaml` and the chart-rendered config. Match these locally before claiming work is done.
 
 > **API drift CI** (see README "API drift CI" + `internal/oas`, `internal/tsapi/contract`,
-> `tools/apidrift`): the PR-time **decode-fuzz** and `oas` classifier tests run inside `go test -race ./...`
-> and **do** gate PRs. The three *scheduled* lanes (`api-drift.yml`, `clientlib-main.yml`,
-> `live-contract.yml`) are advisory — on detection they open a deduped tracking issue + fail the
-> scheduled run, but never block PRs. The live lane does NOT use GitHub OIDC — it mints a short-lived
+> `tools/apidrift`): the PR-time schema-driven **decode tests** and `oas` classifier tests run inside
+> `go test -race ./...` and **do** gate PRs. The separate **`fuzz` JOB** (exploratory `go test -fuzz`)
+> is deliberately NOT in `ci-success.needs` — finding a new crasher is nondeterministic, so gating it
+> would let an unrelated PR randomly block merges; each target's seed corpus rides the gated leg, so a
+> known crasher still blocks. Don't conflate the two: "decode fuzz gates" is true of the tests and
+> false of the job. The three *scheduled* lanes (`api-drift.yml` **daily**, `clientlib-main.yml`
+> **weekly**, `live-contract.yml` **daily**) are advisory — on detection they open a deduped tracking
+> issue + fail the scheduled run, but never block PRs. `internal/ci/workflowcontract_test.go` asserts
+> these cadences and the gating split against the workflow files, because the README stated two of
+> them wrong for months while nothing failed (#436). The live lane does NOT use GitHub OIDC — it mints a short-lived
 > Tailscale API token via OAuth client-credentials, using a read-only (`all:read`) OAuth client.
 >
 > **The credentials are GitHub secrets on a standard `ubuntu-latest` runner.** An earlier design kept

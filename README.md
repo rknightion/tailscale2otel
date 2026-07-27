@@ -274,13 +274,19 @@ has broken decoders here before. Four lanes guard it:
 
 | Lane | When | What it checks |
 |---|---|---|
-| **Schema-driven decode fuzz** | every PR (gates) | synthesizes payloads from the vendored OpenAPI spec + known wire quirks (numeric `proto`, polymorphic audit `old`/`new`) through the real decoders |
-| **OpenAPI drift** | weekly | diffs the live spec against the vendored copy, scoped to consumed operations, classifying breaking vs informational |
+| **Schema-driven decode tests** | every PR (gates) | synthesizes payloads from the vendored OpenAPI spec + known wire quirks (numeric `proto`, polymorphic audit `old`/`new`) through the real decoders. Runs inside the normal `go test -race ./...` leg, which `ci-success` requires |
+| **Exploratory fuzzing** | every PR (advisory) | `go test -fuzz` over the HEC envelope, HEC timestamps and the flow/audit decoders. Deliberately **not** required: finding a NEW crasher is nondeterministic, so gating it would let an unrelated PR randomly block merges. Each target's seed corpus runs in the gated leg above, so a KNOWN crasher still blocks |
+| **OpenAPI drift** | daily | diffs the live spec against the vendored copy, scoped to consumed operations, classifying breaking vs informational |
 | **Client-lib tracking** | weekly | builds and tests against `tailscale-client-go/v2@main` and `@latest` |
-| **Live contract** | weekly | hits the real API read-only and asserts every consumed GET still decodes |
+| **Live contract** | daily | hits the real API read-only and asserts every consumed GET still decodes |
 
 Scheduled lanes are advisory — they open a deduplicated tracking issue and fail the run, but never
-block PRs. Only the decode-fuzz lane gates.
+block PRs. Of the PR-time lanes, only the schema-driven decode tests gate; exploratory fuzzing does
+not, for the reason in its row.
+
+The cadences and the advisory-versus-gating split in this table are asserted by
+`internal/ci/workflowcontract_test.go`, which reads the workflow files — two of these rows claimed
+"weekly" against daily crons until that test was added (#436).
 
 <details>
 <summary>Maintainer one-time setup</summary>
