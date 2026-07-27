@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability (PRIVATE — do not file a public issue)
+    url: https://github.com/rknightion/tailscale2otel/security/advisories/new
+    about: Suspected vulnerabilities must be reported privately via GitHub security advisories, never as a public issue.
+  - name: 📚 Documentation
+    url: https://m7kni.io/tailscale2otel/
+    about: Check the docs site before filing — configuration reference, metrics catalog, and deployment guides.

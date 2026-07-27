@@ -1,0 +1,63 @@
+name: Support / configuration help
+description: "\"How do I...\" questions or help getting tailscale2otel configured — not a bug report."
+title: "[SUPPORT] "
+labels:
+  - question
+assignees:
+  - rknightion
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the docs first: https://m7kni.io/tailscale2otel/ — this form is for questions the docs
+        don't answer. If you've found an actual bug (crash, wrong telemetry, broken config), please use
+        the Bug report form instead.
+  - type: checkboxes
+    id: redaction-ack
+    attributes:
+      label: Redaction acknowledgement
+      description: >
+        Before submitting, confirm you have removed all credentials from anything pasted below:
+        OAuth client secrets, API keys, the admin token, the webhook HMAC secret, Grafana Cloud
+        tokens, and (if you consider them sensitive) tailnet names, device names, or user emails.
+      options:
+        - label: I have removed all credentials and secrets from the config excerpt in this report.
+          required: true
+  - type: dropdown
+    id: deployment-shape
+    attributes:
+      label: Deployment shape
+      description: How are you running tailscale2otel?
+      options:
+        - Docker image
+        - Docker Compose
+        - Helm chart
+        - systemd / bare binary
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Describe the outcome you want and what you've already tried.
+    validations:
+      required: true
+  - type: textarea
+    id: config-excerpt
+    attributes:
+      label: Relevant config excerpt
+      description: >
+        Paste the relevant parts of your config.yaml. REDACT before pasting: OAuth client secrets,
+        API keys, the admin token, the webhook HMAC secret, Grafana Cloud tokens, and tailnet/device
+        names or user emails if sensitive.
+      render: yaml
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context here.
+    validations:
+      required: false

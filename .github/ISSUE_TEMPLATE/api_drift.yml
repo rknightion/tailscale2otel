@@ -1,0 +1,109 @@
+name: Tailscale API drift
+description: The Tailscale (or Headscale) API changed shape and tailscale2otel is decoding it wrong, or a collector went dark.
+title: "[API DRIFT] "
+labels:
+  - bug
+  - "area: api"
+assignees:
+  - rknightion
+body:
+  - type: checkboxes
+    id: redaction-ack
+    attributes:
+      label: Redaction acknowledgement
+      description: >
+        Before submitting, confirm you have removed all credentials from anything pasted below:
+        OAuth client secrets, API keys, the admin token, the webhook HMAC secret, Grafana Cloud
+        tokens, and (if you consider them sensitive) tailnet names, device names, or user emails.
+      options:
+        - label: I have removed all credentials and secrets from the excerpts in this report.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: tailscale2otel version
+      description: Run `./tailscale2otel -version`, or check the admin `/api/status.json` if the admin server is enabled.
+      placeholder: e.g. v3.4.1
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Control plane provider
+      description: The `provider` config key.
+      options:
+        - tailscale (default)
+        - headscale
+    validations:
+      required: true
+  - type: dropdown
+    id: collectors
+    attributes:
+      label: Affected collector(s)
+      description: Which collector(s) are affected — went silent, errored, or returned unexpected fields?
+      multiple: true
+      options:
+        - devices
+        - flowlogs
+        - auditlogs
+        - users
+        - keys
+        - settings
+        - acl
+        - dns
+        - contacts
+        - webhooks
+        - posture_integrations
+        - log_stream
+        - services
+        - node_metrics
+        - oauth_apps
+    validations:
+      required: true
+  - type: dropdown
+    id: ingestion-source
+    attributes:
+      label: Ingestion path (flowlogs/auditlogs only)
+      description: The `source` config key for the affected log type — poll and stream are different code paths.
+      options:
+        - poll
+        - stream
+    validations:
+      required: false
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed API response shape
+      description: >
+        Paste the actual JSON response (or the relevant fragment) you observed from the Tailscale/Headscale
+        API. REDACT credentials and anything you consider sensitive (tailnet/device names, user emails)
+        before pasting.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected API response shape
+      description: >
+        What did tailscale2otel expect, or what does the vendor's current API documentation say the
+        shape should be? Link to docs if you have them.
+    validations:
+      required: true
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: Error logs
+      description: >
+        Any decode errors or warnings tailscale2otel logged. REDACT credentials, the admin token, and
+        the webhook HMAC secret before pasting.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context here.
+    validations:
+      required: false

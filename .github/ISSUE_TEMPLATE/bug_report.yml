@@ -1,0 +1,183 @@
+name: Bug report
+description: Report a problem with tailscale2otel itself (crashes, wrong/missing telemetry, config that doesn't behave as documented).
+title: "[BUG] "
+labels:
+  - bug
+assignees:
+  - rknightion
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Suspected security vulnerability?** Do NOT file it here. Use GitHub's private vulnerability
+        reporting instead: https://github.com/rknightion/tailscale2otel/security/advisories/new
+  - type: checkboxes
+    id: redaction-ack
+    attributes:
+      label: Redaction acknowledgement
+      description: >
+        Before submitting, confirm you have removed all credentials from anything pasted below:
+        OAuth client secrets, API keys, the admin token, the webhook HMAC secret, Grafana Cloud
+        tokens, and (if you consider them sensitive) tailnet names, device names, or user emails.
+      options:
+        - label: I have removed all credentials and secrets from the config/log excerpts in this report.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: tailscale2otel version
+      description: Run `./tailscale2otel -version`, or check the admin `/api/status.json` if the admin server is enabled.
+      placeholder: e.g. v3.4.1
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment-shape
+    attributes:
+      label: Deployment shape
+      description: How are you running tailscale2otel?
+      options:
+        - Docker image
+        - Docker Compose
+        - Helm chart
+        - systemd / bare binary
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Control plane provider
+      description: The `provider` config key.
+      options:
+        - tailscale (default)
+        - headscale
+    validations:
+      required: false
+  - type: dropdown
+    id: auth-method
+    attributes:
+      label: Auth method
+      description: The `tailscale.auth.method` config key.
+      options:
+        - OAuth client
+        - API key
+        - Workload identity federation
+    validations:
+      required: false
+  - type: dropdown
+    id: tailnet-mode
+    attributes:
+      label: Tailnet mode
+      description: Are you running a single tailnet, or multiple via the `tailnets:` list (MSP mode)?
+      options:
+        - single
+        - multi-tailnet (MSP mode)
+    validations:
+      required: false
+  - type: dropdown
+    id: collectors
+    attributes:
+      label: Affected collector(s)
+      description: Which collector(s) does this bug affect, if applicable?
+      multiple: true
+      options:
+        - devices
+        - flowlogs
+        - auditlogs
+        - users
+        - keys
+        - settings
+        - acl
+        - dns
+        - contacts
+        - webhooks
+        - posture_integrations
+        - log_stream
+        - services
+        - node_metrics
+        - oauth_apps
+    validations:
+      required: false
+  - type: dropdown
+    id: ingestion-source
+    attributes:
+      label: Ingestion path (flowlogs/auditlogs only)
+      description: The `source` config key for the affected log type — poll and stream are different code paths.
+      options:
+        - poll
+        - stream
+    validations:
+      required: false
+  - type: dropdown
+    id: flow-metrics-mode
+    attributes:
+      label: Flow cardinality mode
+      description: The `cardinality.flow.metrics_mode` config key.
+      options:
+        - all
+        - rollup
+        - both
+    validations:
+      required: false
+  - type: dropdown
+    id: otlp-protocol
+    attributes:
+      label: OTLP protocol
+      description: The `otlp.protocol` config key.
+      options:
+        - grpc
+        - http
+        - stdout
+    validations:
+      required: false
+  - type: dropdown
+    id: export-target
+    attributes:
+      label: Export target
+      description: Where is telemetry being sent?
+      options:
+        - Grafana Cloud (otlp.grafana_cloud)
+        - Other OTLP endpoint
+        - Prometheus pull endpoint
+        - stdout
+    validations:
+      required: false
+  - type: textarea
+    id: describe-bug
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: To reproduce
+      description: Steps to reproduce the behavior.
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: false
+  - type: textarea
+    id: config-excerpt
+    attributes:
+      label: Relevant config / logs
+      description: >
+        Paste the relevant parts of your config.yaml and/or logs. REDACT before pasting: OAuth
+        client secrets, API keys, the admin token, the webhook HMAC secret, Grafana Cloud tokens,
+        and tailnet/device names or user emails if sensitive.
+      render: yaml
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.
+    validations:
+      required: false
