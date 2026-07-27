@@ -545,6 +545,10 @@ config:
         # still found. Keep it >= interval, or an object landing between two cycles can be missed.
         lookback: 1h
         # -- Cold-start reach-back, so a first run against a long history does not ingest all of it.
+        # CAPPED IN EFFECT AT 14 DAYS under layout: partitioned — the reader enumerates at most 14
+        # day partitions newest-first and the cursor only moves forward, so a larger value silently
+        # ingests only the most recent 14 days (warned about at startup). Use layout: flat, which has
+        # no partitions to cap, to reach further back.
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200
@@ -634,6 +638,10 @@ config:
         # still found. Keep it >= interval, or an object landing between two cycles can be missed.
         lookback: 1h
         # -- Cold-start reach-back, so a first run against a long history does not ingest all of it.
+        # CAPPED IN EFFECT AT 14 DAYS under layout: partitioned — the reader enumerates at most 14
+        # day partitions newest-first and the cursor only moves forward, so a larger value silently
+        # ingests only the most recent 14 days (warned about at startup). Use layout: flat, which has
+        # no partitions to cap, to reach further back.
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200

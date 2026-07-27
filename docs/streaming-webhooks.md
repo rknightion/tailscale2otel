@@ -12,16 +12,27 @@ an object store. Two optional receivers cover the Tailscale push mechanisms: a
 **Splunk-HEC-compatible stream receiver** for network flow and configuration audit logs, and an
 **HMAC-verified webhook receiver** for real-time Tailscale events. Both are off by default.
 
-## Poll vs. stream: pick one path per log type
+## Ingestion paths: the compatibility matrix
 
-Both `flowlogs` and `auditlogs` accept `poll`, `stream`, `objectstore`, or `both`:
+This table is the authoritative answer to "which paths can carry which signal, and what does each one
+guarantee". Everything else on this page elaborates one of its rows.
 
-| `source` | Description |
-|---|---|
-| `poll` (default) | `tailscale2otel` pulls logs from the Tailscale API on a schedule |
-| `stream` | Tailscale pushes logs to the built-in HEC receiver; the windowing fields are ignored |
-| `objectstore` | `tailscale2otel` reads Tailscale's partitioned export from an S3-compatible bucket |
-| `both` | Polls *and* accepts the stream — **discouraged** |
+| Path | `flowlogs` | `auditlogs` | Tailscale events | Delivery | Durability boundary | Max backfill |
+|---|:---:|:---:|:---:|---|---|---|
+| `poll` (default) | ✓ | ✓ | — | at-least-once | checkpointed high-water mark; `replay_overlap` deliberately revisits completed time | `initial_lookback`, bounded by the API's own retention |
+| `stream` (Splunk-HEC receiver) | ✓ | ✓ | — | at-least-once, **at Tailscale's discretion** | none by default; opt-in bounded ingress WAL (`streaming.wal`) makes local acceptance durable | none — push only, no history |
+| `objectstore` | ✓ | ✓ | — | at-least-once | durable cursor, per-prefix scan positions, seen set and failed-object gaps, all in one checkpoint transaction | **14 day partitions** (`layout: partitioned`) or unbounded (`layout: flat`) — see below |
+| `webhook` receiver | — | — | ✓ | at-least-once, HMAC-verified | none by default; same opt-in WAL | none |
+| `both` | ✓ | ✓ | — | **double-counts** | as `poll` | as `poll` |
+
+"✓" means the path carries that signal today. `objectstore` covers both log types because Tailscale
+publishes each as its own export; `webhook` carries only the real-time event feed, which is a
+different data source rather than a third delivery route for logs.
+
+**Acknowledgement stops at this process.** Every path above is at-least-once *into* the exporter. What
+happens after — whether the OTLP gateway accepted the batch, whether the backend stored it — is
+outside every boundary in the table. A checkpoint that has advanced means "these records were handed
+to the emitter", not "these records are queryable".
 
 The network and configuration exports are **separate objects in separate key spaces**, so each signal
 reads its own destination: `collectors.flowlogs.objectstore` and `collectors.auditlogs.objectstore`
@@ -34,6 +45,35 @@ signal's records. One bucket with a prefix per signal is the normal arrangement.
     Setting `source: both` — or enabling the streaming receiver while a collector still uses `source: poll` — means the same log record can be delivered and emitted twice. Cross-source deduplication is only a best-effort failsafe; the exporter logs a **WARN** at startup when it detects both paths are active for the same log type. Pick exactly one method per log type.
 
 Streamed log records pass through the same shared processors as polled records, so they produce identical OTEL metrics and log events regardless of which path delivers them.
+
+## Maximum effective backfill
+
+**Under the default `layout: partitioned`, the furthest back object-store ingestion can ever reach is
+14 day partitions — today plus the previous 13 days.** That is a permanent ceiling, not a per-cycle
+one, and it does not depend on `initial_lookback`:
+
+- one cycle enumerates at most 14 `YYYY/MM/DD/` partitions, walking **backwards** from the newest so a
+  capped span keeps the recent days rather than getting stuck on the oldest;
+- the cursor only ever moves forward, so the days beyond the cap are not enumerated on a later cycle
+  either.
+
+Setting `initial_lookback: 720h` against a bucket holding 30 days of exports therefore ingests the
+most recent 14 partitions and **silently ignores the other 16**. Nothing reports it: the older objects
+are never listed, so they produce no gap, no `skipped` count and no metric. `Warnings()` flags an
+`initial_lookback` beyond the ceiling at startup for exactly this reason — it is the only place an
+operator finds out.
+
+To reach further back, use **`layout: flat`**, which has no day partitions to cap. It lists the prefix
+itself and resumes from a durable scan position, so it walks arbitrarily far back over as many cycles
+as it takes, bounded per cycle by `max_objects`. The cost is more LIST requests and higher discovery
+latency for new objects — see [export layouts](configuration.md#export-layouts-partitioned-vs-flat).
+For a one-off historical load, `flat` against a copy of the export is the supported route; the
+partitioned reader is for steady-state ingestion.
+
+Two notes on what "backfill" can mean here at all. Object-store history is bounded by whatever the
+bucket's own lifecycle policy retains, and pushing old records into a backend does not make them
+visible if that backend's retention window has already passed them — Grafana Cloud's flow-log retention
+is why a longer historical load was declined as unsupported in #287.
 
 ## Object-store durability and failed gaps
 
@@ -49,9 +89,19 @@ does not provide restart durability.
 
 Malformed JSON and semantically invalid rows are record-level failures: valid rows in the same
 NDJSON object are accepted and the object can complete. GET, decompressor, and scanner failures are
-object-level gaps. A scanner can fail after it emitted valid rows, so retry may duplicate those rows
-after restart until object processing is atomic. OTLP/backend acknowledgement is outside this
-boundary.
+object-level gaps.
+
+**One object is all-or-nothing.** Every row is decoded and validated first, and only then is the whole
+set committed to the shared processor, so a scanner or read failure part-way through an object emits
+**nothing at all** — not a partial prefix of its rows. The retry after restart therefore replays the
+object exactly once rather than duplicating rows it had already emitted. (An earlier version of this
+page said the opposite; it predated the two-phase prepare/commit engine.
+`TestCollect_LateScannerErrorEntersDurableGapPath` and the `atomicity_test.go` suite are the
+guarantee.)
+
+What remains at-least-once is the object as a unit: a crash between emission and the checkpoint write
+replays that whole object. And OTLP/backend acknowledgement stays outside this boundary entirely — a
+committed row means "handed to the emitter", never "stored by the backend".
 
 Gap diagnostics do not expose bucket keys. Logs use a 12-character SHA-256 object digest, and these
 gauges have no attributes:

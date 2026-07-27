@@ -200,3 +200,16 @@ func dayPrefixes(base string, from, to time.Time, maxDays int) []string {
 // position was classified stale and DELETED on the cycle that loaded it, so
 // enumeration restarted at the beginning of every day partition forever.
 func scanBase(prefix string) string { return strings.TrimSuffix(prefix, "/") }
+
+// MaxDayPrefixes is how many day partitions the partitioned layout enumerates,
+// and therefore how far back it can EVER reach: today plus the previous
+// MaxDayPrefixes-1 days.
+//
+// It is exported because it is an operator-facing bound that has to be stated
+// somewhere an operator will see it, and internal/config is the only place that
+// can: a configured initial_lookback beyond this ceiling silently ingests only the
+// most recent partitions, producing no gap, no error and no metric because the
+// older objects are never listed at all (#463). config cannot import this package
+// (the dependency runs the other way), so it holds its own copy of the bound and a
+// test asserts the two still agree.
+const MaxDayPrefixes = maxDayPrefixes

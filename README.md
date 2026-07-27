@@ -171,8 +171,8 @@ flowlogs: { enabled: true, source: poll, interval: 60s, lag: 120s, initial_lookb
 # Stream: Tailscale pushes to the built-in HEC receiver (the window fields are ignored).
 flowlogs: { enabled: true, source: stream, log_mode: per_connection }
 
-# Object store: read the export Tailscale writes to S3. No API quota, and the only practical way
-# to backfill a long history. Credentials come from the ambient chain (env, IRSA, instance profile).
+# Object store: read the export Tailscale writes to S3. No API quota, and the cheapest path for a
+# busy tailnet. Credentials come from the ambient chain (env, IRSA, instance profile).
 flowlogs:
   enabled: true
   source: objectstore
@@ -181,8 +181,19 @@ flowlogs:
 
 Object-store delivery is at-least-once. With the file checkpoint store, successful object identities
 and failed-object gaps survive restart; transient failures retry with bounded backoff, while invalid
-compressed objects are quarantined for operator acknowledgement. A scanner error after partial
-emission can replay already-emitted rows, and OTLP/backend acknowledgement is outside this boundary.
+compressed objects are quarantined for operator acknowledgement. One object is all-or-nothing — every
+row is decoded before any is committed, so a mid-object failure emits nothing rather than a partial
+prefix — but the object as a unit replays if the process dies between emission and the checkpoint
+write. OTLP/backend acknowledgement is outside this boundary.
+
+**Backfill has a hard ceiling of 14 day partitions** — today plus the previous 13 days — under the
+default `layout: partitioned`, whatever `initial_lookback` says. It is permanent, not per-cycle: one
+cycle enumerates at most 14 day prefixes newest-first, and the cursor only moves forward, so older
+days are never listed and are skipped with no gap, no error and no metric. `layout: flat` has no
+partitions to cap and reaches arbitrarily far back, at the cost of more LIST requests. The exporter
+warns at startup when `initial_lookback` exceeds the ceiling. See
+[Streaming & webhooks](https://m7kni.io/tailscale2otel/streaming-webhooks/) for the full path-by-path
+compatibility, delivery and durability matrix.
 
 Checkpoints persist how far poll and object-store collectors have read. Details on all paths,
 receiver auth, object-gap handling, and `auto_configure` are in

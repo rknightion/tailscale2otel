@@ -84,6 +84,12 @@ const (
 	defaultMaxCycleRecords            = 500_000
 	// maxDayPrefixes bounds how many day partitions one cycle enumerates, so a
 	// corrupt or absurd cursor cannot turn a cycle into thousands of LIST calls.
+	//
+	// It is also the PERMANENT backfill ceiling of the partitioned layout, not just
+	// a per-cycle bound: dayPrefixes walks backwards from the newest day so a
+	// capped span keeps the recent days, and the cursor only ever moves forward, so
+	// the days beyond the cap are never enumerated on a later cycle either. See
+	// MaxDayPrefixes.
 	maxDayPrefixes = 14
 	// maxLineBytes bounds one NDJSON line. Flow-log records carrying a busy
 	// node's whole window are large; bufio.Scanner's 64 KiB default fails on

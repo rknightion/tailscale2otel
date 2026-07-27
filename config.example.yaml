@@ -239,7 +239,7 @@ collectors:
       session_token_file: ""          # read the temporary session token from this path instead; value XOR file
       interval: 60s                   # how often the bucket is listed
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
-      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
       max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB
@@ -270,7 +270,7 @@ collectors:
       session_token_file: ""          # read the temporary session token from this path instead; value XOR file
       interval: 60s                   # how often the bucket is listed
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
-      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
       max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // This file owns object-store destination RESOLUTION and the destination-level
@@ -34,6 +35,16 @@ const (
 	ObjectStoreLayoutPartitioned = "partitioned"
 	ObjectStoreLayoutFlat        = "flat"
 )
+
+// objectStoreMaxBackfill is the furthest back the PARTITIONED layout can ever
+// reach: objectstore.maxDayPrefixes (14) day partitions, i.e. today plus the
+// previous 13 days.
+//
+// It is duplicated here rather than imported because internal/collector/objectstore
+// imports this package, so the dependency cannot run the other way. The pair is
+// held together by TestPartitionedBackfillCeilingMatchesTheEngine in the engine's
+// own tests, which fails if either side moves.
+const objectStoreMaxBackfill = 14 * 24 * time.Hour
 
 // objectStoreSignalSpec says WHERE one signal's destination lives, so resolution,
 // validation and warnings are written once and cannot disagree between signals.
@@ -416,6 +427,22 @@ func objectStoreWarnings(key string, os ObjectStoreConfig) []string {
 			"interval (%v): the overlap that catches a late-arriving object is smaller than the gap "+
 			"between listings, so an object that lands between two cycles can be missed entirely.",
 			key, os.Lookback.D(), os.Interval.D()))
+	}
+	// The partitioned layout enumerates at most 14 day partitions per cycle
+	// (objectstore.maxDayPrefixes), walking backwards from the newest day so a
+	// capped span keeps the RECENT days. The cursor then only moves forward, so
+	// the days beyond the cap are never enumerated on a later cycle either: the
+	// ceiling is permanent, not per-cycle. Nothing in the engine can report this —
+	// the older objects are never listed, so they produce no gap, no skip and no
+	// metric — which is why it has to be said here, at configuration time.
+	if os.Layout != ObjectStoreLayoutFlat && os.InitialLookback.D() > objectStoreMaxBackfill {
+		w = append(w, fmt.Sprintf("%s.initial_lookback is %v, but layout=%s enumerates at most "+
+			"%v of day partitions and the cursor only moves forward, so the older objects are never "+
+			"listed on any cycle — they are silently skipped with no gap, no error and no metric. "+
+			"Either lower it to %v or less, or use layout=flat, which has no day partitions to cap "+
+			"and can reach arbitrarily far back (at the cost of more LIST requests).",
+			key, os.InitialLookback.D(), ObjectStoreLayoutPartitioned,
+			objectStoreMaxBackfill, objectStoreMaxBackfill))
 	}
 	if strings.HasPrefix(strings.TrimSpace(os.Prefix), "/") {
 		w = append(w, fmt.Sprintf("%s.prefix starts with \"/\", which is not part of any key "+
