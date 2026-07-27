@@ -54,6 +54,7 @@ var knownLabels = map[string]bool{
 var driftLaneLabels = map[string]bool{
 	"api-drift": true, "clientlib-drift": true,
 	"live-contract": true, "api-operation-drift": true,
+	"iana-drift": true,
 }
 
 var formBodyTypes = map[string]bool{

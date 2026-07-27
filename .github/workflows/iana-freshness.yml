@@ -1,0 +1,136 @@
+# Scheduled freshness check for the committed IANA service-name registry (#440).
+#
+# internal/portservice embeds a trimmed copy of IANA's service-name/port-number
+# registry so port→service mapping works offline, with no lookup at runtime and
+# no network dependency in `go generate` (#128). The cost of that offline
+# bootstrap is that the copy goes stale silently: nothing fetches it, nothing
+# compares it, and a missing row does not fail anything — a flow to an
+# unrecognised port simply reports no service name, which looks identical to a
+# port that genuinely has no registration.
+#
+# It went stale exactly that way. The CSV was generated once when the feature
+# landed and never regenerated, so by the time this lane was written it was
+# missing every registration IANA had accepted since.
+#
+# This lane is ADVISORY, like the other scheduled drift lanes: it opens a
+# deduplicated tracking issue and fails its own run, but gates no pull request.
+# Refreshing the data is a deliberate commit, not something CI does behind the
+# maintainer's back — the committed CSV is an input to a build, and a lane that
+# rewrote it unattended would change what the binary maps without review.
+#
+# Monthly, not daily. IANA assignments arrive at a rate of a few per week across
+# the whole registry, and a daily lane on a monthly-moving artifact spends 30
+# runs to learn one thing.
+name: IANA registry freshness
+
+on:
+  schedule:
+    - cron: "27 7 3 * *" # monthly, 3rd at 07:27 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: iana-freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # gen.go is deliberately non-fatal on a failed download (#128) so that
+      # `go generate ./...` still works for a contributor with no network. That
+      # is wrong for THIS lane: a silent no-op would leave the CSV untouched, the
+      # diff empty, and the run green — reporting "fresh" when it had in fact
+      # learned nothing. So the fetch is done here, checked, and handed to the
+      # generator via -raw.
+      - name: Fetch the current IANA registry
+        run: |
+          set -euo pipefail
+          scripts/ci-retry.sh curl -fsSL --max-time 120 \
+            "https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.csv" \
+            -o /tmp/iana-raw.csv
+          # A registry this size is never a handful of bytes; a truncated or
+          # error-page response would otherwise regenerate an empty table and
+          # report thousands of deletions.
+          bytes=$(wc -c < /tmp/iana-raw.csv)
+          if [ "$bytes" -lt 1000000 ]; then
+            echo "downloaded registry is only ${bytes} bytes — refusing to treat that as the registry" >&2
+            exit 1
+          fi
+
+      - name: Regenerate from the fetched registry
+        run: go run gen.go -raw /tmp/iana-raw.csv
+        working-directory: internal/portservice
+
+      - name: Compare against the committed copy
+        id: compare
+        run: |
+          set -euo pipefail
+          csv=internal/portservice/service-names-port-numbers.csv
+          if git diff --quiet -- "$csv"; then
+            echo "code=0" >> "$GITHUB_OUTPUT"
+            echo "committed registry copy is current"
+            exit 0
+          fi
+          echo "code=3" >> "$GITHUB_OUTPUT"
+          added=$(git diff -- "$csv" | grep -c '^+[^+]' || true)
+          removed=$(git diff -- "$csv" | grep -c '^-[^-]' || true)
+          {
+            echo "## Committed IANA service registry is out of date"
+            echo
+            echo "\`internal/portservice/service-names-port-numbers.csv\` differs from the"
+            echo "current IANA registry: **${added} added, ${removed} removed**."
+            echo
+            echo "A missing row is not visible at runtime — the port simply maps to no"
+            echo "service name, which looks the same as a port with no registration."
+            echo
+            echo "Refresh it deliberately:"
+            echo
+            echo '```sh'
+            echo 'go generate ./internal/portservice'
+            echo '```'
+            echo
+            echo "<details><summary>Diff (first 200 lines)</summary>"
+            echo
+            echo '```diff'
+            git diff -- "$csv" | head -200
+            echo '```'
+            echo
+            echo "</details>"
+          } > /tmp/iana-drift.md
+
+      - name: Report staleness
+        if: steps.compare.outputs.code == '3'
+        continue-on-error: true
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: iana-drift
+          title: "Committed IANA service registry is out of date"
+          report-path: /tmp/iana-drift.md
+          # Claude enrichment is deliberately NOT wired here. The shared
+          # report-drift prompt is written for Tailscale API drift and talks
+          # about internal/tsapi decoders; pointing it at a port-registry diff
+          # would produce confident, irrelevant analysis.
+
+      - name: Fail the run on staleness
+        if: steps.compare.outputs.code == '3'
+        run: 'echo "IANA registry copy is stale — see the issue labelled iana-drift" >&2; exit 1'
+
+      - name: Resolve when current again
+        if: steps.compare.outputs.code == '0'
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: iana-drift

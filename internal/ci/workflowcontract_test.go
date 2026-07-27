@@ -1167,3 +1167,82 @@ func TestTransientFetchesAreRetried(t *testing.T) {
 		})
 	}
 }
+
+// TestIANARegistryHasAFreshnessLane (#440).
+//
+// internal/portservice embeds a trimmed copy of IANA's service-name registry so
+// port lookup works offline. That copy has no drift gate by construction — it is
+// not one of the generated artifacts regen-generated.sh rebuilds — and its
+// staleness is invisible at runtime: an unregistered port and a port missing
+// from a stale table both report no service name.
+//
+// It went stale exactly that way once, generated at the feature commit and never
+// again. This asserts the scheduled lane that now watches it still exists and
+// still points at the right file, because deleting a lane nobody looks at is
+// silent.
+func TestIANARegistryHasAFreshnessLane(t *testing.T) {
+	const (
+		wf  = "iana-freshness.yml"
+		csv = "internal/portservice/service-names-port-numbers.csv"
+	)
+	doc := readWorkflow(t, wf)
+
+	if _, ok := triggerBlock(t, doc, wf)["schedule"]; !ok {
+		t.Errorf("%s has no schedule; an on-demand-only freshness check is one nobody runs", wf)
+	}
+
+	var scripts strings.Builder
+	for _, raw := range jobsOf(t, doc, wf) {
+		def, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		steps, _ := def["steps"].([]any)
+		for _, s := range steps {
+			step, ok := s.(map[string]any)
+			if !ok {
+				continue
+			}
+			if run, _ := step["run"].(string); run != "" {
+				scripts.WriteString(run + "\n")
+			}
+			if uses, _ := step["uses"].(string); uses != "" {
+				scripts.WriteString(uses + "\n")
+			}
+			if with, ok := step["with"].(map[string]any); ok {
+				if label, _ := with["lane-label"].(string); label != "" {
+					scripts.WriteString(label + "\n")
+				}
+			}
+		}
+	}
+	body := scripts.String()
+	for _, want := range []string{
+		csv,                    // it compares the committed copy
+		"iana.org/assignments", // against the live registry
+		"gen.go",               // via the deterministic generator, not an ad-hoc parser
+		"iana-drift",           // and reports under its own lane label
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s no longer references %q; the lane may still run while checking "+
+				"nothing", wf, want)
+		}
+	}
+
+	// The generator is deliberately non-fatal on a failed download so
+	// `go generate` works offline (#128). In THIS lane that would be a silent
+	// pass: no fetch, no diff, green run, nothing learned. The lane must fetch
+	// separately and hand the file over with -raw.
+	// Match the generator INVOCATION, not the bare flag: the fetched file is
+	// named iana-raw.csv, so a substring search for "-raw" matches the filename
+	// and passes whether or not the flag is ever passed. It did exactly that on
+	// the first draft of this test.
+	if !strings.Contains(body, "gen.go -raw") {
+		t.Errorf("%s does not pass -raw to the generator, so a failed download would be "+
+			"reported as 'registry is current' — gen.go swallows fetch errors by design", wf)
+	}
+
+	if _, err := os.Stat(filepath.Join(repoDir, csv)); err != nil {
+		t.Errorf("%s is missing: %v", csv, err)
+	}
+}

@@ -4755,6 +4755,7 @@ joaJewelSuite,6583,tcp
 mshvlm,6600,tcp
 mstmg-sstp,6601,tcp
 wsscomfrmwk,6602,tcp
+bencher,6610,tcp
 odette-ftps,6619,tcp
 kftp-data,6620,tcp
 kftp,6621,tcp
@@ -10476,6 +10477,7 @@ parsec-master,6580,udp
 parsec-peer,6581,udp
 parsec-game,6582,udp
 joaJewelSuite,6583,udp
+bencher,6610,udp
 odette-ftps,6619,udp
 kftp-data,6620,udp
 kftp,6621,udp
@@ -10578,6 +10580,7 @@ font-service,7100,udp
 elcn,7101,udp
 aes-x170,7107,udp
 virprot-lm,7121,udp
+snif,7123,udp
 scenidm,7128,udp
 scenccs,7129,udp
 cabsm-comm,7161,udp
