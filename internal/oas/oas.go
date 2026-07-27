@@ -44,14 +44,23 @@ type Operation struct {
 // Schema is a resolved subset of JSON Schema. Refs are followed at parse time.
 // Fields not present in the source document are left as zero values.
 //
-// Composition keywords (anyOf/oneOf/allOf) and additionalProperties are
-// intentionally NOT modeled: a node using only those resolves to Type "object"
-// with a nil Properties (or to the empty Schema for a bare anyOf). This is by
-// design — drift on those loosely-typed fields (e.g. audit old/new, posture
-// attribute maps) does not break our decoders, which read them as
-// json.RawMessage / map[string]any. Synthesized fuzz bodies therefore cannot
-// vary those shapes; cover them with hand-written payloads instead. An empty
-// Properties on an object is not a parser bug.
+// The COMPOSITION keywords anyOf/oneOf/allOf remain intentionally unmodeled: a
+// node using only those resolves to Type "object" with a nil Properties (or to the
+// empty Schema for a bare anyOf). This is by design — drift on those loosely-typed
+// fields does not break our decoders, which read them as json.RawMessage /
+// map[string]any. In the vendored spec they are also nearly unreachable: `oneOf`
+// appears once (a POST request body) and `allOf` once (VIPServiceInfoPut,
+// referenced only from a PUT request body), and ParseSpec keeps GET operations
+// only, so neither is reachable at all. `anyOf` appears on audit old/new and the
+// posture attribute map, which are deliberately decoded loosely. Synthesized fuzz
+// bodies therefore cannot vary those shapes; cover them with hand-written payloads
+// instead. An empty Properties on an object is not a parser bug.
+//
+// additionalProperties IS modeled (see AdditionalProperties): the spec uses it for
+// real typed maps that consumed GETs return — SplitDns, DnsConfiguration.splitDNS,
+// DevicePostureAttributes.attributes — and leaving it out made those nodes
+// indistinguishable from an object with no properties, so a change to the map's
+// VALUE type looked like nothing at all (#431).
 type Schema struct {
 	Type       string            // "object","array","string","integer","number","boolean",""
 	Format     string            // e.g. "date-time" — drives valid-value synthesis
@@ -59,6 +68,11 @@ type Schema struct {
 	Items      *Schema           // non-nil for arrays
 	Enum       []string          // string enum values, if any
 	Nullable   bool
+	// AdditionalProperties is the VALUE schema of a typed map, non-nil only when
+	// the source node gave additionalProperties a schema. The boolean forms
+	// (`additionalProperties: true|false`) carry no value type and leave this nil;
+	// neither appears in the vendored spec.
+	AdditionalProperties *Schema
 }
 
 // rawSchema is the raw JSON representation of an OpenAPI schema node,
@@ -356,9 +370,31 @@ func resolveSchema(rs rawSchema, components map[string]rawSchema, visited map[st
 
 	var s Schema
 
-	// type
+	// type — OpenAPI 3.1 permits a type ARRAY, which is how this spec spells
+	// nullability: `"type": ["boolean","null"]`. The 3.0 `nullable: true` keyword
+	// does not appear in it at all. Unmarshalling an array into a string silently
+	// fails and leaves Type empty, and Classify's type-change check is guarded on
+	// both sides being non-empty, so an unparsed type array makes a field's type
+	// change undetectable rather than merely unknown (#431).
 	if rawType, ok := rs["type"]; ok {
-		_ = json.Unmarshal(rawType, &s.Type)
+		if err := json.Unmarshal(rawType, &s.Type); err != nil {
+			var types []string
+			if json.Unmarshal(rawType, &types) == nil {
+				for _, t := range types {
+					if t == "null" {
+						s.Nullable = true
+						continue
+					}
+					// First non-null wins. A union of two concrete types cannot be
+					// represented here, and none appears in the vendored spec; taking
+					// the first is strictly better than taking none, because it keeps
+					// the type-change check alive on the common nullable case.
+					if s.Type == "" {
+						s.Type = t
+					}
+				}
+			}
+		}
 	}
 
 	// format
@@ -404,6 +440,16 @@ func resolveSchema(rs rawSchema, components map[string]rawSchema, visited map[st
 		if err := json.Unmarshal(rawItems, &itemRS); err == nil {
 			resolved := resolveSchema(itemRS, components, visited, depth+1)
 			s.Items = &resolved
+		}
+	}
+
+	// additionalProperties (typed map). Only the SCHEMA form carries a value type;
+	// the boolean form unmarshals into rawSchema with an error and is left nil.
+	if rawAP, ok := rs["additionalProperties"]; ok {
+		var apRS rawSchema
+		if err := json.Unmarshal(rawAP, &apRS); err == nil && len(apRS) > 0 {
+			resolved := resolveSchema(apRS, components, visited, depth+1)
+			s.AdditionalProperties = &resolved
 		}
 	}
 
