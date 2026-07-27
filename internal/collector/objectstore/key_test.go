@@ -24,6 +24,15 @@ func TestParseKey(t *testing.T) {
 		{name: "official zstd layout", key: "flow/2026/07/24/09:05:00.json.zst", wantAt: want, wantComp: compZstd, wantOK: true},
 		{name: "official gzip layout", key: "flow/2026/07/24/09:05:00.json.gz", wantAt: want, wantComp: compGzip, wantOK: true},
 		{
+			// #496: the long codec spellings were only wired up for .ndjson;
+			// .json fell through to ok=false and the object was silently
+			// skipped rather than fetched.
+			name: "official long zstd layout on the json stem", key: "flow/2026/07/24/09:05:00.json.zstd", wantAt: want, wantComp: compZstd, wantOK: true,
+		},
+		{
+			name: "official long gzip layout on the json stem", key: "flow/2026/07/24/09:05:00.json.gzip", wantAt: want, wantComp: compGzip, wantOK: true,
+		},
+		{
 			name:     "legacy date-bearing basename",
 			key:      "flow/2026/07/24/2026-07-24-09-05-00.ndjson.zst",
 			wantAt:   want,
@@ -73,6 +82,59 @@ func TestParseKey(t *testing.T) {
 				t.Errorf("compression = %v, want %v", comp, tc.wantComp)
 			}
 		})
+	}
+}
+
+// TestParseKey_StemCodecCrossProduct pins every combination the suffix table is
+// supposed to cover: two stems (.json, .ndjson) x five codec spellings (none,
+// .zst, .zstd, .gz, .gzip) x both basename shapes (the official time-only
+// basename, whose date comes from the partition directories, and the legacy
+// self-contained one) = 20 cases.
+//
+// This is the regression shape for #496: the table had .zstd/.gzip for .ndjson
+// but not .json, and a flat list of examples did not force full coverage. Adding
+// a stem or a spelling without the matching table entries now fails on the exact
+// missing cell. Each case asserts the EXACT codec rather than just ok=true, so a
+// key matching the wrong entry is caught here instead of passing on a false ok.
+func TestParseKey_StemCodecCrossProduct(t *testing.T) {
+	want := time.Date(2026, 7, 24, 9, 5, 0, 0, time.UTC)
+	stems := []string{".json", ".ndjson"}
+	codecs := []struct {
+		suffix string
+		comp   compression
+	}{
+		{"", compNone},
+		{".zst", compZstd},
+		{".zstd", compZstd},
+		{".gz", compGzip},
+		{".gzip", compGzip},
+	}
+	shapes := []struct {
+		name string
+		base string
+	}{
+		{"official", "09:05:00"},
+		{"legacy", "2026-07-24-09-05-00"},
+	}
+	for _, shape := range shapes {
+		for _, stem := range stems {
+			for _, c := range codecs {
+				ext := stem + c.suffix
+				t.Run(shape.name+ext, func(t *testing.T) {
+					key := "flow/2026/07/24/" + shape.base + ext
+					at, comp, ok := parseKey(key)
+					if !ok {
+						t.Fatalf("parseKey(%q) ok = false, want true", key)
+					}
+					if !at.Equal(want) {
+						t.Errorf("at = %v, want %v", at, want)
+					}
+					if comp != c.comp {
+						t.Errorf("compression = %v, want %v", comp, c.comp)
+					}
+				})
+			}
+		}
 	}
 }
 

@@ -53,7 +53,18 @@ const (
 
 // suffixes maps each recognized extension to its codec. Tailscale writes zstd;
 // gzip is here because operators routinely re-compress an export while copying
-// it between buckets.
+// it between buckets. All five codec spellings (bare, .zst, .zstd, .gz, .gzip)
+// are listed for BOTH stems, because #496 was this list going out of sync: the
+// long .zstd/.gzip forms existed for .ndjson but not .json, so such an object
+// parsed as unrecognized and was silently skipped instead of fetched.
+// TestParseKey_StemCodecCrossProduct enumerates the whole stem x codec grid, so
+// adding a stem or a spelling to one family and not the other fails loudly.
+//
+// Ordering rule: parseKey returns on the FIRST entry whose extension matches and
+// never falls through, so if one extension is ever a literal byte-suffix of
+// another, the longer must be listed first. Nothing here is in that relationship
+// today (.zst/.zstd and .gz/.gzip differ in their final byte, and the stem keeps
+// the families apart), but check it before adding an entry.
 var suffixes = []struct {
 	ext  string
 	comp compression
@@ -67,7 +78,9 @@ var suffixes = []struct {
 	// .json or .log. Accepting them costs nothing and refusing them silently
 	// skips real data.
 	{".json.zst", compZstd},
+	{".json.zstd", compZstd},
 	{".json.gz", compGzip},
+	{".json.gzip", compGzip},
 	{".json", compNone},
 }
 
