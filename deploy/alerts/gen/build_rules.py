@@ -442,18 +442,44 @@ def rule_expr(rule):
     return rule["_prom"]["expr"]
 
 
-def _derp_byte_fraction(win="10m"):
-    """Fleet fraction of bytes relayed via DERP, robust to asymmetric inbound-/outbound-only series.
+def _path_byte_fraction(path, win="10m"):
+    """Fleet fraction of bytes carried over `path`, robust to asymmetric inbound-/outbound-only series.
 
     `rate(in)+rate(out)` is a one-to-one join on all shared labels, so a node/path present in only
     one direction (asymmetric relay traffic) is silently dropped before the outer sum runs. Instead
     union the two directions (disambiguated with a synthetic `dir` label via label_replace) and then
-    sum, so no series is lost. Numerator restricts to path="derp"; denominator is all paths."""
+    sum, so no series is lost. Numerator restricts to the requested path; denominator is all paths.
+
+    Generalised from the DERP-only original in #406 so the direct-path fraction is the SAME
+    construction rather than a second hand-written one that could drift from it. The DERP wrapper
+    below must keep producing a byte-identical expression — its recorded rule is already shipped."""
     def _u(sel):
         return ('sum(label_replace(rate(tailscaled_inbound_bytes_total%s[%s]), "dir", "in", "", "") '
                 'or label_replace(rate(tailscaled_outbound_bytes_total%s[%s]), "dir", "out", "", ""))'
                 % (sel, win, sel, win))
-    return '%s / clamp_min(%s, 1)' % (_u('{path="derp"}'), _u(''))
+    return '%s / clamp_min(%s, 1)' % (_u('{path="%s"}' % path), _u(''))
+
+
+def _derp_byte_fraction(win="10m"):
+    """Fleet fraction of bytes relayed via DERP. See _path_byte_fraction."""
+    return _path_byte_fraction("derp", win)
+
+
+def _burn(sli, short, long, thr):
+    """Multi-window error-budget burn: 1 only when BOTH windows breach `thr`.
+
+    Written as a PRODUCT of two `> bool` comparisons rather than with `and`, and
+    that is not a style choice. `a and b` returns a's VALUE where both sides have
+    matching labels, so the rule's threshold would then depend on the magnitude of
+    the short-window error rate instead of on the two windows agreeing — which is
+    the entire point of a multi-window burn alert. The product is 1/0 and the
+    condition is a clean `> 0`.
+
+    Requiring both windows is what suppresses a single blip: the short window
+    catches a fast burn early, the long window refuses to fire on one bad minute.
+    """
+    return ("(1 - avg_over_time(%s[%s]) > bool %s) * (1 - avg_over_time(%s[%s]) > bool %s)"
+            % (sli, short, thr, sli, long, thr))
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +787,64 @@ def groups():
               domain="observability", paused=True,
               policy="advisory", runbook="tailscale-api-health",
               panel="Rate-limiter wait p50/p95/p99 by endpoint"),
+        # --- #398: multi-window SLO burn-rate alerts ----------------------------
+        # These query the tailscale2otel:sli_*:ratio RECORDED metrics, which ship
+        # enabled for exactly that reason. Availability and freshness are `core`:
+        # their SLIs are emitted by any running exporter, so absence is genuinely
+        # abnormal and must surface as NoData rather than as silence. Delivery is
+        # `optional` because export.duration is legitimately absent under the
+        # stdout exporter or an idle pipeline.
+        #
+        # No panel= on these four: they burn against a recorded ratio over hours,
+        # and there is no single panel that shows a burn rate. The runbook names
+        # the panels to read instead.
+        alert("ts2o-slo-availability-fast-burn", "SLO availability fast burn",
+              _burn("tailscale2otel:sli_availability:ratio", "5m", "1h", 0.0144),
+              "gt", 0, "2m", "critical",
+              "Exporter availability is burning its error budget 14.4x too fast",
+              "Both the 5m and the 1h window show availability error above 14.4x the 99.9% budget "
+              "burn rate, which exhausts a 30-day budget in about two days. Requiring BOTH windows is "
+              "what stops a single restart from paging. This is the exporter itself being down or "
+              "flapping — it says nothing about the tailnet's health or the backend's. Depends on the "
+              "tailscale2otel:sli_availability:ratio recording rule: if that is paused this alert has "
+              "no series and cannot fire.",
+              domain="observability", paused=True,
+              policy="core", runbook="slo-burn-rate"),
+        alert("ts2o-slo-availability-slow-burn", "SLO availability slow burn",
+              _burn("tailscale2otel:sli_availability:ratio", "30m", "6h", 0.006),
+              "gt", 0, "15m", "warning",
+              "Exporter availability is burning its error budget 6x too fast",
+              "The slower companion to the fast-burn rule: 6x the 99.9% budget burn rate sustained "
+              "across both a 30m and a 6h window. It catches a persistent low-grade problem — repeated "
+              "short restarts, an OOM loop — that never breaches the fast threshold but still spends "
+              "the month's budget. Lower severity on purpose: there is time to act.",
+              domain="observability", paused=True,
+              policy="core", runbook="slo-burn-rate"),
+        alert("ts2o-slo-freshness-fast-burn", "SLO freshness fast burn",
+              _burn("tailscale2otel:sli_freshness:ratio", "5m", "1h", 0.144),
+              "gt", 0, "5m", "warning",
+              "Collector freshness is burning its error budget 14.4x too fast",
+              "Collectors are failing their scrapes fast enough to burn the 99% freshness budget at "
+              "14.4x. The exporter is RUNNING — this is collection failing, so look at the Tailscale "
+              "API and at which collector is red rather than at the process. Distinct from "
+              "availability on purpose: a healthy process that collects nothing is still an outage, "
+              "and a blended SLO would hide it.",
+              domain="observability", paused=True,
+              policy="core", runbook="slo-burn-rate"),
+        alert("ts2o-slo-delivery-fast-burn", "SLO delivery fast burn",
+              _burn("tailscale2otel:sli_delivery:ratio", "5m", "1h", 0.144),
+              "gt", 0, "5m", "warning",
+              "OTLP delivery is burning its error budget 14.4x too fast",
+              "THIS IS A BACKEND FAULT, NOT A TAILNET FAULT. The OTLP endpoint is rejecting or timing "
+              "out exports at 14.4x the 99% budget burn rate. The exporter is healthy and the tailnet "
+              "is healthy — nothing is wrong with Tailscale, and this must NOT be routed to tailnet "
+              "owners. Check the backend's own status, the endpoint URL and the auth credential. "
+              "Keeping this separate from availability is the whole reason there are three SLIs: a "
+              "single blended one would report a Grafana Cloud outage as an exporter failure. "
+              "`optional` policy because export.duration is legitimately absent under the stdout "
+              "exporter or an idle pipeline.",
+              domain="observability", paused=True,
+              policy="optional", runbook="slo-burn-rate"),
     ]
 
     security = [
@@ -1050,6 +1134,38 @@ def groups():
               domain="security", paused=True,
               policy="optional", runbook="device-posture-coverage",
               panel="Multiple simultaneous connections"),
+        # --- #410: approval workflow -------------------------------------------
+        # Both are explicitly page=False. #410 forbids a default page-level
+        # severity: an unapproved device is a queue to work through, not an
+        # incident, and paging on it at 3am trains people to silence the channel.
+        alert("ts2o-devices-unauthorized", "Unauthorized devices awaiting approval",
+              "sum(tailscale:devices_unauthorized:count)",
+              "gt", 0, "2h", "warning",
+              "Devices have been awaiting admin approval for over 2h",
+              "One or more INTERNAL devices have been sitting unapproved for two hours, so they are "
+              "joined but cannot carry traffic. EXTERNAL (shared-in) devices are excluded by "
+              "construction — the recorded metric filters tailscale_external=\"false\", because a "
+              "device shared in from another tailnet is not yours to approve and counting it would "
+              "produce an alert nobody can action. The 2h `for` is what makes this a waiting device "
+              "rather than one that merely appeared: firing on arrival would page during the normal "
+              "minutes before an admin gets to it. Reads the tailscale:devices_unauthorized:count "
+              "recording rule (#406), which ships enabled for that reason.",
+              domain="security", paused=True, page=False,
+              policy="optional", runbook="device-and-user-approval",
+              panel="Unauthorized (internal)"),
+        alert("ts2o-user-invites-stale", "User invites awaiting acceptance",
+              "histogram_quantile(0.9, sum by (le) "
+              "(rate(tailscale_user_invites_pending_age_seconds_bucket[6h])))",
+              "gt", 604800, "1h", "warning",
+              "User invites have been outstanding for over 7 days",
+              "The p90 outstanding user invite is more than seven days old. Seven days is a \"nobody "
+              "is going to accept this\" horizon, not an SLA — a long-stale invite is usually an "
+              "access-review and offboarding problem (an invite sent to someone who has since left, "
+              "or to the wrong address) and should normally be REVOKED rather than chased. Every "
+              "outstanding invite is a standing grant waiting to be claimed.",
+              domain="security", paused=True, page=False,
+              policy="optional", runbook="device-and-user-approval",
+              panel="Pending user-invite age (p50 / p90)"),
     ]
 
     integrations = [
@@ -1530,6 +1646,74 @@ def groups():
                "sum by (tailscale_node) (rate(tailscaled_outbound_dropped_packets_total[5m]))",
                "Per-node outbound dropped-packet rate (5m).",
                domain="infra", paused=True),
+        # --- #406: canonical recordings -----------------------------------------
+        # Dimensions here are DELIBERATE, not incidental. Each of these either keeps
+        # exactly the label that makes the number actionable, or is aggregated
+        # because no label is meaningful — see the per-rule notes.
+        record("ts2o-rec-devices-unauthorized", "tailscale:devices_unauthorized:count",
+               'sum by (tailscale_tailnet) (last_over_time(tailscale_devices_count_ratio'
+               '{tailscale_authorized="false", tailscale_external="false"}[10m]))',
+               "Internal devices awaiting admin approval, per tailnet. Keeps tailscale_tailnet "
+               "because on a multi-tailnet/MSP deployment a summed count hides WHICH tailnet has the "
+               "unapproved device, which is the only actionable part. Excludes external (shared-in) "
+               "devices on purpose: a device shared from another tailnet is not yours to approve. "
+               "Consumed by ts2o-devices-unauthorized (#410), so it ships ENABLED.",
+               domain="security", paused=False),
+        record("ts2o-rec-export-success-by-signal", "tailscale2otel:export:success_ratio",
+               'sum by (signal) (rate(tailscale2otel_export_duration_seconds_count'
+               '{outcome="success"}[5m])) / '
+               "sum by (signal) (rate(tailscale2otel_export_duration_seconds_count[5m]))",
+               "OTLP export success ratio per signal. Keeps `signal` because a backend can accept "
+               "metrics while rejecting logs, and one blended number averages that away. This is the "
+               "per-signal DIAGNOSTIC view; tailscale2otel:sli_delivery:ratio is the deliberately "
+               "separate aggregate the SLO burns against.",
+               domain="observability", paused=True),
+        record("ts2o-rec-scrape-freshness", "tailscale2otel:scrape_freshness:seconds",
+               "max by (tailscale_collector) (tailscale2otel_scrape_staleness_seconds)",
+               "Seconds since each collector's last SUCCESSFUL scrape. Keeps tailscale_collector: "
+               "bounded (~15 collectors) and useless aggregated, since \"something is stale\" is only "
+               "actionable once it names the collector.",
+               domain="observability", paused=True),
+        record("ts2o-rec-objectstore-backlog", "tailscale2otel:objectstore_backlog:max",
+               "max(tailscale2otel_objectstore_backlog_ratio)",
+               "Objects listed but not yet ingested. Fully aggregated — the object-store path is a "
+               "single pipeline, so no label is meaningful. A lower bound while "
+               "objectstore.scan.truncated is 1.",
+               domain="observability", paused=True),
+        record("ts2o-rec-direct-byte-fraction", "tailscale:direct_path:byte_fraction",
+               _path_byte_fraction("direct"),
+               "Fleet fraction of bytes carried peer-to-peer. The complement view to "
+               "tailscale:derp_relay:byte_fraction and built by the SAME helper, so the two cannot "
+               "drift apart. Note the pair does not sum to 1: peer-relay is a third path.",
+               domain="infra", paused=True),
+        # --- #398: the three SLIs, deliberately SEPARATE ------------------------
+        # Availability = the exporter is running. Freshness = collection is current.
+        # Delivery = the BACKEND is accepting. Blending them is the failure this
+        # issue exists to prevent: a backend outage drives delivery to zero while
+        # the exporter and the tailnet are both perfectly healthy, and one blended
+        # SLO reports that as "the exporter is failing" and pages the wrong people.
+        #
+        # All three ship ENABLED because the burn-rate alerts query them. A paused
+        # recording rule feeding an alert is a silently dead alert — see
+        # test_rules.py's paused-recording gate.
+        record("ts2o-rec-sli-availability", "tailscale2otel:sli_availability:ratio",
+               "max(tailscale2otel_up_ratio)",
+               "SLI: the exporter is running and emitting telemetry. Target 99.9%. This is NOT a "
+               "statement about the tailnet or the backend.",
+               domain="observability", paused=False),
+        record("ts2o-rec-sli-freshness", "tailscale2otel:sli_freshness:ratio",
+               "avg(tailscale2otel_scrape_success_ratio)",
+               "SLI: fraction of collectors whose last scrape succeeded — collection is current. "
+               "Target 99%. Degrades when the Tailscale API or a single collector is failing, "
+               "independently of whether the exporter is up or the backend is reachable.",
+               domain="observability", paused=False),
+        record("ts2o-rec-sli-delivery", "tailscale2otel:sli_delivery:ratio",
+               'sum(rate(tailscale2otel_export_duration_seconds_count{outcome="success"}[5m])) / '
+               "sum(rate(tailscale2otel_export_duration_seconds_count[5m]))",
+               "SLI: the OTLP backend is accepting exports. Target 99%. A drop here is a BACKEND "
+               "fault — the exporter and the tailnet are healthy — which is exactly why it is a "
+               "separate SLI rather than folded into availability.",
+               domain="observability", paused=False),
     ]
 
     return [

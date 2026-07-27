@@ -79,7 +79,7 @@ Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
 `infra` / `observability`); rules not worthy of automatic investigation
 (non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
 so IRM routing / auto-investigation stays focused. The generated set currently
-has **91 alert rules + 12 recording rules** across five groups (`-health`,
+has **97 alert rules + 20 recording rules** across five groups (`-health`,
 `-security`, `-integrations`, `-network`, `-recording`); the tables below are an
 illustrative guide — `gen/build_rules.py` is the source of truth.
 
@@ -119,8 +119,8 @@ semantics:
 | Policy | `noDataState` | `execErrState` | Used for | Count |
 |---|---|---|---|---|
 | `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
-| `core` | `NoData` | `Error` | always emitted while the exporter runs | 7 |
-| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 64 |
+| `core` | `NoData` | `Error` | always emitted while the exporter runs | 10 |
+| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 67 |
 | `advisory` | `Ok` | `OK` | hygiene; neither absence nor a transient error is actionable | 19 |
 
 Before this, *every* rule was fail-open on error, so a broken datasource read
@@ -128,7 +128,7 @@ as "healthy" across the whole pack. Only the `advisory` class still is, and that
 is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 90 of the 91 carry the
+[`docs/runbooks.md`](../../docs/runbooks.md), and 92 of the 97 carry the
 `__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
 generated flagship dashboard. Both are resolved and validated **at generation
 time**: an unknown runbook slug, an unreferenced runbook section, a missing panel
@@ -197,6 +197,10 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `NodeMetricsDiscoveryFailing` | warning | ⏸ off | dynamic node-target discovery failing |
 | `AdminAuthRejectionsHigh` | info | ⏸ off | elevated admin-auth rejections (probing/misconfig) |
 | `GCCPUFractionHigh` | info | ⏸ off | GC CPU fraction > 0.25 (low value — near-idle service) |
+| `SLOAvailabilityFastBurn` | critical | ⏸ off | multi-window burn on `tailscale2otel:sli_availability:ratio` — 5m+1h both over 14.4x burns a 30-day 99.9% budget in ~2 days |
+| `SLOAvailabilitySlowBurn` | warning | ⏸ off | slower companion to the above — 30m+6h both over 6x |
+| `SLOFreshnessFastBurn` | warning | ⏸ off | multi-window burn on `tailscale2otel:sli_freshness:ratio` (collection currency), 5m+1h at 14.4x against a 99% target |
+| `SLODeliveryFastBurn` | warning | ⏸ off | multi-window burn on `tailscale2otel:sli_delivery:ratio` (backend acceptance), 5m+1h at 14.4x against a 99% target — a **backend** fault, not a tailnet one; do not route to tailnet owners |
 
 ### `tailscale2otel-security` — security & governance
 
@@ -214,6 +218,8 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `TailnetContactUnverified` | warning | ✅ on | a tailnet contact is unverified (security notices may not be delivered) |
 | `NewDeviceWithKeyExpiryDisabled` | warning | ⏸ off | a new device with key expiry disabled appeared in the last hour (delta, not level — a standing population of tag-owned never-expiring keys is normal) |
 | `DeviceKeyUsedByMultipleClients` | warning | ⏸ off | one or more device node keys are in simultaneous use by more than one client — a key is being shared across machines |
+| `UnauthorizedDevicesAwaitingApproval` | warning | ⏸ off | one or more internal (non-external) devices unauthorized for 2h+ — excludes shared-in devices, which are not yours to approve |
+| `UserInvitesAwaitingAcceptance` | warning | ⏸ off | p90 pending-invite age > 7 days — an access-review signal, usually resolved by revoking rather than chasing |
 
 > **Why `DeviceKeyExpiringCritical` only pages on tagged devices.** Node-key expiry is
 > real either way — a Tailscale node key does **not** silently auto-renew, and the
@@ -275,6 +281,14 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `tailscale2otel:series_active:sum` | ✅ on | total active series (ingest-cost proxy) |
 | `tailscale2otel:ingest_event_freshness_seconds` | ⏸ off | seconds since the greatest accepted event timestamp per source/signal |
 | `tailscale:device_keys_expiring_7d:count` | ⏸ off | device keys expiring within 7 days |
+| `tailscale:devices_unauthorized:count` | ✅ on | unauthorized internal (non-external) devices by tailnet — consumed by `UnauthorizedDevicesAwaitingApproval` |
+| `tailscale2otel:export:success_ratio` | ⏸ off | export success ratio by signal (metrics vs logs) — the per-signal diagnostic view |
+| `tailscale2otel:scrape_freshness:seconds` | ⏸ off | staleness by collector |
+| `tailscale2otel:objectstore_backlog:max` | ⏸ off | object-store ingestion backlog |
+| `tailscale:direct_path:byte_fraction` | ⏸ off | fleet direct-path (non-DERP) byte fraction |
+| `tailscale2otel:sli_availability:ratio` | ✅ on | availability SLI (exporter up) — consumed by `SLOAvailabilityFastBurn`/`SLOAvailabilitySlowBurn` |
+| `tailscale2otel:sli_freshness:ratio` | ✅ on | freshness SLI (collection current) — consumed by `SLOFreshnessFastBurn` |
+| `tailscale2otel:sli_delivery:ratio` | ✅ on | delivery SLI (backend accepting) — consumed by `SLODeliveryFastBurn` |
 
 > **Heads-up on recording rules:** Grafana-managed recording rules need the
 > recording-rules feature + a writable Prometheus/Mimir target on your stack;

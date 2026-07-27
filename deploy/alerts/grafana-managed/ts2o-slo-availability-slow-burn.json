@@ -1,0 +1,105 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-slo-availability-slow-burn"
+  },
+  "spec": {
+    "annotations": {
+      "description": "The slower companion to the fast-burn rule: 6x the 99.9% budget burn rate sustained across both a 30m and a 6h window. It catches a persistent low-grade problem \u2014 repeated short restarts, an OOM loop \u2014 that never breaches the fast threshold but still spends the month's budget. Lower severity on purpose: there is time to act.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate",
+      "summary": "Exporter availability is burning its error budget 6x too fast"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(1 - avg_over_time(tailscale2otel:sli_availability:ratio[30m]) > bool 0.006) * (1 - avg_over_time(tailscale2otel:sli_availability:ratio[6h]) > bool 0.006)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "15m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "NoData",
+    "paused": true,
+    "title": "SLO availability slow burn",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

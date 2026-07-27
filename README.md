@@ -23,7 +23,7 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 |---|---|
 | **255** metrics + **15** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
-| **103** shipped rules | **91** alert + **12** recording, Grafana-managed |
+| **117** shipped rules | **97** alert + **20** recording, Grafana-managed |
 | **1** Grafana dashboard | flagship, 10 tabs, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
@@ -208,8 +208,8 @@ receiver auth, object-gap handling, and `auto_configure` are in
   hard requirement** — 12.4 accepts the file with a `200` and renders nothing, and 11.5 rejects it
   with the misleading `Dashboard title cannot be empty`. Push it with `gcx resources push -f`. See
   [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
-- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **91 alert
-  rules and 12 recording rules** (103 total) as `rules.alerting.grafana.app` manifests, one JSON per
+- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **97 alert
+  rules and 20 recording rules** (117 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
   `runbook_url`, and 77 of 78 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and

@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-user-invites-stale"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel",
+      "__panelId__": "215",
+      "description": "The p90 outstanding user invite is more than seven days old. Seven days is a \"nobody is going to accept this\" horizon, not an SLA \u2014 a long-stale invite is usually an access-review and offboarding problem (an invite sent to someone who has since left, or to the wrong address) and should normally be REVOKED rather than chased. Every outstanding invite is a standing grant waiting to be claimed.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#device-and-user-approval",
+      "summary": "User invites have been outstanding for over 7 days"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_user_invites_pending_age_seconds_bucket[6h])))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  604800
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "1h0m0s",
+    "labels": {
+      "domain": "security",
+      "page": "false",
+      "service": "tailscale2otel",
+      "severity": "warning"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "User invites awaiting acceptance",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

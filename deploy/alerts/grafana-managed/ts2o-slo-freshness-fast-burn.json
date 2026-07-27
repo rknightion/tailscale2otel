@@ -1,0 +1,105 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-slo-freshness-fast-burn"
+  },
+  "spec": {
+    "annotations": {
+      "description": "Collectors are failing their scrapes fast enough to burn the 99% freshness budget at 14.4x. The exporter is RUNNING \u2014 this is collection failing, so look at the Tailscale API and at which collector is red rather than at the process. Distinct from availability on purpose: a healthy process that collects nothing is still an outage, and a blended SLO would hide it.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate",
+      "summary": "Collector freshness is burning its error budget 14.4x too fast"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(1 - avg_over_time(tailscale2otel:sli_freshness:ratio[5m]) > bool 0.144) * (1 - avg_over_time(tailscale2otel:sli_freshness:ratio[1h]) > bool 0.144)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "5m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "NoData",
+    "paused": true,
+    "title": "SLO freshness fast burn",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

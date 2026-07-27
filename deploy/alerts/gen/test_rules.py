@@ -315,8 +315,8 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(91, len(alert_rules()))
-        self.assertEqual(12, len(recording_rules()))
+        self.assertEqual(97, len(alert_rules()))
+        self.assertEqual(20, len(recording_rules()))
 
     def test_durations_are_go_style_strings(self):
         # `for` and relativeTimeRange are Go duration STRINGS in this API, not the
@@ -501,6 +501,239 @@ class NewAlertRulesTest(unittest.TestCase):
             with self.subTest(uid=rule["uid"]):
                 self.assertNotIn("tailscale_webhook_duplicates_total",
                                  rules.rule_expr(rule))
+
+
+class PausedRecordingGateTest(unittest.TestCase):
+    """The load-bearing new gate for this wave (#406/#398/#410).
+
+    ``record(...)`` defaults to ``paused=True``. An alert that queries a
+    recorded metric whose recording rule is paused gets NO series at all — and
+    under ``optional`` policy (``noDataState: Ok``) that alert is then
+    silently dead forever while every offline check, including every OTHER
+    test in this file, keeps passing. This is the same class of silent
+    failure as the ``noDataState`` casing trap: nothing local can see it
+    except a test that looks at both sides of the dependency.
+
+    Derived entirely from the catalogue — never a hard-coded uid/metric list,
+    because a hard-coded list is exactly the kind of thing that rots the
+    moment a new alert starts consuming a new recording.
+    """
+
+    def test_every_recording_rule_consumed_by_an_alert_is_not_paused(self):
+        alert_exprs = " ".join(rules.rule_expr(r) for r in alert_rules())
+        for rec in recording_rules():
+            if rec["metric"] in alert_exprs:
+                with self.subTest(metric=rec["metric"], uid=rec["uid"]):
+                    self.assertFalse(
+                        rec["paused"],
+                        "%s (%s) is paused but at least one alert expression queries it. "
+                        "That alert would get NO series at all, and under `optional` "
+                        "policy (noDataState: Ok) it would be silently dead forever while "
+                        "every offline check still passes. Ship this recording rule "
+                        "enabled (paused=False)." % (rec["metric"], rec["uid"]))
+
+
+class NoRawRollupDoubleCountTest(unittest.TestCase):
+    """#406: a recording rule must never ADD the rollup and raw flow-byte
+    counters together.
+
+    ``ts2o-rec-flow-throughput`` combines them with `or` (fall back to the raw
+    counter only when the rollup series is entirely absent) — the correct
+    construction, because a deployment that emits BOTH would have every flow
+    byte counted twice under `+`. `or` picks one series set per label
+    combination; `+` sums both unconditionally.
+    """
+
+    def test_recording_rules_combining_raw_and_rollup_flow_bytes_use_or_not_plus(self):
+        rollup = "tailscale_network_io_rollup_bytes_total"
+        raw = "tailscale_network_io_bytes_total"
+        seen_both = False
+        for rec in recording_rules():
+            expr = rules.rule_expr(rec)
+            if rollup in expr and raw in expr:
+                seen_both = True
+                with self.subTest(uid=rec["uid"]):
+                    parts = expr.split(" or ")
+                    self.assertEqual(
+                        2, len(parts),
+                        "expected exactly one ` or ` splitting the rollup fallback from "
+                        "the raw fallback; got: %r" % expr)
+                    self.assertIn(rollup, parts[0])
+                    self.assertNotIn(raw, parts[0])
+                    self.assertIn(raw, parts[1])
+                    self.assertNotIn(rollup, parts[1])
+        self.assertTrue(seen_both, "no recording rule references both raw and rollup "
+                         "flow-byte counters, so this guard is untested")
+
+
+class PathByteFractionConstructionTest(unittest.TestCase):
+    """The DERP/direct byte-fraction pair share one construction (#406).
+
+    ``_derp_byte_fraction`` was generalised into ``_path_byte_fraction``, and
+    the DERP recording rule's shipped expression must come out byte-identical.
+    Both directions must be unioned via `label_replace(...) or
+    label_replace(...)`, never summed with `rate(in) + rate(out)` — a
+    one-to-one join on that `+` silently drops any node present in only one
+    direction (asymmetric relay traffic).
+    """
+
+    def test_derp_byte_fraction_delegates_to_path_byte_fraction(self):
+        self.assertEqual(rules._derp_byte_fraction(), rules._path_byte_fraction("derp"))
+
+    def test_derp_and_direct_recorded_expressions_use_label_replace_union(self):
+        by_uid = rules.rules_by_uid()
+        for uid, path in (("ts2o-rec-derp-byte-fraction", "derp"),
+                          ("ts2o-rec-direct-byte-fraction", "direct")):
+            with self.subTest(uid=uid):
+                expr = rules.rule_expr(by_uid[uid])
+                self.assertIn("label_replace(", expr)
+                self.assertIn(") or label_replace(", expr)
+                self.assertNotRegex(
+                    expr, r"rate\([^)]*inbound_bytes_total[^)]*\)\s*\+\s*rate\(",
+                    "a one-to-one `+` join silently drops any node present in only one "
+                    "direction (asymmetric relay traffic); the union construction exists "
+                    "precisely to avoid that")
+
+
+class SLOBurnExpressionTest(unittest.TestCase):
+    """#398: the four burn-rate alerts must use a PRODUCT of two `> bool`
+    comparisons, never `and`.
+
+    `a and b` (Prometheus vector matching) returns *a's value* wherever both
+    sides have matching labels, so the alert's effective threshold would then
+    depend on the magnitude of the short-window error rate instead of on both
+    windows simply agreeing that they breached — which defeats the entire
+    point of requiring two windows to suppress a single blip.
+    """
+
+    SLO_UIDS = (
+        "ts2o-slo-availability-fast-burn",
+        "ts2o-slo-availability-slow-burn",
+        "ts2o-slo-freshness-fast-burn",
+        "ts2o-slo-delivery-fast-burn",
+    )
+    SLI_METRICS = (
+        "tailscale2otel:sli_availability:ratio",
+        "tailscale2otel:sli_freshness:ratio",
+        "tailscale2otel:sli_delivery:ratio",
+    )
+
+    def test_burn_expressions_are_a_bool_product_referencing_one_sli_over_two_windows(self):
+        by_uid = rules.rules_by_uid()
+        for uid in self.SLO_UIDS:
+            expr = rules.rule_expr(by_uid[uid])
+            with self.subTest(uid=uid):
+                self.assertEqual(2, expr.count("> bool"), expr)
+                self.assertNotIn(" and ", expr,
+                                 "`and` returns the left operand's VALUE, making the "
+                                 "threshold depend on the error rate's magnitude instead "
+                                 "of on both windows agreeing")
+                referenced = [m for m in self.SLI_METRICS if m in expr]
+                self.assertEqual(1, len(referenced), expr)
+                windows = re.findall(r"avg_over_time\([^\[]+\[(\w+)\]\)", expr)
+                self.assertEqual(2, len(windows), expr)
+                self.assertNotEqual(windows[0], windows[1],
+                                    "the two windows must differ; a burn alert with "
+                                    "identical short/long windows is not multi-window")
+
+
+class SLISeparationTest(unittest.TestCase):
+    """#398: the three SLIs must stay three separate recording rules.
+
+    Blending availability/freshness/delivery into one number makes a backend
+    outage read as an exporter failure — a Grafana Cloud incident would then
+    page whoever owns the tailnet, not whoever owns the OTLP backend. This is
+    the failure #398 exists to prevent.
+    """
+
+    SLI_METRICS = (
+        "tailscale2otel:sli_availability:ratio",
+        "tailscale2otel:sli_freshness:ratio",
+        "tailscale2otel:sli_delivery:ratio",
+    )
+
+    def test_three_slis_are_distinct_recording_rules_with_distinct_expressions(self):
+        by_metric = {r["metric"]: rules.rule_expr(r) for r in recording_rules()
+                     if r["metric"] in self.SLI_METRICS}
+        self.assertEqual(set(self.SLI_METRICS), set(by_metric))
+        self.assertEqual(3, len(set(by_metric.values())),
+                         "the three SLIs must not share an expression: %r" % by_metric)
+
+    def test_delivery_burn_alert_references_only_the_delivery_sli(self):
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-slo-delivery-fast-burn"])
+        self.assertIn("tailscale2otel:sli_delivery:ratio", expr)
+        self.assertNotIn("tailscale2otel:sli_availability:ratio", expr)
+        self.assertNotIn("tailscale2otel:sli_freshness:ratio", expr)
+
+
+class ApprovalWorkflowTest(unittest.TestCase):
+    """#410: unauthorized-device / stale-invite approval alerts."""
+
+    def test_devices_unauthorized_recording_excludes_external_devices(self):
+        # A shared-in device from another tailnet is not yours to approve;
+        # counting it as "awaiting approval" would produce an alert nobody
+        # can action.
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-rec-devices-unauthorized"])
+        self.assertIn('tailscale_external="false"', expr)
+        self.assertIn('tailscale_authorized="false"', expr)
+
+    def test_approval_alerts_are_not_page_tier(self):
+        # #410 explicitly forbids a default page-level severity: an unapproved
+        # device is a queue to work through, not an incident.
+        by_uid = rules.rules_by_uid()
+        for uid in ("ts2o-devices-unauthorized", "ts2o-user-invites-stale"):
+            with self.subTest(uid=uid):
+                self.assertEqual("false", by_uid[uid]["labels"].get("page"))
+
+
+class WaveBNewAlertsTableTest(unittest.TestCase):
+    """The 6 new alert uids exist with the policy the frozen spec declares,
+    and the panel-link split (4 SLO rules with none, 2 approval rules with
+    one) is asserted on BOTH halves so "no panel" stays a recorded decision
+    rather than looking like an omission."""
+
+    NEW_ALERT_POLICIES = {
+        "ts2o-slo-availability-fast-burn": "core",
+        "ts2o-slo-availability-slow-burn": "core",
+        "ts2o-slo-freshness-fast-burn": "core",
+        "ts2o-slo-delivery-fast-burn": "optional",
+        "ts2o-devices-unauthorized": "optional",
+        "ts2o-user-invites-stale": "optional",
+    }
+    NO_PANEL_UIDS = (
+        "ts2o-slo-availability-fast-burn",
+        "ts2o-slo-availability-slow-burn",
+        "ts2o-slo-freshness-fast-burn",
+        "ts2o-slo-delivery-fast-burn",
+    )
+    HAS_PANEL_UIDS = (
+        "ts2o-devices-unauthorized",
+        "ts2o-user-invites-stale",
+    )
+
+    def test_new_uids_exist_with_their_declared_policy(self):
+        by_uid = rules.rules_by_uid()
+        declared = rules.POLICY_BY_UID
+        for uid, policy in self.NEW_ALERT_POLICIES.items():
+            with self.subTest(uid=uid):
+                self.assertIn(uid, by_uid, "rule is missing from the catalogue")
+                self.assertEqual(policy, declared[uid])
+
+    def test_the_four_slo_rules_deliberately_carry_no_panel_link(self):
+        by_uid = rules.rules_by_uid()
+        for uid in self.NO_PANEL_UIDS:
+            with self.subTest(uid=uid):
+                ann = by_uid[uid]["annotations"]
+                self.assertNotIn("__panelId__", ann)
+                self.assertNotIn("__dashboardUid__", ann)
+
+    def test_the_two_approval_rules_carry_a_panel_link(self):
+        by_uid = rules.rules_by_uid()
+        for uid in self.HAS_PANEL_UIDS:
+            with self.subTest(uid=uid):
+                ann = by_uid[uid]["annotations"]
+                self.assertIn("__panelId__", ann)
+                self.assertIn("__dashboardUid__", ann)
 
 
 class ManifestEmitTest(unittest.TestCase):

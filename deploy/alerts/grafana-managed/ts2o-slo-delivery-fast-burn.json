@@ -1,0 +1,105 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-slo-delivery-fast-burn"
+  },
+  "spec": {
+    "annotations": {
+      "description": "THIS IS A BACKEND FAULT, NOT A TAILNET FAULT. The OTLP endpoint is rejecting or timing out exports at 14.4x the 99% budget burn rate. The exporter is healthy and the tailnet is healthy \u2014 nothing is wrong with Tailscale, and this must NOT be routed to tailnet owners. Check the backend's own status, the endpoint URL and the auth credential. Keeping this separate from availability is the whole reason there are three SLIs: a single blended one would report a Grafana Cloud outage as an exporter failure. `optional` policy because export.duration is legitimately absent under the stdout exporter or an idle pipeline.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate",
+      "summary": "OTLP delivery is burning its error budget 14.4x too fast"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(1 - avg_over_time(tailscale2otel:sli_delivery:ratio[5m]) > bool 0.144) * (1 - avg_over_time(tailscale2otel:sli_delivery:ratio[1h]) > bool 0.144)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "5m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "SLO delivery fast burn",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

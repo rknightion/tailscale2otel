@@ -230,6 +230,55 @@ appends `/v1/metrics` and `/v1/logs` itself: a bare gateway URL in `otlp.endpoin
 window. `export-latency-high` is `core` — if the histogram disappears entirely, that is a `NoData`
 alert and means exports stopped, not that they got fast.
 
+## SLO burn rate {#slo-burn-rate}
+
+**Rules:** `ts2o-slo-availability-fast-burn`, `ts2o-slo-availability-slow-burn`,
+`ts2o-slo-freshness-fast-burn`, `ts2o-slo-delivery-fast-burn`
+
+**What it means.** Three separate SLIs, each recorded on its own and never blended:
+**availability** (`tailscale2otel:sli_availability:ratio`, `max(tailscale2otel_up_ratio)`) is the
+exporter process running at all; **freshness** (`tailscale2otel:sli_freshness:ratio`,
+`avg(tailscale2otel_scrape_success_ratio)`) is whether collection is current; **delivery**
+(`tailscale2otel:sli_delivery:ratio`, the export-success ratio) is whether the OTLP backend is
+accepting what the exporter sends. Targets are 99.9% for availability and 99% for freshness and
+delivery. Keeping delivery separate is the reason this section exists: **a firing delivery burn is
+a backend fault, not a tailnet fault.** The exporter is running, the tailnet is fine, and Grafana
+Cloud (or whatever OTLP endpoint is configured) is rejecting or timing out. Do not route it to
+tailnet owners — there is nothing on the tailnet side for them to fix.
+
+**Multi-window burn rate, briefly.** Each alert only fires when BOTH a short window and a long
+window breach the burn threshold at once — a single blip that clears within the short window never
+lights up the long one, so it never fires alone. `ts2o-slo-availability-fast-burn` (5m + 1h at
+14.4x) exhausts a 30-day error budget in about two days if sustained, and is the critical-severity
+tripwire for a fast, real outage. `ts2o-slo-availability-slow-burn` (30m + 6h at 6x) is the slower,
+lower-severity companion that catches a burn too gradual to trip the fast pair. The freshness and
+delivery rules use the same 14.4x/5m+1h fast-burn shape against their own SLI.
+
+**These alerts depend on recording rules that must not be paused.** All four burn-rate alerts query
+the recorded `tailscale2otel:sli_*:ratio` metrics rather than raw series, and those three recording
+rules ship enabled for exactly that reason. If someone pauses `ts2o-rec-sli-availability`,
+`ts2o-rec-sli-freshness` or `ts2o-rec-sli-delivery` in the Grafana UI, the matching burn-rate
+alerts get no series at all to evaluate — not a false green, an absent one — and under `core` policy
+that reads as `NoData`, not as "healthy". Check the recording rule is still enabled before assuming
+a quiet burn-rate alert means a quiet system.
+
+**Legitimate causes.** A deliberate exporter restart or redeploy burning availability budget for a
+few minutes. A backend maintenance window burning delivery budget while the exporter keeps queuing
+and retrying. A single collector failing repeatedly, which drags the freshness SLI down on its own
+while every other collector and the exporter process itself are fine.
+
+**Not legitimate.** A sustained burn with no known restart, deploy, or backend maintenance in
+progress. A delivery burn attributed to "the tailnet" — the delivery SLI is deliberately backend-only
+and cannot be caused by tailnet state.
+
+**First step.** **Exporter up** (availability), **Scrape success by collector** and **Scrape
+staleness** (freshness), and **Export outcome rate** (delivery) on the Exporter Diagnostics tab.
+Start with whichever SLI's alert fired, and for a delivery burn check the OTLP backend's own status
+before touching the exporter or tailnet configuration at all.
+
+**Resolved when.** The fired SLI's recorded ratio is back above its target for both the short and
+the long window the alert reads.
+
 ## Checkpoint health {#checkpoint-health}
 
 **Rules:** `ts2o-checkpoint-persist-errors`, `ts2o-checkpoint-stalled`
@@ -575,6 +624,44 @@ each against who it was meant for and whether routing their traffic is intended.
 
 **Resolved when.** The invite is revoked or reissued without exit-node permission, or it is confirmed
 intentional.
+
+## Device and user approval {#device-and-user-approval}
+
+**Rules:** `ts2o-devices-unauthorized`, `ts2o-user-invites-stale`
+
+**What it means.** `ts2o-devices-unauthorized` fires on a sustained count of devices joined to the
+tailnet but not yet authorized — it consumes the `tailscale:devices_unauthorized:count` recording
+rule, which sums `tailscale_devices_count_ratio` filtered on `tailscale_authorized="false"` **and**
+`tailscale_external="false"`. That second filter is deliberate: **an external, shared-in device from
+another tailnet is not an unauthorized device of yours to approve.** It belongs to someone else's
+admin console. Counting it here would produce an alert nobody on this tailnet can action.
+`ts2o-user-invites-stale` fires on the p90 age of pending user invites crossing 7 days.
+
+**Why the 2-hour `for` on the unauthorized-devices rule.** Every device that joins goes through a
+short window — seconds to minutes — before an admin (or auto-approval) authorizes it. Firing
+immediately would page on every normal join. The 2-hour window reports a device that has been
+*waiting*, not one that merely appeared.
+
+**Why 7 days on invite age, not sooner.** It is a "nobody is going to accept this" horizon, not an
+SLA — most invites are accepted within hours or days. A pending invite still open after a week is
+better treated as an access-review and offboarding question (an invite sent to someone who has since
+left, or who never needed access) than as something to chase; usually the right action is to revoke
+it, not to remind the invitee.
+
+**Legitimate causes.** Device approval genuinely requiring a human, on a tailnet that has device
+approval enabled deliberately (`devices.approve`). Invites outstanding to contractors or infrequent
+users who have not yet logged in.
+
+**Not legitimate.** A large or growing count of internal devices sitting unauthorized with no admin
+action pending. An invite aged well past a week with no plan to revoke or re-send it.
+
+**First step.** **Unauthorized (internal)** on the Security tab for the devices alert; **Pending
+user-invite age (p50 / p90)** for the invites alert. Neither rule is page-tier by design — both ship
+`warning` severity with `page=false`, since neither represents an active outage.
+
+**Resolved when.** The unauthorized-devices count returns to zero (or every remaining device has a
+tracked approval in progress). The pending-invite p90 age drops back under 7 days, or the stale
+invites are revoked.
 
 ## Posture integrations {#posture-integrations}
 

@@ -1606,7 +1606,8 @@
       "prom_name": "tailscale_user_invites_pending_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1957,7 +1958,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
@@ -2116,7 +2118,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
@@ -2439,7 +2442,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
@@ -2449,7 +2453,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
@@ -2527,7 +2532,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {

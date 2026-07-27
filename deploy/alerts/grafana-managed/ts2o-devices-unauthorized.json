@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-devices-unauthorized"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel",
+      "__panelId__": "45",
+      "description": "One or more INTERNAL devices have been sitting unapproved for two hours, so they are joined but cannot carry traffic. EXTERNAL (shared-in) devices are excluded by construction \u2014 the recorded metric filters tailscale_external=\"false\", because a device shared in from another tailnet is not yours to approve and counting it would produce an alert nobody can action. The 2h `for` is what makes this a waiting device rather than one that merely appeared: firing on arrival would page during the normal minutes before an admin gets to it. Reads the tailscale:devices_unauthorized:count recording rule (#406), which ships enabled for that reason.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#device-and-user-approval",
+      "summary": "Devices have been awaiting admin approval for over 2h"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(tailscale:devices_unauthorized:count)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "2h0m0s",
+    "labels": {
+      "domain": "security",
+      "page": "false",
+      "service": "tailscale2otel",
+      "severity": "warning"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "Unauthorized devices awaiting approval",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

@@ -1,0 +1,421 @@
+# promtool unit tests for the #398 SLO burn-rate alerts and the #410
+# approval-workflow alerts (wave B).
+#
+# `promtool check rules` only proves the expressions PARSE. These execute them
+# against synthetic series and assert what actually fires, which is the only
+# way to catch a rule that is syntactically valid and semantically wrong.
+#
+# THE RULE FILE IS GENERATED AND NOT COMMITTED — see health_rules_test.yaml for
+# the two commands. In short:
+#
+#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   promtool test rules deploy/alerts/tests/*.yaml
+#
+# A load-bearing rendering detail for every SLO fixture below: the
+# `tailscale2otel:sli_*:ratio` recordings live in the LAST rule group
+# ("tailscale2otel-recording") in file order, while the burn-rate alerts live
+# in the "tailscale2otel-health" group, which is evaluated EARLIER in the same
+# tick. Prometheus evaluates groups sequentially within one pass, so an alert
+# group sees the recorded metric's value as written by the PREVIOUS tick, not
+# the current one — a fixed ~1-evaluation-interval (1m) lag. None of the
+# scenarios below depend on sub-minute precision, so the lag is irrelevant to
+# the outcomes, but it is why every eval_time below carries a few minutes of
+# slack rather than landing exactly on a threshold boundary.
+rule_files:
+  - ../.generated-prom-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # =====================================================================
+  # SLOAvailabilityFastBurn — 5m + 1h windows, thr 0.0144, for 2m
+  # SLI: tailscale2otel:sli_availability:ratio = max(tailscale2otel_up_ratio)
+  # =====================================================================
+
+  - name: perfectly healthy exporter never fires the availability fast burn
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '1+0x400'
+    alert_rule_test:
+      - eval_time: 350m
+        alertname: SLOAvailabilityFastBurn
+        exp_alerts: []
+
+  # THE key fixture: a single degraded minute, ~5 minutes back. It is old
+  # enough that both the 5m and the 1h avg_over_time windows include it (5m
+  # trivially; 1h by a wide margin), so this isolates the windowing logic
+  # itself rather than window-boundary timing.
+  #
+  # Why the sample is 0.5 rather than a clean 0: the recorded SLI only gets a
+  # new value once per evaluation tick (1m), so the finest "bad" sample this
+  # rule can ever see is one full minute wide. A single FULLY-DOWN minute
+  # already trips the long window too — one bad sample in 60 is 1/60 = 1.667%,
+  # which is already over the 1.44% fast-burn threshold — so a real 0/1 outage
+  # cannot demonstrate "short breaches, long does not" at this granularity. A
+  # single half-availability sample can: 1 bad sample of value 0.5 among 5
+  # gives avg 0.9 (1-avg = 0.10 > 0.0144, breach), but the same sample among
+  # 60 gives avg 0.99167 (1-avg = 0.00833 < 0.0144, no breach). This models a
+  # brief partial-availability blip, which is the realistic shape of the case
+  # this rule exists to reject: a single bad measurement that a human would
+  # correctly call "a blip", not an outage.
+  - name: a brief blip breaches only the short window and must not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '1+0x69 0.5+0x0 1+0x60'
+    alert_rule_test:
+      - eval_time: 75m
+        alertname: SLOAvailabilityFastBurn
+        exp_alerts: []
+
+  # The other side: a sustained full outage breaches BOTH windows immediately
+  # (avg 0 either way => 1-avg = 1 >> 0.0144), and requiring both is not what
+  # suppresses this one — only the `for: 2m` timer does. If a future edit ever
+  # collapsed the AND-both-windows product into a single-window check, this
+  # fixture would still pass; the blip fixture above is what actually catches
+  # that regression.
+  - name: a sustained outage breaches both windows and fires after 2m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '0+0x400'
+    alert_rule_test:
+      # Still inside the 2m `for` (allowing for the ~1m recording lag).
+      - eval_time: 1m
+        alertname: SLOAvailabilityFastBurn
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: SLOAvailabilityFastBurn
+        exp_alerts:
+          # Critical => "worthy" of auto-investigation, so no
+          # skipinvestigation label.
+          - exp_labels:
+              severity: critical
+              service: tailscale2otel
+              domain: observability
+            exp_annotations:
+              summary: "Exporter availability is burning its error budget 14.4x too fast"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+
+  # =====================================================================
+  # SLOAvailabilitySlowBurn — 30m + 6h windows, thr 0.006, for 15m
+  # =====================================================================
+
+  - name: perfectly healthy exporter never fires the availability slow burn
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '1+0x420'
+    alert_rule_test:
+      - eval_time: 400m
+        alertname: SLOAvailabilitySlowBurn
+        exp_alerts: []
+
+  # A sustained LOW-GRADE degradation (99% availability, never fully down —
+  # e.g. a repeated brief-restart loop) rather than a hard outage: constant
+  # 0.99 gives 1-avg = 0.01 > 0.006 in both windows, however the window is
+  # sliced, so this does not depend on precise sample placement the way the
+  # fast-burn blip fixture does.
+  #
+  # The series runs to 420m (7h) specifically so that by eval_time 400m the
+  # full 6h lookback window is populated entirely with degraded samples —
+  # avoiding a partial/empty-window edge case where the long window's average
+  # is computed over less than a full 6h of history and the fixture's
+  # correctness would depend on how much history happened to exist.
+  - name: a sustained low-grade degradation fires the slow burn after 15m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '0.99+0x420'
+    alert_rule_test:
+      # Below the 15m `for`, still pending.
+      - eval_time: 10m
+        alertname: SLOAvailabilitySlowBurn
+        exp_alerts: []
+      - eval_time: 400m
+        alertname: SLOAvailabilitySlowBurn
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Exporter availability is burning its error budget 6x too fast"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+
+  # =====================================================================
+  # SLOFreshnessFastBurn — 5m + 1h windows, thr 0.144, for 5m
+  # SLI: tailscale2otel:sli_freshness:ratio = avg(tailscale2otel_scrape_success_ratio)
+  # =====================================================================
+
+  - name: all ten collectors healthy never fires the freshness fast burn
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c1"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c2"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c3"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c4"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c5"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c6"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c7"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c8"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c9"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c10"}'
+        values: '1+0x600'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOFreshnessFastBurn
+        exp_alerts: []
+
+  # VERIFIED, not assumed: one of ten collectors failing is avg(...) = 0.9, so
+  # 1-avg = 0.10. That is BELOW the 0.144 threshold, so this must NOT fire —
+  # a single flaky collector out of a healthy ten is not (by this rule's own
+  # arithmetic) a 14.4x budget burn. This is the case the task asked to
+  # verify rather than assume; the naive "10% failing surely breaches a 14.4%
+  # threshold" intuition is wrong; both are ratios of the SAME error rate, and
+  # 10% < 14.4%.
+  - name: one of ten collectors failing does NOT breach the 0.144 threshold
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c1"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c2"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c3"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c4"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c5"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c6"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c7"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c8"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c9"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c10"}'
+        values: '0+0x600'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOFreshnessFastBurn
+        exp_alerts: []
+
+  # Two of ten (20% error rate) DOES clear 0.144, and does fire — the
+  # contrast that proves the SLI moves proportionally with collector count
+  # rather than being some other aggregation.
+  - name: two of ten collectors failing breaches 0.144 and fires after 5m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c1"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c2"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c3"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c4"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c5"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c6"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c7"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c8"}'
+        values: '1+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c9"}'
+        values: '0+0x600'
+      - series: 'tailscale2otel_scrape_success_ratio{tailscale_collector="c10"}'
+        values: '0+0x600'
+    alert_rule_test:
+      # Below the 5m `for`, still pending.
+      - eval_time: 2m
+        alertname: SLOFreshnessFastBurn
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: SLOFreshnessFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Collector freshness is burning its error budget 14.4x too fast"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+
+  # =====================================================================
+  # SLODeliveryFastBurn — 5m + 1h windows, thr 0.144, for 5m
+  # SLI: tailscale2otel:sli_delivery:ratio =
+  #   rate(...{outcome="success"}[5m]) / rate(...[5m])
+  # =====================================================================
+
+  - name: a fully healthy backend (all exports succeed) never fires the delivery burn
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_export_duration_seconds_count{outcome="success"}'
+        values: '0+1x600'
+      - series: 'tailscale2otel_export_duration_seconds_count{outcome="failure"}'
+        values: '0+0x600'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLODeliveryFastBurn
+        exp_alerts: []
+
+  # A backend rejecting every export (success rate 0, only failures
+  # accumulating) is the scenario #398 exists to separate from a tailnet or
+  # exporter problem: it is a pure backend fault.
+  - name: a backend rejecting every export fires the delivery burn after 5m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_export_duration_seconds_count{outcome="success"}'
+        values: '0+0x600'
+      - series: 'tailscale2otel_export_duration_seconds_count{outcome="failure"}'
+        values: '0+1x600'
+    alert_rule_test:
+      # Below the 5m `for`, still pending.
+      - eval_time: 2m
+        alertname: SLODeliveryFastBurn
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: SLODeliveryFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "OTLP delivery is burning its error budget 14.4x too fast"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+
+  # =====================================================================
+  # UnauthorizedDevicesAwaitingApproval (#410)
+  # Recording consumed: tailscale:devices_unauthorized:count =
+  #   sum by (tailscale_tailnet) (last_over_time(tailscale_devices_count_ratio{
+  #       tailscale_authorized="false", tailscale_external="false"}[10m]))
+  # Alert: sum(tailscale:devices_unauthorized:count) > 0, for 2h
+  # =====================================================================
+
+  # THE #410 requirement: a shared-in (external) device is not yours to
+  # approve. The recording rule's own filter (tailscale_external="false")
+  # already excludes it, so an external-only unauthorized device must never
+  # reach this alert at all, however long it sits unauthorized.
+  - name: an external unauthorized device is excluded and never fires
+    interval: 1m
+    input_series:
+      - series: 'tailscale_devices_count_ratio{tailscale_authorized="false",tailscale_external="true",tailscale_tailnet="alpha.ts.net"}'
+        values: '1+0x200'
+    alert_rule_test:
+      - eval_time: 150m
+        alertname: UnauthorizedDevicesAwaitingApproval
+        exp_alerts: []
+
+  # An INTERNAL unauthorized device sustained past the 2h `for` fires. The
+  # alert expression is a bare `sum(...)` with no `by` clause, so it
+  # aggregates every label away — including tailscale_tailnet — on purpose:
+  # this is one fleet-wide "something needs approving" statement, not a
+  # per-tailnet one, so exp_labels carries only the rule's own labels.
+  - name: a sustained internal unauthorized device fires after 2h
+    interval: 1m
+    input_series:
+      - series: 'tailscale_devices_count_ratio{tailscale_authorized="false",tailscale_external="false",tailscale_tailnet="alpha.ts.net"}'
+        values: '1+0x200'
+    alert_rule_test:
+      # Below the 2h `for`, still pending.
+      - eval_time: 60m
+        alertname: UnauthorizedDevicesAwaitingApproval
+        exp_alerts: []
+      - eval_time: 150m
+        alertname: UnauthorizedDevicesAwaitingApproval
+        exp_alerts:
+          # domain=security and page explicitly set (page=False, rendered as
+          # the string label "false") => still "worthy" (security, not
+          # hygiene), so no skipinvestigation label — but page IS present,
+          # per #410's explicit requirement that this never defaults to a
+          # page-level severity.
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: security
+              page: "false"
+            exp_annotations:
+              summary: "Devices have been awaiting admin approval for over 2h"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-and-user-approval"
+
+  # =====================================================================
+  # UserInvitesAwaitingAcceptance (#410)
+  # histogram_quantile(0.9, sum by (le) (rate(
+  #   tailscale_user_invites_pending_age_seconds_bucket[6h]))) > 604800, for 1h
+  # =====================================================================
+
+  # Fresh invites: every observation falls inside the first (le=3600s)
+  # bucket, so all cumulative bucket counts are equal. histogram_quantile
+  # interpolates phi=0.9 inside [0, 3600] (the implicit lower bound of the
+  # first bucket is 0), giving p90 = 0.9 * 3600 = 3240s — far under the
+  # 604800s (7d) threshold.
+  - name: freshly-sent invites do not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="3600"}'
+        values: '0+1x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="86400"}'
+        values: '0+1x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="604800"}'
+        values: '0+1x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="1209600"}'
+        values: '0+1x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="+Inf"}'
+        values: '0+1x100'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: UserInvitesAwaitingAcceptance
+        exp_alerts: []
+
+  # Stale invites: NONE fall inside le=604800 (nobody is under 7 days old),
+  # all of them fall inside (604800, 1209600] instead — i.e. every
+  # outstanding invite is between 7 and 14 days old. histogram_quantile
+  # interpolates phi=0.9 inside that bucket: cumulative fraction at 604800 is
+  # 0, at 1209600 is 1.0, so p90 = 604800 + 0.9*(1209600-604800) = 1149120s,
+  # comfortably over the 604800s threshold.
+  - name: invites outstanding for 7 to 14 days fire after 1h
+    interval: 1m
+    input_series:
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="3600"}'
+        values: '0+0x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="86400"}'
+        values: '0+0x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="604800"}'
+        values: '0+0x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="1209600"}'
+        values: '0+1x100'
+      - series: 'tailscale_user_invites_pending_age_seconds_bucket{le="+Inf"}'
+        values: '0+1x100'
+    alert_rule_test:
+      # Below the 1h `for`, still pending.
+      - eval_time: 30m
+        alertname: UserInvitesAwaitingAcceptance
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: UserInvitesAwaitingAcceptance
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: security
+              page: "false"
+            exp_annotations:
+              summary: "User invites have been outstanding for over 7 days"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-and-user-approval"
