@@ -336,6 +336,96 @@ func TestGet_EncodedKeyIsSentAsSigned(t *testing.T) {
 	}
 }
 
+// A reverse-proxied endpoint (e.g. https://gw.example.net/storage/s3) has a
+// base path of its own; overwriting it, as request() once did, sends and
+// signs the wrong path and every request 404s/403s against everything
+// upstream of the proxy prefix.
+func TestAddressing_NonRootEndpointPathStyle(t *testing.T) {
+	srv, got := serve(t, listOnePage, http.StatusOK)
+	c, err := New(Config{
+		Endpoint: srv.URL + "/storage/s3", Region: "eu-west-2", Bucket: "flows",
+		PathStyle: true, Credentials: staticCreds(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.List(context.Background(), "", "", 0); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if got.path != "/storage/s3/flows/" {
+		t.Errorf("list path = %q, want the endpoint's base path preserved ahead of the bucket", got.path)
+	}
+
+	if _, err := c.Get(context.Background(), "flow/2026/07/24/a.ndjson"); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.path != "/storage/s3/flows/flow/2026/07/24/a.ndjson" {
+		t.Errorf("get path = %q, want the base path preserved ahead of bucket and key", got.path)
+	}
+}
+
+// Virtual-host addressing puts the bucket in the hostname, but the endpoint's
+// base path must still be preserved in front of the key.
+func TestAddressing_NonRootEndpointVirtualHost(t *testing.T) {
+	srv, got := serve(t, listOnePage, http.StatusOK)
+	c, err := New(Config{
+		Endpoint: srv.URL + "/storage/s3", Region: "eu-west-2", Bucket: "flows",
+		Credentials: staticCreds(), HTTPClient: dialTo(srv.Listener.Addr().String()),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.Get(context.Background(), "flow/2026/07/24/a.ndjson"); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !strings.HasPrefix(got.host, "flows.") {
+		t.Errorf("Host = %q, want the bucket in the hostname", got.host)
+	}
+	if got.path != "/storage/s3/flow/2026/07/24/a.ndjson" {
+		t.Errorf("path = %q, want the base path preserved with the bucket kept out of the path", got.path)
+	}
+}
+
+// Combines escaping with a non-root, trailing-slash-terminated base path: a
+// trailing slash on the configured endpoint must not produce a doubled "/"
+// once the bucket and key are appended, unicode/percent/plus/space must all
+// be escaped, and "/" separators inside the key must stay unescaped.
+func TestGet_EncodedKeyIsSentAsSigned_NonRootEndpoint(t *testing.T) {
+	srv, got := serve(t, "", http.StatusOK)
+	c, err := New(Config{
+		Endpoint: srv.URL + "/storage/s3/", Region: "eu-west-2", Bucket: "flows",
+		PathStyle: true, Credentials: staticCreds(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key := "flow/2026/07/24/100% ünïcödé+file.ndjson"
+	rc, err := c.Get(context.Background(), key)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	rc.Close()
+
+	want := "/storage/s3/flows/" + key
+	if got.path != want {
+		t.Errorf("decoded path = %q, want %q", got.path, want)
+	}
+	if strings.Contains(got.requestURI, "//") {
+		t.Errorf("request line = %q, contains a doubled slash", got.requestURI)
+	}
+	if strings.Contains(got.requestURI, "%2520") || strings.Contains(got.requestURI, "%2525") {
+		t.Errorf("request line = %q; the path was encoded twice", got.requestURI)
+	}
+	// "/" separators must never be escaped, so the escaped request line has
+	// exactly as many literal "/" characters as the decoded path.
+	if wantSlashes, gotSlashes := strings.Count(want, "/"), strings.Count(got.requestURI, "/"); gotSlashes != wantSlashes {
+		t.Errorf("request line = %q has %d '/' separators, want %d matching the decoded path", got.requestURI, gotSlashes, wantSlashes)
+	}
+}
+
 func TestNew_RejectsIncompleteConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name string

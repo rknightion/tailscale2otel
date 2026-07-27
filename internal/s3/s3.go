@@ -48,7 +48,10 @@ type Config struct {
 	// Endpoint is the service URL, e.g. https://s3.eu-west-2.amazonaws.com or a
 	// MinIO/Ceph address. Required: there is no region-to-endpoint guessing here,
 	// because the non-AWS implementations this is meant to support would all be
-	// guessed wrong.
+	// guessed wrong. A base path on the endpoint (e.g.
+	// https://gw.example.net/storage/s3, reaching S3-compatible storage through
+	// a reverse-proxy prefix) is preserved ahead of the bucket/key on every
+	// request — see requestPath.
 	Endpoint string
 	Region   string
 	Bucket   string
@@ -73,6 +76,12 @@ type Client struct {
 	signer signer
 	hc     *http.Client
 	now    func() time.Time
+	// basePath is base.Path with any trailing "/" trimmed — the endpoint's own
+	// path prefix (e.g. "/storage/s3" for a reverse-proxied endpoint), normalized
+	// once so requestPath never has to re-derive it. A root endpoint's base.Path
+	// is "" or "/", both of which trim to "", so basePath contributes nothing
+	// and requestPath's result is unchanged from before this field existed.
+	basePath string
 }
 
 // New validates cfg and returns a client for one bucket.
@@ -106,7 +115,14 @@ func New(cfg Config) (*Client, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Client{cfg: cfg, base: base, signer: signer{region: cfg.Region}, hc: hc, now: now}, nil
+	return &Client{
+		cfg:      cfg,
+		base:     base,
+		signer:   signer{region: cfg.Region},
+		hc:       hc,
+		now:      now,
+		basePath: strings.TrimRight(base.Path, "/"),
+	}, nil
 }
 
 func loopbackHost(host string) bool {
@@ -237,12 +253,10 @@ func (c *Client) do(ctx context.Context, path, rawQuery string) ([]byte, error) 
 // request builds and signs one GET.
 func (c *Client) request(ctx context.Context, path, rawQuery string) (*http.Request, error) {
 	u := *c.base
-	if c.cfg.PathStyle {
-		u.Path = "/" + c.cfg.Bucket + path
-	} else {
+	if !c.cfg.PathStyle {
 		u.Host = c.cfg.Bucket + "." + u.Host
-		u.Path = path
 	}
+	u.Path = c.requestPath(path)
 	// The signature covers the ENCODED path, and Go re-derives RawPath from Path
 	// only when they differ, so setting both keeps what is signed identical to
 	// what is sent for keys containing characters that need escaping.
@@ -259,6 +273,26 @@ func (c *Client) request(ctx context.Context, path, rawQuery string) (*http.Requ
 	}
 	c.signer.sign(req, cred, c.now())
 	return req, nil
+}
+
+// requestPath is the ONLY place this package decides the full URL path for a
+// request: the endpoint's own base path (basePath — e.g. "/storage/s3" for a
+// reverse-proxied endpoint), the bucket when addressing path-style (virtual-host
+// addressing puts the bucket in the host instead, via u.Host above), and the
+// caller-supplied path (always "/" for a list, or "/"+key for a get). A root
+// endpoint has an empty basePath, so its result is byte-identical to what
+// request() computed before this method existed.
+//
+// This is also why the signed path and the sent path cannot diverge: request()
+// assigns this result straight to u.Path (with u.RawPath kept in lockstep just
+// below), and that same *url.URL becomes req.URL — which is exactly what
+// sign() reads via req.URL.EscapedPath(). There is no second copy of this join
+// anywhere for signing to disagree with.
+func (c *Client) requestPath(path string) string {
+	if !c.cfg.PathStyle {
+		return c.basePath + path
+	}
+	return c.basePath + "/" + c.cfg.Bucket + path
 }
 
 // snippet trims an error body to something loggable. S3 returns XML error
