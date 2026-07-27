@@ -35,6 +35,21 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
+      # The root module gets the same tidy-diff as the tool modules (#437): three
+      # of its requirements were marked `// indirect` while being imported
+      # directly, which nothing caught. `go mod tidy` is a pure function of the
+      # source, so any diff is drift. It does NOT move versions — the OTEL
+      # lockstep pins in CLAUDE.md are unaffected by it.
+      - name: go mod tidy leaves no diff
+        run: |
+          cp go.mod /tmp/go.mod.before
+          cp go.sum /tmp/go.sum.before
+          go mod tidy
+          if ! diff -u /tmp/go.mod.before go.mod || ! diff -u /tmp/go.sum.before go.sum; then
+            echo "::error::the root module is not tidy — run 'go mod tidy' and commit the result"
+            exit 1
+          fi
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
@@ -61,6 +76,75 @@ jobs:
         with:
           version: v2.12.2
           working-directory: ${{ matrix.module }}
+
+  # Per-module verification for the three CI-only tool modules.
+  #
+  # There is no go.work, ON PURPOSE — each tool module is a separate go.mod so it
+  # never affects the main module's `go build ./...`. The consequence is that
+  # NOTHING run from the repository root reaches them: build-test's `go vet ./...`
+  # and `go test -race ./...`, and the govulncheck job's `govulncheck ./...`, all
+  # stop at the root module boundary. Before this job the tool modules were only
+  # golangci-lint'ed, plus incidentally compiled by whichever job happened to
+  # `go build -o /tmp/...` one of them.
+  #
+  # The root module is deliberately NOT in this matrix: it already has dedicated
+  # build-test and govulncheck jobs, and duplicating it here would double the
+  # slowest legs in CI for no extra coverage. internal/ci's
+  # TestEveryGoModuleIsCoveredByCIVerification enforces that every OTHER module
+  # appears here, so a fifth module cannot be added and silently go unverified.
+  module-verify:
+    name: verify (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ["tools/configcheck", "tools/metricscatalog", "tools/apidrift"]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: install govulncheck (pinned)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+
+      - name: go build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      # -race here too: these modules parse untrusted-ish inputs (a spec, a config)
+      # and the cost is trivial at this size.
+      - name: go test -race
+        working-directory: ${{ matrix.module }}
+        run: go test -race ./...
+
+      # Renovate bumps a dependency in the root module and a tool module's go.mod
+      # keeps the old requirement, or a `replace ../..` goes stale after a module
+      # major bump. `go mod tidy` is a pure function of the source, so any diff it
+      # produces is drift.
+      - name: go mod tidy leaves no diff
+        working-directory: ${{ matrix.module }}
+        run: |
+          cp go.mod /tmp/go.mod.before
+          cp go.sum /tmp/go.sum.before
+          go mod tidy
+          if ! diff -u /tmp/go.mod.before go.mod || ! diff -u /tmp/go.sum.before go.sum; then
+            echo "::error::${{ matrix.module }} is not tidy — run 'go mod tidy' in that module and commit the result"
+            exit 1
+          fi
+
+      - name: govulncheck
+        working-directory: ${{ matrix.module }}
+        run: govulncheck ./...
 
   docs-catalog:
     name: docs/metrics.md is generated from the code catalog
@@ -297,7 +381,7 @@ jobs:
     name: ci-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [build-test, lint, docs-catalog, govulncheck, goreleaser-snapshot, docker-build]
+    needs: [build-test, lint, module-verify, docs-catalog, govulncheck, goreleaser-snapshot, docker-build]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

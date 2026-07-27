@@ -288,3 +288,199 @@ func TestSchemaDrivenDecodeTestsRideAGatedLeg(t *testing.T) {
 	t.Errorf("ci-success does not require %q, so the only API-drift lane the README calls gating "+
 		"would not actually block a merge", leg)
 }
+
+// goModules discovers every Go module in the repository by walking for go.mod,
+// so the assertions below cannot go stale when a module is added.
+func goModules(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	root := "../.."
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			switch info.Name() {
+			case ".git", "node_modules", "dist", ".capture":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info.Name() != "go.mod" {
+			return nil
+		}
+		rel, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk for go.mod: %v", err)
+	}
+	if len(out) < 2 {
+		t.Fatalf("found %d modules (%v); the repository has a root module plus tool modules, so "+
+			"this discovery is broken and every assertion built on it is vacuous", len(out), out)
+	}
+	return out
+}
+
+// matrixModules returns the module list of a matrix job in ci.yml.
+func matrixModules(t *testing.T, jobName string) []string {
+	t.Helper()
+	doc := readWorkflow(t, "ci.yml")
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no jobs mapping")
+	}
+	job, ok := jobs[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("ci.yml has no %q job", jobName)
+	}
+	strategy, ok := job["strategy"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no strategy block", jobName)
+	}
+	matrix, ok := strategy["matrix"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no matrix block", jobName)
+	}
+	raw, ok := matrix["module"].([]any)
+	if !ok {
+		t.Fatalf("%s matrix has no module list", jobName)
+	}
+	var out []string
+	for _, m := range raw {
+		s, ok := m.(string)
+		if !ok {
+			t.Fatalf("%s matrix module entry is %T, want a string", jobName, m)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// There is no go.work, so `go build ./...` / `go vet ./...` / `go test -race ./...`
+// / `govulncheck ./...` run from the repository root CANNOT reach a nested module —
+// each tool module is a separate go.mod by design, precisely so it never affects
+// the main module's build. The consequence is that a tool module is only verified
+// by whatever explicitly names it, and adding a module verifies nothing by default.
+//
+// This asserts every discovered module is named by a CI matrix that verifies it, so
+// a fifth module cannot be added and silently go unchecked (#437).
+func TestEveryGoModuleIsCoveredByCIVerification(t *testing.T) {
+	modules := goModules(t)
+
+	for _, job := range []string{"lint", "module-verify"} {
+		t.Run(job, func(t *testing.T) {
+			covered := map[string]bool{}
+			for _, m := range matrixModules(t, job) {
+				covered[m] = true
+			}
+			for _, m := range modules {
+				// The root module is spelled "." in a matrix, and has its own
+				// dedicated build/test/vuln jobs besides.
+				name := m
+				if name == "." && job == "module-verify" {
+					continue
+				}
+				if !covered[name] {
+					t.Errorf("module %q is not in ci.yml's %q matrix. Without a go.work, nothing "+
+						"run from the repo root reaches it, so it is verified only by what names "+
+						"it explicitly.", name, job)
+				}
+			}
+		})
+	}
+}
+
+// The per-module verification job has to actually verify something. A matrix that
+// names every module but only builds it would satisfy the test above while
+// checking almost nothing, so the steps themselves are asserted.
+func TestModuleVerifyRunsTheFullPerModuleGate(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, ok := jobs["module-verify"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no module-verify job")
+	}
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatal("module-verify has no steps list")
+	}
+	var script strings.Builder
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if run, ok := step["run"].(string); ok {
+			script.WriteString(run)
+			script.WriteString("\n")
+		}
+	}
+	// Match each command as an INVOKED line, not merely as a substring of the
+	// concatenated script. A substring match is satisfied by the command's name
+	// appearing inside an error message — which is exactly how a first version of
+	// this test passed after the `go mod tidy` invocation had been removed, since
+	// the remediation message still said "run 'go mod tidy'".
+	invoked := func(cmd string) bool {
+		for _, line := range strings.Split(script.String(), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), cmd) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, want := range []struct {
+		cmd string
+		why string
+	}{
+		{"go build ./...", "a module that does not compile is not verified"},
+		{"go vet ./...", "vet catches the mistakes the compiler accepts"},
+		{"go test -race ./...", "a module with no test leg has no behavioral guarantee at all"},
+		{"go mod tidy", "Renovate bumps a dependency in one module and leaves the nested ones stale; " +
+			"a tidy-diff is what catches it, and tools/configcheck/go.sum really had drifted"},
+		{"govulncheck ./...", "the root govulncheck cannot reach a nested module without a go.work"},
+	} {
+		if !invoked(want.cmd) {
+			t.Errorf("no step in module-verify invokes %q — %s", want.cmd, want.why)
+		}
+	}
+}
+
+// The root module needs the same tidy-diff as the tool modules. It is not in the
+// module-verify matrix (it has dedicated jobs), so the check has to be asserted
+// where it actually lives — and it was missing: three root requirements were
+// marked `// indirect` while being imported directly, and nothing caught it (#437).
+func TestRootModuleTidyIsChecked(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, ok := jobs["build-test"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no build-test job")
+	}
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatal("build-test has no steps list")
+	}
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		run, ok := step["run"].(string)
+		if !ok {
+			continue
+		}
+		for _, line := range strings.Split(run, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "go mod tidy") {
+				return
+			}
+		}
+	}
+	t.Error("build-test never invokes `go mod tidy`. The root module is excluded from the " +
+		"module-verify matrix, so without a tidy leg here nothing checks it — which is how three " +
+		"directly-imported requirements sat marked `// indirect`.")
+}

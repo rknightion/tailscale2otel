@@ -14,29 +14,40 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 )
 
 func main() {
-	paths := os.Args[1:]
+	os.Exit(check(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// check validates every path and returns the process exit code: 0 when all load,
+// 1 when any fails, 2 for a usage error.
+//
+// The body lives here rather than in main so it can be tested. Without this the
+// module's `go test` leg would pass vacuously — a gate that cannot fail (#437).
+// Writers are injected for the same reason.
+func check(paths []string, stdout, stderr io.Writer) int {
 	if len(paths) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: configcheck <config.yaml> [config2.yaml ...]")
-		os.Exit(2)
+		fmt.Fprintln(stderr, "usage: configcheck <config.yaml> [config2.yaml ...]")
+		return 2
 	}
 
 	failed := false
 	for _, p := range paths {
 		if _, err := config.Load(p); err != nil {
-			fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", p, err)
+			fmt.Fprintf(stderr, "FAIL %s: %v\n", p, err)
 			failed = true
 			continue
 		}
-		fmt.Printf("OK   %s\n", p)
+		fmt.Fprintf(stdout, "OK   %s\n", p)
 	}
 
 	if failed {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

@@ -150,11 +150,23 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 
 ## CI gates (a PR must pass all of these)
 
-`go vet` · `go build` · `go test -race` · `golangci-lint` (root + **three** tool modules:
-`configcheck`, `metricscatalog`, `apidrift`) · `docs/metrics.md` in sync (`metricscatalog -check`) ·
-`govulncheck` · GoReleaser snapshot build · Docker image build. The Helm workflow additionally gates:
-`helm lint`/`template`, `values.schema.json` drift, `helm-docs` drift, and `configcheck` on both
-`config.example.yaml` and the chart-rendered config. Match these locally before claiming work is done.
+Root module: `go vet` · `go build` · `go test -race` · `golangci-lint` · `govulncheck` ·
+`docs/metrics.md` in sync (`metricscatalog -check`) · GoReleaser snapshot build · Docker image build.
+The Helm workflow additionally gates: `helm lint`/`template`, `values.schema.json` drift, `helm-docs`
+drift, and `configcheck` on both `config.example.yaml` and the chart-rendered config.
+
+> **`go test -race ./...` at the root is NOT "the test suite" — there is no `go.work`, so it stops at
+> the root module boundary.** Each tool module is a separate `go.mod` on purpose (so it never affects
+> the main module's build), which means nothing run from the repo root reaches it. The
+> **`module-verify`** matrix job in `ci.yml` covers the three tool modules with `go build` · `go vet` ·
+> `go test -race` · **`go mod tidy` diff** · `govulncheck`, and is in `ci-success.needs`; the separate
+> `lint` matrix runs `golangci-lint` across all four. Before that job existed the tool modules were
+> lint-only, and `tools/configcheck/go.sum` had silently drifted 82 lines out of tidy (#437).
+>
+> **Run `scripts/verify-modules.sh` locally** — it mirrors those legs for every module (discovered by
+> walking for `go.mod`, so a new module is covered the day it is added) and SKIPs loudly rather than
+> silently passing when `golangci-lint`/`govulncheck` are absent. `internal/ci/workflowcontract_test.go`
+> fails if a module is missing from either CI matrix, or if `module-verify` stops running a leg.
 
 > **API drift CI** (see README "API drift CI" + `internal/oas`, `internal/tsapi/contract`,
 > `tools/apidrift`): the PR-time schema-driven **decode tests** and `oas` classifier tests run inside
