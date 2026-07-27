@@ -686,8 +686,29 @@ func TestPythonGeneratorTestsRunInCI(t *testing.T) {
 		t.Error("dashboards-drift never runs `python3 -m unittest discover`, so the generator " +
 			"unit tests execute nowhere and only pass by being run by hand")
 	}
-	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen"} {
-		if !strings.Contains(body, dir) {
+	// Narrow to the unittest STEP before checking which directories it covers.
+	// Searching the whole job for "scripts" matched `scripts/regen-generated.sh`
+	// on an unrelated step, so the assertion passed whether or not scripts/ was
+	// in the discover loop.
+	var unittestStep string
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if run, _ := step["run"].(string); strings.Contains(run, "unittest discover") {
+			unittestStep = run
+			break
+		}
+	}
+	if unittestStep == "" {
+		t.Fatal("no step in dashboards-drift runs `unittest discover`")
+	}
+	// scripts/ carries the release-completeness gate (#442), whose own logic
+	// would otherwise run for the first time during a release — the one moment
+	// it is being relied upon.
+	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen", "scripts"} {
+		if !strings.Contains(unittestStep, dir) {
 			t.Errorf("dashboards-drift does not run the unit tests in %s", dir)
 		}
 	}
@@ -698,7 +719,7 @@ func TestPythonGeneratorTestsRunInCI(t *testing.T) {
 // contain tests — `unittest discover` over a directory with no test module exits 0 and
 // reports success, which would make the CI step a no-op that reads as coverage.
 func TestPythonGeneratorDirectoriesContainTests(t *testing.T) {
-	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen"} {
+	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen", "scripts"} {
 		matches, err := filepath.Glob(filepath.Join(repoDir, dir, "test_*.py"))
 		if err != nil {
 			t.Fatalf("globbing %s: %v", dir, err)
@@ -1319,5 +1340,66 @@ func TestOnlyOneJobPerLaneCanWriteIssues(t *testing.T) {
 			t.Errorf("%s grants issues:write to more than one job (%s); concurrent writers to "+
 				"one lane label race on the tracking issue", wf, strings.Join(writers, ", "))
 		}
+	}
+}
+
+// TestReleaseCompletenessIsVerified (#442).
+//
+// The release is created visible immediately and three independent jobs then
+// attach assets to it in parallel with no ordering. Nothing read the result
+// back, so a failed uploader left a permanently incomplete public release behind
+// a green workflow — twice (#174, #176).
+//
+// The specific thing worth guarding is the `if:` condition. A verification job
+// that inherits the default `success()` runs only when every uploader already
+// worked, which is exactly when it has nothing to find. It must run on
+// `always()` and gate on release_created instead.
+func TestReleaseCompletenessIsVerified(t *testing.T) {
+	const wf = "release-please.yml"
+	doc := readWorkflow(t, wf)
+	job, ok := jobsOf(t, doc, wf)["verify-release"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no verify-release job; nothing checks that a published release "+
+			"actually carries its assets", wf)
+	}
+
+	cond, _ := job["if"].(string)
+	if !strings.Contains(cond, "always()") {
+		t.Errorf("verify-release has `if: %s`. Without always() it inherits success() and "+
+			"runs only when every uploader already succeeded — it would never see the "+
+			"failure it exists to catch.", cond)
+	}
+	if !strings.Contains(cond, "release_created") {
+		t.Errorf("verify-release has `if: %s`, which does not gate on release_created; it "+
+			"would run on every push to main and fail against a release that was never cut",
+			cond)
+	}
+
+	needs, _ := job["needs"].([]any)
+	got := map[string]bool{}
+	for _, n := range needs {
+		if s, ok := n.(string); ok {
+			got[s] = true
+		}
+	}
+	for _, want := range []string{"release-please", "publish", "binaries"} {
+		if !got[want] {
+			t.Errorf("verify-release does not need %q, so it can read the release back "+
+				"before that job has finished uploading and report a false incompleteness",
+				want)
+		}
+	}
+
+	var script strings.Builder
+	steps, _ := job["steps"].([]any)
+	for _, raw := range steps {
+		if step, ok := raw.(map[string]any); ok {
+			if run, _ := step["run"].(string); run != "" {
+				script.WriteString(run + "\n")
+			}
+		}
+	}
+	if !strings.Contains(script.String(), "check_release_assets.py") {
+		t.Error("verify-release does not invoke scripts/check_release_assets.py")
 	}
 }

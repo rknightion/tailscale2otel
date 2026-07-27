@@ -211,10 +211,15 @@ jobs:
       # executed if someone happened to invoke them by hand (#481). They run before
       # the drift check on purpose — a generator logic regression should fail on its
       # own terms with a named assertion, not as an opaque 1 MB artifact diff.
+      #
+      # scripts/ joined them for the release-completeness gate (#442): that gate
+      # only ever executes during a release, so without a PR-time test its own
+      # logic would be exercised for the first time at the exact moment it is
+      # relied upon.
       - name: generator unit tests
         run: |
           set -euo pipefail
-          for d in deploy/grafana/gen deploy/alerts/gen; do
+          for d in deploy/grafana/gen deploy/alerts/gen scripts; do
             echo "::group::$d"
             python3 -m unittest discover -s "$d" -t "$d" -v
             echo "::endgroup::"

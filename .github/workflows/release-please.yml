@@ -130,3 +130,54 @@ jobs:
       # the reusable's checkout does not guarantee tags are fetched, and a guard that silently
       # no-ops is worse than no guard. Same value already passed as release-tag above.
       pre-cmd: "bash scripts/wait-for-module-proxy.sh '${{ needs.release-please.outputs.tag_name }}' && go install github.com/anchore/syft/cmd/syft@v1.18.1 && go install github.com/google/go-licenses@v1.6.0 && bash scripts/notices.sh"
+
+  # Read the published release back and say whether it is actually complete (#442).
+  #
+  # `publish` and `binaries` have no ordering between them and neither reads its
+  # own result, so an actor that fails outright leaves a permanently incomplete
+  # release behind a green workflow. That happened twice: v2.0.0 shipped 4 of 17
+  # assets after the binaries job produced nothing (#174), and v2.0.1 and v1.0.0
+  # each silently lost SHA256SUMS.intoto.jsonl to a fail-soft provenance step
+  # (#176). Nothing noticed either at the time.
+  #
+  # `if: always()` with an explicit release_created guard, NOT the default
+  # success(): a failed uploader is precisely when the completeness of the
+  # release most needs reporting, and a gate that only runs when everything
+  # already worked verifies nothing.
+  #
+  # This cannot make the release atomic — GitHub has no all-or-nothing publish
+  # and the uploading jobs live in another repository — but it converts silent
+  # incompleteness into a failed run.
+  verify-release:
+    timeout-minutes: 10
+    needs: [release-please, publish, binaries]
+    if: always() && needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      # Uploads settle asynchronously after their jobs report success, so poll
+      # rather than reading once. Bounded: five attempts, ~2.5 minutes total,
+      # then report whatever is actually there.
+      - name: Verify the published asset manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5; do
+            if python3 scripts/check_release_assets.py --version "$VERSION" --tag "$TAG"; then
+              exit 0
+            fi
+            [ "$attempt" -eq 5 ] && break
+            echo "attempt ${attempt}/5: release not complete yet, waiting 30s" >&2
+            sleep 30
+          done
+          echo "::error::Release ${TAG} is incomplete. Re-run the failed publishing job, or" \
+               "delete and re-cut the release — do NOT leave it published in this state."
+          exit 1
