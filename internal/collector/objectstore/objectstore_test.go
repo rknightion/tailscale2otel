@@ -277,6 +277,47 @@ func TestCollect_IngestsObjectsThroughTheSharedProcessor(t *testing.T) {
 	}
 }
 
+// The metric is tailscale2otel.ingest.size, whose other emitters (stream,
+// webhook) mean decoded/decompressed payload bytes. OnIngest must report the
+// SAME meaning for objectstore, not the compressed bytes actually read off the
+// wire (that figure is already covered, unchanged, by the object-store-specific
+// tailscale2otel.objectstore.bytes counter). See #450.
+func TestCollect_OnIngestReportsDecompressedNotWireBytes(t *testing.T) {
+	var gotSource, gotSignal string
+	var gotBytes, calls int
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.OnIngest = func(source, signal string, records, bytes int) {
+			calls++
+			gotSource, gotSignal, gotBytes = source, signal, bytes
+		}
+	})
+	at := now.Add(-10 * time.Minute)
+	// Repeating one record compresses well, so the decompressed and compressed
+	// sizes provably differ -- proof this test would fail if OnIngest reverted
+	// to reporting the wire/compressed count.
+	plain := strings.Repeat(record("n1", at)+"\n", 200)
+	compressed := gzipBytes(t, plain)
+	if len(compressed) >= len(plain) {
+		t.Fatalf("fixture does not compress (compressed=%d, plain=%d bytes); the test needs the two sizes to differ", len(compressed), len(plain))
+	}
+	h.store.put(keyAt(at, ".json.gz"), compressed)
+
+	h.collect(t)
+
+	if calls != 1 {
+		t.Fatalf("OnIngest calls = %d, want 1", calls)
+	}
+	if gotSource != semconv.IngestSourceObjectStore {
+		t.Errorf("source = %q, want %q", gotSource, semconv.IngestSourceObjectStore)
+	}
+	if gotSignal != semconv.IngestSignalFlow {
+		t.Errorf("signal = %q, want %q", gotSignal, semconv.IngestSignalFlow)
+	}
+	if gotBytes != len(plain) {
+		t.Errorf("OnIngest bytes = %d, want the decompressed size %d (compressed wire size was %d)", gotBytes, len(plain), len(compressed))
+	}
+}
+
 func TestCollect_ReportsAcceptedFreshnessAfterProcessorHandoff(t *testing.T) {
 	var got []ingest.AcceptedEvent
 	var h *harness

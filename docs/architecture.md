@@ -237,8 +237,9 @@ full catalog):
   `tailscale2otel.api.duration` — a per-request latency histogram (with trace exemplars when
   `tracing.enabled`).
 - **Export-cost & ingest volume (C8):** `tailscale2otel.export.datapoints` / `export.log_records`
-  (the DPM/log-cost proxy) and `tailscale2otel.ingest.records` / `ingest.size` (per poll/stream/webhook
-  path), plus `tailscale2otel.series.by_group`.
+  (the DPM/log-cost proxy) and `tailscale2otel.ingest.records` / `ingest.size` (per
+  poll/stream/webhook/objectstore path; `ingest.size` counts decoded payload bytes and the poll path
+  emits none), plus `tailscale2otel.series.by_group`.
 - **Health (C9):** `tailscale2otel.config.warnings` / `config.valid` (runtime view of
   `Validate()`/`Warnings()`), the standard `process.uptime` / `process.cpu.time`, and checkpoint health
   (`checkpoint.disk.size`, `checkpoint.persist.age`). The dedup failsafe exposes

@@ -439,14 +439,16 @@ var (
 
 // Ingestion-volume descriptors. ingest.records counts records accepted at each
 // ingestion-path boundary (post intra-source overlap de-dup for poll; as-received
-// for stream/webhook). ingest.bytes is the decompressed request-body size and is
-// emitted for the receiver paths only (poll has no wire body to measure).
+// for stream/webhook/objectstore). ingest.bytes is the decompressed/decoded
+// payload size and is emitted for stream, webhook, and objectstore only (poll has
+// no wire body to measure); objectstore's figure is the decompressed object size,
+// not the compressed bytes it actually read off the bucket (#450).
 var (
 	DocIngestRecords = metricdoc.Metric{
 		Name:        MetricIngestRecords,
 		Unit:        semconv.UnitRecords,
 		Instrument:  metricdoc.Counter,
-		Description: "Records accepted per ingestion path and signal type. `source`=poll|stream|webhook, `signal`=flow|audit|webhook. The unified cross-path ingestion-volume view (the per-path receivers also expose domain counters).",
+		Description: "Records accepted per ingestion path and signal type. `source`=poll|stream|webhook|objectstore, `signal`=flow|audit|webhook. The unified cross-path ingestion-volume view (the per-path receivers also expose domain counters).",
 		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
 		Group:       GroupSelfObs,
 	}
@@ -454,7 +456,7 @@ var (
 		Name:        MetricIngestBytes,
 		Unit:        semconv.UnitBytes,
 		Instrument:  metricdoc.Counter,
-		Description: "Decompressed request-body bytes received per ingestion path. Emitted for the stream and webhook receivers only (`source`=stream|webhook); the poll path has no wire body to measure. Note: ingress bytes do not directly drive Grafana Cloud cost — see export.datapoints/export.log_records for that.",
+		Description: "Decompressed/decoded payload bytes received per ingestion path, by `source`=stream|webhook|objectstore; the poll path has no wire body to measure and emits none. For objectstore this is the decompressed object size (matching stream/webhook's meaning), NOT the compressed bytes actually read from the bucket — see tailscale2otel.objectstore.bytes for that. Note: ingress bytes do not directly drive Grafana Cloud cost — see export.datapoints/export.log_records for that.",
 		Attributes:  []string{semconv.AttrIngestSource},
 		Group:       GroupSelfObs,
 	}

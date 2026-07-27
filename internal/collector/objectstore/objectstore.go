@@ -452,7 +452,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Gauge(docBacklog.Name, docBacklog.Unit, docBacklog.Description,
 		float64(len(candidates)-durableCandidates), telemetry.Attrs{})
 	if c.opts.OnIngest != nil && records > 0 {
-		c.opts.OnIngest(semconv.IngestSourceObjectStore, c.signal.Signal(), records, int(fetched))
+		// bytes is the decompressed/decoded payload size, matching what the
+		// stream and webhook receivers mean by tailscale2otel.ingest.size — NOT
+		// the compressed wire bytes (`fetched`), which stay reported separately,
+		// unchanged, by tailscale2otel.objectstore.bytes. See #450.
+		c.opts.OnIngest(semconv.IngestSourceObjectStore, c.signal.Signal(), records, int(decoded))
 	}
 
 	if newest.After(cursor) {

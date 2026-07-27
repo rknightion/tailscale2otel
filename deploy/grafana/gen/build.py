@@ -1239,7 +1239,7 @@ def tab_events():
         (panel("Ingest records/s by source+signal", "timeseries",
                [prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI, legend="{{source}}/{{signal}}")],
                unit="cps", custom=ts_custom(), options=ts_opts()), 12, 7),
-        (panel("Ingest wire bytes/s by source", "timeseries",
+        (panel("Ingest decoded bytes/s by source", "timeseries",
                [prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI, legend="{{source}}")],
                unit="Bps", custom=ts_custom(), options=ts_opts()), 12, 7),
     ]

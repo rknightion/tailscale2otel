@@ -273,14 +273,14 @@ func TestCollect_LimitAccountingUsesActualCompressedBytes(t *testing.T) {
 	at := now.Add(-10 * time.Minute)
 	raw := record("wire-count", at) + "\n"
 	compressed := gzipBytes(t, raw)
-	var gotBytes int
+	var gotIngestBytes int
 	h := newHarness(t, func(o *objectstore.Options) {
 		o.MaxObjectDecompressedBytes = int64(len(raw))
 		o.MaxObjectRecords = 1
 		o.MaxCycleDecompressedBytes = int64(len(raw))
 		o.MaxCycleRecords = 1
 		o.OnIngest = func(_, _ string, _ int, bytes int) {
-			gotBytes = bytes
+			gotIngestBytes = bytes
 		}
 	})
 	key := officialKeyAt(at, ".json.gz")
@@ -289,11 +289,16 @@ func TestCollect_LimitAccountingUsesActualCompressedBytes(t *testing.T) {
 
 	h.collect(t)
 
-	if gotBytes != len(compressed) {
-		t.Fatalf("OnIngest compressed bytes = %d, want actual GET bytes %d", gotBytes, len(compressed))
-	}
+	// tailscale2otel.objectstore.bytes counts actual compressed wire bytes read
+	// from the GET, never the (deliberately wrong) advisory listing size.
 	if got := metricTotal(h.rec, "tailscale2otel.objectstore.bytes"); got != float64(len(compressed)) {
 		t.Fatalf("compressed bytes metric = %v, want actual GET bytes %d", got, len(compressed))
+	}
+	// OnIngest's bytes mean decoded/decompressed payload size (see
+	// TestCollect_OnIngestReportsDecompressedNotWireBytes) — not the compressed
+	// wire size asserted above, and not the wrong advisory listing size either.
+	if gotIngestBytes != len(raw) {
+		t.Fatalf("OnIngest bytes = %d, want the decompressed size %d", gotIngestBytes, len(raw))
 	}
 }
 
