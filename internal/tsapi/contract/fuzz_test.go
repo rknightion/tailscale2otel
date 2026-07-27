@@ -83,6 +83,19 @@ func TestFuzz_SchemaSynthDecodes(t *testing.T) {
 
 // TestFuzz_EdgeVariants checks that empty, null, and unknown-key payloads do
 // not cause decode errors.
+//
+// The first four bodies are the hand-written ancestor of the boundary matrix
+// (boundary_test.go, #433), which now derives the same shapes from each
+// operation's own schema for ALL consumed operations rather than this one. They
+// stay because a concrete, readable case at the exact operation the quirks were
+// found on is worth more than the lines it costs, and because a regression here
+// names listTailnetDevices directly.
+//
+// The FIFTH body is not covered by the matrix and must not be deleted: empty-string
+// timestamps on an external/shared device (#48). The matrix keeps a valid RFC3339
+// value in every date-time field on purpose — an empty timestamp is real for THIS
+// operation but is not something upstream does generally, so asserting it
+// everywhere would assert wire behavior that does not exist.
 func TestFuzz_EdgeVariants(t *testing.T) {
 	op, _ := contract.ByID("listTailnetDevices")
 	for _, body := range []string{

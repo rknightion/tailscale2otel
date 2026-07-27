@@ -165,16 +165,6 @@ func (c *Client) Devices(ctx context.Context) ([]tsclient.Device, error) {
 	return c.ts.Devices().List(ctx)
 }
 
-// Users lists all users in the tailnet.
-func (c *Client) Users(ctx context.Context) ([]tsclient.User, error) {
-	return c.ts.Users().List(ctx, nil, nil)
-}
-
-// Webhooks lists configured webhook endpoints.
-func (c *Client) Webhooks(ctx context.Context) ([]tsclient.Webhook, error) {
-	return c.ts.Webhooks().List(ctx)
-}
-
 // Contacts returns the tailnet's account/support/security contacts.
 func (c *Client) Contacts(ctx context.Context) (*tsclient.Contacts, error) {
 	return c.ts.Contacts().Get(ctx)

@@ -508,3 +508,41 @@ func TestCollectWindow_AcceptedObserverSurvivesCrossSourceSuppression(t *testing
 		t.Fatalf("accepted observer calls = %d, want 1", len(got))
 	}
 }
+
+// The boundary matrix (#433) proves the DECODER accepts a null or empty response
+// body. This proves what happens next: the collector emits nothing at all, rather
+// than a phantom zero-valued point or log record, and still advances the
+// high-water mark so the window is not re-fetched forever.
+//
+// A zero-valued point here would be worse than no point: it is indistinguishable
+// on a dashboard from "the tailnet genuinely had no audit events", while also
+// creating series for label combinations the tailnet never produced.
+func TestCollectWindow_EmptyAndNullResponseEmitNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		resp audit.ConfigurationResponse
+	}{
+		{"nil logs (what the real API returns for a quiet window)", audit.ConfigurationResponse{}},
+		{"empty logs slice", audit.ConfigurationResponse{Logs: []audit.Event{}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			c := auditlogs.New(&fakeAPI{resp: tc.resp}, audit.NewProcessor(), 0, 0, nil)
+
+			hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
+			if err != nil {
+				t.Fatalf("CollectWindow: %v", err)
+			}
+			if !hwm.Equal(to) {
+				t.Fatalf("high-water mark = %v, want %v — an empty window must still advance, or "+
+					"it is re-fetched forever", hwm, to)
+			}
+			if pts := rec.MetricPoints(audit.MetricAuditEvents); len(pts) != 0 {
+				t.Errorf("%s emitted %d point(s), want 0: %+v", audit.MetricAuditEvents, len(pts), pts)
+			}
+			if logs := rec.LogRecords(); len(logs) != 0 {
+				t.Errorf("emitted %d log record(s), want 0: %+v", len(logs), logs)
+			}
+		})
+	}
+}

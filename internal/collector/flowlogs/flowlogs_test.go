@@ -763,3 +763,53 @@ func TestAvailabilityUnknownOnCancellation(t *testing.T) {
 		t.Fatal("StateUnknown must not be Actionable")
 	}
 }
+
+// The boundary matrix (#433) proves the DECODER accepts a null or empty response
+// body. This proves what happens next: the collector emits nothing at all, rather
+// than a phantom zero-valued point, and still advances the high-water mark so the
+// window is not re-fetched forever.
+//
+// A zero-valued point here would be worse than no point. Flow-log metrics are
+// per-pair counters, so a phantom point would mint a series for a src/dst pair
+// that never sent a byte, and top-N rollup decisions are made on exactly those
+// series.
+func TestCollectWindow_EmptyAndNullResponseEmitNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		resp flowlog.NetworkResponse
+	}{
+		{"nil logs (what the real API returns for a quiet window)", flowlog.NetworkResponse{}},
+		{"empty logs slice", flowlog.NetworkResponse{Logs: []flowlog.FlowLog{}}},
+		{"a log with no traffic at all", flowlog.NetworkResponse{Logs: []flowlog.FlowLog{{
+			NodeID: "n-laptop",
+			Start:  time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC),
+			End:    time.Date(2026, 6, 2, 12, 1, 0, 0, time.UTC),
+		}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &fakeAPI{resp: tc.resp}
+			c := New(a, newProcessor(), 0, 0, nil, nil)
+			rec := telemetrytest.New()
+
+			from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+			to := from.Add(time.Minute)
+
+			hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
+			if err != nil {
+				t.Fatalf("CollectWindow: %v", err)
+			}
+			if !hwm.Equal(to) {
+				t.Fatalf("high-water mark = %v, want %v — an empty window must still advance, or "+
+					"it is re-fetched forever", hwm, to)
+			}
+			for _, metric := range []string{flowlog.MetricIO, flowlog.MetricPackets, flowlog.MetricFlows} {
+				if pts := rec.MetricPoints(metric); len(pts) != 0 {
+					t.Errorf("%s emitted %d point(s), want 0: %+v", metric, len(pts), pts)
+				}
+			}
+			if logs := rec.LogRecords(); len(logs) != 0 {
+				t.Errorf("emitted %d log record(s), want 0: %+v", len(logs), logs)
+			}
+		})
+	}
+}
