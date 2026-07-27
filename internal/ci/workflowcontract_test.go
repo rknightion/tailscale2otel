@@ -543,3 +543,40 @@ func TestGeneratedGrafanaArtifactsAreDriftGated(t *testing.T) {
 	}
 	t.Errorf("ci-success does not require %q, so the drift gate would report without blocking", gate)
 }
+
+// promtool parses every PromQL expression in the Prometheus-format rule file,
+// which nothing in Go does — the reference tests in internal/catalog check that
+// metric NAMES exist, not that the expressions are valid PromQL. It cannot check
+// the Grafana-managed file (promtool does not understand that schema), which is
+// why that one has a structural test in internal/catalog instead (#438).
+func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, ok := jobs["dashboards-drift"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no dashboards-drift job")
+	}
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatal("dashboards-drift has no steps list")
+	}
+	var script strings.Builder
+	for _, raw := range steps {
+		if step, ok := raw.(map[string]any); ok {
+			if run, ok := step["run"].(string); ok {
+				script.WriteString(run)
+				script.WriteString("\n")
+			}
+		}
+	}
+	body := script.String()
+	if !strings.Contains(body, "promtool check rules") {
+		t.Error("dashboards-drift never runs `promtool check rules`, so no PromQL expression in " +
+			"deploy/alerts/tailscale2otel.rules.yaml is ever parsed")
+	}
+	// The tarball is verified against the release's own published sums rather than
+	// a checksum pasted here, which would silently rot on the next version bump.
+	if !strings.Contains(body, "sha256sums.txt") {
+		t.Error("the promtool download is not verified against the release's sha256sums.txt")
+	}
+}

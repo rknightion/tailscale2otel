@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
 )
 
@@ -235,4 +237,220 @@ func itoa(i int) string {
 		i /= 10
 	}
 	return string(digits)
+}
+
+// Every panel's datasource must be a variable the dashboard actually declares.
+// A typo'd or removed variable renders the panel against Grafana's default
+// datasource — or nothing — with no error, the same silent-wrong-output failure
+// as an unknown metric name (#438).
+//
+// "-- Grafana --" is the built-in pseudo-datasource used by annotation queries and
+// is legitimately not a declared variable.
+func TestFlagshipDashboardDatasourceRefsAreDeclared(t *testing.T) {
+	b, err := os.ReadFile(dashboardPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("the generated dashboard is not valid JSON: %v", err)
+	}
+
+	declared := map[string]bool{}
+	refs := map[string]int{}
+	var walk func(node any, inVariables bool)
+	walk = func(node any, inVariables bool) {
+		switch v := node.(type) {
+		case map[string]any:
+			if ds, ok := v["datasource"].(map[string]any); ok {
+				if name, ok := ds["name"].(string); ok {
+					refs[name]++
+				}
+			}
+			// A dashboard's variable list declares each one by name; the v2 schema
+			// nests them under "variables", the classic schema under "templating".
+			if name, ok := v["name"].(string); ok && inVariables {
+				declared[name] = true
+			}
+			for k, child := range v {
+				walk(child, inVariables || k == "variables" || k == "templating")
+			}
+		case []any:
+			for _, child := range v {
+				walk(child, inVariables)
+			}
+		}
+	}
+	walk(doc, false)
+
+	if len(refs) == 0 {
+		t.Fatal("the dashboard references no datasources at all; this extraction is broken and " +
+			"the assertion below would be vacuous")
+	}
+	if len(declared) == 0 {
+		t.Fatal("no dashboard variables were discovered; the assertion below would reject everything")
+	}
+
+	for ref, count := range refs {
+		if ref == "-- Grafana --" {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(ref, "${"), "}")
+		if name == ref {
+			t.Errorf("datasource %q (%d panel(s)) is a literal, not a ${variable}: the dashboard "+
+				"would be pinned to one stack's datasource UID and unusable anywhere else", ref, count)
+			continue
+		}
+		if !declared[name] {
+			t.Errorf("datasource variable %q (%d panel(s)) is referenced but never declared. Those "+
+				"panels fall back to Grafana's default datasource silently.", ref, count)
+		}
+	}
+}
+
+// The README states rule counts, and prose counts drift the moment a rule is
+// added — exactly how it came to claim 79 Grafana-managed rules against a
+// generated file holding 85 (#438). Derive them from the files instead.
+func TestReadmeRuleCountsMatchTheShippedFiles(t *testing.T) {
+	grafana := countRules(t, grafanaRules)
+	prom := countRules(t, promRules)
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(readme)
+
+	for _, want := range []struct {
+		count int
+		what  string
+	}{
+		{grafana, "Grafana-managed rules"},
+		{prom, "Prometheus rules"},
+		{grafana + prom, "total shipped rules"},
+	} {
+		if !strings.Contains(body, itoa(want.count)) {
+			t.Errorf("README never states %d, the actual number of %s. A count stated in prose "+
+				"drifts the moment a rule is added, so it must be the real figure.",
+				want.count, want.what)
+		}
+	}
+}
+
+// countRules totals the rules across every group in a provisioning file. Both the
+// Grafana-managed and Prometheus formats nest rules the same way (`groups[].rules[]`).
+func countRules(t *testing.T, path string) int {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc struct {
+		Groups []struct {
+			Rules []any `yaml:"rules"`
+		} `yaml:"groups"`
+	}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	total := 0
+	for _, g := range doc.Groups {
+		total += len(g.Rules)
+	}
+	if total == 0 {
+		t.Fatalf("%s parsed to zero rules; the format changed and every count here is vacuous", path)
+	}
+	return total
+}
+
+// Structural validation of the Grafana-managed provisioning file. promtool cannot
+// check it — it does not understand Grafana's schema — so nothing validated its
+// shape at all, and a generator change that dropped a required field would import
+// as a broken or silently-paused rule (#438).
+//
+// Only fields whose absence breaks provisioning or makes a rule useless are
+// required, so ordinary rule authoring does not trip this.
+func TestGrafanaRulesAreStructurallyValid(t *testing.T) {
+	b, err := os.ReadFile(grafanaRules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		APIVersion int `yaml:"apiVersion"`
+		Groups     []struct {
+			Name     string `yaml:"name"`
+			Folder   string `yaml:"folder"`
+			Interval string `yaml:"interval"`
+			Rules    []struct {
+				Title       string            `yaml:"title"`
+				UID         string            `yaml:"uid"`
+				Condition   string            `yaml:"condition"`
+				Data        []any             `yaml:"data"`
+				For         string            `yaml:"for"`
+				Labels      map[string]string `yaml:"labels"`
+				Annotations map[string]string `yaml:"annotations"`
+				// Record marks a RECORDING rule, which computes a series instead of
+				// alerting. Those carry no condition and no summary by design, so
+				// requiring either of a recording rule reports twelve defects that
+				// are not there — which is what a first version of this test did.
+				Record map[string]string `yaml:"record"`
+			} `yaml:"rules"`
+		} `yaml:"groups"`
+	}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("parse %s: %v", grafanaRules, err)
+	}
+
+	if doc.APIVersion != 1 {
+		t.Errorf("apiVersion = %d, want 1 — Grafana rejects a provisioning file it cannot version",
+			doc.APIVersion)
+	}
+	if len(doc.Groups) == 0 {
+		t.Fatal("no rule groups parsed; every assertion below would be vacuous")
+	}
+
+	uids := map[string]string{}
+	titles := map[string]bool{}
+	for _, g := range doc.Groups {
+		if g.Name == "" || g.Folder == "" || g.Interval == "" {
+			t.Errorf("group %+v is missing name, folder or interval — provisioning needs all three",
+				struct{ Name, Folder, Interval string }{g.Name, g.Folder, g.Interval})
+		}
+		if len(g.Rules) == 0 {
+			t.Errorf("group %q has no rules", g.Name)
+		}
+		for _, r := range g.Rules {
+			recording := len(r.Record) > 0
+			switch {
+			case r.Title == "":
+				t.Errorf("group %q has a rule with no title", g.Name)
+				continue
+			case r.UID == "":
+				t.Errorf("rule %q has no uid; provisioning keys updates off it, so an absent uid "+
+					"recreates the rule (and loses its silences) on every apply", r.Title)
+			case len(r.Data) == 0:
+				t.Errorf("rule %q has no data queries, so it references nothing", r.Title)
+			case recording && r.Record["metric"] == "":
+				t.Errorf("recording rule %q names no target metric", r.Title)
+			case recording && r.Record["from"] == "":
+				t.Errorf("recording rule %q does not say which query refId to record from", r.Title)
+			case !recording && r.Condition == "":
+				t.Errorf("alert rule %q has no condition, so it can never fire", r.Title)
+			}
+			if prev, dup := uids[r.UID]; dup && r.UID != "" {
+				t.Errorf("uid %q is used by both %q and %q; the second silently overwrites the first "+
+					"on provisioning", r.UID, prev, r.Title)
+			}
+			uids[r.UID] = r.Title
+			if titles[r.Title] {
+				t.Errorf("rule title %q appears twice; alert notifications become ambiguous", r.Title)
+			}
+			titles[r.Title] = true
+			// A summary is what a responder reads first; an ALERT without one pages
+			// someone with nothing but its title. Recording rules page nobody.
+			if !recording && r.Annotations["summary"] == "" {
+				t.Errorf("alert rule %q has no summary annotation", r.Title)
+			}
+		}
+	}
 }

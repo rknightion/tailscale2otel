@@ -23,7 +23,7 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 |---|---|
 | **186** metrics + **13** log-event types | across **15** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
-| **89** shipped alert rules | 79 Grafana-managed + 10 Prometheus |
+| **95** shipped alert rules | 85 Grafana-managed + 10 Prometheus |
 | **5** Grafana dashboards | 1 flagship 10-tab + 4 legacy-schema |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
@@ -207,7 +207,7 @@ receiver auth, object-gap handling, and `auto_configure` are in
   13+), with dynamic rendering so a section only appears when its data is present — plus 4 standalone
   legacy-schema dashboards for older stacks. See
   [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
-- **Alerts** — [`deploy/alerts/`](./deploy/alerts/) ships 79 Grafana-managed rules and 10 Prometheus
+- **Alerts** — [`deploy/alerts/`](./deploy/alerts/) ships 85 Grafana-managed rules and 10 Prometheus
   rules. See [Alerts](https://m7kni.io/tailscale2otel/alerts/).
 - **Admin status page** — on by default at `:9091`. Liveness/readiness probes at `/healthz` and
   `/readyz` (never auth-gated), a live status page at `/`, and the same snapshot at

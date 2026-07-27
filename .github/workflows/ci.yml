@@ -201,6 +201,34 @@ jobs:
             exit 1
           fi
 
+      # promtool parses every PromQL expression and validates the rule structure,
+      # which no Go-side check does: the reference tests in internal/catalog check
+      # that the metric NAMES exist, not that the expressions are syntactically
+      # valid PromQL. Only the Prometheus-format file is checkable this way —
+      # promtool does not understand Grafana's provisioning schema.
+      # promtool cannot be `go install`ed — the prometheus module carries replace
+      # directives, which go install refuses — so it comes from the pinned release
+      # tarball, verified against that release's own published sha256sums.txt
+      # rather than a checksum copied into this file (one that drifts on the next
+      # version bump is worse than none, because it gets deleted rather than
+      # updated).
+      - name: install promtool (pinned)
+        env:
+          PROM_VERSION: 3.7.3
+        run: |
+          set -euo pipefail
+          base="https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}"
+          archive="prometheus-${PROM_VERSION}.linux-amd64.tar.gz"
+          curl -fsSL -o "/tmp/${archive}" "${base}/${archive}"
+          curl -fsSL -o /tmp/sha256sums.txt "${base}/sha256sums.txt"
+          (cd /tmp && sha256sum --check --ignore-missing sha256sums.txt)
+          tar -xzf "/tmp/${archive}" -C /tmp
+          sudo install -m 0755 "/tmp/prometheus-${PROM_VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
+          promtool --version
+
+      - name: promtool check rules
+        run: promtool check rules deploy/alerts/tailscale2otel.rules.yaml
+
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
