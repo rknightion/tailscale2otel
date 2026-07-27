@@ -52,8 +52,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| operational | 203 | 193 | 56 | 8 | 6 | 0 |
-| self_obs | 67 | 65 | 27 | 8 | 0 | 2 |
+| operational | 203 | 193 | 56 | 11 | 6 | 0 |
+| self_obs | 67 | 65 | 27 | 9 | 0 | 2 |
 
 ## Operational signals
 
@@ -215,7 +215,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.stream.decode_errors` | metric | `tailscale_stream_decode_errors_total` | visualized |  |
 | `tailscale.stream.inflight` | metric | `tailscale_stream_inflight` | visualized |  |
 | `tailscale.stream.records` | metric | `tailscale_stream_records_total` | visualized |  |
-| `tailscale.stream.rejected` | metric | `tailscale_stream_rejected_total` | visualized, alertable |  |
+| `tailscale.stream.rejected` | metric | `tailscale_stream_rejected_total` | visualized, alertable, recorded |  |
 | `tailscale.stream.request.duration` | metric | `tailscale_stream_request_duration_seconds` | visualized, alertable |  |
 | `tailscale.stream.skipped` | metric | `tailscale_stream_skipped_total` | visualized, alertable |  |
 | `tailscale.subnet_routes.advertised` | metric | `tailscale_subnet_routes_advertised` | visualized |  |
@@ -233,7 +233,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.webhook.duplicates` | metric | `tailscale_webhook_duplicates_total` | visualized |  |
 | `tailscale.webhook.events` | metric | `tailscale_webhook_events_total` | visualized, alertable |  |
 | `tailscale.webhook.inflight` | metric | `tailscale_webhook_inflight` | visualized |  |
-| `tailscale.webhook.rejected` | metric | `tailscale_webhook_rejected_total` | visualized, alertable |  |
+| `tailscale.webhook.rejected` | metric | `tailscale_webhook_rejected_total` | visualized, alertable, recorded |  |
 | `tailscale.webhook.request.duration` | metric | `tailscale_webhook_request_duration_seconds` | visualized |  |
 | `tailscale.webhook.schema_drift` | metric | `tailscale_webhook_schema_drift_total` | visualized, alertable |  |
 | `tailscale.webhook_endpoint.age` | metric | `tailscale_webhook_endpoint_age_seconds` | visualized |  |
@@ -261,7 +261,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.objectstore.requests` | metric | `tailscale2otel_objectstore_requests_total` | visualized |  |
 | `tailscale2otel.objectstore.retries` | metric | `tailscale2otel_objectstore_retries_total` | visualized |  |
 | `tailscale2otel.objectstore.scan.truncated` | metric | `tailscale2otel_objectstore_scan_truncated_ratio` | visualized |  |
-| `tailscale2otel.objectstore.skipped` | metric | `tailscale2otel_objectstore_skipped_total` | visualized, alertable |  |
+| `tailscale2otel.objectstore.skipped` | metric | `tailscale2otel_objectstore_skipped_total` | visualized, alertable, recorded |  |
 
 ## Self-observability signals
 
@@ -297,7 +297,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.ingest.capture.delay` | metric | `tailscale2otel_ingest_capture_delay_seconds` | visualized |  |
 | `tailscale2otel.ingest.event.age` | metric | `tailscale2otel_ingest_event_age_seconds` | visualized |  |
 | `tailscale2otel.ingest.last_event_timestamp` | metric | `tailscale2otel_ingest_last_event_timestamp_seconds` | visualized, alertable, recorded |  |
-| `tailscale2otel.ingest.records` | metric | `tailscale2otel_ingest_records_total` | visualized |  |
+| `tailscale2otel.ingest.records` | metric | `tailscale2otel_ingest_records_total` | visualized, recorded |  |
 | `tailscale2otel.ingest.size` | metric | `tailscale2otel_ingest_size_bytes_total` | visualized |  |
 | `tailscale2otel.ingest.timestamp_skew` | metric | `tailscale2otel_ingest_timestamp_skew_total` | visualized |  |
 | `tailscale2otel.ingress_wal.completion.markers` | metric | `tailscale2otel_ingress_wal_completion_markers_ratio` | visualized |  |

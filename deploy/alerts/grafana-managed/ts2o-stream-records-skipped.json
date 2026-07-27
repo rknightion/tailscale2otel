@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "376",
+      "__panelId__": "377",
       "description": "Records were extracted from an otherwise-valid request body and then never routed to a processor. `unclassified` means the record matched neither the flow nor the audit shape \u2014 usually a sender pointed at the wrong log type, or Tailscale changed a payload. `unwrap_drop` means a non-object value (a scalar or null HEC \"event\") was dropped while unwrapping the envelope. Either way the request succeeded and the sender saw no error, so this rule is the only thing that reports the loss. Compare against accepted volume on \"Stream records accepted vs skipped/s\".",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
       "summary": "Stream receiver is discarding {{ $labels.reason }} records"

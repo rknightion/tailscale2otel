@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "333",
+      "__panelId__": "334",
       "description": "tailscale2otel_config_warnings_ratio > 0 \u2014 the loaded config produced advisory warnings (e.g. API-key auth, poll+stream overlap). Review startup logs / the Warnings() output.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health",
       "summary": "tailscale2otel has configuration warnings"

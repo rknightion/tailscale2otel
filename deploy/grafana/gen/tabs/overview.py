@@ -163,27 +163,39 @@ def tab_overview():
                thresholds=thr([(None, "green"), (1, "yellow"), (3, "red")]),
                options=stat_opts(color="background"),
                desc="ACL auto-approver entries for exit-node routes. Review whether automatic exit-node approval is intended."), 4, 5),
+        # #395: this row is gated on has_acl_risk (acl collector), but this panel's
+        # metric comes from the devices collector. Zero-filling here would render a
+        # healthy-looking "0" when devices is absent rather than never checked.
         (panel("Unapproved subnet routes", "stat",
-               [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_subnet_routes_unapproved", WIN_SLOW)},
+               [prom_t("max(%(e)s)" % {"e": lot("tailscale_subnet_routes_unapproved", WIN_SLOW)},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
+               novalue="No subnet-route data — needs the devices collector "
+                       "(collectors.devices) and a control plane that reports approved routes.",
                desc="Subnet routes advertised but not yet approved by an admin."), 4, 5),
+        # #395: same gating mismatch as above — devices collector, acl-gated row.
         (panel("Untagged devices", "stat",
-               [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_devices_untagged_ratio")},
+               [prom_t("max(%(e)s)" % {"e": lot("tailscale_devices_untagged_ratio")},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
                options=stat_opts(color="background"),
+               novalue="No device-tag data — needs the devices collector (collectors.devices) "
+                       "and a control plane that reports device tags.",
                desc="Devices not associated with any ACL tag — harder to audit and apply granular policies to."), 4, 5),
+        # #395: same gating mismatch — device-invite data comes from the devices
+        # collector, not acl.
         (panel("Pending exit-node shares", "stat",
-               [prom_t('sum(%(e)s) or vector(0)' % {
+               [prom_t('sum(%(e)s)' % {
                    "e": lot('tailscale_device_invites_count_ratio{tailscale_device_invite_accepted="false",tailscale_device_invite_allow_exit_node="true"}', WIN_SLOW)},
                        instant=True)],
                unit="short",
                thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
+               novalue="No device-invite data — needs the devices collector "
+                       "(collectors.devices.collect_device_invites).",
                desc="Pending device share invitations that grant exit-node access."), 4, 5),
         (panel("SSH wildcard enabled", "stat",
                [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_acl_ssh_wildcard_ratio", WIN_SLOW)},

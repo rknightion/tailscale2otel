@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "351",
+      "__panelId__": "352",
       "description": "discovered.newest.age is how fresh the EXPORT's own writes are, independent of whether anything was ingested \u2014 objects skipped as already-ingested still count, so a caught-up feed keeps reporting a small age. Over an hour means Tailscale has stopped writing, or the configured prefix/credentials no longer see what it writes. The expression folds the -1 sentinel (nothing timestamped was listed at all) to a day of staleness on purpose: -1 is NOT an age, and a naive threshold would exclude the very case where discovery has stopped entirely.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion",
       "summary": "No recently-written object has been discovered in the bucket"

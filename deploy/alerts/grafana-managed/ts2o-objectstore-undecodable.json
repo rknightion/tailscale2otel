@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "360",
+      "__panelId__": "361",
       "description": "objectstore.skipped{reason=\"undecodable_object\"} counts whole objects that decoded ZERO records while at least one row failed. That is the signature of an export whose framing is not newline-delimited records, so ANY non-zero value means a broken FEED, not corrupt data \u2014 everything in the affected objects is being discarded. Reading subtlety: for a wholly-failed object the row-local decode_error/semantic_invalid reasons are deliberately NOT emitted, so this shows as ONE undecodable_object rather than N decode_error; the count understates the volume lost. Ships ENABLED \u2014 the object-store path is off by default, so this is inert unless you configured it, and if you did, this is the one object-store fault that is never acceptable. Check the export's format and compression against the configured decoder.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion",
       "summary": "An object-store object decoded no records at all"

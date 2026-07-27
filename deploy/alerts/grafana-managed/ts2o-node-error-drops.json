@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "292",
+      "__panelId__": "293",
       "description": "Sustained data-plane drops for a reason that is NOT policy. ACL drops are excluded from this rule deliberately \u2014 a packet dropped by the ACL is the filter working, and folding it in here would keep the alert permanently firing on any tailnet with a real policy. `error` is tailscaled failing to process a packet, `unknown_protocol` is traffic it will not carry, and `other` is a reason this exporter does not recognise (a tailscaled upgrade can introduce one). Requires the node-metrics scraper; absent and inert without it. See \"Error & malformed drops by reason\", and \"Drop share by reason\" for the proportion against offered packets.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#node-client-health",
       "summary": "tailscaled is dropping {{ $labels.tailscale_drop_reason }} packets"

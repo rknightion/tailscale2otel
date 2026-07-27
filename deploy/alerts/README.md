@@ -79,7 +79,7 @@ Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
 `infra` / `observability`); rules not worthy of automatic investigation
 (non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
 so IRM routing / auto-investigation stays focused. The generated set currently
-has **97 alert rules + 20 recording rules** across five groups (`-health`,
+has **97 alert rules + 23 recording rules** across five groups (`-health`,
 `-security`, `-integrations`, `-network`, `-recording`); the tables below are an
 illustrative guide — `gen/build_rules.py` is the source of truth.
 
@@ -289,6 +289,9 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `tailscale2otel:sli_availability:ratio` | ✅ on | availability SLI (exporter up) — consumed by `SLOAvailabilityFastBurn`/`SLOAvailabilitySlowBurn` |
 | `tailscale2otel:sli_freshness:ratio` | ✅ on | freshness SLI (collection current) — consumed by `SLOFreshnessFastBurn` |
 | `tailscale2otel:sli_delivery:ratio` | ✅ on | delivery SLI (backend accepting) — consumed by `SLODeliveryFastBurn` |
+| `tailscale2otel:ingest_records:rate5m` | ⏸ off | accepted records/s by source, signal **and tailnet** — the cross-source comparison (poll vs HEC vs webhook vs object store) |
+| `tailscale2otel:ingest_rejected:rate5m` | ⏸ off | rejections/s unified across the three ingestion paths, which use three differently-named metrics |
+| `tailscale2otel:ingest_freshness:by_tailnet` | ⏸ off | seconds since the newest accepted event per source/signal/tailnet — the per-tailnet companion to the fleet-wide freshness rule |
 
 > **Heads-up on recording rules:** Grafana-managed recording rules need the
 > recording-rules feature + a writable Prometheus/Mimir target on your stack;

@@ -316,7 +316,7 @@ class RuleShapeTest(unittest.TestCase):
 
     def test_rule_counts_are_as_documented(self):
         self.assertEqual(97, len(alert_rules()))
-        self.assertEqual(20, len(recording_rules()))
+        self.assertEqual(23, len(recording_rules()))
 
     def test_durations_are_go_style_strings(self):
         # `for` and relativeTimeRange are Go duration STRINGS in this API, not the

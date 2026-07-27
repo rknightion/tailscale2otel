@@ -84,8 +84,8 @@ def tab_cardinality():
         (panel("Series limit", "stat",
                [prom_t("max(tailscale2otel_series_limit)", instant=True)],
                unit="short", options=stat_opts(),
-               novalue="No per-metric series cap reported — cardinality.metric_limit is unset "
-                       "(unlimited), or exporter self-observability is off.",
+               novalue="No per-metric series cap reported — needs cardinality.metric_limit set "
+                       "(unset means unlimited) and exporter self-observability.",
                desc="Configured per-metric series limit (cardinality.metric_limit). 0 means unlimited."), 6, 5),
         (panel("Overflowing now", "stat",
                [prom_t("sum(tailscale2otel_series_overflowing_ratio) or vector(0)", instant=True)],

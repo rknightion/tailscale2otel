@@ -275,6 +275,25 @@ def tab_events():
         (panel("Ingest decoded bytes/s by source", "timeseries",
                [prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI, legend="{{source}}")],
                unit="Bps", custom=ts_custom(), options=ts_opts()), 12, 7),
+        # The three ingestion paths count rejections under three differently-named
+        # metrics, so until now they could not be read on one axis against the
+        # accepted volume directly above. The label_replace + `or` union is what
+        # puts them on one footing; `+` would be a one-to-one join that silently
+        # drops any source present in only one operand, which is the normal case
+        # here because each receiver is independently optional.
+        (panel("Rejected/s by ingestion source", "timeseries",
+               [prom_t('sum by (source) ('
+                       'label_replace(rate(tailscale_stream_rejected_total[%(w)s]), "source", "stream", "", "") or '
+                       'label_replace(rate(tailscale_webhook_rejected_total[%(w)s]), "source", "webhook", "", "") or '
+                       'label_replace(rate(tailscale2otel_objectstore_skipped_total[%(w)s]), "source", "objectstore", "", "")'
+                       ')' % {"w": RI}, legend="{{source}}")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Rejections and skips from every ingestion path on one axis, to read against "
+                    "accepted volume above. A source missing here is a source that has never "
+                    "rejected anything, not one that is failing silently — the receivers are "
+                    "independently optional. Object-store contributes its skipped-object count, "
+                    "which includes per-cycle budget skips as well as faults, so read it alongside "
+                    "the by-reason breakdown on Exporter Diagnostics rather than as pure loss."), 12, 7),
     ]
     ingestfresh = [
         (panel("Accepted event freshness", "timeseries",

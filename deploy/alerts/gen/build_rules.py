@@ -1714,6 +1714,44 @@ def groups():
                "fault — the exporter and the tailnet are healthy — which is exactly why it is a "
                "separate SLI rather than folded into availability.",
                domain="observability", paused=False),
+        # --- #400: cross-source ingestion, with tailnet identity preserved ------
+        # tailscale.tailnet is a provider-scoped CONST attribute appended to every
+        # emitted metric (internal/telemetry/emitter.go), so it is available here
+        # even though the flagship's ingest panels aggregate it away. On a
+        # multi-tailnet deployment that aggregation is the problem: "ingest is
+        # healthy" across five tailnets can hide one that has gone silent.
+        record("ts2o-rec-ingest-records-by-source", "tailscale2otel:ingest_records:rate5m",
+               "sum by (source, signal, tailscale_tailnet) "
+               "(rate(tailscale2otel_ingest_records_total[5m]))",
+               "Accepted record rate per ingestion path, signal AND tailnet. `source`="
+               "poll|stream|webhook|objectstore, `signal`=flow|audit|webhook. The canonical "
+               "cross-source comparison: poll vs HEC vs webhook vs object store on one footing. "
+               "Keeps tailscale_tailnet so a single silent tailnet cannot hide behind a healthy "
+               "fleet total. Grouping by an absent label is harmless, so this still works when the "
+               "operator has disabled the tailnet attribute category.",
+               domain="observability", paused=True),
+        record("ts2o-rec-ingest-rejected-by-source", "tailscale2otel:ingest_rejected:rate5m",
+               "sum by (source, tailscale_tailnet) ("
+               'label_replace(rate(tailscale_stream_rejected_total[5m]), "source", "stream", "", "") or '
+               'label_replace(rate(tailscale_webhook_rejected_total[5m]), "source", "webhook", "", "") or '
+               'label_replace(rate(tailscale2otel_objectstore_skipped_total[5m]), "source", "objectstore", "", "")'
+               ")",
+               "Rejection rate unified across ingestion paths, which otherwise use three differently-"
+               "named metrics and cannot be compared on one panel. Uses the label_replace + `or` union "
+               "rather than addition for the same reason the path-fraction helper does: `+` is a "
+               "one-to-one join that silently drops any source present in only one of the operands, "
+               "which is the normal case here since receivers are independently optional.",
+               domain="observability", paused=True),
+        record("ts2o-rec-ingest-freshness-by-tailnet", "tailscale2otel:ingest_freshness:by_tailnet",
+               "clamp_min(time() - max by (source, signal, tailscale_tailnet) "
+               "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
+               "Seconds since the newest accepted event, per source, signal AND tailnet. The "
+               "per-tailnet companion to tailscale2otel:ingest_event_freshness_seconds, which stays "
+               "as the fleet-wide view — both are kept because they answer different questions and "
+               "the aggregate is the one an SLO should burn against. Same caveat as the aggregate: "
+               "sparse sources are legitimately idle, so use it only with workload-specific "
+               "thresholds.",
+               domain="observability", paused=True),
     ]
 
     return [

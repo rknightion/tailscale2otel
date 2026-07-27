@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "340",
+      "__panelId__": "341",
       "description": "p99 OTLP export duration > 2s for a signal \u2014 the backend is slow or unreachable, so exports are backing up. Break down by signal on the Exporter Diagnostics tab.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health",
       "summary": "OTLP export p99 latency is high"

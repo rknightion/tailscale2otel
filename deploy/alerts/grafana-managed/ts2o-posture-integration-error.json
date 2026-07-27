@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "206",
+      "__panelId__": "207",
       "description": "The device-posture (MDM/EDR) integration {{ $labels.tailscale_posture_provider }}/{{ $labels.tailscale_posture_integration }} reported a sync error (e.g. revoked credentials, an expired OAuth grant) on its status.error field. Unlike the staleness alert, this fires even while Tailscale keeps retrying and refreshing last_sync, so it catches a broken-but-retrying integration the staleness alert structurally cannot (#99). Absent until an integration exists AND the collector decodes/emits status.error as this gauge.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#posture-integrations",
       "summary": "Posture integration {{ $labels.tailscale_posture_provider }} sync is failing"

@@ -1493,7 +1493,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
@@ -1663,7 +1664,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
@@ -2016,7 +2018,8 @@
       "prom_name": "tailscale2otel_ingest_records_total",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "recorded"
       ]
     },
     {
@@ -2266,7 +2269,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "recorded"
       ]
     },
     {
