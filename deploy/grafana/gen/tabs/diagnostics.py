@@ -1,9 +1,9 @@
 """tab_diagnostics() — moved out of build.py in the module split."""
 
 from builder import (bargauge_opts, hq, lot, organize, panel, PII, prom_t, RI, row,
-                     stat_opts, TBL_NOISE, tempo_t, thr, ts_custom, ts_opts, vmap,
+                     stat_opts, TBL_NOISE, tempo_t, thr, ts_custom, ts_opts,
                      WIN_FAST, WIN_SLOW)
-from maps import BOOL_MAP, UP_MAP
+from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 import builder
 
 
@@ -125,22 +125,29 @@ def tab_diagnostics():
     # --- WU9: app-health (config validity, uptime, CPU, checkpoint) — supersedes C9 stubs.
     apphealth = [
         (panel("Config valid", "stat", [prom_t("max(tailscale2otel_config_valid_ratio)")],
-               mappings=BOOL_MAP, thresholds=thr([(None, "red"), (1, "green")]),
+               mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]),
                options=stat_opts(color="background")), 4, 5),
         (panel("Config warnings", "stat", [prom_t("max(tailscale2otel_config_warnings_ratio) or vector(0)")],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="value")), 4, 5),
         (panel("Uptime", "stat", [prom_t("max(process_uptime_seconds)")],
                unit="s", options=stat_opts()), 4, 5),
-        (panel("Checkpoint disk", "stat", [prom_t("max(tailscale2otel_checkpoint_disk_size_bytes) or vector(0)")],
-               unit="bytes", novalue="0", options=stat_opts()), 4, 5),
+        # No zero-fill on either checkpoint gauge: emitCheckpointStats() deliberately emits
+        # nothing when the file is absent (in-memory store, or nothing persisted yet), so a
+        # zero here would invent a healthy-looking answer out of "not applicable" (#385).
+        (panel("Checkpoint disk", "stat", [prom_t("max(tailscale2otel_checkpoint_disk_size_bytes)")],
+               unit="bytes", options=stat_opts(),
+               novalue="No checkpoint file — the store is not file-backed, or nothing has "
+                       "persisted yet."), 4, 5),
         (panel("Process CPU (user/system)", "timeseries",
                [prom_t("sum by (cpu_mode) (rate(process_cpu_time_seconds_total[%s]))" % RI, legend="{{cpu_mode}}")],
                unit="percentunit", custom=ts_custom(), options=ts_opts(),
                desc="CPU seconds/s by mode (~cores)."), 12, 6),
         (panel("Checkpoint persist age", "timeseries",
-               [prom_t("max(tailscale2otel_checkpoint_persist_age_seconds) or vector(0)", legend="persist age")],
-               unit="s", novalue="0", custom=ts_custom(), options=ts_opts(),
+               [prom_t("max(tailscale2otel_checkpoint_persist_age_seconds)", legend="persist age")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               novalue="No checkpoint file — the store is not file-backed, or nothing has "
+                       "persisted yet.",
                desc="Absent when the checkpoint store is not file-backed (in-memory)."), 12, 6),
     ]
     # --- WU9 A: API latency histograms (present="has_api_hist").
@@ -201,8 +208,7 @@ def tab_diagnostics():
     pii_status = [
         (panel("PII filter status", "table",
                [prom_t("%s" % lot("tailscale2otel_pii_filter_category_ratio", WIN_FAST), instant=True, fmt="table")],
-               mappings=vmap({"0": {"text": "REDACTED", "color": "red", "index": 0},
-                              "1": {"text": "emitted", "color": "green", "index": 1}}),
+               mappings=bool_map("REDACTED", "emitted", "red", "green"),
                transformations=[organize(exclude=TBL_NOISE,
                                          rename={"category": "Category", "Value": "State"})],
                desc="Compliance view: every category should read 'emitted' (==1) unless redacted."), 12, 7),

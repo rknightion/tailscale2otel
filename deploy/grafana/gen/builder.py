@@ -98,6 +98,31 @@ def vmap(d):
     return [{"type": "value", "options": d}]
 
 
+def check_bool_polarity(title, mappings, thresholds):
+    """Fail the build when a 0/1 value map contradicts the panel's own thresholds.
+
+    A boolean panel states its polarity twice — once in the colours of its value map
+    and once in its thresholds — and the two silently disagreeing is exactly how a
+    healthy state came to render red (#385). Only the unambiguous shape is checked:
+    a value map carrying both "0" and "1", against a two-step base/at-1 threshold.
+    """
+    steps = (thresholds or {}).get("steps") or []
+    if len(steps) != 2 or steps[0]["value"] is not None or steps[1]["value"] != 1:
+        return
+    for m in mappings or []:
+        if m.get("type") != "value":
+            continue
+        opts = m.get("options") or {}
+        if "0" not in opts or "1" not in opts:
+            continue
+        for (key, step) in (("0", steps[0]), ("1", steps[1])):
+            if opts[key]["color"] != step["color"]:
+                raise ValueError(
+                    "panel %r: value map colours %s for %s but its threshold says %s — "
+                    "pick the semantic map that matches the panel's polarity (see maps.py)"
+                    % (title, opts[key]["color"], key, step["color"]))
+
+
 def organize(exclude=None, rename=None):
     return {"kind": "Transformation", "group": "organize", "spec": {"options": {
         "excludeByName": {k: True for k in (exclude or [])},
@@ -113,6 +138,7 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
           overrides=None, decimals=None, version=VERSION, novalue=None,
           transformations=None):
     global _id
+    check_bool_polarity(title, mappings, thresholds)
     _id += 1
     name = "panel-%d" % _id
     for i, _t in enumerate(targets):  # distinct refIds (A, B, C, ...) — duplicate refIds blank a panel

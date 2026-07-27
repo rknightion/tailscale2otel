@@ -2,7 +2,7 @@
 
 from builder import (bargauge_opts, hq, lot, organize, panel, prom_t, RI, row,
                      stat_opts, thr, ts_custom, ts_opts, WIN_SLOW)
-from maps import BOOL_MAP, UP_MAP
+from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 
 
 def tab_overview():
@@ -17,9 +17,14 @@ def tab_overview():
         (panel("Offline", "stat",
                [prom_t("count(%s == 0) or vector(0)" % lot("tailscale_device_online_ratio"))],
                unit="short", options=stat_opts(color="value"), desc="Devices currently offline (normal for laptops/phones)."), 3, 5),
+        # No zero-fill: update availability is suppressed entirely when the control plane
+        # does not report it (Headscale) or per-device metrics are off, and "0 updates
+        # needed" is a different statement from "we were not told" (#385).
         (panel("Updates available", "stat",
-               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_update_available_ratio"))],
-               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="value")), 3, 5),
+               [prom_t("count(%s == 1)" % lot("tailscale_device_update_available_ratio"))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="value"),
+               novalue="No device update data — needs the devices collector and a control plane "
+                       "that reports update availability."), 3, 5),
         (panel("Users", "stat", [prom_t("sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)) or vector(0)" % lot("tailscale_users_count_ratio", WIN_SLOW))],
                unit="short", options=stat_opts()), 3, 5),
         (panel("Device keys ≤7d", "stat",
@@ -31,7 +36,7 @@ def tab_overview():
                unit="s", options=stat_opts(graph="none"), desc="Time since the ACL policy last changed."), 3, 5),
         (panel("Flow logging", "stat",
                [prom_t("max(%s)" % lot("tailscale_feature_enabled_ratio{tailscale_feature=\"network_flow_logging\"}", WIN_SLOW))],
-               mappings=BOOL_MAP, thresholds=thr([(None, "red"), (1, "green")]),
+               mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]),
                options=stat_opts(color="background"), desc="Tailnet network-flow-logging feature state."), 3, 5),
     ]
     exporter = [
@@ -124,12 +129,16 @@ def tab_overview():
                thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
                options=stat_opts(color="background"),
                desc="Worst-case fraction of scrape budget consumed across all collectors."), 3, 5),
+        # No zero-fill: series.limit is emitted only when a positive cap is configured, so
+        # the zero read as "0% of the cap consumed" for a deployment that has no cap (#385).
         (panel("Series headroom", "stat",
-               [prom_t("max(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit) or vector(0)",
+               [prom_t("max(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit)",
                        instant=True)],
                unit="percentunit",
                thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
                options=stat_opts(color="background"),
+               novalue="No per-metric series cap configured (cardinality.metric_limit unset) — "
+                       "nothing to measure headroom against.",
                desc="Fraction of the per-metric series limit consumed (0 = plenty of headroom)."), 3, 5),
         (panel("Export cost (DPM + log rec/s)", "timeseries",
                [prom_t("rate(tailscale2otel_export_datapoints_total[%s])" % RI, legend="datapoints/s"),
@@ -180,7 +189,9 @@ def tab_overview():
                [prom_t("max(%(e)s) or vector(0)" % {"e": lot("tailscale_acl_ssh_wildcard_ratio", WIN_SLOW)},
                        instant=True)],
                unit="short",
-               mappings=BOOL_MAP,
+               # Inverse risk: a wildcard SSH rule (1) is the state to act on. The
+               # scorecard rates it yellow, so the map is yellow too, not red.
+               mappings=bool_map(off_color="green", on_color="yellow"),
                thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                desc="Whether the tailnet ACL contains a wildcard SSH rule."), 4, 5),

@@ -1,7 +1,8 @@
 """tab_events() — moved out of build.py in the module split."""
 
 from builder import (hq, logs_opts, loki_t, lot, organize, panel, prom_t, RI, row,
-                     stat_opts, thr, ts_custom, ts_opts, vmap, WIN_FAST, WIN_SLOW)
+                     stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
+from maps import bool_map
 
 
 def tab_events():
@@ -67,11 +68,13 @@ def tab_events():
                [prom_t("sum(max by (tailscale_logstream_type) (%s)) or vector(0)" % lot("tailscale_logstream_configured_ratio", WIN_SLOW), instant=True)],
                unit="short", options=stat_opts(color="value"),
                desc="Configuration/network log streams delivering to a SIEM sink."), 4, 6),
+        # No zero-fill: the error gauge is emitted only for a CONFIGURED stream, so the
+        # zero rendered a green "OK" for log types that deliver nowhere (#385).
         (panel("Last delivery error", "stat",
-               [prom_t("max(%s) or vector(0)" % lot("tailscale_logstream_error_ratio", WIN_FAST), instant=True)],
-               mappings=vmap({"0": {"text": "OK", "color": "green", "index": 0},
-                              "1": {"text": "ERROR", "color": "red", "index": 1}}),
+               [prom_t("max(%s)" % lot("tailscale_logstream_error_ratio", WIN_FAST), instant=True)],
+               mappings=bool_map("OK", "ERROR", "green", "red"),
                thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
+               novalue="No delivery status — no configured log stream has reported one.",
                desc="1 if any stream's last delivery reported an error (see the Delivery errors log)."), 4, 6),
         (panel("Delivery throughput by type", "timeseries",
                [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_bytes_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],

@@ -78,9 +78,14 @@ def tab_cardinality():
 
     # C5: additional headroom panels added to the overflow row (Task 1.8 Step 1)
     overflow += [
+        # No zero-fill: the gauge is emitted only when a positive limit is configured, and
+        # 0 is a MEANINGFUL value here (unlimited) — so filling it in asserts the opposite
+        # of what an absent series implies (#385).
         (panel("Series limit", "stat",
-               [prom_t("max(tailscale2otel_series_limit) or vector(0)", instant=True)],
+               [prom_t("max(tailscale2otel_series_limit)", instant=True)],
                unit="short", options=stat_opts(),
+               novalue="No per-metric series cap reported — cardinality.metric_limit is unset "
+                       "(unlimited), or exporter self-observability is off.",
                desc="Configured per-metric series limit (cardinality.metric_limit). 0 means unlimited."), 6, 5),
         (panel("Overflowing now", "stat",
                [prom_t("sum(tailscale2otel_series_overflowing_ratio) or vector(0)", instant=True)],

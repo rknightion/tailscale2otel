@@ -2613,7 +2613,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_update_available_ratio[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_update_available_ratio[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -2660,7 +2660,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No device update data \u2014 needs the devices collector and a control plane that reports update availability."
                 },
                 "overrides": []
               }
@@ -4427,7 +4428,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit) or vector(0)",
+                        "expr": "max(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4478,7 +4479,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No per-metric series cap configured (cardinality.metric_limit unset) \u2014 nothing to measure headroom against."
                 },
                 "overrides": []
               }
@@ -5050,12 +5052,12 @@
                       "options": {
                         "0": {
                           "text": "off",
-                          "color": "red",
+                          "color": "green",
                           "index": 0
                         },
                         "1": {
                           "text": "on",
-                          "color": "green",
+                          "color": "yellow",
                           "index": 1
                         }
                       }
@@ -5316,7 +5318,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5363,7 +5365,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No device update data \u2014 needs the devices collector and a control plane that reports update availability."
                 },
                 "overrides": []
               }
@@ -5395,7 +5398,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_user_connected_ratio[2h]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_user_connected_ratio[2h]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5429,7 +5432,8 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "noValue": "No per-user data \u2014 needs the users collector and cardinality.per_entity.user."
                 },
                 "overrides": []
               }
@@ -5993,7 +5997,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_outdated_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_devices_outdated_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6040,7 +6044,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No fleet version comparison \u2014 enable version_checks.devices (and the upstream latest version must be reachable)."
                 },
                 "overrides": []
               }
@@ -7398,7 +7403,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale2otel_update_available_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale2otel_update_available_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7437,13 +7442,13 @@
                       "type": "value",
                       "options": {
                         "0": {
-                          "text": "off",
-                          "color": "red",
+                          "text": "up to date",
+                          "color": "green",
                           "index": 0
                         },
                         "1": {
-                          "text": "on",
-                          "color": "green",
+                          "text": "update available",
+                          "color": "yellow",
                           "index": 1
                         }
                       }
@@ -7461,7 +7466,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No self update-check data \u2014 enable version_checks.self (dev builds never report)."
                 },
                 "overrides": []
               }
@@ -11131,7 +11137,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_logstream_error_ratio[10m])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_logstream_error_ratio[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -11194,7 +11200,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No delivery status \u2014 no configured log stream has reported one."
                 },
                 "overrides": []
               }
@@ -13418,12 +13425,12 @@
                       "options": {
                         "0": {
                           "text": "off",
-                          "color": "red",
+                          "color": "green",
                           "index": 0
                         },
                         "1": {
                           "text": "on",
-                          "color": "green",
+                          "color": "red",
                           "index": 1
                         }
                       }
@@ -14725,7 +14732,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_update_available_ratio[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_update_available_ratio[10m]) == 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -14772,7 +14779,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No device update data \u2014 needs the devices collector and a control plane that reports update availability."
                 },
                 "overrides": []
               }
@@ -15391,7 +15399,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(time() - last_over_time(tailscale_posture_integration_last_sync_seconds[2h])) or vector(0)",
+                        "expr": "max(time() - last_over_time(tailscale_posture_integration_last_sync_seconds[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -15442,7 +15450,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No posture integration has reported a sync yet."
                 },
                 "overrides": []
               }
@@ -15860,7 +15869,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_contact_needs_verification_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_contact_needs_verification_ratio[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -15907,7 +15916,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No contact data \u2014 enable the contacts collector (collectors.contacts)."
                 },
                 "overrides": []
               }
@@ -16922,7 +16932,25 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {},
+                "defaults": {
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "off",
+                          "color": "text",
+                          "index": 0
+                        },
+                        "1": {
+                          "text": "on",
+                          "color": "text",
+                          "index": 1
+                        }
+                      }
+                    }
+                  ]
+                },
                 "overrides": []
               }
             }
@@ -17063,7 +17091,25 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {},
+                "defaults": {
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "off",
+                          "color": "text",
+                          "index": 0
+                        },
+                        "1": {
+                          "text": "on",
+                          "color": "text",
+                          "index": 1
+                        }
+                      }
+                    }
+                  ]
+                },
                 "overrides": []
               }
             }
@@ -17160,7 +17206,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_webhook_endpoints_count_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_webhook_endpoints_count_ratio[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -17195,7 +17241,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "noValue": "0"
+                  "noValue": "No webhook data \u2014 needs the webhooks collector and a credential scoped to read webhooks."
                 },
                 "overrides": []
               }
@@ -17208,7 +17254,7 @@
         "spec": {
           "id": 193,
           "title": "Stale users (>30d)",
-          "description": "Users not seen in over 30 days (last-seen staleness). Shows 0 when per-user metrics are disabled (cardinality.per_entity.user); see the Per-user detail row.",
+          "description": "Users not seen in over 30 days (last-seen staleness). Empty, not zero, when per-user metrics are disabled; see the Per-user detail row.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -17227,7 +17273,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((time() - last_over_time(tailscale_user_last_seen_seconds[2h])) > 30*86400) or vector(0)",
+                        "expr": "count((time() - last_over_time(tailscale_user_last_seen_seconds[2h])) > 30*86400)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -17274,7 +17320,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No per-user data \u2014 needs the users collector and cardinality.per_entity.user."
                 },
                 "overrides": []
               }
@@ -17900,7 +17947,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_key_preauthorized_ratio[2h]) == 1) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_key_preauthorized_ratio[2h]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -17935,7 +17982,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "noValue": "0"
+                  "noValue": "No per-key data \u2014 needs the keys collector and cardinality.per_entity.key."
                 },
                 "overrides": []
               }
@@ -23505,7 +23552,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_checkpoint_disk_size_bytes) or vector(0)",
+                        "expr": "max(tailscale2otel_checkpoint_disk_size_bytes)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -23540,7 +23587,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "bytes",
-                  "noValue": "0"
+                  "noValue": "No checkpoint file \u2014 the store is not file-backed, or nothing has persisted yet."
                 },
                 "overrides": []
               }
@@ -23646,7 +23693,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_checkpoint_persist_age_seconds) or vector(0)",
+                        "expr": "max(tailscale2otel_checkpoint_persist_age_seconds)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "persist age",
@@ -23680,7 +23727,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "s",
-                  "noValue": "0",
+                  "noValue": "No checkpoint file \u2014 the store is not file-backed, or nothing has persisted yet.",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -25950,7 +25997,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_series_limit) or vector(0)",
+                        "expr": "max(tailscale2otel_series_limit)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -25984,7 +26031,8 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "noValue": "No per-metric series cap reported \u2014 cardinality.metric_limit is unset (unlimited), or exporter self-observability is off."
                 },
                 "overrides": []
               }

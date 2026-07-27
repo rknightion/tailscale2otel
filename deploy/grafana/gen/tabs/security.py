@@ -3,7 +3,7 @@
 from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, lot, merge, organize,
                      panel, PII, prom_t, RI, row, stat_opts, thr, ts_custom, ts_opts,
                      WIN_FAST, WIN_SLOW)
-from maps import BOOL_MAP
+from maps import BOOL_HEALTHY_OFF
 
 
 def tab_security():
@@ -82,7 +82,7 @@ def tab_security():
         (panel("SSH wildcard", "stat",
                [prom_t("max(%s) or vector(0)" % lot("tailscale_acl_ssh_wildcard_ratio", WIN_SLOW),
                        instant=True)],
-               unit="short", mappings=BOOL_MAP, thresholds=thr([(None, "green"), (1, "red")]),
+               unit="short", mappings=BOOL_HEALTHY_OFF, thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
                desc="Whether any SSH rule uses a wildcard source or destination."), 4, 6),
         (panel("Auto-approvers by kind", "barchart",
@@ -238,8 +238,10 @@ def tab_security():
                options=stat_opts(color="background"),
                desc="Fraction of devices reporting an encrypted local state store."), 6, 6),
         (panel("Devices needing update", "stat",
-               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_update_available_ratio"), instant=True)],
-               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="background")), 6, 6),
+               [prom_t("count(%s == 1)" % lot("tailscale_device_update_available_ratio"), instant=True)],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="background"),
+               novalue="No device update data — needs the devices collector and a control plane "
+                       "that reports update availability."), 6, 6),
         (panel("Release track split", "barchart",
                [prom_t("count by (track) (max by (track, host_id) (%s))" % POS,
                        legend="{{track}}", instant=True, fmt="table")],
@@ -284,10 +286,13 @@ def tab_security():
                        legend="{{tailscale_posture_provider}} / {{tailscale_posture_integration}}")],
                unit="short", options=bargauge_opts(),
                desc="Devices matched to a provider host by each posture integration."), 12, 5),
+        # No zero-fill: last_sync is emitted only once a sync has occurred, and "0s ago"
+        # is the healthiest possible reading of "no integration has ever synced".
         (panel("Oldest sync age", "stat",
-               [prom_t("max(time() - %s) or vector(0)" % lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW), instant=True)],
+               [prom_t("max(time() - %s)" % lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW), instant=True)],
                unit="s", thresholds=thr([(None, "green"), (3600, "yellow"), (86400, "red")]),
                options=stat_opts(color="background"),
+               novalue="No posture integration has reported a sync yet.",
                desc="Time since the least-recently-synced integration last synced (alert on staleness)."), 6, 5),
         # Task 1H.8: match rate = matched / possible-match (clamped to avoid div-by-zero)
         (panel("Posture match rate", "stat",
@@ -334,11 +339,14 @@ def tab_security():
     # Task 1H.8: contact stat — "Contact needs verification" (single global stat, no gate)
     # -----------------------------------------------------------------------
     contact = [
+        # No zero-fill: this row is ungated, so with the contacts collector off the
+        # zero read as a green "all contacts verified" for a tailnet nobody had checked.
         (panel("Contact needs verification", "stat",
-               [prom_t("max(%s) or vector(0)" % lot("tailscale_contact_needs_verification_ratio", WIN_SLOW),
+               [prom_t("max(%s)" % lot("tailscale_contact_needs_verification_ratio", WIN_SLOW),
                        instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
+               novalue="No contact data — enable the contacts collector (collectors.contacts).",
                desc="Whether any tailnet contact address requires re-verification (admin/security/billing)."), 6, 5),
     ]
 

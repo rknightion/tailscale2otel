@@ -2,7 +2,7 @@
 
 from builder import (barchart_opts, bargauge_opts, hq, lot, merge, organize, panel, PII,
                      prom_t, row, stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
-from maps import BOOL_MAP
+from maps import bool_map
 
 
 def tab_fleet():
@@ -20,13 +20,19 @@ def tab_fleet():
                unit="short", thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background")), 3, 5),
         (panel("Total", "stat", [prom_t("count(%s) or vector(0)" % on)], unit="short", options=stat_opts()), 3, 5),
         (panel("Offline", "stat", [prom_t("count(%s == 0) or vector(0)" % on)], unit="short", options=stat_opts(color="value")), 3, 5),
+        # No zero-fill: absent update-availability means the control plane never reported
+        # it (Headscale) or per-device metrics are off — not "everything is current" (#385).
         (panel("Updates available", "stat",
-               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_update_available_ratio" + df))],
-               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="value")), 3, 5),
+               [prom_t("count(%s == 1)" % lot("tailscale_device_update_available_ratio" + df))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="value"),
+               novalue="No device update data — needs the devices collector and a control plane "
+                       "that reports update availability."), 3, 5),
         # A. Fix: count actually-connected users (tailscale_user_connected_ratio == 1) not a device-derived proxy
         (panel("Distinct users", "stat",
-               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_user_connected_ratio", WIN_SLOW))],
-               unit="short", options=stat_opts()), 3, 5),
+               [prom_t("count(%s == 1)" % lot("tailscale_user_connected_ratio", WIN_SLOW))],
+               unit="short", options=stat_opts(),
+               novalue="No per-user data — needs the users collector and "
+                       "cardinality.per_entity.user."), 3, 5),
         (panel("Devices by OS", "bargauge",
                [prom_t("sum by (os_type) (max by (os_type, tailscale_authorized, tailscale_external) (%s))" % lot("tailscale_devices_count_ratio", WIN_SLOW), legend="{{os_type}}")],
                unit="short", options=bargauge_opts()), 9, 5),
@@ -64,10 +70,14 @@ def tab_fleet():
                [prom_t("max(%s) or vector(0)" % lot("tailscale_devices_ephemeral_ratio", WIN_SLOW))],
                unit="short", options=stat_opts(color="value"),
                desc="Ephemeral devices currently registered."), 4, 5),
+        # No zero-fill: emitted only when version_checks.devices is on AND the upstream
+        # latest version is known, so absence means the comparison never ran.
         (panel("Outdated (≥N behind)", "stat",
-               [prom_t("max(%s) or vector(0)" % lot("tailscale_devices_outdated_ratio", WIN_SLOW))],
+               [prom_t("max(%s)" % lot("tailscale_devices_outdated_ratio", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
+               novalue="No fleet version comparison — enable version_checks.devices "
+                       "(and the upstream latest version must be reachable).",
                desc="Devices running a client version that is at least one minor release behind the fleet latest."), 4, 5),
         (panel("Latest stable", "table",
                [prom_t(lot("tailscale_fleet_latest_version_ratio", WIN_SLOW), instant=True, fmt="table")],
@@ -230,11 +240,16 @@ def tab_fleet():
 
     # F (exporter update stat) — non-PII, sits in hygiene-adjacent position; present="has_version_skew"
     exporterver = [
+        # Inverse risk with its own vocabulary, and no zero-fill: the gauge is emitted only
+        # when version_checks.self is on and both versions parse (dev builds never emit),
+        # so a zero would claim "up to date" for a check that never ran (#385).
         (panel("Exporter update available", "stat",
-               [prom_t("max(%s) or vector(0)" % lot("tailscale2otel_update_available_ratio", WIN_SLOW))],
-               mappings=BOOL_MAP,
+               [prom_t("max(%s)" % lot("tailscale2otel_update_available_ratio", WIN_SLOW))],
+               mappings=bool_map("up to date", "update available", "green", "yellow"),
                thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
+               novalue="No self update-check data — enable version_checks.self "
+                       "(dev builds never report).",
                desc="Whether a newer version of the tailscale2otel exporter is available."), 6, 5),
     ]
 

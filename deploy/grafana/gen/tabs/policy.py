@@ -2,7 +2,7 @@
 
 from builder import (barchart_opts, bargauge_opts, loki_t, lot, merge, organize, panel,
                      PII, prom_t, row, stat_opts, thr, WIN_SLOW)
-from maps import BOOL_MAP
+from maps import BOOL_HEALTHY_ON, BOOL_NEUTRAL
 
 
 def tab_policy():
@@ -27,14 +27,14 @@ def tab_policy():
     ]
     dns = [
         (panel("MagicDNS", "stat", [prom_t("max(%s)" % lot("tailscale_dns_magic_dns_ratio", WIN_SLOW))],
-               mappings=BOOL_MAP, thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background")), 6, 5),
+               mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background")), 6, 5),
         (panel("Nameservers", "stat", [prom_t("max(%s)" % lot("tailscale_dns_nameservers_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
         (panel("Search paths", "stat", [prom_t("max(%s)" % lot("tailscale_dns_search_paths_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
         (panel("Split-DNS zones", "stat", [prom_t("max(%s)" % lot("tailscale_dns_split_zones_count_ratio", WIN_SLOW))], unit="short", options=stat_opts()), 6, 5),
         # Task 1.6 Step 1 — A3 DNS additions (stats; ungated)
         (panel("Override local DNS", "stat",
                [prom_t("max(%s)" % lot("tailscale_dns_override_local_ratio", WIN_SLOW))],
-               mappings=BOOL_MAP, thresholds=thr([(None, "red"), (1, "green")]),
+               mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]),
                options=stat_opts(color="background")), 6, 5),
         (panel("Exit-node resolvers", "stat",
                [prom_t("max(%s)" % lot("tailscale_dns_resolvers_use_with_exit_node_ratio", WIN_SLOW))],
@@ -58,7 +58,10 @@ def tab_policy():
                desc="DNS resolver configuration. FIX-3: no domain label on live wire."), 24, 6),
     ]
     settings = [
+        # Neutral map: a tailnet setting being off is a fact, not a verdict — the risky
+        # ones have their own colour-coded panels.
         (panel("Tailnet settings", "table", [prom_t(lot("tailscale_setting_enabled_ratio", WIN_SLOW), instant=True, fmt="table")],
+               mappings=BOOL_NEUTRAL,
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_setting_name": "Setting", "Value": "Enabled"})],
@@ -66,6 +69,7 @@ def tab_policy():
         (panel("Device key duration", "stat", [prom_t("max(%s)" % lot("tailscale_setting_devices_key_duration_days", WIN_SLOW))],
                unit="d", options=stat_opts()), 4, 7),
         (panel("Tailnet features", "table", [prom_t(lot("tailscale_feature_enabled_ratio", WIN_SLOW), instant=True, fmt="table")],
+               mappings=BOOL_NEUTRAL,
                transformations=[organize(exclude=["Time", "__name__", "job", "instance",
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_feature": "Feature", "Value": "Enabled"})],
@@ -78,18 +82,27 @@ def tab_policy():
                desc="Role granted to users joining from external tailnets. "
                     "Values: none / member / admin. Live: role=none."), 6, 5),
         # Task 1H.8 — Webhook endpoints
+        # No zero-fill: the collector emits an explicit 0 when the tailnet exposes no
+        # webhook surface, but emits NOTHING when the credential is rejected or
+        # under-scoped — so a manufactured 0 hides a permissions problem.
         (panel("Webhook endpoints", "stat",
-               [prom_t("max(%s) or vector(0)" % lot("tailscale_webhook_endpoints_count_ratio", WIN_SLOW))],
-               unit="short", options=stat_opts(), novalue="0"), 6, 5),
+               [prom_t("max(%s)" % lot("tailscale_webhook_endpoints_count_ratio", WIN_SLOW))],
+               unit="short", options=stat_opts(),
+               novalue="No webhook data — needs the webhooks collector and a credential "
+                       "scoped to read webhooks."), 6, 5),
     ]
     users = [
+        # No zero-fill: per-user series are gated by cardinality.per_entity.user, and this
+        # panel used to render a reassuring 0 with the gate closed (#385).
         (panel("Stale users (>30d)", "stat",
-               [prom_t("count((time() - %s) > 30*86400) or vector(0)"
+               [prom_t("count((time() - %s) > 30*86400)"
                        % lot("tailscale_user_last_seen_seconds", WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
-               desc="Users not seen in over 30 days (last-seen staleness). Shows 0 when per-user "
-                    "metrics are disabled (cardinality.per_entity.user); see the Per-user detail row."), 6, 5),
+               novalue="No per-user data — needs the users collector and "
+                       "cardinality.per_entity.user.",
+               desc="Users not seen in over 30 days (last-seen staleness). Empty, not zero, when "
+                    "per-user metrics are disabled; see the Per-user detail row."), 6, 5),
         (panel("Users by role", "barchart",
                [prom_t("sum by (tailscale_user_role) (max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s))" % lot("tailscale_users_count_ratio", WIN_SLOW), legend="{{tailscale_user_role}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
@@ -145,8 +158,10 @@ def tab_policy():
                desc="Time until each API/auth key expires."), 14, 7),
         # Task 1.6 Step 2 — Preauthorized auth keys
         (panel("Preauthorized auth keys", "stat",
-               [prom_t("sum(%s == 1) or vector(0)" % lot("tailscale_key_preauthorized_ratio", WIN_SLOW))],
-               unit="short", options=stat_opts(), novalue="0"), 10, 7),
+               [prom_t("sum(%s == 1)" % lot("tailscale_key_preauthorized_ratio", WIN_SLOW))],
+               unit="short", options=stat_opts(),
+               novalue="No per-key data — needs the keys collector and "
+                       "cardinality.per_entity.key."), 10, 7),
     ]
     # Task 1.6 Step 2 — Credential scopes top-N (gated on the key-scopes metric)
     credscopes = [
