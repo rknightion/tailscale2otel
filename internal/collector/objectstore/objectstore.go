@@ -20,7 +20,11 @@
 // checkpoint can replay objects after restart.
 //
 // Malformed or semantically invalid NDJSON lines are record-level failures: good
-// lines in that object are accepted and the object can be marked complete. GET,
+// lines in that object are accepted and the object can be marked complete. An
+// object whose rows ALL fail that way accepted nothing, so it becomes an
+// object-level gap instead — total row failure is a framing mismatch rather than
+// corrupt records, and completing it would lose the object silently. A genuinely
+// empty object has no row failures at all and still completes. GET,
 // decompressor, scanner, and unexpected signal-preparation failures are
 // object-level gaps. Raw rows are staged until clean EOF and then converted to
 // prepared actions without side effects. Only after every row has prepared does
@@ -370,7 +374,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			}
 			c.logger.Error("objectstore: ingest failed", logArgs...)
 			e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, 1,
-				telemetry.Attrs{attrReason: reasonReadError})
+				telemetry.Attrs{attrReason: skipReasonForStage(failure.stage)})
 			return true
 		}
 		if _, exists := gapsByIdentity[obj.Identity]; exists {
@@ -746,8 +750,8 @@ func (c *Collector) ingest(
 	}
 
 	var (
-		actions          = make([]preparedAction, 0, len(staged))
-		bad, semanticBad int
+		actions                        = make([]preparedAction, 0, len(staged))
+		acceptedRows, bad, semanticBad int
 	)
 	for i, line := range staged {
 		prepared, err := c.signal.PrepareRecord(ctx, line, c.now())
@@ -788,6 +792,7 @@ func (c *Collector) ingest(
 				err:   errors.New("signal processor returned nil for an accepted record"),
 			}
 		}
+		acceptedRows++
 		actions = append(actions, preparedAction{record: prepared, accepted: true})
 	}
 
@@ -796,6 +801,32 @@ func (c *Collector) ingest(
 	// retry cannot repeat an action prefix.
 	if err := ctx.Err(); err != nil {
 		return result, &objectIngestError{stage: "process", err: err}
+	}
+	// Zero accepted records with at least one row-level failure is the signature
+	// of a FRAMING mismatch, not of corrupt records: the object is not
+	// newline-delimited bare records, so every row failed the same way. One bad
+	// row must stay row-local or a single malformed record wedges a feed forever
+	// (#286, #448) — but an object that decoded nothing must never be recorded as
+	// ingested, because that advances the cursor past permanently lost data while
+	// every health signal reports success (#497). Decided before any commit, so
+	// nothing is emitted for an object that fails here.
+	//
+	// A genuinely empty object has no failures and is NOT this case: Tailscale
+	// writes zero-length objects, and those complete cleanly.
+	if acceptedRows == 0 && bad+semanticBad > 0 {
+		c.logger.Warn(
+			"objectstore: no row in the object decoded; the export framing may not be newline-delimited records",
+			"object_id", objectDigest(identity),
+			"rows", result.rows,
+			"decode_failures", bad,
+			"validation_failures", semanticBad)
+		return result, &objectIngestError{
+			stage: stageUndecodableObject,
+			err: fmt.Errorf(
+				"no row decoded: %d row(s), %d decode failure(s), %d validation failure(s)",
+				result.rows, bad, semanticBad,
+			),
+		}
 	}
 	for _, action := range actions {
 		timestamps := action.record.Commit(e)
@@ -1018,6 +1049,13 @@ func boolFloat(v bool) float64 {
 	return 0
 }
 
+// stageUndecodableObject is the object-failure stage for an object that reached
+// clean EOF but produced no accepted record while at least one row failed a
+// row-local decode or validation check. It is NOT quarantining: like a fetch or
+// read failure it retries under the existing bounded backoff, so an object lost
+// to a framing bug is still recoverable once the framing is fixed.
+const stageUndecodableObject = "undecodable_object"
+
 type objectIngestError struct {
 	stage      string
 	quarantine bool
@@ -1061,6 +1099,17 @@ type objectFailure struct {
 	limitKind      string
 	configured     int64
 	expansionLimit *expansionLimitError
+}
+
+// skipReasonForStage maps an object-failure stage onto its bounded skip reason.
+// Every stage keeps the historical read_error reason except the one whose cause
+// an operator cannot infer from it — an object that decoded nothing needs to be
+// distinguishable from an object that could not be read at all.
+func skipReasonForStage(stage string) string {
+	if stage == stageUndecodableObject {
+		return reasonUndecodableObject
+	}
+	return reasonReadError
 }
 
 func classifyObjectFailure(err error) objectFailure {

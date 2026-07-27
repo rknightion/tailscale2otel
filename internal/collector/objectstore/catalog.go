@@ -40,6 +40,10 @@ const (
 	reasonDecodeError     = "decode_error"
 	reasonSemanticInvalid = "semantic_invalid"
 	reasonReadError       = "read_error"
+	// reasonUndecodableObject counts whole objects that reached clean EOF but
+	// produced no accepted record while at least one row failed — a framing
+	// mismatch rather than individual corrupt records.
+	reasonUndecodableObject = "undecodable_object"
 )
 
 var (
@@ -83,7 +87,7 @@ var (
 		Name:        metricSkipped,
 		Instrument:  metricdoc.Counter,
 		Unit:        semconv.UnitDimensionless,
-		Description: "Objects or lines not ingested, by reason. A sustained non-zero `per_cycle_budget` means the per-cycle object cap is holding ingestion behind the bucket. `semantic_invalid` marks quarantined flow records; inspect tailscale.network.data_quality for the bounded reason. A non-zero `future_timestamp` means objects are named beyond the 5-minute clock-skew allowance and were skipped so they could not push the ingestion cursor past the wall clock; check the exporter's clock.",
+		Description: "Objects or lines not ingested, by reason. A sustained non-zero `per_cycle_budget` means the per-cycle object cap is holding ingestion behind the bucket. `decode_error` and `semantic_invalid` count individual rows discarded from an object that still completed; `semantic_invalid` marks quarantined flow records, so inspect tailscale.network.data_quality for the bounded reason. `undecodable_object` counts whole objects that decoded no record at all while at least one row failed — the signature of an export whose framing is not newline-delimited records, so treat any non-zero value as a broken feed rather than as corrupt data; each one becomes a retried gap instead of being recorded as ingested. A non-zero `future_timestamp` means objects are named beyond the 5-minute clock-skew allowance and were skipped so they could not push the ingestion cursor past the wall clock; check the exporter's clock.",
 		Attributes:  []string{attrReason},
 		Group:       "Object-store ingestion",
 	}
