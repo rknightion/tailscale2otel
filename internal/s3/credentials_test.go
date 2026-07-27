@@ -274,6 +274,50 @@ func TestCachingProvider_KeepsWorkingCredentialsThroughARefreshFailure(t *testin
 	}
 }
 
+// endlessReader never returns EOF: an endpoint that keeps talking forever, which
+// is what the bound on readAllClose exists to survive.
+type endlessReader struct{}
+
+func (endlessReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	return len(p), nil
+}
+
+// Splitting the listing bound out (#291) is only worth anything if the metadata
+// bound stays where it was. Everything that reads a credential goes through
+// readAllClose — the IMDSv2 handshake, the IMDS documents, the STS web-identity
+// exchange, and the container endpoint whose address comes out of the environment
+// — so a shared constant would mean the listing path's much larger allowance
+// silently became theirs too.
+func TestReadAllClose_MetadataBoundStaysSmallAndSeparate(t *testing.T) {
+	if maxMetadataResponseBytes >= maxListResponseBytes {
+		t.Errorf("metadata bound %d is not smaller than the listing bound %d; the two must not track each other",
+			maxMetadataResponseBytes, maxListResponseBytes)
+	}
+	if maxMetadataResponseBytes > 1<<20 {
+		t.Errorf("metadata bound = %d bytes; credential documents are a few hundred bytes, so this stays at ~1 MiB",
+			maxMetadataResponseBytes)
+	}
+	// Tightest first: the container endpoint re-caps itself on top of the shared
+	// bound, and that ordering is what keeps the environment-supplied address the
+	// most constrained of the three.
+	if containerMaxCredentialBody >= maxMetadataResponseBytes {
+		t.Errorf("container bound %d is not tighter than the shared metadata bound %d",
+			containerMaxCredentialBody, maxMetadataResponseBytes)
+	}
+
+	body, err := readAllClose(&http.Response{Body: io.NopCloser(endlessReader{})})
+	if err != nil {
+		t.Fatalf("readAllClose: %v", err)
+	}
+	if len(body) != maxMetadataResponseBytes {
+		t.Errorf("read %d bytes from an endless body, want it stopped at the %d-byte metadata bound",
+			len(body), maxMetadataResponseBytes)
+	}
+}
+
 // The regional endpoint is what AWS recommends and what a VPC endpoint policy is
 // written against.
 func TestSTSEndpoint(t *testing.T) {

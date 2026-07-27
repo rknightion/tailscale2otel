@@ -341,9 +341,27 @@ func imdsGet(ctx context.Context, hc *http.Client, token, path string) ([]byte, 
 	return body, nil
 }
 
+// maxMetadataResponseBytes caps every credential and metadata response this
+// package reads: the IMDSv2 token handshake, the IMDS metadata documents, the STS
+// web-identity exchange, and the container credential endpoint. Each of those is a
+// few hundred bytes on the wire — the container path re-caps itself to 64 KiB on
+// top (containerMaxCredentialBody) — so 1 MiB is already ~1000x anything
+// legitimate, and exists only so a hostile or misconfigured endpoint cannot make
+// the process read forever.
+//
+// It is deliberately SEPARATE from maxListResponseBytes and must stay small. One
+// shared cap for both was the #291 bug: object listings legitimately need a much
+// larger bound, and with a single constant, widening it for them would hand the
+// same allowance to endpoints whose address comes out of the environment.
+const maxMetadataResponseBytes = 1 << 20
+
 // readAllClose drains and closes a response body, bounded so a hostile or
 // misconfigured endpoint cannot make the process read forever.
+//
+// This is the buffering path, for documents small enough that holding one in
+// memory is free. Object listings do NOT come through here: they are stream
+// decoded against their own, larger bound — see decodeListResponse in s3.go.
 func readAllClose(resp *http.Response) ([]byte, error) {
 	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return io.ReadAll(io.LimitReader(resp.Body, maxMetadataResponseBytes))
 }

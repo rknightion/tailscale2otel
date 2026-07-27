@@ -149,6 +149,35 @@ type listResponse struct {
 // ListResult is retained as a source-compatible alias for objectstore.ListResult.
 type ListResult = objectstore.ListResult
 
+// maxListResponseBytes bounds one ListObjectsV2 response.
+//
+// The number is arithmetic, not a guess. A page carries at most 1000 keys (the
+// ListObjectsV2 maximum), an S3 key may be 1024 bytes, and each key arrives
+// wrapped in ~200 bytes of XML: <Contents>, <Key>, <LastModified>, <ETag>,
+// <Size>, <StorageClass> and their closing tags. So a legitimate page of long
+// keys is ~1.2 MiB — already past the 1 MiB metadata cap that used to apply
+// here, which is exactly the #291 bug. The true ceiling is higher still, because
+// XML escaping can turn one key byte into five ("&" -> "&amp;"): a page of 1000
+// escape-heavy 1024-byte keys reaches ~5.1 MiB. 8 MiB clears that with room
+// spare and is still a bound.
+//
+// Raising the number is cheap because the decode STREAMS (see
+// decodeListResponse): the wire bytes are never held alongside the result, so on
+// a real listing the peak footprint is the decoded keys (~1.2 MiB at the ceiling
+// above, and unescaping only shrinks them) plus one token. A single-token body is
+// the worst case the decoder can be made to buffer, and that is bounded by this
+// constant — which is why it stays a constant rather than becoming an operator
+// knob.
+const maxListResponseBytes = 8 << 20
+
+// errListResponseTooLarge is returned when a listing does not end within
+// maxListResponseBytes.
+//
+// It is deliberately NOT a decode error. The bytes that arrived were discarded
+// rather than parsed, and calling that malformed would blame the bucket for a cap
+// of ours — which is how the truncation this replaces used to present.
+var errListResponseTooLarge = errors.New("s3: list response exceeds this client's read limit")
+
 // List returns objects under prefix, in the lexicographic order S3 lists them —
 // which for a zero-padded date-partitioned layout is also chronological order.
 //
@@ -181,13 +210,9 @@ func (c *Client) List(ctx context.Context, prefix, startAfter string, limit int)
 			q.Set("max-keys", itoa(min(remaining, 1000)))
 		}
 
-		body, err := c.do(ctx, "/", q.Encode())
-		if err != nil {
-			return ListResult{}, err
-		}
 		var page listResponse
-		if err := xml.Unmarshal(body, &page); err != nil {
-			return ListResult{}, fmt.Errorf("s3: decode list response: %w", err)
+		if err := c.listPage(ctx, q.Encode(), &page); err != nil {
+			return ListResult{}, err
 		}
 		for _, o := range page.Contents {
 			result.Objects = append(result.Objects, Object{
@@ -230,25 +255,72 @@ func (c *Client) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-// do issues a signed GET and returns the whole body. Used for listings, which
-// are bounded by max-keys and small.
-func (c *Client) do(ctx context.Context, path, rawQuery string) ([]byte, error) {
-	req, err := c.request(ctx, path, rawQuery)
+// listPage issues one signed ListObjectsV2 GET and decodes the response into
+// page. It is the only caller of decodeListResponse; an error status is still
+// read and reported the way it always has been.
+func (c *Client) listPage(ctx context.Context, rawQuery string, page *listResponse) error {
+	req, err := c.request(ctx, "/", rawQuery)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("s3: list: %w", err)
-	}
-	body, err := readAllClose(resp)
-	if err != nil {
-		return nil, fmt.Errorf("s3: list: %w", err)
+		return fmt.Errorf("s3: list: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("s3: list: %s: %s", resp.Status, snippet(body))
+		// A failure body is an XML fault document — small by nature, and worth
+		// having whole so the message can quote it. The buffering reader's own
+		// bound is the right one for that, not the listing bound.
+		body, readErr := readAllClose(resp)
+		if readErr != nil {
+			return fmt.Errorf("s3: list: %w", readErr)
+		}
+		return fmt.Errorf("s3: list: %s: %s", resp.Status, snippet(body))
 	}
-	return body, nil
+	return decodeListResponse(resp, page)
+}
+
+// decodeListResponse stream decodes one ListObjectsV2 body into page and closes
+// it. It is the streaming twin of readAllClose: the same drain-and-close
+// discipline, re-capping the body through boundedBody rather than around it, but
+// without ever materializing the response.
+//
+// Streaming is what makes maxListResponseBytes affordable — the wire bytes are
+// never held alongside the decoded result — and the reason the bound has to be
+// checked independently of the decoder is that the decoder is not a witness to
+// truncation. Usually a cut document fails with an unexpected EOF, which is the
+// wrong message (it blames the bucket); but a body cut at an element boundary
+// parses cleanly as a complete listing that is silently missing objects, and
+// nothing at all is reported. So the reader is allowed exactly ONE byte past the
+// bound, which makes "the allowance ran out" distinguishable from "the document
+// ended on the last permitted byte", and that signal — not the decoder's error —
+// decides whether the response is refused.
+func decodeListResponse(resp *http.Response, page *listResponse) error {
+	limited := &io.LimitedReader{R: resp.Body, N: maxListResponseBytes + 1}
+	resp.Body = boundedBody{Reader: limited, Closer: resp.Body}
+	defer resp.Body.Close()
+
+	err := xml.NewDecoder(resp.Body).Decode(page)
+	if err == nil && limited.N > 0 {
+		// The decoder stops on the root's closing tag and may never ask for the
+		// byte after it, so ask here. Without this, whether an overrun is noticed
+		// would depend on how the decoder happened to buffer, and a body whose
+		// root closes exactly on the last permitted byte with more to follow would
+		// slip through. A body that genuinely ends there answers EOF and is
+		// unaffected: only bytes actually delivered count against the allowance.
+		var probe [1]byte
+		_, _ = resp.Body.Read(probe[:])
+	}
+	if limited.N <= 0 {
+		return fmt.Errorf("%w of %d bytes: the response was discarded rather than parsed, because "+
+			"parsing a truncated listing silently drops objects. This is a bound in this client, not a "+
+			"malformed response from the bucket — a full page of 1000 maximum-length keys is ~1.2 MiB",
+			errListResponseTooLarge, maxListResponseBytes)
+	}
+	if err != nil {
+		return fmt.Errorf("s3: decode list response: %w", err)
+	}
+	return nil
 }
 
 // request builds and signs one GET.
