@@ -123,10 +123,16 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 
 ## Module / package layout
 
-Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v3`) plus three
+Five modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v3`) plus four
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
 are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
-`tools/apidrift`).
+`tools/apidrift`, `tools/promqlcheck`).
+
+> `tools/promqlcheck` is the one tool module with **no `replace ../..`** — it needs nothing from the
+> root module. It pins `golang.org/x/text` explicitly: the version prometheus v0.313.1 pulls in
+> transitively is vulnerable (`GO-2026-5970`), so **Renovate must keep that pin in step with the root
+> module's**. Invoke it as `go run -C tools/promqlcheck . -root "$PWD"` — `go run ./tools/promqlcheck`
+> from the root fails, per the separate-module gotcha above.
 
 - `cmd/tailscale2otel/main.go` — thin entrypoint: load config, build slog logger, `app.New` → `Run`.
   `version` is injected via `-ldflags -X main.version=...`.
@@ -169,7 +175,8 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   the self update-available check and per-device version-skew metrics.
 - `internal/config/` — layered config loader (defaults → YAML → `TS2OTEL_*` env), `Validate()` and advisory `Warnings()`.
 - `tools/metricscatalog/` (docs/metrics.md generator), `tools/configcheck/` (validates config via the
-  real `config.Load`, catching cross-field rules JSON Schema can't express).
+  real `config.Load`, catching cross-field rules JSON Schema can't express), `tools/promqlcheck/`
+  (parses every dashboard/rule expression with the real `prometheus/promql/parser`).
 - `deploy/` — Dockerfiles, docker-compose, Helm chart, Grafana dashboards, Prometheus alert rules. See `deploy/CLAUDE.md`.
 
 ## CI gates (a PR must pass all of these)

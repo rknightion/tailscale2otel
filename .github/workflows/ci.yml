@@ -59,7 +59,7 @@ jobs:
         # Root module + the three CI-only tool modules (each a separate go.mod).
         # gofmt/goimports are enforced here via the `formatters` block in
         # .golangci.yml, so there is no separate gofmt step.
-        module: [".", "tools/configcheck", "tools/metricscatalog", "tools/apidrift"]
+        module: [".", "tools/configcheck", "tools/metricscatalog", "tools/apidrift", "tools/promqlcheck"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -98,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: ["tools/configcheck", "tools/metricscatalog", "tools/apidrift"]
+        module: ["tools/configcheck", "tools/metricscatalog", "tools/apidrift", "tools/promqlcheck"]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -191,6 +191,14 @@ jobs:
         with:
           python-version: "3.14"
 
+      # For promqlcheck, below. It is a separate module, so it needs its own
+      # go.sum for the cache key.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: tools/promqlcheck/go.sum
+
       # The two Python generators ship real unittest suites that CI never ran:
       # nothing in .github/, scripts/ or .githooks/ referenced them, so they only
       # executed if someone happened to invoke them by hand (#481). They run before
@@ -240,8 +248,28 @@ jobs:
           sudo install -m 0755 "/tmp/prometheus-${PROM_VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
           promtool --version
 
+      # promtool only understands the plain Prometheus rules file. promqlcheck
+      # parses the dashboard's 400+ panel queries and the Grafana provisioning
+      # rules with the same Prometheus parser, and additionally fails on a
+      # reference to an undeclared template variable — a typo class no regex or
+      # name-existence check can see (#407). It cannot validate LogQL or TraceQL
+      # syntax: Loki's parser package pulls 583 modules and does not compile
+      # outside its own repo, so those are counted and reported unparsed rather
+      # than silently skipped.
+      - name: promqlcheck (dashboard + rule expressions)
+        run: go run -C tools/promqlcheck . -root "$PWD"
+
       - name: promtool check rules
         run: promtool check rules deploy/alerts/tailscale2otel.rules.yaml
+
+      # `check rules` only proves the expressions parse. These execute them
+      # against synthetic series and assert what actually fires — the only way to
+      # catch a rule that is valid PromQL and semantically wrong (#407). The cases
+      # that matter are the ones a syntax check cannot reach: absent() coverage,
+      # counter resets across a restart, multi-tailnet label preservation, and
+      # "healthy zero" versus "absent" on a feature probe.
+      - name: promtool test rules
+        run: promtool test rules deploy/alerts/tests/*.yaml
 
   govulncheck:
     name: govulncheck

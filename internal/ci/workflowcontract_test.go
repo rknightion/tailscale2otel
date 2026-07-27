@@ -585,6 +585,63 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	if !strings.Contains(body, "sha256sums.txt") {
 		t.Error("the promtool download is not verified against the release's sha256sums.txt")
 	}
+	// `check rules` proves the expressions parse; it does not run them. A rule can
+	// be valid PromQL and still never fire, or fire forever — the already-expired
+	// key case in deploy/alerts/tests is exactly that shape (#407).
+	if !strings.Contains(body, "promtool test rules") {
+		t.Error("dashboards-drift parses the rules but never executes them against fixtures, " +
+			"so a rule that is valid PromQL and semantically wrong still ships")
+	}
+}
+
+// promqlcheck is the only thing that parses the DASHBOARD's expressions and the
+// Grafana provisioning rules — promtool understands neither. Adding the module to
+// the lint/module-verify matrices makes it build and test; it does not make it RUN
+// against the artifacts. Verified-but-never-invoked is exactly the shape of #437, so
+// assert the invocation on its own line rather than as a loose substring, because
+// remediation prose in an error message has satisfied a substring check here before.
+func TestDashboardsDriftRunsPromqlcheck(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, ok := jobs["dashboards-drift"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no dashboards-drift job")
+	}
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatal("dashboards-drift has no steps list")
+	}
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		run, ok := step["run"].(string)
+		if !ok {
+			continue
+		}
+		for line := range strings.SplitSeq(run, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "go run -C tools/promqlcheck") {
+				return
+			}
+		}
+	}
+	t.Error("dashboards-drift never invokes `go run -C tools/promqlcheck`, so every panel " +
+		"query and Grafana rule expression goes unparsed. Note `go run ./tools/promqlcheck` " +
+		"from the root does NOT work — it is a separate module.")
+}
+
+// Guards the guard for `promtool test rules`: the CI step globs
+// deploy/alerts/tests/*.yaml, and a glob that matches nothing makes promtool exit 0.
+func TestPrometheusRuleFixturesExist(t *testing.T) {
+	matches, err := filepath.Glob(filepath.Join(repoDir, "deploy/alerts/tests", "*.yaml"))
+	if err != nil {
+		t.Fatalf("globbing rule fixtures: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Error("deploy/alerts/tests holds no fixtures, so the `promtool test rules` step " +
+			"matches no files and passes while executing nothing")
+	}
 }
 
 // Both Python generators ship unittest suites, and for a long time CI ran neither:

@@ -1,0 +1,174 @@
+{
+  "apiVersion": "dashboard.grafana.app/v2",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "fixture-good"
+  },
+  "spec": {
+    "title": "Fixture good",
+    "variables": [
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_prometheus",
+          "pluginId": "prometheus"
+        }
+      },
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_loki",
+          "pluginId": "loki"
+        }
+      },
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_tempo",
+          "pluginId": "tempo"
+        }
+      },
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "topn"
+        }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "host_name"
+        }
+      },
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "log_filter"
+        }
+      }
+    ],
+    "elements": {
+      "panel-1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 1,
+          "title": "Rate with a range token",
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_tailnet) (rate(tailscale_network_io_bytes_total{host_name=~\"$host_name\"}[$__rate_interval]))"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "panel-2": {
+        "kind": "Panel",
+        "spec": {
+          "id": 2,
+          "title": "Numeric variable position",
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "topk(${topn}, last_over_time(tailscale_device_version_skew_ratio[$__range]))"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "panel-3": {
+        "kind": "Panel",
+        "spec": {
+          "id": 3,
+          "title": "Logs",
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_loki}"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"tailscale2otel\"} |~ `$log_filter`"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "panel-4": {
+        "kind": "Panel",
+        "spec": {
+          "id": 4,
+          "title": "Traces",
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_tempo}"
+                      },
+                      "spec": {
+                        "query": "{ resource.service.name = \"tailscale2otel\" }",
+                        "queryType": "traceql"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

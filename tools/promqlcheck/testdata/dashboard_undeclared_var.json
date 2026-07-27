@@ -1,0 +1,83 @@
+{
+  "apiVersion": "dashboard.grafana.app/v2",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "fixture-undeclared-var"
+  },
+  "spec": {
+    "title": "Fixture good",
+    "variables": [
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_prometheus",
+          "pluginId": "prometheus"
+        }
+      },
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_loki",
+          "pluginId": "loki"
+        }
+      },
+      {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_tempo",
+          "pluginId": "tempo"
+        }
+      },
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "topn"
+        }
+      },
+      {
+        "kind": "QueryVariable",
+        "spec": {
+          "name": "host_name"
+        }
+      },
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "log_filter"
+        }
+      }
+    ],
+    "elements": {
+      "panel-1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 1,
+          "title": "Rate with a range token",
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum(rate(tailscale_network_io_bytes_total{host_name=~\"$hostname\"}[$__rate_interval]))"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

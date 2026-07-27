@@ -1,0 +1,9 @@
+# Fixture: plain Prometheus rule-group format.
+groups:
+  - name: fixture.health
+    rules:
+      - alert: ExporterDown
+        expr: absent(tailscale2otel_up_ratio) or tailscale2otel_up_ratio == 0
+        for: 5m
+      - record: fixture:io:rate5m
+        expr: sum by (tailscale_tailnet) (rate(tailscale_network_io_bytes_total[5m]))

@@ -1,0 +1,23 @@
+# Fixture: two deliberate faults — an unparseable PromQL expr, and a
+# server-side expression node missing both `type` and `expression`.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: "fixture-broken"
+    folder: "fixture"
+    interval: "1m"
+    rules:
+      - uid: "fx-bad-promql"
+        title: "Bad PromQL"
+        condition: "B"
+        data:
+          - refId: "A"
+            datasourceUid: "grafanacloud-prom"
+            model:
+              expr: "sum by (tailscale2otel_up_ratio"
+              refId: "A"
+          - refId: "B"
+            datasourceUid: "__expr__"
+            model:
+              reducer: "last"
+              refId: "B"

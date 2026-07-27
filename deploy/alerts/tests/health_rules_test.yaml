@@ -1,0 +1,112 @@
+# promtool unit tests for the tailscale2otel.health group.
+#
+# `promtool check rules` only proves the expressions PARSE. These execute them
+# against synthetic series and assert what actually fires, which is the only way
+# to catch a rule that is syntactically valid and semantically wrong (#407).
+#
+# Run: promtool test rules deploy/alerts/tests/*.yaml
+rule_files:
+  - ../tailscale2otel.rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # --- ExporterDown: absent() is the whole point of this rule -----------------
+  # The exporter emitting a healthy 1 must never fire, and — more importantly —
+  # the series going away entirely MUST fire. A rule written as
+  # `tailscale2otel_up_ratio == 0` alone would go silent exactly when the
+  # exporter dies, which is the failure it exists to catch.
+  - name: exporter up and healthy does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '1+0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ExporterDown
+        exp_alerts: []
+
+  - name: exporter reporting zero fires after 5m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_up_ratio{job="tailscale2otel"}'
+        values: '0+0x20'
+    alert_rule_test:
+      # Below the 5m `for`, the alert is pending, not firing.
+      - eval_time: 4m
+        alertname: ExporterDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: tailscale2otel
+            exp_annotations:
+              summary: "tailscale2otel exporter is down"
+              description: >-
+                tailscale2otel_up_ratio is 0 or absent for 5m — the exporter is not
+                running or not emitting telemetry, so no Tailscale metrics or logs
+                are flowing. All dashboards will be stale. Check the "Up state" /
+                build-info panels on the Exporter Health dashboard (uid
+                ts2otel-exporter-health).
+
+  # The absent() arm. No input series at all for this metric.
+  - name: exporter series absent entirely fires with no labels
+    interval: 1m
+    input_series:
+      - series: 'tailscale_devices_count_ratio'
+        values: '3+0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "tailscale2otel exporter is down"
+              description: >-
+                tailscale2otel_up_ratio is 0 or absent for 5m — the exporter is not
+                running or not emitting telemetry, so no Tailscale metrics or logs
+                are flowing. All dashboards will be stale. Check the "Up state" /
+                build-info panels on the Exporter Health dashboard (uid
+                ts2otel-exporter-health).
+
+  # --- CollectorScrapeErrorRateHigh: counter-reset safety ---------------------
+  # A process restart resets the counter to 0. rate() must absorb that rather
+  # than reading the drop as a huge negative or the recovery as a spike. A
+  # steady, error-free collector that restarts must stay quiet.
+  - name: counter reset on a healthy collector does not fire
+    interval: 1m
+    input_series:
+      # Errors counter sits flat at 7, resets to 0 at the restart, stays flat.
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices"}'
+        values: '7+0x10 0+0x20'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CollectorScrapeErrorRateHigh
+        exp_alerts: []
+
+  - name: sustained scrape errors fire per collector
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="devices"}'
+        values: '0+1x40'
+      - series: 'tailscale2otel_scrape_errors_total{tailscale_collector="acl"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CollectorScrapeErrorRateHigh
+        exp_alerts:
+          # Only the failing collector alerts; the healthy one must not be
+          # swept in by the sum.
+          - exp_labels:
+              severity: warning
+              tailscale_collector: devices
+            exp_annotations:
+              summary: "Collector devices scrape errors elevated"
+              description: >-
+                Collector devices has been logging scrape errors
+                (rate(tailscale2otel_scrape_errors_total[5m]) > 0) for 15m. Break down
+                by error_type on the "scrape errors by collector" panel of the Exporter
+                Health dashboard (uid ts2otel-exporter-health).

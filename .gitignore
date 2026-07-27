@@ -74,3 +74,10 @@ __pycache__/
 
 # Superpowers visual-companion scratch (brainstorming mockups)
 .superpowers/
+
+# Tool-module binaries left behind by a bare `go build` inside tools/<name>/.
+# Go names the output after the directory, so it lands next to the source.
+tools/*/promqlcheck
+tools/*/metricscatalog
+tools/*/configcheck
+tools/*/apidrift

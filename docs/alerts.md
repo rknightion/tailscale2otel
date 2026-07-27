@@ -32,7 +32,7 @@ Every rule follows the canonical Grafana 3-node pipeline (A query → B reduce �
 round-trips cleanly through the Grafana UI and API. Datasource UIDs default to the portable Grafana
 Cloud defaults (`grafanacloud-prom` / `grafanacloud-logs`); swap them for a self-hosted stack.
 
-Rules are organised into four groups:
+Rules are organised into five groups:
 
 - **`tailscale2otel-health`** — exporter self-health (scrape staleness, cardinality cap, API auth
   failures, checkpoint errors, enrichment cache age, and more)
@@ -56,9 +56,37 @@ Rules are organised into four groups:
 
 !!! tip "Default-disabled by design"
     Only a high-signal starter set ships with `isPaused: false`. The rest are `isPaused: true` —
-    enable them in the Grafana UI once your tailnet has the relevant data. Optional signals
-    (posture, log streaming, tailnet-lock, DERP rollups) use `noDataState: OK` so they don't fire
-    until data actually exists.
+    enable them in the Grafana UI once your tailnet has the relevant data. Pausing is orthogonal to
+    the evaluation policy below: a paused rule still carries its declared no-data and error
+    semantics, it just is not evaluating yet.
+
+!!! tip "Evaluation policy — absence and error are per-rule, not global"
+    Every rule declares one of four policies, which fix its `noDataState` and `execErrState`
+    together. Previously all of them were `execErrState: OK`, so a broken datasource or a malformed
+    query read as *healthy* across the entire pack.
+
+    | policy | noData | execErr | for |
+    | --- | --- | --- | --- |
+    | `coverage_critical` | `Alerting` | `Alerting` | the rule exists to notice something stopped — absence IS the alert |
+    | `core` | `NoData` | `Error` | always emitted by a running exporter, so absence is abnormal |
+    | `optional` | `OK` | `Error` | absence means "not configured", but an error is still a fault |
+    | `advisory` | `OK` | `OK` | neither absence nor a transient error is actionable here |
+
+    `ExporterDown` is the only `coverage_critical` rule. Per-collector scrape rules are `core`
+    rather than `coverage_critical` on purpose: total absence means the exporter is gone, which
+    `ExporterDown` already pages on, and promoting them would fan one outage into a page per
+    collector.
+
+    **Nothing here can watch Grafana's own ruler.** If the ruler stops evaluating, no rule fires,
+    including the `coverage_critical` one. See
+    [Runbooks — who watches the watcher](runbooks.md) for the three operator-owned answers.
+
+!!! tip "Every alert links to a runbook and a panel"
+    All 73 alert rules carry a `runbook_url` pointing at a section of
+    [Runbooks](runbooks.md), and 72 of them carry paired `dashboardUid`/`panelId` fields naming a
+    canonical panel. Panel ids are resolved **by title** against the generated dashboard at build
+    time, and generation hard-fails on a title that matches zero or more than one panel — so a
+    renumbered or renamed panel breaks the build instead of silently producing a dead link.
 
 !!! tip "Alert on accepted data, not only a running receiver"
     `AcceptedIngestDataStale` compares `time()` with

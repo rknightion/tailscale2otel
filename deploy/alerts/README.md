@@ -60,15 +60,59 @@ has **73 alert rules + 12 recording rules** across five groups (`-health`, `-sec
 
 **Default-disabled by design.** Only a high-signal *starter set* ships enabled
 (`isPaused: false`); the rest are `isPaused: true` — enable them in the UI when you
-want them. Gated/optional signals (posture integrations, log streaming, services,
-tailnet-lock, DERP rollups, node discovery) are *absent* until the tailnet has the
-data, so their rules use `noDataState: OK` (absent ⇒ not firing).
+want them.
+
+**Every alert declares an evaluation policy** (#388), which fixes its
+`noDataState`/`execErrState` pair. There is no global default — the generator's
+`alert()` requires `policy=`, so a new rule cannot inherit someone else's
+semantics:
+
+| Policy | `noDataState` | `execErrState` | Used for | Count |
+|---|---|---|---|---|
+| `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
+| `core` | `NoData` | `Error` | always emitted while the exporter runs | 7 |
+| `optional` | `OK` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 47 |
+| `advisory` | `OK` | `OK` | hygiene; neither absence nor a transient error is actionable | 18 |
+
+Before this, *all* 73 rules shipped `execErrState: OK`, so a broken datasource
+read as "healthy" across the whole pack. Only the `advisory` class is still
+fail-open on both axes, and that is a per-rule decision.
+
+**Every alert also carries a `runbook_url` annotation** pointing at a section of
+[`docs/runbooks.md`](../../docs/runbooks.md), and 72 of the 73 carry a
+`dashboardUid`/`panelId` pair for their canonical panel in the generated flagship
+dashboard. Both are resolved and validated **at generation time**: an unknown
+runbook slug, an unreferenced runbook section, a missing panel title, or a title
+matching more than one panel each **fail the build**. Panels are resolved by
+**title**, never by a literal id — ids come from a counter in
+`../grafana/gen/build.py` and renumber whenever a panel is inserted. This is why
+`build.py` must run before `build_rules.py` (`scripts/regen-generated.sh
+dashboards` already does, in that order).
+
+> Grafana file provisioning takes `dashboardUid`/`panelId` as **top-level** rule
+> fields. The `__dashboardUid__`/`__panelId__` *annotations* are the HTTP-API
+> form of the same thing and Grafana materializes them itself — emitting both
+> conflicts, so this generator emits only the top-level pair, and only ever as a
+> pair.
+
+Nothing in this repo monitors Grafana's own ruler or datasource health, and a
+rule structurally cannot alert on its own non-evaluation. See
+[the runbook page](../../docs/runbooks.md) for the honest version and the three
+external mechanisms that do cover it.
+
+Generator tests live in [`gen/test_rules.py`](gen/test_rules.py) — they pin the
+policy matrix, the `coverage_critical` allowlist (with a written reason per
+member), the recording-rule field contract, and both link contracts:
+
+```bash
+python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
+```
 
 ### `tailscale2otel-health` — exporter self-health
 
 | Rule | Severity | Default | Fires when |
 |---|---|---|---|
-| `ExporterDown` | critical | ✅ on | `tailscale2otel_up_ratio` is `0` **or absent** for 5m (`noDataState: Alerting`, unlike the rest of this group) — the exporter process died or stopped emitting entirely |
+| `ExporterDown` | critical | ✅ on | `tailscale2otel_up_ratio` is `0` **or absent** for 5m — the exporter process died or stopped emitting entirely. The pack's only `coverage_critical` rule: a query error pages too |
 | `CollectorScrapeFailing` | warning | ✅ on | `tailscale2otel_scrape_success_ratio == 0` (per collector) for 15m — the last scrape failed and hasn't recovered |
 | `CollectorScrapeStale` | warning | ✅ on | a collector hasn't completed a scrape in >1h (wedged; success gauge can stay stale at 1) |
 | `MetricCardinalityCapped` | warning | ✅ on | `series_overflowing_ratio` > 0 → a metric is collapsing excess series (silent per-series loss) |

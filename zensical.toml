@@ -30,6 +30,7 @@ nav = [
     ] },
   { Operations = [
       { Upgrading = "upgrading.md" },
+      { Runbooks = "runbooks.md" },
       { Troubleshooting = "troubleshooting.md" },
       { Security = "security.md" }
     ] },
