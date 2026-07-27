@@ -278,6 +278,9 @@
                                         "interval": {
                                             "type": "string"
                                         },
+                                        "layout": {
+                                            "type": "string"
+                                        },
                                         "lookback": {
                                             "type": "string"
                                         },

@@ -26,6 +26,15 @@ import (
 //     (collectors.flowlogs.source); mixed poll/object-store modes per runtime are
 //     out of scope.
 
+// The two supported export layouts. Anything else is a validation error, and an
+// empty value means ObjectStoreLayoutPartitioned. There is no "auto": a flat and a
+// partitioned bucket are distinguishable only by listing them, and guessing wrong
+// changes what the durable scan positions mean, so the choice is explicit.
+const (
+	ObjectStoreLayoutPartitioned = "partitioned"
+	ObjectStoreLayoutFlat        = "flat"
+)
+
 // FlowObjectStore returns the effective flow-log object-store destination for the
 // runtime whose CONFIGURED tailnet name is tailnet (the literal configured value,
 // including the "-" placeholder — the same identity that keys the checkpoint
@@ -41,14 +50,30 @@ import (
 // material of the one tailnet it asked for.
 func (c *Config) FlowObjectStore(tailnet string) (ObjectStoreConfig, bool) {
 	if len(c.Tailnets) == 0 {
-		return c.Collectors.Flowlogs.ObjectStore, true
+		return objectStoreWithLayoutDefault(c.Collectors.Flowlogs.ObjectStore), true
 	}
 	for _, t := range c.Tailnets {
 		if t.Name == tailnet {
-			return objectStoreWithBudgetDefaults(t.ObjectStore.Flow), true
+			return objectStoreWithLayoutDefault(objectStoreWithBudgetDefaults(t.ObjectStore.Flow)), true
 		}
 	}
 	return ObjectStoreConfig{}, false
+}
+
+// objectStoreWithLayoutDefault resolves an unset layout to
+// ObjectStoreLayoutPartitioned. This is the ONE place that normalization happens,
+// on both branches of FlowObjectStore, so every reader of a destination sees a
+// concrete layout and no caller re-derives the default.
+//
+// It is deliberately NOT part of objectStoreWithBudgetDefaults: that function fills
+// TUNING fields for a list entry and its contract is that nothing else is defaulted.
+// Validate accepts an empty layout on either shape (it means partitioned), so the
+// two paths agree without the global block leaking into an entry.
+func objectStoreWithLayoutDefault(os ObjectStoreConfig) ObjectStoreConfig {
+	if os.Layout == "" {
+		os.Layout = ObjectStoreLayoutPartitioned
+	}
+	return os
 }
 
 // objectStoreWithBudgetDefaults fills a per-tailnet destination's TUNING fields
@@ -213,6 +238,15 @@ func validateObjectStoreDestination(collectorName, key string, os ObjectStoreCon
 		return fmt.Errorf("%s.endpoint uses plaintext HTTP for a remote "+
 			"host: set allow_insecure_http only when accepting that credentials and session tokens "+
 			"will cross the network without TLS", key)
+	case !oneOf(os.Layout, "", ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat):
+		// No autodetection and no third value: the layout decides which prefixes are
+		// enumerated, so an unrecognized one would either leave every flat object
+		// undiscovered or re-interpret the durable scan positions.
+		return fmt.Errorf("%s.layout %q invalid: must be %q (the default, and what "+
+			"Tailscale's own export writes) or %q (a copied/mirrored export whose "+
+			"self-contained basenames sit directly under the prefix); unset means %q",
+			key, os.Layout, ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat,
+			ObjectStoreLayoutPartitioned)
 	case os.MaxObjects < 0:
 		return fmt.Errorf("%s.max_objects must be >= 0 (got %d)", key, os.MaxObjects)
 	case os.MaxObjectWireBytes <= 0:
@@ -272,6 +306,14 @@ func objectStoreWarnings(key string, os ObjectStoreConfig) []string {
 			"interval (%v): the overlap that catches a late-arriving object is smaller than the gap "+
 			"between listings, so an object that lands between two cycles can be missed entirely.",
 			key, os.Lookback.D(), os.Interval.D()))
+	}
+	if os.Layout == ObjectStoreLayoutFlat {
+		w = append(w, fmt.Sprintf("%s.layout=flat is for copied or mirrored exports, not for "+
+			"Tailscale's own — those are always written under YYYY/MM/DD partitions. Flat has no "+
+			"partitions to bound re-listing, so once caught up every cycle re-walks the prefix: more "+
+			"LIST requests than the partitioned default, and a new object is discovered only when the "+
+			"walk reaches its key. Each cycle is still bounded by max_objects and resumes from a "+
+			"durable position, so no single cycle scans the whole bucket.", key))
 	}
 	if os.AllowInsecureHTTP && plaintextRemoteObjectStoreEndpoint(os.Endpoint) {
 		w = append(w, fmt.Sprintf("%s.allow_insecure_http=true sends S3 signing "+

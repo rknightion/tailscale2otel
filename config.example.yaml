@@ -220,6 +220,7 @@ collectors:
       region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
       bucket: ""                      # required — the bucket Tailscale exports into
       prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions
+      layout: partitioned             # partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) | flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk)
       path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
       allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
       access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile

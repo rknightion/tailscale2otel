@@ -22,15 +22,22 @@ type scanState struct {
 	StaleKeys []string
 }
 
-func loadScanState(cp collector.CheckpointStore, configuredBasePrefix string) (scanState, error) {
+func loadScanState(
+	cp collector.CheckpointStore,
+	configuredBasePrefix string,
+	layout Layout,
+) (scanState, error) {
 	state := scanState{Positions: map[string]string{}}
 	for _, row := range cp.Keys() {
 		encoded, ok := strings.CutPrefix(row, scanPrefix)
 		if !ok {
 			continue
 		}
+		// An EMPTY encoded prefix is legitimate: LayoutFlat with no configured
+		// prefix scans the bucket root, whose prefix is the empty string. Only the
+		// key half must be present.
 		encodedPrefix, encodedKey, ok := strings.Cut(encoded, "/")
-		if !ok || encodedPrefix == "" || encodedKey == "" || strings.Contains(encodedKey, "/") {
+		if !ok || encodedKey == "" || strings.Contains(encodedKey, "/") {
 			return scanState{}, fmt.Errorf("objectstore: invalid scan checkpoint %q", row)
 		}
 		prefixBytes, err := base64.RawURLEncoding.DecodeString(encodedPrefix)
@@ -49,7 +56,7 @@ func loadScanState(cp collector.CheckpointStore, configuredBasePrefix string) (s
 		if key != "" && !strings.HasPrefix(key, prefix) {
 			return scanState{}, fmt.Errorf("objectstore: scan key is outside its prefix")
 		}
-		if !isConfiguredDayPrefix(prefix, configuredBasePrefix) {
+		if !isConfiguredScanPrefix(prefix, configuredBasePrefix, layout) {
 			state.StaleKeys = append(state.StaleKeys, row)
 			continue
 		}
@@ -60,6 +67,23 @@ func loadScanState(cp collector.CheckpointStore, configuredBasePrefix string) (s
 	}
 	sort.Strings(state.StaleKeys)
 	return state, nil
+}
+
+// isConfiguredScanPrefix reports whether a persisted scan row names a prefix the
+// CURRENT layout still enumerates. A row that does not is returned as stale and
+// deleted by the cycle that loads it, which is what makes a layout switch safe in
+// both directions: the day-partition rows a partitioned deployment wrote are
+// pruned on the first flat cycle, and the single flat row is pruned on the first
+// partitioned cycle. Nothing is left behind to be listed under one layout and
+// counted against the prefix cap under the other.
+func isConfiguredScanPrefix(prefix, configuredBasePrefix string, layout Layout) bool {
+	if layout == LayoutFlat {
+		// Exactly the one prefix scanPrefixes lists, compared the same way it is
+		// built, so a configured prefix written with or without a trailing slash
+		// resolves to the same durable row.
+		return prefix == flatPrefix(configuredBasePrefix)
+	}
+	return isConfiguredDayPrefix(prefix, configuredBasePrefix)
 }
 
 func isConfiguredDayPrefix(prefix, configuredBasePrefix string) bool {

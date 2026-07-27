@@ -22,7 +22,7 @@ func TestScanStateRoundTripsAndReplacesOnePrefix(t *testing.T) {
 		t.Fatalf("apply first position: %v", err)
 	}
 
-	got, err := loadScanState(cp, "flow ü")
+	got, err := loadScanState(cp, "flow ü", LayoutPartitioned)
 	if err != nil {
 		t.Fatalf("load first position: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestScanStateRoundTripsAndReplacesOnePrefix(t *testing.T) {
 	if err := batch.apply(cp); err != nil {
 		t.Fatalf("replace position: %v", err)
 	}
-	got, err = loadScanState(cp, "flow ü")
+	got, err = loadScanState(cp, "flow ü", LayoutPartitioned)
 	if err != nil {
 		t.Fatalf("load replacement: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestScanStateClearLeavesUnrelatedKeys(t *testing.T) {
 	if _, ok := cp.Get("unrelated"); !ok {
 		t.Fatal("clearing scan position removed an unrelated checkpoint")
 	}
-	got, err := loadScanState(cp, "flow")
+	got, err := loadScanState(cp, "flow", LayoutPartitioned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestScanStateRoundTripsPrefixStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := loadScanState(cp, "flow")
+	got, err := loadScanState(cp, "flow", LayoutPartitioned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestLoadScanStateRejectsDuplicateRows(t *testing.T) {
 		}
 	}
 
-	if _, err := loadScanState(cp, "flow"); err == nil {
+	if _, err := loadScanState(cp, "flow", LayoutPartitioned); err == nil {
 		t.Fatal("loadScanState accepted duplicate rows for one prefix")
 	}
 }
@@ -132,12 +132,82 @@ func TestLoadScanStateReturnsRowsOutsideConfiguredPrefixAsStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := loadScanState(cp, "flow")
+	got, err := loadScanState(cp, "flow", LayoutPartitioned)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got.Positions) != 0 || len(got.StaleKeys) != 1 {
 		t.Fatalf("state = %+v, want one stale row and no active position", got)
+	}
+}
+
+// A scan row belongs to the layout that can still list its prefix. Under
+// LayoutFlat the day-partition rows a partitioned deployment left behind are
+// stale, and the base-prefix row is the live one — reversed under
+// LayoutPartitioned. Both directions matter: a row classed live under a layout
+// that never lists it would be neither drained nor pruned.
+func TestLoadScanStateClassifiesRowsByLayout(t *testing.T) {
+	dayPrefix := "flow/2026/07/24/"
+	flat := "flow/"
+	at := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		name       string
+		layout     Layout
+		wantActive string
+		wantStale  string
+	}{
+		{"flat keeps the base prefix", LayoutFlat, flat, dayPrefix},
+		{"partitioned keeps the day partition", LayoutPartitioned, dayPrefix, flat},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := collector.NewMemoryStore()
+			batch := newCheckpointBatch()
+			batch.setScanPosition(cp, dayPrefix, dayPrefix+"10:00:00.json", at)
+			batch.setScanPosition(cp, flat, flat+"2026-07-24-10-00-00.ndjson", at)
+			if err := batch.apply(cp); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := loadScanState(cp, "flow", tc.layout)
+			if err != nil {
+				t.Fatalf("loadScanState: %v", err)
+			}
+			if len(got.Positions) != 1 {
+				t.Fatalf("positions = %v, want only the row this layout lists", got.Positions)
+			}
+			if _, ok := got.Positions[tc.wantActive]; !ok {
+				t.Fatalf("positions = %v, want the %q row active", got.Positions, tc.wantActive)
+			}
+			if len(got.StaleKeys) != 1 ||
+				!strings.Contains(got.StaleKeys[0],
+					base64.RawURLEncoding.EncodeToString([]byte(tc.wantStale))) {
+				t.Fatalf("stale = %v, want exactly the %q row", got.StaleKeys, tc.wantStale)
+			}
+		})
+	}
+}
+
+// The flat listing prefix and the day-partition prefixes must agree on what "the
+// configured prefix" is, or a durable position written under one spelling of the
+// same prefix is orphaned. dayPrefixes owns that normalization; flatPrefix mirrors
+// it, so every day prefix starts with the flat prefix for the same base.
+func TestFlatPrefixNormalizesTheSameBaseAsDayPrefixes(t *testing.T) {
+	day := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	for _, base := range []string{"", "flow", "flow/", "a/b", "a/b/", "/flow"} {
+		flat := flatPrefix(base)
+		days := dayPrefixes(base, day, day, 1)
+		if len(days) != 1 {
+			t.Fatalf("dayPrefixes(%q) = %v, want one prefix", base, days)
+		}
+		if !strings.HasPrefix(days[0], flat) {
+			t.Errorf("flatPrefix(%q) = %q is not a prefix of dayPrefixes(%q)[0] = %q",
+				base, flat, base, days[0])
+		}
+		if rest := strings.TrimPrefix(days[0], flat); rest != "2026/07/24/" {
+			t.Errorf("dayPrefixes(%q)[0] beyond flatPrefix = %q, want the bare day partition",
+				base, rest)
+		}
 	}
 }
 
@@ -211,7 +281,7 @@ func TestGapStateRoundTripsUpdatesAndResolves(t *testing.T) {
 			t.Fatalf("resolving a gap removed %q", unaffected)
 		}
 	}
-	state, err := loadScanState(cp, "flow")
+	state, err := loadScanState(cp, "flow", LayoutPartitioned)
 	if err != nil || len(state.Positions) != 1 {
 		t.Fatalf("scan state after gap resolution = %+v, err=%v", state, err)
 	}

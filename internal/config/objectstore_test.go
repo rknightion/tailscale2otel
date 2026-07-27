@@ -893,3 +893,143 @@ func hasWarning(warnings []string, substr string) bool {
 	}
 	return false
 }
+
+// The layout is an explicit operator choice with exactly two values. There is
+// deliberately no "auto": a flat and a partitioned bucket are distinguishable only
+// by listing them, and guessing changes what the durable scan cursors mean.
+func TestValidate_ObjectStoreLayoutEnum(t *testing.T) {
+	for _, tc := range []struct {
+		layout string
+		wantOK bool
+	}{
+		{"", true}, // unset means partitioned
+		{"partitioned", true},
+		{"flat", true},
+		{"auto", false},
+		{"Flat", false},
+		{"partitioned/flat", false},
+	} {
+		t.Run(tc.layout, func(t *testing.T) {
+			err := objectStoreConfig(func(c *Config) {
+				c.Collectors.Flowlogs.ObjectStore.Layout = tc.layout
+			}).Validate()
+			if tc.wantOK {
+				if err != nil {
+					t.Fatalf("Validate rejected layout %q: %v", tc.layout, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate accepted layout %q", tc.layout)
+			}
+			for _, want := range []string{"layout", "partitioned", "flat"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not name %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// #284 gives every tailnets[] entry its own complete destination, so the layout is
+// validated per entry too, and the message must name the entry's key.
+func TestValidate_ObjectStoreLayoutEnumPerTailnet(t *testing.T) {
+	err := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[1].ObjectStore.Flow.Layout = "auto"
+	}).Validate()
+	if err == nil {
+		t.Fatal("Validate accepted an unsupported per-tailnet layout")
+	}
+	if !strings.Contains(err.Error(), "tailnets[1].objectstore.flow.layout") {
+		t.Errorf("error %q does not name the offending key", err)
+	}
+}
+
+// Flat is correct for a copied export and wrong as a default, so choosing it is
+// advised — never an error.
+func TestWarnings_ObjectStoreFlatLayoutCosts(t *testing.T) {
+	c := objectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Layout = "flat"
+	})
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate rejected layout flat: %v", err)
+	}
+	if !hasWarning(c.Warnings(), "collectors.flowlogs.objectstore.layout") {
+		t.Errorf("warnings = %v, want an advisory naming the layout key", c.Warnings())
+	}
+	if !hasWarning(c.Warnings(), "LIST") {
+		t.Errorf("warnings = %v, want the extra LIST cost stated", c.Warnings())
+	}
+
+	partitioned := objectStoreConfig(nil)
+	if hasWarning(partitioned.Warnings(), "objectstore.layout") {
+		t.Errorf("warnings = %v, want none for the partitioned default", partitioned.Warnings())
+	}
+}
+
+func TestWarnings_ObjectStoreFlatLayoutPerTailnet(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[1].ObjectStore.Flow.Layout = "flat"
+	})
+	if !hasWarning(c.Warnings(), "tailnets[1].objectstore.flow.layout") {
+		t.Errorf("warnings = %v, want an advisory naming the entry's layout key", c.Warnings())
+	}
+}
+
+// The zero value must resolve to partitioned at the ONE seam the app reads a
+// destination through, so no caller has to re-derive it. A tailnets[] entry cannot
+// pass through Default(), which is exactly where an empty value would otherwise
+// reach the collector.
+func TestFlowObjectStore_EmptyLayoutResolvesToPartitioned(t *testing.T) {
+	if got := Default().Collectors.Flowlogs.ObjectStore.Layout; got != ObjectStoreLayoutPartitioned {
+		t.Errorf("default layout = %q, want %q", got, ObjectStoreLayoutPartitioned)
+	}
+
+	single := objectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Layout = ""
+	})
+	dest, ok := single.FlowObjectStore("example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(single) = !ok")
+	}
+	if dest.Layout != ObjectStoreLayoutPartitioned {
+		t.Errorf("single-mode layout = %q, want %q", dest.Layout, ObjectStoreLayoutPartitioned)
+	}
+
+	multi := multiTailnetObjectStoreConfig(nil) // neither entry sets a layout
+	entry, ok := multi.FlowObjectStore("beta.example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(beta) = !ok")
+	}
+	if entry.Layout != ObjectStoreLayoutPartitioned {
+		t.Errorf("per-tailnet layout = %q, want %q", entry.Layout, ObjectStoreLayoutPartitioned)
+	}
+
+	flat := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[0].ObjectStore.Flow.Layout = ObjectStoreLayoutFlat
+	})
+	alpha, ok := flat.FlowObjectStore("alpha.example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(alpha) = !ok")
+	}
+	if alpha.Layout != ObjectStoreLayoutFlat {
+		t.Errorf("explicit per-tailnet layout = %q, want %q", alpha.Layout, ObjectStoreLayoutFlat)
+	}
+}
+
+// The layout does not identify a FEED: two tailnets pointed at one bucket+prefix
+// are the same physical objects however they are enumerated, so a differing layout
+// must not let the duplicate past the #284 dedupe check.
+func TestValidate_ObjectStoreLayoutIsNotPartOfTheFeedIdentity(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[1].ObjectStore.Flow.Endpoint = c.Tailnets[0].ObjectStore.Flow.Endpoint
+		c.Tailnets[1].ObjectStore.Flow.Region = c.Tailnets[0].ObjectStore.Flow.Region
+		c.Tailnets[1].ObjectStore.Flow.Bucket = c.Tailnets[0].ObjectStore.Flow.Bucket
+		c.Tailnets[1].ObjectStore.Flow.Prefix = c.Tailnets[0].ObjectStore.Flow.Prefix
+		c.Tailnets[0].ObjectStore.Flow.Layout = ObjectStoreLayoutPartitioned
+		c.Tailnets[1].ObjectStore.Flow.Layout = ObjectStoreLayoutFlat
+	})
+	if err := c.Validate(); err == nil {
+		t.Fatal("Validate accepted two tailnets on one feed because their layouts differ")
+	}
+}

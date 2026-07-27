@@ -627,6 +627,7 @@ be built from it, and that is an immutable fault rather than something a retry f
 | `collectors.flowlogs.objectstore.region` | `""` | **Required.** Part of the request signature, so a wrong or missing value fails every request with HTTP 403 rather than degrading quietly. |
 | `collectors.flowlogs.objectstore.bucket` | `""` | **Required.** The bucket Tailscale exports into. |
 | `collectors.flowlogs.objectstore.prefix` | `""` | The export's root within the bucket, above the `YYYY/MM/DD` partitions. |
+| `collectors.flowlogs.objectstore.layout` | `partitioned` | How objects are arranged under `prefix`: `partitioned` or `flat`. Not autodetected — see [export layouts](#export-layouts-partitioned-vs-flat) below. Any other value is a startup error. |
 | `collectors.flowlogs.objectstore.path_style` | `false` | Address as `<endpoint>/<bucket>/<key>` rather than `<bucket>.<endpoint>/<key>`. Required by most non-AWS implementations. Getting it backwards shows up as a DNS failure, not an HTTP error. |
 | `collectors.flowlogs.objectstore.allow_insecure_http` | `false` | Permit plaintext HTTP to a **remote** object-store endpoint. HTTP loopback endpoints (`localhost`, `127.0.0.0/8`, `::1`) remain available without the override for local MinIO development. Enabling this sends signing credentials and temporary session tokens over the network without TLS and emits a startup warning; prefer HTTPS. |
 | `collectors.flowlogs.objectstore.access_key_id` | `""` | Static credential. **Set via `TS2OTEL_*` env only.** Leave empty to use the ambient chain (below). |
@@ -645,6 +646,54 @@ be built from it, and that is an immutable fault rather than something a retry f
 | `collectors.flowlogs.objectstore.max_cycle_wire_bytes` | `536870912` (512 MiB) | Maximum GET response bytes read in one cycle. Once reached, the current object and untouched objects are deferred without creating gaps. Must be positive and at least `max_object_wire_bytes`. |
 | `collectors.flowlogs.objectstore.max_cycle_decompressed_bytes` | `268435456` (256 MiB) | Maximum decompressed bytes processed in one cycle. Once reached, untouched objects are deferred to a later cycle without creating gaps. Must be positive and at least `max_object_decompressed_bytes`. |
 | `collectors.flowlogs.objectstore.max_cycle_records` | `500000` | Maximum records processed in one cycle. Once reached, untouched objects are deferred to a later cycle without creating gaps. Must be positive and at least `max_object_records`. |
+
+##### Export layouts: `partitioned` vs `flat`
+
+Tailscale's own export always writes day partitions, and its object keys carry only a time:
+
+```
+<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]
+```
+
+`layout: partitioned` (the default) enumerates exactly the `YYYY/MM/DD/` partitions spanning the
+listing window. That bound is what keeps a first run against a bucket holding months of exports from
+walking all of it, and it is the right setting for every bucket Tailscale writes to directly.
+
+A **copied or mirrored** export can end up flattened, with self-contained basenames and no partition
+directories above them:
+
+```
+<prefix>/YYYY-MM-DD-HH-MM-SS.ndjson[.zst|.zstd|.gz|.gzip]
+```
+
+Those keys have always parsed, but under `partitioned` they are never **listed**, so they were never
+discovered. `layout: flat` lists `prefix` itself with no delimiter, which finds them.
+
+Choosing `flat` is an explicit decision and emits a startup advisory. There is no `auto`: the two
+layouts are distinguishable only by listing the bucket, and guessing wrong changes what the durable
+scan positions mean.
+
+What to know before setting it:
+
+- **`flat` is a superset, so a mixed bucket works.** An undelimited listing of `prefix` also returns
+  everything beneath the day partitions, and both key shapes parse, so one bucket holding both is
+  fully ingested.
+- **It costs more LIST requests.** There are no partitions to bound the re-walk, so once caught up
+  every cycle re-walks the prefix. Each cycle is still bounded — one listing of at most
+  `max_objects * 4` keys — and resumes from a durable position, so no single cycle scans an unbounded
+  bucket. But a large flat prefix takes several cycles per full sweep, and a newly written object is
+  discovered only when the walk reaches its key, which raises ingestion latency accordingly.
+- **An official-shaped key directly under a flat root stays unreadable.** `<prefix>/HH:MM:SS.json`
+  carries no date — the date lives in the three directories the flattening removed — so it is counted
+  into `tailscale2otel.objectstore.skipped{reason="unrecognized_key"}` rather than guessed at. Only
+  the self-contained `YYYY-MM-DD-HH-MM-SS` basename is genuinely flat-readable.
+- **Switching layout is safe in both directions.** The scan positions the other layout wrote are
+  recognized as stale on the first cycle after the switch and deleted there, so nothing is left behind
+  to be listed under one layout and never pruned under the other. `lookback` still bounds recovery:
+  an object older than the overlap window is out of reach under either layout.
+
+With a `tailnets:` list the key is `tailnets[].objectstore.flow.layout`, per entry, with the same
+values and the same default.
 
 **Credentials.** The three credential values are `config.Secret` fields: config dumps, structured
 logs, validation errors, and the admin status surface redact or omit them. They are revealed only

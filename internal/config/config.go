@@ -777,6 +777,14 @@ type ObjectStoreConfig struct {
 	// Prefix is the export's root within the bucket, above the YYYY/MM/DD
 	// partitions.
 	Prefix string `yaml:"prefix"`
+	// Layout is how objects are arranged under Prefix:
+	// ObjectStoreLayoutPartitioned (the default, and what Tailscale itself
+	// writes) or ObjectStoreLayoutFlat for a copied/mirrored export whose
+	// self-contained basenames sit directly under Prefix. Empty means
+	// partitioned; there is deliberately no autodetection, because the two are
+	// distinguishable only by listing the bucket and guessing wrong changes what
+	// the durable scan positions mean.
+	Layout string `yaml:"layout"`
 	// PathStyle addresses the bucket as <endpoint>/<bucket>/<key> rather than
 	// <bucket>.<endpoint>/<key>. Required by most non-AWS implementations.
 	PathStyle bool `yaml:"path_style"`

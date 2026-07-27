@@ -124,6 +124,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__BUCKET` | `""` | required — the bucket Tailscale exports into |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LAYOUT` | `partitioned` | partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) \| flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ALLOW_INSECURE_HTTP` | `false` | remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID` | `""` | SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile |

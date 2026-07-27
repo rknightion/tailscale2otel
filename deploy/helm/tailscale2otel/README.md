@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.5](https://img.shields.io/badge/Version-0.14.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.6](https://img.shields.io/badge/Version-0.14.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -258,6 +258,7 @@ extraVolumeMounts:
 | config.collectors.flowlogs.objectstore.endpoint | string | `""` | Service URL of the S3-compatible store holding Tailscale's flow-log export, e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when source is objectstore; never derived from the region, because a non-AWS implementation would be derived wrong. Leave "" for any other source. |
 | config.collectors.flowlogs.objectstore.initial_lookback | string | `"6h"` | Cold-start reach-back, so a first run against a long history does not ingest all of it. |
 | config.collectors.flowlogs.objectstore.interval | string | `"60s"` | How often the bucket is listed. |
+| config.collectors.flowlogs.objectstore.layout | string | `"partitioned"` | How objects are arranged under prefix: `partitioned` (the default, and what Tailscale's own export writes: objects under prefix/YYYY/MM/DD/) or `flat` (a COPIED or mirrored export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix). Flat also finds partitioned objects, but has no partitions to bound re-listing, so it costs more LIST requests; each cycle is still bounded and resumable. Not autodetected. |
 | config.collectors.flowlogs.objectstore.lookback | string | `"1h"` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Keep it >= interval, or an object landing between two cycles can be missed. |
 | config.collectors.flowlogs.objectstore.max_cycle_decompressed_bytes | int | `268435456` | Maximum decompressed bytes processed in one cycle. Untouched objects are deferred. Must be at least max_object_decompressed_bytes. |
 | config.collectors.flowlogs.objectstore.max_cycle_records | int | `500000` | Maximum records processed in one cycle. Untouched objects are deferred. Must be at least max_object_records. |

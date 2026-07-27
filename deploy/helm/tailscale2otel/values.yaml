@@ -523,6 +523,12 @@ config:
         bucket: ""
         # -- The export's root within the bucket, above the YYYY/MM/DD partitions.
         prefix: ""
+        # -- How objects are arranged under prefix: `partitioned` (the default, and what Tailscale's
+        # own export writes: objects under prefix/YYYY/MM/DD/) or `flat` (a COPIED or mirrored export
+        # whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix). Flat also
+        # finds partitioned objects, but has no partitions to bound re-listing, so it costs more LIST
+        # requests; each cycle is still bounded and resumable. Not autodetected.
+        layout: partitioned
         # -- Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>.
         # Required by most non-AWS implementations; getting it backwards is a DNS failure.
         path_style: false

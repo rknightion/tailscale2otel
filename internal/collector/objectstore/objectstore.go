@@ -105,11 +105,40 @@ const (
 	seenPrefix = "seen/"
 )
 
+// Layout is how objects are arranged under Prefix. It is an explicit operator
+// choice, never autodetected: a flat and a partitioned bucket are
+// indistinguishable without listing, and guessing wrong changes what the durable
+// scan positions mean.
+type Layout string
+
+const (
+	// LayoutPartitioned is Tailscale's own export shape and the default: objects
+	// live under <Prefix>/YYYY/MM/DD/, and only the day partitions spanning the
+	// listing window are enumerated. That bound is what keeps a first run against
+	// a bucket holding months of history from walking all of it.
+	LayoutPartitioned Layout = "partitioned"
+	// LayoutFlat enumerates <Prefix> itself, with no delimiter, so objects whose
+	// self-contained basename carries the whole timestamp are discovered even
+	// though no YYYY/MM/DD directory sits above them. It exists for copied or
+	// mirrored exports — Tailscale's own exports are always partitioned.
+	//
+	// It is a SUPERSET of LayoutPartitioned's reach: an undelimited listing of the
+	// base prefix also returns everything beneath the day partitions, and parseKey
+	// handles those keys too. What it costs is the day-partition bound: once caught
+	// up, each cycle re-walks the prefix (still bounded per cycle by the page
+	// request and resumable through the durable scan position, so no single cycle
+	// scans an unbounded bucket).
+	LayoutFlat Layout = "flat"
+)
+
 // Options configures a Collector. Zero values select the defaults above.
 type Options struct {
 	// Prefix is the export's root within the bucket, above the YYYY/MM/DD
 	// partitions.
-	Prefix          string
+	Prefix string
+	// Layout is how objects are arranged under Prefix. Empty means
+	// LayoutPartitioned.
+	Layout          Layout
 	Interval        time.Duration
 	Lookback        time.Duration
 	InitialLookback time.Duration
@@ -184,6 +213,19 @@ func New(
 	if err := migrateLegacyState(cp, opts.LegacyCheckpointNamespace, namespace); err != nil {
 		return nil, err
 	}
+	// An unrecognized layout is refused rather than defaulted: silently reading it
+	// as partitioned would leave every flat object undiscovered while the config
+	// says otherwise, and reading it as flat would change what the durable scan
+	// positions mean. config.Validate rejects it first, so reaching this is a
+	// wiring bug.
+	switch opts.Layout {
+	case "":
+		opts.Layout = LayoutPartitioned
+	case LayoutPartitioned, LayoutFlat:
+	default:
+		return nil, fmt.Errorf("objectstore: layout %q is not supported: use %q or %q",
+			opts.Layout, LayoutPartitioned, LayoutFlat)
+	}
 	if opts.Interval <= 0 {
 		opts.Interval = defaultInterval
 	}
@@ -255,7 +297,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// timestamp is still found. The seen set is what makes this free.
 	from := cursor.Add(-c.opts.Lookback)
 
-	state, err := loadScanState(c.cp, c.opts.Prefix)
+	state, err := loadScanState(c.cp, c.opts.Prefix, c.opts.Layout)
 	if err != nil {
 		return err
 	}
@@ -530,8 +572,57 @@ type enumeration struct {
 	prefixes   []prefixProgress
 }
 
-// enumerate lists the day partitions spanning [from, now] and returns the
-// objects worth fetching, oldest first.
+// scanPrefixes is the prefix set this cycle would list from scratch, before any
+// durable scan position is folded in by listingPrefixes.
+//
+// LayoutFlat returns exactly ONE prefix — the configured base — so the
+// maxDayPrefixes span cap is irrelevant there and cannot misfire: one prefix can
+// never exceed it, and the listing window plays no part in choosing it.
+func (c *Collector) scanPrefixes(from, now time.Time) []string {
+	if c.opts.Layout == LayoutFlat {
+		return []string{flatPrefix(c.opts.Prefix)}
+	}
+	return dayPrefixes(c.opts.Prefix, from, now, maxDayPrefixes)
+}
+
+// flatPrefix normalizes the configured base prefix into the single listing prefix
+// LayoutFlat walks. It trims a trailing slash and restores exactly one, the same
+// way dayPrefixes joins the base onto a day partition, so the two layouts agree
+// on what "the configured prefix" is. An empty base stays empty, which lists the
+// whole bucket.
+func flatPrefix(base string) string {
+	base = strings.TrimSuffix(base, "/")
+	if base == "" {
+		return ""
+	}
+	return base + "/"
+}
+
+// beforeLowerBound reports whether an object stamped at is skipped for sitting
+// below the listing lower bound.
+//
+// A PARTITIONED prefix that already holds a scan position is committed ground:
+// its span is one day, so an object behind the bound is at most that far behind
+// it, and re-listing it is how a failed object at the start of a partition is
+// retried immediately (see TestCollect_FailureAtPrefixStartKeepsScanGroundActive).
+//
+// A FLAT prefix spans the whole export, so the same exemption would admit every
+// object in the bucket for as long as any scan position exists. That is not merely
+// expensive: the seen set is pruned 2*Lookback behind the cursor, so an object too
+// old to be inside the window is also too old to be remembered, and each wrap of
+// the walk would re-fetch and re-emit the same history — permanent duplicate
+// records. The bound is absolute in flat mode; a failed object there is still
+// retried durably through its gap row, which needs no listing.
+func (c *Collector) beforeLowerBound(at, from time.Time, active bool) bool {
+	if !at.Before(from) {
+		return false
+	}
+	return !active || c.opts.Layout == LayoutFlat
+}
+
+// enumerate lists the configured prefixes for this layout — the day partitions
+// spanning [from, now], or the one flat base prefix — and returns the objects
+// worth fetching, oldest first.
 func (c *Collector) enumerate(
 	ctx context.Context,
 	from, now time.Time,
@@ -540,7 +631,7 @@ func (c *Collector) enumerate(
 	positions map[string]string,
 	e telemetry.Emitter,
 ) (enumeration, error) {
-	prefixes, err := listingPrefixes(positions, dayPrefixes(c.opts.Prefix, from, now, maxDayPrefixes))
+	prefixes, err := listingPrefixes(positions, c.scanPrefixes(from, now))
 	if err != nil {
 		return enumeration{}, err
 	}
@@ -575,7 +666,7 @@ func (c *Collector) enumerate(
 				// never become a candidate: a candidate is what advances the
 				// cursor, and the cursor is the next cycle's lower bound.
 				future++
-			case at.Before(from) && !progress.active:
+			case c.beforeLowerBound(at, from, progress.active):
 				stale++
 				item.safe = true
 			default:

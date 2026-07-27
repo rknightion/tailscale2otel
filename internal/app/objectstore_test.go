@@ -14,6 +14,7 @@ import (
 func TestObjectStoreOptionsMapsEveryConfigFieldExactly(t *testing.T) {
 	got := objectStoreOptions(config.ObjectStoreConfig{
 		Prefix:                     "prefix-marker",
+		Layout:                     config.ObjectStoreLayoutFlat,
 		Interval:                   config.Duration(11 * time.Second),
 		Lookback:                   config.Duration(13 * time.Minute),
 		InitialLookback:            config.Duration(17 * time.Hour),
@@ -27,6 +28,7 @@ func TestObjectStoreOptionsMapsEveryConfigFieldExactly(t *testing.T) {
 	})
 	want := objectstore.Options{
 		Prefix:                     "prefix-marker",
+		Layout:                     objectstore.LayoutFlat,
 		Interval:                   11 * time.Second,
 		Lookback:                   13 * time.Minute,
 		InitialLookback:            17 * time.Hour,

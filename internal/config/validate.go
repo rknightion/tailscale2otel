@@ -269,8 +269,8 @@ func (c *Config) Warnings() []string {
 			"double-counted. The bucket holds the same records the receiver does. Cross-source "+
 			"de-duplication is a best-effort FAILSAFE, not a guarantee: choose ONE.")
 	}
-	// Per-destination advisories (overlap gap, plaintext signing). In multi-tailnet
-	// mode this is one set per tailnets[] entry, each naming its own key.
+	// Per-destination advisories (overlap gap, flat layout, plaintext signing). In
+	// multi-tailnet mode this is one set per tailnets[] entry, each naming its own key.
 	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) {
 		w = append(w, c.flowObjectStoreWarnings()...)
 	}

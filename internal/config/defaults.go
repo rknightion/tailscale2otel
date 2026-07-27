@@ -113,6 +113,7 @@ func Default() *Config {
 				ReplaySeenCapacity: 131072,
 				LogMode:            "per_connection",
 				ObjectStore: ObjectStoreConfig{
+					Layout:                     ObjectStoreLayoutPartitioned,
 					Interval:                   dur(60 * time.Second),
 					Lookback:                   dur(1 * time.Hour),
 					InitialLookback:            dur(6 * time.Hour),

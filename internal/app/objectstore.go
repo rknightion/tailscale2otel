@@ -19,7 +19,11 @@ func objectStoreSource(s string) bool { return s == "objectstore" }
 
 func objectStoreOptions(cfg config.ObjectStoreConfig) objectstore.Options {
 	return objectstore.Options{
-		Prefix:                     cfg.Prefix,
+		Prefix: cfg.Prefix,
+		// config resolves an unset layout to "partitioned" in FlowObjectStore, and
+		// objectstore.New treats an empty Layout the same way, so a caller that
+		// bypassed that seam still gets the safe default rather than a refusal.
+		Layout:                     objectstore.Layout(cfg.Layout),
 		Interval:                   cfg.Interval.D(),
 		Lookback:                   cfg.Lookback.D(),
 		InitialLookback:            cfg.InitialLookback.D(),
