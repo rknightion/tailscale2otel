@@ -297,12 +297,14 @@ type TailnetConfig struct {
 
 // TailnetObjectStore groups one tailnet's per-signal object-store destinations.
 //
-// Only flow ships: object-store audit ingestion is blocked on external wire
-// evidence (#288), and exposing an audit: key now would be dead config. The
-// struct exists so that signal can be added additively, without moving the flow
-// destination or changing the checkpoint namespace.
+// The two signals are separate destinations with separate checkpoint namespaces
+// and nothing is shared between them: Tailscale publishes network (flow) and
+// configuration (audit) logs as independent exports, so one runtime can read one,
+// the other, or both. Two destinations reachable by this process may not name the
+// same feed — see validateObjectStoreFeeds.
 type TailnetObjectStore struct {
-	Flow ObjectStoreConfig `yaml:"flow"`
+	Flow  ObjectStoreConfig `yaml:"flow"`
+	Audit ObjectStoreConfig `yaml:"audit"`
 }
 
 // ResolvedTailnet is the normalized, per-tailnet connection config the app layer
@@ -835,6 +837,12 @@ type AuditlogsCollector struct {
 	Lag             Duration `yaml:"lag"`              // poll only
 	InitialLookback Duration `yaml:"initial_lookback"` // poll only
 	MaxWindow       Duration `yaml:"max_window"`       // poll only
+	// ObjectStore configures the objectstore ingestion path for Tailscale's
+	// CONFIGURATION-log export. It applies only when source is "objectstore", and
+	// it is a destination of its own: the configuration and network exports are
+	// separate, so nothing here is shared with or inherited from
+	// collectors.flowlogs.objectstore.
+	ObjectStore ObjectStoreConfig `yaml:"objectstore"`
 }
 
 // KeysCollector configures the keys collector. ExpiryWarn sets how far ahead of

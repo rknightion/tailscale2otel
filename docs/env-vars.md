@@ -144,11 +144,34 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_CYCLE_DECOMPRESSED_BYTES` | `268435456` | defer untouched objects after 256 MiB of decoded data in one cycle |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_CYCLE_RECORDS` | `500000` | defer untouched objects after this many decoded records in one cycle |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__ENABLED` | `true` | configuration/audit events -> event logs + a counter |
-| `TS2OTEL_COLLECTORS__AUDITLOGS__SOURCE` | `poll` | poll \| stream \| both (see flowlogs) |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__SOURCE` | `poll` | poll \| stream \| both \| objectstore (see flowlogs) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__INTERVAL` | `60s` | poll only |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__LAG` | `60s` | poll only |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__INITIAL_LOOKBACK` | `5m` | poll only |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__MAX_WINDOW` | `6h` | poll only |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region) |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__BUCKET` | `""` | required — the bucket Tailscale exports configuration logs into |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__PREFIX` | `""` | the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__LAYOUT` | `partitioned` | partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) \| flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk) |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ALLOW_INSECURE_HTTP` | `false` | remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ACCESS_KEY_ID` | `""` | SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ACCESS_KEY_ID_FILE` | `""` | read the access key ID from this path instead; value XOR file |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SECRET_ACCESS_KEY` | `""` | SET VIA ENV ONLY |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SECRET_ACCESS_KEY_FILE` | `""` | read the secret access key from this path instead; value XOR file |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SESSION_TOKEN` | `""` | SET VIA ENV ONLY — temporary credentials only |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SESSION_TOKEN_FILE` | `""` | read the temporary session token from this path instead; value XOR file |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__INTERVAL` | `60s` | how often the bucket is listed |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_DECOMPRESSED_BYTES` | `33554432` | reject and quarantine one object that expands beyond 32 MiB |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_RECORDS` | `100000` | reject and quarantine one object containing more than this many records |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_CYCLE_WIRE_BYTES` | `536870912` | defer untouched objects after 512 MiB of GET response data in one cycle |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_CYCLE_DECOMPRESSED_BYTES` | `268435456` | defer untouched objects after 256 MiB of decoded data in one cycle |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_CYCLE_RECORDS` | `500000` | defer untouched objects after this many decoded records in one cycle |
 | `TS2OTEL_COLLECTORS__USERS__ENABLED` | `true` | user inventory (devices/connected/last_seen per user) |
 | `TS2OTEL_COLLECTORS__USERS__INTERVAL` | `300s` | user inventory (devices/connected/last_seen per user) |
 | `TS2OTEL_COLLECTORS__KEYS__ENABLED` | `true` | auth-key inventory + expiry warnings |

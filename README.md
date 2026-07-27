@@ -157,8 +157,10 @@ degrades to `unknown`/`external` without it.
 
 ### Logs: poll, stream *or* object store — pick one
 
-`flowlogs` takes a `source` of `poll` (default), `stream`, `objectstore` or `both`; `auditlogs` takes
-the first three of those. **Pick exactly one method per log type** — running two risks
+Both `flowlogs` and `auditlogs` take a `source` of `poll` (default), `stream`, `objectstore` or
+`both`. Tailscale exports each log type to object storage independently, so each has its OWN
+destination (`collectors.flowlogs.objectstore` / `collectors.auditlogs.objectstore`) and nothing is
+inherited between them. **Pick exactly one method per log type** — running two risks
 double-counting, cross-source de-dup is only a best-effort failsafe, and the exporter WARNs at startup
 when it sees this.
 

@@ -93,6 +93,32 @@ func TestRegisterCollectors_ObjectStoreSourceRegistersIt(t *testing.T) {
 	}
 }
 
+// Configuration logs read from object storage register their OWN collector, under
+// a distinct name so its scrape metrics and status row do not merge with flow's
+// (#288). The flow poller/probe wiring is untouched.
+func TestRegisterCollectors_AuditObjectStoreSourceRegistersItsOwnCollector(t *testing.T) {
+	cfg := objectStoreTestConfig(func(c *config.Config) {
+		c.Collectors.Auditlogs.Source = "objectstore"
+		c.Collectors.Auditlogs.ObjectStore.Endpoint = "https://s3.eu-west-2.amazonaws.com"
+		c.Collectors.Auditlogs.ObjectStore.Region = "eu-west-2"
+		c.Collectors.Auditlogs.ObjectStore.Bucket = "config-logs"
+	})
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+
+	names := registeredNames(a)
+	if !hasName(names, "objectstore-audit") {
+		t.Errorf("collectors = %v, want objectstore-audit registered", names)
+	}
+	// The audit POLLER must be gone: source selection is exclusive per signal, and
+	// polling alongside the bucket would double-count every event.
+	if hasName(names, "auditlogs") {
+		t.Errorf("collectors = %v, want no auditlogs poller alongside the object store", names)
+	}
+}
+
 // In multi-tailnet mode each runtime registers an objectstore collector against
 // ITS OWN destination, on its own interval — one global feed read twice is the
 // cross-attribution hazard #283 closed.

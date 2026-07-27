@@ -99,6 +99,9 @@ otlp.headers
 collectors.flowlogs.objectstore.access_key_id
 collectors.flowlogs.objectstore.secret_access_key
 collectors.flowlogs.objectstore.session_token
+collectors.auditlogs.objectstore.access_key_id
+collectors.auditlogs.objectstore.secret_access_key
+collectors.auditlogs.objectstore.session_token
 streaming.token
 webhook.secret
 prometheus.auth.token

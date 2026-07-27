@@ -219,8 +219,15 @@ func New(
 			signal.Signal(),
 		)
 	}
-	if err := migrateLegacyState(cp, opts.LegacyCheckpointNamespace, namespace); err != nil {
-		return nil, err
+	// The pre-v1 layout exists for FLOW ONLY — its keys are literally
+	// objectstore.flowlogs.* (see migration.go). Running the migration for any
+	// other signal would have that signal adopt the flow cursor, seen set and
+	// gaps as its own AND delete them out from under flow, so it is gated on the
+	// signal here rather than trusted to every caller.
+	if signal.Signal() == semconv.IngestSignalFlow {
+		if err := migrateLegacyState(cp, opts.LegacyCheckpointNamespace, namespace); err != nil {
+			return nil, err
+		}
 	}
 	// An unrecognized layout is refused rather than defaulted: silently reading it
 	// as partitioned would leave every flat object undiscovered while the config
@@ -284,7 +291,21 @@ func New(
 }
 
 // Name implements collector.SnapshotCollector.
-func (c *Collector) Name() string { return "objectstore" }
+// Two signals can be registered on one runtime, and Name() keys BOTH the
+// tailscale.collector attribute on the framework's scrape.* metrics and the admin
+// status page's per-collector row. Returning one name for both would merge their
+// durations, failures and last-error into a single indistinguishable series.
+//
+// The flow name is deliberately left as the bare "objectstore" rather than made
+// symmetric: it is the value every existing deployment's scrape series and every
+// dashboard query already carry, and renaming it to gain symmetry would be a
+// silent breaking change for no functional gain (#288).
+func (c *Collector) Name() string {
+	if c.signal.Signal() == semconv.IngestSignalFlow {
+		return "objectstore"
+	}
+	return "objectstore-" + c.signal.Signal()
+}
 
 // DefaultInterval implements collector.SnapshotCollector.
 func (c *Collector) DefaultInterval() time.Duration { return c.opts.Interval }

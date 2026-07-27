@@ -823,16 +823,22 @@ func TestValidate_ObjectStoreErrorDoesNotLeakCredentials(t *testing.T) {
 	}
 }
 
-// Audit logs are not exported to object storage. Accepting the value there would
-// configure a path that silently collects nothing at all.
-func TestValidate_ObjectStoreIsFlowLogsOnly(t *testing.T) {
+// This test used to assert that collectors.auditlogs.source=objectstore was
+// REJECTED outright, on the premise that Tailscale does not export configuration
+// logs to object storage. That premise was WRONG — a live capture on 2026-07-27
+// (#288) produced real configuration-log export objects — so the rejection went
+// away. What survives is the real rule: the audit source is accepted, but only
+// with an audit destination of its own.
+//
+// See internal/config/objectstore_audit_test.go for the positive cases.
+func TestValidate_AuditObjectStoreNeedsItsOwnDestination(t *testing.T) {
 	c := objectStoreConfig(func(c *Config) { c.Collectors.Auditlogs.Source = "objectstore" })
 	err := c.Validate()
 	if err == nil {
-		t.Fatal("Validate accepted collectors.auditlogs.source=objectstore")
+		t.Fatal("Validate accepted auditlogs.source=objectstore with only a FLOW destination configured")
 	}
-	if !strings.Contains(err.Error(), "auditlogs.source") {
-		t.Errorf("error = %v, want it to name the auditlogs source", err)
+	if !strings.Contains(err.Error(), "collectors.auditlogs.objectstore") {
+		t.Errorf("error = %v, want it to name the missing audit destination key", err)
 	}
 }
 

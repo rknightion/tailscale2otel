@@ -115,6 +115,12 @@ tailnets: []
 #         prefix: exports/           # distinct bucket OR distinct prefix per tailnet
 #         path_style: false
 #         secret_access_key_file: /run/secrets/acme-s3-secret   # no env path for a list entry
+#       audit:                       # the CONFIGURATION-log export; a destination of its own, never inherited from flow
+#         endpoint: https://s3.eu-west-2.amazonaws.com
+#         region: eu-west-2
+#         bucket: acme-flow-logs
+#         prefix: configuration/     # same bucket as flow is fine, but the prefix must differ
+#         secret_access_key_file: /run/secrets/acme-s3-secret
 #   - name: beta.example.com
 #     auth:
 #       method: apikey
@@ -241,11 +247,35 @@ collectors:
       max_cycle_records: 500000       # defer untouched objects after this many decoded records in one cycle
   auditlogs:                          # configuration/audit events -> event logs + a counter
     enabled: true
-    source: poll                      # poll | stream | both (see flowlogs)
+    source: poll                      # poll | stream | both | objectstore (see flowlogs)
     interval: 60s                     # poll only
     lag: 60s                          # poll only
     initial_lookback: 5m              # poll only
     max_window: 6h                    # poll only
+    objectstore:                      # source: objectstore only — read the CONFIGURATION-log export Tailscale writes to an S3-compatible bucket. A separate export from the flow one: nothing here is inherited from collectors.flowlogs.objectstore, and two destinations may not name the same bucket+prefix
+      endpoint: ""                    # required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)
+      region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
+      bucket: ""                      # required — the bucket Tailscale exports configuration logs into
+      prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket
+      layout: partitioned             # partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) | flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk)
+      path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
+      allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
+      access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile
+      access_key_id_file: ""          # read the access key ID from this path instead; value XOR file
+      secret_access_key: ""           # SET VIA ENV ONLY
+      secret_access_key_file: ""      # read the secret access key from this path instead; value XOR file
+      session_token: ""               # SET VIA ENV ONLY — temporary credentials only
+      session_token_file: ""          # read the temporary session token from this path instead; value XOR file
+      interval: 60s                   # how often the bucket is listed
+      lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it
+      max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
+      max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
+      max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB
+      max_object_records: 100000      # reject and quarantine one object containing more than this many records
+      max_cycle_wire_bytes: 536870912 # defer untouched objects after 512 MiB of GET response data in one cycle
+      max_cycle_decompressed_bytes: 268435456  # defer untouched objects after 256 MiB of decoded data in one cycle
+      max_cycle_records: 500000       # defer untouched objects after this many decoded records in one cycle
   users:                              # user inventory (devices/connected/last_seen per user)
     enabled: true
     interval: 300s

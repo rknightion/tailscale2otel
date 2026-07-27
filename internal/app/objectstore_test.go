@@ -94,7 +94,7 @@ func TestObjectStoreDestinationFor_LegacyUsesGlobalBlock(t *testing.T) {
 	})
 	rt := &tailnetRuntime{configuredName: "example.com", name: "example.com"}
 
-	got, err := objectStoreDestinationFor(rt, runtimeDeps{cfg: cfg})
+	got, err := objectStoreDestinationFor(objectStoreFlowFeed, rt, runtimeDeps{cfg: cfg})
 	if err != nil {
 		t.Fatalf("objectStoreDestinationFor: %v", err)
 	}
@@ -115,11 +115,11 @@ func TestObjectStoreDestinationFor_MultiTailnetIsolatesDestinationsAndCredential
 	})
 	d := runtimeDeps{cfg: cfg, multi: true}
 
-	alpha, err := objectStoreDestinationFor(&tailnetRuntime{configuredName: "alpha.example.com"}, d)
+	alpha, err := objectStoreDestinationFor(objectStoreFlowFeed, &tailnetRuntime{configuredName: "alpha.example.com"}, d)
 	if err != nil {
 		t.Fatalf("alpha: %v", err)
 	}
-	beta, err := objectStoreDestinationFor(&tailnetRuntime{configuredName: "beta.example.com"}, d)
+	beta, err := objectStoreDestinationFor(objectStoreFlowFeed, &tailnetRuntime{configuredName: "beta.example.com"}, d)
 	if err != nil {
 		t.Fatalf("beta: %v", err)
 	}
@@ -155,6 +155,7 @@ func TestObjectStoreDestinationFor_SingleEntryListUsesTheEntry(t *testing.T) {
 		c.Collectors.Flowlogs.ObjectStore.Bucket = "GLOBAL-BUCKET-canary"
 	})
 	got, err := objectStoreDestinationFor(
+		objectStoreFlowFeed,
 		&tailnetRuntime{configuredName: "alpha.example.com"},
 		runtimeDeps{cfg: cfg, multi: false})
 	if err != nil {
@@ -168,7 +169,7 @@ func TestObjectStoreDestinationFor_SingleEntryListUsesTheEntry(t *testing.T) {
 // A runtime with no destination of its own must not silently fall back.
 func TestObjectStoreDestinationFor_UnconfiguredTailnetIsAnError(t *testing.T) {
 	cfg := multiTailnetObjectStoreCfg(nil)
-	_, err := objectStoreDestinationFor(&tailnetRuntime{configuredName: "gamma.example.com"},
+	_, err := objectStoreDestinationFor(objectStoreFlowFeed, &tailnetRuntime{configuredName: "gamma.example.com"},
 		runtimeDeps{cfg: cfg, multi: true})
 	if err == nil {
 		t.Fatal("objectStoreDestinationFor = nil error, want a refusal for an unconfigured tailnet")
@@ -186,7 +187,7 @@ func TestObjectStoreScopeUsesLiteralConfiguredTailnetName(t *testing.T) {
 		Bucket:   "flows",
 		Prefix:   "exports/",
 	}
-	got := objectStoreScope("-", dest)
+	got := objectStoreScope("flow", "-", dest)
 	want := objectstore.CheckpointScope{
 		Tailnet:  "-",
 		Provider: "s3",

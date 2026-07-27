@@ -256,12 +256,19 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		// Each runtime reads its OWN destination: the global block in legacy mode,
 		// this tailnet's objectstore.flow entry with a tailnets: list. Nothing is
 		// inherited across the two (#284).
-		registerObjectStoreCollector(rt, d, onIngest, onAccepted)
+		registerObjectStoreCollector(objectStoreFlowFeed, rt, d, onIngest, onAccepted)
 	}
 	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), onIngest,
 			auditlogs.WithAcceptedObserver(onAccepted))
 		rt.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
+	}
+	if c.Auditlogs.Enabled && objectStoreSource(c.Auditlogs.Source) {
+		// Deliberately NOT gated on cp.Supports("auditlogs"): the capability set
+		// describes the CONTROL PLANE's API surface, and reading an export bucket
+		// makes no API call at all. A Headscale runtime with no configuration-log
+		// endpoint can still be pointed at an S3 export.
+		registerObjectStoreCollector(objectStoreAuditFeed, rt, d, onIngest, onAccepted)
 	}
 }
 

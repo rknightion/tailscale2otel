@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.6](https://img.shields.io/badge/Version-0.14.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.7](https://img.shields.io/badge/Version-0.14.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -229,7 +229,30 @@ extraVolumeMounts:
 | config.collectors.auditlogs.interval | string | `"60s"` | Poll interval. |
 | config.collectors.auditlogs.lag | string | `"60s"` | Tail-hazard lag (see flowlogs.lag). |
 | config.collectors.auditlogs.max_window | string | `"6h"` | Maximum width of a single poll window. |
-| config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both. Pick ONE method per log type (see flowlogs.source): `both` risks double-counting and de-dup is only a best-effort failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true. |
+| config.collectors.auditlogs.objectstore.access_key_id | string | `""` | Static S3 access key ID. Set via the TS2OTEL_* secret, not here. |
+| config.collectors.auditlogs.objectstore.access_key_id_file | string | `""` | Read the S3 access key ID from this mounted file instead of an inline value. Set the value or the file, never both. |
+| config.collectors.auditlogs.objectstore.allow_insecure_http | bool | `false` | Permit plaintext HTTP to a remote object-store endpoint. Loopback HTTP works without this flag for local MinIO development. Enabling it exposes signing credentials and temporary session tokens to the network; prefer HTTPS. |
+| config.collectors.auditlogs.objectstore.bucket | string | `""` | Bucket Tailscale exports configuration logs into. REQUIRED when source is objectstore. |
+| config.collectors.auditlogs.objectstore.endpoint | string | `""` | Service URL of the S3-compatible store holding Tailscale's CONFIGURATION-log export, e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when auditlogs.source is objectstore. This is a SEPARATE export from the flow one: nothing here is inherited from collectors.flowlogs.objectstore, and two destinations may not name the same bucket+prefix. |
+| config.collectors.auditlogs.objectstore.initial_lookback | string | `"6h"` | Cold-start reach-back, so a first run against a long history does not ingest all of it. |
+| config.collectors.auditlogs.objectstore.interval | string | `"60s"` | How often the bucket is listed. |
+| config.collectors.auditlogs.objectstore.layout | string | `"partitioned"` | How objects are arranged under prefix: `partitioned` (the default, and what Tailscale's own export writes: objects under prefix/YYYY/MM/DD/) or `flat` (a COPIED or mirrored export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix). Flat also finds partitioned objects, but has no partitions to bound re-listing, so it costs more LIST requests; each cycle is still bounded and resumable. Not autodetected. |
+| config.collectors.auditlogs.objectstore.lookback | string | `"1h"` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Keep it >= interval, or an object landing between two cycles can be missed. |
+| config.collectors.auditlogs.objectstore.max_cycle_decompressed_bytes | int | `268435456` | Maximum decompressed bytes processed in one cycle. Untouched objects are deferred. Must be at least max_object_decompressed_bytes. |
+| config.collectors.auditlogs.objectstore.max_cycle_records | int | `500000` | Maximum records processed in one cycle. Untouched objects are deferred. Must be at least max_object_records. |
+| config.collectors.auditlogs.objectstore.max_cycle_wire_bytes | int | `536870912` | Maximum GET response bytes read in one cycle. The current and untouched objects are deferred. Must be at least max_object_wire_bytes. |
+| config.collectors.auditlogs.objectstore.max_object_decompressed_bytes | int | `33554432` | Maximum decompressed bytes accepted from one object. A breach quarantines that object. |
+| config.collectors.auditlogs.objectstore.max_object_records | int | `100000` | Maximum records accepted from one object. A breach quarantines that object. |
+| config.collectors.auditlogs.objectstore.max_object_wire_bytes | int | `67108864` | Maximum GET response bytes read from one object. A breach quarantines that object. |
+| config.collectors.auditlogs.objectstore.max_objects | int | `200` | Objects ingested per cycle. The remainder is counted, logged and picked up next cycle. |
+| config.collectors.auditlogs.objectstore.path_style | bool | `false` | Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>. Required by most non-AWS implementations; getting it backwards is a DNS failure. |
+| config.collectors.auditlogs.objectstore.prefix | string | `""` | The export's root within the bucket, above the YYYY/MM/DD partitions. Use a distinct prefix when the flow and configuration exports share one bucket. |
+| config.collectors.auditlogs.objectstore.region | string | `""` | Bucket region. REQUIRED when source is objectstore: it is part of the request signature, so a wrong value fails every request with HTTP 403. |
+| config.collectors.auditlogs.objectstore.secret_access_key | string | `""` | Static S3 secret access key. Set via the TS2OTEL_* secret, not here. |
+| config.collectors.auditlogs.objectstore.secret_access_key_file | string | `""` | Read the S3 secret access key from this mounted file instead of an inline value. Set the value or the file, never both. |
+| config.collectors.auditlogs.objectstore.session_token | string | `""` | Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here. |
+| config.collectors.auditlogs.objectstore.session_token_file | string | `""` | Read the temporary S3 session token from this mounted file instead of an inline value. Set the value or the file, never both. |
+| config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both | objectstore. Pick ONE method per log type (see flowlogs.source): `both` risks double-counting and de-dup is only a best-effort failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true. |
 | config.collectors.contacts.enabled | bool | `true` | Enable the contacts collector (account/support/security contact verification; no emails emitted). |
 | config.collectors.contacts.interval | string | `"600s"` | Poll interval. |
 | config.collectors.devices.attribute_namespaces | list | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info} metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled. |

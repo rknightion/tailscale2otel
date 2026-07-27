@@ -52,35 +52,85 @@ func objectStoreTailnetIdentity(rt *tailnetRuntime, cfg *config.Config) string {
 	return cfg.Tailscale.Tailnet
 }
 
+// objectStoreFeed describes one signal's object-store ingestion: where its
+// destination comes from and what turns an object into emitted telemetry.
+//
+// It exists so the wiring below is written once for both signals. signal is the
+// FROZEN checkpoint-namespace segment (#453) — changing a value orphans every
+// deployment's durable state for that signal.
+type objectStoreFeed struct {
+	signal string
+	// entryKey is the config path a destination is read from in multi-tailnet
+	// mode, used only to make the "no destination" error name the right key.
+	entryKey  string
+	globalKey string
+	resolve   func(*config.Config, string) (config.ObjectStoreConfig, bool)
+	// processor adapts the runtime's shared processor for this signal. It is the
+	// only place a signal's record type enters the object-store path.
+	processor func(*tailnetRuntime) objectstore.SignalProcessor
+}
+
+var objectStoreFlowFeed = objectStoreFeed{
+	signal:    "flow",
+	entryKey:  "objectstore.flow",
+	globalKey: "collectors.flowlogs.objectstore",
+	resolve: func(c *config.Config, tailnet string) (config.ObjectStoreConfig, bool) {
+		return c.FlowObjectStore(tailnet)
+	},
+	processor: func(rt *tailnetRuntime) objectstore.SignalProcessor {
+		return objectstore.NewFlowSignal(rt.flowProc)
+	},
+}
+
+var objectStoreAuditFeed = objectStoreFeed{
+	signal:    "audit",
+	entryKey:  "objectstore.audit",
+	globalKey: "collectors.auditlogs.objectstore",
+	resolve: func(c *config.Config, tailnet string) (config.ObjectStoreConfig, bool) {
+		return c.AuditObjectStore(tailnet)
+	},
+	processor: func(rt *tailnetRuntime) objectstore.SignalProcessor {
+		return objectstore.NewAuditSignal(rt.auditProc)
+	},
+}
+
 // objectStoreDestinationFor resolves the one object-store destination this
-// runtime reads, refusing rather than falling back when there is none.
+// runtime reads for a signal, refusing rather than falling back when there is
+// none.
 //
 // The dispatch is on the CONFIG shape (a tailnets: list) and not on d.multi (>1
 // runtime), so a one-entry list still takes its destination from the entry —
 // exactly as config.Validate demands. Every value the S3 client needs, including
 // the credentials, comes from the returned struct, so no other tailnet's
 // material is in reach while this runtime is being built.
-func objectStoreDestinationFor(rt *tailnetRuntime, d runtimeDeps) (config.ObjectStoreConfig, error) {
+func objectStoreDestinationFor(
+	feed objectStoreFeed,
+	rt *tailnetRuntime,
+	d runtimeDeps,
+) (config.ObjectStoreConfig, error) {
 	tailnet := objectStoreTailnetIdentity(rt, d.cfg)
-	dest, ok := d.cfg.FlowObjectStore(tailnet)
+	dest, ok := feed.resolve(d.cfg, tailnet)
 	if !ok {
 		return config.ObjectStoreConfig{}, fmt.Errorf(
-			"tailnet %q has no objectstore.flow destination of its own; a destination is never "+
-				"inherited from collectors.flowlogs.objectstore in multi-tailnet mode", tailnet)
+			"tailnet %q has no %s destination of its own; a destination is never "+
+				"inherited from %s in multi-tailnet mode", tailnet, feed.entryKey, feed.globalKey)
 	}
 	return dest, nil
 }
 
-// objectStoreScope is the durable checkpoint identity for one runtime's flow
-// feed. The namespace it produces is frozen (#453):
+// objectStoreScope is the durable checkpoint identity for one runtime's feed of
+// one signal. The namespace it produces is frozen (#453):
 // objectstore/v1/<base64url-tailnet>/<provider>/<signal>/<feed-digest>/ — the
 // feed digest is a one-way function of endpoint, bucket and prefix, so no
 // operator-controlled value enters a checkpoint path.
-func objectStoreScope(tailnet string, dest config.ObjectStoreConfig) objectstore.CheckpointScope {
+//
+// signal comes from the feed spec and must stay "flow" for the flow signal: it
+// is the segment every existing deployment's flow state already lives under.
+func objectStoreScope(signal, tailnet string, dest config.ObjectStoreConfig) objectstore.CheckpointScope {
 	return objectstore.CheckpointScope{
 		Tailnet:  tailnet,
 		Provider: "s3",
-		Signal:   "flow",
+		Signal:   signal,
 		Feed:     objectstore.FeedID(dest.Endpoint, dest.Bucket, dest.Prefix),
 	}
 }
@@ -96,22 +146,23 @@ func objectStoreScope(tailnet string, dest config.ObjectStoreConfig) objectstore
 // config.Validate/Load error, so startup fails there instead of leaving one
 // runtime silently mute.
 func registerObjectStoreCollector(
+	feed objectStoreFeed,
 	rt *tailnetRuntime,
 	d runtimeDeps,
 	onIngest func(source, signal string, records, bytes int),
 	onAccepted ingest.AcceptedObserver,
 ) {
-	dest, err := objectStoreDestinationFor(rt, d)
+	dest, err := objectStoreDestinationFor(feed, rt, d)
 	if err == nil {
 		var oc *objectstore.Collector
-		oc, err = newObjectStoreCollector(rt, d, dest, onIngest, onAccepted)
+		oc, err = newObjectStoreCollector(feed, rt, d, dest, onIngest, onAccepted)
 		if err == nil {
 			rt.registry.Register(oc, dest.Interval.D())
 			return
 		}
 	}
-	d.logger.Error("objectstore flow-log ingestion is not running",
-		"tailnet", objectStoreTailnetIdentity(rt, d.cfg), "error", err)
+	d.logger.Error("objectstore ingestion is not running",
+		"signal", feed.signal, "tailnet", objectStoreTailnetIdentity(rt, d.cfg), "error", err)
 }
 
 // newObjectStoreCollector builds the objectstore ingestion collector for one
@@ -124,6 +175,7 @@ func registerObjectStoreCollector(
 // where there is no role to use. dest is the ONLY place they are read from, and
 // it holds one tailnet's material, so a credential cannot cross runtimes.
 func newObjectStoreCollector(
+	feed objectStoreFeed,
 	rt *tailnetRuntime,
 	d runtimeDeps,
 	dest config.ObjectStoreConfig,
@@ -157,19 +209,18 @@ func newObjectStoreCollector(
 		return nil, fmt.Errorf("build object-store client: %w", err)
 	}
 
-	legacyNamespace := ""
-	if d.multi {
-		legacyNamespace = rt.name
-	}
-
 	opts := objectStoreOptions(dest)
 	opts.Logger = d.logger
 	opts.OnIngest = onIngest
 	opts.OnAccepted = onAccepted
-	opts.Scope = objectStoreScope(objectStoreTailnetIdentity(rt, d.cfg), dest)
-	opts.LegacyCheckpointNamespace = legacyNamespace
+	opts.Scope = objectStoreScope(feed.signal, objectStoreTailnetIdentity(rt, d.cfg), dest)
+	// The pre-v1 layout is flow-only; objectstore.New ignores this for any other
+	// signal, so it is safe (and simpler) to supply the namespace unconditionally.
+	if d.multi {
+		opts.LegacyCheckpointNamespace = rt.name
+	}
 
-	return objectstore.New(client, objectstore.NewFlowSignal(rt.flowProc), d.store, opts)
+	return objectstore.New(client, feed.processor(rt), d.store, opts)
 }
 
 // ensure the config type stays referenced from here, so a rename of the config

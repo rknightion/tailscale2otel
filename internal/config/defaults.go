@@ -5,6 +5,31 @@ import "time"
 // dur is a small helper to express a Duration default from a time.Duration.
 func dur(d time.Duration) Duration { return Duration(d) }
 
+// defaultObjectStore is the tuning baseline shared by every object-store
+// destination, whatever signal reads it. The two signals differ only in WHICH
+// export they point at, never in how hard one cycle is allowed to work, so both
+// default blocks come from here rather than being written out twice and drifting
+// (TestAuditObjectStoreBoundsDefaults enforces that they stay equal).
+//
+// Credentials and destination identity are deliberately absent: an unset
+// destination must stay unset so validation can tell "not configured" from
+// "configured wrong".
+func defaultObjectStore() ObjectStoreConfig {
+	return ObjectStoreConfig{
+		Layout:                     ObjectStoreLayoutPartitioned,
+		Interval:                   dur(60 * time.Second),
+		Lookback:                   dur(1 * time.Hour),
+		InitialLookback:            dur(6 * time.Hour),
+		MaxObjects:                 200,
+		MaxObjectWireBytes:         64 << 20,
+		MaxObjectDecompressedBytes: 32 << 20,
+		MaxObjectRecords:           100_000,
+		MaxCycleWireBytes:          512 << 20,
+		MaxCycleDecompressedBytes:  256 << 20,
+		MaxCycleRecords:            500_000,
+	}
+}
+
 // Default returns a Config populated with the documented default values. Load
 // starts from Default and unmarshals the user's YAML on top, so any key the
 // user omits keeps its default.
@@ -112,19 +137,7 @@ func Default() *Config {
 				// comfortably above the normal per-window volume.
 				ReplaySeenCapacity: 131072,
 				LogMode:            "per_connection",
-				ObjectStore: ObjectStoreConfig{
-					Layout:                     ObjectStoreLayoutPartitioned,
-					Interval:                   dur(60 * time.Second),
-					Lookback:                   dur(1 * time.Hour),
-					InitialLookback:            dur(6 * time.Hour),
-					MaxObjects:                 200,
-					MaxObjectWireBytes:         64 << 20,
-					MaxObjectDecompressedBytes: 32 << 20,
-					MaxObjectRecords:           100_000,
-					MaxCycleWireBytes:          512 << 20,
-					MaxCycleDecompressedBytes:  256 << 20,
-					MaxCycleRecords:            500_000,
-				},
+				ObjectStore:        defaultObjectStore(),
 			},
 			Auditlogs: AuditlogsCollector{
 				Enabled:         true,
@@ -133,6 +146,7 @@ func Default() *Config {
 				Lag:             dur(60 * time.Second),
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(6 * time.Hour),
+				ObjectStore:     defaultObjectStore(),
 			},
 			Users: SimpleCollector{
 				Enabled:  true,

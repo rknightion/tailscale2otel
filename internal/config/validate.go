@@ -868,13 +868,11 @@ func (c *Config) Validate() error {
 			c.Collectors.Auditlogs.MaxWindow.D(), c.Collectors.Auditlogs.Interval.D()},
 	}
 	for _, col := range logCollectors {
-		// Only flowlogs has an export bucket; audit logs are not exported to
-		// object storage, so accepting the value there would configure a path
-		// that silently collects nothing.
-		valid := []string{"poll", "stream", "both"}
-		if col.name == "flowlogs" {
-			valid = append(valid, "objectstore")
-		}
+		// Both log types are exported to object storage: network logs and, since
+		// #288, configuration logs — the latter verified against a live export on
+		// 2026-07-27. The earlier "flowlogs only" restriction here rested on the
+		// opposite premise and was wrong.
+		valid := []string{"poll", "stream", "both", "objectstore"}
 		if col.source != "" && !oneOf(col.source, valid...) {
 			return fmt.Errorf("collectors.%s.source %q invalid: must be one of %s",
 				col.name, col.source, strings.Join(valid, ", "))
@@ -897,7 +895,14 @@ func (c *Config) Validate() error {
 		// tailnets: list every runtime needs its OWN complete destination — see
 		// validateFlowObjectStore in objectstore.go for the frozen #284 contract.
 		if objectStoreSource(col.source) {
-			if err := c.validateFlowObjectStore(col.name); err != nil {
+			var err error
+			switch col.name {
+			case "flowlogs":
+				err = c.validateFlowObjectStore(col.name)
+			case "auditlogs":
+				err = c.validateAuditObjectStore(col.name)
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -936,6 +941,20 @@ func (c *Config) Validate() error {
 				}
 			}
 		}
+	}
+
+	// Feed collisions are checked once, across every destination this process will
+	// read, so a flow/audit collision and a tailnet/tailnet collision are one rule
+	// with one message rather than two that can disagree.
+	var inUse []objectStoreSignalSpec
+	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) {
+		inUse = append(inUse, objectStoreFlowSpec)
+	}
+	if c.Collectors.Auditlogs.Enabled && objectStoreSource(c.Collectors.Auditlogs.Source) {
+		inUse = append(inUse, objectStoreAuditSpec)
+	}
+	if err := c.validateObjectStoreFeeds(inUse...); err != nil {
+		return err
 	}
 
 	if !oneOf(c.Collectors.Flowlogs.LogMode, "per_connection", "per_record", "off") {

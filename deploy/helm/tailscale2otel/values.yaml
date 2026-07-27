@@ -586,7 +586,7 @@ config:
     auditlogs:
       # -- Enable the configuration-audit-logs collector.
       enabled: true
-      # -- Ingestion source: poll | stream | both. Pick ONE method per log type (see
+      # -- Ingestion source: poll | stream | both | objectstore. Pick ONE method per log type (see
       # flowlogs.source): `both` risks double-counting and de-dup is only a best-effort
       # failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true.
       source: poll
@@ -598,6 +598,77 @@ config:
       initial_lookback: 5m
       # -- Maximum width of a single poll window.
       max_window: 6h
+      objectstore:
+        # -- Service URL of the S3-compatible store holding Tailscale's CONFIGURATION-log export,
+        # e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when auditlogs.source
+        # is objectstore. This is a SEPARATE export from the flow one: nothing here is inherited from
+        # collectors.flowlogs.objectstore, and two destinations may not name the same bucket+prefix.
+        endpoint: ""
+        # -- Bucket region. REQUIRED when source is objectstore: it is part of the request
+        # signature, so a wrong value fails every request with HTTP 403.
+        region: ""
+        # -- Bucket Tailscale exports configuration logs into. REQUIRED when source is objectstore.
+        bucket: ""
+        # -- The export's root within the bucket, above the YYYY/MM/DD partitions. Use a distinct
+        # prefix when the flow and configuration exports share one bucket.
+        prefix: ""
+        # -- How objects are arranged under prefix: `partitioned` (the default, and what Tailscale's
+        # own export writes: objects under prefix/YYYY/MM/DD/) or `flat` (a COPIED or mirrored export
+        # whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix). Flat also
+        # finds partitioned objects, but has no partitions to bound re-listing, so it costs more LIST
+        # requests; each cycle is still bounded and resumable. Not autodetected.
+        layout: partitioned
+        # -- Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>.
+        # Required by most non-AWS implementations; getting it backwards is a DNS failure.
+        path_style: false
+        # -- Permit plaintext HTTP to a remote object-store endpoint. Loopback HTTP works without
+        # this flag for local MinIO development. Enabling it exposes signing credentials and
+        # temporary session tokens to the network; prefer HTTPS.
+        allow_insecure_http: false
+        # -- How often the bucket is listed.
+        interval: 60s
+        # -- How far back past the cursor each listing reaches, so an object that arrived late is
+        # still found. Keep it >= interval, or an object landing between two cycles can be missed.
+        lookback: 1h
+        # -- Cold-start reach-back, so a first run against a long history does not ingest all of it.
+        initial_lookback: 6h
+        # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
+        max_objects: 200
+        # -- Maximum GET response bytes read from one object. A breach quarantines that object.
+        max_object_wire_bytes: 67108864
+        # -- Maximum decompressed bytes accepted from one object. A breach quarantines that object.
+        max_object_decompressed_bytes: 33554432
+        # -- Maximum records accepted from one object. A breach quarantines that object.
+        max_object_records: 100000
+        # -- Maximum GET response bytes read in one cycle. The current and untouched objects are deferred.
+        # Must be at least max_object_wire_bytes.
+        max_cycle_wire_bytes: 536870912
+        # -- Maximum decompressed bytes processed in one cycle. Untouched objects are deferred.
+        # Must be at least max_object_decompressed_bytes.
+        max_cycle_decompressed_bytes: 268435456
+        # -- Maximum records processed in one cycle. Untouched objects are deferred.
+        # Must be at least max_object_records.
+        max_cycle_records: 500000
+        # NOTE: LEAVE THE THREE CREDENTIAL VALUE KEYS BELOW EMPTY — same contract as
+        # flowlogs.objectstore above. Anything set there is rendered into the config and routes it to
+        # a Secret. Empty selects the ambient chain. For a MinIO/Ceph bucket with no role to assume,
+        # set the TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__* keys under `secret:` instead, or set
+        # the matching *_file path to a mounted Secret; the env layer overrides this file.
+        # -- Static S3 access key ID. Set via the TS2OTEL_* secret, not here.
+        access_key_id: ""
+        # -- Read the S3 access key ID from this mounted file instead of an inline value.
+        # Set the value or the file, never both.
+        access_key_id_file: ""
+        # -- Static S3 secret access key. Set via the TS2OTEL_* secret, not here.
+        secret_access_key: ""
+        # -- Read the S3 secret access key from this mounted file instead of an inline value.
+        # Set the value or the file, never both.
+        secret_access_key_file: ""
+        # -- Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here.
+        session_token: ""
+        # -- Read the temporary S3 session token from this mounted file instead of an inline value.
+        # Set the value or the file, never both.
+        session_token_file: ""
     users:
       # -- Enable the users collector (users.count, per-user devices/connected/last_seen).
       enabled: true

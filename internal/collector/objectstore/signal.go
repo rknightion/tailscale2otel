@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -90,6 +91,53 @@ func (r acceptedFlowRecord) Commit(e telemetry.Emitter) RecordTimestamps {
 	return RecordTimestamps{
 		EventTime:   flowlog.EventTimestamp(r.record),
 		CaptureTime: flowlog.CaptureTimestamp(r.record),
+	}
+}
+
+type auditSignal struct {
+	proc *audit.Processor
+}
+
+// NewAuditSignal adapts the existing shared configuration-audit processor to the
+// provider-neutral object-store engine, so an export object reaches exactly the
+// emission path the poller, the log-stream receiver and the webhook receiver use
+// (#288).
+func NewAuditSignal(proc *audit.Processor) SignalProcessor {
+	return &auditSignal{proc: proc}
+}
+
+func (*auditSignal) Signal() string { return semconv.IngestSignalAudit }
+
+func (s *auditSignal) PrepareRecord(
+	_ context.Context,
+	line []byte,
+	_ time.Time,
+) (PreparedRecord, error) {
+	var event audit.Event
+	if err := json.Unmarshal(line, &event); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrRecordDecode, err)
+	}
+	// "null", "{}" and "[]"-shaped padding all unmarshal into a zero Event
+	// WITHOUT an error, and a zero Event emits a log record with no action, no
+	// target and the zero timestamp. Requiring one load-bearing field keeps such
+	// a line from minting a phantom audit event; the object-level guard (#497)
+	// then fails an object in which every row is like this.
+	if event.Action == "" && event.EventTime.IsZero() && event.Logged.IsZero() {
+		return nil, fmt.Errorf("%w: record carries no action and no timestamp", ErrRecordDecode)
+	}
+	return acceptedAuditRecord{proc: s.proc, event: event}, nil
+}
+
+type acceptedAuditRecord struct {
+	proc  *audit.Processor
+	event audit.Event
+}
+
+func (r acceptedAuditRecord) Commit(e telemetry.Emitter) RecordTimestamps {
+	r.proc.Process(r.event, e)
+	return RecordTimestamps{
+		EventTime:   audit.EventTimestamp(r.event),
+		CaptureTime: audit.CaptureTimestamp(r.event),
 	}
 }
 

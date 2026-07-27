@@ -33,6 +33,12 @@ func (r ConfigurationResponse) TailnetName() string {
 // Event is one configuration audit event.
 type Event struct {
 	EventTime time.Time `json:"eventTime"`
+	// Logged is when Tailscale's publisher recorded the event for delivery. It is
+	// present ONLY on the object-store export, which the polled API's
+	// ConfigurationResponse does not carry; conversely the poll payload carries
+	// Type and the export does not (both verified against live captures,
+	// 2026-07-27, #288). Nothing may assume either field is set.
+	Logged time.Time `json:"logged"`
 	// DeferredAt is when Tailscale's audit rate limiter deferred the event. It
 	// is distinct from EventTime, which remains the time the underlying change
 	// happened.

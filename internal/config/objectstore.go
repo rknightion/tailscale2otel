@@ -35,6 +35,67 @@ const (
 	ObjectStoreLayoutFlat        = "flat"
 )
 
+// objectStoreSignalSpec says WHERE one signal's destination lives, so resolution,
+// validation and warnings are written once and cannot disagree between signals.
+//
+// Adding a signal is adding a spec; the flow and audit specs below are the only
+// two, because S3 is the only supported export and Tailscale publishes exactly
+// these two log types to it (#454/#455 closed non-S3 providers; #288 added the
+// configuration export).
+type objectStoreSignalSpec struct {
+	// signal is the frozen checkpoint-namespace segment (#453). Changing one of
+	// these values orphans every deployment's durable state for that signal.
+	signal string
+	// globalKey / entryKey are the dotted config paths the destination is read
+	// from in legacy/single mode and in a tailnets: entry, so an error names the
+	// exact key an operator must fix.
+	globalKey string
+	entryKey  string
+	global    func(*Config) ObjectStoreConfig
+	entry     func(TailnetConfig) ObjectStoreConfig
+}
+
+var objectStoreFlowSpec = objectStoreSignalSpec{
+	signal:    "flow",
+	globalKey: "collectors.flowlogs.objectstore",
+	entryKey:  "objectstore.flow",
+	global:    func(c *Config) ObjectStoreConfig { return c.Collectors.Flowlogs.ObjectStore },
+	entry:     func(t TailnetConfig) ObjectStoreConfig { return t.ObjectStore.Flow },
+}
+
+var objectStoreAuditSpec = objectStoreSignalSpec{
+	signal:    "audit",
+	globalKey: "collectors.auditlogs.objectstore",
+	entryKey:  "objectstore.audit",
+	global:    func(c *Config) ObjectStoreConfig { return c.Collectors.Auditlogs.ObjectStore },
+	entry:     func(t TailnetConfig) ObjectStoreConfig { return t.ObjectStore.Audit },
+}
+
+// resolveObjectStore is the shared body of FlowObjectStore and AuditObjectStore.
+func (c *Config) resolveObjectStore(spec objectStoreSignalSpec, tailnet string) (ObjectStoreConfig, bool) {
+	if len(c.Tailnets) == 0 {
+		return objectStoreWithLayoutDefault(spec.global(c)), true
+	}
+	for _, t := range c.Tailnets {
+		if t.Name == tailnet {
+			return objectStoreWithLayoutDefault(objectStoreWithBudgetDefaults(spec.entry(t))), true
+		}
+	}
+	return ObjectStoreConfig{}, false
+}
+
+// AuditObjectStore returns the effective configuration-log object-store
+// destination for the runtime whose CONFIGURED tailnet name is tailnet, under
+// exactly the rules FlowObjectStore documents.
+//
+// It is a separate destination from the flow one and never falls back to it: the
+// network and configuration exports are different objects with different record
+// shapes, so reading one for the other decodes nothing and looks like an idle
+// tailnet (#288).
+func (c *Config) AuditObjectStore(tailnet string) (ObjectStoreConfig, bool) {
+	return c.resolveObjectStore(objectStoreAuditSpec, tailnet)
+}
+
 // FlowObjectStore returns the effective flow-log object-store destination for the
 // runtime whose CONFIGURED tailnet name is tailnet (the literal configured value,
 // including the "-" placeholder — the same identity that keys the checkpoint
@@ -49,15 +110,7 @@ const (
 // Credentials ride along on the returned value, so a caller only ever holds the
 // material of the one tailnet it asked for.
 func (c *Config) FlowObjectStore(tailnet string) (ObjectStoreConfig, bool) {
-	if len(c.Tailnets) == 0 {
-		return objectStoreWithLayoutDefault(c.Collectors.Flowlogs.ObjectStore), true
-	}
-	for _, t := range c.Tailnets {
-		if t.Name == tailnet {
-			return objectStoreWithLayoutDefault(objectStoreWithBudgetDefaults(t.ObjectStore.Flow)), true
-		}
-	}
-	return ObjectStoreConfig{}, false
+	return c.resolveObjectStore(objectStoreFlowSpec, tailnet)
 }
 
 // objectStoreWithLayoutDefault resolves an unset layout to
@@ -170,41 +223,90 @@ func normalizedObjectStoreEndpoint(raw string) string {
 	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimRight(u.Path, "/")
 }
 
-// validateFlowObjectStore checks every destination the configured runtimes will
-// actually read, dispatching on the config shape: the global block in legacy
-// mode, one complete block per entry with a tailnets: list. collectorName is the
-// log collector whose source selected the object store, so the message can say
-// what turned this path on.
+// validateFlowObjectStore checks every flow destination the configured runtimes
+// will actually read. Retained as the frozen #284 entry point; the body is shared
+// with the audit signal.
 func (c *Config) validateFlowObjectStore(collectorName string) error {
+	return c.validateObjectStore(objectStoreFlowSpec, collectorName)
+}
+
+// validateAuditObjectStore checks every configuration-log destination the
+// configured runtimes will actually read.
+func (c *Config) validateAuditObjectStore(collectorName string) error {
+	return c.validateObjectStore(objectStoreAuditSpec, collectorName)
+}
+
+// validateObjectStore checks every destination for ONE signal, dispatching on the
+// config shape: the global block in legacy mode, one complete block per entry
+// with a tailnets: list. collectorName is the log collector whose source selected
+// the object store, so the message can say what turned this path on.
+func (c *Config) validateObjectStore(spec objectStoreSignalSpec, collectorName string) error {
 	if len(c.Tailnets) == 0 {
 		// The global block has already been through Default(), so an explicit zero
 		// there is an operator error, not "unset" — validate it as written.
-		return validateObjectStoreDestination(collectorName, "collectors.flowlogs.objectstore",
-			c.Collectors.Flowlogs.ObjectStore)
+		return validateObjectStoreDestination(collectorName, spec.globalKey, spec.global(c))
 	}
-	seen := map[string]int{}
 	for i, t := range c.Tailnets {
-		key := fmt.Sprintf("tailnets[%d].objectstore.flow", i)
-		if !objectStoreDestinationDeclared(t.ObjectStore.Flow) {
+		key := fmt.Sprintf("tailnets[%d].%s", i, spec.entryKey)
+		if !objectStoreDestinationDeclared(spec.entry(t)) {
 			return fmt.Errorf("tailnets[%d] %q: collectors.%s.source=objectstore requires %s "+
 				"(endpoint + region + bucket): an object-store destination is never inherited from "+
-				"collectors.flowlogs.objectstore in multi-tailnet mode, because two runtimes reading one "+
+				"%s in multi-tailnet mode, because two runtimes reading one "+
 				"feed would each ingest every record and attribute a copy to their own tailnet",
-				i, t.Name, collectorName, key)
+				i, t.Name, collectorName, key, spec.globalKey)
 		}
-		dest := objectStoreWithBudgetDefaults(t.ObjectStore.Flow)
+		dest := objectStoreWithBudgetDefaults(spec.entry(t))
 		if err := validateObjectStoreDestination(collectorName, key, dest); err != nil {
 			return fmt.Errorf("tailnets[%d] %q: %w", i, t.Name, err)
 		}
+	}
+	return nil
+}
+
+// validateObjectStoreFeeds rejects any two destinations THIS PROCESS will read
+// that name the same physical feed.
+//
+// One check covers both collision shapes, because they are the same fault:
+//
+//   - two tailnets on one feed — each runtime ingests every record and attributes
+//     a copy to its own tailnet, the cross-attribution hazard #283 closed;
+//   - two signals on one feed — each engine fetches every object and then decodes
+//     the other signal's records as garbage, burning its budget to produce
+//     undecodable-object errors.
+//
+// Only destinations an ENABLED collector actually reads are considered: a
+// leftover block for a signal that is polling is inert config, and failing
+// startup over it would be a false alarm.
+func (c *Config) validateObjectStoreFeeds(specs ...objectStoreSignalSpec) error {
+	type owner struct {
+		desc string
+	}
+	seen := map[string]owner{}
+	claim := func(dest ObjectStoreConfig, desc string) error {
 		feed := objectStoreFeedKey(dest)
-		if j, dup := seen[feed]; dup {
-			return fmt.Errorf("tailnets[%d] %q and tailnets[%d] %q name the same object-store feed "+
-				"(endpoint, region, bucket, prefix and path_style all match): both runtimes would ingest "+
-				"every object and attribute a copy to their own tailnet, so give each tailnet its own "+
-				"export destination (a distinct bucket, or a distinct prefix within one bucket)",
-				j, c.Tailnets[j].Name, i, t.Name)
+		if prev, dup := seen[feed]; dup {
+			return fmt.Errorf("%s and %s name the same object-store feed (endpoint, region, bucket, "+
+				"prefix and path_style all match): both would ingest every object in it, so give each "+
+				"one its own export destination (a distinct bucket, or a distinct prefix within one "+
+				"bucket)", prev.desc, desc)
 		}
-		seen[feed] = i
+		seen[feed] = owner{desc: desc}
+		return nil
+	}
+	for _, spec := range specs {
+		if len(c.Tailnets) == 0 {
+			if err := claim(spec.global(c), spec.globalKey); err != nil {
+				return err
+			}
+			continue
+		}
+		for i, t := range c.Tailnets {
+			dest := objectStoreWithBudgetDefaults(spec.entry(t))
+			desc := fmt.Sprintf("tailnets[%d] %q %s", i, t.Name, spec.entryKey)
+			if err := claim(dest, desc); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

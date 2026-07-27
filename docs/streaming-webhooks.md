@@ -14,15 +14,21 @@ an object store. Two optional receivers cover the Tailscale push mechanisms: a
 
 ## Poll vs. stream: pick one path per log type
 
-`flowlogs` accepts `poll`, `stream`, `objectstore`, or `both`. `auditlogs` accepts `poll`, `stream`,
-or `both`:
+Both `flowlogs` and `auditlogs` accept `poll`, `stream`, `objectstore`, or `both`:
 
 | `source` | Description |
 |---|---|
 | `poll` (default) | `tailscale2otel` pulls logs from the Tailscale API on a schedule |
 | `stream` | Tailscale pushes logs to the built-in HEC receiver; the windowing fields are ignored |
-| `objectstore` (flow only) | `tailscale2otel` reads Tailscale's partitioned flow-log export from an S3-compatible bucket |
+| `objectstore` | `tailscale2otel` reads Tailscale's partitioned export from an S3-compatible bucket |
 | `both` | Polls *and* accepts the stream — **discouraged** |
+
+The network and configuration exports are **separate objects in separate key spaces**, so each signal
+reads its own destination: `collectors.flowlogs.objectstore` and `collectors.auditlogs.objectstore`
+(or, with a `tailnets:` list, each entry's `objectstore.flow` and `objectstore.audit`). Nothing is
+inherited between them, and two destinations this process reads may not name the same bucket **and**
+prefix — sharing one feed would have each engine fetch every object and then fail to decode the other
+signal's records. One bucket with a prefix per signal is the normal arrangement.
 
 !!! warning "Running both paths double-counts"
     Setting `source: both` — or enabling the streaming receiver while a collector still uses `source: poll` — means the same log record can be delivered and emitted twice. Cross-source deduplication is only a best-effort failsafe; the exporter logs a **WARN** at startup when it detects both paths are active for the same log type. Pick exactly one method per log type.
@@ -31,7 +37,7 @@ Streamed log records pass through the same shared processors as polled records, 
 
 ## Object-store durability and failed gaps
 
-Object-store flow records use the same processor as poll and stream. Listing is bounded and resumes
+Object-store records use the same processor as poll and stream, for both signals. Listing is bounded and resumes
 per day prefix; after reaching the end it wraps so a late key sorted before the previous position is
 still found.
 

@@ -6,14 +6,28 @@ import (
 )
 
 const (
-	// officialKeyLayout is Tailscale's documented object-key suffix. The date
-	// lives in the three partition directories and the basename carries only
-	// the UTC time.
-	officialKeyLayout = "2006/01/02/15:04:05"
-	// legacyKeyLayout is retained for exports and copied objects produced for
-	// the original collector contract. Its date-bearing basename can also be
-	// parsed after an operator flattens the object hierarchy.
-	legacyKeyLayout = "2006-01-02-15-04-05"
+	// selfDatedKeyLayout is what Tailscale's publisher ACTUALLY writes, verified
+	// against a live export on 2026-07-27 for both log types (#288):
+	//
+	//	<prefix>/YYYY/MM/DD/YYYY-MM-DD-HH-MM-SS.ndjson[.zst|.gz]
+	//
+	// The date appears twice — once in the partition directories and again in a
+	// self-contained basename — which is why a flattened copy of an export is
+	// still parseable. This is tried FIRST because it is the common case.
+	//
+	// It was previously called legacyKeyLayout, and timeOnlyKeyLayout below was
+	// called officialKeyLayout, which had it exactly backwards.
+	selfDatedKeyLayout = "2006-01-02-15-04-05"
+	// timeOnlyKeyLayout is the form Tailscale's DOCUMENTATION describes, where the
+	// basename carries only the UTC time and its date comes from the three
+	// partition directories above it:
+	//
+	//	<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]
+	//
+	// The live export has never been observed writing this, but accepting it costs
+	// nothing and refusing it would silently skip real data if the publisher ever
+	// switches to it.
+	timeOnlyKeyLayout = "2006/01/02/15:04:05"
 )
 
 // maxClockSkew is how far ahead of this process's clock an object's basename
@@ -86,13 +100,13 @@ var suffixes = []struct {
 
 // parseKey reads the object's own timestamp and codec out of its name.
 //
-// Official:
-//
-//	<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]
-//
-// Retained legacy/copied layout:
+// What the live export writes (both log types, verified 2026-07-27):
 //
 //	<prefix>/YYYY/MM/DD/<YYYY-MM-DD-HH-MM-SS>.ndjson[.zst|.zstd|.gz|.gzip]
+//
+// Also accepted — the documented time-only basename, and flattened copies:
+//
+//	<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]
 //
 // The timestamp is what the cursor is compared against, so a key that does not
 // carry one is reported as unparseable rather than defaulted to a time — an
@@ -108,20 +122,21 @@ func parseKey(key string) (at time.Time, comp compression, ok bool) {
 		if !found {
 			continue
 		}
-		// The legacy basename is self-contained, so try it first and preserve
-		// flat copied-export compatibility.
-		if t, err := time.Parse(legacyKeyLayout, stem); err == nil {
+		// The self-dated basename is what the live export writes, and it is
+		// self-contained, so try it first: it also keeps a flattened copy of an
+		// export parseable.
+		if t, err := time.Parse(selfDatedKeyLayout, stem); err == nil {
 			return t.UTC(), s.comp, true
 		}
-		// The official basename carries only a time. Its date is the final
-		// three directory components immediately above it; any earlier
-		// components are the operator-selected key prefix.
+		// A time-only basename takes its date from the final three directory
+		// components immediately above it; any earlier components are the
+		// operator-selected key prefix.
 		parts := strings.Split(strings.TrimSuffix(key, "/"), "/")
 		if len(parts) < 4 {
 			return time.Time{}, compNone, false
 		}
 		stamp := strings.Join(parts[len(parts)-4:len(parts)-1], "/") + "/" + stem
-		t, err := time.Parse(officialKeyLayout, stamp)
+		t, err := time.Parse(timeOnlyKeyLayout, stamp)
 		if err != nil {
 			return time.Time{}, compNone, false
 		}

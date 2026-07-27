@@ -295,19 +295,23 @@ single-tailnet `tailscale:` block above is used instead.
 | `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey` plus the matching `oauth`/`apikey` sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. |
 | `tailnets[].http` | — | Same shape as [`tailscale.http`](#tailscalehttp). Unlike `auth`, this **is** backfilled field-by-field from the top-level `tailscale.http` block (itself defaulted), which is why `tailscale.http` doubles as the fleet-wide default for the whole list (see the note above). An entry that sets its own `http.*` field overrides the fleet default for that field only. |
 | `tailnets[].objectstore.flow` | — | This tailnet's own flow-log export bucket. Same fields as [`collectors.flowlogs.objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source). Optional in general, **required on every entry** when `collectors.flowlogs.source: objectstore` — see the note below. |
+| `tailnets[].objectstore.audit` | — | This tailnet's own **configuration**-log export bucket. Same fields again, and a destination of its own — never inherited from `objectstore.flow`. Optional in general, **required on every entry** when `collectors.auditlogs.source: objectstore`. |
 
-> **Per-tailnet object-store destinations.** When `collectors.flowlogs.source: objectstore` and a
+> **Per-tailnet object-store destinations.** When a log collector's `source` is `objectstore` and a
 > `tailnets:` list is present (**any** length, including one), each entry must carry its own complete
-> destination under `objectstore.flow` — at minimum `endpoint`, `region` and `bucket`. The rules:
+> destination for THAT signal — `objectstore.flow` for `collectors.flowlogs`, `objectstore.audit` for
+> `collectors.auditlogs` — at minimum `endpoint`, `region` and `bucket`. The rules:
 >
 > - **No inheritance, no fallback.** Nothing is taken from `collectors.flowlogs.objectstore`; that
 >   block is the destination for single-tailnet (no `tailnets:` list) mode only. An entry with no
 >   destination of its own is a startup error naming the tailnet, never a silent fall-back to the
 >   global block.
-> - **No shared feeds.** Two entries whose normalized `endpoint` + `region` + `bucket` + `prefix` +
->   `path_style` match are rejected at startup, naming both tailnets. Both runtimes would ingest every
->   object and attribute a copy to their own tailnet. Give each tailnet a distinct bucket, or a distinct
->   `prefix` within one bucket (one bucket with two prefixes is fine).
+> - **No shared feeds — across tailnets OR across signals.** Any two destinations this process reads
+>   whose normalized `endpoint` + `region` + `bucket` + `prefix` + `path_style` match are rejected at
+>   startup, naming both. Two tailnets on one feed would each ingest every object and attribute a copy
+>   to their own tailnet; two signals on one feed would each fetch every object and then fail to decode
+>   the other's records. Give each one a distinct bucket, or a distinct `prefix` within one bucket (one
+>   bucket with several prefixes is fine).
 > - **Credentials are per entry and never cross runtimes.** Each entry's `access_key_id` /
 >   `secret_access_key` / `session_token` are revealed only while that runtime's S3 client is built.
 >   Because the list is file-only there is no `TS2OTEL_*` path into a list element, so a static
@@ -320,8 +324,10 @@ single-tailnet `tailscale:` block above is used instead.
 >   states what makes it different. Destination identity, `path_style`, `allow_insecure_http` and the
 >   credentials are never defaulted — that fallback is exactly the inheritance the rules above forbid.
 >   For a list entry, `0` reads as "unset" and takes the default; a negative value is still rejected.
-> - **Source selection stays global.** `collectors.flowlogs.source` is one value for the whole process;
->   a runtime cannot poll while another reads the bucket.
+> - **Source selection stays global per signal.** `collectors.flowlogs.source` and
+>   `collectors.auditlogs.source` are each one value for the whole process; a runtime cannot poll one
+>   signal while another runtime reads the same signal from a bucket. The two signals may differ from
+>   each other.
 > - **Checkpoint identity is the configured name.** The literal `tailnets[].name` keys the durable
 >   `objectstore/v1/<tailnet>/…` namespace, including a literal `-`, so a resolved display name never
 >   moves a runtime's state.
@@ -537,6 +543,11 @@ snapshots.
   time-window per tick.
 - **`stream`** — logs are **pushed** to the [`streaming`](#streaming-splunk-hec-log-receiver)
   receiver instead; the exporter does not poll this log type.
+- **`objectstore`** — the exporter reads Tailscale's export objects from an S3-compatible bucket
+  instead of calling the API. Available for **both** log types, each with its own destination:
+  [`collectors.flowlogs.objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source)
+  and [`collectors.auditlogs.objectstore`](#collectorsauditlogsobjectstore-the-configuration-log-export).
+  The windowing fields below are ignored; the object-store block has its own interval and lookback.
 - **`both`** — poll *and* accept the stream. **Discouraged:** the same record can be double-counted.
   Cross-source de-duplication is a best-effort failsafe, not a guarantee, and a startup WARN fires.
 
@@ -649,11 +660,22 @@ be built from it, and that is an immutable fault rather than something a retry f
 
 ##### Export layouts: `partitioned` vs `flat`
 
-Tailscale's own export always writes day partitions, and its object keys carry only a time:
+Tailscale's own export always writes day partitions. Verified against a live export on 2026-07-27, for
+both the network and configuration log types, the keys look like this — the date appears **twice**, in
+the partitions and again in a self-contained basename:
 
 ```
-<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]
+<prefix>/YYYY/MM/DD/YYYY-MM-DD-HH-MM-SS.ndjson[.zst|.gz]
 ```
+
+The extension follows the destination's `compressionFormat`: `.ndjson` for `none`, `.ndjson.zst` for
+`zstd`, `.ndjson.gz` for `gzip` (all three observed live). The configured `s3KeyPrefix` is used
+verbatim, so it must carry its own trailing slash. Tailscale also writes a **zero-byte object** for an
+upload period with nothing to report; that is a normal empty object, not an error.
+
+Tailscale's documentation describes a time-only basename instead
+(`<prefix>/YYYY/MM/DD/HH:MM:SS.json[.zst|.gz]`). That form has never been observed from the live
+publisher, but it is accepted too, so a change of publisher behaviour would not silently drop data.
 
 `layout: partitioned` (the default) enumerates exactly the `YYYY/MM/DD/` partitions spanning the
 listing window. That bound is what keeps a first run against a bucket holding months of exports from
@@ -683,7 +705,7 @@ What to know before setting it:
   `max_objects * 4` keys — and resumes from a durable position, so no single cycle scans an unbounded
   bucket. But a large flat prefix takes several cycles per full sweep, and a newly written object is
   discovered only when the walk reaches its key, which raises ingestion latency accordingly.
-- **An official-shaped key directly under a flat root stays unreadable.** `<prefix>/HH:MM:SS.json`
+- **A time-only key directly under a flat root stays unreadable.** `<prefix>/HH:MM:SS.json`
   carries no date — the date lives in the three directories the flattening removed — so it is counted
   into `tailscale2otel.objectstore.skipped{reason="unrecognized_key"}` rather than guessed at. Only
   the self-contained `YYYY-MM-DD-HH-MM-SS` basename is genuinely flat-readable.
@@ -758,11 +780,39 @@ Configuration/audit events → event logs + a counter.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `collectors.auditlogs.enabled` | `true` | Whether audit logs are collected. |
-| `collectors.auditlogs.source` | `poll` | `poll` \| `stream` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs-auditlogs-only). |
+| `collectors.auditlogs.source` | `poll` | `poll` \| `stream` \| `objectstore` \| `both`. See [`source`](#source-and-the-windowing-fields-flowlogs-auditlogs-only) and [`objectstore`](#collectorsauditlogsobjectstore-the-configuration-log-export) below. |
 | `collectors.auditlogs.interval` | `60s` | Poll cadence (poll only). |
 | `collectors.auditlogs.lag` | `60s` | Tail-safety margin (poll only). |
 | `collectors.auditlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
 | `collectors.auditlogs.max_window` | `6h` | Catch-up cap for one tick (poll only). |
+
+#### `collectors.auditlogs.objectstore` — the configuration-log export
+
+Tailscale exports configuration (audit) logs to an S3-compatible bucket exactly as it does network flow
+logs, as a separate destination with its own key space. Setting `collectors.auditlogs.source:
+objectstore` reads that export.
+
+**The fields, defaults, layout rules, budgets and credential handling are identical to
+[`collectors.flowlogs.objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source)**
+— read that section for all of them; only the key prefix differs
+(`collectors.auditlogs.objectstore.*`). With a `tailnets:` list, each entry carries its own
+`objectstore.audit` block instead, with no inheritance from here.
+
+Two rules are specific to running both signals from object storage:
+
+- **Nothing is shared between the two destinations.** The network and configuration exports are
+  different objects; pointing the audit collector at the flow bucket decodes nothing and looks like an
+  idle tailnet.
+- **No two destinations this process reads may name the same feed** — the same endpoint, region,
+  bucket, prefix and `path_style`. Both engines would fetch every object and then fail to decode the
+  other signal's records, burning their budgets to produce undecodable-object errors. One bucket with a
+  distinct prefix per signal is the normal arrangement, and it is what Tailscale's own console
+  encourages via `s3KeyPrefix`.
+
+The records carry their own `eventTime`, so an object-store audit event is timestamped identically to a
+polled or streamed one and reaches the same processor. The export additionally carries a `logged`
+publisher timestamp, which supplies the ingest freshness/lag view; the polled API carries a `type`
+field the export does not. Neither field is required.
 
 ### Snapshot collectors
 

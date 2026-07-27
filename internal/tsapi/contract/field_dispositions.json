@@ -3,7 +3,7 @@
     "Consumed-field disposition contract (#422). Generated + hand-dispositioned.",
     "Regenerate: go test ./internal/tsapi/contract -run TestFieldDispositionsInSync -update",
     "Regeneration adds new fields with an EMPTY disposition and prunes removed ones;",
-    "it never assigns a disposition. Fill every empty one in by hand — an empty or",
+    "it never assigns a disposition. Fill every empty one in by hand \u2014 an empty or",
     "unknown disposition fails TestFieldDispositionsInSync.",
     "disposition: emitted | enrichment | excluded | unhandled",
     "  emitted    - reaches OTLP as a metric value/attribute or log attribute",
@@ -189,7 +189,7 @@
     {
       "op": "getPolicyFile",
       "path": "(whole response)",
-      "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) — an opaque string we never structurally decode; disposition is recorded at op level",
+      "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) \u2014 an opaque string we never structurally decode; disposition is recorded at op level",
       "disposition": "emitted"
     },
     {
@@ -365,6 +365,13 @@
       "path": "Logs[].EventTime",
       "type": "audit.ConfigurationResponse",
       "disposition": "emitted"
+    },
+    {
+      "op": "listConfigurationAuditLogs",
+      "path": "Logs[].Logged",
+      "type": "audit.ConfigurationResponse",
+      "disposition": "enrichment",
+      "note": "present only on the object-store CONFIGURATION-log export, never on this poll response; supplies the ingest freshness/lag capture timestamp (#288)"
     },
     {
       "op": "listConfigurationAuditLogs",
