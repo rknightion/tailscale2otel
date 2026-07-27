@@ -222,7 +222,7 @@ collectors:
       prefix: ""                      # the export's root within the bucket, above the YYYY/MM/DD partitions
       path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
       allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
-      access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then EC2 instance profile
+      access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile
       access_key_id_file: ""          # read the access key ID from this path instead; value XOR file
       secret_access_key: ""           # SET VIA ENV ONLY
       secret_access_key_file: ""      # read the secret access key from this path instead; value XOR file

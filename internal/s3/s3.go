@@ -19,7 +19,8 @@
 //   - The shared config file (~/.aws/credentials, AWS_PROFILE, SSO login). That
 //     is a developer-laptop convenience; static environment credentials cover
 //     the same ground in one variable, and container deployments use web
-//     identity or an instance profile, both of which ARE supported.
+//     identity, the ECS/EKS container credential endpoint, or an instance
+//     profile, all of which ARE supported.
 //   - Request retries beyond what the caller does. A failed list or get is
 //     returned as an error; the collector retries on its next cycle, which is
 //     the natural cadence for an ingestion source.

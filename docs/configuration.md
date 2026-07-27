@@ -312,7 +312,8 @@ single-tailnet `tailscale:` block above is used instead.
 >   `secret_access_key` / `session_token` are revealed only while that runtime's S3 client is built.
 >   Because the list is file-only there is no `TS2OTEL_*` path into a list element, so a static
 >   credential must come from the `*_file` sibling (a mounted Secret) or be left empty to use the
->   ambient chain (environment / IRSA / instance profile) — which is the same chain for every runtime,
+>   ambient chain (environment / IRSA / ECS-EKS container endpoint / instance profile) — which is the
+>   same chain for every runtime,
 >   so per-tailnet static credentials or per-tailnet roles are what actually separate access.
 > - **Defaults.** Only the tuning fields (`interval`, `lookback`, `initial_lookback`, `max_objects`,
 >   the `max_object_*` / `max_cycle_*` budgets) fall back to the built-in defaults, so an entry only
@@ -652,10 +653,23 @@ both a value and its file is a startup error.
 
 Leave all three values and files empty and the ambient chain is used, in this order:
 the environment (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`), then **web
-identity** (`AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE` — this is IRSA on EKS), then the **EC2
+identity** (`AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE` — this is IRSA on EKS), then the
+**container credential endpoint** (`AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` on ECS task roles, or
+`AWS_CONTAINER_CREDENTIALS_FULL_URI` plus a token file on EKS Pod Identity), then the **EC2
 instance profile** via IMDSv2. Set `AWS_EC2_METADATA_DISABLED=true` off EC2 to skip the last probe,
 which otherwise costs a connection timeout on every refresh. Temporary credentials are refreshed
 5 minutes before expiry.
+
+The container endpoint is the only step whose address comes from the environment, so it is
+constrained harder than the AWS SDKs constrain it: the host must be loopback, `169.254.170.2` (ECS)
+or `169.254.170.23` / `fd00:ec2::23` (EKS Pod Identity); a hostname is refused unless *every* address
+it resolves to is in that set; the destination is re-checked at connect time and dialled by literal,
+so a DNS answer that changes in between cannot redirect the fetch; redirects are refused outright;
+and userinfo in the URL is rejected. **This is stricter than the AWS SDKs, which apply their host
+allow-list only to `http://` URLs and let `https://` reach any host.** An outbound credential fetch
+aimed at an arbitrary host is an egress channel, and neither ECS nor EKS needs one — both agents
+serve on the documented link-local addresses. If you are using a third-party local credential broker
+on some other address, this exporter will refuse it and say so.
 
 The shared config file (`~/.aws/credentials`, `AWS_PROFILE`, SSO login) is **not** supported. It is a
 developer-laptop convenience; static environment credentials cover the same ground in one variable,

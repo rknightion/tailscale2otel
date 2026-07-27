@@ -21,6 +21,7 @@ func clearAWSEnv(t *testing.T) {
 	for _, k := range []string{
 		envAccessKey, envSecretKey, envSessionTok, envRoleARN, envTokenFile,
 		envRoleSession, envRegion, envSTSLegacy, envIMDSDisabled,
+		envContainerRelativeURI, envContainerFullURI, envContainerAuthToken, envContainerAuthFile,
 	} {
 		t.Setenv(k, "")
 		_ = os.Unsetenv(k)

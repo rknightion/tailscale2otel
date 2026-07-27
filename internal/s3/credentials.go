@@ -110,16 +110,31 @@ const (
 //
 //  1. static credentials in the environment;
 //  2. web identity (IRSA on EKS, workload identity federation);
-//  3. the EC2 instance profile, via IMDSv2.
+//  3. the container credential endpoint (ECS task roles, EKS Pod Identity);
+//  4. the EC2 instance profile, via IMDSv2.
 //
-// Both (2) and (3) are UNSIGNED HTTP calls, which is what makes them tractable
+// (2), (3) and (4) are UNSIGNED HTTP calls, which is what makes them tractable
 // without an SDK: what they return is used to sign later requests, but obtaining
 // them needs no signature and so no chicken-and-egg.
+//
+// (3) is the only step whose address comes out of the environment rather than being
+// fixed, so it carries its own host allow-list and dial-time guard — see
+// containercreds.go.
 //
 // httpClient and now are injectable for tests; nil selects the real ones.
 func AmbientProvider(httpClient *http.Client, now func() time.Time) Provider {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	// The container endpoint gets its own derived client: its address comes out of
+	// the environment, so that fetch alone refuses redirects and re-checks the
+	// destination at dial time.
+	containerHC := containerHTTPClient(httpClient)
+	// Resolved separately from what cachingProvider is given, so the caching
+	// behavior of every existing provider is left exactly as it was.
+	containerNow := now
+	if containerNow == nil {
+		containerNow = time.Now
 	}
 	return &cachingProvider{now: now, fetch: func(ctx context.Context) (Credentials, error) {
 		if ak, sk := os.Getenv(envAccessKey), os.Getenv(envSecretKey); ak != "" && sk != "" {
@@ -132,8 +147,22 @@ func AmbientProvider(httpClient *http.Client, now func() time.Time) Provider {
 		if os.Getenv(envRoleARN) != "" && os.Getenv(envTokenFile) != "" {
 			return webIdentity(ctx, httpClient)
 		}
+		// The container endpoint sits after web identity and before IMDS, which is
+		// where AWS puts it. That ordering is load-bearing on EKS: a workload
+		// migrating from IRSA to Pod Identity keeps using IRSA until its web
+		// identity setup is removed, and AWS documents that as the safe migration
+		// path. It is also checked BEFORE the IMDS opt-out, because a task or pod
+		// that has switched IMDS off still has a container endpoint.
+		endpoint, ok, err := containerEndpoint()
+		if err != nil {
+			return Credentials{}, err
+		}
+		if ok {
+			return containerCredentials(ctx, containerHC, endpoint, containerNow)
+		}
 		if os.Getenv(envIMDSDisabled) == "true" {
-			return Credentials{}, errors.New("no credentials: none in the environment, no web identity, and IMDS is disabled")
+			return Credentials{}, errors.New("no credentials: none in the environment, no web identity, " +
+				"no container credentials endpoint, and IMDS is disabled")
 		}
 		return instanceProfile(ctx, httpClient)
 	}}

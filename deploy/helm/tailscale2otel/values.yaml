@@ -557,7 +557,8 @@ config:
         # NOTE: LEAVE THE THREE CREDENTIAL VALUE KEYS BELOW EMPTY. Anything set there is rendered
         # into the config and routes it to a Secret. Empty selects the
         # ambient chain (environment, then IRSA/web identity via a service-account annotation, then
-        # an EC2 instance profile) — the right answer on EKS. For a MinIO/Ceph bucket with no role
+        # the ECS/EKS Pod Identity container credential endpoint, then an EC2 instance profile) —
+        # the right answer on EKS, with either IRSA or Pod Identity. For a MinIO/Ceph bucket with no role
         # to assume, set the TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__* keys under `secret:`
         # instead, or set the matching *_file path to a mounted Secret; the env layer overrides
         # this file.
