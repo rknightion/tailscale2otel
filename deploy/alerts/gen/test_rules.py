@@ -1096,8 +1096,13 @@ class InstallableProfilesTest(unittest.TestCase):
     # inconsistency in today's authored paused= flags, not a profile bug. This
     # is a closed, reviewed list: an uid appearing here that ISN'T should fail,
     # and so should the set silently growing.
+    # `ts2o-config-invalid` was on this list until 2026-07-27, when it was
+    # resolved the other way: it now ships ENABLED in `recommended`, because an
+    # invalid config needs no site-specific threshold and there is no deployment
+    # where it firing is uninteresting. The remaining six are deliberate — the
+    # three SLO rules wait on an agreed target, and the other three need a
+    # per-deployment baseline before their thresholds mean anything.
     KNOWN_BASELINE_ENABLES_BEYOND_RECOMMENDED = {
-        "ts2o-config-invalid",
         "ts2o-export-latency-high",
         "ts2o-scrape-budget-overrun",
         "ts2o-scrape-staleness-high",

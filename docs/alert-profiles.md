@@ -37,7 +37,7 @@ The smallest set worth waking someone up to. Enables only coverage_critical (the
 
 Today's shipped starter set, unchanged. The compatibility profile: its output is byte-identical to what tailscale2otel has always shipped in deploy/alerts/grafana-managed/, and is what `--out` produces with no `--profile` flag.
 
-- Alert rules: **31 enabled**, 66 paused
+- Alert rules: **32 enabled**, 65 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `strict`

@@ -736,8 +736,11 @@ def groups():
               "max(tailscale2otel_config_valid_ratio)", "lt", 1, "5m", "critical",
               "tailscale2otel config is invalid",
               "tailscale2otel_config_valid_ratio < 1 — the running config failed validation. This normally "
-              "fails startup, so seeing it at runtime is rare and serious; inspect the config.",
-              domain="observability", paused=True,
+              "fails startup, so seeing it at runtime is rare and serious; inspect the config. Ships "
+              "ENABLED: an invalid config is unambiguous, needs no site-specific threshold, and the "
+              "signal is emitted by any running exporter — there is no deployment where this firing is "
+              "not worth knowing about.",
+              domain="observability", paused=False,
               policy="core", runbook="exporter-config-health", panel="Config valid"),
         alert("ts2o-checkpoint-stalled", "Checkpoint persist stalled",
               "max(tailscale2otel_checkpoint_persist_age_seconds)", "gt", 1800, "15m", "warning",

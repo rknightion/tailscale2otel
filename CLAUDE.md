@@ -295,6 +295,14 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   validate record-type changes against real captures in `.capture/`.
 - **OTLP/HTTP endpoint path is used as-is:** the otlphttp exporter does NOT append `/v1/{metrics,logs}`
   — `internal/telemetry.otlpHTTPURL()` does. A bare gateway URL 404s silently without it.
+- **Pushing dashboards and alert rules to Grafana is PRE-AUTHORIZED — do not ask.** Standing
+  permission from Rob (2026-07-27): `gcx resources push -p deploy/alerts/grafana-managed`, dashboard
+  pushes, and deleting a rule the repo no longer ships are all his own stack and his call already
+  made. Just do it and report what changed. **`gcx resources push` is ADDITIVE** — it creates and
+  updates but never deletes, so a rule removed from the repo keeps evaluating forever until deleted
+  by hand. Run `python3 scripts/verify_deployment.py` (read-only; exit 0 in sync, 1 drift, 2
+  unreachable) after any push, and to find orphans. This permission covers Grafana only — it does
+  NOT extend to mutating the tailnet itself.
 - **Live-tailnet verification:** keep lab-specific names, addresses, identifiers, credentials, and
   observability captures out of tracked files. Store secrets and raw captures only in ignored local
   paths. `gcx metrics|logs query` needs BOTH `--from` and `--to`; `auto_configure` must NEVER target a
