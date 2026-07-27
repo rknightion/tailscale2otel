@@ -15,11 +15,15 @@ The rules worth having a validator for at all — each one is a mistake that eve
 other local check accepts and the API rejects at push time, or worse, accepts and
 then ignores:
 
-  * **``noDataState`` casing.** The API spells the OK no-data state ``"Ok"``, and
-    ``execErrState`` spells its own ``"OK"``. The apiVersion: 1 provisioning
-    format used ``"OK"`` for both, so a mechanical port of a rule pack produces
-    manifests that fail to deploy. This exact mistake once made every rule in a
-    sibling repo un-deployable and slipped past that repo's validator.
+  * **State casing.** BOTH ``noDataState`` and ``execErrState`` spell the OK state
+    ``"Ok"``. ``"OK"`` is rejected outright. CORRECTED 2026-07-27: this file
+    previously asserted the two fields differed, allowing ``"OK"`` for
+    ``execErrState`` — so it validated the mistake against itself and 19 rules
+    passed every offline check and then failed to deploy with
+    ``spec.execErrState: Invalid value: "OK"``. A validator written from the same
+    belief as the generator cannot catch that belief being wrong; only a real
+    push can, because ``gcx resources validate`` explicitly does not check the
+    spec server-side.
   * **``metadata.name`` must be a legal Grafana UID** — <=40 chars, ``[A-Za-z0-9_-]``.
     An over-long or oddly-punctuated slug is rejected per-resource, so a push
     "succeeds" having quietly skipped one rule.
@@ -46,7 +50,7 @@ RULE_API = "rules.alerting.grafana.app/v0alpha1"
 RULE_KINDS = ("AlertRule", "RecordingRule")
 
 NODATA_STATES = {"NoData", "Ok", "Alerting", "KeepLast"}
-EXECERR_STATES = {"Error", "Alerting", "OK", "KeepLast"}
+EXECERR_STATES = {"Error", "Alerting", "Ok", "KeepLast"}
 
 # Grafana UID rules. 40 is a hard cap server-side.
 UID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")

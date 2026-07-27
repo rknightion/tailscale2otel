@@ -93,8 +93,10 @@ Three of these are silent: the manifest looks fine everywhere locally and the AP
 rejects it — or accepts it and ignores the field — at push time.
 
 - **`noDataState` spells its OK value `"Ok"`. `execErrState` spells its own
-  `"OK"`.** The asymmetry is real. The old `apiVersion: 1` provisioning format
-  used `"OK"` for both, so a mechanical port produces un-deployable rules.
+  `"Ok"` as well.** Corrected 2026-07-27: this README previously claimed the two
+  fields differed. They do not — the API accepts only `["Error", "Ok",
+  "Alerting", "KeepLast"]` for both, and `"OK"` is rejected. Believing otherwise
+  cost 19 rules that passed every offline gate and failed at push time.
 - **Durations are Go-style strings** — `"30m0s"`, `"1h0m0s"`, `"0s"`. `"5m"` is
   not accepted, and `relativeTimeRange.from`/`to` are durations here rather than
   the integer seconds provisioning took.
@@ -121,7 +123,7 @@ semantics:
 | `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
 | `core` | `NoData` | `Error` | always emitted while the exporter runs | 10 |
 | `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 67 |
-| `advisory` | `Ok` | `OK` | hygiene; neither absence nor a transient error is actionable | 19 |
+| `advisory` | `Ok` | `Ok` | hygiene; neither absence nor a transient error is actionable | 19 |
 
 Before this, *every* rule was fail-open on error, so a broken datasource read
 as "healthy" across the whole pack. Only the `advisory` class still is, and that

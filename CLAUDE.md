@@ -92,11 +92,22 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > than hiding). Alert rules are **Grafana-managed `rules.alerting.grafana.app/v0alpha1` manifests**,
 > one JSON per rule, pushed with `gcx resources push -p deploy/alerts/grafana-managed`.
 >
-> Two casing traps in those manifests, both silent: `noDataState` spells its OK value **`"Ok"`**
-> while `execErrState` spells its own **`"OK"`**, and durations are Go-style strings (`"30m0s"`, not
-> `"5m"`). The wrong casing makes a rule un-deployable while every offline check passes, and
-> `gcx resources validate` will NOT catch it — it reports "does not support server-side dry-run …
-> did not validate the spec". `deploy/alerts/gen/validate_manifests.py` is the real gate.
+> Two format traps in those manifests, both silent: **`noDataState` and `execErrState` BOTH spell
+> the OK state `"Ok"`** — the API accepts only `["Error", "Ok", "Alerting", "KeepLast"]` for either
+> — and durations are Go-style strings (`"30m0s"`, not `"5m"`).
+>
+> **CORRECTED 2026-07-27, by an actual push.** This file previously stated that `execErrState`
+> spelled its own value `"OK"`. It does not, and `"OK"` is rejected outright. That wrong belief was
+> encoded in five places at once — here, `build_rules.py`, `validate_manifests.py`, `test_rules.py`
+> and three docs — so **every offline gate agreed with itself and all 19 `advisory` rules failed at
+> push time** with `spec.execErrState: Invalid value: "OK"`. A validator written from the same
+> assumption as the generator cannot catch that assumption being wrong.
+>
+> The durable lesson is not the casing: **`gcx resources validate` does not validate the spec** (it
+> says so — "does not support server-side dry-run … did not validate the spec"), and neither
+> `validate_manifests.py` nor promtool exercises the real schema. **Only a real
+> `gcx resources push` proves a rule is deployable**, and pushing is pre-authorized here — so push
+> and read the result rather than trusting a green offline run.
 >
 > `build_rules.py --prom-out` renders the same catalogue as throwaway Prometheus rules **purely so
 > `promtool test rules` can execute them** against the fixtures in `deploy/alerts/tests/`. That file

@@ -38,7 +38,7 @@ Every alert declares one of four evaluation policies, which fixes its `noDataSta
 | `coverage_critical` | `Alerting` | `Alerting` | Absence **is** the fault. A query error must never read as healthy. |
 | `core` | `NoData` | `Error` | The exporter always emits this while running, so absence is abnormal and surfaces as a distinct `DatasourceNoData` alert. |
 | `optional` | `Ok` | `Error` | The series is legitimately absent in a healthy deployment (gated collector, optional source, a counter that has not incremented). Absence is fine; a datasource error is not. |
-| `advisory` | `Ok` | `OK` | Hygiene. Neither absence nor a transient error is actionable at this severity. |
+| `advisory` | `Ok` | `Ok` | Hygiene. Neither absence nor a transient error is actionable at this severity. |
 
 If you see a `DatasourceError` alert instead of the rule you expected, the rule did not evaluate —
 treat it as an outage of that signal, not as an all-clear.

@@ -18,7 +18,7 @@
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health",
       "summary": "A tailscale2otel exporter update is available"
     },
-    "execErrState": "OK",
+    "execErrState": "Ok",
     "expressions": {
       "A": {
         "datasourceUID": "grafanacloud-prom",

@@ -417,7 +417,11 @@ func TestGrafanaRuleManifestsAreStructurallyValid(t *testing.T) {
 	// The casing is asymmetric and neither half announces a mistake: a rule with
 	// noDataState "OK" is rejected on apply while every local check passes.
 	validNoData := map[string]bool{"NoData": true, "Ok": true, "Alerting": true, "KeepLast": true}
-	validExecErr := map[string]bool{"OK": true, "Error": true, "Alerting": true, "KeepLast": true}
+	// CORRECTED 2026-07-27 by a real `gcx resources push`: BOTH state fields spell the
+	// OK value "Ok". This map previously allowed "OK" for execErrState, matching the same
+	// wrong belief held by the Python generator, its validator and three docs — so every
+	// offline gate agreed with itself while 19 rules were rejected at push time.
+	validExecErr := map[string]bool{"Ok": true, "Error": true, "Alerting": true, "KeepLast": true}
 
 	names := map[string]string{}
 	titles := map[string]bool{}
@@ -483,8 +487,8 @@ func TestGrafanaRuleManifestsAreStructurallyValid(t *testing.T) {
 					"every offline check passes.", path, doc.Spec.NoDataState)
 			}
 			if !validExecErr[doc.Spec.ExecErrState] {
-				t.Errorf("%s has execErrState %q. Valid: OK, Error, Alerting, KeepLast — note "+
-					"this axis really does spell it \"OK\", unlike noDataState.",
+				t.Errorf("%s has execErrState %q. Valid: Ok, Error, Alerting, KeepLast — "+
+					"\"OK\" is rejected by the API, same as for noDataState.",
 					path, doc.Spec.ExecErrState)
 			}
 			// A responder reads the summary first; without one they get a title.

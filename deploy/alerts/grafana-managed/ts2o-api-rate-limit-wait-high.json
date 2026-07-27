@@ -18,7 +18,7 @@
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health",
       "summary": "API requests are waiting on the client-side rate limiter"
     },
-    "execErrState": "OK",
+    "execErrState": "Ok",
     "expressions": {
       "A": {
         "datasourceUID": "grafanacloud-prom",

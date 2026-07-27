@@ -25,10 +25,11 @@ Deploy with (folder first, so the rules resolve it)::
 NOT the ``apiVersion: 1`` file-provisioning format an earlier version of this
 generator emitted, and the differences are silent ones:
 
-  * ``noDataState`` spells its OK value ``"Ok"``; ``execErrState`` spells its own
-    ``"OK"``. The asymmetry is real. The provisioning format used ``"OK"`` for
-    both, so a mechanical port produces manifests every local check accepts and
-    the API rejects at push time.
+  * ``noDataState`` and ``execErrState`` BOTH spell the OK state ``"Ok"``. The
+    API accepts only ``["Error", "Ok", "Alerting", "KeepLast"]`` for either.
+    CORRECTED 2026-07-27: this docstring previously claimed an asymmetry
+    (``"OK"`` for ``execErrState``) and that belief cost 19 rules that passed
+    every local check and were then rejected at push time. See the POLICY block.
   * Durations are Go-style strings (``"30m0s"``, ``"0s"``, ``"1h0m0s"``), not the
     integer seconds ``relativeTimeRange`` took in the provisioning format.
   * Panel links are the paired ``__dashboardUid__``/``__panelId__`` ANNOTATIONS
@@ -102,11 +103,27 @@ RUNBOOK_BASE = "https://m7kni.io/tailscale2otel/runbooks/#"
 # Evaluation policy: how a rule behaves when its query returns nothing, and when
 # the query itself fails. (noDataState, execErrState).
 #
-# CASING. rules.alerting.grafana.app/v0alpha1 spells the no-data OK state "Ok"
-# and the exec-error OK state "OK". That is not a typo below and must not be
-# "tidied": the provisioning format this generator used to emit spelled both
-# "OK", and pushing that spelling makes every affected rule un-deployable while
-# every offline check still passes. test_rules.py asserts the exact bytes.
+# CASING — CORRECTED 2026-07-27 BY A REAL PUSH. This file previously claimed the
+# two fields spelled their OK state differently ("Ok" for noDataState, "OK" for
+# execErrState) and encoded that asymmetry here, in the validator, in the tests
+# and in three docs. IT WAS WRONG IN ONE DIRECTION. The API accepts exactly
+# ["Error", "Ok", "Alerting", "KeepLast"] for BOTH fields: "Ok" is right for both,
+# and "OK" is rejected outright.
+#
+# The cost of believing otherwise was 19 rules — every `advisory` rule, the only
+# policy that used "OK" — failing to deploy with
+#   403 ... spec.execErrState: Invalid value: "OK": value is not one of the
+#   allowed values ["Error","Ok","Alerting","KeepLast"]
+# while validate_manifests.py, test_rules.py, promtool and `gcx resources
+# validate` ALL passed. Nothing offline could catch it: the validator's allowed
+# set was written from the same wrong belief, so it was checking the mistake
+# against itself.
+#
+# The real lesson is not the casing, it is that `gcx resources validate` reports
+# "does not support server-side dry-run ... did not validate the spec". Only an
+# actual push exercises this schema. Do not trust an offline gate to prove a rule
+# is deployable.
+POLICY_STATES = ("Error", "Ok", "Alerting", "KeepLast", "NoData")
 POLICY = {
     # The rule's entire job is to notice that something stopped. Absence IS the
     # alert, and a query error must never read as healthy.
@@ -120,9 +137,15 @@ POLICY = {
     # still is.
     "optional":         ("Ok",       "Error"),
     # Hygiene/advisory. Neither absence nor a transient error is actionable at
-    # this rule's severity, and surfacing them would be pure noise.
-    "advisory":         ("Ok",       "OK"),
+    # this rule's severity, and surfacing them would be pure noise. Both values
+    # are "Ok" — see the casing correction above; "OK" is rejected by the API.
+    "advisory":         ("Ok",       "Ok"),
 }
+
+# Every state either field may carry. Asserted against the emitted manifests, so
+# a value the API would reject cannot reach a file. Derived from the API's own
+# 403 message rather than from documentation.
+assert all(s in POLICY_STATES for pair in POLICY.values() for s in pair), POLICY
 
 # uid -> declared policy name. Populated by alert() as the catalogue is built, so
 # tests can assert the emitted pair against what the source DECLARED rather than

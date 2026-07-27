@@ -18,7 +18,7 @@
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity",
       "summary": "Nodes are dropping outbound packets (sustained)"
     },
-    "execErrState": "OK",
+    "execErrState": "Ok",
     "expressions": {
       "A": {
         "datasourceUID": "grafanacloud-prom",

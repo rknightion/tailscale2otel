@@ -71,7 +71,7 @@ Rules are organised into five families:
 
     | trap | the rule |
     | --- | --- |
-    | state casing | `noDataState` spells its OK value **`"Ok"`**; `execErrState` spells its own **`"OK"`**. The asymmetry is real. `"OK"` in `noDataState` makes the rule un-deployable while every local check passes. |
+    | state casing | **BOTH** `noDataState` and `execErrState` spell the OK state **`"Ok"`**. The API accepts only `["Error", "Ok", "Alerting", "KeepLast"]`. Corrected 2026-07-27 — this table previously claimed an asymmetry (`"OK"` for `execErrState`), and 19 rules passed every local check and were then rejected at push time. |
     | durations | Go-style strings — `"30m0s"`, `"1h0m0s"`, `"0s"`. `"5m"` is rejected, and `relativeTimeRange` bounds are durations here, not integer seconds. |
     | panel links | the paired `__dashboardUid__` / `__panelId__` **annotations**, `__panelId__` a **string**. Top-level `dashboardUid`/`panelId` are provisioning-only and `additionalProperties: false` rejects them. |
     | recording rules | no `annotations`, `for`, `condition`, `noDataState` or `execErrState`. The spec is exactly `{title, trigger, metric, expressions, targetDatasourceUID, labels, paused}`. |
@@ -98,7 +98,7 @@ Rules are organised into five families:
     | `coverage_critical` | `Alerting` | `Alerting` | the rule exists to notice something stopped — absence IS the alert |
     | `core` | `NoData` | `Error` | always emitted by a running exporter, so absence is abnormal |
     | `optional` | `Ok` | `Error` | absence means "not configured", but an error is still a fault |
-    | `advisory` | `Ok` | `OK` | neither absence nor a transient error is actionable here |
+    | `advisory` | `Ok` | `Ok` | neither absence nor a transient error is actionable here |
 
     `ExporterDown` is the only `coverage_critical` rule. Per-collector scrape rules are `core`
     rather than `coverage_critical` on purpose: total absence means the exporter is gone, which

@@ -58,19 +58,21 @@ validate = load_module("tailscale2otel_validate", Path(__file__).with_name("vali
 # reads its expectations out of the code under test proves only self-consistency;
 # this copy fails if the frozen seam is edited without a deliberate test change.
 #
-# CASING IS THE POINT. rules.alerting.grafana.app spells the no-data "OK" state
-# "Ok", and the exec-error one "OK". The asymmetry is real, it is not a typo here,
-# and getting it wrong makes every rule un-deployable via `gcx resources push`
-# while every local check still passes.
+# CASING IS THE POINT — and the direction was WRONG here until 2026-07-27.
+# rules.alerting.grafana.app accepts exactly ["Error", "Ok", "Alerting",
+# "KeepLast"] for BOTH noDataState and execErrState. There is NO asymmetry: "Ok"
+# is correct for both and "OK" is rejected. The old belief cost 19 un-deployable
+# rules that passed every offline gate, because the validator encoded the same
+# wrong set it was meant to police.
 EXPECTED_POLICY_PAIRS = {
     "coverage_critical": ("Alerting", "Alerting"),
     "core": ("NoData", "Error"),
     "optional": ("Ok", "Error"),
-    "advisory": ("Ok", "OK"),
+    "advisory": ("Ok", "Ok"),
 }
 
 VALID_NODATA = {"NoData", "Alerting", "Ok", "KeepLast"}
-VALID_EXECERR = {"Error", "Alerting", "OK", "KeepLast"}
+VALID_EXECERR = {"Error", "Alerting", "Ok", "KeepLast"}
 
 # Rules allowed to alert on absence. Keep this SMALL: a coverage_critical rule
 # treats "no data" as a fault, so anything whose series is legitimately absent in
@@ -111,13 +113,25 @@ class PolicyMatrixTest(unittest.TestCase):
     def test_every_policy_pair_is_a_documented_pair(self):
         self.assertEqual(EXPECTED_POLICY_PAIRS, rules.POLICY)
 
-    def test_nodata_ok_is_spelled_Ok_not_OK(self):
-        # The single most expensive mistake available in this file: "OK" is the
-        # provisioning-format spelling and the API rejects it, but nothing local
-        # catches it. Assert the exact byte sequence.
+    def test_the_ok_state_is_spelled_Ok_in_BOTH_fields(self):
+        # CORRECTED 2026-07-27 by a real push. This test previously asserted the
+        # opposite for execErrState ("OK"), matching a wrong belief held by the
+        # generator, the validator and three docs at once. The API accepts only
+        # ["Error", "Ok", "Alerting", "KeepLast"] for BOTH fields; 19 advisory
+        # rules failed to deploy with:
+        #   spec.execErrState: Invalid value: "OK"
+        # while every offline check passed, because the validator's allowed set
+        # was written from the same belief it was supposed to be checking.
         self.assertEqual("Ok", rules.POLICY["optional"][0])
         self.assertEqual("Ok", rules.POLICY["advisory"][0])
-        self.assertEqual("OK", rules.POLICY["advisory"][1])
+        self.assertEqual("Ok", rules.POLICY["advisory"][1])
+
+    def test_no_policy_uses_the_rejected_uppercase_OK(self):
+        for name, pair in rules.POLICY.items():
+            with self.subTest(policy=name):
+                self.assertNotIn("OK", pair,
+                                 "%r uses \"OK\", which the API rejects — see the casing "
+                                 "correction in build_rules.py" % name)
 
     def test_emitted_states_are_valid_grafana_values(self):
         for rule in alert_rules():
@@ -146,7 +160,7 @@ class PolicyMatrixTest(unittest.TestCase):
         # The pre-#388 state: everything fail-open. Only the advisory class may be.
         declared = rules.POLICY_BY_UID
         for rule in alert_rules():
-            if (rule["noDataState"], rule["execErrState"]) == ("Ok", "OK"):
+            if (rule["noDataState"], rule["execErrState"]) == ("Ok", "Ok"):
                 with self.subTest(uid=rule["uid"]):
                     self.assertEqual("advisory", declared[rule["uid"]])
 
@@ -850,8 +864,10 @@ class ValidatorTest(unittest.TestCase):
         errors = self._errors_for(lambda d: d["spec"].update(noDataState="OK"))
         self.assertTrue(any("noDataState" in e for e in errors), errors)
 
-    def test_rejects_lowercase_ok_execerrstate(self):
-        errors = self._errors_for(lambda d: d["spec"].update(execErrState="Ok"))
+    def test_rejects_uppercase_OK_execerrstate(self):
+        # Was `test_rejects_lowercase_ok_execerrstate`, asserting the exact
+        # inverse — "Ok" is the VALID spelling and "OK" is what the API rejects.
+        errors = self._errors_for(lambda d: d["spec"].update(execErrState="OK"))
         self.assertTrue(any("execErrState" in e for e in errors), errors)
 
     def test_rejects_bad_apiversion(self):

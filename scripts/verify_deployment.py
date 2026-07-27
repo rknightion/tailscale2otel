@@ -93,10 +93,19 @@ def load_shipped():
     return out
 
 
+#: The apiVersion this repo emits. A pull returns the same rule under more than
+#: one API version (`alerting.ext.grafana.app/v1alpha1` carries a stub with no
+#: title or paused), and comparing against the stub invents drift on every field.
+OUR_API = "rules.alerting.grafana.app/v0alpha1"
+
+
 def pull_deployed(workdir):
-    p = run(["gcx", "resources", "pull", "alertrules"], cwd=workdir)
-    if p.returncode != 0:
-        die("gcx resources pull failed:\n%s" % (p.stderr or p.stdout).strip())
+    # RecordingRule is a SEPARATE kind — `pull alertrules` does not return them,
+    # so pulling only that made every recording rule look absent-then-drifted.
+    for kind in ("alertrules", "recordingrules"):
+        p = run(["gcx", "resources", "pull", kind], cwd=workdir)
+        if p.returncode != 0:
+            die("gcx resources pull %s failed:\n%s" % (kind, (p.stderr or p.stdout).strip()))
     found = {}
     for path in glob.glob(os.path.join(workdir, "resources", "**", "*.json"), recursive=True):
         try:
@@ -105,19 +114,29 @@ def pull_deployed(workdir):
         except (OSError, ValueError):
             continue
         name = (doc.get("metadata") or {}).get("name", "")
-        if name.startswith(PREFIX):
-            # A rule can appear under more than one API version; keep the one whose
-            # apiVersion matches what this repo emits, so the comparison is like-for-like.
-            prev = found.get(name)
-            if prev is None or "v0alpha1" in doc.get("apiVersion", ""):
-                found[name] = doc
+        if name.startswith(PREFIX) and doc.get("apiVersion") == OUR_API:
+            found[name] = doc
     return found
+
+
+#: Fields Grafana OMITS from a pulled spec when they hold their default value.
+#: Comparing a shipped explicit default against an absent field would report every
+#: such rule as drifted forever — 57 false positives on the first real run, which
+#: is exactly the noise that makes a drift checker get ignored. Normalise instead.
+DEFAULTS = {"paused": False, "labels": {}, "for": "0s"}
+
+
+def _norm(spec, field):
+    value = spec.get(field)
+    if value is None and field in DEFAULTS:
+        return DEFAULTS[field]
+    return value
 
 
 def compare_specs(shipped, deployed):
     """Field names that differ, for the fields that change behaviour."""
     a, b = shipped.get("spec", {}), deployed.get("spec", {})
-    return [f for f in COMPARED if f in a and a.get(f) != b.get(f)]
+    return [f for f in COMPARED if f in a and _norm(a, f) != _norm(b, f)]
 
 
 def main():
