@@ -110,12 +110,28 @@ func TestClassify_EndpointRemoved_Breaking(t *testing.T) {
 }
 
 func TestClassify_IgnoresUnconsumedOps(t *testing.T) {
-	// change on an op NOT in opIDs ⇒ 0 changes
-	old := mustSpec(t, opJSON(`"name":{"type":"string"}`))
-	newer := mustSpec(t, opJSON(`"name":{"type":"integer"}`)) // type change — but op not in list
-	cs := oas.Classify(old, newer, []string{"someOtherOp"})
+	// A change on an op NOT in opIDs ⇒ 0 changes.
+	//
+	// This used to pass a bogus operationId as the vehicle and assert silence.
+	// Since #432 an opID absent from both specs is itself reported
+	// (OperationUnmodeled — a consumed operation with no drift coverage at all),
+	// so the scoping this test is actually about needs a real second operation
+	// instead. The intent is unchanged: drift on an operation outside opIDs is
+	// invisible.
+	const twoOps = `{"paths":{
+		"/a":{"get":{"operationId":"opA","responses":{"200":{"content":{"application/json":{"schema":{"type":"object","properties":{"n":{"type":%q}}}}}}}}},
+		"/b":{"get":{"operationId":"opB","responses":{"200":{"content":{"application/json":{"schema":{"type":"object","properties":{"n":{"type":"string"}}}}}}}}}
+	}}`
+	old := mustSpec(t, fmt.Sprintf(twoOps, "string"))
+	newer := mustSpec(t, fmt.Sprintf(twoOps, "integer")) // opA's type changed
+	cs := oas.Classify(old, newer, []string{"opB"})
 	if len(cs) != 0 {
 		t.Fatalf("want 0 changes, got %d: %+v", len(cs), cs)
+	}
+	// Control: the same diff IS reported when opA is in scope, so the assertion
+	// above is about scoping rather than about a diff that never happens.
+	if cs := oas.Classify(old, newer, []string{"opA"}); len(cs) != 1 {
+		t.Fatalf("control: want 1 change for opA, got %d: %+v", len(cs), cs)
 	}
 }
 

@@ -9,6 +9,15 @@
 //
 // $ref resolution is cycle-safe via a visited set and a hard depth cap
 // (maxRefDepth).
+//
+// Consequence of GET-only, and why it is not fixed by widening Ops: a CONSUMED
+// operation that is not a GET gets no drift coverage at all. Widening Ops would
+// give every write operation a schema nothing asks for, and the fuzz/decode
+// harnesses are built on Ops being the set of things with a consumed response
+// body. Instead Classify REPORTS the gap (OperationUnmodeled, Warning) rather
+// than skipping it in silence, which is what it did before #432. Today the
+// nearest candidate is validateAndTestPolicyFile — a read-only POST
+// dispositioned `implement`, not `consumed`.
 package oas
 
 import (
@@ -30,15 +39,39 @@ const maxRefDepth = 12
 type Spec struct {
 	Ops        map[string]Operation    // key = operationId; GET only
 	components map[string]rawSchema    // unexported; raw components.schemas for resolution
+	parameters map[string]rawSchema    // unexported; raw components.parameters for resolution
 	allOps     map[string]OperationRef // unexported; every verb, id/method/path only
 }
 
 // Operation is a parsed GET operation from the OpenAPI spec.
+//
+// Everything below the response body — parameters, success statuses, media types
+// — is the request surface added by #432. See surface.go for why each dimension
+// is here and what the vendored spec actually contains.
 type Operation struct {
-	ID              string
-	Method          string   // always "get"
-	RequestRequired []string // required fields from requestBody.content["application/json"].schema.required
-	Response        Schema   // 200 application/json schema, $ref-resolved
+	ID     string
+	Method string // always "get"
+	// Path is the templated path the operation lives at. Carried so a drift
+	// report can say WHERE a change is, which is the evidence a maintainer needs
+	// to check it upstream.
+	Path string
+	// Parameters is the merged path-item + operation-level parameter list,
+	// $ref-resolved and sorted by (In, Name).
+	Parameters []Param
+	// RequestRequired is the required fields of
+	// requestBody.content["application/json"].schema. Latent while every consumed
+	// operation is a GET; see TestVendoredSpec_NoConsumedOperationHasARequestBody.
+	RequestRequired []string
+	// RequestMediaTypes is the sorted media types the request body accepts.
+	RequestMediaTypes []string
+	// Response is the selected success response's application/json schema,
+	// $ref-resolved.
+	Response Schema
+	// SuccessStatuses is the sorted 2xx response codes the operation declares.
+	SuccessStatuses []string
+	// ResponseMediaTypes is the sorted media types of the selected success
+	// response.
+	ResponseMediaTypes []string
 }
 
 // Schema is a resolved subset of JSON Schema. Refs are followed at parse time.
@@ -91,7 +124,13 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 	}
 
 	// Extract components.schemas into a map of raw schema nodes.
-	components, err := parseComponents(doc)
+	components, err := parseComponents(doc, "schemas")
+	if err != nil {
+		return nil, err
+	}
+	// components.parameters, resolved the same way: 30 of the 34 parameters on
+	// consumed operations are $refs into it (#432).
+	parameters, err := parseComponents(doc, "parameters")
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +138,7 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 	spec := &Spec{
 		Ops:        make(map[string]Operation),
 		components: components,
+		parameters: parameters,
 		allOps:     map[string]OperationRef{},
 	}
 
@@ -113,7 +153,7 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 		return nil, fmt.Errorf("oas: unmarshal paths: %w", err)
 	}
 
-	for _, pathItemRaw := range paths {
+	for path, pathItemRaw := range paths {
 		var pathItem map[string]json.RawMessage
 		if err := json.Unmarshal(pathItemRaw, &pathItem); err != nil {
 			continue
@@ -124,7 +164,7 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 			continue
 		}
 
-		op, err := parseOperation(opRaw, spec.components)
+		op, err := parseOperation(opRaw, path, pathItem["parameters"], spec)
 		if err != nil || op == nil {
 			continue
 		}
@@ -134,8 +174,9 @@ func ParseSpec(jsonBytes []byte) (*Spec, error) {
 	return spec, nil
 }
 
-// parseComponents extracts components.schemas from the document.
-func parseComponents(doc map[string]json.RawMessage) (map[string]rawSchema, error) {
+// parseComponents extracts components.<kind> from the document as raw nodes.
+// kind is "schemas" or "parameters".
+func parseComponents(doc map[string]json.RawMessage, kind string) (map[string]rawSchema, error) {
 	result := make(map[string]rawSchema)
 
 	rawComponents, ok := doc["components"]
@@ -148,14 +189,14 @@ func parseComponents(doc map[string]json.RawMessage) (map[string]rawSchema, erro
 		return result, fmt.Errorf("oas: unmarshal components: %w", err)
 	}
 
-	rawSchemas, ok := components["schemas"]
+	rawSchemas, ok := components[kind]
 	if !ok {
 		return result, nil
 	}
 
 	var schemas map[string]json.RawMessage
 	if err := json.Unmarshal(rawSchemas, &schemas); err != nil {
-		return result, fmt.Errorf("oas: unmarshal components.schemas: %w", err)
+		return result, fmt.Errorf("oas: unmarshal components.%s: %w", kind, err)
 	}
 
 	for name, schemaRaw := range schemas {
@@ -170,8 +211,12 @@ func parseComponents(doc map[string]json.RawMessage) (map[string]rawSchema, erro
 }
 
 // parseOperation parses a single GET operation JSON blob into an Operation.
+// path is the templated path it lives at and pathItemParams is the path item's
+// own `parameters` array, which applies to every operation beneath it.
 // Returns nil, nil if the operation has no operationId (skip it).
-func parseOperation(opRaw json.RawMessage, components map[string]rawSchema) (*Operation, error) {
+func parseOperation(opRaw json.RawMessage, path string, pathItemParams json.RawMessage, spec *Spec) (*Operation, error) {
+	components := spec.components
+
 	var opMap map[string]json.RawMessage
 	if err := json.Unmarshal(opRaw, &opMap); err != nil {
 		return nil, fmt.Errorf("oas: unmarshal operation: %w", err)
@@ -189,38 +234,26 @@ func parseOperation(opRaw json.RawMessage, components map[string]rawSchema) (*Op
 	op := &Operation{
 		ID:     opID,
 		Method: "get",
+		Path:   path,
 	}
 
-	// Parse 200 application/json response schema.
-	op.Response = parseResponseSchema(opMap, components)
+	// Request surface (#432): parameters, success statuses, media types.
+	op.Parameters = parseParams(pathItemParams, opMap, spec.parameters, components)
+	op.SuccessStatuses = successStatuses(opMap)
+
+	// Parse the selected success response's application/json schema.
+	if resp, ok := selectSuccessResponse(opMap); ok {
+		op.ResponseMediaTypes = mediaTypes(resp)
+		op.Response = extractJSONSchema(resp, components)
+	}
 
 	// Parse requestBody.content["application/json"].schema.required.
 	op.RequestRequired = parseRequestRequired(opMap, components)
+	if rb, ok := requestBodyObject(opMap); ok {
+		op.RequestMediaTypes = mediaTypes(rb)
+	}
 
 	return op, nil
-}
-
-// parseResponseSchema extracts and resolves the 200 application/json schema.
-func parseResponseSchema(opMap map[string]json.RawMessage, components map[string]rawSchema) Schema {
-	rawResponses, ok := opMap["responses"]
-	if !ok {
-		return Schema{}
-	}
-	var responses map[string]json.RawMessage
-	if err := json.Unmarshal(rawResponses, &responses); err != nil {
-		return Schema{}
-	}
-
-	raw200, ok := responses["200"]
-	if !ok {
-		return Schema{}
-	}
-	var resp200 map[string]json.RawMessage
-	if err := json.Unmarshal(raw200, &resp200); err != nil {
-		return Schema{}
-	}
-
-	return extractJSONSchema(resp200, components)
 }
 
 // extractJSONSchema pulls application/json schema from a response or

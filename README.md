@@ -276,7 +276,7 @@ has broken decoders here before. Four lanes guard it:
 |---|---|---|
 | **Schema-driven decode tests** | every PR (gates) | synthesizes payloads from the vendored OpenAPI spec + known wire quirks (numeric `proto`, polymorphic audit `old`/`new`) through the real decoders. Runs inside the normal `go test -race ./...` leg, which `ci-success` requires |
 | **Exploratory fuzzing** | every PR (advisory) | `go test -fuzz` over the HEC envelope, HEC timestamps and the flow/audit decoders. Deliberately **not** required: finding a NEW crasher is nondeterministic, so gating it would let an unrelated PR randomly block merges. Each target's seed corpus runs in the gated leg above, so a KNOWN crasher still blocks |
-| **OpenAPI drift** | daily | diffs the live spec against the vendored copy, scoped to consumed operations, classifying breaking vs informational |
+| **OpenAPI drift** | daily | diffs the live spec against the vendored copy, scoped to consumed operations. Covers response fields, path/query/header **parameters** (requiredness, type, default, enum), the **success-status set** and **request/response media types**, classifying each as breaking, behavioral or additive |
 | **Client-lib tracking** | weekly | builds and tests against `tailscale-client-go/v2@main` and `@latest` |
 | **Live contract** | daily | hits the real API read-only and asserts every consumed GET still decodes |
 

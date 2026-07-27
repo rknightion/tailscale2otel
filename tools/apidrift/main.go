@@ -126,34 +126,74 @@ func render(format string, changes []oas.Change) {
 
 // renderMarkdown prints a Markdown table to stdout, or a "no drift" message.
 func renderMarkdown(changes []oas.Change) {
+	fmt.Print(renderMarkdownString(changes))
+}
+
+// renderMarkdownString builds the Markdown report.
+//
+// This becomes the body of the scheduled lane's deduplicated tracking issue, read
+// by someone months later with no memory of the run that produced it, so it
+// carries the evidence to act on without re-running anything (#432): WHERE
+// upstream the change is, the old → new values, and what each severity obliges
+// the reader to do. Output is deterministic — the lane compares rendered bodies to
+// decide whether to update its issue, so churn is indistinguishable from news.
+func renderMarkdownString(changes []oas.Change) string {
 	if len(changes) == 0 {
-		fmt.Println("No drift detected on consumed operations.")
-		return
+		return "No drift detected on consumed operations.\n"
 	}
 	var b strings.Builder
-	b.WriteString("| Severity | Op | Kind | Detail |\n")
-	b.WriteString("| --- | --- | --- | --- |\n")
+	b.WriteString("| Severity | Op | Where | Kind | Detail |\n")
+	b.WriteString("| --- | --- | --- | --- | --- |\n")
 	for _, c := range changes {
-		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n",
+		where := c.Where
+		if where == "" {
+			where = "—" // no path to name: neither spec models the operation
+		}
+		fmt.Fprintf(&b, "| %s | %s | `%s` | %s | %s |\n",
 			string(c.Severity),
 			c.OpID,
+			where,
 			string(c.Kind),
 			c.Detail,
 		)
 	}
-	fmt.Print(b.String())
+
+	// Legend, restricted to the severities actually present so a purely
+	// informational report does not read as if something were broken.
+	b.WriteString("\n**Severities present in this report**\n\n")
+	for _, s := range []oas.Severity{oas.Breaking, oas.Warning, oas.Info} {
+		if !containsSeverity(changes, s) {
+			continue
+		}
+		fmt.Fprintf(&b, "- %s\n", oas.SeverityAction(s))
+	}
+	return b.String()
+}
+
+// containsSeverity reports whether any change carries the given severity.
+func containsSeverity(changes []oas.Change, s oas.Severity) bool {
+	for _, c := range changes {
+		if c.Severity == s {
+			return true
+		}
+	}
+	return false
 }
 
 // renderJSON prints the changes as a JSON array to stdout, or a "no drift" message.
 func renderJSON(changes []oas.Change) {
+	fmt.Println(renderJSONString(changes))
+}
+
+// renderJSONString marshals the changes, including Where.
+func renderJSONString(changes []oas.Change) string {
 	if len(changes) == 0 {
-		fmt.Println("No drift detected on consumed operations.")
-		return
+		return "No drift detected on consumed operations."
 	}
 	out, err := json.MarshalIndent(changes, "", "  ")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "apidrift: marshal json:", err)
 		os.Exit(2)
 	}
-	fmt.Println(string(out))
+	return string(out)
 }
