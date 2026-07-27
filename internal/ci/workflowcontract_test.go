@@ -1246,3 +1246,78 @@ func TestIANARegistryHasAFreshnessLane(t *testing.T) {
 		t.Errorf("%s is missing: %v", csv, err)
 	}
 }
+
+// TestNoMatrixJobUpsertsATrackingIssue (#435).
+//
+// report-drift upserts by reading `gh issue list --label <lane> --state open`
+// and creating an issue when the read comes back empty. That is check-then-act
+// with no lock, which is safe only while at most one job per label can be in
+// flight. A job running under `strategy.matrix` breaks that assumption: its legs
+// run concurrently, and a genuine upstream break usually fails ALL of them, so
+// both legs read "no open issue" before either has created one and two issues
+// are filed under the same label.
+//
+// The fix is structural — fan the verdicts out, aggregate them, and let exactly
+// one job speak — so this asserts the structure rather than the symptom. A
+// future lane that grows a matrix and keeps its reporting inline would
+// reintroduce the identical bug, and nothing else would notice: duplicate issues
+// look like two real findings.
+func TestNoMatrixJobUpsertsATrackingIssue(t *testing.T) {
+	for _, wf := range workflowFiles(t) {
+		doc := readWorkflow(t, wf)
+		for job, raw := range jobsOf(t, doc, wf) {
+			def, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			strategy, _ := def["strategy"].(map[string]any)
+			if _, hasMatrix := strategy["matrix"]; !hasMatrix {
+				continue
+			}
+			steps, _ := def["steps"].([]any)
+			for _, s := range steps {
+				step, ok := s.(map[string]any)
+				if !ok {
+					continue
+				}
+				uses, _ := step["uses"].(string)
+				if strings.Contains(uses, "report-drift") || strings.Contains(uses, "resolve-drift") {
+					t.Errorf("%s/%s runs under a matrix AND calls %s. Its legs run "+
+						"concurrently and the composite upserts by list-then-create with no "+
+						"lock, so two failing legs can file two issues under one label. "+
+						"Publish each leg's verdict as an artifact and aggregate in a single "+
+						"downstream job instead.", wf, job, uses)
+				}
+			}
+		}
+	}
+}
+
+// TestOnlyOneJobPerLaneCanWriteIssues is the permission-shaped half of the same
+// contract. Least privilege here is not decoration: a job that cannot write to
+// the tracker cannot race with the job that can, so the narrower permission is
+// what makes the structure above enforceable rather than merely conventional.
+func TestOnlyOneJobPerLaneCanWriteIssues(t *testing.T) {
+	for _, wf := range workflowFiles(t) {
+		doc := readWorkflow(t, wf)
+		var writers []string
+		for job, raw := range jobsOf(t, doc, wf) {
+			def, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			perms, ok := def["permissions"].(map[string]any)
+			if !ok {
+				continue
+			}
+			if issues, _ := perms["issues"].(string); issues == "write" {
+				writers = append(writers, job)
+			}
+		}
+		if len(writers) > 1 {
+			sort.Strings(writers)
+			t.Errorf("%s grants issues:write to more than one job (%s); concurrent writers to "+
+				"one lane label race on the tracking issue", wf, strings.Join(writers, ", "))
+		}
+	}
+}

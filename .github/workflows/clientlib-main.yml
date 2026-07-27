@@ -18,11 +18,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The matrix legs DELIBERATELY do not touch the tracking issue (#435).
+  #
+  # They used to: each leg called report-drift directly, and report-drift upserts
+  # by reading `gh issue list --label ... --state open` and then creating if the
+  # read came back empty. That is a check-then-act race with no lock, and this is
+  # the only lane whose matrix shares a single label — so when both legs failed in
+  # the same run (the common case, since a genuine upstream break usually breaks
+  # both `main` and `latest`), both could read "no open issue" before either had
+  # created one, and file two.
+  #
+  # Each leg now records its own verdict as an artifact and stays silent. Exactly
+  # one downstream job reads them and speaks, so there is no interleaving to race.
   build-against:
     timeout-minutes: 20
     permissions:
-      contents: read
-      issues: write # report-drift creates/comments on the tracking issue
+      contents: read # no issues:write — this job no longer files anything
     strategy:
       fail-fast: false
       matrix:
@@ -52,43 +63,129 @@ jobs:
               && go build ./... && go vet ./... && go test -race ./...; } > /tmp/cl.log 2>&1
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
-      - name: Build report
+      # Captured as named fields rather than left to chance. Previously the only
+      # record of which toolchain and which resolved pseudo-version failed was
+      # whatever happened to survive inside the last 8000 bytes of the combined
+      # build log — which is to say, usually nothing. "It broke on main" is not
+      # actionable six weeks later; "it broke on v2.0.0-20260726... under go1.26.0"
+      # is.
+      - name: Capture failing identity
         if: steps.bump.outputs.code != '0'
-        env:
-          REF: ${{ matrix.ref }}
         run: |
+          set -uo pipefail
+          mkdir -p /tmp/verdict
           {
-            echo "## tailscale-client-go/v2 @ ${REF} breaks our build/tests"
+            echo "### \`${REF}\`"
+            echo
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| requested ref | \`${REF}\` |"
+            echo "| resolved module | \`$(go list -m github.com/tailscale/tailscale-client-go/v2 2>/dev/null || echo 'unresolved')\` |"
+            echo "| toolchain | \`$(go version)\` |"
+            echo "| runner | \`${RUNNER_OS}/${RUNNER_ARCH}\` |"
+            echo "| exit code | \`${CODE}\` |"
+            echo
+            echo "<details><summary>Last 8000 bytes of the build log</summary>"
             echo
             echo '```'
             tail -c 8000 /tmp/cl.log
             echo '```'
-          } > /tmp/cl.md
+            echo
+            echo "</details>"
+          } > "/tmp/verdict/${REF}.md"
+        env:
+          REF: ${{ matrix.ref }}
+          CODE: ${{ steps.bump.outputs.code }}
 
-      - name: Report + fail
+      - name: Publish verdict
         if: steps.bump.outputs.code != '0'
-        uses: ./.github/actions/report-drift
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          lane-label: clientlib-drift
-          title: "tailscale-client-go/v2 ${{ matrix.ref }} breaks our build"
-          report-path: /tmp/cl.md
+          name: clientlib-verdict-${{ matrix.ref }}
+          path: /tmp/verdict/
+          retention-days: 14
 
-  # Separate aggregation job: only close the tracking issue when EVERY matrix leg
-  # (main + latest) is green. Doing it per-leg would let one ref close an issue the
-  # other ref legitimately just (re)opened. `needs` + default `if: success()` runs
-  # this only if all build-against legs succeeded.
-  resolve:
-    timeout-minutes: 5
+  # The single writer. `if: always()` so it runs whatever the legs did, because
+  # the "everything is green again, close the issue" path is just as important as
+  # the failure path and must be decided from the SAME view of all legs.
+  #
+  # Aggregating here also fixes what the per-leg version got wrong even when it
+  # did not race: two failing legs produced two issues with two different titles
+  # under one label, and resolve-drift closes every open issue carrying the label,
+  # so the duplicate was only ever cleaned up by a later fully-green run.
+  report:
+    timeout-minutes: 10
     needs: build-against
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write # resolve-drift comments on and closes the tracking issue
+      issues: write # the only job in this lane that writes to the tracker
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
+
+      - name: Collect verdicts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: /tmp/verdicts
+          pattern: clientlib-verdict-*
+          merge-multiple: true
+        continue-on-error: true # no artifacts at all is the green case, not an error
+
+      - name: Assemble one report
+        id: assemble
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(/tmp/verdicts/*.md)
+          if [ ${#files[@]} -eq 0 ]; then
+            # No verdicts can mean two very different things. Either every leg
+            # passed, or a leg died before it could write one (checkout failed,
+            # the runner was cancelled, setup-go could not reach the proxy). Only
+            # the first is a clean run. Treating the second as clean would close
+            # the tracking issue on the strength of a run that proved nothing —
+            # the exact failure this job exists to avoid, in the other direction.
+            if [ "${LEGS_RESULT}" != "success" ]; then
+              echo "matrix legs reported '${LEGS_RESULT}' and produced no verdict:" \
+                   "treating as inconclusive, not as green" >&2
+              echo "failed=inconclusive" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            echo "failed=0" >> "$GITHUB_OUTPUT"
+            echo "every matrix leg is green"
+            exit 0
+          fi
+          echo "failed=${#files[@]}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## tailscale-client-go/v2 breaks our build"
+            echo
+            echo "${#files[@]} of 2 matrix legs failed in [this run](${RUN_URL})."
+            echo
+            for f in "${files[@]}"; do
+              cat "$f"
+              echo
+            done
+          } > /tmp/cl.md
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LEGS_RESULT: ${{ needs.build-against.result }}
+
+      # One call, one issue, whichever legs failed — so the title no longer varies
+      # per leg and the dedup label always has exactly one issue to find.
+      - name: Report + fail
+        if: steps.assemble.outputs.failed != '0'
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: clientlib-drift
+          title: "tailscale-client-go/v2 breaks our build"
+          report-path: /tmp/cl.md
+
+      # Only close when EVERY leg is green, which is now a property of this job's
+      # own view rather than of `needs` + a default success() condition.
       - name: Resolve tracking issue on clean run
+        if: steps.assemble.outputs.failed == '0'
         uses: ./.github/actions/resolve-drift
         with:
           lane-label: clientlib-drift

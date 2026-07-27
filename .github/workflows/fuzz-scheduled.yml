@@ -22,9 +22,10 @@ on:
         required: false
         default: 15m
 
+# issues:write is granted per-job, to the single aggregation job only — the
+# matrix legs must not be able to file anything (#435).
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: fuzz-scheduled
@@ -139,13 +140,83 @@ jobs:
             echo '</details>'
           } > /tmp/fuzz-report.md
 
-      - name: Report the finding
+      # The leg publishes its verdict and stays silent. It does NOT file the
+      # issue itself: nine legs run concurrently, report-drift upserts by
+      # list-then-create with no lock, and one broken shared decode helper can
+      # crash several targets in the same run — so the legs would race and file
+      # several issues for one defect (#435).
+      - name: Publish the verdict
         if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-verdict-${{ matrix.target }}-${{ strategy.job-index }}
+          path: /tmp/fuzz-report.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The single writer for this lane. `if: always()` because the "all clear, close
+  # the issue" path has to be decided from the same view of every leg as the
+  # failure path.
+  report:
+    timeout-minutes: 10
+    needs: fuzz
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # the only job in this lane that writes to the tracker
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Collect verdicts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: /tmp/verdicts
+          pattern: fuzz-verdict-*
+        continue-on-error: true # no artifacts at all is the clean case
+
+      - name: Assemble one report
+        id: assemble
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(/tmp/verdicts/*/*.md)
+          if [ ${#files[@]} -eq 0 ]; then
+            # No verdicts is only "clean" if every leg actually finished. A leg
+            # killed before it could write one proves nothing, and closing the
+            # tracking issue on that basis would discard a real finding.
+            if [ "${LEGS_RESULT}" != "success" ]; then
+              echo "fuzz legs reported '${LEGS_RESULT}' with no verdict: inconclusive" >&2
+              exit 1
+            fi
+            echo "findings=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "findings=${#files[@]}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Scheduled fuzzing found ${#files[@]} crasher(s)"
+            echo
+            for f in "${files[@]}"; do
+              sed 's/^## Scheduled fuzzing found a crasher/###/' "$f"
+              echo
+            done
+          } > /tmp/fuzz-all.md
+        env:
+          LEGS_RESULT: ${{ needs.fuzz.result }}
+
+      - name: Report the findings
+        if: steps.assemble.outputs.findings != '0'
         continue-on-error: true
         uses: ./.github/actions/report-drift
         with:
           lane-label: fuzz-finding
           title: "Scheduled fuzzing found a crasher"
-          report-path: /tmp/fuzz-report.md
+          report-path: /tmp/fuzz-all.md
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Fail on a finding
+        if: steps.assemble.outputs.findings != '0'
+        run: 'echo "fuzzing found a crasher — see the issue labelled fuzz-finding" >&2; exit 1'
