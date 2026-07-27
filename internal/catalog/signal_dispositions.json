@@ -508,7 +508,8 @@
       "prom_name": "tailscale_device_multiple_connections_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -710,7 +711,8 @@
       "prom_name": "tailscale_devices_key_expiry_disabled_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1192,7 +1194,8 @@
       "prom_name": "tailscale_node_packets_dropped_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1201,7 +1204,8 @@
       "prom_name": "tailscale_node_peer_relay_endpoints_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1386,7 +1390,8 @@
       "prom_name": "tailscale_rdns_cache_overflows_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1507,7 +1512,8 @@
       "prom_name": "tailscale_stream_skipped_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1674,7 +1680,8 @@
       "prom_name": "tailscale_webhook_schema_drift_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1775,7 +1782,8 @@
       "prom_name": "tailscale2otel_api_rate_limit_wait_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -2097,7 +2105,8 @@
       "prom_name": "tailscale2otel_nodemetrics_metric_names_dropped_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -2106,7 +2115,8 @@
       "prom_name": "tailscale2otel_objectstore_backlog_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -2142,7 +2152,8 @@
       "prom_name": "tailscale2otel_objectstore_discovered_newest_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -2169,7 +2180,8 @@
       "prom_name": "tailscale2otel_objectstore_gap_oldest_age_seconds",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -2250,7 +2262,8 @@
       "prom_name": "tailscale2otel_objectstore_skipped_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {

@@ -1,0 +1,106 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-objectstore-undecodable"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel",
+      "__panelId__": "360",
+      "description": "objectstore.skipped{reason=\"undecodable_object\"} counts whole objects that decoded ZERO records while at least one row failed. That is the signature of an export whose framing is not newline-delimited records, so ANY non-zero value means a broken FEED, not corrupt data \u2014 everything in the affected objects is being discarded. Reading subtlety: for a wholly-failed object the row-local decode_error/semantic_invalid reasons are deliberately NOT emitted, so this shows as ONE undecodable_object rather than N decode_error; the count understates the volume lost. Ships ENABLED \u2014 the object-store path is off by default, so this is inert unless you configured it, and if you did, this is the one object-store fault that is never acceptable. Check the export's format and compression against the configured decoder.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion",
+      "summary": "An object-store object decoded no records at all"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(tailscale2otel_objectstore_skipped_total{reason=\"undecodable_object\"}[15m]))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "5m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "critical"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Object-store feed undecodable",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

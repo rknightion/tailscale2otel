@@ -315,7 +315,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(78, len(alert_rules()))
+        self.assertEqual(91, len(alert_rules()))
         self.assertEqual(12, len(recording_rules()))
 
     def test_durations_are_go_style_strings(self):
@@ -397,6 +397,110 @@ class AlertableSignalCoverageTest(unittest.TestCase):
         expr = rules.rule_expr(rules.rules_by_uid()["ts2o-node-ip-forwarding"])
         self.assertIn("exitNodeIPForwardingNotEnabled", expr)
         self.assertIn("subnetIPForwardingNotEnabled", expr)
+
+
+class NewAlertRulesTest(unittest.TestCase):
+    """Load-bearing properties of the 13 rules added for #399 #401 #402 #404 #405.
+
+    Each of these guards something that would silently regress: a check that
+    only looked at the rule's metric name or uid would not catch someone
+    "simplifying" an expression away from the property that actually matters.
+    """
+
+    # uid -> policy, exactly as the frozen spec (ALERT_SPEC.md) declares it.
+    NEW_RULE_POLICIES = {
+        "ts2o-objectstore-undecodable": "optional",
+        "ts2o-objectstore-gap-aging": "optional",
+        "ts2o-objectstore-export-stale": "optional",
+        "ts2o-objectstore-backlog-stuck": "optional",
+        "ts2o-api-rate-limit-wait-high": "advisory",
+        "ts2o-node-error-drops": "optional",
+        "ts2o-peer-relay-stuck": "optional",
+        "ts2o-rdns-cache-overflowing": "optional",
+        "ts2o-stream-records-skipped": "optional",
+        "ts2o-webhook-schema-drift": "optional",
+        "ts2o-nodemetrics-name-budget": "optional",
+        "ts2o-device-key-expiry-disabled-new": "optional",
+        "ts2o-device-multiple-connections": "optional",
+    }
+
+    def test_every_new_uid_exists_with_a_panel_link_and_its_declared_policy(self):
+        by_uid = rules.rules_by_uid()
+        declared = rules.POLICY_BY_UID
+        for uid, policy in self.NEW_RULE_POLICIES.items():
+            with self.subTest(uid=uid):
+                self.assertIn(uid, by_uid, "rule is missing from the catalogue")
+                rule = by_uid[uid]
+                ann = rule["annotations"]
+                self.assertIn("__dashboardUid__", ann)
+                self.assertIn("__panelId__", ann)
+                self.assertEqual(policy, declared[uid])
+
+    def test_objectstore_export_stale_keeps_both_the_clamp_and_sentinel_arms(self):
+        # -1 is a no-discovery sentinel, not an age. A test that only checked
+        # the metric name would not catch a "simplification" back to a plain
+        # `> 3600`, which would silently exclude the worst case (nothing
+        # discovered at all).
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-objectstore-export-stale"])
+        self.assertIn("clamp_min(", expr)
+        self.assertIn("== bool -1", expr)
+
+    def test_node_error_drops_never_selects_acl(self):
+        # #402: an ACL drop is the packet filter working, not a fault.
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-node-error-drops"])
+        self.assertIn("error|unknown_protocol|other", expr)
+        self.assertNotIn("acl", expr)
+
+    def test_objectstore_undecodable_ships_enabled_the_other_three_paused(self):
+        # Any non-zero value here means a broken feed (never acceptable), while
+        # the object-store path is entirely absent unless configured — so this
+        # one rule is safe to ship live and the rest ship paused.
+        by_uid = rules.rules_by_uid()
+        self.assertFalse(by_uid["ts2o-objectstore-undecodable"]["paused"])
+        for uid in (
+            "ts2o-objectstore-gap-aging",
+            "ts2o-objectstore-export-stale",
+            "ts2o-objectstore-backlog-stuck",
+        ):
+            with self.subTest(uid=uid):
+                self.assertTrue(by_uid[uid]["paused"])
+
+    def test_device_key_expiry_disabled_new_alerts_on_delta_not_level(self):
+        # #401 forbids alerting on raw existence: a standing population of
+        # never-expiring (tag-owned) keys is normal. Only a NEW one appearing
+        # is actionable.
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-device-key-expiry-disabled-new"])
+        self.assertIn("delta(tailscale_devices_key_expiry_disabled_ratio", expr)
+
+    def test_rate_limit_wait_is_distinct_from_upstream_api_latency(self):
+        # Client-side self-throttling vs upstream API/network slowness are
+        # different faults with different fixes; they must not share a query.
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-api-rate-limit-wait-high"])
+        self.assertIn("tailscale2otel_api_rate_limit_wait_seconds_bucket", expr)
+        self.assertNotIn("api_duration_seconds", expr)
+
+    def test_rate_limited_429_is_distinct_from_client_side_wait(self):
+        # The server-side 429 rule must not have picked up the client-side
+        # rate-limiter-wait signal either — they page on different faults.
+        expr = rules.rule_expr(rules.rules_by_uid()["ts2o-api-rate-limited"])
+        self.assertNotIn("rate_limit_wait", expr)
+
+    def test_network_store_dropped_is_never_alerted(self):
+        # The flow-view store drop only trims a local in-memory view; OTLP
+        # emission is unaffected and nothing is lost, so it is deliberately
+        # NOT alerted. Without this test a future pass could "fill the
+        # coverage gap" and add an unactionable alert on it.
+        for rule in alert_rules():
+            with self.subTest(uid=rule["uid"]):
+                self.assertNotIn("tailscale_network_store_dropped_total",
+                                 rules.rule_expr(rule))
+
+    def test_webhook_duplicates_is_never_alerted(self):
+        # A counted duplicate is the dedup failsafe working, not a fault.
+        for rule in alert_rules():
+            with self.subTest(uid=rule["uid"]):
+                self.assertNotIn("tailscale_webhook_duplicates_total",
+                                 rules.rule_expr(rule))
 
 
 class ManifestEmitTest(unittest.TestCase):

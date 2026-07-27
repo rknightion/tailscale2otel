@@ -734,6 +734,33 @@ def groups():
               "Informational; absent on dev builds.",
               domain="observability", paused=True,
               policy="advisory", runbook="exporter-config-health", panel="Exporter update available"),
+        # --- #404: client-side rate-limiter saturation -------------------------
+        # Distinct from ts2o-api-rate-limited (server-side HTTP 429) and from
+        # ts2o-export-latency-high (upstream API/network). This one says the
+        # exporter is throttling ITSELF: the poller is asking for more than its
+        # own configured rate allows, so the fix is an interval or a limiter
+        # setting, not anything on Tailscale's side. The histogram only observes
+        # requests that actually waited — a request delayed zero seconds is never
+        # recorded — so the series is absent on an untuned deployment and this is
+        # `advisory`: neither absence nor a transient query error is actionable at
+        # this severity.
+        alert("ts2o-api-rate-limit-wait-high", "API rate-limiter wait high",
+              "histogram_quantile(0.95, sum by (le) "
+              "(rate(tailscale2otel_api_rate_limit_wait_seconds_bucket[10m])))",
+              "gt", 5, "30m", "warning",
+              "API requests are waiting on the client-side rate limiter",
+              "p95 client-side rate-limiter wait is over 5s for 30m — the exporter is blocking its own "
+              "Tailscale API requests before they reach the wire. This is NOT upstream latency (that is "
+              "tailscale2otel_api_duration_seconds) and NOT a server-side 429 (that is "
+              "ts2o-api-rate-limited): it means the configured collector intervals are asking for more "
+              "requests than the configured rate limit allows, so collectors run late. THE 5s THRESHOLD "
+              "IS A PLACEHOLDER — take a baseline from the \"Rate-limiter wait p50/p95/p99 by endpoint\" "
+              "panel over a representative week and set it above your own normal, because a healthy busy "
+              "tailnet legitimately waits. Fix by lengthening the intervals of the endpoints at the top "
+              "of that panel, or by raising the limit if the tailnet's own quota allows.",
+              domain="observability", paused=True,
+              policy="advisory", runbook="tailscale-api-health",
+              panel="Rate-limiter wait p50/p95/p99 by endpoint"),
     ]
 
     security = [
@@ -990,6 +1017,39 @@ def groups():
               "enable where log-export changes must be reviewed.",
               domain="security", hygiene=True, paused=True,
               policy="optional", runbook="tailnet-settings-drift", panel="Streams configured"),
+        # --- #401: actionable SUSTAINED posture states, never raw existence -----
+        # A standing population of never-expiring keys is normal (tag-owned
+        # servers routinely disable key expiry), so alerting on the LEVEL is pure
+        # noise on most tailnets. The delta is what is actionable: a device that
+        # newly stopped expiring its node key is a key that has just become
+        # invisible to the expiry alerts, and someone chose that.
+        alert("ts2o-device-key-expiry-disabled-new", "New device with key expiry disabled",
+              "max(delta(tailscale_devices_key_expiry_disabled_ratio[1h]))",
+              "gt", 0, "15m", "warning",
+              "A device had node-key expiry disabled in the last hour",
+              "The count of devices with keyExpiryDisabled ROSE in the last hour — a node key was just "
+              "set never to expire, so it will never appear in ts2o-device-keys-expiring-7d or "
+              "ts2o-device-key-expiring-critical again. Deliberately keyed on the delta, not the level: "
+              "a standing population of never-expiring keys is normal for tag-owned servers, and "
+              "alerting on its existence trains people to ignore it. Confirm the change was intended "
+              "and that the device is tag-owned rather than user-owned. See \"Key expiry disabled "
+              "(fleet)\" for the level and \"Key expiry disabled (devices)\" for which ones.",
+              domain="security", paused=True,
+              policy="optional", runbook="credential-expiry", panel="Key expiry disabled (fleet)"),
+        alert("ts2o-device-multiple-connections", "Device key used by multiple clients",
+              "count(max by (host_id) (tailscale_device_multiple_connections_ratio) == 1)",
+              "gt", 0, "1h", "warning",
+              "A node key has been used by more than one client simultaneously",
+              "Tailscale reports at least one device where more than one client has connected "
+              "simultaneously using the same node key, sustained for an hour — the key material has been "
+              "copied to another machine. That is a credential-sharing signal, not a connectivity one: "
+              "the second client inherits the first's ACL grants and tags. Identify the device on "
+              "\"Multiple simultaneous connections\", then rotate by removing the device and "
+              "re-authenticating it. The one-hour `for` is what makes this a sustained state rather "
+              "than a transient re-auth overlap.",
+              domain="security", paused=True,
+              policy="optional", runbook="device-posture-coverage",
+              panel="Multiple simultaneous connections"),
     ]
 
     integrations = [
@@ -1089,6 +1149,131 @@ def groups():
               "bypassing posture gates.",
               domain="security", paused=True,
               policy="optional", runbook="device-posture-coverage", panel="Posture match rate"),
+        # --- #399: object-store (bucket log-export) ingestion health -----------
+        # The whole path is off by default, so every series here is legitimately
+        # absent and all four rules are `optional`.
+        alert("ts2o-objectstore-undecodable", "Object-store feed undecodable",
+              'sum(increase(tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}[15m]))',
+              "gt", 0, "5m", "critical",
+              "An object-store object decoded no records at all",
+              "objectstore.skipped{reason=\"undecodable_object\"} counts whole objects that decoded ZERO "
+              "records while at least one row failed. That is the signature of an export whose framing "
+              "is not newline-delimited records, so ANY non-zero value means a broken FEED, not corrupt "
+              "data — everything in the affected objects is being discarded. Reading subtlety: for a "
+              "wholly-failed object the row-local decode_error/semantic_invalid reasons are deliberately "
+              "NOT emitted, so this shows as ONE undecodable_object rather than N decode_error; the "
+              "count understates the volume lost. Ships ENABLED — the object-store path is off by "
+              "default, so this is inert unless you configured it, and if you did, this is the one "
+              "object-store fault that is never acceptable. Check the export's format and compression "
+              "against the configured decoder.",
+              domain="observability", paused=False,
+              policy="optional", runbook="object-store-ingestion",
+              panel="Undecodable objects (broken feed)"),
+        alert("ts2o-objectstore-gap-aging", "Object-store gap aging",
+              "max(tailscale2otel_objectstore_gap_oldest_age_seconds)",
+              "gt", 86400, "30m", "warning",
+              "The oldest unresolved object-store gap is over 24h old",
+              "gap.oldest.age ages FAILED objects awaiting retry (pending.oldest.age is the different "
+              "signal: objects merely not yet ingested). An aging gap while the gap COUNT holds steady "
+              "means the same object is failing repeatedly, not that the backlog is recovering. The "
+              "threshold is about permanent loss: once an object ages past the bucket's own retention "
+              "it can never be recovered, so tune 24h to that retention rather than leaving it. Zero "
+              "when no gaps remain, so this cannot fire on a healthy feed.",
+              domain="observability", paused=True,
+              policy="optional", runbook="object-store-ingestion",
+              panel="Unresolved gaps & oldest gap age"),
+        alert("ts2o-objectstore-export-stale",
+              "Object-store export stale",
+              # -1 is a NO-DISCOVERY SENTINEL, not an age. A plain `> 3600` would
+              # silently exclude the worst case — nothing listed at all — so the
+              # sentinel is folded to a day of apparent staleness and one
+              # threshold covers both arms.
+              "max(clamp_min(last_over_time("
+              "tailscale2otel_objectstore_discovered_newest_age_seconds[10m]), 0) + 86400 * "
+              "(last_over_time(tailscale2otel_objectstore_discovered_newest_age_seconds[10m]) == bool -1))",
+              "gt", 3600, "30m", "warning",
+              "No recently-written object has been discovered in the bucket",
+              "discovered.newest.age is how fresh the EXPORT's own writes are, independent of whether "
+              "anything was ingested — objects skipped as already-ingested still count, so a caught-up "
+              "feed keeps reporting a small age. Over an hour means Tailscale has stopped writing, or "
+              "the configured prefix/credentials no longer see what it writes. The expression folds the "
+              "-1 sentinel (nothing timestamped was listed at all) to a day of staleness on purpose: "
+              "-1 is NOT an age, and a naive threshold would exclude the very case where discovery has "
+              "stopped entirely.",
+              domain="observability", paused=True,
+              policy="optional", runbook="object-store-ingestion",
+              panel="Newest exported object age"),
+        alert("ts2o-objectstore-backlog-stuck", "Object-store backlog stuck",
+              "max(min_over_time(tailscale2otel_objectstore_backlog_ratio[1h]))",
+              "gt", 0, "30m", "warning",
+              "The object-store backlog has not drained to zero in an hour",
+              "min_over_time is what distinguishes a STUCK backlog from normal fill-and-drain: if the "
+              "backlog ever reached zero in the window the minimum is zero and this cannot fire, so a "
+              "busy feed that keeps catching up stays quiet. A backlog that never empties means "
+              "ingestion is slower than the export writes — check the per-cycle object budget "
+              "(objectstore.skipped{reason=\"per_cycle_budget\"}) and the poll interval. Note backlog "
+              "and pending age are LOWER BOUNDS while objectstore.scan.truncated is 1, because the "
+              "listing itself was cut short.",
+              domain="observability", paused=True,
+              policy="optional", runbook="object-store-ingestion",
+              panel="Backlog & oldest pending object age"),
+        # --- #405: receiver / rDNS / node-metrics loss signals ------------------
+        # All `optional`: the receivers, the rDNS cache and the node-metrics
+        # scraper are each off by default, so absence means "not configured".
+        alert("ts2o-rdns-cache-overflowing", "rDNS cache overflowing",
+              "sum(rate(tailscale_rdns_cache_overflows_total[15m]))",
+              "gt", 0, "30m", "warning",
+              "The reverse-DNS cache is too small for the address churn it sees",
+              "An overflow is a hot-path miss for a NEW address that could not even be scheduled for "
+              "lookup because the cache was already at enrichment.reverse_dns.max_entries. Those flows "
+              "keep their raw external addresses instead of a PTR name, so the enrichment silently "
+              "degrades rather than failing. Raise max_entries, or narrow what is submitted for "
+              "lookup. Read it alongside the lookup rate on \"rDNS cache overflows vs lookups/s\" — a "
+              "handful of overflows against a large lookup rate is a different problem from a cache "
+              "that overflows on most misses.",
+              domain="observability", paused=True,
+              policy="optional", runbook="enrichment-and-discovery",
+              panel="rDNS cache overflows vs lookups/s"),
+        alert("ts2o-stream-records-skipped", "Stream records skipped",
+              "sum by (reason) (rate(tailscale_stream_skipped_total[15m]))",
+              "gt", 0, "15m", "warning",
+              "Stream receiver is discarding {{ $labels.reason }} records",
+              "Records were extracted from an otherwise-valid request body and then never routed to a "
+              "processor. `unclassified` means the record matched neither the flow nor the audit shape "
+              "— usually a sender pointed at the wrong log type, or Tailscale changed a payload. "
+              "`unwrap_drop` means a non-object value (a scalar or null HEC \"event\") was dropped while "
+              "unwrapping the envelope. Either way the request succeeded and the sender saw no error, "
+              "so this rule is the only thing that reports the loss. Compare against accepted volume on "
+              "\"Stream records accepted vs skipped/s\".",
+              domain="observability", paused=True,
+              policy="optional", runbook="ingest-receivers",
+              panel="Stream records accepted vs skipped/s"),
+        alert("ts2o-webhook-schema-drift", "Webhook payload schema drift",
+              'sum by (field) (rate(tailscale_webhook_schema_drift_total{status="unknown"}[15m]))',
+              "gt", 0, "15m", "warning",
+              "Webhook field {{ $labels.field }} moved to an unknown schema status",
+              "A field in the webhook payload moved to `unknown` status, which means Tailscale changed "
+              "the payload shape. The receiver KEEPS ACCEPTING, nothing is rejected, and no other rule "
+              "goes red — whatever that field feeds is just quietly no longer populated. That silence "
+              "is the entire reason this rule exists. Compare the field name on \"Webhook payload "
+              "schema drift/s by field\" against the receiver's expected shape and update the decoder.",
+              domain="observability", paused=True,
+              policy="optional", runbook="ingest-receivers",
+              panel="Webhook payload schema drift/s by field"),
+        alert("ts2o-nodemetrics-name-budget", "Node-metrics name budget exhausted",
+              "sum(rate(tailscale2otel_nodemetrics_metric_names_dropped_total[15m]))",
+              "gt", 0, "30m", "warning",
+              "Forwarded node metrics are being dropped by the metric-name budget",
+              "Samples are being dropped because their metric name had not been seen before and the "
+              "distinct forwarded-name budget (node_metrics.max_distinct_metrics) was already "
+              "exhausted. The scrape still succeeds and the target still reports healthy, so nothing "
+              "else surfaces the loss — the dropped names simply never appear in your backend. A "
+              "sustained non-zero rate means either a target upgraded and now presents more names, or "
+              "the budget is set below what the fleet actually emits. Raise the budget or filter at "
+              "the target.",
+              domain="observability", paused=True,
+              policy="optional", runbook="nodemetrics-scrape-targets",
+              panel="Forwarded metric-name drops/s by reason"),
     ]
 
     network = [
@@ -1249,6 +1434,45 @@ def groups():
               "credentials.",
               domain="observability", paused=True,
               policy="optional", runbook="tailscale-api-health", panel="Per-tailnet API errors"),
+        # --- #402: curated packet drops and peer-relay state --------------------
+        # ACL is EXCLUDED by construction. An ACL drop is the packet filter doing
+        # its job; alerting on it teaches operators to ignore drop signals, which
+        # is exactly how the error drops below get missed. The bounded reason set
+        # is acl, multicast, link_local_unicast, too_short, fragment,
+        # unknown_protocol, error, other (internal/semconv/attrs.go) — `other` is
+        # the fold bucket for a reason tailscaled emits that this exporter does
+        # not recognise, i.e. the "unknown" arm.
+        alert("ts2o-node-error-drops", "Node error and malformed packet drops",
+              "sum by (tailscale_drop_reason) (rate(tailscale_node_packets_dropped_total"
+              '{tailscale_drop_reason=~"error|unknown_protocol|other"}[15m]))',
+              "gt", 0, "30m", "warning",
+              "tailscaled is dropping {{ $labels.tailscale_drop_reason }} packets",
+              "Sustained data-plane drops for a reason that is NOT policy. ACL drops are excluded from "
+              "this rule deliberately — a packet dropped by the ACL is the filter working, and folding "
+              "it in here would keep the alert permanently firing on any tailnet with a real policy. "
+              "`error` is tailscaled failing to process a packet, `unknown_protocol` is traffic it will "
+              "not carry, and `other` is a reason this exporter does not recognise (a tailscaled "
+              "upgrade can introduce one). Requires the node-metrics scraper; absent and inert without "
+              "it. See \"Error & malformed drops by reason\", and \"Drop share by reason\" for the "
+              "proportion against offered packets.",
+              domain="infra", paused=True,
+              policy="optional", runbook="node-client-health",
+              panel="Error & malformed drops by reason"),
+        alert("ts2o-peer-relay-stuck", "Peer-relay endpoints stuck connecting",
+              'sum(last_over_time(tailscale_node_peer_relay_endpoints_ratio'
+              '{tailscale_peer_relay_state="connecting"}[15m]))',
+              "gt", 0, "1h", "warning",
+              "A peer-relay endpoint has been connecting for over an hour",
+              "`connecting` is a transient state: an endpoint that has not reached `open` after an hour "
+              "is not going to, so traffic that expected to use that relay is falling back to DERP or "
+              "not flowing at all. The one-hour `for` is what makes this a sustained fault rather than "
+              "normal churn. Check the relay node's reachability on UDP and its own tailscaled health. "
+              "The third bounded state, `other`, is a FOLD bucket for a state this exporter does not "
+              "recognise — that is version drift rather than a fault, so it is visible on \"Peer-relay "
+              "endpoints by state\" but deliberately not alerted here.",
+              domain="infra", paused=True,
+              policy="optional", runbook="node-client-health",
+              panel="Peer-relay endpoints by state"),
     ]
 
     recording = [

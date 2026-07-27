@@ -147,3 +147,78 @@ tests:
       - eval_time: 45m
         alertname: NetworkFlowLoggingDisabled
         exp_alerts: []
+
+  # --- NewDeviceWithKeyExpiryDisabled: the delta, not the level ---------------
+  # #401's whole point: a standing population of never-expiring keys is normal
+  # (tag-owned servers routinely disable key expiry), so alerting on the level
+  # is pure noise. Only a NEW one appearing — a rise in the count — is
+  # actionable, which is why the expression is delta() over 1h, not the gauge
+  # itself.
+  - name: a flat high count of disabled-expiry devices does not fire
+    interval: 1m
+    input_series:
+      # Standing at 40 the whole time: no new device disabled expiry.
+      - series: 'tailscale_devices_key_expiry_disabled_ratio'
+        values: '40+0x90'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: NewDeviceWithKeyExpiryDisabled
+        exp_alerts: []
+
+  - name: a new device disabling key expiry steps the count up and fires
+    interval: 1m
+    input_series:
+      # Flat at 40 for 30m, then one device disables expiry (steps to 41) and
+      # stays there.
+      - series: 'tailscale_devices_key_expiry_disabled_ratio'
+        values: '40+0x30 41+0x60'
+    alert_rule_test:
+      # Shortly after the step the 1h delta has not cleared the 15m `for` yet.
+      - eval_time: 40m
+        alertname: NewDeviceWithKeyExpiryDisabled
+        exp_alerts: []
+      - eval_time: 55m
+        alertname: NewDeviceWithKeyExpiryDisabled
+        exp_alerts:
+          # domain=security and not hygiene => "worthy", so NO
+          # skipinvestigation label.
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: security
+            exp_annotations:
+              summary: "A device had node-key expiry disabled in the last hour"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+
+  # --- DeviceKeyUsedByMultipleClients ------------------------------------------
+  - name: no device with multiple simultaneous connections does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_device_multiple_connections_ratio{host_id="n1"}'
+        values: '0+0x90'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: DeviceKeyUsedByMultipleClients
+        exp_alerts: []
+
+  - name: a device key used by multiple clients for over an hour fires
+    interval: 1m
+    input_series:
+      - series: 'tailscale_device_multiple_connections_ratio{host_id="n1"}'
+        values: '1+0x90'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: DeviceKeyUsedByMultipleClients
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: DeviceKeyUsedByMultipleClients
+        exp_alerts:
+          # count() aggregates host_id away on purpose — this is a fleet-wide
+          # "does this exist at all" statement, not per-device.
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: security
+            exp_annotations:
+              summary: "A node key has been used by more than one client simultaneously"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"

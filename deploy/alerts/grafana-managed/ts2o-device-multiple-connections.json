@@ -1,0 +1,106 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-device-multiple-connections"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel",
+      "__panelId__": "62",
+      "description": "Tailscale reports at least one device where more than one client has connected simultaneously using the same node key, sustained for an hour \u2014 the key material has been copied to another machine. That is a credential-sharing signal, not a connectivity one: the second client inherits the first's ACL grants and tags. Identify the device on \"Multiple simultaneous connections\", then rotate by removing the device and re-authenticating it. The one-hour `for` is what makes this a sustained state rather than a transient re-auth overlap.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage",
+      "summary": "A node key has been used by more than one client simultaneously"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "count(max by (host_id) (tailscale_device_multiple_connections_ratio) == 1)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "1h0m0s",
+    "labels": {
+      "domain": "security",
+      "service": "tailscale2otel",
+      "severity": "warning"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "Device key used by multiple clients",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

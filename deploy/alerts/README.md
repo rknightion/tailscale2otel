@@ -79,7 +79,7 @@ Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
 `infra` / `observability`); rules not worthy of automatic investigation
 (non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
 so IRM routing / auto-investigation stays focused. The generated set currently
-has **78 alert rules + 12 recording rules** across five groups (`-health`,
+has **91 alert rules + 12 recording rules** across five groups (`-health`,
 `-security`, `-integrations`, `-network`, `-recording`); the tables below are an
 illustrative guide — `gen/build_rules.py` is the source of truth.
 
@@ -120,15 +120,15 @@ semantics:
 |---|---|---|---|---|
 | `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
 | `core` | `NoData` | `Error` | always emitted while the exporter runs | 7 |
-| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 52 |
-| `advisory` | `Ok` | `OK` | hygiene; neither absence nor a transient error is actionable | 18 |
+| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 64 |
+| `advisory` | `Ok` | `OK` | hygiene; neither absence nor a transient error is actionable | 19 |
 
 Before this, *every* rule was fail-open on error, so a broken datasource read
 as "healthy" across the whole pack. Only the `advisory` class still is, and that
 is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 77 of the 78 carry the
+[`docs/runbooks.md`](../../docs/runbooks.md), and 90 of the 91 carry the
 `__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
 generated flagship dashboard. Both are resolved and validated **at generation
 time**: an unknown runbook slug, an unreferenced runbook section, a missing panel
@@ -187,6 +187,7 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `SeriesBudgetHigh` | warning | ✅ on | a metric's active-series / `series_limit` headroom ratio > 0.8 (approaching its cap) |
 | `TailscaleAPIAuthFailing` | critical | ✅ on | API returns 401/403 → credentials broken, all polling fails |
 | `TailscaleAPIRateLimited` | warning | ⏸ off | API returns 429 (throttled) |
+| `APIRateLimiterWaitHigh` | warning | ⏸ off | p95 client-side rate-limiter wait > 5s (placeholder threshold, tune from your baseline) — the exporter throttling *itself*, distinct from `TailscaleAPIRateLimited` (server-side 429) and genuine upstream latency |
 | `TailscaleAPIServerErrors` | warning | ⏸ off | API 5xx rate > 0.05/s |
 | `APIRetriesElevated` | warning | ⏸ off | API retry rate > 0.1/s |
 | `CheckpointPersistErrors` | warning | ✅ on | a collector can't persist its high-water mark (replay/dup risk) |
@@ -211,6 +212,8 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `PostureEncryptionCoverageLow` | warning | ⏸ off | < 80% of devices report an encrypted state store |
 | `DevicesNeedingUpdate` | info | ⏸ off | > 5 devices have a client update available |
 | `TailnetContactUnverified` | warning | ✅ on | a tailnet contact is unverified (security notices may not be delivered) |
+| `NewDeviceWithKeyExpiryDisabled` | warning | ⏸ off | a new device with key expiry disabled appeared in the last hour (delta, not level — a standing population of tag-owned never-expiring keys is normal) |
+| `DeviceKeyUsedByMultipleClients` | warning | ⏸ off | one or more device node keys are in simultaneous use by more than one client — a key is being shared across machines |
 
 > **Why `DeviceKeyExpiringCritical` only pages on tagged devices.** Node-key expiry is
 > real either way — a Tailscale node key does **not** silently auto-renew, and the
@@ -236,6 +239,14 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `LogStreamBackpressure` | info | ⏸ off | delivery requests hitting the max body size |
 | `LogStreamSpoofedEntries` | warning | ⏸ off | log entries rejected as spoofed |
 | `AcceptedIngestDataStale` | warning | ⏸ off | newest accepted event timestamp is >1h old; enable only for source/signal pairs expected to be continuous |
+| `ObjectStoreFeedUndecodable` | critical | ✅ on | one or more whole objects decoded zero records with at least one row failing — a broken feed (wrong framing), not a few bad rows |
+| `ObjectStoreGapAging` | warning | ⏸ off | oldest failed-and-awaiting-retry object gap > 24h — tune to the bucket's own retention |
+| `ObjectStoreExportStale` | warning | ⏸ off | newest discovered export object > 1h old (folds the `-1` no-discovery sentinel to a day of apparent staleness) |
+| `ObjectStoreBacklogStuck` | warning | ⏸ off | backlog never reached zero across a full hour (`min_over_time`) |
+| `RDNSCacheOverflowing` | warning | ⏸ off | non-zero rDNS cache overflow rate — the cache is too small for `enrichment.reverse_dns.max_entries` |
+| `StreamRecordsSkipped` | warning | ⏸ off | non-zero rate of stream records skipped (`unclassified` or `unwrap_drop`) |
+| `WebhookPayloadSchemaDrift` | warning | ⏸ off | a webhook payload field moved to `unknown` status — Tailscale changed the payload shape and whatever consumes that field goes quietly unpopulated |
+| `NodeMetricsNameBudgetExhausted` | warning | ⏸ off | non-zero rate of forwarded metric names dropped against `node_metrics.max_distinct_metrics` |
 
 ### `tailscale2otel-network` — connectivity
 
@@ -249,6 +260,8 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | `FlowLogsDropped` | warning | ✅ on | the per-window flow-log volume guard is truncating log records (metrics are never capped, so nothing else shows the loss) |
 | `NodeMetricsTargetDown` | warning | ⏸ off | `tailscale_node_up_ratio == 0` for a target for 10m — tailscaled's metrics endpoint is unreachable. Paused: a sleeping laptop in the target list fires it nightly |
 | `NodeIPForwardingMisconfigured` | warning | ✅ on | an exit node or subnet router reported IP forwarding disabled on the host. Webhook-only signal (no poll/log-stream equivalent) and emitted at INFO, so this rule is the only thing that surfaces it |
+| `NodeErrorAndMalformedPacketDrops` | warning | ⏸ off | non-zero rate of `error`/`unknown_protocol`/`other` packet drops for 30m. `acl` is excluded by construction — an ACL drop is the packet filter working as intended |
+| `PeerRelayEndpointsStuckConnecting` | warning | ⏸ off | one or more peer-relay endpoints stuck in `connecting` state for 1h |
 
 ### `tailscale2otel-recording` — recording rules
 

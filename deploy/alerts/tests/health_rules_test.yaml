@@ -257,3 +257,45 @@ tests:
             exp_annotations:
               summary: "Collector acl scrape failing"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+
+  # --- APIRateLimiterWaitHigh: histogram_quantile over a real bucket layout ---
+  # Two buckets (a finite le and +Inf) with identical cumulative counts means
+  # every observation landed at or below the finite boundary, which is what
+  # lets histogram_quantile interpolate to a single deterministic value:
+  # phi * upper_bound (the implicit lower bound of the first bucket is 0).
+  - name: fast rate-limiter waits (p95 well under 5s) do not fire
+    interval: 1m
+    input_series:
+      # All observations <= 1s: p95 = 0.95 * 1 = 0.95s.
+      - series: 'tailscale2otel_api_rate_limit_wait_seconds_bucket{le="1"}'
+        values: '0+2x60'
+      - series: 'tailscale2otel_api_rate_limit_wait_seconds_bucket{le="+Inf"}'
+        values: '0+2x60'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: APIRateLimiterWaitHigh
+        exp_alerts: []
+
+  - name: slow rate-limiter waits (p95 over 5s) fire after 30m
+    interval: 1m
+    input_series:
+      # All observations <= 10s: p95 = 0.95 * 10 = 9.5s, over the 5s threshold.
+      - series: 'tailscale2otel_api_rate_limit_wait_seconds_bucket{le="10"}'
+        values: '0+2x60'
+      - series: 'tailscale2otel_api_rate_limit_wait_seconds_bucket{le="+Inf"}'
+        values: '0+2x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: APIRateLimiterWaitHigh
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: APIRateLimiterWaitHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "API requests are waiting on the client-side rate limiter"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"

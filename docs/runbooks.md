@@ -158,13 +158,24 @@ suppresses the gauges entirely, so the alert going quiet may mean "no longer mea
 ## Tailscale API health {#tailscale-api-health}
 
 **Rules:** `ts2o-api-credential-rejected`, `ts2o-api-scope-denied`, `ts2o-api-rate-limited`,
-`ts2o-api-server-errors`, `ts2o-api-retries-elevated`, `ts2o-tailnet-api-errors`
+`ts2o-api-server-errors`, `ts2o-api-retries-elevated`, `ts2o-tailnet-api-errors`,
+`ts2o-api-rate-limit-wait-high`
 
 **What it means.** The exporter's calls to the Tailscale API are failing, keyed off the *classified*
 availability state rather than the raw status code. `credential_rejected` (HTTP 401) is the
 tailnet-wide emergency — the credential is invalid, expired or revoked, so every collector stops.
 `scope_denied` (HTTP 403) is narrower: the credential works but is refused one operation, so exactly
 one collector's signals go missing while everything else looks fine.
+
+**Three distinct latency-shaped faults, easy to conflate.** `ts2o-api-rate-limit-wait-high` is the
+exporter's own client-side rate limiter making requests wait before they are sent — self-throttling,
+not a failure. That is a different fault from `ts2o-api-rate-limited`, which is the server telling
+you with an HTTP 429 that you have exceeded its limit, and different again from
+`ts2o-export-latency-high` in [OTLP export health](#otlp-export-health), which is genuine upstream
+API/network slowness. All three look identical on a naive latency chart, and each has a completely
+different fix: tune the client-side limiter's rate, back off the poll interval, or investigate the
+network path to Tailscale's API. The `ts2o-api-rate-limit-wait-high` threshold (5s p95) is a
+**placeholder** — tune it from your own observed baseline rather than treating it as authoritative.
 
 **Legitimate causes.** A 403 is **not** always a fault, and this is the trap the rules were rebuilt
 around: upstream also reports "your tailnet does not have this feature" as a 403. That case is
@@ -274,27 +285,37 @@ tuning signals, not incidents.
 
 ## Enrichment and discovery {#enrichment-and-discovery}
 
-**Rules:** `ts2o-enrich-cache-stale`, `ts2o-nodemetrics-discovery-failing`
+**Rules:** `ts2o-enrich-cache-stale`, `ts2o-nodemetrics-discovery-failing`,
+`ts2o-rdns-cache-overflowing`
 
 **What it means.** The IP/nodeID → name cache has not refreshed, or dynamic node-metrics target
 discovery is failing. Neither stops data flowing — both degrade it silently. Stale enrichment means
 flow and audit records resolve to `unknown`/`external` instead of device names; stale discovery means
-the node-metrics target list is frozen at its last-known state.
+the node-metrics target list is frozen at its last-known state. `ts2o-rdns-cache-overflowing`
+covers a third, related cache: the reverse-DNS (PTR) cache that resolves external IPs seen in flow
+logs. A non-zero overflow rate means the cache is too small for the traffic it is seeing — the fix
+is raising `enrichment.reverse_dns.max_entries`, not investigating a fault.
 
-**Legitimate causes.** Both are gated. Enrichment age is only emitted when the **devices** collector
-is enabled (it is the sole refresher), and discovery only when dynamic discovery is on. With either
-disabled the series is absent and the rule cannot fire — that is why they are `optional`, and it is
-also the trap: turning the devices collector off does not "fix" stale enrichment, it hides it.
+**Legitimate causes.** Both the enrich cache and discovery rules are gated. Enrichment age is only
+emitted when the **devices** collector is enabled (it is the sole refresher), and discovery only when
+dynamic discovery is on. With either disabled the series is absent and the rule cannot fire — that is
+why they are `optional`, and it is also the trap: turning the devices collector off does not "fix"
+stale enrichment, it hides it. The rDNS cache is likewise absent unless reverse-DNS enrichment is
+enabled.
 
 **Not legitimate.** A stale cache while the devices collector is enabled and scraping. That means
-devices scrapes are failing — go to [Collector scrape health](#collector-scrape-health) instead.
+devices scrapes are failing — go to [Collector scrape health](#collector-scrape-health) instead. A
+sustained rDNS overflow rate that does not clear after raising `max_entries` means the working set of
+distinct external IPs is larger than expected — check the flow-log volume before raising the limit
+further.
 
 **First step.** **Enrich cache age** and **Enrich cache devices** on the Exporter Diagnostics tab.
 If the age is climbing, check the devices collector's scrape success. For discovery, **Discovery OK**
-and **Discovered targets** on the Node Metrics tab.
+and **Discovered targets** on the Node Metrics tab. For the rDNS cache, **rDNS cache overflows vs
+lookups/s** shows whether overflow is tracking lookup volume or a step change.
 
-**Resolved when.** Cache age drops back to roughly the devices poll interval, and flow/audit panels
-show device names rather than `unknown`.
+**Resolved when.** Cache age drops back to roughly the devices poll interval, flow/audit panels show
+device names rather than `unknown`, and the rDNS overflow rate returns to zero.
 
 ## Exporter config health {#exporter-config-health}
 
@@ -323,7 +344,7 @@ gone, which is a `NoData` alert, not silence.
 
 **Rules:** `ts2o-device-key-expiring-critical`, `ts2o-auth-key-expiring-critical`,
 `ts2o-device-keys-expiring-7d`, `ts2o-auth-keys-expiring-7d`,
-`ts2o-device-attribute-expiring-14d`
+`ts2o-device-attribute-expiring-14d`, `ts2o-device-key-expiry-disabled-new`
 
 **What it means.** A node key, auth/API key or posture attribute is about to expire. Tailscale node
 keys do **not** silently auto-renew: at expiry the device drops off the tailnet until someone
@@ -336,6 +357,13 @@ and untagged ones only reach the 7-day warning tier. Tagged devices are typicall
 sees the prompt, so expiry becomes an outage. Note Tailscale disables key expiry on tagged devices by
 default, so a tagged device with a live expiry has had it explicitly re-enabled — that is the
 high-signal case.
+
+`ts2o-device-key-expiry-disabled-new` is a different question from the rest of this family: it
+alerts on the **delta**, not the level. A standing population of never-expiring keys is normal on
+most tailnets — tag-owned servers routinely have key expiry disabled on purpose, and alerting on
+their mere existence would be noise nobody acts on. What is actionable is a **new** device joining
+that population: that is either a deliberate new headless deployment (fine) or a device that should
+have had key expiry left on and did not (a mistake worth catching while it is recent).
 
 **Not legitimate.** An auth/API key expiring under automation. API keys are capped at 90 days and are
 **user-bound**: they die when the user who created them is offboarded, taking the exporter with them.
@@ -353,11 +381,15 @@ forever (the rules exclude negative remaining time).
 
 ## Device posture coverage {#device-posture-coverage}
 
-**Rules:** `ts2o-posture-autoupdate-low`, `ts2o-posture-encryption-low`, `ts2o-posture-match-low`
+**Rules:** `ts2o-posture-autoupdate-low`, `ts2o-posture-encryption-low`, `ts2o-posture-match-low`,
+`ts2o-device-multiple-connections`
 
 **What it means.** A fleet-wide posture property has fallen below its coverage threshold: fewer than
 80% of devices report client auto-update enabled, or an encrypted local state store, or an MDM/EDR
-integration is matching fewer than 80% of the devices it could.
+integration is matching fewer than 80% of the devices it could. `ts2o-device-multiple-connections`
+is a per-device fact rather than a fleet coverage ratio: the flag means more than one client has
+connected simultaneously using the same node key — that is, a key is being shared across machines
+rather than one key per device.
 
 **Legitimate causes.** Platforms differ. Client auto-update is not available on every OS, and state
 encryption depends on the platform keystore, so a mixed fleet has a structural ceiling below 100% —
@@ -366,15 +398,19 @@ onboarding a new MDM is expected while enrolment catches up.
 
 **Not legitimate.** A coverage ratio that *drops*. A sustained fall means devices are dropping out of
 management, and for the match-rate rule specifically it means devices may be bypassing posture gates
-entirely.
+entirely. A device flagged with multiple simultaneous connections: a shared node key means Tailscale
+cannot tell the two clients apart, which undermines per-device posture and audit attribution for
+both.
 
 **First step.** **Auto-update coverage**, **State-encryption coverage** and **Posture match rate** on
 the Security tab. **Device posture snapshot** lists which devices are missing the property. Note the
 whole family is gated on `collect_posture`; with posture collection off the series are absent and
-nothing fires.
+nothing fires. For the shared-key case, **Multiple simultaneous connections** identifies the
+affected `host_id`; re-key one of the clients so each machine has its own node key.
 
 **Resolved when.** The ratio is back above threshold, or you have concluded the threshold was wrong
-for this fleet and adjusted it in the generator.
+for this fleet and adjusted it in the generator. For the shared-key rule: the device no longer shows
+more than one simultaneous connection on the same key.
 
 ## Fleet version hygiene {#fleet-version-hygiene}
 
@@ -594,29 +630,105 @@ cadence.
 
 ## Ingest receivers {#ingest-receivers}
 
-**Rules:** `ts2o-receiver-rejections`, `ts2o-receiver-latency-high`, `ts2o-ingest-data-stale`
+**Rules:** `ts2o-receiver-rejections`, `ts2o-receiver-latency-high`, `ts2o-ingest-data-stale`,
+`ts2o-stream-records-skipped`, `ts2o-webhook-schema-drift`
 
 **What it means.** The exporter's own inbound paths — the Splunk-HEC stream receiver and the
-HMAC-verified webhook receiver — are rejecting events, responding slowly, or accepting nothing recent.
+HMAC-verified webhook receiver — are rejecting events, responding slowly, accepting nothing recent,
+skipping records it cannot classify, or seeing a payload field drift out from under its schema.
 
-**Legitimate causes.** Both receivers are **off by default**, so all three series are absent in a
+`ts2o-stream-records-skipped` counts stream records skipped by reason. The two documented reasons
+are `unclassified` (the record matched neither the flow-log nor the audit-log shape) and
+`unwrap_drop` (a non-object value was dropped while unwrapping the HEC envelope). Either means
+records are being silently discarded rather than processed.
+
+`ts2o-webhook-schema-drift` is the quiet one. A field moving to `unknown` status means Tailscale
+changed the webhook payload shape — the receiver keeps accepting events, nothing else in the pack
+goes red, and whatever downstream signal that field used to feed is quietly no longer populated.
+That silence is the entire reason this rule exists: without it, a schema change is invisible until
+someone notices a panel has gone empty.
+
+**Legitimate causes.** Both receivers are **off by default**, so all five series are absent in a
 poll-only deployment (`optional`). `ingest-data-stale` in particular ships paused because quiet
 tailnets and sparse webhook/audit sources are legitimately idle for hours — enable it only for
 `source`/`signal` pairs you expect to deliver continuously, with label filters or a tuned threshold
-for that workload. Firing it on everything produces noise, not coverage.
+for that workload. Firing it on everything produces noise, not coverage. A brief burst of
+`unclassified` skips right after Tailscale ships a payload change is expected until the collector is
+updated.
 
 **Not legitimate.** A rejection rate above zero on a configured receiver. Rejections mean spoofed,
 oversized or undecodable events — either the sender is misconfigured or the HEC/webhook secret does
-not match.
+not match. A sustained skip rate for either reason, or a webhook field parked at `unknown` for more
+than a brief window: something now depends on stale or missing data and nobody has noticed.
 
 **First step.** **Receiver rejected/s** (broken down by reason), **Receiver latency
 p50/p95/p99 (stream)** and **Accepted event freshness** on the Events & Logs tab. The rejection reason
-distinguishes an auth mismatch from a decode failure. Also confirm you have not enabled both poll and
-stream for the same log type — that double-counts, and cross-source dedup is only a best-effort
-failsafe.
+distinguishes an auth mismatch from a decode failure. **Stream records accepted vs skipped/s** shows
+which reason is climbing; **Webhook payload schema drift/s by field** names the specific field that
+drifted — cross-check the vendored OpenAPI spec (`spec/tailscale-api.json`) for whether it should be
+refreshed. Also confirm you have not enabled both poll and stream for the same log type — that
+double-counts, and cross-source dedup is only a best-effort failsafe.
 
-**Resolved when.** Rejections return to zero and the newest accepted event timestamp is inside the
-expected window for that source.
+**Resolved when.** Rejections return to zero, the newest accepted event timestamp is inside the
+expected window for that source, the skip rate for both reasons returns to zero, and no field remains
+at `unknown` status.
+
+## Object-store ingestion {#object-store-ingestion}
+
+**Rules:** `ts2o-objectstore-undecodable`, `ts2o-objectstore-gap-aging`,
+`ts2o-objectstore-export-stale`, `ts2o-objectstore-backlog-stuck`
+
+**What it means.** The object-store path ingests Tailscale's S3/bucket log export — a third
+ingestion path alongside poll and stream. It is **off by default**, so all four series are absent
+in a normal deployment and all four rules are `optional`.
+
+`ts2o-objectstore-undecodable` is the important one, and the only one of the four that ships
+enabled. It counts whole objects that decoded **zero** records while at least one row failed. That
+combination is the signature of an export whose framing is not newline-delimited records — a
+non-zero value means a broken **feed**, not a batch of corrupt data, and should be treated as a
+feed-level fault rather than a few bad rows. There is a reading subtlety worth stating plainly: for
+a wholly-failed object, the row-local `decode_error`/`semantic_invalid` reasons are deliberately
+**not** emitted, so the case shows up as one `undecodable_object`, not as N `decode_error` counts. A
+reader expecting a proportional row count will wrongly conclude the problem is small.
+
+`ts2o-objectstore-gap-aging` reads `gap.oldest.age`, which ages **failed** objects awaiting retry.
+Distinguish it from `pending.oldest.age`, which ages objects merely **not yet ingested** — the two
+are not the same signal. A gap aging while the gap count holds steady means the same object is
+failing repeatedly, not that ingestion is slowly catching up. The 24-hour threshold is about
+permanent loss: once an object ages out of the bucket's own retention window it can never be
+recovered, so tune the threshold to that retention.
+
+`ts2o-objectstore-export-stale` reads `discovered.newest.age`, which is how fresh the export's own
+writes are, independent of whether anything downstream was ingested. `-1` is a **no-discovery
+sentinel, not an age** — the rule folds it to a full day of apparent staleness precisely so "nothing
+was listed at all" is not silently excluded. This is the single easiest thing to get wrong when
+reading the panel: a `-1` is not a healthy low number.
+
+`ts2o-objectstore-backlog-stuck` fires when the backlog never reaches zero across a whole hour
+(`min_over_time`), which is what distinguishes a genuinely stuck backlog from the normal
+fill-and-drain of a busy bucket. Both the backlog and the pending object age are **lower bounds**
+while `objectstore.scan.truncated` is `1`, because the listing itself was cut short — treat the
+numbers as a floor, not a precise count, whenever that flag is set.
+
+**Legitimate causes.** The path being unconfigured (absence, not a fault). A large initial backfill
+that drains over several hours. A per-cycle object budget (`per_cycle_budget` skip reason)
+deliberately holding ingestion behind what the bucket has available.
+
+**Not legitimate.** Any non-zero `undecodable_object` count — treat it as a broken feed. A gap
+aging without the gap count dropping. A `-1`/stale `discovered.newest.age` while the export is
+believed to be running. A backlog that never drains across an hour with no budget skip in play.
+
+**First step.** The Exporter Diagnostics tab carries the panels for this family:
+**Undecodable objects (broken feed)**, **Unresolved gaps & oldest gap age**, **Newest exported
+object age**, **Backlog & oldest pending object age**, **Objects skipped/s by reason**,
+**Object-store cursor age**, and **Object listing complete**. Start with whichever rule fired, then
+check **Objects skipped/s by reason** for a `per_cycle_budget` skip before assuming a fault, and
+**Object listing complete** to see whether truncation is why backlog/gap numbers look wrong.
+
+**Resolved when.** `ts2o-objectstore-undecodable`'s count returns to zero for a full evaluation
+window. For the other three: the gap's oldest age drops back under threshold *and* the gap count is
+falling, the export's newest-discovered age is back under an hour (and is not `-1`), and the backlog
+reaches zero at least once within the hour.
 
 ## DERP and connectivity {#derp-and-connectivity}
 
@@ -723,31 +835,53 @@ calling it fixed.
 
 ## Node client health {#node-client-health}
 
-**Rules:** `ts2o-node-health-warnings`
+**Rules:** `ts2o-node-health-warnings`, `ts2o-node-error-drops`, `ts2o-peer-relay-stuck`
 
 **What it means.** The `tailscaled` client on a node is self-reporting one or more active health
 warnings — no DERP connection, key expiry approaching, network down, and similar. This is the client's
 own opinion of itself, curated from the node-metrics scraper, and it often precedes an outage the
-control-plane view has not noticed yet.
+control-plane view has not noticed yet. `ts2o-node-error-drops` and `ts2o-peer-relay-stuck` add two
+more angles on the same client: packets it is discarding, and peer-relay connections that never
+finish setting up.
+
+`ts2o-node-error-drops` counts packet drops by reason, but it **excludes `acl` by construction**.
+An ACL drop is the packet filter doing its job — the tailnet policy said no, and alerting on that
+teaches operators to ignore drop signals, which is the opposite of what this rule is for. The
+bounded reason set `tailscaled` emits is exactly
+`acl, multicast, link_local_unicast, too_short, fragment, unknown_protocol, error, other`
+(`internal/semconv/attrs.go`); this rule watches `error`, `unknown_protocol` and `other`. `other` is
+the fold bucket for a reason value `tailscaled` emits that this exporter version does not recognise
+— treat a rise in `other` as a sign the reason list needs refreshing, not as a single fault class.
+
+`ts2o-peer-relay-stuck` watches endpoints stuck in the `connecting` state for peer-relay, Tailscale's
+newer relay mechanism — a peer-relay endpoint that never leaves `connecting` behaves like a
+direct-path negotiation that never completes, so that peer falls back to DERP or fails outright.
 
 **Legitimate causes.** A laptop that has just woken, or a node mid-network-transition, will report a
 transient warning that clears itself within a poll or two. The 15-minute `for` window is there to
-absorb exactly that.
+absorb exactly that. A brief burst of `error`/`unknown_protocol` drops during a network transition is
+similarly transient.
 
 **Not legitimate.** A warning that persists across evaluation windows. `no-DERP-connection` in
 particular means that node cannot fall back to relay, so it is one failed direct path away from being
-unreachable.
+unreachable. A sustained non-zero error/unknown-protocol drop rate, or a peer-relay endpoint stuck in
+`connecting` for the full hour window, means the connection attempt is not going to resolve on its
+own.
 
 **First step.** **Active health warnings by type** and **Health messages** on the Node Metrics tab
 identify the node and the warning type. Then go to that node: `tailscale status` and
-`tailscale netcheck` on the host give the client's own diagnosis directly. This rule needs the
-node-metrics scraper — without it the series is absent and nothing fires.
+`tailscale netcheck` on the host give the client's own diagnosis directly. For drops, **Error &
+malformed drops by reason** breaks down which reason is climbing. For peer-relay, **Peer-relay
+endpoints by state** shows how many are stuck versus connected. This family needs the
+node-metrics scraper — without it the series are absent and nothing fires.
 
-**Resolved when.** The node reports no active health warnings for a full evaluation window.
+**Resolved when.** The node reports no active health warnings for a full evaluation window, the
+error/unknown-protocol drop rate returns to zero, and no peer-relay endpoint remains in `connecting`
+past the window.
 
 ## Node-metrics scrape targets {#nodemetrics-scrape-targets}
 
-**Rules:** `ts2o-nodemetrics-target-down`
+**Rules:** `ts2o-nodemetrics-target-down`, `ts2o-nodemetrics-name-budget`
 
 **What it means.** The node-metrics scraper could not reach `tailscaled`'s metrics endpoint on a
 target, so `tailscale_node_up_ratio` is `0` for it and every forwarded `tailscaled_*` series from that
@@ -758,23 +892,36 @@ reporting no health warnings at all. That is why it is a separate family from
 [Enrichment and discovery](#enrichment-and-discovery), which covers the target *list* rather than the
 targets on it.
 
+`ts2o-nodemetrics-name-budget` is a different fault on the same scraper: a target is *reachable* but
+presents more distinct metric names than `node_metrics.max_distinct_metrics` allows, so some are
+silently never forwarded. A sustained non-zero rate means that target's metric surface has grown past
+the configured budget.
+
 **Legitimate causes.** The scraper is off by default, so the gauge is absent in most deployments
 (`optional`). Where it is on, a laptop or workstation target that sleeps overnight goes down every
 night and comes back every morning; `tailscaled` also only serves `/metrics` when the node has the
 debug metrics endpoint enabled and reachable over the tailnet. **This rule therefore ships paused** —
-enable it once your target list is servers you expect to be up continuously.
+enable it once your target list is servers you expect to be up continuously. The name-budget rule
+also ships paused: a target legitimately exposing more metric names than the current budget (a newer
+`tailscaled` version, for instance) is a tuning decision, not an incident by itself.
 
 **Not legitimate.** A server target that stays down while the device still shows online in the
 control-plane view. That combination means the node is on the tailnet but its metrics endpoint is not
-answering — a local `tailscaled`, firewall or bind-address problem, not a tailnet one.
+answering — a local `tailscaled`, firewall or bind-address problem, not a tailnet one. For the
+name-budget rule: drops that persist after you have deliberately raised
+`node_metrics.max_distinct_metrics` and confirmed the metric surface is expected mean something else
+is generating unbounded metric names.
 
 **First step.** **Node up** and **Targets up** on the Node Metrics tab name the target
 (`tailscale_node`). Then, from a host on the tailnet, curl that node's metrics endpoint directly: a
 connection refused points at the endpoint, a timeout points at reachability. If *every* target is
 down at once, suspect the scraper's config rather than the fleet, and check
-[Enrichment and discovery](#enrichment-and-discovery) for a stale or empty target list.
+[Enrichment and discovery](#enrichment-and-discovery) for a stale or empty target list. For the
+name-budget rule, **Forwarded metric-name drops/s by reason** identifies which target is over
+budget.
 
 **Resolved when.** `tailscale_node_up_ratio` is `1` for that target across a full evaluation window.
 Note that decommissioning a target does **not** resolve it by clearing the alert to OK — the series
 goes absent, which this rule treats as `Ok` (no alert) rather than as a fault; remove it from the
-target list so it stops being expected.
+target list so it stops being expected. For the name-budget rule: the drop rate returns to zero,
+either because the metric surface shrank or because `max_distinct_metrics` was deliberately raised.

@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-objectstore-backlog-stuck"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel",
+      "__panelId__": "354",
+      "description": "min_over_time is what distinguishes a STUCK backlog from normal fill-and-drain: if the backlog ever reached zero in the window the minimum is zero and this cannot fire, so a busy feed that keeps catching up stays quiet. A backlog that never empties means ingestion is slower than the export writes \u2014 check the per-cycle object budget (objectstore.skipped{reason=\"per_cycle_budget\"}) and the poll interval. Note backlog and pending age are LOWER BOUNDS while objectstore.scan.truncated is 1, because the listing itself was cut short.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion",
+      "summary": "The object-store backlog has not drained to zero in an hour"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(min_over_time(tailscale2otel_objectstore_backlog_ratio[1h]))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "30m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "Object-store backlog stuck",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

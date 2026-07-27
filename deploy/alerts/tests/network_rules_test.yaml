@@ -196,3 +196,76 @@ tests:
       - eval_time: 40m
         alertname: NodeIPForwardingMisconfigured
         exp_alerts: []
+
+  # --- NodeErrorAndMalformedPacketDrops: ACL is excluded by construction -----
+  # An ACL drop is the packet filter working. Widening the selector to include
+  # it would make this alert fire permanently on any tailnet with a real
+  # policy, which is exactly why #402 forbids it. This fixture is what stops a
+  # future edit from broadening the regex.
+  - name: ACL drops alone do not fire, however fast
+    interval: 1m
+    input_series:
+      - series: 'tailscale_node_packets_dropped_total{tailscale_drop_reason="acl"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NodeErrorAndMalformedPacketDrops
+        exp_alerts: []
+
+  - name: error drops fire after 30m while a concurrent ACL drop series stays excluded
+    interval: 1m
+    input_series:
+      - series: 'tailscale_node_packets_dropped_total{tailscale_drop_reason="acl"}'
+        values: '0+5x60'
+      - series: 'tailscale_node_packets_dropped_total{tailscale_drop_reason="error"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: NodeErrorAndMalformedPacketDrops
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: NodeErrorAndMalformedPacketDrops
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+              tailscale_drop_reason: error
+            exp_annotations:
+              summary: "tailscaled is dropping error packets"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#node-client-health"
+
+  # --- PeerRelayEndpointsStuckConnecting --------------------------------------
+  # `connecting` is a transient state; an endpoint reporting `open` must not
+  # count towards it at all.
+  - name: peer-relay endpoints that reach open do not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_node_peer_relay_endpoints_ratio{tailscale_peer_relay_state="open"}'
+        values: '1+0x90'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: PeerRelayEndpointsStuckConnecting
+        exp_alerts: []
+
+  - name: an endpoint stuck connecting for over an hour fires
+    interval: 1m
+    input_series:
+      - series: 'tailscale_node_peer_relay_endpoints_ratio{tailscale_peer_relay_state="connecting"}'
+        values: '1+0x90'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: PeerRelayEndpointsStuckConnecting
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: PeerRelayEndpointsStuckConnecting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: infra
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "A peer-relay endpoint has been connecting for over an hour"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#node-client-health"

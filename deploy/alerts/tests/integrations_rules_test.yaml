@@ -1,0 +1,315 @@
+# promtool unit tests for the tailscale2otel-integrations rule group.
+#
+# These cover the object-store ingestion pack (#399) and the receiver/rDNS/
+# node-metrics loss signals (#405). Every signal here is behind a path that is
+# off by default, so most cases are about proving the FAULT arm fires cleanly
+# rather than absence — absence-stays-quiet is already covered by the
+# `optional` policy itself and by the analogous cases in the other test files.
+#
+# THE RULE FILE IS GENERATED AND NOT COMMITTED — see health_rules_test.yaml for
+# the two commands. In short:
+#
+#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   promtool test rules deploy/alerts/tests/*.yaml
+rule_files:
+  - ../.generated-prom-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # --- ObjectStoreFeedUndecodable: ships enabled, the one always-actionable ---
+  # object-store fault ------------------------------------------------------
+  - name: no undecodable objects does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ObjectStoreFeedUndecodable
+        exp_alerts: []
+
+  - name: an undecodable object fires after 5m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}'
+        values: '0+1x30'
+    alert_rule_test:
+      # Below the 5m `for`, the alert is pending, not firing.
+      - eval_time: 4m
+        alertname: ObjectStoreFeedUndecodable
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ObjectStoreFeedUndecodable
+        exp_alerts:
+          # critical + not a security rule => "worthy", so NO skipinvestigation
+          # label — this is the one object-store rule meant to page.
+          - exp_labels:
+              severity: critical
+              service: tailscale2otel
+              domain: observability
+            exp_annotations:
+              summary: "An object-store object decoded no records at all"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+
+  # --- ObjectStoreGapAging ----------------------------------------------------
+  - name: no unresolved gaps does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_gap_oldest_age_seconds'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ObjectStoreGapAging
+        exp_alerts: []
+
+  - name: a gap aging past 24h fires after 30m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_gap_oldest_age_seconds'
+        values: '90000+0x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ObjectStoreGapAging
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ObjectStoreGapAging
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "The oldest unresolved object-store gap is over 24h old"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+
+  # --- ObjectStoreExportStale: the -1 no-discovery sentinel -------------------
+  # THE key fixture in this pack. `discovered_newest_age_seconds` reports -1
+  # when nothing timestamped was listed AT ALL — that is worse than any real
+  # age, not "not stale". A naive `> 3600` would pass both of the cases below
+  # AND silently exclude this one, so the expression folds -1 to a full day of
+  # apparent staleness before comparing. Three arms:
+  - name: a small real discovery age does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_discovered_newest_age_seconds'
+        values: '300+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ObjectStoreExportStale
+        exp_alerts: []
+
+  - name: a large real discovery age fires after 30m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_discovered_newest_age_seconds'
+        values: '7200+0x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ObjectStoreExportStale
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ObjectStoreExportStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "No recently-written object has been discovered in the bucket"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+
+  # THE POINT: -1 is not "very fresh" (which a bare numeric comparison might
+  # accidentally treat -1 < 3600 as), it is "we never discovered anything at
+  # all", which is the worst case this rule exists to catch. The fold to
+  # +86400 is what makes this fire; deleting that disjunct would make this
+  # scenario go silently un-alerted forever.
+  - name: the no-discovery sentinel -1 fires after 30m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_discovered_newest_age_seconds'
+        values: '-1+0x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ObjectStoreExportStale
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ObjectStoreExportStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "No recently-written object has been discovered in the bucket"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+
+  # --- ObjectStoreBacklogStuck: min_over_time distinguishes stuck from busy ---
+  # A backlog that fills and then drains to zero within the 1h lookback keeps a
+  # min of zero and must never fire, however high it got in between — that is
+  # what separates "busy but catching up" from "stuck".
+  - name: a backlog that fills and drains within the hour does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_backlog_ratio'
+        values: '0+2x10 20+0x10 0+0x70'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: ObjectStoreBacklogStuck
+        exp_alerts: []
+
+  # A backlog that NEVER reaches zero across the window is genuinely stuck:
+  # ingestion is slower than the export writes, not merely busy.
+  - name: a backlog that never drains fires after 30m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_objectstore_backlog_ratio'
+        values: '5+0x90'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ObjectStoreBacklogStuck
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ObjectStoreBacklogStuck
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "The object-store backlog has not drained to zero in an hour"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+
+  # --- RDNSCacheOverflowing ----------------------------------------------------
+  - name: no rDNS cache overflows does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_rdns_cache_overflows_total'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: RDNSCacheOverflowing
+        exp_alerts: []
+
+  - name: sustained rDNS cache overflows fire after 30m
+    interval: 1m
+    input_series:
+      - series: 'tailscale_rdns_cache_overflows_total'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RDNSCacheOverflowing
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: RDNSCacheOverflowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "The reverse-DNS cache is too small for the address churn it sees"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery"
+
+  # --- StreamRecordsSkipped ----------------------------------------------------
+  - name: no stream records skipped does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_stream_skipped_total{reason="unclassified"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: StreamRecordsSkipped
+        exp_alerts: []
+
+  - name: sustained skipped stream records fire per reason after 15m
+    interval: 1m
+    input_series:
+      - series: 'tailscale_stream_skipped_total{reason="unclassified"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StreamRecordsSkipped
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: StreamRecordsSkipped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              reason: unclassified
+            exp_annotations:
+              summary: "Stream receiver is discarding unclassified records"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+
+  # --- WebhookPayloadSchemaDrift ----------------------------------------------
+  - name: no webhook schema drift does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_webhook_schema_drift_total{field="tags",status="unknown"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: WebhookPayloadSchemaDrift
+        exp_alerts: []
+
+  - name: sustained webhook schema drift fires per field after 15m
+    interval: 1m
+    input_series:
+      - series: 'tailscale_webhook_schema_drift_total{field="tags",status="unknown"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: WebhookPayloadSchemaDrift
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: WebhookPayloadSchemaDrift
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              field: tags
+            exp_annotations:
+              summary: "Webhook field tags moved to an unknown schema status"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+
+  # --- NodeMetricsNameBudgetExhausted -----------------------------------------
+  - name: no node-metrics name budget drops does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_nodemetrics_metric_names_dropped_total'
+        values: '0+0x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NodeMetricsNameBudgetExhausted
+        exp_alerts: []
+
+  - name: sustained node-metrics name budget drops fire after 30m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_nodemetrics_metric_names_dropped_total'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: NodeMetricsNameBudgetExhausted
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: NodeMetricsNameBudgetExhausted
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Forwarded node metrics are being dropped by the metric-name budget"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets"

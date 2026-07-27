@@ -52,8 +52,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| operational | 203 | 193 | 43 | 7 | 6 | 0 |
-| self_obs | 67 | 65 | 26 | 4 | 0 | 2 |
+| operational | 203 | 193 | 55 | 7 | 6 | 0 |
+| self_obs | 67 | 65 | 27 | 4 | 0 | 2 |
 
 ## Operational signals
 
@@ -110,7 +110,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.key.expiry` | metric | `tailscale_device_key_expiry_seconds` | visualized, alertable, recorded |  |
 | `tailscale.device.key_expiry_disabled` | metric | `tailscale_device_key_expiry_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.last_seen` | metric | `tailscale_device_last_seen_seconds` | visualized |  |
-| `tailscale.device.multiple_connections` | metric | `tailscale_device_multiple_connections_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
+| `tailscale.device.multiple_connections` | metric | `tailscale_device_multiple_connections_ratio` | visualized, alertable | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.online` | metric | `tailscale_device_online_ratio` | visualized, recorded |  |
 | `tailscale.device.posture` | metric | `tailscale_device_posture_ratio` | visualized, alertable, recorded |  |
 | `tailscale.device.posture_identity.disabled` | metric | `tailscale_device_posture_identity_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
@@ -131,7 +131,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.devices.ephemeral` | metric | `tailscale_devices_ephemeral_ratio` | visualized |  |
 | `tailscale.devices.hard_nat` | metric | `tailscale_devices_hard_nat_ratio` | visualized, alertable, recorded |  |
 | `tailscale.devices.key_expiry` | metric | `tailscale_devices_key_expiry_days` | visualized |  |
-| `tailscale.devices.key_expiry_disabled` | metric | `tailscale_devices_key_expiry_disabled_ratio` | visualized |  |
+| `tailscale.devices.key_expiry_disabled` | metric | `tailscale_devices_key_expiry_disabled_ratio` | visualized, alertable |  |
 | `tailscale.devices.outdated` | metric | `tailscale_devices_outdated_ratio` | visualized, alertable |  |
 | `tailscale.devices.ssh_enabled` | metric | `tailscale_devices_ssh_enabled_ratio` | visualized |  |
 | `tailscale.devices.untagged` | metric | `tailscale_devices_untagged_ratio` | visualized |  |
@@ -183,8 +183,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.node.health_messages` | metric | `tailscale_node_health_messages_ratio` | visualized, alertable |  |
 | `tailscale.node.io` | metric | `tailscale_node_io_bytes_total` | visualized |  |
 | `tailscale.node.packets` | metric | `tailscale_node_packets_total` | visualized | Packet counterpart of the visualized tailscale.node.io / tailscale.node.peer_relay.io byte counters; kept for ad-hoc PromQL rather than doubling every traffic panel. |
-| `tailscale.node.packets.dropped` | metric | `tailscale_node_packets_dropped_total` | visualized |  |
-| `tailscale.node.peer_relay.endpoints` | metric | `tailscale_node_peer_relay_endpoints_ratio` | visualized |  |
+| `tailscale.node.packets.dropped` | metric | `tailscale_node_packets_dropped_total` | visualized, alertable |  |
+| `tailscale.node.peer_relay.endpoints` | metric | `tailscale_node_peer_relay_endpoints_ratio` | visualized, alertable |  |
 | `tailscale.node.peer_relay.io` | metric | `tailscale_node_peer_relay_io_bytes_total` | visualized |  |
 | `tailscale.node.peer_relay.packets` | metric | `tailscale_node_peer_relay_packets_total` | visualized | Packet counterpart of the visualized tailscale.node.io / tailscale.node.peer_relay.io byte counters; kept for ad-hoc PromQL rather than doubling every traffic panel. |
 | `tailscale.node.up` | metric | `tailscale_node_up_ratio` | visualized, alertable |  |
@@ -204,7 +204,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.rdns.cache.entries` | metric | `tailscale_rdns_cache_entries_ratio` | visualized |  |
 | `tailscale.rdns.cache.evictions` | metric | `tailscale_rdns_cache_evictions_total` | visualized |  |
 | `tailscale.rdns.cache.lookups` | metric | `tailscale_rdns_cache_lookups_total` | visualized |  |
-| `tailscale.rdns.cache.overflows` | metric | `tailscale_rdns_cache_overflows_total` | visualized |  |
+| `tailscale.rdns.cache.overflows` | metric | `tailscale_rdns_cache_overflows_total` | visualized, alertable |  |
 | `tailscale.rdns.queries` | metric | `tailscale_rdns_queries_total` | visualized |  |
 | `tailscale.service.hosts` | metric | `tailscale_service_hosts_ratio` | visualized, alertable |  |
 | `tailscale.service.ports` | metric | `tailscale_service_ports` | visualized |  |
@@ -217,7 +217,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.stream.records` | metric | `tailscale_stream_records_total` | visualized |  |
 | `tailscale.stream.rejected` | metric | `tailscale_stream_rejected_total` | visualized, alertable |  |
 | `tailscale.stream.request.duration` | metric | `tailscale_stream_request_duration_seconds` | visualized, alertable |  |
-| `tailscale.stream.skipped` | metric | `tailscale_stream_skipped_total` | visualized |  |
+| `tailscale.stream.skipped` | metric | `tailscale_stream_skipped_total` | visualized, alertable |  |
 | `tailscale.subnet_routes.advertised` | metric | `tailscale_subnet_routes_advertised` | visualized |  |
 | `tailscale.subnet_routes.enabled` | metric | `tailscale_subnet_routes_enabled` | visualized |  |
 | `tailscale.subnet_routes.routers` | metric | `tailscale_subnet_routes_routers_ratio` | visualized, alertable |  |
@@ -235,7 +235,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.webhook.inflight` | metric | `tailscale_webhook_inflight` | visualized |  |
 | `tailscale.webhook.rejected` | metric | `tailscale_webhook_rejected_total` | visualized, alertable |  |
 | `tailscale.webhook.request.duration` | metric | `tailscale_webhook_request_duration_seconds` | visualized |  |
-| `tailscale.webhook.schema_drift` | metric | `tailscale_webhook_schema_drift_total` | visualized |  |
+| `tailscale.webhook.schema_drift` | metric | `tailscale_webhook_schema_drift_total` | visualized, alertable |  |
 | `tailscale.webhook_endpoint.age` | metric | `tailscale_webhook_endpoint_age_seconds` | visualized |  |
 | `tailscale.webhook_endpoint.subscriptions` | metric | `tailscale_webhook_endpoint_subscriptions_ratio` | visualized |  |
 | `tailscale.webhook_endpoints.count` | metric | `tailscale_webhook_endpoints_count_ratio` | visualized |  |
@@ -244,15 +244,15 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.webhook_endpoints.event_subscriptions` | metric | `tailscale_webhook_endpoints_event_subscriptions_ratio` | visualized |  |
 | `tailscale2otel.nodemetrics.discovery.success` | metric | `tailscale2otel_nodemetrics_discovery_success_ratio` | visualized, alertable |  |
 | `tailscale2otel.nodemetrics.discovery.targets` | metric | `tailscale2otel_nodemetrics_discovery_targets` | visualized |  |
-| `tailscale2otel.nodemetrics.metric_names.dropped` | metric | `tailscale2otel_nodemetrics_metric_names_dropped_total` | visualized |  |
-| `tailscale2otel.objectstore.backlog` | metric | `tailscale2otel_objectstore_backlog_ratio` | visualized |  |
+| `tailscale2otel.nodemetrics.metric_names.dropped` | metric | `tailscale2otel_nodemetrics_metric_names_dropped_total` | visualized, alertable |  |
+| `tailscale2otel.objectstore.backlog` | metric | `tailscale2otel_objectstore_backlog_ratio` | visualized, alertable |  |
 | `tailscale2otel.objectstore.bytes` | metric | `tailscale2otel_objectstore_bytes_bytes_total` | visualized |  |
 | `tailscale2otel.objectstore.cursor.age` | metric | `tailscale2otel_objectstore_cursor_age_seconds` | visualized |  |
 | `tailscale2otel.objectstore.decompressed.bytes` | metric | `tailscale2otel_objectstore_decompressed_bytes_bytes_total` | visualized |  |
-| `tailscale2otel.objectstore.discovered.newest.age` | metric | `tailscale2otel_objectstore_discovered_newest_age_seconds` | visualized |  |
+| `tailscale2otel.objectstore.discovered.newest.age` | metric | `tailscale2otel_objectstore_discovered_newest_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.objectstore.expansion.limit_failures` | metric | `tailscale2otel_objectstore_expansion_limit_failures_total` | visualized |  |
 | `tailscale2otel.objectstore.gap.healthy` | metric | `tailscale2otel_objectstore_gap_healthy_ratio` | visualized |  |
-| `tailscale2otel.objectstore.gap.oldest.age` | metric | `tailscale2otel_objectstore_gap_oldest_age_seconds` | visualized |  |
+| `tailscale2otel.objectstore.gap.oldest.age` | metric | `tailscale2otel_objectstore_gap_oldest_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.objectstore.gaps` | metric | `tailscale2otel_objectstore_gaps_ratio` | visualized |  |
 | `tailscale2otel.objectstore.objects` | metric | `tailscale2otel_objectstore_objects_total` | visualized |  |
 | `tailscale2otel.objectstore.pending.oldest.age` | metric | `tailscale2otel_objectstore_pending_oldest_age_seconds` | visualized |  |
@@ -261,7 +261,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.objectstore.requests` | metric | `tailscale2otel_objectstore_requests_total` | visualized |  |
 | `tailscale2otel.objectstore.retries` | metric | `tailscale2otel_objectstore_retries_total` | visualized |  |
 | `tailscale2otel.objectstore.scan.truncated` | metric | `tailscale2otel_objectstore_scan_truncated_ratio` | visualized |  |
-| `tailscale2otel.objectstore.skipped` | metric | `tailscale2otel_objectstore_skipped_total` | visualized |  |
+| `tailscale2otel.objectstore.skipped` | metric | `tailscale2otel_objectstore_skipped_total` | visualized, alertable |  |
 
 ## Self-observability signals
 
@@ -273,7 +273,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.api.availability` | metric | `tailscale2otel_api_availability_ratio` | visualized, alertable |  |
 | `tailscale2otel.api.duration` | metric | `tailscale2otel_api_duration_seconds` | visualized |  |
 | `tailscale2otel.api.last_probe` | metric | `tailscale2otel_api_last_probe_seconds` | visualized |  |
-| `tailscale2otel.api.rate_limit.wait` | metric | `tailscale2otel_api_rate_limit_wait_seconds` | visualized |  |
+| `tailscale2otel.api.rate_limit.wait` | metric | `tailscale2otel_api_rate_limit_wait_seconds` | visualized, alertable |  |
 | `tailscale2otel.api.requests` | metric | `tailscale2otel_api_requests_total` | visualized, alertable, recorded |  |
 | `tailscale2otel.api.retries` | metric | `tailscale2otel_api_retries_total` | visualized, alertable |  |
 | `tailscale2otel.build_info` | metric | `tailscale2otel_build_info_ratio` | visualized |  |
