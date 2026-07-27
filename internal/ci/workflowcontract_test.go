@@ -1403,3 +1403,48 @@ func TestReleaseCompletenessIsVerified(t *testing.T) {
 		t.Error("verify-release does not invoke scripts/check_release_assets.py")
 	}
 }
+
+// TestDocumentedInstallCommandsAreChecked (#445).
+//
+// The install commands in README.md and docs/ are the first thing anyone runs,
+// and nothing validated them: the chart render tests build their own --set flags
+// rather than reading the documented ones, and no workflow executes or checks a
+// command taken from any documentation file.
+//
+// That is how `--set-string secrets.*` — plural, against a chart whose key is
+// `secret` — survived in the quick start. Helm accepts an unknown --set path
+// silently, so the documented command installed the chart with no credentials.
+func TestDocumentedInstallCommandsAreChecked(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	job, ok := jobsOf(t, doc, "ci.yml")["docs-catalog"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no docs-catalog job")
+	}
+	steps, _ := job["steps"].([]any)
+	var found bool
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if run, _ := step["run"].(string); strings.Contains(run, "check_doc_commands.py") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("docs-catalog does not run scripts/check_doc_commands.py, so a documented " +
+			"install command can reference a chart value or environment variable that does " +
+			"not exist and nothing fails")
+	}
+	// The checker is only as good as the generated schemas it reads; if either
+	// is missing it exits 2 rather than passing, but a missing file should be
+	// caught here rather than at release time.
+	for _, f := range []string{
+		"deploy/helm/tailscale2otel/values.schema.json",
+		"docs/env-vars.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repoDir, f)); err != nil {
+			t.Errorf("%s is missing; check_doc_commands.py validates against it: %v", f, err)
+		}
+	}
+}

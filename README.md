@@ -91,8 +91,8 @@ pass `-config /etc/tailscale2otel/config.yaml` if you prefer.
 ```sh
 helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
   --set-string config.tailscale.tailnet=example.com \
-  --set-string secrets.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
-  --set-string secrets.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret>
+  --set-string secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
+  --set-string secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret>
 ```
 
 See [Installation](https://m7kni.io/tailscale2otel/installation/) for docker-compose, prebuilt
