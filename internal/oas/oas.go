@@ -31,6 +31,12 @@ import (
 // and prevents unbounded recursion on legitimately deep specs.
 const maxRefDepth = 12
 
+// MaxRefDepth exposes the resolution cap. A document cannot be allowed to choose
+// the recursion depth of anything that walks these schemas — flattenPaths,
+// SynthesizeBody and BoundaryVariants all do — so the fuzz targets assert against
+// this rather than against a number copied into a test.
+const MaxRefDepth = maxRefDepth
+
 // Spec is the minimal parsed OpenAPI document: GET operations keyed by
 // operationId, with $ref already resolved against components.schemas.
 //

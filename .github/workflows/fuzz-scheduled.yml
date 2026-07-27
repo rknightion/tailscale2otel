@@ -1,0 +1,146 @@
+# Long-running exploratory fuzzing of every untrusted-input decode path (#434).
+#
+# The PR-time `fuzz` job in ci.yml gives each target 120 seconds, which finds shallow
+# crashers and nothing else — the interesting inputs for a JSON decode chain are
+# several mutations deep. This lane gives each target 15 minutes on a schedule, where
+# a nondeterministic finding costs nobody a blocked merge.
+#
+# ADVISORY, exactly like the other scheduled lanes: on a finding it opens a
+# deduplicated tracking issue and fails the run, but it is not a required check and
+# cannot block a PR. The cadence and the advisory/gating split are asserted by
+# internal/ci/workflowcontract_test.go — a README sentence is not load-bearing on its
+# own (#436).
+name: Scheduled fuzzing
+
+on:
+  schedule:
+    - cron: "43 3 * * 0" # weekly, Sunday 03:43 UTC
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Per-target fuzz duration (Go duration, e.g. 15m)"
+        required: false
+        default: 15m
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fuzz:
+    name: fuzz (${{ matrix.package }} ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: ./internal/stream
+            target: FuzzExtractRecords
+          - package: ./internal/stream
+            target: FuzzParseHECTime
+          - package: ./internal/flowlog
+            target: FuzzProcessorProcessAll
+          - package: ./internal/audit
+            target: FuzzProcessorProcessAll
+          - package: ./internal/webhook
+            target: FuzzDecodeAcceptedBatch
+          - package: ./internal/webhook
+            target: FuzzCanonicalDigest
+          - package: ./internal/oas
+            target: FuzzParseSpec
+          - package: ./internal/oas
+            target: FuzzClassifySelfDiff
+          - package: ./internal/oas
+            target: FuzzClassifyAgainstVendored
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # zizmor: ignore[cache-poisoning] - test-only job, does not publish artifacts
+          cache: true
+
+      - name: go test -fuzz ${{ matrix.target }}
+        id: fuzz
+        env:
+          PKG: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+          FUZZTIME: ${{ inputs.fuzztime || '15m' }}
+        run: |
+          # Steps run under `bash -eo pipefail`, so guard the failure with `|| code=$?` —
+          # a bare `go test` failure would otherwise abort the step before we can classify it.
+          code=0
+          go test "$PKG" -run '^$' -fuzz "^${TARGET}\$" -fuzztime="$FUZZTIME" 2>&1 | tee /tmp/fuzz.log || code=$?
+          [ "$code" -eq 0 ] && exit 0
+
+          # A genuine finding ALWAYS writes the input out and says so. Check this first, so a
+          # crasher can never be swallowed by the tolerance below.
+          if grep -q "Failing input written to" /tmp/fuzz.log; then
+            echo "::error::${TARGET}: fuzzing found a crasher — see the uploaded corpus artifact"
+            exit 1
+          fi
+
+          # Upstream Go race, benign: on -fuzztime expiry the coordinator calls stop(ctx.Err())
+          # with DeadlineExceeded, which internal/fuzz suppresses only if it == fuzzCtx.Err().
+          # A parent context closes its own done channel BEFORE propagating cancellation to its
+          # children, so if the coordinator wakes in that window fuzzCtx.Err() is still nil, the
+          # comparison misses, and a clean timeout is reported as a test failure. Nothing was
+          # found — the run simply ran out its clock.
+          if grep -qE '^[[:space:]]*context deadline exceeded[[:space:]]*$' /tmp/fuzz.log; then
+            echo "::warning::${TARGET}: benign -fuzztime shutdown race in Go's fuzzing runtime (no crasher found) — not failing"
+            exit 0
+          fi
+
+          exit "$code"
+
+      # A crasher is written to testdata/corpus/<target>/ — surface it so the failing input
+      # can be committed as a seed, which is what makes the regression gate a PR afterwards.
+      - name: upload the failing corpus
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: |
+            **/testdata/corpus/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Build the report
+        if: failure()
+        env:
+          PKG: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Scheduled fuzzing found a crasher"
+            echo
+            echo "- Target: \`${TARGET}\` in \`${PKG}\`"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "The failing input is attached to that run as \`fuzz-corpus-${TARGET}\`."
+            echo "Commit it under \`testdata/corpus/${TARGET}/\` so the seed corpus gates every"
+            echo "later PR, then fix the decoder."
+            echo
+            echo '<details><summary>Log tail</summary>'
+            echo
+            echo '```'
+            tail -60 /tmp/fuzz.log || true
+            echo '```'
+            echo
+            echo '</details>'
+          } > /tmp/fuzz-report.md
+
+      - name: Report the finding
+        if: failure()
+        continue-on-error: true
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: fuzz-finding
+          title: "Scheduled fuzzing found a crasher"
+          report-path: /tmp/fuzz-report.md
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

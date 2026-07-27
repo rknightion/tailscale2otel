@@ -12,9 +12,11 @@
 package ci_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -122,6 +124,7 @@ func TestReadmeAPIDriftCadenceMatchesTheCrons(t *testing.T) {
 		{"api-drift.yml", "**OpenAPI drift**"},
 		{"clientlib-main.yml", "**Client-lib tracking**"},
 		{"live-contract.yml", "**Live contract**"},
+		{"fuzz-scheduled.yml", "**Scheduled fuzzing**"},
 	} {
 		t.Run(lane.workflow, func(t *testing.T) {
 			got := crons(t, readWorkflow(t, lane.workflow), lane.workflow)
@@ -579,4 +582,147 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	if !strings.Contains(body, "sha256sums.txt") {
 		t.Error("the promtool download is not verified against the release's sha256sums.txt")
 	}
+}
+
+// Every fuzz target in the tree must run in BOTH lanes: the bounded PR matrix, so a
+// shallow crasher is found on the pull request, and the weekly scheduled matrix, so
+// the deeper search reaches it at all. A target added to neither is dead code that
+// only runs its seed corpus, and nothing else would say so (#434).
+func TestEveryFuzzTargetRunsInBothMatrices(t *testing.T) {
+	declared := fuzzTargetsInTree(t)
+	if len(declared) < 9 {
+		t.Fatalf("found %d (package, target) fuzz pairs in the tree, expected at least 9: %v",
+			len(declared), sortedPairs(declared))
+	}
+
+	for _, lane := range []struct{ workflow, job string }{
+		{"ci.yml", "fuzz"},
+		{"fuzz-scheduled.yml", "fuzz"},
+	} {
+		t.Run(lane.workflow, func(t *testing.T) {
+			listed := fuzzMatrixTargets(t, lane.workflow, lane.job)
+			for pair := range declared {
+				if !listed[pair] {
+					t.Errorf("%s does not fuzz %s. A target absent from a lane runs only its "+
+						"seed corpus there.", lane.workflow, pair)
+				}
+			}
+			for pair := range listed {
+				if !declared[pair] {
+					t.Errorf("%s fuzzes %s, which does not exist in the tree — `go test -fuzz` would "+
+						"match no target and the step would pass while testing nothing", lane.workflow, pair)
+				}
+			}
+		})
+	}
+}
+
+// sortedPairs renders a pair set deterministically for a failure message.
+func sortedPairs(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// The scheduled lane is advisory: it must be schedule/dispatch only, so no fork PR
+// can reach it, and it must not be a required check.
+func TestScheduledFuzzLaneIsAdvisoryOnly(t *testing.T) {
+	doc := readWorkflow(t, "fuzz-scheduled.yml")
+	for name := range triggerBlock(t, doc, "fuzz-scheduled.yml") {
+		switch name {
+		case "schedule", "workflow_dispatch":
+		default:
+			t.Errorf("fuzz-scheduled.yml declares trigger %q. A 15-minute-per-target matrix on a "+
+				"PR trigger would be both a merge blocker and a fork-reachable compute sink.", name)
+		}
+	}
+}
+
+// fuzzTargetsInTree returns the set of "./package FuzzTarget" pairs in the
+// repository.
+//
+// The key is the PAIR, not the target name: FuzzProcessorProcessAll exists in both
+// internal/flowlog and internal/audit, so a map keyed on the name alone silently
+// loses one of them — which is exactly what the first version of this test did, and
+// it reported eight targets where there are nine.
+func fuzzTargetsInTree(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	root := "../.."
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if name := d.Name(); name == ".git" || name == "testdata" || name == "node_modules" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		pkg, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		for _, m := range fuzzFuncRE.FindAllStringSubmatch(string(body), -1) {
+			out["./"+filepath.ToSlash(pkg)+" "+m[1]] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk for fuzz targets: %v", err)
+	}
+	return out
+}
+
+var fuzzFuncRE = regexp.MustCompile(`(?m)^func (Fuzz[A-Za-z0-9_]*)\(f \*testing\.F\)`)
+
+// fuzzMatrixTargets returns the set of "package target" pairs a workflow's fuzz job
+// lists, in the same spelling fuzzTargetsInTree uses.
+func fuzzMatrixTargets(t *testing.T, workflow, job string) map[string]bool {
+	t.Helper()
+	doc := readWorkflow(t, workflow)
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no jobs mapping", workflow)
+	}
+	def, ok := jobs[job].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no %q job", workflow, job)
+	}
+	strategy, ok := def["strategy"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s/%s has no strategy", workflow, job)
+	}
+	matrix, ok := strategy["matrix"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s/%s has no matrix", workflow, job)
+	}
+	include, ok := matrix["include"].([]any)
+	if !ok {
+		t.Fatalf("%s/%s matrix has no include list", workflow, job)
+	}
+	out := map[string]bool{}
+	for _, entry := range include {
+		em, ok := entry.(map[string]any)
+		if !ok {
+			t.Fatalf("%s/%s matrix entry is %T", workflow, job, entry)
+		}
+		target, _ := em["target"].(string)
+		pkg, _ := em["package"].(string)
+		if target == "" || pkg == "" {
+			t.Fatalf("%s/%s matrix entry is missing target or package: %v", workflow, job, em)
+		}
+		out[pkg+" "+target] = true
+	}
+	return out
 }

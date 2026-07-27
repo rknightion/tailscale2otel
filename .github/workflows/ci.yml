@@ -359,8 +359,13 @@ jobs:
           force-coverage-parser: go
 
   # Bounded exploratory fuzzing of the untrusted-input decode paths: the HEC receiver's
-  # envelope parser (its body is attacker-reachable — the token is optional) and the flow/audit
-  # record decoders, whose wire format is polymorphic by design.
+  # envelope parser (its body is attacker-reachable — the token is optional), the flow/audit
+  # record decoders, whose wire format is polymorphic by design, the webhook batch decode and
+  # its dedup digest, and the OpenAPI parser/classifier — which reads the LIVE spec fetched
+  # from api.tailscale.com, so that document is untrusted input too (#434).
+  #
+  # 120s per target finds shallow crashers and nothing else. The deeper search is
+  # fuzz-scheduled.yml, weekly, where a nondeterministic finding costs nobody a blocked merge.
   #
   # Deliberately NOT in ci-success. Each target's SEED corpus already runs inside the normal
   # `go test -race ./...` leg, so a known crasher always gates a merge; this job only explores
@@ -381,6 +386,16 @@ jobs:
             target: FuzzProcessorProcessAll
           - package: ./internal/audit
             target: FuzzProcessorProcessAll
+          - package: ./internal/webhook
+            target: FuzzDecodeAcceptedBatch
+          - package: ./internal/webhook
+            target: FuzzCanonicalDigest
+          - package: ./internal/oas
+            target: FuzzParseSpec
+          - package: ./internal/oas
+            target: FuzzClassifySelfDiff
+          - package: ./internal/oas
+            target: FuzzClassifyAgainstVendored
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
