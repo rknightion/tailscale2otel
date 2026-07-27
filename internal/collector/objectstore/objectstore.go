@@ -98,6 +98,15 @@ const (
 	gapRetryMax  = time.Hour
 )
 
+// requestDurationBucketsSeconds are the explicit bucket boundaries for
+// tailscale2otel.objectstore.request.duration. They reach further than the
+// receivers' HTTP buckets because an object-store GET is a network fetch of a
+// multi-megabyte object rather than a local handler, and a clipped top bucket
+// would hide a stalling provider behind a saturated +Inf.
+var requestDurationBucketsSeconds = []float64{
+	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+}
+
 // checkpoint key prefixes within the shared store. The cursor is one entry; the
 // seen set is one entry per recently ingested object.
 const (
@@ -435,6 +444,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	gapDeferred := 0
+	// retried counts attempts, not objects: one gap row attempted on three cycles
+	// is three retries, which is what distinguishes an object recovering from one
+	// failing over and over under the bounded backoff.
+	retried := 0
 	cycleExhausted := false
 	for _, gap := range gaps {
 		if gap.Quarantined || now.Before(gap.NextAttempt) {
@@ -458,6 +471,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			continue
 		}
 		remaining--
+		// Counted here rather than inside attempt: this is the ONLY path that
+		// re-attempts an object. A listed object carrying a pending gap row is
+		// never made a candidate, so an object can be retried only from its gap.
+		retried++
 		if !attempt(storeapi.Object{Identity: gap.Identity, Key: gap.Key}, comp, at) {
 			cycleExhausted = true
 		}
@@ -495,8 +512,33 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Counter(docObjects.Name, docObjects.Unit, docObjects.Description, float64(objects), telemetry.Attrs{})
 	e.Counter(docRecords.Name, docRecords.Unit, docRecords.Description, float64(records), telemetry.Attrs{})
 	e.Counter(docBytes.Name, docBytes.Unit, docBytes.Description, float64(fetched), telemetry.Attrs{})
+	e.Counter(docRetries.Name, docRetries.Unit, docRetries.Description, float64(retried), telemetry.Attrs{})
 	e.Gauge(docBacklog.Name, docBacklog.Unit, docBacklog.Description,
 		float64(len(candidates)-durableCandidates), telemetry.Attrs{})
+	// newest is the cursor this cycle leaves behind: it starts at the loaded
+	// cursor (the initial lookback on a cold start, so there is always a value)
+	// and advances only to an object actually ingested. Clamped because a key
+	// inside the clock-skew allowance may legitimately sit ahead of now.
+	e.Gauge(docCursorAge.Name, docCursorAge.Unit, docCursorAge.Description,
+		max(0, now.Sub(newest).Seconds()), telemetry.Attrs{})
+	discoveredAge := float64(ageNothingDiscovered)
+	if !listing.newestKeyAt.IsZero() {
+		discoveredAge = max(0, now.Sub(listing.newestKeyAt).Seconds())
+	}
+	e.Gauge(docDiscoveredNewestAge.Name, docDiscoveredNewestAge.Unit, docDiscoveredNewestAge.Description,
+		discoveredAge, telemetry.Attrs{})
+	// Candidates are chronological and consumed from the oldest, so the unhandled
+	// tail begins at durableCandidates — exactly the population the backlog gauge
+	// counts. A candidate that FAILED is durable (it became a gap) and is
+	// therefore not pending: its age belongs to gap.oldest.age instead. Zero is a
+	// real reading here, matching a zero backlog, because "nothing waiting" and
+	// "waiting on something fresh" are both healthy.
+	pendingOldestAge := 0.0
+	if durableCandidates < len(candidates) {
+		pendingOldestAge = max(0, now.Sub(candidates[durableCandidates].at).Seconds())
+	}
+	e.Gauge(docPendingOldestAge.Name, docPendingOldestAge.Unit, docPendingOldestAge.Description,
+		pendingOldestAge, telemetry.Attrs{})
 	if c.opts.OnIngest != nil && records > 0 {
 		// bytes is the decompressed/decoded payload size, matching what the
 		// stream and webhook receivers mean by tailscale2otel.ingest.size — NOT
@@ -570,6 +612,12 @@ type prefixProgress struct {
 type enumeration struct {
 	candidates []candidate
 	prefixes   []prefixProgress
+	// newestKeyAt is the newest key timestamp across every object this cycle
+	// listed whose key parsed and was not rejected as future-stamped, whatever
+	// filter it then fell to. Zero when the cycle listed no such object, which is
+	// a different state from "listed something stamped now" and is reported as
+	// such.
+	newestKeyAt time.Time
 }
 
 // scanPrefixes is the prefix set this cycle would list from scratch, before any
@@ -642,7 +690,9 @@ func (c *Collector) enumerate(
 		// partition on a large tailnet is hundreds of objects, and there is no
 		// value in walking further than one cycle could ever consume.
 		startAfter := positions[prefix]
+		listStarted := time.Now()
 		page, err := c.api.List(ctx, prefix, startAfter, c.opts.MaxObjects*4)
+		observeRequest(ctx, e, operationList, listStarted, err)
 		if err != nil {
 			return enumeration{}, fmt.Errorf("objectstore: list %s: %w", prefix, err)
 		}
@@ -680,6 +730,14 @@ func (c *Collector) enumerate(
 					break
 				}
 				result.candidates = append(result.candidates, candidate{obj: o, at: at, comp: comp})
+			}
+			// Discovery is measured over what was LISTED, not over what will be
+			// ingested, so an object skipped as already ingested or as stale still
+			// counts: that is what keeps the signal alive on a caught-up feed. An
+			// unparsed key has no timestamp to offer, and a future-stamped key is
+			// not data, so neither may set this.
+			if ok && !isFutureKey(at, now) && at.After(result.newestKeyAt) {
+				result.newestKeyAt = at
 			}
 			progress.objects = append(progress.objects, item)
 		}
@@ -732,7 +790,9 @@ func (c *Collector) ingest(
 	e telemetry.Emitter,
 	cycle ingestLimits,
 ) (result ingestResult, err error) {
+	getStarted := time.Now()
 	body, err := c.api.Get(ctx, identity)
+	observeRequest(ctx, e, operationGet, getStarted, err)
 	if err != nil {
 		return result, &objectIngestError{stage: "fetch", err: err}
 	}
@@ -1257,6 +1317,39 @@ func emitGapHealth(e telemetry.Emitter, gaps map[string]gapState, now time.Time)
 func hasPosition(positions map[string]string, prefix string) bool {
 	_, ok := positions[prefix]
 	return ok
+}
+
+// observeRequest records one provider call on the TRANSPORT axis: exactly one
+// data point per Backend.List or Backend.Get call, whose outcome is that call's
+// own return value and nothing else. A body that fails mid-read, a row that
+// fails to decode, and an object that breaches a limit are all counted as a
+// SUCCESSFUL request here — the call itself worked — and land on
+// tailscale2otel.objectstore.skipped and the gap metrics instead. That is what
+// keeps transport health separate from ingestion health and makes it impossible
+// for one failure to be counted twice on either axis.
+//
+// The duration is measured with the monotonic clock rather than Options.Now: Now
+// is the injectable LOGICAL clock the cursor arithmetic runs on, and a stepped or
+// faked wall clock must not be able to produce a negative latency. It is recorded
+// through HistogramCtx so the scheduler's per-cycle span links trace exemplars,
+// the same reason api.duration does; the counter stays context-free because the
+// SDK views give synchronous counters a no-op exemplar reservoir.
+func observeRequest(
+	ctx context.Context,
+	e telemetry.Emitter,
+	operation string,
+	started time.Time,
+	err error,
+) {
+	elapsed := time.Since(started)
+	outcome := outcomeSuccess
+	if err != nil {
+		outcome = outcomeError
+	}
+	attrs := telemetry.Attrs{attrOperation: operation, attrOutcome: outcome}
+	e.Counter(docRequests.Name, docRequests.Unit, docRequests.Description, 1, attrs)
+	e.HistogramCtx(ctx, docRequestDuration.Name, docRequestDuration.Unit, docRequestDuration.Description,
+		elapsed.Seconds(), requestDurationBucketsSeconds, attrs)
 }
 
 // countSkips emits one skipped counter per non-zero reason.

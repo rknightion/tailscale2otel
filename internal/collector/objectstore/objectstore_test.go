@@ -1327,3 +1327,259 @@ func TestCollect_UnrecognizedKeysAreReportedNotGuessed(t *testing.T) {
 		t.Errorf("fetched = %v, want nothing fetched", h.store.fetched)
 	}
 }
+
+// The cursor is the lower bound of the next cycle's listing window, so its age
+// is end-to-end ingestion lag. It is never absent: a cold start with no
+// persisted cursor is genuinely the initial lookback behind, and reporting zero
+// there would claim the feed was caught up when it is hours behind.
+func TestCollect_ReportsCursorAge(t *testing.T) {
+	t.Run("cold start with nothing to ingest", func(t *testing.T) {
+		h := newHarness(t, func(o *objectstore.Options) { o.InitialLookback = 30 * time.Minute })
+
+		h.collect(t)
+
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.cursor.age"); got != 1800 {
+			t.Fatalf("cursor age = %v, want the 30m initial lookback in seconds", got)
+		}
+	})
+
+	t.Run("advances with the newest ingested object", func(t *testing.T) {
+		h := newHarness(t, func(o *objectstore.Options) { o.InitialLookback = 30 * time.Minute })
+		for _, ago := range []time.Duration{20 * time.Minute, 10 * time.Minute} {
+			at := now.Add(-ago)
+			h.store.put(keyAt(at, ".ndjson"), []byte(record("n", at)+"\n"))
+		}
+
+		h.collect(t)
+
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.cursor.age"); got != 600 {
+			t.Fatalf("cursor age = %v, want 600 — the newest ingested object, not the oldest", got)
+		}
+
+		// A quiet cycle does not move the cursor, so the age holds rather than
+		// resetting.
+		h.collect(t)
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.cursor.age"); got != 600 {
+			t.Fatalf("cursor age after a quiet cycle = %v, want it held at 600", got)
+		}
+	})
+
+	t.Run("carries no attributes", func(t *testing.T) {
+		h := newHarness(t, nil)
+		h.collect(t)
+		for _, p := range h.rec.MetricPoints("tailscale2otel.objectstore.cursor.age") {
+			if len(p.Attrs) != 0 {
+				t.Errorf("cursor age attributes = %v, want none", p.Attrs)
+			}
+		}
+	})
+}
+
+// Discovery freshness answers "is the exporter still writing?", which is a
+// different question from "did we ingest anything". Already-ingested objects
+// therefore still count, and a cycle that listed nothing usable reports -1 rather
+// than a zero that would read as the freshest possible object.
+func TestCollect_ReportsNewestDiscoveredObjectAge(t *testing.T) {
+	const metric = "tailscale2otel.objectstore.discovered.newest.age"
+
+	t.Run("newest listed object", func(t *testing.T) {
+		h := newHarness(t, nil)
+		for _, ago := range []time.Duration{30 * time.Minute, 10 * time.Minute} {
+			at := now.Add(-ago)
+			h.store.put(keyAt(at, ".ndjson"), []byte(record("n", at)+"\n"))
+		}
+
+		h.collect(t)
+		if got := lastGauge(h.rec, metric); got != 600 {
+			t.Fatalf("newest discovered age = %v, want 600 (the newest key, not the oldest)", got)
+		}
+
+		// A caught-up feed keeps reporting: the objects are listed again and
+		// skipped as already ingested, which is still discovery.
+		h.collect(t)
+		if got := skippedByReason(h.rec)["already_ingested"]; got == 0 {
+			t.Fatalf("skipped = %v, want the second cycle to re-list the ingested objects", skippedByReason(h.rec))
+		}
+		if got := lastGauge(h.rec, metric); got != 600 {
+			t.Fatalf("newest discovered age on a caught-up cycle = %v, want it still 600", got)
+		}
+	})
+
+	t.Run("nothing listed reports the sentinel", func(t *testing.T) {
+		h := newHarness(t, nil)
+
+		h.collect(t)
+
+		// Asserted as a PRESENT series holding the sentinel, not merely as a
+		// non-zero reading: an absent gauge would satisfy a bare value check while
+		// leaving a dashboard with a stale last value re-exported forever.
+		if got := len(h.rec.MetricPoints(metric)); got != 1 {
+			t.Fatalf("newest discovered age series = %d points, want exactly 1 carrying the sentinel", got)
+		}
+		if got := lastGauge(h.rec, metric); got != -1 {
+			t.Fatalf("newest discovered age over an empty prefix = %v, want -1 — zero would read as a brand-new object", got)
+		}
+	})
+
+	t.Run("future-stamped objects are not discoveries", func(t *testing.T) {
+		h := newHarness(t, nil)
+		at := now.Add(10 * time.Minute)
+		h.store.put(keyAt(at, ".ndjson"), []byte(record("n", at)+"\n"))
+
+		h.collect(t)
+
+		if got := skippedByReason(h.rec)["future_timestamp"]; got != 1 {
+			t.Fatalf("skipped = %v, want the future-stamped object skipped", skippedByReason(h.rec))
+		}
+		if got := len(h.rec.MetricPoints(metric)); got != 1 {
+			t.Fatalf("newest discovered age series = %d points, want exactly 1 carrying the sentinel", got)
+		}
+		if got := lastGauge(h.rec, metric); got != -1 {
+			t.Fatalf("newest discovered age = %v, want -1 — a broken exporter clock must not pin this at zero", got)
+		}
+	})
+
+	t.Run("carries no attributes", func(t *testing.T) {
+		h := newHarness(t, nil)
+		h.collect(t)
+		for _, p := range h.rec.MetricPoints(metric) {
+			if len(p.Attrs) != 0 {
+				t.Errorf("newest discovered age attributes = %v, want none", p.Attrs)
+			}
+		}
+	})
+}
+
+// pending.oldest.age and gap.oldest.age are different signals and both are kept.
+// Pending is BACKLOG latency: the oldest HEALTHY object listed but not yet
+// processed. A gap is FAILURE age: the oldest object that failed and is awaiting
+// retry or acknowledgement. An object that fails leaves the pending population
+// for the gap population, so conflating the two would report the wrong object.
+func TestCollect_PendingOldestAgeIsBacklogLatencyNotFailureAge(t *testing.T) {
+	const pendingMetric = "tailscale2otel.objectstore.pending.oldest.age"
+
+	t.Run("deferred by the per-cycle budget", func(t *testing.T) {
+		h := newHarness(t, func(o *objectstore.Options) { o.MaxObjects = 2 })
+		for i := range 5 {
+			at := now.Add(-time.Duration(i+1) * time.Minute)
+			h.store.put(keyAt(at, ".ndjson"), []byte(record("n", at)+"\n"))
+		}
+
+		h.collect(t)
+
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.backlog"); got != 3 {
+			t.Fatalf("backlog = %v, want 3 deferred", got)
+		}
+		// Oldest REMAINING, not oldest overall (300) and not newest remaining (60):
+		// the two oldest were ingested, so the backlog now starts three minutes back.
+		if got := lastGauge(h.rec, pendingMetric); got != 180 {
+			t.Fatalf("pending oldest age = %v, want 180 — the oldest object still waiting", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 0 {
+			t.Fatalf("gaps = %v, want 0 — a deferred healthy object is not a failure", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.oldest.age"); got != 0 {
+			t.Fatalf("gap oldest age = %v, want 0 — nothing has failed", got)
+		}
+	})
+
+	t.Run("a failed object leaves the pending population", func(t *testing.T) {
+		clock := now
+		h := newHarness(t, func(o *objectstore.Options) {
+			o.MaxObjects = 1
+			o.Now = func() time.Time { return clock }
+		})
+		failing := now.Add(-20 * time.Minute)
+		failingKey := keyAt(failing, ".ndjson")
+		h.store.put(failingKey, []byte(record("fails", failing)+"\n"))
+		h.store.getErr[failingKey] = errors.New("provider refused the fetch")
+		for _, ago := range []time.Duration{15 * time.Minute, 5 * time.Minute} {
+			at := now.Add(-ago)
+			h.store.put(keyAt(at, ".ndjson"), []byte(record("healthy", at)+"\n"))
+		}
+
+		h.collect(t)
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
+			t.Fatalf("gaps = %v, want the failed object retained", got)
+		}
+
+		// Past the first backoff, the whole budget goes to retrying the gap, so
+		// both healthy objects are still waiting.
+		clock = now.Add(120 * time.Second)
+		h.collect(t)
+
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
+			t.Fatalf("gaps = %v, want the failed object still unresolved", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.oldest.age"); got != 120 {
+			t.Fatalf("gap oldest age = %v, want 120 — the failed object's age", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.backlog"); got != 2 {
+			t.Fatalf("backlog = %v, want the 2 healthy objects still waiting", got)
+		}
+		// 1020 = (now+120s) - (now-15m): the oldest HEALTHY object. Conflating the
+		// two populations would report 1320, the failed object's key age.
+		if got := lastGauge(h.rec, pendingMetric); got != 1020 {
+			t.Fatalf("pending oldest age = %v, want 1020 — the oldest healthy object, not the failed one", got)
+		}
+	})
+
+	// The failed object is re-LISTED here (its prefix caught up, so no scan
+	// position hides it) and is still not pending: the gap row is what excludes
+	// it. This is the leg that fails if the two populations are ever merged —
+	// pending would report the failed object's 22-minute key age instead of zero.
+	t.Run("a gapped object is never counted as pending", func(t *testing.T) {
+		clock := now
+		h := newHarness(t, func(o *objectstore.Options) {
+			o.MaxObjects = 1
+			o.Now = func() time.Time { return clock }
+		})
+		failing := now.Add(-20 * time.Minute)
+		failingKey := keyAt(failing, ".ndjson")
+		h.store.put(failingKey, []byte(record("fails", failing)+"\n"))
+		h.store.getErr[failingKey] = errors.New("provider refused the fetch")
+
+		h.collect(t)
+		clock = now.Add(120 * time.Second)
+		h.collect(t)
+
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gaps"); got != 1 {
+			t.Fatalf("gaps = %v, want the failed object unresolved", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.gap.oldest.age"); got != 120 {
+			t.Fatalf("gap oldest age = %v, want 120 — the failure has a real age", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.backlog"); got != 0 {
+			t.Errorf("backlog = %v, want 0 — the only object is a gap, not a backlog", got)
+		}
+		if got := lastGauge(h.rec, pendingMetric); got != 0 {
+			t.Fatalf("pending oldest age = %v, want 0 — a failed object's age belongs to gap.oldest.age", got)
+		}
+		if got := counterTotal(h.rec, "tailscale2otel.objectstore.retries"); got != 1 {
+			t.Fatalf("retries = %v, want the one gap retry", got)
+		}
+	})
+
+	t.Run("nothing pending reports a present zero", func(t *testing.T) {
+		h := newHarness(t, nil)
+		at := now.Add(-10 * time.Minute)
+		h.store.put(keyAt(at, ".ndjson"), []byte(record("n", at)+"\n"))
+
+		h.collect(t)
+
+		if got := len(h.rec.MetricPoints(pendingMetric)); got != 1 {
+			t.Fatalf("pending oldest age series = %d points, want exactly 1", got)
+		}
+		if got := lastGauge(h.rec, pendingMetric); got != 0 {
+			t.Fatalf("pending oldest age = %v, want 0 alongside a zero backlog", got)
+		}
+		if got := lastGauge(h.rec, "tailscale2otel.objectstore.backlog"); got != 0 {
+			t.Fatalf("backlog = %v, want 0", got)
+		}
+		for _, p := range h.rec.MetricPoints(pendingMetric) {
+			if len(p.Attrs) != 0 {
+				t.Errorf("pending oldest age attributes = %v, want none", p.Attrs)
+			}
+		}
+	})
+}

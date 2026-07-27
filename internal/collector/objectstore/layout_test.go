@@ -460,3 +460,55 @@ func hasCheckpointFragment(t *testing.T, h *harness, fragment string) bool {
 	}
 	return false
 }
+
+// The discovery and backlog ages are derived from ENUMERATION, and flat mode
+// enumerates one undelimited prefix rather than day partitions — so both gauges
+// need pinning under it, not just under the partitioned default the rest of these
+// tests use.
+func TestCollect_FlatLayoutReportsDiscoveryAndBacklogAges(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Layout = objectstore.LayoutFlat
+		o.MaxObjects = 1
+		o.InitialLookback = 6 * time.Hour
+	})
+	for _, ago := range []time.Duration{30 * time.Minute, 20 * time.Minute, 10 * time.Minute} {
+		at := now.Add(-ago)
+		h.store.put(flatKeyAt(at, ".ndjson"), []byte(record("n", at)+"\n"))
+	}
+
+	h.collect(t)
+
+	if len(h.store.listCalls) != 1 || h.store.listCalls[0].Prefix != "flow/" {
+		t.Fatalf("list calls = %+v, want one listing of the normalized base prefix", h.store.listCalls)
+	}
+	if got := requestsByLabel(h.rec)["list/success"]; got != 1 {
+		t.Errorf("list requests = %v, want the one flat listing counted", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.discovered.newest.age"); got != 600 {
+		t.Errorf("newest discovered age = %v, want 600 — the newest object under the flat prefix", got)
+	}
+	// The budget of one ingested the oldest object, so the backlog now starts at
+	// the middle one.
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.pending.oldest.age"); got != 1200 {
+		t.Errorf("pending oldest age = %v, want 1200", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.cursor.age"); got != 1800 {
+		t.Errorf("cursor age = %v, want 1800 — the one object ingested", got)
+	}
+
+	// A resumed flat walk starts after the durable scan position, and still
+	// discovers the newest object ahead of it.
+	h.collect(t)
+	if got := h.store.listCalls[1].StartAfter; got == "" {
+		t.Fatalf("second flat listing did not resume from a durable scan position: %+v", h.store.listCalls)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.discovered.newest.age"); got != 600 {
+		t.Errorf("newest discovered age on the resumed walk = %v, want 600", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.pending.oldest.age"); got != 600 {
+		t.Errorf("pending oldest age on the resumed walk = %v, want 600", got)
+	}
+	if got := lastGauge(h.rec, "tailscale2otel.objectstore.cursor.age"); got != 1200 {
+		t.Errorf("cursor age on the resumed walk = %v, want 1200", got)
+	}
+}
