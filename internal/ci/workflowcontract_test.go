@@ -23,7 +23,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const workflowDir = "../../.github/workflows"
+const (
+	repoDir     = "../.."
+	workflowDir = repoDir + "/.github/workflows"
+)
 
 func readWorkflow(t *testing.T, name string) map[string]any {
 	t.Helper()
@@ -581,6 +584,61 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	// a checksum pasted here, which would silently rot on the next version bump.
 	if !strings.Contains(body, "sha256sums.txt") {
 		t.Error("the promtool download is not verified against the release's sha256sums.txt")
+	}
+}
+
+// Both Python generators ship unittest suites, and for a long time CI ran neither:
+// deploy/grafana/gen/test_ingest_freshness.py passed locally and was referenced by
+// nothing in .github/, scripts/ or .githooks/, so it caught nothing (#481). A test
+// suite that no gate runs is worse than none, because its presence reads as coverage.
+// The drift gate alone is not a substitute — it proves the artifact matches the
+// generator, not that the generator is correct.
+func TestPythonGeneratorTestsRunInCI(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, ok := jobs["dashboards-drift"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no dashboards-drift job")
+	}
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatal("dashboards-drift has no steps list")
+	}
+	var script strings.Builder
+	for _, raw := range steps {
+		if step, ok := raw.(map[string]any); ok {
+			if run, ok := step["run"].(string); ok {
+				script.WriteString(run)
+				script.WriteString("\n")
+			}
+		}
+	}
+	body := script.String()
+	if !strings.Contains(body, "unittest discover") {
+		t.Error("dashboards-drift never runs `python3 -m unittest discover`, so the generator " +
+			"unit tests execute nowhere and only pass by being run by hand")
+	}
+	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen"} {
+		if !strings.Contains(body, dir) {
+			t.Errorf("dashboards-drift does not run the unit tests in %s", dir)
+		}
+	}
+}
+
+// Guards the guard: TestPythonGeneratorTestsRunInCI only proves the workflow invokes
+// unittest against those directories. It cannot tell whether the directories actually
+// contain tests — `unittest discover` over a directory with no test module exits 0 and
+// reports success, which would make the CI step a no-op that reads as coverage.
+func TestPythonGeneratorDirectoriesContainTests(t *testing.T) {
+	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen"} {
+		matches, err := filepath.Glob(filepath.Join(repoDir, dir, "test_*.py"))
+		if err != nil {
+			t.Fatalf("globbing %s: %v", dir, err)
+		}
+		if len(matches) == 0 {
+			t.Errorf("%s contains no test_*.py, so the CI unittest step over it discovers "+
+				"nothing and passes vacuously", dir)
+		}
 	}
 }
 
