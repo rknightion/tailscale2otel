@@ -18,7 +18,8 @@ nav = [
       { "Node Metrics" = "node-metrics.md" },
       { "Streaming & Webhooks" = "streaming-webhooks.md" },
       { Dashboards = "dashboards.md" },
-      { Alerts = "alerts.md" }
+      { Alerts = "alerts.md" },
+      { "Alert Profiles" = "alert-profiles.md" }
     ] },
   { Reference = [
       { Metrics = "metrics.md" },

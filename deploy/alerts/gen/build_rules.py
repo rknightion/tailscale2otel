@@ -1781,6 +1781,334 @@ def check_runbook_coverage():
 
 
 # ---------------------------------------------------------------------------
+# installable profiles (#389)
+# ---------------------------------------------------------------------------
+#
+# A "profile" answers exactly one question for every rule in the catalogue:
+# does it ship paused, and why. `recommended`'s predicate is "keep the
+# author's own paused=... value from alert()/record() above", which is what
+# makes it byte-identical to what this generator has always shipped.
+# `baseline` and `strict` are declarative PREDICATES applied AFTER the
+# catalogue is built — never a second hand-authored rule list — so a rule's
+# classification lives in exactly one place (its `policy=`, and for strict's
+# exceptions, STRICT_EXCEPTIONS below) and both the manifests and
+# docs/alert-profiles.md read from it.
+#
+# Threshold/`for` overrides (declarative, keyed by uid; none of the three
+# profiles below currently uses one) are routed through godur()/
+# _threshold_node() — the SAME construction alert() itself uses — rather than
+# mutating an emitted manifest dict, so an override can never produce a shape
+# (a bare "5m", a non-numeric threshold) the schema rejects.
+
+
+class ProfileDecision:
+    """One rule's outcome under one profile: whether it ships paused, and the
+    single sentence explaining why. Read verbatim by docs/alert-profiles.md,
+    so it is required to be a real sentence, not a placeholder."""
+
+    __slots__ = ("paused", "why")
+
+    def __init__(self, paused, why):
+        if not why or len(why) < 20:
+            raise ValueError("profile decision needs a real explanation, got %r" % (why,))
+        self.paused = bool(paused)
+        self.why = why
+
+
+def _recommended_decide(rule):
+    return ProfileDecision(
+        rule["paused"],
+        "recommended: today's shipped starter-set state (this rule's own paused= in "
+        "build_rules.py), unchanged. This is the compatibility profile — its output must "
+        "stay byte-identical to what tailscale2otel has always shipped in "
+        "deploy/alerts/grafana-managed/.")
+
+
+def _baseline_decide(rule):
+    if is_recording(rule):
+        return ProfileDecision(
+            rule["paused"],
+            "baseline classifies ALERT rules by evaluation policy; a recording rule never "
+            "pages on its own, so baseline leaves it at its recommended paused state.")
+    policy = POLICY_BY_UID[rule["uid"]]
+    if policy in ("coverage_critical", "core"):
+        return ProfileDecision(
+            False,
+            "baseline enables only coverage_critical and core policy rules — this rule is "
+            "policy=%r, whose signal is emitted by any running exporter with no optional "
+            "collector, feature, or site-specific threshold required, so it is actionable "
+            "the moment tailscale2otel starts." % (policy,))
+    return ProfileDecision(
+        True,
+        "baseline enables only coverage_critical and core policy rules — this rule is "
+        "policy=%r, which needs either an optional collector/feature turned on or a "
+        "site-specific threshold tuned before it means anything, so baseline ships it "
+        "paused." % (policy,))
+
+
+# Rules `strict` does NOT enable, each with the reason it stays paused even
+# though strict's whole point is "everything else enabled". Keep this list
+# SMALL, and each reason a real justification — test_rules.py asserts a `why`
+# length, and add others here only with one.
+STRICT_EXCEPTIONS = {
+    "ts2o-api-rate-limit-wait-high": (
+        "the rule's own description says its 5s threshold IS A PLACEHOLDER pending a real "
+        "per-site baseline; enabling it blind pages on a busy tailnet's normal "
+        "rate-limiter wait time rather than on an actual problem."
+    ),
+    "ts2o-ingest-data-stale": (
+        "it fires on any legitimately idle sparse ingestion source — a quiet webhook or "
+        "audit stream with nothing to report is not a fault, and the rule ships paused "
+        "specifically so it is enabled per source/signal pair with a threshold tuned to "
+        "that workload."
+    ),
+    "ts2o-export-volume-high": (
+        "its 5000/s threshold is a Grafana Cloud ingest-cost budget tied to one specific "
+        "plan, not a correctness signal, so enabling it fleet-wide pages on someone else's "
+        "billing tier rather than on a real export problem."
+    ),
+}
+
+
+def _strict_decide(rule):
+    if rule["uid"] in STRICT_EXCEPTIONS:
+        return ProfileDecision(True, "strict exception: " + STRICT_EXCEPTIONS[rule["uid"]])
+    return ProfileDecision(
+        False,
+        "strict enables every rule except the declared exceptions; this rule needs no "
+        "optional collector, feature, or site-specific threshold beyond what it already "
+        "ships with to be safely enabled.")
+
+
+PROFILES = {
+    "recommended": {
+        "decide": _recommended_decide,
+        "overrides": {},
+        "exceptions": {},
+        "rationale": (
+            "Today's shipped starter set, unchanged. The compatibility profile: its output "
+            "is byte-identical to what tailscale2otel has always shipped in "
+            "deploy/alerts/grafana-managed/, and is what `--out` produces with no "
+            "`--profile` flag."
+        ),
+    },
+    "baseline": {
+        "decide": _baseline_decide,
+        "overrides": {},
+        "exceptions": {},
+        "rationale": (
+            "The smallest set worth waking someone up to. Enables only coverage_critical "
+            "(the exporter itself is down) and core-policy rules (a signal every running "
+            "exporter always emits, so its absence is always abnormal) — nothing that "
+            "needs an optional collector or feature turned on, and nothing that needs a "
+            "site-specific threshold tuned first. Recording rules keep their recommended "
+            "paused state; they never page on their own."
+        ),
+    },
+    "strict": {
+        "decide": _strict_decide,
+        "overrides": {},
+        "exceptions": STRICT_EXCEPTIONS,
+        "rationale": (
+            "Enables every alert and every recording rule EXCEPT the explicit exceptions "
+            "below, which stay paused because enabling them blind is actively misleading "
+            "rather than merely noisy — a documented placeholder threshold, a per-plan "
+            "ingest-cost budget, or a signal that is legitimately absent on a healthy, "
+            "idle deployment."
+        ),
+    },
+}
+
+
+def profile_names():
+    return sorted(PROFILES)
+
+
+def _apply_override(rule, override):
+    """Return a copy of `rule` with a declarative threshold/`for` override applied.
+
+    Routed through the SAME godur()/_threshold_node() construction alert() itself
+    uses for those fields — never a hand-mutated manifest dict — so an override
+    can't produce a shape (a bare "5m", a non-numeric threshold) the schema
+    rejects. `override` is ``{"why": str, "dur": <short duration>, "thr": <number
+    or [lo, hi]>}``; `dur`/`thr` are each optional but `why` is mandatory and must
+    be a real sentence, not a placeholder.
+    """
+    why = override.get("why", "")
+    if len(why) <= 30:
+        raise ValueError(
+            "override for %r needs a `why` longer than 30 characters, got %r"
+            % (rule["uid"], why))
+    if is_recording(rule):
+        raise ValueError(
+            "override for %r: recording rules have no threshold or `for` to override"
+            % (rule["uid"],))
+    new_rule = dict(rule)
+    prom = dict(rule["_prom"])
+    if "dur" in override:
+        prom["dur"] = override["dur"]
+        new_rule["for"] = godur(override["dur"])
+    if "thr" in override:
+        thr = override["thr"]
+
+        def _is_num(v):
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+        thr_ok = _is_num(thr) or (isinstance(thr, list) and len(thr) == 2
+                                   and all(_is_num(t) for t in thr))
+        if not thr_ok:
+            raise ValueError(
+                "override for %r: thr must be a number (or [lo, hi] for within_range), "
+                "got %r — a non-numeric threshold is exactly the malformed-pipeline shape "
+                "this generator exists to make impossible" % (rule["uid"], thr))
+        prom["thr"] = thr
+        expressions = dict(rule["expressions"])
+        expressions["C"] = _threshold_node(prom["op"], thr)
+        new_rule["expressions"] = expressions
+    new_rule["_prom"] = prom
+    return new_rule
+
+
+def apply_profile(profile_name):
+    """``groups()``, with every rule's paused state (and any declared override)
+    decided by `profile_name`.
+
+    Returns the same ``[(group_name, [rule, ...]), ...]`` shape as ``groups()``;
+    each returned rule additionally carries the generator-internal
+    ``_profile_why`` (why it ships enabled/paused under this profile) and
+    ``_profile_is_exception`` (True for one of the profile's explicit per-uid
+    exceptions) — both stripped before emission like every other ``_``-prefixed
+    key (see ``_INTERNAL``).
+    """
+    if profile_name not in PROFILES:
+        raise ValueError("unknown profile %r; valid: %s"
+                         % (profile_name, ", ".join(profile_names())))
+    profile = PROFILES[profile_name]
+    decide = profile["decide"]
+    overrides = profile["overrides"]
+    exceptions = profile["exceptions"]
+
+    out = []
+    for group_name, group in groups():
+        new_group = []
+        for rule in group:
+            decision = decide(rule)
+            new_rule = dict(rule)
+            new_rule["paused"] = decision.paused
+            why = decision.why
+            override = overrides.get(rule["uid"])
+            if override is not None:
+                new_rule = _apply_override(new_rule, override)
+                new_rule["paused"] = decision.paused
+                why = why + " OVERRIDE: " + override["why"]
+            new_rule["_profile_why"] = why
+            new_rule["_profile_is_exception"] = rule["uid"] in exceptions
+            new_group.append(new_rule)
+        out.append((group_name, new_group))
+    return out
+
+
+def _profile_report(profile_name):
+    """Everything docs/alert-profiles.md needs for one profile, computed from
+    ``apply_profile()`` so the page can never drift from the generator's own
+    decisions."""
+    alerts_enabled = alerts_paused = rec_enabled = rec_paused = 0
+    exceptions, overrides, rows = [], [], []
+    profile = PROFILES[profile_name]
+    for _, group in apply_profile(profile_name):
+        for rule in group:
+            kind = "recording" if is_recording(rule) else "alert"
+            enabled = not rule["paused"]
+            if kind == "alert":
+                if enabled:
+                    alerts_enabled += 1
+                else:
+                    alerts_paused += 1
+            else:
+                if enabled:
+                    rec_enabled += 1
+                else:
+                    rec_paused += 1
+            why = rule["_profile_why"]
+            if not why:
+                raise ValueError("%s: profile %r produced an empty explanation"
+                                 % (rule["uid"], profile_name))
+            rows.append((rule["uid"], rule["title"], kind, enabled, why))
+            if rule["_profile_is_exception"]:
+                exceptions.append((rule["uid"], rule["title"], why))
+            if rule["uid"] in profile["overrides"]:
+                overrides.append((rule["uid"], rule["title"], profile["overrides"][rule["uid"]]["why"]))
+    return {
+        "rationale": profile["rationale"],
+        "alerts_enabled": alerts_enabled, "alerts_paused": alerts_paused,
+        "recording_enabled": rec_enabled, "recording_paused": rec_paused,
+        "exceptions": sorted(exceptions), "overrides": sorted(overrides),
+        "rows": sorted(rows),
+    }
+
+
+_DOC_HEADER = """\
+---
+title: Alert Profiles
+description: Installable alert profiles (baseline/recommended/strict) and how to materialize one
+---
+
+# Alert installation profiles
+
+<!-- GENERATED FILE. Do not hand-edit — regenerate with:
+       python3 deploy/alerts/gen/build_rules.py --docs-out docs/alert-profiles.md
+     (or `scripts/regen-generated.sh dashboards`, which regenerates this alongside
+     deploy/alerts/grafana-managed/). Content is derived entirely from the PROFILES
+     table and each rule's evaluation policy in deploy/alerts/gen/build_rules.py; a
+     unittest in deploy/alerts/gen/test_rules.py fails the build if this file drifts. -->
+
+tailscale2otel's Grafana-managed alert catalogue (see
+[deploy/alerts/README.md](../deploy/alerts/README.md)) ships one committed manifest set:
+the **recommended** profile below, unchanged from every previous release. `baseline` and
+`strict` are alternative *installable* profiles — materialize either on demand with:
+
+```sh
+python3 deploy/alerts/gen/build_rules.py --profile <name> --out <dir>
+gcx resources push -p <dir>
+```
+
+Neither `baseline` nor `strict` is committed to this repository: three near-duplicate
+copies of ~120 manifests would bury every real diff behind profile-only churn, so
+materializing another profile is a command, not a checked-in directory.
+"""
+
+
+def generate_alert_profiles_doc():
+    """The full docs/alert-profiles.md content, as a string."""
+    lines = [_DOC_HEADER]
+    for name in profile_names():
+        report = _profile_report(name)
+        lines.append("\n## `%s`\n" % name)
+        lines.append("\n%s\n" % report["rationale"])
+        lines.append(
+            "\n- Alert rules: **%d enabled**, %d paused\n"
+            "- Recording rules: **%d enabled**, %d paused\n"
+            % (report["alerts_enabled"], report["alerts_paused"],
+               report["recording_enabled"], report["recording_paused"]))
+        if report["exceptions"]:
+            lines.append("\nExplicit exceptions (stay paused, with a reason):\n\n")
+            for uid, title, why in report["exceptions"]:
+                lines.append("- `%s` (%s) — %s\n" % (uid, title, why))
+        if report["overrides"]:
+            lines.append("\nThreshold/`for` overrides:\n\n")
+            for uid, title, why in report["overrides"]:
+                lines.append("- `%s` (%s) — %s\n" % (uid, title, why))
+    return "".join(lines)
+
+
+def emit_alert_profiles_doc(path):
+    text = generate_alert_profiles_doc()
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return text
+
+
+# ---------------------------------------------------------------------------
 # emit: the shipped artifact — one manifest per rule under grafana-managed/
 # ---------------------------------------------------------------------------
 
@@ -1788,8 +2116,13 @@ RULE_API = "rules.alerting.grafana.app/v0alpha1"
 FOLDER_API = "folder.grafana.app/v1beta1"
 FOLDER_TITLE = "tailscale2otel Alerts"
 
-# Keys in a catalogue entry that are generator-internal and must never be emitted.
-_INTERNAL = ("uid", "_prom", "_desc")
+# Keys in a catalogue entry that are generator-internal and must never be
+# emitted. `_profile_why`/`_profile_is_exception` are attached by
+# apply_profile(), never by alert()/record() themselves, so they are only ever
+# present on a profile-applied rule — but they are listed here too so
+# emit_grafana_managed() (which always goes through apply_profile()) never
+# leaks them.
+_INTERNAL = ("uid", "_prom", "_desc", "_profile_why", "_profile_is_exception")
 
 
 def _manifest(rule):
@@ -1818,8 +2151,12 @@ def _write_json(path, doc):
         f.write("\n")
 
 
-def emit_grafana_managed(outdir):
-    """Write the manifest directory. Returns the list of paths written."""
+def emit_grafana_managed(outdir, profile="recommended"):
+    """Write the manifest directory for `profile`. Returns the list of paths written.
+
+    `profile="recommended"` (the default) reproduces exactly what this generator
+    has always emitted — see `_recommended_decide`.
+    """
     check_runbook_coverage()
     os.makedirs(outdir, exist_ok=True)
     # Clear first, so a renamed or deleted rule cannot linger as a stale file
@@ -1837,7 +2174,7 @@ def emit_grafana_managed(outdir):
     })
     written.append(folder_path)
 
-    for _, group in groups():
+    for _, group in apply_profile(profile):
         for rule in group:
             path = os.path.join(outdir, "%s.json" % rule["uid"])
             _write_json(path, _manifest(rule))
@@ -1900,10 +2237,10 @@ def _prom_expr(rule):
     return out
 
 
-def build_prom_rules():
+def build_prom_rules(profile="recommended"):
     check_runbook_coverage()
     out = []
-    for name, group in groups():
+    for name, group in apply_profile(profile):
         rendered = []
         for rule in group:
             if rule["_prom"]["ds"] != PROM:
@@ -1949,8 +2286,8 @@ _PROM_HEADER = """\
 """
 
 
-def emit_prom_rules(path):
-    doc = build_prom_rules()
+def emit_prom_rules(path, profile="recommended"):
+    doc = build_prom_rules(profile)
     with open(path, "w", encoding="utf-8") as f:
         f.write(_PROM_HEADER)
         f.write(yamlify(doc) + "\n")
@@ -1967,33 +2304,47 @@ def main():
                     help="ALSO render a TEST-ONLY Prometheus rule file to FILE. This artifact is "
                          "never committed and never shipped — it exists only so `promtool test "
                          "rules` can execute the expressions. Loki rules are omitted from it.")
+    ap.add_argument("--docs-out", metavar="FILE",
+                    help="write the generated docs/alert-profiles.md installation-profile guide "
+                         "to FILE. Independent of --profile: it always documents all profiles.")
+    ap.add_argument("--profile", choices=profile_names(), default="recommended",
+                    help="which installable profile --out/--prom-out materialize (default: "
+                         "%(default)s, today's shipped starter set — this is the compatibility "
+                         "profile and must stay byte-identical to what has always shipped).")
     args = ap.parse_args()
-    if not args.out and not args.prom_out:
-        ap.error("nothing to do: pass --out (the shipped manifests) and/or --prom-out (test fixture)")
+    if not args.out and not args.prom_out and not args.docs_out:
+        ap.error("nothing to do: pass --out (the shipped manifests), --prom-out (test fixture) "
+                 "and/or --docs-out (the alert-profiles.md page)")
 
     n_alert = sum(1 for _, rs in groups() for r in rs if not is_recording(r))
     n_rec = sum(1 for _, rs in groups() for r in rs if is_recording(r))
-    n_paused = sum(1 for _, rs in groups() for r in rs if r["paused"])
 
     if args.out:
-        written = emit_grafana_managed(args.out)
-        n_panel = sum(1 for _, rs in groups() for r in rs
+        written = emit_grafana_managed(args.out, args.profile)
+        profiled = apply_profile(args.profile)
+        n_paused = sum(1 for _, rs in profiled for r in rs if r["paused"])
+        n_panel = sum(1 for _, rs in profiled for r in rs
                       if "__panelId__" in r.get("annotations", {}))
         tally = {name: 0 for name in POLICY}
         for policy in POLICY_BY_UID.values():
             tally[policy] += 1
-        print("wrote %d manifests to %s  (%d alert rules, %d recording rules, %d paused)"
-              % (len(written), args.out, n_alert, n_rec, n_paused))
+        print("wrote %d manifests to %s  (profile=%s, %d alert rules, %d recording rules, "
+              "%d paused)" % (len(written), args.out, args.profile, n_alert, n_rec, n_paused))
         print("  policy: %s" % ", ".join("%s=%d" % (k, tally[k]) for k in POLICY))
         print("  links:  runbook=%d/%d over %d sections, panel=%d/%d"
               % (n_alert, n_alert, len(runbook_slugs()), n_panel, n_alert))
         print("  push:   gcx resources push -p %s" % args.out)
 
     if args.prom_out:
-        doc = emit_prom_rules(args.prom_out)
+        doc = emit_prom_rules(args.prom_out, args.profile)
         n = sum(len(g["rules"]) for g in doc["groups"])
-        print("wrote %s  (%d rules, TEST-ONLY — not shipped, not committed)"
-              % (args.prom_out, n))
+        print("wrote %s  (profile=%s, %d rules, TEST-ONLY — not shipped, not committed)"
+              % (args.prom_out, args.profile, n))
+
+    if args.docs_out:
+        emit_alert_profiles_doc(args.docs_out)
+        print("wrote %s  (alert-profile installation guide, documents all profiles)"
+              % args.docs_out)
 
 
 if __name__ == "__main__":

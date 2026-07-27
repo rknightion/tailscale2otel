@@ -118,13 +118,16 @@ def tab_network():
                desc="Rollup-first, same fallback as Throughput (now): rollup when present, raw "
                     "otherwise, never the sum of the two."), 4, 5),
         (panel("Flows/s (now)", "stat", [prom_t("sum(rate(tailscale_network_flows_total%s[%s]))" % (sf, RI), instant=True)],
-               unit="cps", options=stat_opts(graph="area")), 4, 5),
+               unit="cps", options=stat_opts(graph="area"),
+               desc="Distinct flow records observed per second, fleet-wide."), 4, 5),
         (panel("Flows/s by transport", "timeseries",
                [prom_t("sum by (network_transport) (rate(tailscale_network_flows_total%s[%s]))" % (tf, RI), legend="{{network_transport}}")],
-               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 6, 5),
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
+               desc="Flow rate split by transport protocol (tcp/udp/other)."), 6, 5),
         (panel("Flows/s by traffic type", "timeseries",
                [prom_t("sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total%s[%s]))" % (tf, RI), legend="{{tailscale_traffic_type}}")],
-               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 6, 5),
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
+               desc="Flow rate split by traffic type (virtual/subnet/exit/physical)."), 6, 5),
     ]
     integrity = [
         (panel("Reporter trust & consistency", "timeseries",
@@ -195,7 +198,9 @@ def tab_network():
         (panel("Exit-node packets/s", "timeseries",
                [prom_t("sum by (tailscale_exit_node, network_io_direction) (rate(tailscale_exit_node_packets_total%s[%s]))" % (sf, RI),
                        legend="{{tailscale_exit_node}} {{network_io_direction}}")],
-               unit="pps", options=ts_opts()), 12, 8),
+               unit="pps", options=ts_opts(),
+               desc="Packets relayed through each exit node, same attribution and gating as "
+                    "Exit-node throughput."), 12, 8),
     ]
     # Flow-log cross-signal bandwidth (Loki metric queries) — aggregate, gate pii_topology for safety.
     # No $tailnet/$provider matcher here: on the log side those are record attributes, and a
@@ -206,7 +211,10 @@ def tab_network():
                         refid="A", legend="tx"),
                 loki_t("sum(rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_rx_bytes [%s]))" % RI,
                         refid="B", legend="rx")],
-               unit="Bps", novalue="0", options=ts_opts()), 24, 8),
+               unit="Bps", novalue="0", options=ts_opts(),
+               desc="Bandwidth derived directly from raw flow-log records (Loki), independent of "
+                    "the Prometheus rollup/raw metric mode — a cross-check for the metrics-side "
+                    "throughput panels."), 24, 8),
     ]
     # Top node-pair talkers from flow logs — node identity; gate pii_node.
     fl_pairs = [
@@ -217,7 +225,8 @@ def tab_network():
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_src_node": "Source",
                                                  "tailscale_dst_node": "Destination",
-                                                 "Value": "tx bytes/s"})]), 24, 8),
+                                                 "Value": "tx bytes/s"})],
+               desc="Top-N src/dst node pairs by outbound bytes/s, from raw flow-log records."), 24, 8),
     ]
     # Rollup aggregate panels — no identity labels; no PII gate.
     rollup_agg = [

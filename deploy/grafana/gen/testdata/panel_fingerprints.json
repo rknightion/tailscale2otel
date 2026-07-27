@@ -1,0 +1,94 @@
+{
+  "_comment": "Golden structural fingerprints for #396 requirement 5. Regenerate ONLY when a change to one of these panels' semantics is deliberate: run `python3 test_panel_fingerprints.py --dump` from deploy/grafana/gen and paste the new value in, after confirming by eye that the change is intended. Panel ids and grid positions are NOT part of the fingerprint on purpose (both renumber on an unrelated panel insertion elsewhere in the dashboard).",
+  "SSH wildcard": {
+    "viz_type": "stat",
+    "unit": "short",
+    "threshold_steps": [[null, "green"], [1, "red"]],
+    "bool_mapping": {"0": ["off", "green"], "1": ["on", "red"]},
+    "metrics": ["tailscale_acl_ssh_wildcard_ratio"]
+  },
+  "SSH wildcard enabled": {
+    "viz_type": "stat",
+    "unit": "short",
+    "threshold_steps": [[null, "green"], [1, "yellow"]],
+    "bool_mapping": {"0": ["off", "green"], "1": ["on", "yellow"]},
+    "metrics": ["tailscale_acl_ssh_wildcard_ratio"]
+  },
+  "Exporter update available": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "green"], [1, "yellow"]],
+    "bool_mapping": {"0": ["up to date", "green"], "1": ["update available", "yellow"]},
+    "metrics": ["tailscale2otel_update_available_ratio"]
+  },
+  "Last delivery error": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "green"], [1, "red"]],
+    "bool_mapping": {"0": ["OK", "green"], "1": ["ERROR", "red"]},
+    "metrics": ["tailscale_logstream_error_ratio"]
+  },
+  "Object listing complete": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "green"], [1, "red"]],
+    "bool_mapping": {"0": ["complete", "green"], "1": ["truncated", "red"]},
+    "metrics": ["tailscale2otel_objectstore_scan_truncated_ratio"]
+  },
+  "Object-store gaps clear": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "red"], [1, "green"]],
+    "bool_mapping": {"0": ["GAPS", "red"], "1": ["CLEAN", "green"]},
+    "metrics": ["tailscale2otel_objectstore_gap_healthy_ratio"]
+  },
+  "Unrestricted ACL rules": {
+    "viz_type": "stat",
+    "unit": "short",
+    "threshold_steps": [[null, "green"], [1, "red"]],
+    "bool_mapping": null,
+    "metrics": ["tailscale_acl_unrestricted_rules_ratio"]
+  },
+  "Auto-approved exit nodes": {
+    "viz_type": "stat",
+    "unit": "short",
+    "threshold_steps": [[null, "green"], [1, "yellow"], [3, "red"]],
+    "bool_mapping": null,
+    "metrics": ["tailscale_acl_autoapprovers_ratio"]
+  },
+  "Config valid": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "red"], [1, "green"]],
+    "bool_mapping": {"0": ["off", "red"], "1": ["on", "green"]},
+    "metrics": ["tailscale2otel_config_valid_ratio"]
+  },
+  "Exporter up": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "red"], [1, "green"]],
+    "bool_mapping": {"0": ["DOWN", "red"], "1": ["UP", "green"]},
+    "metrics": ["tailscale2otel_up_ratio"]
+  },
+  "Discovery OK": {
+    "viz_type": "stat",
+    "unit": null,
+    "threshold_steps": [[null, "red"], [1, "green"]],
+    "bool_mapping": {"0": ["DOWN", "red"], "1": ["UP", "green"]},
+    "metrics": ["tailscale2otel_nodemetrics_discovery_success_ratio"]
+  },
+  "PII filter status": {
+    "viz_type": "table",
+    "unit": null,
+    "threshold_steps": [],
+    "bool_mapping": {"0": ["REDACTED", "red"], "1": ["emitted", "green"]},
+    "metrics": ["tailscale2otel_pii_filter_category_ratio"]
+  },
+  "OAuth scope preflight by capability": {
+    "viz_type": "table",
+    "unit": null,
+    "threshold_steps": [],
+    "bool_mapping": {"0": ["NOT SATISFIED", "red"], "1": ["satisfied", "green"]},
+    "metrics": ["tailscale2otel_capability_scope_satisfied_ratio"]
+  }
+}

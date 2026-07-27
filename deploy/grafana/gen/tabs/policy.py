@@ -193,7 +193,8 @@ def tab_policy():
                # TestFlagshipDashboardQueriesOnlyCatalogMetrics (#438).
                [prom_t("max by (tailscale_user_invite_role, tailscale_user_invite_delivery) (%s)" % lot("tailscale_user_invites_count_ratio", WIN_SLOW),
                        legend="{{tailscale_user_invite_role}} via {{tailscale_user_invite_delivery}}")],
-               unit="short", options=bargauge_opts()), 24, 5),
+               unit="short", options=bargauge_opts(),
+               desc="Outstanding open user invites, by role and delivery method."), 24, 5),
     ]
     keys = [
         # Task 1.6 Step 2 — updated Keys by type (aggregate to type+auth_kind)
@@ -219,7 +220,8 @@ def tab_policy():
                [prom_t("sum(%s == 1)" % lot("tailscale_key_preauthorized_ratio", WIN_SLOW))],
                unit="short", options=stat_opts(),
                novalue="No per-key data — needs the keys collector and "
-                       "cardinality.per_entity.key."), 10, 7),
+                       "cardinality.per_entity.key.",
+               desc="Count of auth keys marked preauthorized (auto-approved, no manual login)."), 10, 7),
     ]
     # Task 1.6 Step 2 — Credential scopes top-N (gated on the key-scopes metric)
     credscopes = [

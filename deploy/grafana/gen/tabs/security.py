@@ -34,10 +34,12 @@ def tab_security():
         (panel("Audit actions over time", "timeseries",
                [loki_t("sum by (tailscale_audit_action) (count_over_time(%s [$__auto]))" % AUD,
                        legend="{{tailscale_audit_action}}")],
-               unit="cps", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right")), 12, 7),
+               unit="cps", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right"),
+               desc="Config-audit events over time, by action (create/update/delete/...)."), 12, 7),
         (panel("Audit events (range)", "stat",
                [loki_t("sum(count_over_time(%s [$__range]))" % AUD, instant=True)],
-               unit="short", novalue="0", options=stat_opts(color="value")), 6, 7),
+               unit="short", novalue="0", options=stat_opts(color="value"),
+               desc="Total config-audit events over the selected dashboard time range."), 6, 7),
         (panel("Failed changes — WARN (range)", "stat",
                # severity field is severity_text (value "INFO"/"WARN"), verified live — NOT `severity`.
                # novalue="0": LogQL count_over_time over an empty match yields no series (not 0),
@@ -49,7 +51,8 @@ def tab_security():
                [loki_t("sum by (tailscale_target_type) "
                        "(count_over_time(%s | tailscale_target_type != `` [$__auto]))" % AUD,
                        legend="{{tailscale_target_type}}")],
-               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts()), 24, 7),
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
+               desc="Config-audit events over time, by the kind of object changed."), 24, 7),
     ]
     # Actor/identity panels moved here — hidden when pii_actor redaction is active
     # (actor login and actor emails in log bodies are PII).
@@ -61,12 +64,16 @@ def tab_security():
                [loki_t("topk($topn, sum by (user_name) "
                        "(count_over_time(%s | user_name != `` [$__auto])))" % AUD,
                        legend="{{user_name}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Top-N config-change actors by event count. Hidden on explicit PII redaction "
+                    "of actor identity."), 12, 8),
         (panel("Top $topn targets over time", "timeseries",
                [loki_t("topk($topn, sum by (tailscale_target_name) "
                        "(count_over_time(%s | tailscale_target_name != `` [$__auto])))" % AUD,
                        legend="{{tailscale_target_name}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Top-N config-change targets by event count. Hidden on explicit PII redaction "
+                    "of actor identity."), 12, 8),
         (panel("Recent configuration changes", "logs",
                [loki_t("%s |~ `$log_filter`" % AUD, maxlines=200)],
                options=logs_opts(), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
@@ -258,17 +265,20 @@ def tab_security():
                [prom_t("count(%s == 1)" % lot("tailscale_device_update_available_ratio"), instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="background"),
                novalue="No device update data — needs the devices collector and a control plane "
-                       "that reports update availability."), 6, 6),
+                       "that reports update availability.",
+               desc="Count of devices with a client update available."), 6, 6),
         (panel("Release track split", "barchart",
                [prom_t("count by (track) (max by (track, host_id) (%s))" % POS,
                        legend="{{track}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])]), 6, 6),
+               transformations=[organize(exclude=["Time"])],
+               desc="Device count by Tailscale release track (stable/unstable), from posture data."), 6, 6),
         (panel("Client version distribution", "barchart",
                [prom_t("count by (ts_version) (max by (ts_version, host_id) (%s))" % POS,
                        legend="{{ts_version}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])]), 24, 7),
+               transformations=[organize(exclude=["Time"])],
+               desc="Device count by reported Tailscale client version, from posture data."), 24, 7),
     ]
     expiry = [
         (panel("Device keys ≤7d", "stat",

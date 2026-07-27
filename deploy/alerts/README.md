@@ -344,3 +344,37 @@ case to [`tests/`](tests/) whenever a rule's *semantics* — not just its thresh
 — are the thing that could be wrong: absence handling, counter resets, label
 preservation, and "healthy zero versus absent" are the four classes already
 covered.
+
+## Verifying what is actually deployed
+
+`gcx resources push` is **additive**. It creates and updates, but it never deletes — so a rule
+removed from this repo keeps evaluating on the stack indefinitely, firing against an expression
+nobody maintains any more. Nothing in the normal workflow tells you that happened.
+
+```sh
+python3 scripts/verify_deployment.py            # read-only, against the current gcx context
+python3 scripts/verify_deployment.py --json     # machine-readable summary
+```
+
+It compares the deployed rules with the manifests in `grafana-managed/` and reports three kinds of
+drift:
+
+| finding | meaning | fix |
+| --- | --- | --- |
+| **missing** | in this repo, not on the stack | `gcx resources push -p deploy/alerts/grafana-managed` |
+| **orphaned** | on the stack, deleted from this repo | delete by hand — push will not remove it |
+| **drifted** | same rule name, different behaviour | push (re-applies the repo's definition) |
+
+Drift compares only the fields that change behaviour — `title`, `noDataState`, `execErrState`,
+`for`, `paused`, `labels`. Grafana adds server-side fields (uid, version, timestamps, provenance)
+that differ on every pull, and comparing those would report everything as drifted forever.
+
+Exit code is `0` when the deployment matches, `1` on drift, `2` when Grafana cannot be reached.
+The script is **read-only** — it never pushes and never mutates. Output is safe to paste into an
+issue: only rule names, counts and field names are printed, never expressions, annotations,
+datasource UIDs or folder UIDs.
+
+A worked example of why this matters: the first run against a real stack found one orphaned rule
+left over from an earlier release, and 77 rules still carrying the old global fail-open
+`execErrState` from before per-rule evaluation policy (#388) — meaning a query error was still
+being read as OK on the deployed copies long after the repo had fixed it.

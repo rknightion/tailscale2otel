@@ -190,6 +190,14 @@ regen_dashboards() {
   # matches zero or more than one panel.
   note "deploy/alerts/grafana-managed/ (alerts/gen/build_rules.py)"
   python3 "$ROOT/deploy/alerts/gen/build_rules.py" --out "$ROOT/deploy/alerts/grafana-managed" >/dev/null
+  note "docs/alert-profiles.md (alerts/gen/build_rules.py --docs-out)"
+  # The installable-profile (#389) installation guide: a pure function of the
+  # PROFILES table and each rule's policy in build_rules.py, so it is safe to
+  # regenerate unconditionally alongside the manifests above. Drift is gated by
+  # a unittest in deploy/alerts/gen/test_rules.py (run in the `dashboards-drift`
+  # CI job's "generator unit tests" step), not by the fail-on-diff `git diff`
+  # below — that check is scoped to deploy/grafana + deploy/alerts on purpose.
+  python3 "$ROOT/deploy/alerts/gen/build_rules.py" --docs-out "$ROOT/docs/alert-profiles.md" >/dev/null
   # Nothing under deploy/grafana or deploy/alerts is hand-maintained any more —
   # the four legacy classic-schema dashboards and the Prometheus-ruler rules file
   # were deleted (#394) precisely because sitting outside this gate let them rot.

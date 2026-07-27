@@ -93,10 +93,12 @@ def tab_diagnostics():
     api_cond = [
         (panel("API retries/s by endpoint", "timeseries",
                [prom_t("sum by (endpoint) (rate(tailscale2otel_api_retries_total[%s]))" % RI, legend="{{endpoint}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 12, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Tailscale API calls retried (429/5xx/timeout), by endpoint."), 12, 6),
         (panel("Export failures/s by type", "timeseries",
                [prom_t("sum by (error_type) (rate(tailscale2otel_export_failures_total[%s]))" % RI, legend="{{error_type}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 12, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="OTLP export attempts that failed, by error type."), 12, 6),
     ]
     cardinality = [
         (panel("Active series by metric (top $topn)", "timeseries",
@@ -152,34 +154,43 @@ def tab_diagnostics():
     reliability = [
         (panel("Scrape errors/s", "timeseries",
                [prom_t("sum by (tailscale_collector) (rate(tailscale2otel_scrape_errors_total[%s]))" % RI, legend="{{tailscale_collector}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 6, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Collector scrape attempts that failed, by collector."), 6, 6),
         (panel("Checkpoint persist errors/s", "timeseries",
                [prom_t("sum by (tailscale_collector) (rate(tailscale2otel_checkpoint_persist_errors_total[%s]))" % RI, legend="{{tailscale_collector}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 6, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Checkpoint-store writes that failed, by collector."), 6, 6),
         (panel("Component errors/s", "timeseries",
                [prom_t("sum by (component) (rate(tailscale2otel_component_errors_total[%s]))" % RI, legend="{{component}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 6, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Internal component errors, by component."), 6, 6),
         (panel("Admin auth rejected/s", "timeseries",
                [prom_t("sum by (reason) (rate(tailscale2otel_admin_auth_rejected_total[%s]))" % RI, legend="{{reason}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 6, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Admin-endpoint requests rejected by auth, by reason."), 6, 6),
     ]
     # --- WU9: app-health (config validity, uptime, CPU, checkpoint) — supersedes C9 stubs.
     apphealth = [
         (panel("Config valid", "stat", [prom_t("max(tailscale2otel_config_valid_ratio)")],
                mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]),
-               options=stat_opts(color="background")), 4, 5),
+               options=stat_opts(color="background"),
+               desc="Whether the running config passed validation at startup."), 4, 5),
         (panel("Config warnings", "stat", [prom_t("max(tailscale2otel_config_warnings_ratio) or vector(0)")],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
-               options=stat_opts(color="value")), 4, 5),
+               options=stat_opts(color="value"),
+               desc="Active configuration advisories from startup (a count, despite the "
+                    "_ratio suffix)."), 4, 5),
         (panel("Uptime", "stat", [prom_t("max(process_uptime_seconds)")],
-               unit="s", options=stat_opts()), 4, 5),
+               unit="s", options=stat_opts(),
+               desc="Time since the process started."), 4, 5),
         # No zero-fill on either checkpoint gauge: emitCheckpointStats() deliberately emits
         # nothing when the file is absent (in-memory store, or nothing persisted yet), so a
         # zero here would invent a healthy-looking answer out of "not applicable" (#385).
         (panel("Checkpoint disk", "stat", [prom_t("max(tailscale2otel_checkpoint_disk_size_bytes)")],
                unit="bytes", options=stat_opts(),
                novalue="No checkpoint file — the store is not file-backed, or nothing has "
-                       "persisted yet."), 4, 5),
+                       "persisted yet.",
+               desc="On-disk size of the file-backed checkpoint store."), 4, 5),
         (panel("Process CPU (user/system)", "timeseries",
                [prom_t("sum by (cpu_mode) (rate(process_cpu_time_seconds_total[%s]))" % RI, legend="{{cpu_mode}}")],
                unit="percentunit", custom=ts_custom(), options=ts_opts(),
@@ -205,7 +216,8 @@ def tab_diagnostics():
         (panel("API 429 / retries", "timeseries",
                [prom_t('sum(rate(tailscale2otel_api_requests_total{http_response_status_code="429"}[%s]))' % RI, legend="429/s"),
                 prom_t("sum(rate(tailscale2otel_api_retries_total[%s]))" % RI, legend="retries/s", refid="B")],
-               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts()), 12, 7),
+               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(),
+               desc="Rate-limit responses and the retries they trigger, fleet-wide."), 12, 7),
     ]
     # --- WU9 B: export latency histograms (present="has_export_hist").
     exportlat = [
@@ -213,37 +225,45 @@ def tab_diagnostics():
                [prom_t(hq("0.5", "tailscale2otel_export_duration_seconds", by="signal"), legend="p50 {{signal}}"),
                 prom_t(hq("0.95", "tailscale2otel_export_duration_seconds", by="signal"), legend="p95 {{signal}}", refid="B"),
                 prom_t(hq("0.99", "tailscale2otel_export_duration_seconds", by="signal"), legend="p99 {{signal}}", refid="C")],
-               unit="s", custom=ts_custom(), options=ts_opts(placement="right")), 12, 7),
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="OTLP export latency quantiles, by signal (metrics/logs/traces)."), 12, 7),
         (panel("Export outcome rate", "timeseries",
                [prom_t("sum by (outcome) (rate(tailscale2otel_export_duration_seconds_count[%s]))" % RI, legend="{{outcome}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 12, 7),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="OTLP export attempts completed per second, by outcome (success/failure)."), 12, 7),
     ]
     # --- WU9 C: scrape freshness (present="has_staleness").
     freshness = [
         (panel("Scrape staleness", "timeseries",
                [prom_t('max by (tailscale_collector) (tailscale2otel_scrape_staleness_seconds{tailscale_collector=~"$collector"})',
                        legend="{{tailscale_collector}}")],
-               unit="s", custom=ts_custom(), options=ts_opts(placement="right")), 12, 7),
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Time since each collector's last successful scrape."), 12, 7),
         (panel("Scrape budget headroom", "bargauge",
                [prom_t('max by (tailscale_collector) (tailscale2otel_scrape_budget_ratio{tailscale_collector=~"$collector"})',
                        legend="{{tailscale_collector}}")],
                unit="percentunit", thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
-               options=bargauge_opts()), 12, 7),
+               options=bargauge_opts(),
+               desc="Last scrape duration as a fraction of the collector's poll interval; near "
+                    "or above 1 means the scrape risks overrunning its interval."), 12, 7),
     ]
     # --- WU9 E: rDNS resolver (present="has_rdns").
     rdns = [
         (panel("rDNS cache fill", "stat",
                [prom_t("%s / clamp_min(%s, 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
                                                   lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
-               unit="percentunit", options=stat_opts()), 6, 6),
+               unit="percentunit", options=stat_opts(),
+               desc="rDNS cache entries as a fraction of configured capacity."), 6, 6),
         (panel("rDNS lookup hit-rate", "timeseries",
                [prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result="hit"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
                        legend="hit-rate")],
-               unit="percentunit", custom=ts_custom(), options=ts_opts()), 9, 6),
+               unit="percentunit", custom=ts_custom(), options=ts_opts(),
+               desc="Share of rDNS lookups served from cache rather than an upstream query."), 9, 6),
         (panel("rDNS upstream queries/s", "timeseries",
                [prom_t("sum by (result) (rate(tailscale_rdns_queries_total[%s]))" % RI, legend="query {{result}}"),
                 prom_t("rate(tailscale_rdns_cache_evictions_total[%s])" % RI, legend="evictions/s", refid="B")],
-               unit="cps", custom=ts_custom(), options=ts_opts()), 9, 6),
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Upstream PTR queries issued and cache evictions, per second."), 9, 6),
         # An overflow rate on its own is unreadable — "12/s dropped" needs "out of how
         # many", so the accepted hot-path lookup rate shares the panel (#405).
         (panel("rDNS cache overflows vs lookups/s", "timeseries",
@@ -269,7 +289,9 @@ def tab_diagnostics():
         (panel("Per-tailnet API errors", "timeseries",
                [prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5..", tailscale_tailnet!=""}[%s]))' % RI,
                        legend="{{tailscale_tailnet}}")],
-               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(placement="right")), 24, 7),
+               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Tailscale API 4xx/5xx responses per second, split out per tailnet on a "
+                    "multi-tailnet deployment."), 24, 7),
     ]
     # --- #399: object-store ingestion (flow/audit export bucket).
     #

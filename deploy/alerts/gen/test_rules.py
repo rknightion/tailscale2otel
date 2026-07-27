@@ -969,5 +969,246 @@ class PrometheusRenderingTest(unittest.TestCase):
                          rules.yamlify(rules.build_prom_rules()))
 
 
+ALERT_PROFILES_DOC = ROOT / "docs" / "alert-profiles.md"
+
+
+def _profile_enabled_uids(profile):
+    return {r["uid"] for _, group in rules.apply_profile(profile) for r in group
+            if not r["paused"]}
+
+
+class InstallableProfilesTest(unittest.TestCase):
+    """#389: --profile {baseline,recommended,strict} and declarative overrides.
+
+    `recommended` MUST stay byte-identical to the committed manifests — that is
+    the compatibility requirement the whole feature exists under, and it is the
+    first thing every other assertion here builds on.
+    """
+
+    def test_recommended_is_byte_identical_to_committed_manifests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules.emit_grafana_managed(tmp, profile="recommended")
+            got = sorted(Path(tmp).glob("*.json"))
+            want = sorted(MANIFEST_DIR.glob("*.json"))
+            self.assertEqual([p.name for p in got], [p.name for p in want])
+            for g, w in zip(got, want):
+                with self.subTest(name=g.name):
+                    self.assertEqual(g.read_bytes(), w.read_bytes())
+
+    def test_default_profile_is_recommended(self):
+        with tempfile.TemporaryDirectory() as explicit, tempfile.TemporaryDirectory() as implicit:
+            rules.emit_grafana_managed(explicit, profile="recommended")
+            rules.emit_grafana_managed(implicit)
+            for p in sorted(Path(explicit).glob("*.json")):
+                with self.subTest(name=p.name):
+                    self.assertEqual(p.read_bytes(), (Path(implicit) / p.name).read_bytes())
+
+    def test_every_profile_materializes_and_validates(self):
+        for name in rules.profile_names():
+            with self.subTest(profile=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rules.emit_grafana_managed(tmp, profile=name)
+                    errors = validate.validate_dir(Path(tmp))
+                self.assertEqual([], errors)
+
+    def test_every_rule_in_every_profile_yields_a_non_empty_explanation(self):
+        for name in rules.profile_names():
+            for _, group in rules.apply_profile(name):
+                for rule in group:
+                    with self.subTest(profile=name, uid=rule["uid"]):
+                        self.assertTrue(rule["_profile_why"])
+
+    def test_unknown_profile_name_is_rejected(self):
+        with self.assertRaises(ValueError):
+            rules.apply_profile("does-not-exist")
+
+    def test_every_strict_exception_has_a_real_why(self):
+        # Mandatory per the frozen spec: an explicit exception must carry a
+        # reason, not just a bare uid.
+        self.assertTrue(rules.STRICT_EXCEPTIONS, "strict declares no exceptions to test")
+        for uid, why in rules.STRICT_EXCEPTIONS.items():
+            with self.subTest(uid=uid):
+                self.assertGreater(len(why), 30, why)
+
+    def test_strict_exceptions_are_exactly_the_documented_three(self):
+        # Membership is an exact set with a written reason per member, same
+        # discipline as COVERAGE_CRITICAL above — adding or removing one is a
+        # deliberate act, not a silent drift.
+        self.assertEqual(
+            {"ts2o-api-rate-limit-wait-high", "ts2o-ingest-data-stale", "ts2o-export-volume-high"},
+            set(rules.STRICT_EXCEPTIONS))
+
+    def test_strict_exceptions_stay_paused_and_everything_else_enabled(self):
+        by_uid = rules.rules_by_uid()
+        strict_groups = rules.apply_profile("strict")
+        by_uid_strict = {r["uid"]: r for _, g in strict_groups for r in g}
+        for uid in rules.STRICT_EXCEPTIONS:
+            with self.subTest(uid=uid):
+                self.assertIn(uid, by_uid)  # allowlist has no stale entries
+                self.assertTrue(by_uid_strict[uid]["paused"])
+        for uid, rule in by_uid_strict.items():
+            if uid in rules.STRICT_EXCEPTIONS:
+                continue
+            with self.subTest(uid=uid):
+                self.assertFalse(rule["paused"])
+
+    def test_baseline_enables_only_coverage_critical_and_core_alerts(self):
+        by_uid_baseline = {r["uid"]: r for _, g in rules.apply_profile("baseline") for r in g}
+        declared = rules.POLICY_BY_UID
+        for uid, rule in by_uid_baseline.items():
+            if rules.is_recording(rule):
+                continue
+            with self.subTest(uid=uid):
+                if declared[uid] in ("coverage_critical", "core"):
+                    self.assertFalse(rule["paused"])
+                else:
+                    self.assertTrue(rule["paused"])
+
+    def test_baseline_recording_rules_keep_the_recommended_paused_state(self):
+        by_uid_recommended = rules.rules_by_uid()
+        for _, group in rules.apply_profile("baseline"):
+            for rule in group:
+                if not rules.is_recording(rule):
+                    continue
+                with self.subTest(uid=rule["uid"]):
+                    self.assertEqual(by_uid_recommended[rule["uid"]]["paused"], rule["paused"])
+
+    def test_recommended_is_a_subset_of_strict(self):
+        # strict enables everything except its 3 declared exceptions, and none
+        # of those 3 is enabled in recommended either -- so this direction is a
+        # true subset with no exceptions of its own.
+        recommended = _profile_enabled_uids("recommended")
+        strict = _profile_enabled_uids("strict")
+        self.assertEqual(set(), recommended - strict,
+                         "recommended enables a rule that strict does not -- strict is "
+                         "supposed to be a superset")
+
+    def test_baseline_is_a_subset_of_strict(self):
+        baseline = _profile_enabled_uids("baseline")
+        strict = _profile_enabled_uids("strict")
+        self.assertEqual(set(), baseline - strict)
+
+    # baseline is NOT a strict subset of recommended's enabled set, and forcing
+    # it to be would mean lying about what "core policy" means (per the frozen
+    # spec: report this rather than force a false subset). These 7 core-policy
+    # alerts ship PAUSED in `recommended` today even though their policy says
+    # their signal is always present and therefore always actionable -- a real
+    # inconsistency in today's authored paused= flags, not a profile bug. This
+    # is a closed, reviewed list: an uid appearing here that ISN'T should fail,
+    # and so should the set silently growing.
+    KNOWN_BASELINE_ENABLES_BEYOND_RECOMMENDED = {
+        "ts2o-config-invalid",
+        "ts2o-export-latency-high",
+        "ts2o-scrape-budget-overrun",
+        "ts2o-scrape-staleness-high",
+        "ts2o-slo-availability-fast-burn",
+        "ts2o-slo-availability-slow-burn",
+        "ts2o-slo-freshness-fast-burn",
+    }
+
+    def test_baseline_vs_recommended_deviation_is_the_documented_known_set(self):
+        baseline = _profile_enabled_uids("baseline")
+        recommended = _profile_enabled_uids("recommended")
+        declared = rules.POLICY_BY_UID
+        extra = baseline - recommended
+        self.assertEqual(self.KNOWN_BASELINE_ENABLES_BEYOND_RECOMMENDED, extra,
+                         "baseline enables a different set of rules beyond recommended's "
+                         "than the reviewed list above -- update KNOWN_BASELINE_ENABLES_"
+                         "BEYOND_RECOMMENDED with a reason, don't just widen it")
+        # every uid on that list really is core policy, ships paused in
+        # recommended today, and is enabled (not paused) under baseline -- i.e.
+        # it is exactly the "core policy but authored paused=True" case.
+        by_uid_recommended = rules.rules_by_uid()
+        for uid in extra:
+            with self.subTest(uid=uid):
+                self.assertIn(declared[uid], ("coverage_critical", "core"))
+                self.assertTrue(by_uid_recommended[uid]["paused"])
+
+    def test_override_rejects_a_non_numeric_threshold(self):
+        rule = rules.rules_by_uid()["ts2o-exporter-down"]
+        with self.assertRaises(ValueError):
+            rules._apply_override(rule, {"thr": "five", "why": "x" * 40})
+
+    def test_override_rejects_a_within_range_pair_with_a_non_numeric_bound(self):
+        rule = rules.rules_by_uid()["ts2o-device-key-expiring-critical"]
+        with self.assertRaises(ValueError):
+            rules._apply_override(rule, {"thr": [0, "high"], "why": "x" * 40})
+
+    def test_override_rejects_a_short_why(self):
+        rule = rules.rules_by_uid()["ts2o-exporter-down"]
+        with self.assertRaises(ValueError):
+            rules._apply_override(rule, {"thr": 5, "why": "too short"})
+
+    def test_override_rejects_recording_rules(self):
+        rec = next(r for r in rules.rules_by_uid().values() if rules.is_recording(r))
+        with self.assertRaises(ValueError):
+            rules._apply_override(rec, {"dur": "10m", "why": "x" * 40})
+
+    def test_override_duration_and_threshold_round_trip_through_the_real_construction(self):
+        # Prove the override mechanism actually produces the same shapes
+        # alert() itself does -- a Go-style `for` and a numeric threshold node
+        # -- rather than a hand-mutated dict that happens to look right.
+        rule = rules.rules_by_uid()["ts2o-exporter-down"]
+        overridden = rules._apply_override(
+            rule, {"dur": "17m", "thr": 3, "why": "a synthetic override exercised only by this test"})
+        self.assertEqual("17m0s", overridden["for"])
+        self.assertEqual([3], overridden["expressions"]["C"]["model"]["conditions"][0]["evaluator"]["params"])
+        # Untouched fields carry over unchanged.
+        self.assertEqual(rule["title"], overridden["title"])
+
+    def test_override_with_no_why_is_rejected(self):
+        rule = rules.rules_by_uid()["ts2o-exporter-down"]
+        with self.assertRaises(ValueError):
+            rules._apply_override(rule, {"thr": 5})
+
+    def test_profile_decision_rejects_an_empty_explanation(self):
+        with self.assertRaises(ValueError):
+            rules.ProfileDecision(True, "")
+
+    def test_profile_decision_rejects_a_too_short_explanation(self):
+        with self.assertRaises(ValueError):
+            rules.ProfileDecision(True, "too short")
+
+    def test_internal_profile_keys_never_reach_a_manifest(self):
+        for name in rules.profile_names():
+            with self.subTest(profile=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rules.emit_grafana_managed(tmp, profile=name)
+                    for p in Path(tmp).glob("*.json"):
+                        doc = json.loads(p.read_text())
+                        spec = doc.get("spec", {})
+                        self.assertNotIn("_profile_why", spec)
+                        self.assertNotIn("_profile_is_exception", spec)
+
+
+class AlertProfilesDocTest(unittest.TestCase):
+    """docs/alert-profiles.md is a GENERATED artifact (like docs/metrics.md,
+    docs/env-vars.md, docs/signal-coverage.md) -- this is its drift check,
+    run every time this suite runs (which CI already does)."""
+
+    def test_doc_is_in_sync_with_the_generator(self):
+        self.assertTrue(ALERT_PROFILES_DOC.is_file(), f"{ALERT_PROFILES_DOC} is missing")
+        want = rules.generate_alert_profiles_doc()
+        got = ALERT_PROFILES_DOC.read_text()
+        self.assertEqual(
+            want, got,
+            "docs/alert-profiles.md is out of date with its generator -- run "
+            "'python3 deploy/alerts/gen/build_rules.py --docs-out docs/alert-profiles.md' "
+            "(or 'scripts/regen-generated.sh dashboards') and commit the result")
+
+    def test_doc_mentions_every_profile(self):
+        text = ALERT_PROFILES_DOC.read_text()
+        for name in rules.profile_names():
+            with self.subTest(profile=name):
+                self.assertIn("`%s`" % name, text)
+
+    def test_doc_mentions_every_strict_exception_and_its_reason(self):
+        text = ALERT_PROFILES_DOC.read_text()
+        for uid, why in rules.STRICT_EXCEPTIONS.items():
+            with self.subTest(uid=uid):
+                self.assertIn(uid, text)
+                self.assertIn(why, text)
+
+
 if __name__ == "__main__":
     unittest.main()

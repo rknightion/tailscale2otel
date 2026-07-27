@@ -583,11 +583,14 @@ def tab_fleet():
                unit="s", transformations=[organize(exclude=_infra,
                                                    rename={"host_name": "Host", "tailscale_derp_region": "Region",
                                                            "tailscale_derp_preferred": "Preferred", "Value": "Latency"})],
-               overrides=[host_drilldown()]), 14, 8),
+               overrides=[host_drilldown()],
+               desc="Per-device DERP relay latency by region; one row per device/region pair "
+                    "reporting a relay path."), 14, 8),
         (panel("Preferred DERP regions", "bargauge",
                [prom_t("count by (tailscale_derp_region) (max by (tailscale_derp_region, host_name) (%s))"
                        % lot("tailscale_device_derp_latency_seconds{tailscale_derp_preferred=\"true\"}"),
-                       legend="{{tailscale_derp_region}}")], unit="short", options=bargauge_opts()), 10, 8),
+                       legend="{{tailscale_derp_region}}")], unit="short", options=bargauge_opts(),
+               desc="Device count per preferred DERP relay region."), 10, 8),
     ]
     routes = [
         (panel("Subnet routes — advertised vs enabled", "table",
@@ -596,7 +599,9 @@ def tab_fleet():
                unit="short", transformations=[merge(),
                                               organize(exclude=_infra,
                                                        rename={"host_name": "Host", "Value #A": "Advertised", "Value #B": "Enabled"})],
-               overrides=[host_drilldown()]), 24, 8),
+               overrides=[host_drilldown()],
+               desc="Per-device advertised vs enabled subnet-route counts — a gap between the two "
+                    "means an advertised route is still awaiting approval."), 24, 8),
     ]
     posture = [
         (panel("Posture overview", "table",
@@ -606,7 +611,8 @@ def tab_fleet():
         (panel("Clients by version", "barchart",
                [prom_t("count by (ts_version) (max by (ts_version, host_name) (%s))" % lot("tailscale_device_posture_ratio", WIN_SLOW), legend="{{ts_version}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])]), 8, 8),
+               transformations=[organize(exclude=["Time"])],
+               desc="Device count by reported Tailscale client version, from posture data."), 8, 8),
     ]
 
     # Wire all rows: aggregates first, then per-device (PII-gated)

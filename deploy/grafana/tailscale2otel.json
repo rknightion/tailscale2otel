@@ -9824,7 +9824,7 @@
         "spec": {
           "id": 89,
           "title": "DERP latency by host / region",
-          "description": "",
+          "description": "Per-device DERP relay latency by region; one row per device/region pair reporting a relay path.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -9923,7 +9923,7 @@
         "spec": {
           "id": 90,
           "title": "Preferred DERP regions",
-          "description": "",
+          "description": "Device count per preferred DERP relay region.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -9988,7 +9988,7 @@
         "spec": {
           "id": 91,
           "title": "Subnet routes \u2014 advertised vs enabled",
-          "description": "",
+          "description": "Per-device advertised vs enabled subnet-route counts \u2014 a gap between the two means an advertised route is still awaiting approval.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10189,7 +10189,7 @@
         "spec": {
           "id": 93,
           "title": "Clients by version",
-          "description": "",
+          "description": "Device count by reported Tailscale client version, from posture data.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10402,7 +10402,7 @@
         "spec": {
           "id": 96,
           "title": "Flows/s (now)",
-          "description": "",
+          "description": "Distinct flow records observed per second, fleet-wide.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10468,7 +10468,7 @@
         "spec": {
           "id": 97,
           "title": "Flows/s by transport",
-          "description": "",
+          "description": "Flow rate split by transport protocol (tcp/udp/other).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10546,7 +10546,7 @@
         "spec": {
           "id": 98,
           "title": "Flows/s by traffic type",
-          "description": "",
+          "description": "Flow rate split by traffic type (virtual/subnet/exit/physical).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11099,7 +11099,7 @@
         "spec": {
           "id": 105,
           "title": "Exit-node packets/s",
-          "description": "",
+          "description": "Packets relayed through each exit node, same attribution and gating as Exit-node throughput.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11164,7 +11164,7 @@
         "spec": {
           "id": 106,
           "title": "Observed tailnet bandwidth (flow logs)",
-          "description": "",
+          "description": "Bandwidth derived directly from raw flow-log records (Loki), independent of the Prometheus rollup/raw metric mode \u2014 a cross-check for the metrics-side throughput panels.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11250,7 +11250,7 @@
         "spec": {
           "id": 107,
           "title": "Top node-pair talkers (flow logs)",
-          "description": "",
+          "description": "Top-N src/dst node pairs by outbound bytes/s, from raw flow-log records.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13784,7 +13784,7 @@
         "spec": {
           "id": 137,
           "title": "Stream records/s by type",
-          "description": "",
+          "description": "Records accepted from the configured stream (HEC) receiver, by record type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13858,7 +13858,7 @@
         "spec": {
           "id": 138,
           "title": "Stream rejected/s by reason",
-          "description": "",
+          "description": "Stream records rejected before decoding, by rejection reason.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13932,7 +13932,7 @@
         "spec": {
           "id": 139,
           "title": "Stream decode errors/s",
-          "description": "",
+          "description": "Stream records that failed to decode into a known record type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14006,7 +14006,7 @@
         "spec": {
           "id": 140,
           "title": "Webhook events/s by type",
-          "description": "",
+          "description": "Webhook events accepted, by event type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14084,7 +14084,7 @@
         "spec": {
           "id": 141,
           "title": "Webhook rejected/s by reason",
-          "description": "",
+          "description": "Webhook deliveries rejected (bad signature, unknown event, etc.), by reason.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14294,7 +14294,7 @@
         "spec": {
           "id": 144,
           "title": "Flow log stream",
-          "description": "",
+          "description": "Raw flow-log lines; filter with the Log filter variable.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14353,7 +14353,7 @@
         "spec": {
           "id": 145,
           "title": "Posture log stream",
-          "description": "",
+          "description": "Raw device-posture log lines; filter with the Log filter variable.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14574,7 +14574,7 @@
         "spec": {
           "id": 148,
           "title": "Delivery throughput by type",
-          "description": "",
+          "description": "Bytes sent to the configured SIEM sink, by log type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14648,7 +14648,7 @@
         "spec": {
           "id": 149,
           "title": "Entries delivered/s by type",
-          "description": "",
+          "description": "Log entries successfully delivered to the SIEM sink, by log type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15177,7 +15177,7 @@
         "spec": {
           "id": 156,
           "title": "Receiver in-flight",
-          "description": "",
+          "description": "Requests currently being handled by the stream/webhook receivers \u2014 a sustained non-zero value means the receiver is backed up.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15273,7 +15273,7 @@
         "spec": {
           "id": 157,
           "title": "Receiver latency p50/p95/p99 (stream)",
-          "description": "",
+          "description": "Stream (HEC) receiver request-handling latency quantiles.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15391,7 +15391,7 @@
         "spec": {
           "id": 158,
           "title": "Receiver rejected/s",
-          "description": "",
+          "description": "Requests rejected by either receiver, by reason \u2014 combines stream and webhook.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15488,7 +15488,7 @@
         "spec": {
           "id": 159,
           "title": "Ingest records/s by source+signal",
-          "description": "",
+          "description": "Records accepted across every ingestion path, by source and signal type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15562,7 +15562,7 @@
         "spec": {
           "id": 160,
           "title": "Ingest decoded bytes/s by source",
-          "description": "",
+          "description": "Decoded payload bytes accepted across every ingestion path, by source.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16007,7 +16007,7 @@
         "spec": {
           "id": 166,
           "title": "Dedup hits/s",
-          "description": "",
+          "description": "Duplicate records suppressed by the cross-source dedup failsafe, per set.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16073,7 +16073,7 @@
         "spec": {
           "id": 167,
           "title": "Dedup set fill",
-          "description": "",
+          "description": "Keys currently held in each bounded dedup set (a count, despite the metric's `_ratio` suffix).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16147,7 +16147,7 @@
         "spec": {
           "id": 168,
           "title": "Dedup evictions/s",
-          "description": "",
+          "description": "Entries evicted from a dedup set on capacity pressure, per set.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16221,7 +16221,7 @@
         "spec": {
           "id": 169,
           "title": "Audit actions over time",
-          "description": "",
+          "description": "Config-audit events over time, by action (create/update/delete/...).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16298,7 +16298,7 @@
         "spec": {
           "id": 170,
           "title": "Audit events (range)",
-          "description": "",
+          "description": "Total config-audit events over the selected dashboard time range.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16443,7 +16443,7 @@
         "spec": {
           "id": 172,
           "title": "Audit events by target type",
-          "description": "",
+          "description": "Config-audit events over time, by the kind of object changed.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16520,7 +16520,7 @@
         "spec": {
           "id": 173,
           "title": "Top $topn actors over time",
-          "description": "",
+          "description": "Top-N config-change actors by event count. Hidden on explicit PII redaction of actor identity.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -16593,7 +16593,7 @@
         "spec": {
           "id": 174,
           "title": "Top $topn targets over time",
-          "description": "",
+          "description": "Top-N config-change targets by event count. Hidden on explicit PII redaction of actor identity.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -18296,7 +18296,7 @@
         "spec": {
           "id": 196,
           "title": "Devices needing update",
-          "description": "",
+          "description": "Count of devices with a client update available.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -18376,7 +18376,7 @@
         "spec": {
           "id": 197,
           "title": "Release track split",
-          "description": "",
+          "description": "Device count by Tailscale release track (stable/unstable), from posture data.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -18457,7 +18457,7 @@
         "spec": {
           "id": 198,
           "title": "Client version distribution",
-          "description": "",
+          "description": "Device count by reported Tailscale client version, from posture data.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -21916,7 +21916,7 @@
         "spec": {
           "id": 241,
           "title": "User invites",
-          "description": "",
+          "description": "Outstanding open user invites, by role and delivery method.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -22125,7 +22125,7 @@
         "spec": {
           "id": 244,
           "title": "Preauthorized auth keys",
-          "description": "",
+          "description": "Count of auth keys marked preauthorized (auto-approved, no manual login).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -23866,7 +23866,7 @@
         "spec": {
           "id": 265,
           "title": "Targets up",
-          "description": "",
+          "description": "Node-metrics scrape targets currently reachable.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -23945,7 +23945,7 @@
         "spec": {
           "id": 266,
           "title": "Targets total",
-          "description": "",
+          "description": "Node-metrics scrape targets configured/discovered, up or down.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24011,7 +24011,7 @@
         "spec": {
           "id": 267,
           "title": "Discovery OK",
-          "description": "",
+          "description": "Whether the last node-metrics target-discovery pass succeeded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24106,7 +24106,7 @@
         "spec": {
           "id": 268,
           "title": "Discovered targets",
-          "description": "",
+          "description": "Scrape targets found by the last node-metrics discovery pass.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24247,7 +24247,7 @@
         "spec": {
           "id": 270,
           "title": "Inbound bytes/s",
-          "description": "",
+          "description": "Raw tailscaled inbound byte rate, per node.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24321,7 +24321,7 @@
         "spec": {
           "id": 271,
           "title": "Outbound bytes/s",
-          "description": "",
+          "description": "Raw tailscaled outbound byte rate, per node.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24395,7 +24395,7 @@
         "spec": {
           "id": 272,
           "title": "Inbound packets/s",
-          "description": "",
+          "description": "Raw tailscaled inbound packet rate, per node.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24469,7 +24469,7 @@
         "spec": {
           "id": 273,
           "title": "Outbound packets/s",
-          "description": "",
+          "description": "Raw tailscaled outbound packet rate, per node.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24617,7 +24617,7 @@
         "spec": {
           "id": 275,
           "title": "Advertised routes",
-          "description": "",
+          "description": "Per-node count of subnet routes advertised, from raw tailscaled state.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24694,7 +24694,7 @@
         "spec": {
           "id": 276,
           "title": "Approved routes",
-          "description": "",
+          "description": "Per-node count of subnet routes approved, from raw tailscaled state.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24848,7 +24848,7 @@
         "spec": {
           "id": 278,
           "title": "Home DERP region",
-          "description": "",
+          "description": "Each node's current home DERP region ID, from raw tailscaled state.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -24925,7 +24925,7 @@
         "spec": {
           "id": 279,
           "title": "Peer relay endpoints",
-          "description": "",
+          "description": "Per-node count of peer-relay endpoints, from raw tailscaled state.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -25239,7 +25239,7 @@
         "spec": {
           "id": 283,
           "title": "Path mix (DERP / IPv4 / IPv6)",
-          "description": "",
+          "description": "Current total throughput split by raw tailscaled path (DERP/IPv4/IPv6).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -27667,7 +27667,7 @@
         "spec": {
           "id": 314,
           "title": "API retries/s by endpoint",
-          "description": "",
+          "description": "Tailscale API calls retried (429/5xx/timeout), by endpoint.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -27741,7 +27741,7 @@
         "spec": {
           "id": 315,
           "title": "Export failures/s by type",
-          "description": "",
+          "description": "OTLP export attempts that failed, by error type.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -28908,7 +28908,7 @@
         "spec": {
           "id": 329,
           "title": "Scrape errors/s",
-          "description": "",
+          "description": "Collector scrape attempts that failed, by collector.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -28982,7 +28982,7 @@
         "spec": {
           "id": 330,
           "title": "Checkpoint persist errors/s",
-          "description": "",
+          "description": "Checkpoint-store writes that failed, by collector.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29056,7 +29056,7 @@
         "spec": {
           "id": 331,
           "title": "Component errors/s",
-          "description": "",
+          "description": "Internal component errors, by component.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29130,7 +29130,7 @@
         "spec": {
           "id": 332,
           "title": "Admin auth rejected/s",
-          "description": "",
+          "description": "Admin-endpoint requests rejected by auth, by reason.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29204,7 +29204,7 @@
         "spec": {
           "id": 333,
           "title": "Config valid",
-          "description": "",
+          "description": "Whether the running config passed validation at startup.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29299,7 +29299,7 @@
         "spec": {
           "id": 334,
           "title": "Config warnings",
-          "description": "",
+          "description": "Active configuration advisories from startup (a count, despite the _ratio suffix).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29378,7 +29378,7 @@
         "spec": {
           "id": 335,
           "title": "Uptime",
-          "description": "",
+          "description": "Time since the process started.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29444,7 +29444,7 @@
         "spec": {
           "id": 336,
           "title": "Checkpoint disk",
-          "description": "",
+          "description": "On-disk size of the file-backed checkpoint store.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29781,7 +29781,7 @@
         "spec": {
           "id": 340,
           "title": "API 429 / retries",
-          "description": "",
+          "description": "Rate-limit responses and the retries they trigger, fleet-wide.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29878,7 +29878,7 @@
         "spec": {
           "id": 341,
           "title": "Export latency p50/p95/p99 by signal",
-          "description": "",
+          "description": "OTLP export latency quantiles, by signal (metrics/logs/traces).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -29996,7 +29996,7 @@
         "spec": {
           "id": 342,
           "title": "Export outcome rate",
-          "description": "",
+          "description": "OTLP export attempts completed per second, by outcome (success/failure).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -30070,7 +30070,7 @@
         "spec": {
           "id": 343,
           "title": "Scrape staleness",
-          "description": "",
+          "description": "Time since each collector's last successful scrape.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -30144,7 +30144,7 @@
         "spec": {
           "id": 344,
           "title": "Scrape budget headroom",
-          "description": "",
+          "description": "Last scrape duration as a fraction of the collector's poll interval; near or above 1 means the scrape risks overrunning its interval.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -30226,7 +30226,7 @@
         "spec": {
           "id": 345,
           "title": "rDNS cache fill",
-          "description": "",
+          "description": "rDNS cache entries as a fraction of configured capacity.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -30292,7 +30292,7 @@
         "spec": {
           "id": 346,
           "title": "rDNS lookup hit-rate",
-          "description": "",
+          "description": "Share of rDNS lookups served from cache rather than an upstream query.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -30366,7 +30366,7 @@
         "spec": {
           "id": 347,
           "title": "rDNS upstream queries/s",
-          "description": "",
+          "description": "Upstream PTR queries issued and cache evictions, per second.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -30653,7 +30653,7 @@
         "spec": {
           "id": 350,
           "title": "Per-tailnet API errors",
-          "description": "",
+          "description": "Tailscale API 4xx/5xx responses per second, split out per tailnet on a multi-tailnet deployment.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
