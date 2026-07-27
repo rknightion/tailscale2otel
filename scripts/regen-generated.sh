@@ -8,6 +8,7 @@
 #   values.schema.json  <- values.yaml                                   (helm-values-schema-json, draft 7)
 #   docs/metrics.md     <- the in-code telemetry catalog                 (tools/metricscatalog)
 #   docs/env-vars.md    <- config.example.yaml                           (TestEnvReferenceDocInSync -update)
+#   docs/signal-coverage.md <- internal/catalog/signal_dispositions.json (TestSignalCoverageDocInSync -update)
 #
 # The commands here mirror CI exactly (.github/workflows/helm.yml, the
 # metricscatalog step in CLAUDE.md, and the `go test` gate for env-vars.md) so
@@ -23,6 +24,7 @@
 #   scripts/regen-generated.sh helm-schema      # just values.schema.json
 #   scripts/regen-generated.sh metrics          # just docs/metrics.md
 #   scripts/regen-generated.sh envref           # just docs/env-vars.md
+#   scripts/regen-generated.sh coverage         # just docs/signal-coverage.md
 #
 # A missing OR VERSION-MISMATCHED tool is a loud SKIP (not a failure) so the hook
 # never blocks a commit — CI's fail-on-diff checks remain the hard backstop. A
@@ -163,6 +165,19 @@ regen_envref() {
   go test -C "$ROOT" ./internal/config -run TestEnvReferenceDocInSync -update -count=1 >/dev/null
 }
 
+regen_coverage() {
+  if ! command -v go >/dev/null 2>&1; then
+    skip "go not installed -> docs/signal-coverage.md not regenerated (CI will gate it)"
+    return 0
+  fi
+  note "docs/signal-coverage.md (from internal/catalog/signal_dispositions.json)"
+  # The page is a pure function of the COMMITTED manifest, so regenerating it is
+  # always safe. The manifest itself is deliberately NOT regenerated here: adding
+  # or pruning its rows is a decision, not a formatting step, so it stays a
+  # hand-run `go test ./internal/catalog -run TestSignalDispositionsInSync -update`.
+  go test -C "$ROOT" ./internal/catalog -run TestSignalCoverageDocInSync -update -count=1 >/dev/null
+}
+
 regen_dashboards() {
   if ! command -v python3 >/dev/null 2>&1; then
     skip "python3 not installed -> deploy/grafana + deploy/alerts not regenerated (CI will gate them)"
@@ -183,18 +198,19 @@ main() {
   local targets=("$@")
   [ ${#targets[@]} -eq 0 ] && targets=(all)
 
-  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0
+  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0 do_cov=0
   for t in "${targets[@]}"; do
     case "$t" in
       # `all` deliberately does NOT install tools — it must stay side-effect-free
       # for the pre-commit hook. Run `tools` explicitly (once per machine).
-      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1 ;;
+      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1; do_cov=1 ;;
       tools)       do_tools=1 ;;
       helm)        do_docs=1; do_schema=1 ;;
       helm-docs)   do_docs=1 ;;
       helm-schema) do_schema=1 ;;
       metrics)     do_metrics=1 ;;
       envref)      do_envref=1 ;;
+      coverage)    do_cov=1 ;;
       dashboards)  do_dash=1 ;;
       *) printf 'regen-generated.sh: unknown target %q\n' "$t" >&2; exit 2 ;;
     esac
@@ -206,6 +222,8 @@ main() {
   [ "$do_metrics" = 1 ] && regen_metrics
   [ "$do_envref" = 1 ]  && regen_envref
   [ "$do_dash" = 1 ]    && regen_dashboards
+  # After the dashboards: the coverage page reports on what they reference.
+  [ "$do_cov" = 1 ]     && regen_coverage
   return 0
 }
 

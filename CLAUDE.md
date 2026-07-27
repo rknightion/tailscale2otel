@@ -20,9 +20,9 @@ go generate ./...                    # regenerate portservice data + install the
 
 ### Regenerate generated artifacts (required before commit when you touch them)
 
-Six files are committed but **generated** — each a pure function of its inputs and each gated in CI
+Seven files are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
-without the README). `scripts/regen-generated.sh` reproduces all four locally, byte-for-byte with CI:
+without the README). `scripts/regen-generated.sh` reproduces them all locally, byte-for-byte with CI:
 
 ```sh
 scripts/regen-generated.sh tools  # ONCE PER MACHINE: install the pinned helm tools (see below)
@@ -35,6 +35,7 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | --- | --- | --- |
 | `docs/metrics.md` | the in-code telemetry catalog | `tools/metricscatalog` |
 | `docs/env-vars.md` | `config.example.yaml` (keys, defaults, inline comments) | `TestEnvReferenceDocInSync -update` (root module; no separate tool) |
+| `docs/signal-coverage.md` | `internal/catalog/signal_dispositions.json` | `TestSignalCoverageDocInSync -update` (root module; no separate tool) |
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
 | `deploy/grafana/tailscale2otel.json` | `deploy/grafana/gen/build.py` | `python3 build.py --out …` (stdlib only) |
@@ -68,11 +69,20 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-CI re-validates all six via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
-`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` via `TestEnvReferenceDocInSync` in the
+CI re-validates all seven via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` and `docs/signal-coverage.md` via
+`TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` in the
 normal `go test -race ./...` run — no extra workflow step; the two Grafana artifacts via ci.yml's
 `dashboards-drift` job, which runs `scripts/regen-generated.sh dashboards` and then
 `git diff --exit-code`). The local tools above are installed on this machine.
+
+> **`signal_dispositions.json` is the one generated-adjacent file you do NOT blindly regenerate.**
+> `scripts/regen-generated.sh coverage` rebuilds only the *page* from the manifest. The manifest itself
+> is updated by hand-running `go test ./internal/catalog -run TestSignalDispositionsInSync -update`,
+> which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded` from the actual
+> dashboard and rule artifacts and prunes dead rows, but leaves a new signal's disposition EMPTY — and an
+> empty disposition always fails the gate. Choosing `raw_only` vs `omitted`, with an honest note, is a
+> human decision. Regenerating after changing the dashboards or rules is expected and correct.
 
 > **`deploy/alerts/tailscale2otel.rules.yaml` and the four legacy standalone dashboards are
 > HAND-MAINTAINED, not generated** — do not add them to `regen_dashboards` or the drift gate.
