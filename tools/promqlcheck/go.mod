@@ -17,7 +17,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.69.0 // indirect
-	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
