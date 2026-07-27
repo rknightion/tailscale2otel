@@ -484,3 +484,62 @@ func TestRootModuleTidyIsChecked(t *testing.T) {
 		"module-verify matrix, so without a tidy leg here nothing checks it — which is how three " +
 		"directly-imported requirements sat marked `// indirect`.")
 }
+
+// Every generated artifact needs a fail-on-diff gate, or a stale one ships
+// looking fine. Four have had one for a while (docs/metrics.md, docs/env-vars.md,
+// the chart README and values.schema.json); the two generated Grafana artifacts
+// had none at all until #438.
+//
+// This asserts the gate exists and is REQUIRED, rather than asserting a diff —
+// the diff itself is what the CI job checks.
+func TestGeneratedGrafanaArtifactsAreDriftGated(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no jobs mapping")
+	}
+
+	const gate = "dashboards-drift"
+	job, ok := jobs[gate].(map[string]any)
+	if !ok {
+		t.Fatalf("ci.yml has no %q job. deploy/grafana/tailscale2otel.json and "+
+			"deploy/alerts/tailscale2otel.grafana-rules.yaml are generated, so without a "+
+			"fail-on-diff gate a stale one ships silently.", gate)
+	}
+
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatalf("%s has no steps list", gate)
+	}
+	var script strings.Builder
+	for _, raw := range steps {
+		if step, ok := raw.(map[string]any); ok {
+			if run, ok := step["run"].(string); ok {
+				script.WriteString(run)
+				script.WriteString("\n")
+			}
+		}
+	}
+	body := script.String()
+	if !strings.Contains(body, "regen-generated.sh dashboards") {
+		t.Errorf("%s does not regenerate via scripts/regen-generated.sh — the CI gate and the "+
+			"local command must be the same code path, or one of them drifts", gate)
+	}
+	if !strings.Contains(body, "git diff --exit-code") {
+		t.Errorf("%s regenerates but never diffs, so it would pass on stale artifacts", gate)
+	}
+	for _, dir := range []string{"deploy/grafana", "deploy/alerts"} {
+		if !strings.Contains(body, dir) {
+			t.Errorf("%s does not check %s for drift", gate, dir)
+		}
+	}
+
+	success, _ := jobs["ci-success"].(map[string]any)
+	needs, _ := success["needs"].([]any)
+	for _, n := range needs {
+		if s, ok := n.(string); ok && s == gate {
+			return
+		}
+	}
+	t.Errorf("ci-success does not require %q, so the drift gate would report without blocking", gate)
+}

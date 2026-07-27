@@ -17691,10 +17691,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_user_invite_role, tailscale_user_invite_accepted) (last_over_time(tailscale_user_invites_count_ratio[2h]))",
+                        "expr": "max by (tailscale_user_invite_role, tailscale_user_invite_delivery) (last_over_time(tailscale_user_invites_count_ratio[2h]))",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "{{tailscale_user_invite_role}} accepted={{tailscale_user_invite_accepted}}",
+                        "legendFormat": "{{tailscale_user_invite_role}} via {{tailscale_user_invite_delivery}}",
                         "format": "time_series"
                       }
                     }

@@ -1410,8 +1410,15 @@ def tab_policy():
     ]
     invites = [
         (panel("User invites", "bargauge",
-               [prom_t("max by (tailscale_user_invite_role, tailscale_user_invite_accepted) (%s)" % lot("tailscale_user_invites_count_ratio", WIN_SLOW),
-                       legend="{{tailscale_user_invite_role}} accepted={{tailscale_user_invite_accepted}}")],
+               # Group by the labels the code ACTUALLY emits: role + delivery
+               # (internal/collector/users emits tailscale.user_invite.role and
+               # .delivery). This used to group by tailscale_user_invite_accepted,
+               # which is emitted nowhere — PromQL silently collapses an unknown
+               # grouping label, so the panel rendered with a blank "accepted="
+               # legend and no error. Caught by
+               # TestFlagshipDashboardQueriesOnlyCatalogMetrics (#438).
+               [prom_t("max by (tailscale_user_invite_role, tailscale_user_invite_delivery) (%s)" % lot("tailscale_user_invites_count_ratio", WIN_SLOW),
+                       legend="{{tailscale_user_invite_role}} via {{tailscale_user_invite_delivery}}")],
                unit="short", options=bargauge_opts()), 24, 5),
     ]
     keys = [

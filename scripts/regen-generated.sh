@@ -163,22 +163,39 @@ regen_envref() {
   go test -C "$ROOT" ./internal/config -run TestEnvReferenceDocInSync -update -count=1 >/dev/null
 }
 
+regen_dashboards() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    skip "python3 not installed -> deploy/grafana + deploy/alerts not regenerated (CI will gate them)"
+    return 0
+  fi
+  note "deploy/grafana/tailscale2otel.json (grafana/gen/build.py)"
+  python3 "$ROOT/deploy/grafana/gen/build.py" --out "$ROOT/deploy/grafana/tailscale2otel.json" >/dev/null
+  note "deploy/alerts/tailscale2otel.grafana-rules.yaml (alerts/gen/build_rules.py)"
+  python3 "$ROOT/deploy/alerts/gen/build_rules.py" --out "$ROOT/deploy/alerts/tailscale2otel.grafana-rules.yaml" >/dev/null
+  # deploy/alerts/tailscale2otel.rules.yaml and the four legacy standalone
+  # dashboards are HAND-MAINTAINED, not generated — do not add them here. Both
+  # generators are stdlib-only and deterministic (no time/random/set ordering), so
+  # rerunning them is a no-op on a clean tree, which is what makes the CI
+  # fail-on-diff gate possible.
+}
+
 main() {
   local targets=("$@")
   [ ${#targets[@]} -eq 0 ] && targets=(all)
 
-  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0
+  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0
   for t in "${targets[@]}"; do
     case "$t" in
       # `all` deliberately does NOT install tools — it must stay side-effect-free
       # for the pre-commit hook. Run `tools` explicitly (once per machine).
-      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1 ;;
+      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1 ;;
       tools)       do_tools=1 ;;
       helm)        do_docs=1; do_schema=1 ;;
       helm-docs)   do_docs=1 ;;
       helm-schema) do_schema=1 ;;
       metrics)     do_metrics=1 ;;
       envref)      do_envref=1 ;;
+      dashboards)  do_dash=1 ;;
       *) printf 'regen-generated.sh: unknown target %q\n' "$t" >&2; exit 2 ;;
     esac
   done
@@ -188,6 +205,7 @@ main() {
   [ "$do_schema" = 1 ]  && regen_helm_schema
   [ "$do_metrics" = 1 ] && regen_metrics
   [ "$do_envref" = 1 ]  && regen_envref
+  [ "$do_dash" = 1 ]    && regen_dashboards
   return 0
 }
 
