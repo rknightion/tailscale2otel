@@ -163,16 +163,31 @@ def element_titles(doc):
     return {name: el["spec"]["title"] for name, el in doc["spec"]["elements"].items()}
 
 
+def _find_tab(layout, tab_title):
+    """Depth-first search for a TabsLayoutTab titled `tab_title`, at any nesting depth
+    (#495 nested sub-tab navigation put leaf tabs like "Fleet & Devices" inside a
+    domain wrapper's own TabsLayout rather than always at the document's top level)."""
+    if layout["kind"] != "TabsLayout":
+        return None
+    for t in layout["spec"]["tabs"]:
+        if t["spec"]["title"] == tab_title:
+            return t
+        found = _find_tab(t["spec"]["layout"], tab_title)
+        if found is not None:
+            return found
+    return None
+
+
 def rows_of_tab(doc, tab_title):
     """Yield (row_title, row_spec, [panel titles]) for one tab of the built doc."""
     titles = element_titles(doc)
-    for t in doc["spec"]["layout"]["spec"]["tabs"]:
-        if t["spec"]["title"] != tab_title:
-            continue
-        for r in t["spec"]["layout"]["spec"]["rows"]:
-            names = [i["spec"]["element"]["name"]
-                     for i in r["spec"]["layout"]["spec"]["items"]]
-            yield r["spec"]["title"], r["spec"], [titles[n] for n in names]
+    t = _find_tab(doc["spec"]["layout"], tab_title)
+    if t is None:
+        return
+    for r in t["spec"]["layout"]["spec"]["rows"]:
+        names = [i["spec"]["element"]["name"]
+                 for i in r["spec"]["layout"]["spec"]["items"]]
+        yield r["spec"]["title"], r["spec"], [titles[n] for n in names]
 
 
 def transformation_excludes(defaults_panel_spec):

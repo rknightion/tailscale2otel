@@ -37,6 +37,53 @@ from tabs.cardinality import tab_cardinality
 
 
 # ---------------------------------------------------------------------------
+# domain grouping (#495) — nested sub-tab navigation
+# ---------------------------------------------------------------------------
+#
+# Ten flat top-level leaf tabs is too many for one row of tab labels at 405 panels, so
+# the leaves are grouped under a smaller set of top-level DOMAINS, each carrying a
+# second TabsLayout nested inside its TabsLayoutTab (builder.tab_group()). A domain
+# with exactly one child gets no pointless single-item sub-tab bar — its one leaf is
+# promoted straight to the top level instead (see STANDALONE_LEAVES below and
+# "Events & Logs" in particular, which is the only domain candidate this applies to).
+#
+# Order here is the rendered top-level tab order. Within DOMAIN_GROUPS, leaf order is
+# the rendered sub-tab order for that domain.
+DOMAIN_GROUPS = [
+    ("Fleet & Network", ("Fleet & Devices", "Network & Flows", "Node Metrics", "Tailnets")),
+    ("Security & Policy", ("Security & Audit", "Policy & Config")),
+    ("Exporter", ("Exporter Diagnostics", "Cardinality & Cost")),
+]
+
+# Leaves that stay top-level tabs in their own right: Overview never had siblings to
+# begin with, and Events & Logs is the one otherwise-plausible domain ("Ingestion")
+# that would have exactly one child — folded flat rather than nested.
+STANDALONE_LEAVES = ("Overview", "Events & Logs")
+
+
+def organize_tabs(leaf_tabs):
+    """Arrange the flat dict of built leaf TabsLayoutTab dicts (keyed by title) into
+    the top-level tab list: standalone leaves stay as-is, grouped leaves are wrapped
+    in a domain via builder.tab_group(). Title-keyed on purpose (see builder.tab_group's
+    docstring) — a renamed, duplicate, or unassigned leaf is a build failure here
+    rather than a silently dropped or duplicated tab."""
+    remaining = dict(leaf_tabs)
+    # Fixed rendered order: Overview, Fleet & Network, Security & Policy, Events & Logs,
+    # Exporter — domains interleaved with the remaining standalone leaf in that order.
+    top = [remaining.pop("Overview")]
+    top.append(builder.tab_group("Fleet & Network",
+                                  [remaining.pop(t) for t in DOMAIN_GROUPS[0][1]]))
+    top.append(builder.tab_group("Security & Policy",
+                                  [remaining.pop(t) for t in DOMAIN_GROUPS[1][1]]))
+    top.append(remaining.pop("Events & Logs"))
+    top.append(builder.tab_group("Exporter",
+                                  [remaining.pop(t) for t in DOMAIN_GROUPS[2][1]]))
+    if remaining:
+        raise ValueError("unassigned dashboard leaf tab(s): %r" % sorted(remaining))
+    return top
+
+
+# ---------------------------------------------------------------------------
 # assembly
 # ---------------------------------------------------------------------------
 
@@ -78,7 +125,8 @@ def build(uid, title, flat, only=None, folder=None):
                 allrows.append(r2)
         layout = {"kind": "RowsLayout", "spec": {"rows": allrows}}
     else:
-        layout = {"kind": "TabsLayout", "spec": {"tabs": [tab(ttl, rws, present) for (ttl, rws, present) in tabs]}}
+        leaf_tabs = {ttl: tab(ttl, rws, present) for (ttl, rws, present) in tabs}
+        layout = {"kind": "TabsLayout", "spec": {"tabs": organize_tabs(leaf_tabs)}}
 
     spec = {
         "title": title,

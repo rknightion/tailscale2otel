@@ -60,13 +60,26 @@ def _refs(spec, acc=None):
     return acc
 
 
-def _collect(doc, kind):
+def _collect_leaf_tabs(doc):
+    """Every LEAF TabsLayoutTab — one that carries panels directly (layout.kind ==
+    RowsLayout) — never a domain wrapper (#495 nested sub-tab navigation added a
+    second TabsLayout nested inside a top-level TabsLayoutTab). A domain wrapper's
+    layout recursively contains every one of its children's panels via
+    ElementReference, so collecting BOTH the wrapper and its children would double
+    count every grouped tab's panels/queries. Recursing into TabsLayout children
+    without appending the wrapper itself keeps one panel counted exactly once,
+    under its real (leaf) tab."""
     out = []
 
     def walk(o):
         if isinstance(o, dict):
-            if o.get("kind") == kind:
-                out.append(o)
+            if o.get("kind") == "TabsLayoutTab":
+                layout = o["spec"].get("layout", {})
+                if layout.get("kind") == "TabsLayout":
+                    walk(layout)  # domain wrapper — recurse, don't count it itself
+                else:
+                    out.append(o)
+                return
             for v in o.values():
                 walk(v)
         elif isinstance(o, list):
@@ -81,7 +94,7 @@ def measure(doc):
     """(per-tab rows, totals) — the static query footprint."""
     els = doc["spec"]["elements"]
     tabs = []
-    for tab in _collect(doc, "TabsLayoutTab"):
+    for tab in _collect_leaf_tabs(doc):
         panels = queries = 0
         for name in _refs(tab["spec"].get("layout", {})):
             el = els.get(name)

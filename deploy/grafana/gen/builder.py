@@ -439,3 +439,22 @@ def tab(title, rowlist, present=None):
     if present:
         spec["conditionalRendering"] = cond_present(present)
     return {"kind": "TabsLayoutTab", "spec": spec}
+
+
+def tab_group(title, children, present=None):
+    """A top-level domain tab whose content is a second, NESTED TabsLayout (#495).
+
+    `children` are complete `TabsLayoutTab` dicts already built via `tab()` — each keeps
+    its own `conditionalRendering` untouched, so a leaf gated on a sentinel (e.g. Node
+    Metrics on `has_nodemetrics`) stays gated identically whether it sits at the top
+    level or nested inside a domain. `present` optionally gates the DOMAIN itself: a tab
+    containing only conditional rows still renders unless the tab is itself conditional,
+    and the same is true one level up — a domain whose every child is optional must be
+    gated too, or Grafana leaves an empty top-level domain visible when none of its
+    children fire. Do NOT pass `present` for a domain that carries any always-present
+    child — that would hide core content behind a feature flag.
+    """
+    spec = {"title": title, "layout": {"kind": "TabsLayout", "spec": {"tabs": children}}}
+    if present:
+        spec["conditionalRendering"] = cond_present(present)
+    return {"kind": "TabsLayoutTab", "spec": spec}
