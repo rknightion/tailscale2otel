@@ -1,11 +1,16 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // objectStoreConfig returns a config with flow logs coming from the export
@@ -354,29 +359,372 @@ func TestObjectStoreLimitValidationIgnoresDormantValues(t *testing.T) {
 	}
 }
 
-// The object-store destination is process-global today. Starting two runtimes
-// against it would read every object twice and attribute one copy to each
-// tailnet, so validation must hold the safety boundary until #284 supplies
-// explicit per-tailnet destinations.
-func TestValidate_ObjectStoreRejectsMultiTailnetAttribution(t *testing.T) {
+// multiTailnetObjectStoreConfig returns a valid multi-tailnet config where each
+// entry owns a complete, distinct object-store destination and its own
+// credentials — the #284 contract's happy path.
+func multiTailnetObjectStoreConfig(tune func(*Config)) *Config {
+	c := Default()
+	c.Tailscale.Tailnet = "" // multi mode: the list replaces the single block
+	c.Collectors.Flowlogs.Source = "objectstore"
+	c.Tailnets = []TailnetConfig{
+		{
+			Name: "alpha.example.com",
+			Auth: TailscaleAuth{Method: "apikey", APIKey: "alpha-key"},
+			ObjectStore: TailnetObjectStore{Flow: ObjectStoreConfig{
+				Endpoint:        "https://s3.eu-west-2.amazonaws.com",
+				Region:          "eu-west-2",
+				Bucket:          "alpha-flows",
+				Prefix:          "exports/",
+				AccessKeyID:     "ALPHA-ACCESS-canary",
+				SecretAccessKey: "ALPHA-SECRET-canary",
+				SessionToken:    "ALPHA-SESSION-canary",
+			}},
+		},
+		{
+			Name: "beta.example.com",
+			Auth: TailscaleAuth{Method: "apikey", APIKey: "beta-key"},
+			ObjectStore: TailnetObjectStore{Flow: ObjectStoreConfig{
+				Endpoint:        "https://s3.us-east-1.amazonaws.com",
+				Region:          "us-east-1",
+				Bucket:          "beta-flows",
+				AccessKeyID:     "BETA-ACCESS-canary",
+				SecretAccessKey: "BETA-SECRET-canary",
+				SessionToken:    "BETA-SESSION-canary",
+			}},
+		},
+	}
+	if tune != nil {
+		tune(c)
+	}
+	return c
+}
+
+func TestValidate_ObjectStoreMultiTailnetAcceptsPerTailnetDestinations(t *testing.T) {
+	if err := multiTailnetObjectStoreConfig(nil).Validate(); err != nil {
+		t.Fatalf("Validate rejected complete per-tailnet destinations: %v", err)
+	}
+}
+
+// Legacy/single mode keeps reading the one global block, unchanged.
+func TestFlowObjectStore_LegacyModeUsesGlobalBlock(t *testing.T) {
 	c := objectStoreConfig(func(c *Config) {
-		c.Tailscale.Tailnet = ""
-		c.Tailnets = []TailnetConfig{
-			{Name: "alpha.example.com", Auth: TailscaleAuth{Method: "apikey", APIKey: "alpha-key"}},
-			{Name: "beta.example.com", Auth: TailscaleAuth{Method: "apikey", APIKey: "beta-key"}},
+		c.Collectors.Flowlogs.ObjectStore.AccessKeyID = "GLOBAL-ACCESS-canary"
+	})
+	got, ok := c.FlowObjectStore("example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(single tailnet) = !ok, want the global block")
+	}
+	if got.Bucket != "flows" || got.Region != "eu-west-2" {
+		t.Errorf("dest = %s/%s, want flows/eu-west-2 from the global block", got.Region, got.Bucket)
+	}
+	if got.AccessKeyID.Reveal() != "GLOBAL-ACCESS-canary" {
+		t.Errorf("dest credential = %q, want the global one", got.AccessKeyID.Reveal())
+	}
+}
+
+// Each runtime resolves ONLY its own entry: no other tailnet's destination or
+// credential is reachable through the resolution seam.
+func TestFlowObjectStore_MultiTailnetSelectsItsOwnDestination(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(nil)
+
+	alpha, ok := c.FlowObjectStore("alpha.example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(alpha) = !ok, want its own destination")
+	}
+	if alpha.Bucket != "alpha-flows" || alpha.Region != "eu-west-2" || alpha.Prefix != "exports/" {
+		t.Errorf("alpha dest = %s/%s/%s, want eu-west-2/alpha-flows/exports/",
+			alpha.Region, alpha.Bucket, alpha.Prefix)
+	}
+	beta, ok := c.FlowObjectStore("beta.example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(beta) = !ok, want its own destination")
+	}
+	if beta.Bucket != "beta-flows" || beta.Region != "us-east-1" {
+		t.Errorf("beta dest = %s/%s, want us-east-1/beta-flows", beta.Region, beta.Bucket)
+	}
+
+	// Credential isolation: alpha's material must be unreachable while holding
+	// beta's destination, and vice versa.
+	for name, pair := range map[string]struct {
+		dest      ObjectStoreConfig
+		forbidden []string
+	}{
+		"alpha": {alpha, []string{"BETA-ACCESS-canary", "BETA-SECRET-canary", "BETA-SESSION-canary"}},
+		"beta":  {beta, []string{"ALPHA-ACCESS-canary", "ALPHA-SECRET-canary", "ALPHA-SESSION-canary"}},
+	} {
+		revealed := pair.dest.AccessKeyID.Reveal() + "|" + pair.dest.SecretAccessKey.Reveal() + "|" +
+			pair.dest.SessionToken.Reveal()
+		for _, forbidden := range pair.forbidden {
+			if strings.Contains(revealed, forbidden) {
+				t.Errorf("%s destination exposed another tailnet's credential %q", name, forbidden)
+			}
 		}
+	}
+	if alpha.AccessKeyID.Reveal() != "ALPHA-ACCESS-canary" || beta.AccessKeyID.Reveal() != "BETA-ACCESS-canary" {
+		t.Errorf("per-tailnet credentials not plumbed: alpha=%q beta=%q",
+			alpha.AccessKeyID.Reveal(), beta.AccessKeyID.Reveal())
+	}
+	if _, ok := c.FlowObjectStore("gamma.example.com"); ok {
+		t.Error("FlowObjectStore(unconfigured tailnet) = ok, want no destination")
+	}
+}
+
+// The global block is never a fallback in multi-tailnet mode: two runtimes
+// reading one feed is exactly the cross-attribution hazard #283 closed.
+func TestFlowObjectStore_MultiTailnetNeverInheritsGlobalBlock(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Endpoint = "https://s3.global.example"
+		c.Collectors.Flowlogs.ObjectStore.Region = "global-region-1"
+		c.Collectors.Flowlogs.ObjectStore.Bucket = "GLOBAL-BUCKET-canary"
+		c.Collectors.Flowlogs.ObjectStore.AccessKeyID = "GLOBAL-ACCESS-canary"
+		// beta declares nothing of its own.
+		c.Tailnets[1].ObjectStore = TailnetObjectStore{}
 	})
 
+	beta, ok := c.FlowObjectStore("beta.example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(beta) = !ok, want the (empty) entry destination")
+	}
+	if beta.Bucket != "" || beta.Endpoint != "" || beta.Region != "" {
+		t.Errorf("beta inherited the global destination: %s/%s/%s", beta.Endpoint, beta.Region, beta.Bucket)
+	}
+	if beta.AccessKeyID.Reveal() != "" {
+		t.Errorf("beta inherited the global credential %q", beta.AccessKeyID.Reveal())
+	}
 	err := c.Validate()
 	if err == nil {
-		t.Fatal("Validate accepted one global object-store destination for two tailnets")
+		t.Fatal("Validate accepted a tailnet with no object-store destination of its own")
 	}
-	for _, want := range []string{"objectstore", "multi-tailnet", "#284"} {
+	for _, want := range []string{"beta.example.com", "tailnets[1]", "inherit"} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %v, want it to explain the %q safety boundary", err, want)
+			t.Errorf("error = %v, want it to contain %q", err, want)
 		}
 	}
 }
+
+// Destination identity and credentials are never defaulted, but the tuning
+// budgets are: a list entry cannot pass through Default(), and requiring an
+// operator to restate ten byte limits per tailnet would guarantee drift.
+func TestFlowObjectStore_MultiTailnetBackfillsBudgetsNotDestination(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[0].ObjectStore.Flow = ObjectStoreConfig{
+			Endpoint: "https://s3.eu-west-2.amazonaws.com",
+			Region:   "eu-west-2",
+			Bucket:   "alpha-flows",
+		}
+	})
+	got, ok := c.FlowObjectStore("alpha.example.com")
+	if !ok {
+		t.Fatal("FlowObjectStore(alpha) = !ok")
+	}
+	def := Default().Collectors.Flowlogs.ObjectStore
+	if got.Interval != def.Interval || got.Lookback != def.Lookback || got.InitialLookback != def.InitialLookback {
+		t.Errorf("timings = %v/%v/%v, want the built-in defaults %v/%v/%v",
+			got.Interval.D(), got.Lookback.D(), got.InitialLookback.D(),
+			def.Interval.D(), def.Lookback.D(), def.InitialLookback.D())
+	}
+	if got.MaxObjects != def.MaxObjects ||
+		got.MaxObjectWireBytes != def.MaxObjectWireBytes ||
+		got.MaxObjectDecompressedBytes != def.MaxObjectDecompressedBytes ||
+		got.MaxObjectRecords != def.MaxObjectRecords ||
+		got.MaxCycleWireBytes != def.MaxCycleWireBytes ||
+		got.MaxCycleDecompressedBytes != def.MaxCycleDecompressedBytes ||
+		got.MaxCycleRecords != def.MaxCycleRecords {
+		t.Errorf("budgets = %+v, want the built-in defaults", got)
+	}
+	if got.AccessKeyID != "" || got.SecretAccessKey != "" || got.SessionToken != "" {
+		t.Error("defaulting invented credentials for a per-tailnet destination")
+	}
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate rejected a destination that omits only the tuning budgets: %v", err)
+	}
+}
+
+// An incomplete per-tailnet destination is rejected by name, so an MSP with many
+// entries knows which one to fix.
+func TestValidate_ObjectStoreMultiTailnetIncompleteDestinationNamesTailnet(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		break_ func(*Config)
+		want   string
+	}{
+		{"no bucket", func(c *Config) { c.Tailnets[1].ObjectStore.Flow.Bucket = "" }, "bucket"},
+		{"no endpoint", func(c *Config) { c.Tailnets[1].ObjectStore.Flow.Endpoint = "" }, "endpoint"},
+		{"no region", func(c *Config) { c.Tailnets[1].ObjectStore.Flow.Region = "" }, "region"},
+		{"negative budget", func(c *Config) { c.Tailnets[1].ObjectStore.Flow.MaxObjectRecords = -3 }, "max_object_records"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := multiTailnetObjectStoreConfig(tc.break_).Validate()
+			if err == nil {
+				t.Fatal("Validate accepted an incomplete per-tailnet object-store destination")
+			}
+			for _, want := range []string{tc.want, "beta.example.com", "tailnets[1]"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %v, want it to contain %q", err, want)
+				}
+			}
+			for _, forbidden := range []string{
+				"ALPHA-ACCESS-canary", "ALPHA-SECRET-canary", "ALPHA-SESSION-canary",
+				"BETA-ACCESS-canary", "BETA-SECRET-canary", "BETA-SESSION-canary",
+			} {
+				if strings.Contains(err.Error(), forbidden) {
+					t.Errorf("validation error leaked credential %q: %v", forbidden, err)
+				}
+			}
+		})
+	}
+}
+
+// Two tailnets pointing at ONE feed re-creates the cross-attribution hazard by
+// hand, so the normalized (endpoint, region, bucket, prefix, path_style) tuple
+// must be unique across entries.
+func TestValidate_ObjectStoreMultiTailnetRejectsDuplicateFeed(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		// Same feed as alpha, written differently: trailing slash, upper-case
+		// host, and an unslashed prefix.
+		c.Tailnets[1].ObjectStore.Flow.Endpoint = "https://S3.EU-WEST-2.amazonaws.com/"
+		c.Tailnets[1].ObjectStore.Flow.Region = "EU-WEST-2"
+		c.Tailnets[1].ObjectStore.Flow.Bucket = "alpha-flows"
+		c.Tailnets[1].ObjectStore.Flow.Prefix = "/exports"
+	})
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate accepted two tailnets reading the same object-store feed")
+	}
+	for _, want := range []string{"alpha.example.com", "beta.example.com", "tailnets[0]", "tailnets[1]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to name %q", err, want)
+		}
+	}
+}
+
+// A prefix difference is a different feed, and must stay allowed: it is how one
+// bucket serves several tailnets.
+func TestValidate_ObjectStoreMultiTailnetAllowsSameBucketDistinctPrefix(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[1].ObjectStore.Flow = c.Tailnets[0].ObjectStore.Flow
+		c.Tailnets[1].ObjectStore.Flow.Prefix = "exports/beta/"
+	})
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate rejected one bucket with two distinct prefixes: %v", err)
+	}
+}
+
+// s3.New refuses an unparseable or non-HTTP endpoint, and a client that cannot
+// be built is an immutable structural fault — reject it at startup, where the
+// message can name the key, rather than at collector construction.
+func TestValidate_ObjectStoreRejectsStructurallyUnusableEndpoint(t *testing.T) {
+	for _, endpoint := range []string{"s3.eu-west-2.amazonaws.com", "ftp://s3.example.com", "://nope", "https://"} {
+		t.Run(endpoint, func(t *testing.T) {
+			legacy := objectStoreConfig(func(c *Config) {
+				c.Collectors.Flowlogs.ObjectStore.Endpoint = endpoint
+			})
+			if err := legacy.Validate(); err == nil {
+				t.Errorf("Validate accepted global endpoint %q", endpoint)
+			}
+			multi := multiTailnetObjectStoreConfig(func(c *Config) {
+				c.Tailnets[1].ObjectStore.Flow.Endpoint = endpoint
+			})
+			err := multi.Validate()
+			if err == nil {
+				t.Fatalf("Validate accepted per-tailnet endpoint %q", endpoint)
+			}
+			if !strings.Contains(err.Error(), "beta.example.com") {
+				t.Errorf("error = %v, want it to name the offending tailnet", err)
+			}
+		})
+	}
+}
+
+// A tailnets: list of ONE is still multi-tailnet CONFIG: the destination lives
+// under the entry, not in the global block.
+func TestValidate_ObjectStoreSingleEntryListStillRequiresItsOwnDestination(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Endpoint = "https://s3.global.example"
+		c.Collectors.Flowlogs.ObjectStore.Region = "global-region-1"
+		c.Collectors.Flowlogs.ObjectStore.Bucket = "global-bucket"
+		c.Tailnets = c.Tailnets[:1]
+		c.Tailnets[0].ObjectStore = TailnetObjectStore{}
+	})
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate let a one-entry tailnets list fall back to the global destination")
+	}
+	if !strings.Contains(err.Error(), "alpha.example.com") {
+		t.Errorf("error = %v, want it to name the tailnet", err)
+	}
+}
+
+// Per-entry advisories name their own key, so an MSP can tell which tailnet is
+// signing over plaintext.
+func TestWarnings_TailnetObjectStoreAdvisoriesNameTheEntry(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Tailnets[1].ObjectStore.Flow.Endpoint = "http://storage.example.com:9000"
+		c.Tailnets[1].ObjectStore.Flow.AllowInsecureHTTP = true
+		c.Tailnets[1].ObjectStore.Flow.Interval = dur(minutesDur(10))
+		c.Tailnets[1].ObjectStore.Flow.Lookback = dur(minutesDur(1))
+	})
+	warnings := c.Warnings()
+	for _, want := range []string{
+		"tailnets[1].objectstore.flow.allow_insecure_http",
+		"tailnets[1].objectstore.flow.lookback",
+	} {
+		if !hasWarning(warnings, want) {
+			t.Errorf("warnings = %v, want one naming %q", warnings, want)
+		}
+	}
+}
+
+// A global block left behind while migrating to a tailnets: list is inert, and
+// silently-ignored destination config is exactly how an operator concludes the
+// exporter is broken. Say so.
+func TestWarnings_ObjectStoreGlobalBlockIsIgnoredInMultiTailnetMode(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(func(c *Config) {
+		c.Collectors.Flowlogs.ObjectStore.Endpoint = "https://s3.global.example"
+		c.Collectors.Flowlogs.ObjectStore.Region = "global-region-1"
+		c.Collectors.Flowlogs.ObjectStore.Bucket = "global-bucket"
+	})
+	if !hasWarning(c.Warnings(), "collectors.flowlogs.objectstore is ignored") {
+		t.Errorf("warnings = %v, want one saying the global block is ignored", c.Warnings())
+	}
+	// Nothing to say when it was never set.
+	if hasWarning(multiTailnetObjectStoreConfig(nil).Warnings(), "collectors.flowlogs.objectstore is ignored") {
+		t.Error("warned about an unset global block")
+	}
+}
+
+// Per-tailnet credentials are config.Secret like the global ones: a config dump
+// can never leak them.
+func TestTailnetObjectStoreSecretsRedactInDumps(t *testing.T) {
+	c := multiTailnetObjectStoreConfig(nil)
+	dump := fmt.Sprintf("%+v\n%#v", c, c)
+	yamlDump, err := yaml.Marshal(c)
+	if err != nil {
+		t.Fatalf("yaml.Marshal: %v", err)
+	}
+	var logs bytes.Buffer
+	slog.New(slog.NewTextHandler(&logs, nil)).Info("config", "tailnets", c.Tailnets)
+	for _, secret := range []string{
+		"ALPHA-ACCESS-canary", "ALPHA-SECRET-canary", "ALPHA-SESSION-canary",
+		"BETA-ACCESS-canary", "BETA-SECRET-canary", "BETA-SESSION-canary",
+	} {
+		if strings.Contains(dump, secret) {
+			t.Errorf("config dump leaked per-tailnet credential %q", secret)
+		}
+		if strings.Contains(string(yamlDump), secret) {
+			t.Errorf("config YAML dump leaked per-tailnet credential %q", secret)
+		}
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("config log leaked per-tailnet credential %q", secret)
+		}
+	}
+	if got := c.Tailnets[0].ObjectStore.Flow.SecretAccessKey.Reveal(); got != "ALPHA-SECRET-canary" {
+		t.Errorf("Reveal() = %q, want the real value preserved at the point of use", got)
+	}
+}
+
+// Each of the three required fields fails a request in a different, confusing
+// way if left empty, so each is rejected by name at startup instead.
 
 // Each of the three required fields fails a request in a different, confusing
 // way if left empty, so each is rejected by name at startup instead.

@@ -294,6 +294,43 @@ single-tailnet `tailscale:` block above is used instead.
 | `tailnets[].name` | — (required) | The tailnet's name (e.g. `acme.example.com`). Required, and must be unique within the list — a missing or duplicate name is rejected at startup. |
 | `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey` plus the matching `oauth`/`apikey` sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. |
 | `tailnets[].http` | — | Same shape as [`tailscale.http`](#tailscalehttp). Unlike `auth`, this **is** backfilled field-by-field from the top-level `tailscale.http` block (itself defaulted), which is why `tailscale.http` doubles as the fleet-wide default for the whole list (see the note above). An entry that sets its own `http.*` field overrides the fleet default for that field only. |
+| `tailnets[].objectstore.flow` | — | This tailnet's own flow-log export bucket. Same fields as [`collectors.flowlogs.objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source). Optional in general, **required on every entry** when `collectors.flowlogs.source: objectstore` — see the note below. |
+
+> **Per-tailnet object-store destinations.** When `collectors.flowlogs.source: objectstore` and a
+> `tailnets:` list is present (**any** length, including one), each entry must carry its own complete
+> destination under `objectstore.flow` — at minimum `endpoint`, `region` and `bucket`. The rules:
+>
+> - **No inheritance, no fallback.** Nothing is taken from `collectors.flowlogs.objectstore`; that
+>   block is the destination for single-tailnet (no `tailnets:` list) mode only. An entry with no
+>   destination of its own is a startup error naming the tailnet, never a silent fall-back to the
+>   global block.
+> - **No shared feeds.** Two entries whose normalized `endpoint` + `region` + `bucket` + `prefix` +
+>   `path_style` match are rejected at startup, naming both tailnets. Both runtimes would ingest every
+>   object and attribute a copy to their own tailnet. Give each tailnet a distinct bucket, or a distinct
+>   `prefix` within one bucket (one bucket with two prefixes is fine).
+> - **Credentials are per entry and never cross runtimes.** Each entry's `access_key_id` /
+>   `secret_access_key` / `session_token` are revealed only while that runtime's S3 client is built.
+>   Because the list is file-only there is no `TS2OTEL_*` path into a list element, so a static
+>   credential must come from the `*_file` sibling (a mounted Secret) or be left empty to use the
+>   ambient chain (environment / IRSA / instance profile) — which is the same chain for every runtime,
+>   so per-tailnet static credentials or per-tailnet roles are what actually separate access.
+> - **Defaults.** Only the tuning fields (`interval`, `lookback`, `initial_lookback`, `max_objects`,
+>   the `max_object_*` / `max_cycle_*` budgets) fall back to the built-in defaults, so an entry only
+>   states what makes it different. Destination identity, `path_style`, `allow_insecure_http` and the
+>   credentials are never defaulted — that fallback is exactly the inheritance the rules above forbid.
+>   For a list entry, `0` reads as "unset" and takes the default; a negative value is still rejected.
+> - **Source selection stays global.** `collectors.flowlogs.source` is one value for the whole process;
+>   a runtime cannot poll while another reads the bucket.
+> - **Checkpoint identity is the configured name.** The literal `tailnets[].name` keys the durable
+>   `objectstore/v1/<tailnet>/…` namespace, including a literal `-`, so a resolved display name never
+>   moves a runtime's state.
+>
+> **Migrating from a single global destination.** Moving from `tailscale:` +
+> `collectors.flowlogs.objectstore` to a `tailnets:` list means copying that block under the entry as
+> `objectstore.flow` (and giving each further tailnet its own bucket/prefix). Object-store checkpoints
+> are keyed by tailnet, so the first tailnet keeps its own namespace only if its `tailnets[].name`
+> equals the previous `tailscale.tailnet`; otherwise it cold-starts from `initial_lookback` and may
+> re-ingest up to that window once.
 
 > **Mutual exclusion with `tailscale.tailnet`.** `tailnets:` and an explicit `tailscale.tailnet` cannot
 > both be set — a non-empty `tailnets` list alongside a `tailscale.tailnet` that names an actual
@@ -576,9 +613,16 @@ stream receiver double-counts — pick one, exactly as for the other sources.
 
 Every field below applies **only** when `source: objectstore`.
 
+**This block is the destination for single-tailnet mode.** With a `tailnets:` list every entry carries
+its own destination under `tailnets[].objectstore.flow` instead, with the same fields and no
+inheritance from here — see
+[per-tailnet object-store destinations](#tailnets-multi-tailnet-msp-mode). An endpoint that is not an
+absolute `http://`/`https://` URL with a host is rejected at startup either way: the S3 client cannot
+be built from it, and that is an immutable fault rather than something a retry fixes.
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `collectors.flowlogs.objectstore.endpoint` | `""` | **Required.** Service URL, e.g. `https://s3.eu-west-2.amazonaws.com`, or a MinIO/Ceph address. Deliberately not derived from the region: a non-AWS implementation would be derived wrong. |
+| `collectors.flowlogs.objectstore.endpoint` | `""` | **Required.** Service URL, e.g. `https://s3.eu-west-2.amazonaws.com`, or a MinIO/Ceph address. Deliberately not derived from the region: a non-AWS implementation would be derived wrong. Must be an absolute `http`/`https` URL with a host. |
 | `collectors.flowlogs.objectstore.region` | `""` | **Required.** Part of the request signature, so a wrong or missing value fails every request with HTTP 403 rather than degrading quietly. |
 | `collectors.flowlogs.objectstore.bucket` | `""` | **Required.** The bucket Tailscale exports into. |
 | `collectors.flowlogs.objectstore.prefix` | `""` | The export's root within the bucket, above the `YYYY/MM/DD` partitions. |

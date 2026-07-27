@@ -286,6 +286,23 @@ type TailnetConfig struct {
 	Name string              `yaml:"name"`
 	Auth TailscaleAuth       `yaml:"auth"`
 	HTTP TailscaleHTTPConfig `yaml:"http"`
+	// ObjectStore holds THIS tailnet's object-store ingestion destinations, one
+	// per signal. In multi-tailnet mode it is the only place a destination may
+	// come from: nothing is inherited from collectors.flowlogs.objectstore, and
+	// two entries may not name the same feed (#284). Like the rest of the list it
+	// is file-only, so a static credential must arrive through its *_file sibling
+	// (a mounted Secret) or the ambient chain — see FlowObjectStore.
+	ObjectStore TailnetObjectStore `yaml:"objectstore"`
+}
+
+// TailnetObjectStore groups one tailnet's per-signal object-store destinations.
+//
+// Only flow ships: object-store audit ingestion is blocked on external wire
+// evidence (#288), and exposing an audit: key now would be dead config. The
+// struct exists so that signal can be added additively, without moving the flow
+// destination or changing the checkpoint namespace.
+type TailnetObjectStore struct {
+	Flow ObjectStoreConfig `yaml:"flow"`
 }
 
 // ResolvedTailnet is the normalized, per-tailnet connection config the app layer

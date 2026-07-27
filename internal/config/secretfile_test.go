@@ -268,6 +268,108 @@ func TestSecretFile_ObjectStoreSettableViaEnvVar(t *testing.T) {
 	}
 }
 
+// TestSecretFile_TailnetObjectStoreCredentialFiles covers the per-tailnet
+// object-store credentials from #284. A tailnets[] entry has no TS2OTEL_* env
+// form, so the *_file sibling is the ONLY way to keep a static S3 credential out
+// of the YAML — it must resolve, trim, and honor value-XOR-file per entry, and
+// entry 0's file must never land on entry 1.
+func TestSecretFile_TailnetObjectStoreCredentialFiles(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		field string
+		get   func(config.TailnetConfig) config.Secret
+	}{
+		{"access_key_id", "access_key_id_file", func(t config.TailnetConfig) config.Secret {
+			return t.ObjectStore.Flow.AccessKeyID
+		}},
+		{"secret_access_key", "secret_access_key_file", func(t config.TailnetConfig) config.Secret {
+			return t.ObjectStore.Flow.SecretAccessKey
+		}},
+		{"session_token", "session_token_file", func(t config.TailnetConfig) config.Secret {
+			return t.ObjectStore.Flow.SessionToken
+		}},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			alphaPath := writeSecretFile(t, "alpha-"+tc.key+"\n\n")
+			betaPath := writeSecretFile(t, "  beta-"+tc.key+"  ")
+			cfgPath := writeTemp(t, tailnetObjectStoreYAML(
+				[]string{tc.field + ": " + alphaPath},
+				[]string{tc.field + ": " + betaPath}))
+
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got, want := tc.get(cfg.Tailnets[0]).Reveal(), "alpha-"+tc.key; got != want {
+				t.Errorf("tailnets[0] %s = %q, want %q (trimmed)", tc.key, got, want)
+			}
+			if got, want := tc.get(cfg.Tailnets[1]).Reveal(), "beta-"+tc.key; got != want {
+				t.Errorf("tailnets[1] %s = %q, want %q (trimmed)", tc.key, got, want)
+			}
+
+			// value XOR file, per entry, named by index.
+			conflict := writeTemp(t, tailnetObjectStoreYAML(
+				nil,
+				[]string{tc.key + ": inline-value", tc.field + ": " + betaPath}))
+			_, err = config.Load(conflict)
+			if err == nil {
+				t.Fatal("Load: want a value-XOR-file conflict for the tailnets[1] destination")
+			}
+			want := "tailnets[1].objectstore.flow." + tc.key
+			if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "value XOR file") {
+				t.Errorf("Load error %q does not name %s and the value-XOR-file rule", err.Error(), want)
+			}
+
+			// A missing file is a hard Load error naming the path.
+			missing := filepath.Join(t.TempDir(), "does-not-exist.txt")
+			gone := writeTemp(t, tailnetObjectStoreYAML(nil, []string{tc.field + ": " + missing}))
+			if _, err := config.Load(gone); err == nil || !strings.Contains(err.Error(), missing) {
+				t.Errorf("Load error = %v, want it to name the missing path %q", err, missing)
+			}
+		})
+	}
+}
+
+// tailnetObjectStoreYAML builds a two-tailnet document where each entry owns a
+// complete object-store destination, with extra "key: value" credential lines
+// spliced into each entry's objectstore.flow block.
+func tailnetObjectStoreYAML(alphaExtra, betaExtra []string) string {
+	return `
+collectors:
+  flowlogs:
+    source: objectstore
+tailnets:
+  - name: alpha.example.com
+    auth:
+      method: apikey
+      apikey: alpha-key
+    objectstore:
+      flow:
+        endpoint: https://s3.eu-west-2.amazonaws.com
+        region: eu-west-2
+        bucket: alpha-flows
+` + flowLines(alphaExtra) + `  - name: beta.example.com
+    auth:
+      method: apikey
+      apikey: beta-key
+    objectstore:
+      flow:
+        endpoint: https://s3.us-east-1.amazonaws.com
+        region: us-east-1
+        bucket: beta-flows
+` + flowLines(betaExtra)
+}
+
+// flowLines indents bare "key: value" pairs to the objectstore.flow mapping
+// level used by tailnetObjectStoreYAML.
+func flowLines(lines []string) string {
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString("        " + l + "\n")
+	}
+	return b.String()
+}
+
 // TestSecretFile_TailnetsEntryInheritsFileFields confirms the seam-freeze
 // claim that tailnets[] entries get apikey_file / oauth.client_secret_file for
 // free by embedding TailscaleAuth, without any extra resolution wiring.

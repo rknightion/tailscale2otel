@@ -83,13 +83,23 @@ tailscale:
 # ── Multi-tailnet / MSP (OPTIONAL) ──────────────────────────────────────────────
 # Observe MORE THAN ONE tailnet from a single instance. Mutually exclusive with an
 # explicit tailscale.tailnet above (leave it at "-" when using this list). Each
-# entry is self-contained (its own name + auth + http) — credentials are never
-# inherited from the tailscale: block. Tailnet identity is emitted as the
+# entry is self-contained (its own name + auth + http + objectstore) — credentials
+# are never inherited from the tailscale: block. Tailnet identity is emitted as the
 # tailscale.tailnet OTEL resource attribute (one target_info per tailnet); query
 # fleet-wide with `sum without(instance)(...)`. FILE-ONLY: this list of structs is
 # NOT settable via TS2OTEL_* env vars. Streaming/webhook receivers require
 # single-tailnet mode (use the tailscale: block instead). Default: empty (single
 # tailnet from the tailscale: block above).
+#
+# objectstore.flow (OPTIONAL, and REQUIRED on every entry when
+# collectors.flowlogs.source: objectstore): each tailnet's own export bucket. Same
+# fields as collectors.flowlogs.objectstore below. With a tailnets: list NOTHING is
+# inherited from that global block — a runtime without its own complete destination
+# (endpoint + region + bucket) is a startup error, and two entries may not name the
+# same feed, because both runtimes would ingest every object and attribute a copy
+# to their own tailnet. Because the list is file-only, a static S3 credential must
+# come from a *_file sibling (a mounted Secret) or the ambient chain; only the
+# tuning fields (interval/lookback/max_*) fall back to the built-in defaults.
 tailnets: []
 #   - name: acme.example.com
 #     auth:
@@ -97,10 +107,23 @@ tailnets: []
 #       oauth:
 #         client_id: ""               # secret via env or a mounted secrets file
 #         scopes: [all:read]          # least-privilege; unset requests every scope the client holds
+#     objectstore:
+#       flow:
+#         endpoint: https://s3.eu-west-2.amazonaws.com
+#         region: eu-west-2
+#         bucket: acme-flow-logs
+#         prefix: exports/           # distinct bucket OR distinct prefix per tailnet
+#         path_style: false
+#         secret_access_key_file: /run/secrets/acme-s3-secret   # no env path for a list entry
 #   - name: beta.example.com
 #     auth:
 #       method: apikey
 #       apikey: ""
+#     objectstore:
+#       flow:
+#         endpoint: https://s3.eu-west-2.amazonaws.com
+#         region: eu-west-2
+#         bucket: beta-flow-logs
 
 # ── OTLP export destination ─────────────────────────────────────────────────────
 otlp:

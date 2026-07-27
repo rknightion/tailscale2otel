@@ -51,11 +51,20 @@ func (c *Config) resolveSecretFiles() error {
 	// tailnets[] entries embed TailscaleAuth, so their apikey_file /
 	// oauth.client_secret_file siblings get the same resolution for free (per
 	// the seam freeze: "that list is file-only config anyway").
+	//
+	// Their objectstore.flow credentials need the pointers spelling out, but get
+	// the identical value-XOR-file contract — and for a list entry the *_file path
+	// is the ONLY way to supply a static credential without writing it into YAML,
+	// since a list-of-structs key has no TS2OTEL_* env form (#79).
 	for i := range c.Tailnets {
 		t := &c.Tailnets[i]
+		flow := &t.ObjectStore.Flow
 		fields = append(fields,
 			secretFileField{fmt.Sprintf("tailnets[%d].auth.apikey", i), &t.Auth.APIKey, t.Auth.APIKeyFile},
 			secretFileField{fmt.Sprintf("tailnets[%d].auth.oauth.client_secret", i), &t.Auth.OAuth.ClientSecret, t.Auth.OAuth.ClientSecretFile},
+			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.flow.access_key_id", i), &flow.AccessKeyID, flow.AccessKeyIDFile},
+			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.flow.secret_access_key", i), &flow.SecretAccessKey, flow.SecretAccessKeyFile},
+			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.flow.session_token", i), &flow.SessionToken, flow.SessionTokenFile},
 		)
 	}
 	for i := range c.Streaming.Routes {

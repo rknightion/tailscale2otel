@@ -220,6 +220,13 @@ config:
   # per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds
   # inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode.
   # Default empty (single tailnet from the tailscale block below).
+  # An entry may also carry its own `objectstore.flow` destination (endpoint/region/bucket/prefix
+  # plus the same credential and limit fields as collectors.flowlogs.objectstore). With this list
+  # non-empty nothing is inherited from that global block, and when
+  # config.collectors.flowlogs.source is `objectstore` EVERY entry must have a complete destination
+  # of its own and no two entries may name the same bucket+prefix — otherwise startup fails, naming
+  # the tailnet. Use `*_file` credential keys pointing at a mounted Secret to keep per-tailnet S3
+  # keys out of this file.
   # When this list is non-empty the chart renders the whole config.yaml into a dedicated
   # Secret (<fullname>-config) instead of a ConfigMap, so the inline per-tailnet credentials
   # never land in a ConfigMap readable by namespace viewers.

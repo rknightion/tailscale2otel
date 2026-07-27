@@ -253,16 +253,10 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(fp, fp.DefaultInterval())
 	}
 	if c.Flowlogs.Enabled && objectStoreSource(c.Flowlogs.Source) {
-		if oc, err := newObjectStoreCollector(rt, d, onIngest, onAccepted); err != nil {
-			// Not fatal: the rest of the exporter is still useful, and a bucket
-			// that cannot be reached at startup is usually a credential or
-			// endpoint problem an operator fixes without a restart being the
-			// only recovery. Validation has already rejected the cases that are
-			// certainly wrong.
-			d.logger.Error("objectstore flow-log ingestion is not running", "error", err)
-		} else {
-			rt.registry.Register(oc, c.Flowlogs.ObjectStore.Interval.D())
-		}
+		// Each runtime reads its OWN destination: the global block in legacy mode,
+		// this tailnet's objectstore.flow entry with a tailnets: list. Nothing is
+		// inherited across the two (#284).
+		registerObjectStoreCollector(rt, d, onIngest, onAccepted)
 	}
 	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), onIngest,

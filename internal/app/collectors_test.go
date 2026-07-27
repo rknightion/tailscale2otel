@@ -1,10 +1,15 @@
 package app
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/provider"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
@@ -85,6 +90,45 @@ func TestRegisterCollectors_ObjectStoreSourceRegistersIt(t *testing.T) {
 	// lightweight probe keeps reporting it.
 	if !hasName(names, "flowlogs-feature") {
 		t.Errorf("collectors = %v, want the flow-log feature still reported", names)
+	}
+}
+
+// In multi-tailnet mode each runtime registers an objectstore collector against
+// ITS OWN destination, on its own interval — one global feed read twice is the
+// cross-attribution hazard #283 closed.
+func TestRegisterCollectors_ObjectStorePerTailnetDestinations(t *testing.T) {
+	cfg := multiTailnetObjectStoreCfg(nil)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	a := newAppShell(cfg, "vtest", nil, telemetrytest.New().Emitter(),
+		tracenoop.NewTracerProvider().Tracer("test"),
+		func(context.Context) error { return nil }, collector.NewMemoryStore())
+	a.buildProcessDeps()
+	a.addRuntime("alpha.example.com", telemetrytest.New().Emitter(), nil, nil,
+		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")), true)
+	a.addRuntime("beta.example.com", telemetrytest.New().Emitter(), nil, nil,
+		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")), true)
+
+	wantIntervals := map[string]time.Duration{
+		"alpha.example.com": 90 * time.Second,
+		"beta.example.com":  150 * time.Second,
+	}
+	for _, rt := range a.runtimes {
+		var got time.Duration
+		found := false
+		for _, e := range rt.registry.Entries() {
+			if e.Collector.Name() == "objectstore" {
+				got, found = e.Interval, true
+			}
+		}
+		if !found {
+			t.Fatalf("tailnet %q registered no objectstore collector", rt.configuredName)
+		}
+		if want := wantIntervals[rt.configuredName]; got != want {
+			t.Errorf("tailnet %q objectstore interval = %v, want %v from its own entry",
+				rt.configuredName, got, want)
+		}
 	}
 }
 

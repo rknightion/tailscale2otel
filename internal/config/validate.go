@@ -269,20 +269,10 @@ func (c *Config) Warnings() []string {
 			"double-counted. The bucket holds the same records the receiver does. Cross-source "+
 			"de-duplication is a best-effort FAILSAFE, not a guarantee: choose ONE.")
 	}
-	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) &&
-		c.Collectors.Flowlogs.ObjectStore.Lookback.D() > 0 &&
-		c.Collectors.Flowlogs.ObjectStore.Lookback.D() < c.Collectors.Flowlogs.ObjectStore.Interval.D() {
-		w = append(w, fmt.Sprintf("collectors.flowlogs.objectstore.lookback (%v) is shorter than its "+
-			"interval (%v): the overlap that catches a late-arriving object is smaller than the gap "+
-			"between listings, so an object that lands between two cycles can be missed entirely.",
-			c.Collectors.Flowlogs.ObjectStore.Lookback.D(), c.Collectors.Flowlogs.ObjectStore.Interval.D()))
-	}
-	if os := c.Collectors.Flowlogs.ObjectStore; c.Collectors.Flowlogs.Enabled &&
-		objectStoreSource(c.Collectors.Flowlogs.Source) &&
-		os.AllowInsecureHTTP && plaintextRemoteObjectStoreEndpoint(os.Endpoint) {
-		w = append(w, "collectors.flowlogs.objectstore.allow_insecure_http=true sends S3 signing "+
-			"credentials and temporary session tokens over a plaintext remote connection. "+
-			"Use HTTPS unless this transport is isolated and explicitly trusted.")
+	// Per-destination advisories (overlap gap, plaintext signing). In multi-tailnet
+	// mode this is one set per tailnets[] entry, each naming its own key.
+	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) {
+		w = append(w, c.flowObjectStoreWarnings()...)
 	}
 
 	// With the tailnet distinguisher dropped, per-tailnet Prometheus series become
@@ -903,67 +893,12 @@ func (c *Config) Validate() error {
 			}
 		}
 		// (b) The object-store path needs a bucket to read, and pointing at one
-		// that does not exist would look like a tailnet with no traffic.
+		// that does not exist would look like a tailnet with no traffic. With a
+		// tailnets: list every runtime needs its OWN complete destination — see
+		// validateFlowObjectStore in objectstore.go for the frozen #284 contract.
 		if objectStoreSource(col.source) {
-			if len(c.Tailnets) > 1 {
-				return fmt.Errorf("collectors.%s.source=objectstore is unsafe in multi-tailnet mode: "+
-					"the current destination is global, so every runtime would read the same objects "+
-					"and attribute a copy to its own tailnet; use one tailnet until #284 adds explicit "+
-					"per-tailnet object-store destinations", col.name)
-			}
-			os := c.Collectors.Flowlogs.ObjectStore
-			switch {
-			case os.Bucket == "":
-				return fmt.Errorf("collectors.%s.source=objectstore requires "+
-					"collectors.flowlogs.objectstore.bucket — without it there is no ingestion "+
-					"path and flow logs are silently never collected", col.name)
-			case os.Endpoint == "":
-				return fmt.Errorf("collectors.%s.source=objectstore requires "+
-					"collectors.flowlogs.objectstore.endpoint (e.g. https://s3.eu-west-2.amazonaws.com); "+
-					"it is not derived from the region, because a non-AWS implementation would be "+
-					"derived wrong", col.name)
-			case os.Region == "":
-				return fmt.Errorf("collectors.%s.source=objectstore requires "+
-					"collectors.flowlogs.objectstore.region — it is part of the request signature, "+
-					"so a wrong or missing value fails every request with HTTP 403", col.name)
-			case plaintextRemoteObjectStoreEndpoint(os.Endpoint) && !os.AllowInsecureHTTP:
-				return fmt.Errorf("collectors.flowlogs.objectstore.endpoint uses plaintext HTTP for a remote " +
-					"host: set allow_insecure_http only when accepting that credentials and session tokens " +
-					"will cross the network without TLS")
-			case os.MaxObjects < 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_objects must be >= 0 (got %d)", os.MaxObjects)
-			case os.MaxObjectWireBytes <= 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_object_wire_bytes must be positive "+
-					"(supplied %d; required >= 1)", os.MaxObjectWireBytes)
-			case os.MaxObjectDecompressedBytes <= 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_object_decompressed_bytes must be positive "+
-					"(supplied %d; required >= 1)", os.MaxObjectDecompressedBytes)
-			case os.MaxObjectRecords <= 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_object_records must be positive "+
-					"(supplied %d; required >= 1)", os.MaxObjectRecords)
-			case os.MaxCycleWireBytes <= 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_wire_bytes must be positive "+
-					"(supplied %d; required >= 1)", os.MaxCycleWireBytes)
-			case os.MaxCycleDecompressedBytes <= 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_decompressed_bytes must be positive "+
-					"(supplied %d; required >= 1)", os.MaxCycleDecompressedBytes)
-			case os.MaxCycleRecords <= 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_records must be positive "+
-					"(supplied %d; required >= 1)", os.MaxCycleRecords)
-			case os.MaxCycleWireBytes < os.MaxObjectWireBytes:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_wire_bytes must be at least "+
-					"max_object_wire_bytes (supplied %d; required >= %d)",
-					os.MaxCycleWireBytes, os.MaxObjectWireBytes)
-			case os.MaxCycleDecompressedBytes < os.MaxObjectDecompressedBytes:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_decompressed_bytes must be at least "+
-					"max_object_decompressed_bytes (supplied %d; required >= %d)",
-					os.MaxCycleDecompressedBytes, os.MaxObjectDecompressedBytes)
-			case os.MaxCycleRecords < os.MaxObjectRecords:
-				return fmt.Errorf("collectors.flowlogs.objectstore.max_cycle_records must be at least "+
-					"max_object_records (supplied %d; required >= %d)",
-					os.MaxCycleRecords, os.MaxObjectRecords)
-			case os.Interval.D() < 0 || os.Lookback.D() < 0 || os.InitialLookback.D() < 0:
-				return fmt.Errorf("collectors.flowlogs.objectstore interval/lookback/initial_lookback must be >= 0")
+			if err := c.validateFlowObjectStore(col.name); err != nil {
+				return err
 			}
 		}
 
