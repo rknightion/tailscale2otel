@@ -275,7 +275,7 @@ are generated — run `scripts/regen-generated.sh` before committing changes tha
 ## API drift CI
 
 Tailscale's API and OpenAPI spec evolve continuously ("may change or break without notice"), which
-has broken decoders here before. Five lanes guard it:
+has broken decoders here before. Eight lanes guard it:
 
 | Lane | When | What it checks |
 |---|---|---|
@@ -285,6 +285,9 @@ has broken decoders here before. Five lanes guard it:
 | **Client-lib tracking** | weekly | builds and tests against `tailscale-client-go/v2@main` and `@latest` |
 | **Scheduled fuzzing** | weekly | the same nine fuzz targets for 15 minutes each instead of 120 seconds, where a nondeterministic finding costs nobody a blocked merge. Opens a deduplicated tracking issue on a crasher and attaches the failing input |
 | **Live contract** | daily | hits the real API read-only and asserts every consumed GET still decodes |
+| **Changelog review** | monthly | reads Tailscale's changelog feed for entries that name something this exporter collects and carry no recorded verdict in `spec/changelog-reviewed.json`. Catches a capability announced *before*, or without, any OpenAPI change. Reviewing an entry means recording a verdict — including a negative one, so a surface already declined is never re-proposed |
+| **IANA registry freshness** | monthly | regenerates the embedded IANA service-name table from the live registry and reports a diff. The committed copy has no other drift gate and its staleness is invisible at runtime — an unregistered port and a port missing from a stale table both map to no service name |
+| **Release completeness** | every release | reads the published release back and fails when its asset manifest is short. Two releases shipped permanently incomplete behind green workflows before this existed |
 
 Scheduled lanes are advisory — they open a deduplicated tracking issue and fail the run, but never
 block PRs. Of the PR-time lanes, only the schema-driven decode tests gate; exploratory fuzzing does

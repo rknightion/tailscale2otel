@@ -1,0 +1,1450 @@
+{
+  "//": [
+    "Reviewed Tailscale changelog entries (#446).",
+    "An entry listed here is NOT re-proposed. Recording the negative verdicts is the",
+    "point: without them every run re-raises a surface already considered and declined.",
+    "verdict: adopted | parked | rejected | not-relevant | pre-baseline",
+    "  adopted      - a signal was or will be built; the note names the issue",
+    "  parked       - plausible, deferred; no plan, no objection",
+    "  rejected     - deliberately not observed; the note must say why",
+    "  not-relevant - matched a keyword but implies no signal we could emit",
+    "  pre-baseline - predates this lane; never individually reviewed"
+  ],
+  "reviewed": {
+    "changelog:2024-04-15-changelog": {
+      "title": "Changelog update",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-04-15-email-device-invites": {
+      "title": "Share devices by email from the admin console",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-04-17-client": {
+      "title": "Tailscale v1.64.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-04-18-sso-all-plans": {
+      "title": "All identity providers available to everyone",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-04-22-winver": {
+      "title": "Windows OS versions in admin console",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-04-23-axiom": {
+      "title": "Log streaming with Axiom",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-04-30-split-dns": {
+      "title": "Manage split DNS in API and Terraform",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-01-device-posture": {
+      "title": "Device posture management GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-08-acl-updates": {
+      "title": "ACL syntax updates",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-08-client": {
+      "title": "Tailscale v1.66.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-09-client": {
+      "title": "Tailscale v1.66.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-10-amazon-fire": {
+      "title": "Support for Amazon Fire devices",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-15-client": {
+      "title": "Tailscale v1.66.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-15-dark-mode": {
+      "title": "Dark mode in the admin console",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-20-client": {
+      "title": "Tailscale v1.66.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-24-exit-node-destination-logging": {
+      "title": "Exit node destination logging",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-05-30-auto-exit-nodes": {
+      "title": "Auto exit nodes",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-12-client": {
+      "title": "Tailscale v1.68.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-14-client": {
+      "title": "Tailscale v1.68.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-20-client-docker": {
+      "title": "Tailscale Docker image v1.68.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-20-client-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.68.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-20-client-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.68.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-21-indent": {
+      "title": "Indent shutting down July 15, 2024",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-06-25-google-group-sync": {
+      "title": "Sync Google Workspace groups to use in your Tailscale ACLs",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-02-client": {
+      "title": "Tailscale v1.68.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-08-ipsets": {
+      "title": "IP sets GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-08-via": {
+      "title": "Via in grants",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-10-api": {
+      "title": "New API endpoints, OpenAPI spec, and interactive API docs",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-10-invites": {
+      "title": "Automatically cleanup invites",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-11-onboarding": {
+      "title": "Plan enrollment changes for new tailnets",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-15-indent": {
+      "title": "Indent has shut down",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-17-client": {
+      "title": "Tailscale v1.70.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-22-api": {
+      "title": "New API endpoints",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-22-client-docker": {
+      "title": "Tailscale Docker image v1.70.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-22-client-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.70.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-22-client-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.70.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-07-25-control-d": {
+      "title": "Control D integration",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-02-device-posture-integrations": {
+      "title": "New device posture integrations",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-08-ssh-autogroups": {
+      "title": "Autogroups allowed as SSH source in ACLs",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-13-entra": {
+      "title": "Microsoft Entra ID SCIM GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-15-via-in-previews": {
+      "title": "Via in Access Control Previews",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-19-client": {
+      "title": "Tailscale v1.72.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-21-docker": {
+      "title": "Tailscale Docker image v1.72.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-21-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.72.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-21-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.72.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-22-client": {
+      "title": "Tailscale v1.72.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-22-docker": {
+      "title": "Tailscale Docker image v1.72.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-22-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.72.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-22-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.72.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-23-session-expiry": {
+      "title": "Configurable session timeouts",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-08-26-client": {
+      "title": "Tailscale v1.72.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-11-posture-identity-hwaddr": {
+      "title": "MAC addresses matching in CrowdStrike Falcon",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-12-client": {
+      "title": "Tailscale v1.74.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-13-terraform": {
+      "title": "Tailscale Terraform Provider v0.17.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-18-client": {
+      "title": "Tailscale v1.74.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-18-docker": {
+      "title": "Tailscale Docker image v1.74.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-18-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.74.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-18-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.74.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-09-27-attribute-expiry": {
+      "title": "Parameters added to Set custom device posture attributes endpoint",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-02-client": {
+      "title": "Tailscale v1.74.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-02-delete-tailnet": {
+      "title": "Tailnet deletion",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-03-pricing-personal-plus": {
+      "title": "Personal Plus pricing plan",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-10-client": {
+      "title": "Tailscale v1.76.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-16-client": {
+      "title": "Tailscale v1.76.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-16-docker": {
+      "title": "Tailscale Docker image v1.76.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-16-google-group-sync": {
+      "title": "Google Workspace integration GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-16-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.76.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-16-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.76.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-17-client": {
+      "title": "Tailscale v1.76.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-21-client": {
+      "title": "Tailscale v1.76.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-10-24-1password-xam": {
+      "title": "1Password XAM device posture integration GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-05-user-ga": {
+      "title": "User approval and Invite any user GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-06-client": {
+      "title": "Tailscale v1.76.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-08-docker": {
+      "title": "Tailscale Docker image v1.76.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-08-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.76.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-08-s3-logging": {
+      "title": "Log streaming integration with S3 buckets",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-08-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.76.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-14-oauth-scopes": {
+      "title": "New and more granular OAuth scopes",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-11-27-country-code": {
+      "title": "Country device posture attribute",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-05-client": {
+      "title": "Tailscale v1.78.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-05-client-patch": {
+      "title": "Tailscale v1.78.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-10-docker": {
+      "title": "Tailscale Docker image v1.78.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-10-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.78.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-10-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.78.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-11-posture-integrations": {
+      "title": "Device posture integrations GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-12-docker": {
+      "title": "Tailscale Docker image v1.78.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-12-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.78.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-12-mullvad-during-trial": {
+      "title": "Mullvad exit nodes with trial tailnets",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-12-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.78.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2024-12-13-client": {
+      "title": "Tailscale v1.78.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-22-github-secrets": {
+      "title": "GitHub secret scanning",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-4via6": {
+      "title": "4via6 subnet routers GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-acl-autoapprovers": {
+      "title": "Auto approvers GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-acl-nodeattrs": {
+      "title": "Node attributes GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-download-invoices": {
+      "title": "Download invoices GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-fus": {
+      "title": "Fast user switching GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-log-config-s3": {
+      "title": "Configuration log streaming integration with S3 buckets GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-log-network-s3": {
+      "title": "Network flow log streaming integration with S3 buckets GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-27-ga-nextdns": {
+      "title": "NextDNS profiles per device GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-29-github-user-rename": {
+      "title": "GitHub username change automatically updates tailnet name",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-01-30-client": {
+      "title": "Tailscale v1.80.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-03-docker": {
+      "title": "Tailscale Docker image v1.80.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-03-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.80.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-03-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.80.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-06-client": {
+      "title": "Tailscale v1.80.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-07-country-code-ga": {
+      "title": "Country device posture attribute GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-13-ashburn": {
+      "title": "Ashburn and Nuremberg DERP regions",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-13-client": {
+      "title": "Tailscale v1.80.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-02-26-terraform": {
+      "title": "Tailscale Terraform Provider v0.18.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-04-client": {
+      "title": "Tailscale v1.80.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-04-docker": {
+      "title": "Tailscale Docker image v1.80.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-04-kubenetes": {
+      "title": "Tailscale Kubernetes operator v1.80.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-04-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.80.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-05-helsinki": {
+      "title": "Helsinki DERP region",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-05-promo-codes": {
+      "title": "Tailscale promo codes for plan upgrades",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-07-security-bulletin": {
+      "title": "Admin console session timeout update",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-13-github-action-windows-mac": {
+      "title": "Tailscale GitHub Action support for Windows and macOS",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-26-client": {
+      "title": "Tailscale v1.82.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-27-client": {
+      "title": "Tailscale v1.82.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-31-docker": {
+      "title": "Tailscale Docker image v1.82.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-31-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.82.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-03-31-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.82.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-02-k8s-session-recording-beta": {
+      "title": "Tailscale Kubernetes Operator session recording",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-02-kubernetes": {
+      "title": "Tailscale Kubernetes Operator GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-09-github-action-windows-mac": {
+      "title": "Tailscale GitHub Action for macOS and Windows GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-09-terraform": {
+      "title": "Tailscale Terraform Provider v0.19.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-15-client": {
+      "title": "Tailscale v1.82.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-17-client": {
+      "title": "Tailscale v1.82.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-21-acl-code-folding": {
+      "title": "Code folding in ACL editor",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-04-22-device-posture": {
+      "title": "Trigger device posture integration for new nodes",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-05-docker": {
+      "title": "Tailscale Docker image v1.82.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-05-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.82.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-05-oauth-clients": {
+      "title": "Programmatic management of OAuth clients",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-05-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.82.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-21-client": {
+      "title": "Tailscale v1.84.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-23-docker": {
+      "title": "Tailscale Docker image v1.84.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-23-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.84.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-23-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.84.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-29-client": {
+      "title": "Tailscale v1.84.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-05-29-ga-grants": {
+      "title": "Grants GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-03-app-connectors-ga": {
+      "title": "App connectors GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-03-gitops": {
+      "title": "Updated UI to prevent accidental tailnet policy file changes",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-09-client": {
+      "title": "Tailscale v1.84.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-09-docker": {
+      "title": "Tailscale Docker image v1.84.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-09-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.84.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-09-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.84.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-23-tailnet-lock": {
+      "title": "Tailnet Lock GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-26-android-tv": {
+      "title": "Tailscale v1.84.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-26-docker": {
+      "title": "Tailscale Docker image v1.84.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-26-github-action": {
+      "title": "Tailscale GitHub Action fix for headless Windows runners",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-26-kubernetes": {
+      "title": "Tailscale Kubernetes operator v1.84.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-06-26-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.84.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-17-static-ip": {
+      "title": "IP changes to Tailscale's control plane",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-24-client": {
+      "title": "Tailscale v1.86.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-24-grafana-integration": {
+      "title": "Grafana Cloud integration",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-29-client": {
+      "title": "Tailscale v1.86.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-31-container": {
+      "title": "Tailscale container image v1.86.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-31-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.86.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-07-31-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.86.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-08-05-visual-policy-editor": {
+      "title": "Visual policy editor",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-08-07-client": {
+      "title": "Tailscale v1.86.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-08-19": {
+      "title": "DERP server IP address changes for S\u00e3o Paulo",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-08-22-container": {
+      "title": "Tailscale container image v1.86.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-08-22-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.86.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-08-22-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.86.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-09": {
+      "title": "DERP server IP address changes for Sydney",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-10": {
+      "title": "DERP server IP address changes for Tokyo",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-11": {
+      "title": "DERP server IP address changes for Singapore",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-11-client": {
+      "title": "Tailscale v1.88.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-17-client": {
+      "title": "Tailscale v1.88.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-18-container": {
+      "title": "Tailscale container image v1.88.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-18-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.88.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-18-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.88.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-25-client": {
+      "title": "Tailscale v1.88.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-29-container": {
+      "title": "Tailscale container image v1.88.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-29-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.88.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-09-29-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.88.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-08-devices": {
+      "title": "Updated devices API",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-09-autogroup-self": {
+      "title": "Expanded `autogroup:self` compatibility",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-client": {
+      "title": "Tailscale v1.88.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-container": {
+      "title": "Tailscale container image v1.88.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-github-action": {
+      "title": "Tailscale GitHub Action v4.0.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-github-action-2": {
+      "title": "Tailscale GitHub Action v4.0.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.88.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-new-presets": {
+      "title": "Preset app support for Amazon AWS, Salesforce (Hyperforce), and Microsoft 365",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-14-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.88.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-15-github-action": {
+      "title": "Tailscale GitHub Action v4.0.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-16-tailnet-names": {
+      "title": "Tailnet name type changes in the admin console",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-23-client": {
+      "title": "Tailscale v1.90.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-24-client": {
+      "title": "Tailscale v1.90.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-24-github-action": {
+      "title": "Tailscale GitHub Action v4.0.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-27-client": {
+      "title": "Tailscale v1.90.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-28-client": {
+      "title": "Tailscale v1.90.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-28-services": {
+      "title": "Tailscale Services",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-29-multi-tailnet": {
+      "title": "Multiple tailnets for a single organization",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-29-peer-relay-beta": {
+      "title": "Tailscale Peer Relays",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-29-visual-policy-editor": {
+      "title": "Visual policy editor (GA)",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-30-client": {
+      "title": "Tailscale v1.90.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-30-container": {
+      "title": "Tailscale container image v1.90.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-30-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.90.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-30-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.90.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-30-workload-identity-federation": {
+      "title": "Workload identity federation",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-31-client": {
+      "title": "Tailscale v1.90.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-31-container": {
+      "title": "Tailscale container image v1.90.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-31-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.90.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-10-31-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.90.6",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-13-static-ip": {
+      "title": "IP changes to Tailscale's logging infrastructure",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-19-client": {
+      "title": "Tailscale v1.90.8",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-19-container": {
+      "title": "Tailscale container image v1.90.8",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-19-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.90.8",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-19-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.90.8",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-25-client": {
+      "title": "Tailscale v1.90.9",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-25-container": {
+      "title": "Tailscale container image v1.90.9",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-25-kubernetes-operator": {
+      "title": "Tailscale Kubernetes operator v1.90.9",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-11-25-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.90.9",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-10-client": {
+      "title": "Tailscale v1.92.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-10-client2": {
+      "title": "Tailscale v1.92.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-16-client": {
+      "title": "Tailscale v1.92.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-17-container": {
+      "title": "Tailscale container image v1.92.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-17-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.92.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-17-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.92.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-18-container": {
+      "title": "Tailscale container image v1.92.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-18-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.92.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-18-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.92.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2025-12-23-github-action": {
+      "title": "Tailscale GitHub Action v4.1.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-05-workload-identity-federation-api": {
+      "title": "Workload identity federation API",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-06-client": {
+      "title": "Tailscale v1.92.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-06-container": {
+      "title": "Tailscale container image v1.92.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-06-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.92.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-06-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.92.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-21-bengaluru": {
+      "title": "India DERP Region City Name updated",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-22-device-posture-operators": {
+      "title": "IS SET and NOT SET device posture operators",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-26-client": {
+      "title": "Tailscale v1.94.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-27-services-ga": {
+      "title": "Tailscale Services GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-27-tsnet-integration": {
+      "title": "tsnet integration for Tailscale Services",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-01-30-workload-identity-federation-updates": {
+      "title": "Workload identity federation updates",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-04-google-logging": {
+      "title": "Log streaming integration with Google Cloud Storage",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-05-container": {
+      "title": "Tailscale container image v1.94.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-05-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.94.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-05-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.94.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-12-client": {
+      "title": "Tailscale v1.94.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-13-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.94.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-17-aperture": {
+      "title": "Aperture by Tailscale",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-18-device-posture-fleet": {
+      "title": "Fleet device posture integration",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-18-device-posture-huntress": {
+      "title": "Huntress device posture integration",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-18-peer-relay-ga": {
+      "title": "Tailscale Peer Relays GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-02-19-workload-identity-federation-ga": {
+      "title": "Workload identity federation GA",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-03-18-client": {
+      "title": "Tailscale v1.96.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-03-19-client": {
+      "title": "Tailscale v1.96.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-03-27-client": {
+      "title": "Tailscale v1.96.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-03-30-client": {
+      "title": "Tailscale v1.96.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-07-container": {
+      "title": "Tailscale container image v1.96.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-07-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.96.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-07-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.96.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-08-pricing": {
+      "title": "New pricing and packaging",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-22-seat-calculator": {
+      "title": "Seat calculator",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-23-aperture-beta": {
+      "title": "Aperture",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-23-api-only-tailnet-access": {
+      "title": "Access API-only tailnets with OAuth clients",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-27-gitops-pusher-github-action": {
+      "title": "GitOps for Tailscale with GitHub Actions v1.5.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-04-29-device-postures": {
+      "title": "View device posture status",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-13-client": {
+      "title": "Tailscale v1.98.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-14-tagged-device-add-ons": {
+      "title": "Purchase additional tagged resources",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-15-client": {
+      "title": "Tailscale v1.98.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-15-terraform-provider": {
+      "title": "Tailscale Terraform Provider v0.29.0",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-19-domain-verification": {
+      "title": "Manage domain names",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-19-terraform-provider": {
+      "title": "Tailscale Terraform Provider v0.29.1",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-20-aperture-cli": {
+      "title": "Aperture CLI",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-21-client": {
+      "title": "Tailscale v1.98.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-21-container": {
+      "title": "Tailscale container image v1.98.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-22-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.98.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-22-tsrecorder": {
+      "title": "Tailscale tsrecorder v1.98.3",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-26-terraform-provider": {
+      "title": "Tailscale Terraform Provider v0.29.2",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-28-client": {
+      "title": "Tailscale v1.98.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-29-kubernetes-operator": {
+      "title": "Tailscale Kubernetes Operator v1.98.4",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-05-29-oracle-preset-apps": {
+      "title": "Preset app support for Oracle Cloud Infrastructure (OCI)",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-01-client": {
+      "title": "Tailscale v1.98.5",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-10-visible-groups": {
+      "title": "Group visibility on Tailscale clients",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-16-aperture": {
+      "title": "Aperture chat, connectors, and sandboxes",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-17-azure-logstreaming": {
+      "title": "Log streaming integration with Azure Blob Storage",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-26-tailnet-system-policy": {
+      "title": "Tailnet system policy values",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-29-client": {
+      "title": "Tailscale v1.98.8",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-29-ip-attribute-beta": {
+      "title": "Public IP address device posture attribute",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-06-30-device-provisioning-with-oauth-apps": {
+      "title": "Device Provisioning with OAuth Apps",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-07-06-self-serve-identity-provider": {
+      "title": "Self-serve identity provider changes",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-07-08-nested-synced-groups": {
+      "title": "Nested group support for synced groups",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-07-14-client": {
+      "title": "Tailscale v1.98.9",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-07-23-admin-console-url": {
+      "title": "Admin console URL change",
+      "verdict": "pre-baseline",
+      "note": "predates the changelog review lane; not individually reviewed"
+    }
+  }
+}

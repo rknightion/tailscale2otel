@@ -1,0 +1,81 @@
+# Watch the Tailscale changelog for new observability surfaces (#446).
+#
+# The OpenAPI half of #446 was already delivered and is NOT duplicated here:
+# operation_dispositions.json (#423) classifies all 90 published operations
+# across every verb with a mandatory note, and api-drift.yml runs the
+# operation-set classifier daily, so a new API operation cannot appear without
+# forcing a recorded decision.
+#
+# What nothing watched is the changelog, which is where a capability is announced
+# BEFORE — or without — any OpenAPI change: a new log destination, a new client
+# metric, a behaviour change in something already collected.
+#
+# ADVISORY, like every other scheduled lane. It opens a deduplicated issue and
+# fails its own run; it gates no pull request. Reviewing an entry means recording
+# a verdict in spec/changelog-reviewed.json, INCLUDING a negative one — an entry
+# left unrecorded is re-proposed forever, which is how a watch lane turns into a
+# monthly reminder to re-reach a conclusion already reached.
+name: Changelog review
+
+on:
+  schedule:
+    - cron: "13 8 5 * *" # monthly, 5th at 08:13 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: changelog-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Review new changelog entries
+        id: review
+        run: |
+          set +e
+          python3 scripts/review_changelog.py --report /tmp/changelog-review.md
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      # Exit 3 is the repository's drift signal. Anything else non-zero means the
+      # script itself broke (feed unreachable, baseline malformed) and must not be
+      # reported as "nothing new" — a watch lane that silently stops watching is
+      # worse than no lane.
+      - name: Fail on reviewer error
+        if: steps.review.outputs.code != '0' && steps.review.outputs.code != '3'
+        run: |
+          echo "review_changelog errored (exit ${CODE}) — not treated as a clean run" >&2
+          exit 1
+        env:
+          CODE: ${{ steps.review.outputs.code }}
+
+      - name: Report candidate surfaces
+        if: steps.review.outputs.code == '3'
+        continue-on-error: true
+        uses: ./.github/actions/report-drift
+        with:
+          lane-label: changelog-review
+          title: "New Tailscale changelog entries may be observability surfaces"
+          report-path: /tmp/changelog-review.md
+          # No Claude enrichment: the shared prompt is written for OpenAPI drift
+          # and talks about internal/tsapi decoders, which is the wrong frame for
+          # a product-changelog triage.
+
+      - name: Fail the run when a review is outstanding
+        if: steps.review.outputs.code == '3'
+        run: 'echo "new changelog entries need a verdict — see the issue labelled changelog-review" >&2; exit 1'
+
+      - name: Resolve when everything is reviewed
+        if: steps.review.outputs.code == '0'
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: changelog-review
