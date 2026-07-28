@@ -74,6 +74,24 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "tailscale2otel.serviceAccountName" . }}
+      {{- /*
+        The staged drain (receivers -> ingress WAL -> OTLP flush) can run to 30
+        seconds, and each stage is bounded in Go. Kubernetes' default budget is
+        also 30 — the drain exactly, with no margin — so a rollout could SIGKILL
+        the pod mid-flush and lose the final flow rollup, the WAL backlog and
+        the last export (#332). Fail the render rather than truncate a drain:
+        an operator who lowers this is making a data-durability decision and
+        should be told the floor, not discover it as gaps in a dashboard.
+        The `@schema minimum` on the value covers `helm install --set`; this
+        guard covers a values file, which schema validation alone also catches
+        but with a message that does not explain WHY 45. internal/app's
+        TestChartMinimumMatchesDrain fails if this number stops matching the
+        code, so raising a stage timeout cannot leave a stale floor here.
+      */}}
+      {{- if lt (int .Values.terminationGracePeriodSeconds) 45 }}
+      {{- fail (printf "terminationGracePeriodSeconds must be at least 45 (got %v): the binary's worst-case staged drain is 30s (receiver drain 10s + ingress WAL final drain 10s + OTLP flush 10s) and a shorter budget SIGKILLs the process mid-flush, losing the final flow rollup, the WAL backlog and the last export" .Values.terminationGracePeriodSeconds) }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ int .Values.terminationGracePeriodSeconds }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:

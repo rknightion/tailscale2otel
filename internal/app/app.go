@@ -579,7 +579,7 @@ func (a *App) Run(ctx context.Context) error {
 				a.componentError(appcatalog.ComponentIngressWAL)
 				<-ctx.Done()
 			}
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
 			shutdownErr := a.shutdown(shutdownCtx)
 			cancel()
 			closeErr := a.ingressWAL.Close()
@@ -744,7 +744,7 @@ func (a *App) Run(ctx context.Context) error {
 		if err := <-walDone; err != nil {
 			a.logger.Warn("ingress WAL worker stopped with a bounded failure")
 		}
-		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		drainCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
 		if err := a.ingressWAL.Drain(drainCtx); err != nil {
 			a.logger.Warn("ingress WAL final drain incomplete; pending entries remain for restart")
 		}
@@ -759,7 +759,7 @@ func (a *App) Run(ctx context.Context) error {
 		rt.flowProc.FlushRollup(rt.emitter)
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
 	shutdownErr := a.shutdown(shutdownCtx)
 	cancel()
 	var closeErr error

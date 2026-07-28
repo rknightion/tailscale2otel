@@ -329,5 +329,36 @@ else
   ok "J: stale probe workaround warning removed from values.yaml"
 fi
 
+# --------------------------------------------------------------------------
+case_ "K. shutdown budget covers the staged drain (#332)"
+render
+assert_rc0 "K: default renders"
+budget="$(dep_field '.spec.template.spec.terminationGracePeriodSeconds')"
+[[ "$budget" == "45" ]] \
+  && ok "K: default terminationGracePeriodSeconds is 45" \
+  || bad "K: default terminationGracePeriodSeconds is $budget, want 45"
+
+# An operator lowering this is making a data-durability decision. The render
+# must fail and say so, rather than truncating a drain silently.
+render --set terminationGracePeriodSeconds=20
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'terminationGracePeriodSeconds must be at least 45' <<<"$RENDER"; then
+  ok "K: a budget below the drain fails the render and names the floor"
+else
+  bad "K: terminationGracePeriodSeconds=20 rendered (rc=$RENDER_RC) instead of failing"
+fi
+
+# 30 is Kubernetes' own default and the exact drain — the specific value most
+# likely to be chosen by someone "restoring the default", and the one with zero
+# margin. It must fail too.
+render --set terminationGracePeriodSeconds=30
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "K: 30 (the k8s default, == the drain, no margin) also fails" \
+  || bad "K: terminationGracePeriodSeconds=30 rendered; it leaves no headroom"
+
+render --set terminationGracePeriodSeconds=120
+assert_rc0 "K: a larger budget renders"
+[[ "$(dep_field '.spec.template.spec.terminationGracePeriodSeconds')" == "120" ]] \
+  && ok "K: a larger budget is passed through" || bad "K: larger budget not honoured"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

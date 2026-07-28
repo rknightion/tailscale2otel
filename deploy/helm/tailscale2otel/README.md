@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.8](https://img.shields.io/badge/Version-0.14.8-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.9](https://img.shields.io/badge/Version-0.14.9-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -516,6 +516,7 @@ extraVolumeMounts:
 | serviceAccount.automountServiceAccountToken | bool | `false` | Automount the ServiceAccount API token into the pod. The exporter makes no Kubernetes API calls, so this defaults to false to drop an unused, attacker-useful credential from the network-facing pod. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
 | serviceAccount.name | string | `""` | ServiceAccount name. Generated when empty. |
+| terminationGracePeriodSeconds | int | `45` | Seconds the kubelet allows for a graceful stop before SIGKILL. Shutdown is STAGED and each stage is separately bounded in the binary: the receivers drain already-ACKed requests (10s), the ingress WAL performs one final drain (10s), then the OTLP pipeline flushes and shuts down (10s) — 30s worst case, plus headroom. Kubernetes' own default is 30s, which is exactly the drain with no margin, so a rollout could SIGKILL the pod mid-flush and lose the final flow rollup, the WAL backlog and the last export. Values below the enforced minimum make `helm template` fail rather than silently truncating a drain. Raise it if you raise a stage timeout; `internal/app` fails the build if the two stop agreeing (#332). |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 
 ----------------------------------------------

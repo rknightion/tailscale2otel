@@ -54,6 +54,13 @@ See [Configuration](configuration.md) for the full list of options once you are 
       -config /etc/tailscale2otel/config.yaml
     ```
 
+    !!! warning "Pass `--stop-timeout 45` on every `docker run`"
+        Shutdown is *staged*, and `docker run`'s default stop timeout is 10
+        seconds — long enough to be killed partway through the first stage. See
+        [Shutdown budgets](#shutdown-budgets) below for the arithmetic. Both the
+        Compose file and the Helm chart set an adequate budget already; a bare
+        `docker run` is the one path where you must set it yourself.
+
     ### Docker Compose
 
     A ready-to-use [`deploy/docker-compose.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/docker-compose.yaml)
@@ -246,6 +253,41 @@ See [Configuration](configuration.md) for the full list of options once you are 
     Release binaries (pre-built, multi-arch) are attached to each
     [GitHub Release](https://github.com/rknightion/tailscale2otel/releases) and
     are signed with cosign keyless signatures.
+
+---
+
+## Shutdown budgets
+
+Stopping the exporter is not instantaneous, and cutting it short loses data that
+was already accepted. Shutdown runs in **stages**, each separately bounded:
+
+| Stage | Bound | What is lost if it is cut short |
+| --- | --- | --- |
+| Receivers drain | 10s | Requests already ACKed to Tailscale, still being processed |
+| Ingress WAL final drain | 10s | The accepted-but-unexported backlog (replayed next start) |
+| OTLP flush and shutdown | 10s | The final flow rollup and the last metric/log export |
+
+Worst case is therefore **30 seconds**, and a deployment budget needs headroom on
+top of that — the numbers above are bounds, not durations, and process teardown
+lands after them. Every shipped path uses **45 seconds**:
+
+| Path | Setting | Its own default |
+| --- | --- | --- |
+| Compose | `stop_grace_period: 45s` (set in `deploy/docker-compose.yaml`) | 10s |
+| Kubernetes | `terminationGracePeriodSeconds: 45` (chart value) | 30s |
+| `docker run` | `--stop-timeout 45` — **you must pass this** | 10s |
+| systemd (your own unit — none is shipped yet) | `TimeoutStopSec=45` | 90s, already adequate |
+
+Kubernetes' own default of 30 is worth calling out: it equals the drain exactly,
+with zero margin, so it is not a safe value despite looking like one. The chart
+**fails to render** below 45 rather than silently truncating a drain.
+
+These numbers are derived, not copied. `internal/app` sums the stage constants
+and its tests fail if the Compose file, the chart default, or the chart's
+enforced floor stops covering the total — so raising any stage timeout fails the
+build with a message naming the files to update, instead of quietly eroding the
+margin. Raise the budgets if you raise a timeout; lowering them below the floor
+is a data-durability decision the chart will not make silently.
 
 ---
 

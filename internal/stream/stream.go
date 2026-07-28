@@ -326,6 +326,13 @@ const maxUnwrapDepth = 4
 // handlerProcessDeadline bounds how long the receiver will spend on one request
 // before answering (#228). See withProcessDeadline for what this does and does
 // not buy.
+// ShutdownTimeout bounds the receiver's graceful HTTP shutdown: once the
+// operator's context is canceled, already-ACKed in-flight requests get this
+// long to finish emitting before the server is torn down. Exported because it
+// is one stage of the process-wide staged drain that deployment shutdown
+// budgets must cover (#332); internal/app asserts it at compile time.
+const ShutdownTimeout = 10 * time.Second
+
 const handlerProcessDeadline = 30 * time.Second
 
 // Listener timeouts. readHeaderTimeout and writeTimeout are load-bearing as a
@@ -525,7 +532,7 @@ func (r *Router) Run(ctx context.Context) error {
 	}()
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
@@ -1905,7 +1912,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:

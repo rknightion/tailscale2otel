@@ -360,6 +360,13 @@ func (r *Router) acquire(ctx context.Context) (func(), bool) {
 	}
 }
 
+// ShutdownTimeout bounds the receiver's graceful HTTP shutdown: once the
+// operator's context is canceled, already-ACKed in-flight requests get this
+// long to finish emitting before the server is torn down. Exported because it
+// is one stage of the process-wide staged drain that deployment shutdown
+// budgets must cover (#332); internal/app asserts it at compile time.
+const ShutdownTimeout = 10 * time.Second
+
 // Run binds the shared listener; all per-tailnet Servers have identical listen
 // settings because the config exposes one webhook listener.
 func (r *Router) Run(ctx context.Context) error {
@@ -389,7 +396,7 @@ func (r *Router) Run(ctx context.Context) error {
 	}()
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
@@ -562,7 +569,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeout)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
