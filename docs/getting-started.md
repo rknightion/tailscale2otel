@@ -121,22 +121,33 @@ override the endpoint:
 `tailscale2otel_up` in Prometheus/Grafana) once the first export cycle completes successfully. Query
 for it in Grafana Explore — if it appears, the pipeline is working end-to-end.
 
-**Admin status page:** the admin server is on by default, giving live visibility into collector
-health without querying the backend. Override the bind address (or disable it) if you need to:
+**Admin status page:** the admin server is on by default and binds `127.0.0.1:9091`, giving live
+visibility into collector health without querying the backend. The status page shows each
+collector's last-run time, success or failure, active-series cardinality, OTLP delivery state per
+signal, the full metrics catalog, and a redacted config summary. The `/healthz` and `/readyz`
+endpoints are always available without authentication and are suitable for container health checks.
+
+A loopback default means "loopback **inside the container**", so reaching it from your machine takes
+both a published port and a bind the container will accept traffic on — plus a token, because a
+non-loopback bind without one is refused:
 
 ```sh
--e TS2OTEL_ADMIN__LISTEN=:9091
+docker run -p 9091:9091 \
+  -e TS2OTEL_ADMIN__LISTEN=0.0.0.0:9091 \
+  -e TS2OTEL_ADMIN__AUTH__TOKEN="$ADMIN_TOKEN" \
+  ghcr.io/rknightion/tailscale2otel:latest
 ```
 
-Then open `http://localhost:9091/` in a browser. The status page shows each collector's last-run
-time, success or failure, active-series cardinality, the full metrics catalog, and a redacted
-config summary. The `/healthz` and `/readyz` endpoints are always available without authentication
-and are suitable for container health checks.
+Then open `http://localhost:9091/` and supply the token as the HTTP Basic password (any username) or
+as `Authorization: Bearer <token>`.
 
-!!! warning "Bind the admin server carefully"
-    By default the admin page is open (no token required), so bind `admin.listen` to a loopback or
-    tailnet address rather than `0.0.0.0`. Set `TS2OTEL_ADMIN__AUTH__TOKEN` to require a shared
-    secret for the status page and pprof handlers. `/healthz` and `/readyz` are never gated.
+!!! warning "The admin page fails closed on a network-reachable bind"
+    With **no** `admin.auth.token` the page is served **only** on a loopback `admin.listen`; every
+    other bind — including a tailnet address — is refused with HTTP 403. Setting
+    `TS2OTEL_ADMIN__LISTEN=:9091` *without* a token therefore does not expose the page, it makes it
+    answer 403 to everyone, which reads like a broken exporter. Set
+    `TS2OTEL_ADMIN__AUTH__TOKEN` whenever the bind is not loopback. `/healthz` and `/readyz` are
+    never gated and stay reachable either way.
 
 ## What's collected by default
 

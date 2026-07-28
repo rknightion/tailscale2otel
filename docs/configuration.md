@@ -1163,6 +1163,13 @@ Tailscale IPs, for example.
 > When no category is disabled the filter is not installed at all, so the default configuration pays
 > nothing and exported spans are byte-identical.
 >
+> **This filter does not apply to the built-in flow view.** It governs what this process
+> **exports**; `/flows` reads an in-memory store that is never written or sent anywhere and is
+> reachable only through the admin-authenticated surface. So `emails: false` still leaves the users
+> breakdown populated there, and `hostnames: false` still leaves the topology graph drawn — see
+> [Privacy](flow-view.md#privacy) in the flow-view guide for the full reasoning (#241). "At
+> collection time" above describes the export path only.
+>
 > Two things traces do **not** filter: **span names** are safe by construction rather than by policy
 > (`endpointLabel` already strips the tailnet segment and elides variable ID segments before the name
 > is built), and **resource attributes** go through the separate existing resource gate. If you add a

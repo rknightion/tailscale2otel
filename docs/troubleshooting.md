@@ -249,7 +249,8 @@ surfaced as live gauges so you can alert without scraping logs.
 
 **Diagnosis.** Query `tailscale2otel_config_warnings_ratio` (count of advisory warnings) and
 `tailscale2otel_config_valid_ratio` (`0` when `Validate()` failed). Both are emitted each export
-cycle. The admin status page also renders the redacted config and any warnings.
+cycle. The admin status page renders the redacted config summary; it does **not** yet list the
+individual advisories, so read the startup log for their text.
 
 ---
 

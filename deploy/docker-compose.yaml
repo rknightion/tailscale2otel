@@ -90,8 +90,11 @@ services:
       TS2OTEL_INGRESS_WAL__MAX_ENTRIES: ${TS2OTEL_INGRESS_WAL__MAX_ENTRIES:-10000}
       TS2OTEL_INGRESS_WAL__CORRUPTION: ${TS2OTEL_INGRESS_WAL__CORRUPTION:-fail}
       # Gates the admin status page (/ and /api/status.json) and pprof when
-      # admin.enabled. Leave empty to keep the status page open; required if you
-      # enable profiling.pprof. /healthz and /readyz are never gated.
+      # admin.enabled. With NO token the page is served only on a loopback
+      # admin.listen — any other bind is refused with HTTP 403 — so set this
+      # whenever you publish the port or move the bind off 127.0.0.1. Required
+      # outright if you enable profiling.pprof. /healthz and /readyz are never
+      # gated.
       TS2OTEL_ADMIN__AUTH__TOKEN: ${TS2OTEL_ADMIN__AUTH__TOKEN:-}
       # Pinned true so the healthcheck: block above always has a /readyz to
       # probe (#337) — see the comment on that block for what breaks if you

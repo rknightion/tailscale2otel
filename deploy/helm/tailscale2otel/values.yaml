@@ -275,9 +275,10 @@ metrics: # @schema additionalProperties:false
 #
 # Rendering FAILS if you enable a Service for a listener that is switched off, or for
 # one with no credential set (value or its _file sibling). Publishing a listener is
-# what turns a local misconfiguration into a cluster-reachable one: `prometheus` serves
-# every series unauthenticated with an empty token, and `webhook` fails OPEN — an empty
-# secret skips HMAC verification entirely.
+# what turns a local misconfiguration into a cluster-reachable one: `webhook` fails OPEN —
+# an empty secret skips HMAC verification entirely — and while `prometheus` and `admin` now
+# fail CLOSED, a published Service with no credential just answers HTTP 403 forever, which
+# reads as a broken exporter rather than as the refusal it is.
 service: # @schema additionalProperties:false
   admin: # @schema additionalProperties:false
     # -- Render a Service for the admin listener. Requires config.admin.auth.token.
@@ -571,18 +572,22 @@ secret: # @schema additionalProperties:false
   # chain refreshes its own.
   TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN: ""
   # -- HEC token the streaming receiver expects ("Authorization: Splunk <token>").
-  # Set ONLY when you enable config.streaming. Empty makes streaming token auth a no-op.
+  # Set ONLY when you enable config.streaming. With no token the receiver fails CLOSED:
+  # it serves only a loopback config.streaming.listen and refuses every other bind.
   TS2OTEL_STREAMING__TOKEN: ""
   # -- Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. Empty is accepted
   # only on a loopback config.webhook.listen; network-reachable binds refuse every request
   # with HTTP 403 before reading its body.
   TS2OTEL_WEBHOOK__SECRET: ""
-  # -- Shared token gating the admin status page (/ and /api/status.json) and pprof. Empty leaves the
-  # status page open (a WARN fires if it's exposed on a wildcard bind); REQUIRED when you enable
-  # config.profiling.pprof. /healthz and /readyz are never gated.
+  # -- Shared token gating the admin status page (/ and /api/status.json) and pprof. With no token
+  # the page is served only on a loopback config.admin.listen and every other bind is refused with
+  # HTTP 403 — so a chart install that publishes the admin Service needs one. REQUIRED when you
+  # enable config.profiling.pprof. /healthz and /readyz are never gated.
   TS2OTEL_ADMIN__AUTH__TOKEN: ""
   # -- Token gating the Prometheus /metrics endpoint (HTTP Basic password or "Authorization: Bearer <token>").
-  # Empty = open (a WARN fires when prometheus.enabled on a wildcard bind). Set ONLY when prometheus.enabled.
+  # With no token /metrics is refused with HTTP 403 on any network-reachable bind; loopback stays
+  # open, and config.prometheus.auth.allow_unauthenticated re-opens a network bind explicitly for an
+  # in-cluster scrape behind a NetworkPolicy. Set ONLY when prometheus.enabled.
   TS2OTEL_PROMETHEUS__AUTH__TOKEN: ""
   # -- Pyroscope basic-auth user (Grafana Cloud: the profiles instance ID). Set ONLY when you
   # enable config.profiling.pyroscope.
