@@ -52,12 +52,17 @@ jobs:
 
       # NEGATIVE CASE FIRST, so a broken exchange cannot be mistaken for a working one.
       #
-      # Note what this can and cannot assert. Tailscale returns an IDENTICAL opaque
-      # `400 invalid request` for an unknown client, a malformed JWT, a wrong audience and an
-      # expired token — verified against the live endpoint. That is correct API design (telling
-      # them apart is an oracle) but it means #355's "wrong audience/issuer/expired token fail
-      # predictably" cannot be four assertions. They fail INDISTINGUISHABLY, so this is one
-      # case: a token this identity must not accept is rejected, and no access_token comes back.
+      # Note what this can and cannot assert, and note that the status code depends on WHICH
+      # thing is wrong — a distinction that only showed up once a real identity existed:
+      #
+      #   unknown client_id, or a malformed request  -> 400 "invalid request"
+      #   valid client_id, token it must refuse      -> 403        (observed here)
+      #
+      # So the response does NOT leak which property of an otherwise-valid token failed, but it
+      # does separate "no such client" from "this client refuses that token". What it will not
+      # do is tell a wrong audience from a wrong issuer from an expired token, so #355's "wrong
+      # audience/issuer/expired token fail predictably" is ONE assertion, not four: a token
+      # this identity must refuse is refused, and no access_token comes back.
       - name: A wrong-audience token must be rejected
         env:
           TS_WIF_CLIENT_ID: ${{ secrets.TS_WIF_CLIENT_ID }}
