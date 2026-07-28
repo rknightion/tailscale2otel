@@ -88,6 +88,7 @@ func newFlowStore(cfg *config.Config) *flowstore.Memory {
 	return flowstore.NewMemory(
 		int(cfg.Flows.Retention.D()/flowstore.Resolution),
 		flowstore.WithMaxFutureSkew(cfg.Flows.MaxFutureSkew.D()),
+		flowstore.WithCapacityProfile(cfg.Flows.CapacityProfile),
 	)
 }
 
@@ -150,6 +151,17 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 		s := rt.flowStore.Stats()
 		info.Buckets += s.Buckets
 		info.Capacity = s.Capacity // identical across runtimes: one config value
+		// Also identical across runtimes, and for the same reason: every store
+		// is built from the one flows.capacity_profile. Reported per store
+		// rather than read back off the config so the page shows what is
+		// actually in force. EstimatedBytes stays PER TAILNET rather than
+		// summed — it is a worst-case bound on one store, and adding worst
+		// cases across tailnets compounds an over-estimate into a number no
+		// deployment could reach.
+		lim := rt.flowStore.Limits()
+		info.CapacityProfile = lim.Profile
+		info.MaxRecent = lim.MaxRecent
+		info.EstimatedBytes = lim.EstimatedBytes
 		info.Observations += s.Observations
 		info.Truncated += s.Truncated
 		if !s.Earliest.IsZero() && (earliest.IsZero() || s.Earliest.Before(earliest)) {

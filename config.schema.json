@@ -1372,6 +1372,16 @@
     "flows": {
       "additionalProperties": false,
       "properties": {
+        "capacity_profile": {
+          "default": "default",
+          "description": "trade memory for fidelity on every per-bucket dimension + the raw-connection ring: compact (~half), default (unchanged), or expanded (~double). Fixed, hard-coded presets only — never a raw number",
+          "enum": [
+            "compact",
+            "default",
+            "expanded"
+          ],
+          "type": "string"
+        },
         "enabled": {
           "default": true,
           "description": "keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise)",

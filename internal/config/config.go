@@ -154,6 +154,14 @@ type FlowsConfig struct {
 	// MaxFutureSkew is the largest amount a record may lead the local clock and
 	// still enter the in-memory view. It does not affect OTLP emission.
 	MaxFutureSkew Duration `yaml:"max_future_skew"`
+	// CapacityProfile trades memory for fidelity on every per-bucket dimension
+	// AND the raw-connection ring (#329): "compact" (roughly half the default
+	// footprint, folds into "everything else" sooner), "default" (today's
+	// hardcoded limits, unchanged), or "expanded" (roughly double). There is
+	// no arbitrary/continuous knob — each name is a fixed, hard-coded preset
+	// enforced by internal/flowstore.CapsForProfile, so a bad value fails
+	// Validate() by name rather than accepting an unbounded raw number.
+	CapacityProfile string `yaml:"capacity_profile"`
 }
 
 // EventsConfig configures the built-in bounded audit/webhook event explorer

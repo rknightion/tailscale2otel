@@ -345,6 +345,17 @@ type FlowStoreInfo struct {
 	// which is shorter until the ring fills. Empty when nothing is retained.
 	Retention string `json:"retention"`
 	Covered   string `json:"covered,omitempty"`
+	// CapacityProfile is the effective flows.capacity_profile ("compact",
+	// "default" or "expanded") and MaxRecent the raw-connection ring size it
+	// selects (#329). Both are the STORE's own values, not the config's, so
+	// they report what is actually in force rather than what was asked for.
+	CapacityProfile string `json:"capacity_profile,omitempty"`
+	MaxRecent       int    `json:"max_recent,omitempty"`
+	// EstimatedBytes is a worst-case steady-state footprint estimate for ONE
+	// tailnet's store — a capacity-planning number, not a measurement, and
+	// deliberately not presented as one. Every dimension would have to be
+	// saturated simultaneously to reach it, which a real tailnet does not do.
+	EstimatedBytes int64 `json:"estimated_bytes,omitempty"`
 }
 
 // EventStoreInfo summarizes the bounded audit/webhook event explorer's store

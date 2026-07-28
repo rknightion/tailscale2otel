@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 )
 
 func TestDefaults_Flows(t *testing.T) {
@@ -15,6 +16,51 @@ func TestDefaults_Flows(t *testing.T) {
 	}
 	if want := 6 * time.Hour; c.Flows.Retention.D() != want {
 		t.Errorf("flows.retention default = %v, want %v", c.Flows.Retention.D(), want)
+	}
+	// #329: the default capacity profile must reproduce today's hardcoded
+	// flowstore limits exactly — safe defaults stay unchanged.
+	if want := flowstore.ProfileDefault; c.Flows.CapacityProfile != want {
+		t.Errorf("flows.capacity_profile default = %q, want %q", c.Flows.CapacityProfile, want)
+	}
+}
+
+// #329: flows.capacity_profile is a closed enum, not a raw number — an
+// invalid or unsafe value must fail Validate() by name, and a valid one must
+// resolve via flowstore.CapsForProfile (the single source of truth for what
+// profiles exist).
+func TestValidate_FlowsCapacityProfile(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+		profile string
+		wantErr bool
+	}{
+		{name: "compact", enabled: true, profile: "compact"},
+		{name: "default", enabled: true, profile: "default"},
+		{name: "expanded", enabled: true, profile: "expanded"},
+		{name: "empty", enabled: true, profile: "", wantErr: true},
+		{name: "unknown", enabled: true, profile: "unbounded", wantErr: true},
+		{name: "typo", enabled: true, profile: "Default", wantErr: true},
+		// Disabled means the store is never built, so the value cannot hurt anyone.
+		{name: "ignored when disabled", enabled: false, profile: ""},
+		{name: "absurd but disabled", enabled: false, profile: "literally anything"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			c.Flows.Enabled = tc.enabled
+			c.Flows.CapacityProfile = tc.profile
+
+			err := c.Validate()
+			switch {
+			case tc.wantErr && err == nil:
+				t.Fatalf("Validate() = nil, want an error for capacity_profile %q", tc.profile)
+			case !tc.wantErr && err != nil:
+				t.Fatalf("Validate() = %v, want nil", err)
+			case tc.wantErr && !strings.Contains(err.Error(), "flows.capacity_profile"):
+				t.Errorf("error %q does not name the offending key", err)
+			}
+		})
 	}
 }
 

@@ -12,15 +12,21 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 )
 
-// maxExportRows bounds one export response at flowstore.MaxRecent — the
-// recent-connection ring's own hard cap. A single RecentPage call with this
-// Limit is therefore guaranteed to return every row the ring currently holds
-// that matches Start/End/Filter: Matched can never exceed Retained, and
-// Retained can never exceed MaxRecent, so this Limit is never actually the
-// constraint that trims a real response. It exists so the constraint is
-// explicit and load-bearing rather than "whatever RecentPage happens to do
-// when Limit is unset" (#299).
-const maxExportRows = flowstore.MaxRecent
+// maxExportRows bounds one export response at THIS store's recent-connection
+// ring cap. A single RecentPage call with this Limit is therefore guaranteed
+// to return every row the ring currently holds that matches Start/End/Filter:
+// Matched can never exceed Retained, and Retained can never exceed the ring
+// cap, so this Limit is never actually the constraint that trims a real
+// response. It exists so the constraint is explicit and load-bearing rather
+// than "whatever RecentPage happens to do when Limit is unset" (#299).
+//
+// It reads the STORE's cap rather than the package constant because
+// flows.capacity_profile (#329) scales the ring per store. Pinned to the
+// constant, an "expanded" operator's export would stop at the default
+// profile's 2000 while their ring held 4000 — and the provenance line would
+// still say truncated=true, which reads as "the ring dropped them" rather
+// than "the export refused to read them".
+func maxExportRows(s *flowstore.Memory) int { return s.Limits().MaxRecent }
 
 // exportSource is the honesty label every export carries, in both formats:
 // the rows come from the bounded in-memory recent-connection ring
@@ -79,7 +85,7 @@ func (a *App) parseFlowsExportQuery(w http.ResponseWriter, r *http.Request) (flo
 // single call is always enough to drain every currently-matching row.
 func (eq flowsExportQuery) fetch() flowstore.RecentPage {
 	return eq.rt.flowStore.RecentPage(flowstore.RecentQuery{
-		Start: eq.start, End: eq.end, Limit: maxExportRows, Filter: eq.filter,
+		Start: eq.start, End: eq.end, Limit: maxExportRows(eq.rt.flowStore), Filter: eq.filter,
 	})
 }
 

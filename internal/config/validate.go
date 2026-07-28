@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v3/internal/redact"
@@ -971,6 +972,24 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		if d := c.Flows.MaxFutureSkew.D(); d < 0 || d > time.Hour {
 			return fmt.Errorf("flows.max_future_skew must be between 0 and 1h (got %v)", d)
+		}
+		return nil
+	})
+
+	// flows.capacity_profile trades memory for fidelity on every per-bucket
+	// dimension and the raw-connection ring (#329). It is a closed enum, not a
+	// raw number: flowstore.CapsForProfile is the single source of truth for
+	// which names exist and what each maps to, so a rename or a fourth profile
+	// only has to change there. Unchecked when the view is off — the store is
+	// never built.
+	add("flows.capacity_profile", `Set flows.capacity_profile to one of "compact", "default" or "expanded".`, func() error {
+		if !c.Flows.Enabled {
+			return nil
+		}
+		if _, ok := flowstore.CapsForProfile(c.Flows.CapacityProfile); !ok {
+			return fmt.Errorf(`flows.capacity_profile must be one of "compact", "default" or "expanded" (got %q): `+
+				`it selects a fixed, hard-coded capacity/memory preset, not an arbitrary limit`,
+				c.Flows.CapacityProfile)
 		}
 		return nil
 	})

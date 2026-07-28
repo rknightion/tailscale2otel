@@ -487,6 +487,8 @@
       <div class="card"><div class="k">Coverage</div><div class="v" style="font-size:16px" id="flowCovered">{{if .Flows.Covered}}{{.Flows.Covered}}{{else}}nothing yet{{end}}</div><div class="sub">retention {{.Flows.Retention}}</div></div>
       <div class="card"><div class="k">Observations</div><div class="v" id="flowObservations">{{.Flows.Observations}}</div><div class="sub">connections recorded since start</div></div>
       <div class="card{{if .Flows.Truncated}} warn2{{end}}"><div class="k">Truncated</div><div class="v" id="flowTruncated">{{.Flows.Truncated}}</div><div class="sub">{{if .Flows.Truncated}}folded into __other__ — ranked lists are partial{{else}}every key fits within the per-minute caps{{end}}</div></div>
+      <div class="card"><div class="k">Capacity profile</div><div class="v" style="font-size:16px" id="flowProfile">{{.Flows.CapacityProfile}}</div><div class="sub">flows.capacity_profile — scales every per-minute cap and the ring together; holds {{.Flows.MaxRecent}} recent connections</div></div>
+      <div class="card"><div class="k">Estimated memory</div><div class="v" style="font-size:16px" id="flowEstimate">{{.Flows.EstimatedBytes}} B</div><div class="sub">per tailnet, worst case — every dimension saturated at once, which a real tailnet does not reach. A planning bound, not a measurement.</div></div>
     </div>
     <div class="controls" style="margin-top:12px">
       <a class="ctl" href="/flows" style="display:inline-block">Open the flow view &rarr;</a>

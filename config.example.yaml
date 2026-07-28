@@ -474,6 +474,7 @@ flows:
   enabled: true                       # keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise)
   retention: 6h                       # how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record
   max_future_skew: 5m                 # local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged
+  capacity_profile: default           # trade memory for fidelity on every per-bucket dimension + the raw-connection ring: compact (~half), default (unchanged), or expanded (~double). Fixed, hard-coded presets only — never a raw number
 
 # ── Built-in audit/webhook event explorer (served at /events on the admin server) ──
 events:

@@ -89,6 +89,181 @@ const (
 // bound it. At roughly 200 bytes per entry this is well under a megabyte.
 const MaxRecent = 2000
 
+// Profile names a bounded capacity/memory policy for a Memory store: how many
+// entries each per-bucket dimension may hold, and how large the raw
+// connection ring is. There are exactly three, each a FIXED, hard-coded
+// preset — there is no arbitrary/continuous knob a caller can set — so an
+// operator trading memory for fidelity can only ever land on one of three
+// known-safe points, never something unbounded (#329).
+const (
+	// ProfileCompact halves every DefaultCaps dimension: roughly half the
+	// worst-case per-bucket memory of the default profile, at the cost of
+	// folding more into Other sooner on a busy tailnet.
+	ProfileCompact = "compact"
+	// ProfileDefault reproduces today's hardcoded limits (the Max*PerBucket
+	// and MaxRecent constants above) exactly. It is what a Memory built with
+	// no capacity option gets, so pre-#329 behavior is unchanged unless an
+	// operator opts into a different profile.
+	ProfileDefault = "default"
+	// ProfileExpanded doubles every DefaultCaps dimension. Still a fixed,
+	// hard-coded ceiling — "far above any legitimate volume", per the
+	// per-dimension doc comments above, multiplied by two — never an
+	// operator-supplied raw number.
+	ProfileExpanded = "expanded"
+)
+
+// Caps bounds every per-bucket dimension and the raw-connection ring for one
+// Memory store. It has no exported constructor other than CapsForProfile:
+// the zero value caps every dimension at zero (nothing would ever be
+// retained), so the only way to obtain a usable Caps from outside this
+// package is by naming one of the three fixed profiles above.
+type Caps struct {
+	MaxPairsPerBucket       int
+	MaxNodesPerBucket       int
+	MaxPortsPerBucket       int
+	MaxLabelsPerKind        int
+	MaxMatrixCellsPerBucket int
+	MaxUnexplainedPerBucket int
+	MaxRulesPerBucket       int
+	MaxPeerPathsPerBucket   int
+	// MaxRecent is the raw-connection ring size for this profile — the
+	// per-store analog of the package-level MaxRecent constant.
+	MaxRecent int
+}
+
+// DefaultCaps mirrors today's hardcoded per-bucket/ring limits exactly, so a
+// Memory built with no capacity-profile option behaves byte-identically to
+// before #329.
+var DefaultCaps = Caps{
+	MaxPairsPerBucket:       MaxPairsPerBucket,
+	MaxNodesPerBucket:       MaxNodesPerBucket,
+	MaxPortsPerBucket:       MaxPortsPerBucket,
+	MaxLabelsPerKind:        MaxLabelsPerKind,
+	MaxMatrixCellsPerBucket: MaxMatrixCellsPerBucket,
+	MaxUnexplainedPerBucket: MaxUnexplainedPerBucket,
+	MaxRulesPerBucket:       MaxRulesPerBucket,
+	MaxPeerPathsPerBucket:   MaxPeerPathsPerBucket,
+	MaxRecent:               MaxRecent,
+}
+
+// compactCaps halves every DefaultCaps dimension.
+var compactCaps = Caps{
+	MaxPairsPerBucket:       MaxPairsPerBucket / 2,
+	MaxNodesPerBucket:       MaxNodesPerBucket / 2,
+	MaxPortsPerBucket:       MaxPortsPerBucket / 2,
+	MaxLabelsPerKind:        MaxLabelsPerKind / 2,
+	MaxMatrixCellsPerBucket: MaxMatrixCellsPerBucket / 2,
+	MaxUnexplainedPerBucket: MaxUnexplainedPerBucket / 2,
+	MaxRulesPerBucket:       MaxRulesPerBucket / 2,
+	MaxPeerPathsPerBucket:   MaxPeerPathsPerBucket / 2,
+	MaxRecent:               MaxRecent / 2,
+}
+
+// expandedCaps doubles every DefaultCaps dimension. Still a fixed, hard-coded
+// ceiling, not an operator-suppliable number — see Profile's doc comment.
+var expandedCaps = Caps{
+	MaxPairsPerBucket:       MaxPairsPerBucket * 2,
+	MaxNodesPerBucket:       MaxNodesPerBucket * 2,
+	MaxPortsPerBucket:       MaxPortsPerBucket * 2,
+	MaxLabelsPerKind:        MaxLabelsPerKind * 2,
+	MaxMatrixCellsPerBucket: MaxMatrixCellsPerBucket * 2,
+	MaxUnexplainedPerBucket: MaxUnexplainedPerBucket * 2,
+	MaxRulesPerBucket:       MaxRulesPerBucket * 2,
+	MaxPeerPathsPerBucket:   MaxPeerPathsPerBucket * 2,
+	MaxRecent:               MaxRecent * 2,
+}
+
+// CapsForProfile returns the Caps for a named profile, and false for anything
+// else — including the empty string. It is the ONLY way to obtain a Caps
+// other than DefaultCaps itself: there is no exported way to set an
+// arbitrary/unbounded cap, matching #329's "do not expose unbounded raw
+// limits" requirement. config.Validate() calls this to reject a bad
+// flows.capacity_profile value before a Memory is ever built.
+func CapsForProfile(profile string) (Caps, bool) {
+	switch profile {
+	case ProfileCompact:
+		return compactCaps, true
+	case ProfileDefault:
+		return DefaultCaps, true
+	case ProfileExpanded:
+		return expandedCaps, true
+	default:
+		return Caps{}, false
+	}
+}
+
+// bytesPerCountsMapEntry is a conservative flat per-entry cost for a Go map
+// keyed by a small comparable type and holding a *Counts (40 bytes): it
+// covers the map's own bucket/pointer overhead plus the Counts allocation.
+// This is a PLANNING estimate, not a measurement — real map overhead varies
+// with key shape and load factor, and the true figure is smaller in practice
+// because most dimensions never fill to their cap. It exists so the admin
+// status page can show a worst-case footnote next to the configured profile,
+// not to size an allocator.
+const bytesPerCountsMapEntry = 96
+
+// bytesPerRecentEntry matches the "roughly 200 bytes per entry" estimate in
+// MaxRecent's doc comment above.
+const bytesPerRecentEntry = 200
+
+// bytesPerBucket estimates one bucket's WORST-CASE memory footprint: every
+// capped map at its cap. See bytesPerCountsMapEntry for what "estimate"
+// means here.
+func (c Caps) bytesPerBucket() int64 {
+	// Eight single-key label maps, each capped at MaxLabelsPerKind:
+	// transports, trafficTypes, users, tags, oses, paths, derpRegions,
+	// verdicts.
+	labelMaps := int64(8) * int64(c.MaxLabelsPerKind) * bytesPerCountsMapEntry
+	pairs := int64(c.MaxPairsPerBucket) * bytesPerCountsMapEntry
+	ports := int64(c.MaxPortsPerBucket) * bytesPerCountsMapEntry
+	unexplained := int64(c.MaxUnexplainedPerBucket) * bytesPerCountsMapEntry
+	rules := int64(c.MaxRulesPerBucket) * bytesPerCountsMapEntry
+	peerPaths := int64(c.MaxPeerPathsPerBucket) * bytesPerCountsMapEntry
+	// nodes holds *nodeCounts (two Counts), roughly double the per-entry cost
+	// of the single-Counts maps above.
+	nodes := int64(c.MaxNodesPerBucket) * (bytesPerCountsMapEntry + 40)
+	// Three identity matrices (tag, user, OS), each capped at
+	// MaxMatrixCellsPerBucket.
+	matrices := int64(3) * int64(c.MaxMatrixCellsPerBucket) * bytesPerCountsMapEntry
+	return labelMaps + pairs + ports + unexplained + rules + peerPaths + nodes + matrices
+}
+
+// EstimatedBytes estimates the store's WORST-CASE steady-state footprint:
+// every retained bucket full in every dimension, plus the raw-connection
+// ring. bucketCapacity is the store's retained bucket count (flows.retention
+// / Resolution); a non-positive value contributes nothing.
+func (c Caps) EstimatedBytes(bucketCapacity int) int64 {
+	if bucketCapacity < 0 {
+		bucketCapacity = 0
+	}
+	return c.bytesPerBucket()*int64(bucketCapacity) + int64(c.MaxRecent)*bytesPerRecentEntry
+}
+
+// Limits reports the effective (post-validation, post-clamp) capacity policy
+// a Memory store was built with, and its estimated in-memory footprint. It is
+// the seam the admin status page reads to show configured/effective limits
+// and estimated usage (#329) — see Memory.Limits.
+type Limits struct {
+	// Profile is one of ProfileCompact, ProfileDefault or ProfileExpanded —
+	// whichever WithCapacityProfile selected, or ProfileDefault when unset or
+	// unrecognized.
+	Profile                 string
+	BucketCapacity          int
+	MaxPairsPerBucket       int
+	MaxNodesPerBucket       int
+	MaxPortsPerBucket       int
+	MaxLabelsPerKind        int
+	MaxMatrixCellsPerBucket int
+	MaxUnexplainedPerBucket int
+	MaxRulesPerBucket       int
+	MaxPeerPathsPerBucket   int
+	MaxRecent               int
+	// EstimatedBytes is Caps.EstimatedBytes(BucketCapacity): the store's
+	// worst-case steady-state footprint at these limits. A planning estimate,
+	// not a measurement — see bytesPerCountsMapEntry.
+	EstimatedBytes int64
+}
+
 // Other is the key that overflow folds into, in every dimension. It is
 // deliberately the same sentinel the flow-metric rollup uses, so an operator
 // sees one consistent "everything else" label across the metric and the UI.
@@ -285,6 +460,13 @@ type bucket struct {
 	start time.Time
 	total Counts
 
+	// caps is the owning Memory's capacity profile, copied in at creation
+	// time. A bucket enforces its own caps rather than reaching back through
+	// a pointer to Memory, so its methods stay lock-free and independent of
+	// the store around them (they already run under Memory's mutex via
+	// RecordResult, but nothing here should ever need to know that).
+	caps Caps
+
 	pairs map[PairKey]*Counts
 	nodes map[string]*nodeCounts
 	ports map[PortKey]*Counts
@@ -331,9 +513,10 @@ type nodeCounts struct {
 	Received Counts
 }
 
-func newBucket(start time.Time) *bucket {
+func newBucket(start time.Time, caps Caps) *bucket {
 	return &bucket{
 		start:        start,
+		caps:         caps,
 		pairs:        map[PairKey]*Counts{},
 		nodes:        map[string]*nodeCounts{},
 		ports:        map[PortKey]*Counts{},
@@ -384,7 +567,7 @@ func (b *bucket) record(o Observation) {
 		k := PairKey{Src: o.SrcNode, Dst: o.DstNode, TrafficType: o.TrafficType}
 		e, ok := b.pairs[k]
 		if !ok {
-			if len(b.pairs) >= MaxPairsPerBucket {
+			if len(b.pairs) >= b.caps.MaxPairsPerBucket {
 				k = PairKey{Src: Other, Dst: Other, TrafficType: o.TrafficType}
 				b.dropped++
 				e, ok = b.pairs[k]
@@ -402,15 +585,15 @@ func (b *bucket) record(o Observation) {
 
 	b.recordPorts(o)
 
-	addLabel(b.transports, o.Transport, o.Counts, MaxLabelsPerKind)
-	addLabel(b.trafficTypes, o.TrafficType, o.Counts, MaxLabelsPerKind)
-	addLabel(b.users, o.SrcUser, o.Counts, MaxLabelsPerKind)
+	addLabel(b.transports, o.Transport, o.Counts, b.caps.MaxLabelsPerKind)
+	addLabel(b.trafficTypes, o.TrafficType, o.Counts, b.caps.MaxLabelsPerKind)
+	addLabel(b.users, o.SrcUser, o.Counts, b.caps.MaxLabelsPerKind)
 	if o.DstUser != o.SrcUser {
-		addLabel(b.users, o.DstUser, o.Counts, MaxLabelsPerKind)
+		addLabel(b.users, o.DstUser, o.Counts, b.caps.MaxLabelsPerKind)
 	}
-	addLabel(b.oses, o.SrcOS, o.Counts, MaxLabelsPerKind)
+	addLabel(b.oses, o.SrcOS, o.Counts, b.caps.MaxLabelsPerKind)
 	if o.DstOS != o.SrcOS {
-		addLabel(b.oses, o.DstOS, o.Counts, MaxLabelsPerKind)
+		addLabel(b.oses, o.DstOS, o.Counts, b.caps.MaxLabelsPerKind)
 	}
 
 	// Tags are a SET per endpoint, so the breakdown is per individual tag: a
@@ -419,11 +602,11 @@ func (b *bucket) record(o Observation) {
 	// both endpoints describes one flow, so it counts once.
 	srcTags, dstTags := splitTags(o.SrcTags), splitTags(o.DstTags)
 	for _, tag := range srcTags {
-		addLabel(b.tags, tag, o.Counts, MaxLabelsPerKind)
+		addLabel(b.tags, tag, o.Counts, b.caps.MaxLabelsPerKind)
 	}
 	for _, tag := range dstTags {
 		if !slices.Contains(srcTags, tag) {
-			addLabel(b.tags, tag, o.Counts, MaxLabelsPerKind)
+			addLabel(b.tags, tag, o.Counts, b.caps.MaxLabelsPerKind)
 		}
 	}
 
@@ -469,7 +652,7 @@ func (b *bucket) recordPorts(o Observation) {
 	k := PortKey{Port: o.DstPort, Transport: o.Transport, Service: o.DstService}
 	e, ok := b.ports[k]
 	if !ok {
-		if len(b.ports) >= MaxPortsPerBucket {
+		if len(b.ports) >= b.caps.MaxPortsPerBucket {
 			k = PortKey{Port: Other, Transport: o.Transport}
 			b.dropped++
 			e, ok = b.ports[k]
@@ -489,17 +672,17 @@ func (b *bucket) recordPath(o Observation) {
 	if o.Path == "" {
 		return
 	}
-	addLabel(b.paths, o.Path, o.Counts, MaxLabelsPerKind)
+	addLabel(b.paths, o.Path, o.Counts, b.caps.MaxLabelsPerKind)
 	// A relayed connection whose region was unreadable still counts as relayed
 	// above; it simply names no relay here.
 	if o.Path == PathDERP {
-		addLabel(b.derpRegions, o.DERPRegion, o.Counts, MaxLabelsPerKind)
+		addLabel(b.derpRegions, o.DERPRegion, o.Counts, b.caps.MaxLabelsPerKind)
 	}
 
 	k := peerPathKey{peer: peerIdentity(o.SrcNode, o.SrcAddr), path: o.Path}
 	e, ok := b.peerPaths[k]
 	if !ok {
-		if len(b.peerPaths) >= MaxPeerPathsPerBucket {
+		if len(b.peerPaths) >= b.caps.MaxPeerPathsPerBucket {
 			k = peerPathKey{peer: Other, path: o.Path}
 			b.dropped++
 			e, ok = b.peerPaths[k]
@@ -548,7 +731,7 @@ func (b *bucket) recordPolicy(o Observation) {
 	if verdict == VerdictPermitted && o.Reversed {
 		verdict = VerdictPermittedReverse
 	}
-	addLabel(b.verdicts, verdict, o.Counts, MaxLabelsPerKind)
+	addLabel(b.verdicts, verdict, o.Counts, b.caps.MaxLabelsPerKind)
 
 	switch {
 	case o.Verdict == VerdictPermitted && o.Rule >= 0:
@@ -558,7 +741,7 @@ func (b *bucket) recordPolicy(o Observation) {
 		k := RuleKey{PolicyVersion: o.PolicyVersion, Rule: o.Rule}
 		e, ok := b.rules[k]
 		if !ok {
-			if len(b.rules) >= MaxRulesPerBucket {
+			if len(b.rules) >= b.caps.MaxRulesPerBucket {
 				b.dropped++
 				return
 			}
@@ -590,7 +773,7 @@ func (b *bucket) addUnexplained(o Observation) {
 	}
 	e, ok := b.unexplained[k]
 	if !ok {
-		if len(b.unexplained) >= MaxUnexplainedPerBucket {
+		if len(b.unexplained) >= b.caps.MaxUnexplainedPerBucket {
 			k = UnexplainedKey{Src: Other, Dst: Other, Transport: o.Transport}
 			b.dropped++
 			e, ok = b.unexplained[k]
@@ -654,7 +837,7 @@ func (b *bucket) addMatrix(m map[MatrixKey]*Counts, src, dst []string, c Counts)
 			k := MatrixKey{Src: s, Dst: d}
 			e, ok := m[k]
 			if !ok {
-				if len(m) >= MaxMatrixCellsPerBucket {
+				if len(m) >= b.caps.MaxMatrixCellsPerBucket {
 					k = MatrixKey{Src: Other, Dst: Other}
 					b.dropped++
 					e, ok = m[k]
@@ -706,7 +889,7 @@ func (b *bucket) addNode(name string, c Counts, sending bool) {
 	}
 	e, ok := b.nodes[name]
 	if !ok {
-		if len(b.nodes) >= MaxNodesPerBucket {
+		if len(b.nodes) >= b.caps.MaxNodesPerBucket {
 			name = Other
 			b.dropped++
 			e, ok = b.nodes[name]
@@ -737,6 +920,13 @@ type Memory struct {
 	capacity      int
 	now           func() time.Time
 	maxFutureSkew time.Duration
+
+	// caps is this store's capacity profile (#329): every per-bucket cap and
+	// the raw-connection ring size. Defaults to DefaultCaps/ProfileDefault,
+	// reproducing the pre-#329 hardcoded behavior exactly when no
+	// WithCapacityProfile option is given.
+	caps    Caps
+	profile string
 
 	// recent holds up to MaxRecent raw connections, kept sorted ascending by
 	// event time (ties broken by recentSeq, the ingestion order) so "newest"
@@ -791,6 +981,21 @@ func WithClock(now func() time.Time) Option {
 func WithMaxFutureSkew(skew time.Duration) Option {
 	return func(m *Memory) {
 		m.maxFutureSkew = max(skew, 0)
+	}
+}
+
+// WithCapacityProfile selects the bounded capacity/memory profile the store
+// enforces on every dimension: ProfileCompact, ProfileDefault (also the
+// zero-option behavior) or ProfileExpanded (#329). An unrecognized or empty
+// profile is ignored and the store keeps ProfileDefault — config.Validate()
+// is what rejects a bad flows.capacity_profile value before this is ever
+// called; this option fails safe rather than silently going unbounded.
+func WithCapacityProfile(profile string) Option {
+	return func(m *Memory) {
+		if caps, ok := CapsForProfile(profile); ok {
+			m.caps = caps
+			m.profile = profile
+		}
 	}
 }
 
@@ -850,7 +1055,8 @@ func NewMemory(capacity int, opts ...Option) *Memory {
 	m := &Memory{
 		buckets:       map[int64]*bucket{},
 		capacity:      capacity,
-		recent:        make([]Recent, 0, MaxRecent),
+		caps:          DefaultCaps,
+		profile:       ProfileDefault,
 		now:           time.Now,
 		maxFutureSkew: 5 * time.Minute,
 	}
@@ -859,7 +1065,32 @@ func NewMemory(capacity int, opts ...Option) *Memory {
 			opt(m)
 		}
 	}
+	// Sized from m.caps, which options above may have replaced — this must
+	// happen after the options loop, not in the literal above.
+	m.recent = make([]Recent, 0, m.caps.MaxRecent)
 	return m
+}
+
+// Limits reports the effective (post-validation, post-clamp) capacity policy
+// this store was built with, and its estimated in-memory footprint (#329).
+// It is the seam the admin status page reads; see the Limits type.
+func (m *Memory) Limits() Limits {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Limits{
+		Profile:                 m.profile,
+		BucketCapacity:          m.capacity,
+		MaxPairsPerBucket:       m.caps.MaxPairsPerBucket,
+		MaxNodesPerBucket:       m.caps.MaxNodesPerBucket,
+		MaxPortsPerBucket:       m.caps.MaxPortsPerBucket,
+		MaxLabelsPerKind:        m.caps.MaxLabelsPerKind,
+		MaxMatrixCellsPerBucket: m.caps.MaxMatrixCellsPerBucket,
+		MaxUnexplainedPerBucket: m.caps.MaxUnexplainedPerBucket,
+		MaxRulesPerBucket:       m.caps.MaxRulesPerBucket,
+		MaxPeerPathsPerBucket:   m.caps.MaxPeerPathsPerBucket,
+		MaxRecent:               m.caps.MaxRecent,
+		EstimatedBytes:          m.caps.EstimatedBytes(m.capacity),
+	}
 }
 
 // bucketKey is the minute-aligned Unix timestamp a time falls in.
@@ -897,7 +1128,7 @@ func (m *Memory) RecordResult(o Observation) Admission {
 
 	b, ok := m.buckets[key]
 	if !ok {
-		b = newBucket(time.Unix(key, 0).UTC())
+		b = newBucket(time.Unix(key, 0).UTC(), m.caps)
 		m.buckets[key] = b
 		m.evictLocked()
 	}
@@ -955,7 +1186,7 @@ func (m *Memory) recordRecentLocked(o Observation) {
 	m.recentSeq++
 
 	live := m.recent[m.recentStart:]
-	if len(live) >= MaxRecent {
+	if len(live) >= m.caps.MaxRecent {
 		if !entry.Time.After(live[0].Time) {
 			// Older than (or exactly as old as) the oldest row currently
 			// retained: it would not make the newest-MaxRecent cut, so it is
@@ -981,7 +1212,7 @@ func (m *Memory) recordRecentLocked(o Observation) {
 	// Reclaim the dead prefix once it has grown to a full window. Doing it here
 	// rather than per-eviction is what makes eviction amortized O(1): the copy
 	// costs O(MaxRecent) but happens at most once per MaxRecent inserts.
-	if m.recentStart >= MaxRecent {
+	if m.recentStart >= m.caps.MaxRecent {
 		n := copy(m.recent, m.recent[m.recentStart:])
 		m.recent = m.recent[:n]
 		m.recentStart = 0
@@ -1158,7 +1389,7 @@ func (m *Memory) RecentPage(q RecentQuery) RecentPage {
 	}
 
 	live := m.liveRecentLocked()
-	page := RecentPage{Retained: len(live), Truncated: len(live) >= MaxRecent}
+	page := RecentPage{Retained: len(live), Truncated: len(live) >= m.caps.MaxRecent}
 
 	var rows []Recent
 	if q.Limit > 0 {

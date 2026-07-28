@@ -740,6 +740,14 @@
                 "flows": {
                     "type": "object",
                     "properties": {
+                        "capacity_profile": {
+                            "type": "string",
+                            "enum": [
+                                "compact",
+                                "default",
+                                "expanded"
+                            ]
+                        },
                         "enabled": {
                             "type": "boolean"
                         },

@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 )
 
@@ -308,6 +309,9 @@ func Default() *Config {
 			// see a diurnal shape, short enough that the ring stays small on a real
 			// tailnet.
 			Retention: dur(6 * time.Hour),
+			// "default" reproduces today's hardcoded per-bucket/ring limits exactly
+			// (#329) — safe defaults stay unchanged unless an operator opts in.
+			CapacityProfile: flowstore.ProfileDefault,
 		},
 		Events: EventsConfig{
 			Enabled: true,

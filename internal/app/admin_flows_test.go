@@ -13,6 +13,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
@@ -674,4 +675,40 @@ func TestFlowsJSON_ExactFiltersDoNotSubstringMatch(t *testing.T) {
 // they assert on carries the marker.
 func unverifiedName(name string) string {
 	return enrich.Mark(name, enrich.ProvenanceUnverified)
+}
+
+// TestStatusJSON_FlowStoreLimitsAreWired asserts the flow store's effective
+// capacity policy reaches /api/status.json from the REAL composition root
+// (#329's "status reports configured/effective limits and estimated usage"),
+// not from a value a test hand-assigned. It runs with a non-default profile so
+// a builder that reported the package constants instead of the store's own
+// caps would still fail — asserting the default profile would pass either way.
+func TestStatusJSON_FlowStoreLimitsAreWired(t *testing.T) {
+	a := flowsTestApp(t, func(c *config.Config) {
+		c.Flows.CapacityProfile = flowstore.ProfileExpanded
+	})
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = adminLoopbackHost
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	var got statusdata.Status
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status json: %v", err)
+	}
+	want := a.runtimes[0].flowStore.Limits()
+	if got.Flows.CapacityProfile != want.Profile {
+		t.Errorf("flow_store.capacity_profile = %q, want %q", got.Flows.CapacityProfile, want.Profile)
+	}
+	if got.Flows.MaxRecent != want.MaxRecent {
+		t.Errorf("flow_store.max_recent = %d, want %d", got.Flows.MaxRecent, want.MaxRecent)
+	}
+	if got.Flows.EstimatedBytes != want.EstimatedBytes {
+		t.Errorf("flow_store.estimated_bytes = %d, want %d", got.Flows.EstimatedBytes, want.EstimatedBytes)
+	}
+	if got.Flows.EstimatedBytes <= 0 {
+		t.Errorf("flow_store.estimated_bytes = %d, want a positive planning estimate", got.Flows.EstimatedBytes)
+	}
 }

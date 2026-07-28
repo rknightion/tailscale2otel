@@ -106,7 +106,8 @@ var rulesBySuffix = map[string]schemaRule{
 	"address_order":            {enum: []string{"ipv4", "ipv6"}},
 	"instance_source":          {enum: []string{"address", "name", "hostname"}},
 	"corruption":               {enum: []string{"fail"}},
-	"layout":                   {enum: []string{"", "partitioned", "flat"}}, // *.objectstore.layout (empty = partitioned)
+	"layout":                   {enum: []string{"", "partitioned", "flat"}},        // *.objectstore.layout (empty = partitioned)
+	"capacity_profile":         {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
 	"metric_export_batch_size": {min: f64(1)},
 	"rollup_top_n":             {min: f64(0)},
 	"label_value_sample_cap":   {min: f64(0)},

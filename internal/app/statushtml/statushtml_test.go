@@ -761,3 +761,43 @@ func TestRender_EventsLinkFollowsTheStore(t *testing.T) {
 		t.Error("event store disabled but the page links /events, which is not registered and would 404")
 	}
 }
+
+// TestRender_FlowStoreCapacityProfileCard asserts the flow store's effective
+// capacity policy and its estimated footprint are rendered (#329), so an
+// operator trading memory for fidelity can see what the setting actually
+// bought without opening /flows or reading the config back.
+//
+// Asserts the rendered ELEMENT, not the bare values: every human-facing
+// string on this page exists twice, once here and once in the JavaScript that
+// rebuilds the same section on poll, and five assertions in this file have
+// historically passed with the template block deleted.
+func TestRender_FlowStoreCapacityProfileCard(t *testing.T) {
+	s := statusdata.Status{Flows: statusdata.FlowStoreInfo{
+		Enabled:         true,
+		CapacityProfile: "expanded",
+		MaxRecent:       4000,
+		EstimatedBytes:  12345678,
+	}}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="flowProfile">expanded<`,
+		`4000 recent connections`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+	// The estimate must be labeled as an estimate. A raw byte count beside
+	// measured numbers reads as a measurement, and this one is a worst case
+	// no real tailnet reaches.
+	if !strings.Contains(out, `id="flowEstimate"`) {
+		t.Error(`no id="flowEstimate" element: the footprint estimate is not rendered`)
+	}
+	if !strings.Contains(out, "worst case") {
+		t.Error("the footprint estimate is not disclosed as a worst-case planning number")
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 )
 
@@ -321,5 +322,46 @@ func TestFlowsExportCSV_StopsOnClientDisconnect(t *testing.T) {
 	// cheapest possible "the client is gone, do no work" response.
 	if w.Body.Len() != 0 {
 		t.Errorf("body = %q, want empty: an already-canceled request should do no work at all", w.Body.String())
+	}
+}
+
+// The export bound has to follow the STORE's ring, not a package constant.
+// flows.capacity_profile (#329) scales MaxRecent per store, so a constant
+// maxExportRows pinned to the default profile would silently trim an
+// "expanded" operator's export to half the rows their ring actually holds —
+// and the provenance line would still say truncated=true, which reads as "the
+// ring dropped them" rather than "the export refused to read them".
+func TestFlowsExportCSV_RowBoundFollowsTheConfiguredProfile(t *testing.T) {
+	a := flowsTestApp(t, func(c *config.Config) {
+		c.Flows.CapacityProfile = flowstore.ProfileExpanded
+	})
+	rt := a.runtimes[0]
+	want := rt.flowStore.Limits().MaxRecent
+	if want <= flowstore.MaxRecent {
+		t.Fatalf("test premise broken: expanded ring is %d, want more than the default %d",
+			want, flowstore.MaxRecent)
+	}
+
+	base := time.Now().Add(-time.Hour / 2)
+	for i := range want + 500 {
+		rt.flowStore.Record(flowstore.Observation{
+			Time:        base.Add(time.Duration(i) * time.Millisecond),
+			TrafficType: "virtual",
+			Transport:   "tcp",
+			SrcNode:     "seed-src",
+			DstNode:     "seed-dst",
+			DstPort:     "443",
+			Counts:      flowstore.Counts{TxBytes: 1, RxBytes: 1, TxPkts: 1, RxPkts: 1, Flows: 1},
+		})
+	}
+
+	w := httptest.NewRecorder()
+	a.handleFlowsExportCSV(w, exportReq(http.MethodGet, "/api/flows/export.csv"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET export.csv = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	_, recs := parseCSVExport(t, w.Body.String())
+	if got := len(recs) - 1; got != want { // -1 for the header row
+		t.Errorf("csv exported %d data rows, want the configured ring cap %d", got, want)
 	}
 }

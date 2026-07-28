@@ -1479,6 +1479,7 @@ OTLP remains the system of record, and the store is lost on restart.
 | `flows.enabled` | `true` | Build the store and serve `/flows`. Requires `admin.enabled` **and** `admin.landing_page`; with either off the store is not built at all and a startup advisory says so. |
 | `flows.retention` | `6h` | How far back `/flows` can see, as a ring of one-minute buckets. Must be between `1m` and `24h` — this sizes process memory, not a database. |
 | `flows.max_future_skew` | `5m` | Largest amount a record may lead the process clock and still enter the local view (`0`–`1h`). Rejection is counted by `tailscale.network.store.dropped`; OTLP emission is unchanged. |
+| `flows.capacity_profile` | `default` | Trades memory for fidelity on every per-bucket dimension (pairs, nodes, ports, labels, identity matrices, unexplained relationships, rules, peer paths) AND the raw-connection ring, together: `compact` (roughly half the default footprint, folds into "everything else" sooner on a busy tailnet), `default` (today's hardcoded limits, unchanged), or `expanded` (roughly double). One of three fixed, hard-coded presets — never an arbitrary/unbounded number — so an invalid value fails validation by name. The status page reports the effective per-dimension limits and an estimated worst-case footprint for whichever profile is active. |
 
 Notes:
 

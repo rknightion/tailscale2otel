@@ -1477,6 +1477,8 @@ config: # @schema additionalProperties:false
     retention: 6h
     # -- Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged.
     max_future_skew: 5m
+    # -- Trade memory for fidelity on every per-bucket dimension and the raw-connection ring: `compact` (~half the default footprint), `default` (today's limits, unchanged), or `expanded` (~double). Fixed, hard-coded presets only — never a raw number.
+    capacity_profile: default # @schema enum:["compact","default","expanded"]
 
   events: # @schema additionalProperties:false
     # -- Build the bounded audit/webhook event store and serve /events. No effect without admin.enabled + admin.landing_page.
