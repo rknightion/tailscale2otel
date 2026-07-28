@@ -70,6 +70,59 @@ func TestRender_NoExternalAssets(t *testing.T) {
 	}
 }
 
+// TestRender_ErrorAndTruncationBannersAreLiveRegions asserts the two banners
+// that report a fetch failure and a truncated-window warning are announced by
+// assistive tech when their text is set, not just shown visually — the same
+// treatment flowhtml's #errBanner/#truncBanner got in #327 (this page's
+// closing keyword, #512, is the seam #327 left for this page).
+func TestRender_ErrorAndTruncationBannersAreLiveRegions(t *testing.T) {
+	var buf bytes.Buffer
+	if err := eventshtml.Render(&buf, eventsdata.Page{}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<div id="errBanner" class="banner" role="alert"></div>`,
+		`<div id="truncBanner" class="banner" role="status"></div>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_FocusVisibleStylesPresent asserts a focus-visible rule exists,
+// per #327/#512: the page's dark palette makes the browser default outline
+// hard to see, so filter inputs, selects and buttons need an explicit ring
+// for keyboard users specifically (not for mouse clicks, which
+// :focus-visible already excludes).
+func TestRender_FocusVisibleStylesPresent(t *testing.T) {
+	var buf bytes.Buffer
+	if err := eventshtml.Render(&buf, eventsdata.Page{}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(buf.String(), ":focus-visible{outline:") {
+		t.Error("no :focus-visible outline rule present")
+	}
+}
+
+// TestRender_ReducedMotionRulePresent asserts a prefers-reduced-motion rule
+// exists in the stylesheet. This page has no perceptible animation (no
+// charts, no force-directed layout, no auto-scrolling) — unlike flowhtml's
+// topology simulation, there is nothing here to skip. The rule is defensive,
+// matching statushtml's own documented-as-defensive treatment in #327, not a
+// behavior fix, and is asserted only so the page doesn't silently regress if
+// animation is added later without this guard.
+func TestRender_ReducedMotionRulePresent(t *testing.T) {
+	var buf bytes.Buffer
+	if err := eventshtml.Render(&buf, eventsdata.Page{}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(buf.String(), "@media (prefers-reduced-motion: reduce){") {
+		t.Error("no prefers-reduced-motion rule present")
+	}
+}
+
 // TestPageDTOCannotCarryACredential mirrors flowhtml's own copy of this test
 // (#322) at the point where the template actually consumes the DTO, as a
 // second line of defense alongside eventsdata's own reflection test.

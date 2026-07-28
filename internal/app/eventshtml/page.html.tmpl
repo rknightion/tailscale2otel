@@ -59,6 +59,19 @@
   .banner.show{display:block}
   #errBanner{background:rgba(248,81,73,.16);color:var(--err)}
   #truncBanner{background:rgba(210,153,34,.16);color:var(--warn)}
+  /* Focus-visible: keyboard focus always gets a visible ring; a mouse click
+     alone does not (browsers already suppress :focus-visible for pointer
+     interaction on non-form elements). The default browser outline is hard
+     to see against this page's dark palette, so filter inputs, selects and
+     buttons need an explicit one. */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  /* This page has no perceptible animation (no charts, no force-directed
+     layout, no auto-scrolling) — nothing here needs to be skipped for
+     reduced motion. This rule is defensive, matching statushtml's own
+     documented-as-defensive treatment (#327), not a behavior fix. */
+  @media (prefers-reduced-motion: reduce){
+    *{scroll-behavior:auto!important}
+  }
   table{width:100%;border-collapse:collapse;background:var(--panel);
     border:1px solid var(--line);border-radius:10px;overflow:hidden}
   th,td{text-align:left;padding:7px 11px;border-bottom:1px solid var(--line);
@@ -82,8 +95,8 @@
   <span class="spacer"></span>
   <a href="/">status</a>
 </header>
-<div id="errBanner" class="banner"></div>
-<div id="truncBanner" class="banner"></div>
+<div id="errBanner" class="banner" role="alert"></div>
+<div id="truncBanner" class="banner" role="status"></div>
 <main>
   <section>
     <div class="cards" id="statsCards">
