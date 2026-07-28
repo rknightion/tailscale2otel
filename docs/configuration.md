@@ -1332,6 +1332,17 @@ internet.
 > an existing deployment still starts; only the data-bearing endpoints go dark until you set a token
 > or move to loopback.
 
+> **`/api/config.json` reports the COMPLETE effective configuration.** Alongside the existing named
+> fields it carries a `full` map: every effective key, dotted-path keyed (the `TS2OTEL_*` naming with
+> `.` instead of `__`), reflected straight off the running config so no key can be silently omitted
+> as a new field is added. Secret-bearing values never appear — only
+> `{"secret":true,"set":<bool>,"source":"unset"|"value"|"file"}` — and redaction is driven by the
+> field's TYPE rather than a name list, which would be one forgotten entry away from a leak. Values
+> that merely LOOK like URLs are stripped of embedded credentials and signed queries the same way the
+> rest of the status page does. Header maps are redacted; tag and label maps are not, because those
+> values are already published to your backend as profile tags and metric attributes, and hiding them
+> would cost the operator asking "why is my label not applied" the one place they could check.
+
 ---
 
 ## `flows` — built-in flow view

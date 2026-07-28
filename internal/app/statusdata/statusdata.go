@@ -616,4 +616,10 @@ type ConfigSummary struct {
 	WebhookSecretSet  bool     `json:"webhook_secret_set"`
 	PyroscopeAuthSet  bool     `json:"pyroscope_auth_set"`
 	OTLPHeaderKeys    []string `json:"otlp_header_keys,omitempty"`
+	// Full is the complete effective-configuration export (#320): every config
+	// key reflected off the live config, dotted-path keyed, with secrets
+	// reduced to presence+source. It does not replace the named fields above
+	// (kept for backward compatibility with existing consumers) — it is the
+	// field to read for "the whole config". See ConfigFieldValue.
+	Full map[string]ConfigFieldValue `json:"full"`
 }
