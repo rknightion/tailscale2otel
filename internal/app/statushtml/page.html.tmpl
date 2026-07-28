@@ -532,7 +532,7 @@
     <div class="cards">
       <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
       <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px">{{.Config.AuthMethod}}</div></div>
-      <div class="card"><div class="k">Checkpoint store</div><div class="v" style="font-size:16px">{{.Config.CheckpointStore}}</div></div>
+      <div class="card"><div class="k">Checkpoint store</div><div class="v" style="font-size:16px">{{.Config.CheckpointStore}}</div>{{with .Config.CheckpointPath}}<div class="k" style="margin-top:4px;word-break:break-all">{{.}}</div>{{end}}{{with .Config.CheckpointReason}}<div class="k" style="margin-top:4px">{{.}}</div>{{end}}</div>
       <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
       <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
     </div>

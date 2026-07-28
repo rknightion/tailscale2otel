@@ -353,7 +353,7 @@ collectors:
 # ── Checkpointing (resume polled log collectors after a restart) ────────────────
 checkpoint:
   store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)
-  file_path: /var/lib/tailscale2otel/checkpoints.json   # used when store: file — mount a writable, persistent path here (the dir is auto-created)
+  file_path: /var/lib/tailscale2otel/checkpoints.json   # used when store: file — mount a writable, persistent path here (the dir is auto-created). This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.
 
 # ── Receiver write-ahead log (OPTIONAL: durable local acceptance) ───────────────
 # Disabled is fully stateless. When enabled, a successful receiver ACK means the

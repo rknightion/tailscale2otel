@@ -656,6 +656,8 @@ func (a *App) redactedConfigSummary() statusdata.ConfigSummary {
 		LogLevel:          c.LogLevel,
 		AuthMethod:        authMethod,
 		CheckpointStore:   a.checkpointEffective, // effective store, not the raw config value (#69)
+		CheckpointPath:    a.checkpointPath,      // effective path, which may differ from config (#336)
+		CheckpointReason:  a.checkpointReason,
 		EnabledCollectors: a.enabledCollectorNames(),
 		APIKeySet:         apiKeySet,
 		OAuthSecretSet:    oauthSecretSet,

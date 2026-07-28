@@ -75,7 +75,15 @@ type App struct {
 	// or a corrupt file). The status page and the checkpoint reporter use this, not
 	// the raw config value (#69).
 	checkpointEffective string
-	logger              *slog.Logger
+	// checkpointPath is the file actually in use (empty for the memory store) and
+	// checkpointReason explains any divergence from the config — an unwritable
+	// path, a relocation to the platform state directory (#336), or a corrupt
+	// file renamed aside. Both are surfaced on the status page and in
+	// /api/status.json so an operator can see WHERE state went and WHY without
+	// reading startup logs.
+	checkpointPath   string
+	checkpointReason string
+	logger           *slog.Logger
 
 	flowDedup     *dedup.Set // runtimes[0] flow set, retained for the dedup self-obs reporter
 	auditDedup    *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
@@ -164,14 +172,16 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if err != nil {
 		return nil, err
 	}
-	store, checkpointEffective, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
+	store, checkpointOut, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
 	if err != nil {
 		_ = ps.Shutdown(ctx)
 		return nil, err
 	}
 
 	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, store)
-	a.checkpointEffective = checkpointEffective
+	a.checkpointEffective = checkpointOut.Kind
+	a.checkpointPath = checkpointOut.Path
+	a.checkpointReason = checkpointOut.Reason
 	a.procCard = ps.Process().Cardinality()
 	a.procExportStats = ps.Process().ExportStats
 	a.metricGroups = metricGroupMap()
@@ -836,37 +846,101 @@ func newReleaseHTTPClient(timeout time.Duration) *http.Client {
 // rather than the raw config value (#69). A corrupt/unreadable checkpoint file is
 // non-fatal: it is renamed aside and the store starts empty (a cold start),
 // instead of crash-looping startup.
-func checkpointStore(cfg *config.Config, logger *slog.Logger) (collector.CheckpointStore, string, error) {
+func checkpointStore(cfg *config.Config, logger *slog.Logger) (collector.CheckpointStore, checkpointOutcome, error) {
+	return checkpointStoreWithDefault(cfg, logger, config.LegacyCheckpointPath)
+}
+
+// checkpointOutcome is what the store ACTUALLY resolved to, which can differ
+// from the configured values in three ways: a degrade to memory, a relocation
+// to the platform state path, or a corrupt file renamed aside. The status page
+// and /api/status.json report these rather than the raw config (#69, #336).
+type checkpointOutcome struct {
+	Kind   string // "file" | "memory"
+	Path   string // empty for the memory store
+	Reason string // why the effective values differ from the config; empty when they do not
+}
+
+// checkpointStoreWithDefault is checkpointStore with the "what counts as the
+// default path" seam exposed, so the relocation below can be tested without
+// depending on whether the test process can write to /var/lib.
+//
+// The relocation (#336): the default path is right for the container image,
+// which pre-seeds /var/lib/tailscale2otel for uid 65532, and for the Helm
+// chart, which sets it explicitly and mounts a volume. It is wrong for a native
+// run — Linux non-root cannot create it, and macOS and Windows have no /var/lib
+// at all, though releases ship binaries for both. Those runs used to degrade
+// silently to in-memory checkpoints and cold-start from initial_lookback on
+// every restart.
+//
+// So when the path is UNTOUCHED BY THE OPERATOR and unwritable, fall back to
+// the platform state directory before falling back to memory. Two boundaries
+// keep this honest:
+//
+//   - An explicitly configured path is NEVER relocated. Naming a path is a
+//     decision, and it is usually a mounted volume that is briefly absent;
+//     writing checkpoints somewhere else would hide that misconfiguration and
+//     split state across two locations. Those keep the WARN-and-degrade.
+//   - Nothing is ever MOVED. If the default path is usable it is used, so an
+//     existing checkpoint can never be stranded by this. The relocation only
+//     ever happens where there was no readable checkpoint to begin with.
+func checkpointStoreWithDefault(
+	cfg *config.Config, logger *slog.Logger, defaultPath string,
+) (collector.CheckpointStore, checkpointOutcome, error) {
 	if cfg.Checkpoint.Store != "file" || cfg.Checkpoint.FilePath == "" {
-		return collector.NewMemoryStore(), "memory", nil
+		return collector.NewMemoryStore(), checkpointOutcome{Kind: "memory"}, nil
 	}
-	if err := ensureWritableDir(filepath.Dir(cfg.Checkpoint.FilePath)); err != nil {
-		logger.Warn("checkpoint.store=file but the path is not writable; falling back to in-memory checkpoints "+
-			"(window cursors will not survive a restart). Mount a writable volume at the directory, or set checkpoint.store=memory to silence this.",
-			"file_path", cfg.Checkpoint.FilePath, "error", err)
-		return collector.NewMemoryStore(), "memory", nil
+	path, reason := cfg.Checkpoint.FilePath, ""
+	if err := ensureWritableDir(filepath.Dir(path)); err != nil {
+		relocated := false
+		if path == defaultPath {
+			if alt := config.DefaultCheckpointPath(); alt != "" && alt != path {
+				if altErr := ensureWritableDir(filepath.Dir(alt)); altErr == nil {
+					reason = fmt.Sprintf(
+						"default checkpoint path %s is not writable; using the platform state path instead", path)
+					logger.Info("checkpoint path relocated to the platform state directory "+
+						"(the default is container-oriented and a native run usually cannot write it). "+
+						"Set checkpoint.file_path explicitly to choose your own.",
+						"configured_path", path, "effective_path", alt, "error", err)
+					path = alt
+					relocated = true
+				}
+			}
+		}
+		if !relocated {
+			logger.Warn("checkpoint.store=file but the path is not writable; falling back to in-memory checkpoints "+
+				"(window cursors will not survive a restart). Mount a writable volume at the directory, or set checkpoint.store=memory to silence this.",
+				"file_path", cfg.Checkpoint.FilePath, "error", err)
+			return collector.NewMemoryStore(), checkpointOutcome{
+				Kind:   "memory",
+				Reason: fmt.Sprintf("checkpoint path %s is not writable", cfg.Checkpoint.FilePath),
+			}, nil
+		}
 	}
-	store, err := collector.NewFileStore(cfg.Checkpoint.FilePath)
+	store, err := collector.NewFileStore(path)
 	if errors.Is(err, collector.ErrCorruptCheckpoint) {
 		// Non-critical window-cursor state: rename the corrupt file aside and start
 		// from an empty checkpoint (cold start from initial_lookback) rather than
 		// fail startup. The dir is writable (checked above), so a fresh file store
 		// persists going forward.
-		aside := cfg.Checkpoint.FilePath + ".corrupt"
-		if renameErr := os.Rename(cfg.Checkpoint.FilePath, aside); renameErr != nil {
+		aside := path + ".corrupt"
+		if renameErr := os.Rename(path, aside); renameErr != nil {
 			logger.Warn("checkpoint file is corrupt and could not be renamed aside; falling back to in-memory checkpoints",
-				"file_path", cfg.Checkpoint.FilePath, "error", err, "rename_error", renameErr)
-			return collector.NewMemoryStore(), "memory", nil
+				"file_path", path, "error", err, "rename_error", renameErr)
+			return collector.NewMemoryStore(), checkpointOutcome{
+				Kind:   "memory",
+				Reason: fmt.Sprintf("checkpoint file %s is corrupt and could not be renamed aside", path),
+			}, nil
 		}
 		logger.Warn("checkpoint file was corrupt/unreadable; renamed it aside and started from an empty checkpoint "+
 			"(window collectors cold-start from initial_lookback)",
-			"file_path", cfg.Checkpoint.FilePath, "moved_to", aside, "error", err)
-		store, err = collector.NewFileStore(cfg.Checkpoint.FilePath)
+			"file_path", path, "moved_to", aside, "error", err)
+		reason = fmt.Sprintf("checkpoint file was corrupt; renamed aside to %s and cold-started", aside)
+		store, err = collector.NewFileStore(path)
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, checkpointOutcome{}, err
 	}
-	return store, "file", nil
+	return store, checkpointOutcome{Kind: "file", Path: path, Reason: reason}, nil
 }
 
 // ensureWritableDir creates dir (and parents) if needed and verifies it is

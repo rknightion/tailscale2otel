@@ -33,8 +33,8 @@ func TestCheckpointStore_CorruptFileDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkpointStore returned error, want graceful degrade: %v", err)
 	}
-	if effective != "file" {
-		t.Errorf("effective = %q, want file (dir is writable)", effective)
+	if effective.Kind != "file" {
+		t.Errorf("effective = %q, want file (dir is writable)", effective.Kind)
 	}
 	if store == nil || len(store.Keys()) != 0 {
 		t.Fatalf("store should start empty; keys=%v", store.Keys())
@@ -63,8 +63,8 @@ func TestCheckpointStore_UnwritableReportsMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if effective != "memory" {
-		t.Errorf("effective = %q, want memory", effective)
+	if effective.Kind != "memory" {
+		t.Errorf("effective = %q, want memory", effective.Kind)
 	}
 }
 
@@ -145,5 +145,115 @@ func TestMigrateCheckpointKeys_AmbiguousColdStarts(t *testing.T) {
 	// Both stray keys are left in place (logged, not deleted).
 	if _, ok := store.Get("old1/flowlogs"); !ok {
 		t.Errorf("stray key old1 should be left in place")
+	}
+}
+
+// TestCheckpointStore_RelocatesUnwritableDefaultToPlatformPath pins #336.
+//
+// The default /var/lib/tailscale2otel is writable inside the container image
+// (which pre-seeds it for uid 65532) but not for a native run: on Linux only
+// root can create it, and on macOS and Windows it does not exist at all — yet
+// releases ship binaries for all three. Before this, such a run degraded
+// silently to in-memory checkpoints and cold-started every window collector
+// from initial_lookback on each restart.
+func TestCheckpointStore_RelocatesUnwritableDefaultToPlatformPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LocalAppData", home)
+	t.Setenv("XDG_STATE_HOME", "")
+
+	// Stand in for /var/lib on a non-root native run: a path that cannot be
+	// created, which checkpointStore is told is the default. Injecting the
+	// default is the only way to exercise this without depending on whether the
+	// test runner happens to be root.
+	f := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	unwritableDefault := filepath.Join(f, "sub", "checkpoints.json")
+
+	cfg := &config.Config{}
+	cfg.Checkpoint.Store = "file"
+	cfg.Checkpoint.FilePath = unwritableDefault
+
+	store, out, err := checkpointStoreWithDefault(cfg, discardLogger(), unwritableDefault)
+	if err != nil {
+		t.Fatalf("checkpointStore: %v", err)
+	}
+	if out.Kind != "file" {
+		t.Fatalf("effective store = %q, want file — the platform path is writable, so "+
+			"degrading to memory means the relocation did not happen", out.Kind)
+	}
+	want := config.DefaultCheckpointPath()
+	if out.Path != want {
+		t.Errorf("effective path = %q, want the platform state path %q", out.Path, want)
+	}
+	if out.Reason == "" {
+		t.Error("relocation happened but Reason is empty; the status page would show no explanation")
+	}
+	if err := store.Set("flowlogs", time.Unix(1, 0)); err != nil {
+		t.Errorf("relocated store is not writable: %v", err)
+	}
+	if _, statErr := os.Stat(want); statErr != nil {
+		t.Errorf("nothing was written to the relocated path: %v", statErr)
+	}
+}
+
+// TestCheckpointStore_ExplicitPathIsNeverRelocated pins the boundary. An
+// operator who names a path has made a decision — very likely a mounted volume
+// that is briefly absent. Silently writing their checkpoints somewhere else
+// would hide a real misconfiguration and split state across two locations.
+func TestCheckpointStore_ExplicitPathIsNeverRelocated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LocalAppData", home)
+	t.Setenv("XDG_STATE_HOME", "")
+
+	f := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Checkpoint.Store = "file"
+	cfg.Checkpoint.FilePath = filepath.Join(f, "sub", "checkpoints.json")
+
+	_, out, err := checkpointStore(cfg, discardLogger())
+	if err != nil {
+		t.Fatalf("checkpointStore: %v", err)
+	}
+	if out.Kind != "memory" {
+		t.Errorf("effective store = %q, want memory: an explicitly configured path must "+
+			"WARN and degrade, never relocate", out.Kind)
+	}
+	if _, statErr := os.Stat(config.DefaultCheckpointPath()); statErr == nil {
+		t.Error("checkpoints were relocated to the platform path despite an explicit configured path")
+	}
+}
+
+// TestCheckpointStore_WritableDefaultIsNotRelocated pins container behavior:
+// where /var/lib IS writable (the image pre-seeds it), nothing changes and no
+// existing checkpoint is stranded.
+func TestCheckpointStore_WritableDefaultIsNotRelocated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LocalAppData", home)
+	t.Setenv("XDG_STATE_HOME", "")
+
+	// Stand in for a writable /var/lib by pointing the "default" at a writable
+	// dir and telling checkpointStore that this is the default value.
+	dir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Checkpoint.Store = "file"
+	cfg.Checkpoint.FilePath = filepath.Join(dir, "checkpoints.json")
+
+	_, out, err := checkpointStoreWithDefault(cfg, discardLogger(), cfg.Checkpoint.FilePath)
+	if err != nil {
+		t.Fatalf("checkpointStore: %v", err)
+	}
+	if out.Kind != "file" || out.Path != cfg.Checkpoint.FilePath {
+		t.Errorf("kind=%q path=%q, want file at the configured (writable) default", out.Kind, out.Path)
+	}
+	if out.Reason != "" {
+		t.Errorf("Reason = %q, want empty when nothing was relocated", out.Reason)
 	}
 }

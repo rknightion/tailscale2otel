@@ -526,9 +526,16 @@ type CapabilityOperation struct {
 // ConfigSummary is the redacted configuration overview. Secret VALUES never
 // appear here — only "<thing>Set" booleans and header KEY names.
 type ConfigSummary struct {
-	LogLevel          string   `json:"log_level"`
-	AuthMethod        string   `json:"auth_method"`
-	CheckpointStore   string   `json:"checkpoint_store"`
+	LogLevel        string `json:"log_level"`
+	AuthMethod      string `json:"auth_method"`
+	CheckpointStore string `json:"checkpoint_store"`
+	// CheckpointPath is the file ACTUALLY in use (empty for the memory store) and
+	// CheckpointReason explains any divergence from the configured values — an
+	// unwritable path, a relocation to the platform state directory (#336), or a
+	// corrupt file renamed aside. Both are effective values, not config values,
+	// so an operator can see where state went without reading startup logs.
+	CheckpointPath    string   `json:"checkpoint_path,omitempty"`
+	CheckpointReason  string   `json:"checkpoint_reason,omitempty"`
 	EnabledCollectors []string `json:"enabled_collectors"`
 	APIKeySet         bool     `json:"api_key_set"`
 	OAuthSecretSet    bool     `json:"oauth_secret_set"`

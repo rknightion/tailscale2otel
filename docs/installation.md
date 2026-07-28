@@ -318,6 +318,45 @@ See [Configuration](configuration.md) for the full list of options once you are 
         Set `TS2OTEL_OTLP__PROTOCOL=stdout` (or `otlp.protocol: stdout` in the
         YAML) to print metrics and logs to the console — no OTLP backend needed.
 
+    !!! tip "Where checkpoints go on a native run"
+        The shipped default, `/var/lib/tailscale2otel/checkpoints.json`, suits a
+        **container** — the image pre-seeds that directory for uid 65532, and the
+        Helm chart sets it explicitly and mounts a volume there. A native run
+        usually cannot write it: on Linux only root can create `/var/lib`
+        subdirectories, and macOS and Windows have no `/var/lib` at all, though
+        releases ship binaries for both.
+
+        So when the path is **left at its default** and is not writable, the
+        exporter uses the platform state directory instead and logs both paths at
+        INFO:
+
+        | Platform | Location |
+        | --- | --- |
+        | Linux/BSD | `$XDG_STATE_HOME/tailscale2otel/`, else `~/.local/state/tailscale2otel/` |
+        | macOS | `~/Library/Application Support/tailscale2otel/` |
+        | Windows | `%LocalAppData%\tailscale2otel\` |
+
+        Precedence, and what is *not* done:
+
+        - **The configured path always wins when it is usable.** Nothing is ever
+          moved or copied, so an existing checkpoint can never be stranded by
+          this — relocation only happens where there was no readable checkpoint.
+        - **An explicitly configured `checkpoint.file_path` is never relocated.**
+          Naming a path is a decision, and it is usually a mounted volume that is
+          briefly absent; writing elsewhere would hide that misconfiguration and
+          split state across two locations. Those still WARN and fall back to
+          in-memory, as before.
+        - **Migrating an existing native install is manual and optional.** If you
+          were running as root against `/var/lib` and want to move to the
+          per-user path, copy `checkpoints.json` there yourself. Doing nothing is
+          safe: the old path keeps working while it is writable.
+
+        The effective store, the effective path, and the reason for any
+        divergence are all shown on the admin status page and in
+        `/api/status.json` (`checkpoint_store`, `checkpoint_path`,
+        `checkpoint_reason`), so you never have to read startup logs to find out
+        where state went.
+
     Release binaries (pre-built, multi-arch) are attached to each
     [GitHub Release](https://github.com/rknightion/tailscale2otel/releases) and
     are signed with cosign keyless signatures.

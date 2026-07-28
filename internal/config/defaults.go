@@ -221,7 +221,7 @@ func Default() *Config {
 		},
 		Checkpoint: CheckpointConfig{
 			Store:    "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
-			FilePath: "/var/lib/tailscale2otel/checkpoints.json",
+			FilePath: LegacyCheckpointPath,
 		},
 		IngressWAL: IngressWALConfig{
 			Enabled:    false,
