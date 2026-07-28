@@ -498,6 +498,24 @@ the hot path never blocks.
 | `enrichment.reverse_dns.max_entries` | `50000` | Cache size bound. |
 | `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
 
+> **Relative paths resolve against the config FILE, not the working directory.** Every path-bearing
+> field — each `*_file` secret sibling, every `cert_file`/`key_file`/`ca_file`, `checkpoint.file_path`
+> and `ingress_wal.directory` — resolves a relative value against the directory containing the YAML
+> config file. A self-contained config directory therefore works the same whether the binary is
+> started from inside it, by systemd, or by a container entrypoint. Absolute paths are used as-is,
+> and there is no fallback search: one candidate path, resolved once.
+>
+> A path supplied through a `TS2OTEL_*` environment variable is **never** reinterpreted this way and
+> keeps its traditional working-directory meaning. The environment is set by whoever launches the
+> process, which is a different actor from whoever wrote the config file, and silently resolving
+> their path against a directory they never mentioned would be worse than the old behaviour. With no
+> `-config` file at all, every relative path keeps working-directory semantics — there is no config
+> directory to resolve against.
+>
+> An error names both paths — `admin.tls.cert_file "certs/tls.pem" (resolved to
+> "/etc/ts2otel/certs/tls.pem"): no such file` — because the configured path on its own looks correct
+> and the resolved path on its own looks unrelated to anything in the config.
+>
 > **Editor validation (JSON Schema).** `config.schema.json` at the repository root is a generated
 > draft-07 JSON Schema covering every configuration key's shape — name, type, closed value sets, and
 > the numeric ranges that are validated unconditionally. Point an editor at it via

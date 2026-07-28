@@ -59,7 +59,7 @@ func writeKeypair(t *testing.T, dir, name string) (certPath, keyPath string) {
 func TestValidTLSKeypairIsAccepted(t *testing.T) {
 	dir := t.TempDir()
 	cert, key := writeKeypair(t, dir, "ok")
-	if err := validateTLSFiles("admin", cert, key); err != nil {
+	if err := (&Config{}).validateTLSFiles("admin", cert, key); err != nil {
 		t.Errorf("a valid self-signed keypair was rejected: %v", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestUnparseableTLSKeypairIsRejected(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	err := validateTLSFiles("admin", cert, key)
+	err := (&Config{}).validateTLSFiles("admin", cert, key)
 	if err == nil {
 		t.Fatal("an empty cert/key pair passed validation. This is the /dev/null case from #305: " +
 			"readable, parseable as nothing, and it fails only once the listener tries to serve.")
@@ -88,7 +88,7 @@ func TestMismatchedTLSKeypairIsRejected(t *testing.T) {
 	cert, _ := writeKeypair(t, dir, "a")
 	_, otherKey := writeKeypair(t, dir, "b")
 
-	err := validateTLSFiles("prometheus", cert, otherKey)
+	err := (&Config{}).validateTLSFiles("prometheus", cert, otherKey)
 	if err == nil {
 		t.Fatal("a certificate paired with a DIFFERENT key passed validation. Both files parse " +
 			"and both are readable; only loading them together catches it.")
@@ -103,7 +103,7 @@ func TestTLSErrorDoesNotLeakKeyMaterial(t *testing.T) {
 	cert, _ := writeKeypair(t, dir, "a")
 	_, otherKey := writeKeypair(t, dir, "b")
 
-	err := validateTLSFiles("admin", cert, otherKey)
+	err := (&Config{}).validateTLSFiles("admin", cert, otherKey)
 	if err == nil {
 		t.Fatal("expected a mismatch error")
 	}

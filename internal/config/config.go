@@ -89,6 +89,11 @@ type Config struct {
 	// Load error.
 	secretFileConflicts []string
 
+	// pathResolutions records, for every path-bearing field (see pathFields,
+	// paths.go), what the operator configured and what this process resolved
+	// it to (#310). Populated by Load, before resolveSecretFiles or Validate
+	// run, so both can report a "no such file" error naming both paths.
+	pathResolutions map[string]pathResolution
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -1225,6 +1230,7 @@ func Load(path string) (*Config, error) {
 	//    as-is. Done before resolveSecretFiles / Validate so both open the same
 	//    resolved path this process will actually use at runtime, and can name
 	//    it (alongside what the operator wrote) on failure. See paths.go.
+	cfg.pathResolutions = resolveConfigPaths(&cfg, path, envSetKeys())
 
 	// 5. Resolve every *_file secret sibling (Docker-secrets style) now that file
 	//    + env layering is complete AND every such field's path has already been

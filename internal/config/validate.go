@@ -608,7 +608,7 @@ func validateReceiverPath(field, p string) error {
 // (both-or-neither), and any set path must exist and be readable now — not
 // discovered as an opaque http.Server.ListenAndServeTLS failure at startup.
 // label is the config prefix (e.g. "admin") used in error messages.
-func validateTLSFiles(label, certFile, keyFile string) error {
+func (c *Config) validateTLSFiles(label, certFile, keyFile string) error {
 	if (certFile == "") != (keyFile == "") {
 		return fmt.Errorf("%s.tls.cert_file and %s.tls.key_file must both be set or both be empty "+
 			"(got cert_file=%q, key_file=%q)", label, label, certFile, keyFile)
@@ -625,7 +625,11 @@ func validateTLSFiles(label, certFile, keyFile string) error {
 		}
 		fh, err := os.Open(f.path)
 		if err != nil {
-			return fmt.Errorf("%s.tls.%s %q: %w", label, f.field, f.path, err)
+			// Name both the configured and the resolved path (#310): a relative
+			// path here was rewritten against the config file's directory, and
+			// an error showing only one of them is the hardest kind to act on.
+			return fmt.Errorf("%s.tls.%s %s: %w", label, f.field,
+				c.pathForError(label+".tls."+f.field, f.path), err)
 		}
 		_ = fh.Close()
 	}
@@ -929,20 +933,20 @@ func (c *Config) validationChecks() []configCheck {
 	// ListenAndServeTLS — on a goroutine, after startup, as a log line on a
 	// listener that never served rather than a refusal to run (#305).
 	add("admin.tls", "Set both admin.tls.cert_file and admin.tls.key_file to a matching, loadable keypair.", func() error {
-		return validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile)
+		return c.validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile)
 	})
 	add("prometheus.tls", "Set both prometheus.tls.cert_file and prometheus.tls.key_file to a matching, loadable keypair.", func() error {
-		return validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile)
+		return c.validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile)
 	})
 	// Streaming was the one listener with NO TLS validation at all — and the one
 	// where a half-configured block is worst: stream.Run serves plain HTTP unless
 	// BOTH fields are set, so a cert with a missing key silently downgraded a log
 	// receiver to plaintext while looking configured for TLS (#305).
 	add("streaming.tls", "Set both streaming.tls.cert_file and streaming.tls.key_file to a matching, loadable keypair.", func() error {
-		return validateTLSFiles("streaming", c.Streaming.TLS.CertFile, c.Streaming.TLS.KeyFile)
+		return c.validateTLSFiles("streaming", c.Streaming.TLS.CertFile, c.Streaming.TLS.KeyFile)
 	})
 	add("webhook.tls", "Set both webhook.tls.cert_file and webhook.tls.key_file to a matching, loadable keypair.", func() error {
-		return validateTLSFiles("webhook", c.Webhook.TLS.CertFile, c.Webhook.TLS.KeyFile)
+		return c.validateTLSFiles("webhook", c.Webhook.TLS.CertFile, c.Webhook.TLS.KeyFile)
 	})
 
 	add("tailscale.auth.method", oneOfRemediation("tailscale.auth.method", "oauth", "apikey", "workload_identity"), func() error {

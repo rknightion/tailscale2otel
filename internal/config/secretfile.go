@@ -107,7 +107,13 @@ func (c *Config) resolveSecretFiles() error {
 		}
 		data, err := os.ReadFile(f.file)
 		if err != nil {
-			return fmt.Errorf("%s_file %q: %w", f.name, f.file, err)
+			// f.file already holds the #310-resolved path (resolveConfigPaths runs
+			// before resolveSecretFiles). When resolution actually rewrote it --
+			// a relative YAML-sourced path against the config file's directory --
+			// show the operator both what they wrote and what this process
+			// actually tried to open; a bare resolved path alone can look totally
+			// unrelated to the file the operator names in their config.
+			return fmt.Errorf("%s_file %s: %w", f.name, c.pathForError(f.name+"_file", f.file), err)
 		}
 		*f.value = Secret(strings.TrimSpace(string(data)))
 	}
