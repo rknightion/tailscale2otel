@@ -329,7 +329,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(99, len(alert_rules()))
+        self.assertEqual(100, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
 
     def test_durations_are_go_style_strings(self):
