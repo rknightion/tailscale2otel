@@ -763,5 +763,71 @@ render
 grep -q 'checksum/config' <<<"$RENDER" \
   && ok "Q: default still carries checksum/config" || bad "Q: default lost its checksum/config"
 
+# --------------------------------------------------------------------------
+case_ "R. projected Workload Identity Federation token (#343)"
+WIF="--set workloadIdentity.enabled=true --set-string config.tailscale.auth.method=workload_identity --set-string config.tailscale.auth.workload_identity.client_id=abc123"
+wifvol() { dep_field '.spec.template.spec.volumes[] | select(.name == "tailscale-wif-token")'; }
+
+render
+assert_rc0 "R: default renders"
+[[ -z "$(wifvol | tr -d '[:space:]-')" ]] \
+  && ok "R: no token volume by default" || bad "R: a WIF volume rendered by default"
+
+# shellcheck disable=SC2086
+render $WIF
+assert_rc0 "R: WIF renders"
+[[ "$(wifvol | yq '.projected.sources[0].serviceAccountToken.audience')" == "api.tailscale.com/abc123" ]] \
+  && ok "R: audience derived from the client id" || bad "R: wrong audience"
+[[ "$(wifvol | yq '[.projected.sources[]] | length')" == "1" ]] \
+  && ok "R: exactly one projected source (nothing else smuggled in)" || bad "R: extra projected sources"
+[[ "$(wifvol | yq '.projected.sources[0].serviceAccountToken.expirationSeconds')" == "3600" ]] \
+  && ok "R: expirationSeconds projected" || bad "R: expirationSeconds missing"
+# The critical negative: a projected AUDIENCE-SCOPED token, never the broad
+# Kubernetes API token that automountServiceAccountToken would mount.
+[[ "$(dep_field '.spec.template.spec.automountServiceAccountToken')" != "true" ]] \
+  && ok "R: automountServiceAccountToken still not enabled (no broad k8s API token)" \
+  || bad "R: a general-purpose Kubernetes API token is being mounted"
+[[ "$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | [.volumeMounts[] | select(.name == "tailscale-wif-token")][0].readOnly')" == "true" ]] \
+  && ok "R: token mounted read-only" || bad "R: token mount is not read-only"
+# The env var and the volume must agree, or the exporter reads a path that does
+# not exist and reports an auth failure that looks like a bad client.
+tokpath="$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | [.env[] | select(.name == "TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE")][0].value')"
+mnt="$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | [.volumeMounts[] | select(.name == "tailscale-wif-token")][0].mountPath')"
+fn="$(wifvol | yq '.projected.sources[0].serviceAccountToken.path')"
+[[ "$tokpath" == "${mnt}/${fn}" ]] \
+  && ok "R: id_token_file path agrees with mountPath/fileName ($tokpath)" \
+  || bad "R: token path $tokpath does not match ${mnt}/${fn}"
+
+# A custom mount path must keep those three in agreement.
+# shellcheck disable=SC2086
+render $WIF --set-string workloadIdentity.mountPath=/etc/wif --set-string workloadIdentity.fileName=tok
+assert_rc0 "R: custom path renders"
+[[ "$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | [.env[] | select(.name == "TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE")][0].value')" == "/etc/wif/tok" ]] \
+  && ok "R: custom mountPath/fileName flow through to id_token_file" || bad "R: custom path did not flow through"
+
+# An explicit audience wins over the derived one.
+# shellcheck disable=SC2086
+render $WIF --set-string workloadIdentity.audience=custom.example/aud
+[[ "$(wifvol | yq '.projected.sources[0].serviceAccountToken.audience')" == "custom.example/aud" ]] \
+  && ok "R: explicit audience overrides the derived one" || bad "R: explicit audience ignored"
+
+# --- guards ---
+render --set workloadIdentity.enabled=true --set-string config.tailscale.auth.workload_identity.client_id=abc123
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "R: WIF without auth.method=workload_identity fails" || bad "R: mounted a token the exporter would never use"
+render --set workloadIdentity.enabled=true --set-string config.tailscale.auth.method=workload_identity
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "R: WIF without a client_id fails (the audience derives from it)" || bad "R: rendered an unscoped audience"
+# shellcheck disable=SC2086
+render $WIF --set workloadIdentity.expirationSeconds=60
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "R: expirationSeconds below the k8s floor fails" || bad "R: accepted a value Kubernetes silently clamps"
+# extraEnv must not be able to shadow the chart-set token path.
+# shellcheck disable=SC2086
+render $WIF --set-string 'extraEnv[0].name=TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE' \
+       --set-string 'extraEnv[0].value=/tmp/elsewhere'
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "R: extraEnv cannot silently repoint the token path" || bad "R: extraEnv silently repointed the token path"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

@@ -118,6 +118,28 @@ extraVolumeMounts: []
 #       valueFrom:
 #         fieldRef:
 #           fieldPath: metadata.name
+# --- Workload Identity Federation (default-off) ---
+# Keyless auth to the Tailscale API using a projected ServiceAccount token, so no OAuth
+# client secret exists to store or rotate. Enabling this renders a PROJECTED token volume
+# scoped to Tailscale's audience only — it does NOT turn on automountServiceAccountToken,
+# which would mount a general-purpose Kubernetes API token the exporter has no use for and
+# which would be a far more valuable credential to leak.
+workloadIdentity:
+  # -- Mount a projected, audience-scoped ServiceAccount token and point the exporter at it.
+  # Requires config.tailscale.auth.method: workload_identity and a client_id.
+  enabled: false
+  # -- Token audience. Empty ("") derives Tailscale's required value,
+  # `api.tailscale.com/<client id>`. Override only if Tailscale documents a different one.
+  audience: ""
+  # -- Requested token lifetime in seconds. The kubelet refreshes the file in place at ~80%
+  # of this, and the exporter re-reads it on every token exchange, so rotation needs no
+  # restart. Kubernetes clamps values below 600.
+  expirationSeconds: 3600
+  # -- Directory the token is projected into.
+  mountPath: /var/run/secrets/tailscale
+  # -- Filename within mountPath.
+  fileName: token
+
 # --- Prometheus Operator integration (default-off) ---
 # Custom resources for kube-prometheus-stack. Nothing here renders unless explicitly
 # enabled, so a cluster without the Prometheus Operator CRDs installed is unaffected:

@@ -241,6 +241,9 @@ output and CI logs.
 {{- if .Values.goRuntime.gogc -}}
   {{- $_ := set $reserved "GOGC" "goRuntime.gogc" -}}
 {{- end -}}
+{{- if .Values.workloadIdentity.enabled -}}
+  {{- $_ := set $reserved "TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE" "workloadIdentity.enabled (the projected token path)" -}}
+{{- end -}}
 {{- if include "tailscale2otel.gomemlimit" . -}}
   {{- $_ := set $reserved "GOMEMLIMIT" "goRuntime.memLimit (or computed from resources.limits.memory)" -}}
 {{- end -}}
@@ -325,5 +328,43 @@ Validate the external-config combination (#347). Fails rather than picking one.
 {{- end -}}
 {{- if and (include "tailscale2otel.usesExternalConfig" .) (not .Values.existingConfigKey) -}}
 {{- fail "existingConfigKey must name the key holding the config YAML inside your ConfigMap/Secret (it is mounted as that filename)" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The projected WIF token path, and the guards around it (#343).
+
+Tailscale's workload-identity audience is `api.tailscale.com/<client id>`. Getting
+it wrong does not fail at render or at startup — the token is simply rejected when
+first exchanged, which surfaces as an auth error that looks like a bad client. So
+the audience is DERIVED from the configured client_id by default rather than being
+another string to keep in sync by hand.
+*/}}
+{{- define "tailscale2otel.wifTokenPath" -}}
+{{- printf "%s/%s" (trimSuffix "/" .Values.workloadIdentity.mountPath) .Values.workloadIdentity.fileName -}}
+{{- end -}}
+
+{{- define "tailscale2otel.wifAudience" -}}
+{{- with .Values.workloadIdentity.audience -}}
+{{- . -}}
+{{- else -}}
+{{- printf "api.tailscale.com/%s" .Values.config.tailscale.auth.workload_identity.client_id -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "tailscale2otel.validateWorkloadIdentity" -}}
+{{- if .Values.workloadIdentity.enabled -}}
+  {{- if ne .Values.config.tailscale.auth.method "workload_identity" -}}
+    {{- fail (printf "workloadIdentity.enabled requires config.tailscale.auth.method: workload_identity (got %q). The projected token would be mounted and never used." .Values.config.tailscale.auth.method) -}}
+  {{- end -}}
+  {{- if not .Values.config.tailscale.auth.workload_identity.client_id -}}
+    {{- fail "workloadIdentity.enabled requires config.tailscale.auth.workload_identity.client_id: it is also what the default token audience (api.tailscale.com/<client id>) is derived from, and an unscoped or wrongly-scoped token is rejected only at first use" -}}
+  {{- end -}}
+  {{- if not .Values.workloadIdentity.fileName -}}
+    {{- fail "workloadIdentity.fileName must not be empty; it is the projected token's filename" -}}
+  {{- end -}}
+  {{- if lt (int .Values.workloadIdentity.expirationSeconds) 600 -}}
+    {{- fail (printf "workloadIdentity.expirationSeconds must be at least 600 (got %v): Kubernetes silently clamps shorter requests, so a smaller value here would misdescribe the real token lifetime" .Values.workloadIdentity.expirationSeconds) -}}
+  {{- end -}}
 {{- end -}}
 {{- end -}}

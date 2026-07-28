@@ -1572,6 +1572,26 @@
         },
         "tolerations": {
             "type": "array"
+        },
+        "workloadIdentity": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "expirationSeconds": {
+                    "type": "integer"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "mountPath": {
+                    "type": "string"
+                }
+            }
         }
     }
 }

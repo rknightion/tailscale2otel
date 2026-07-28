@@ -123,7 +123,8 @@ spec:
           {{- $gomemlimit := include "tailscale2otel.gomemlimit" . }}
           {{- include "tailscale2otel.validateExtraEnv" . }}
           {{- include "tailscale2otel.validateExternalConfig" . }}
-          {{- if or .Values.goRuntime.gogc $gomemlimit .Values.extraEnv }}
+          {{- include "tailscale2otel.validateWorkloadIdentity" . }}
+          {{- if or .Values.goRuntime.gogc $gomemlimit .Values.extraEnv .Values.workloadIdentity.enabled }}
           env:
             {{- if .Values.goRuntime.gogc }}
             - name: GOGC
@@ -132,6 +133,12 @@ spec:
             {{- if $gomemlimit }}
             - name: GOMEMLIMIT
               value: {{ $gomemlimit | quote }}
+            {{- end }}
+            {{- if .Values.workloadIdentity.enabled }}
+            # Set here rather than in config.yaml so the path stays derived from
+            # mountPath/fileName in one place and cannot drift from the volume.
+            - name: TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE
+              value: {{ include "tailscale2otel.wifTokenPath" . | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -209,6 +216,11 @@ spec:
               readOnly: true
             - name: checkpoints
               mountPath: /var/lib/tailscale2otel
+            {{- if .Values.workloadIdentity.enabled }}
+            - name: tailscale-wif-token
+              mountPath: {{ .Values.workloadIdentity.mountPath }}
+              readOnly: true
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -251,6 +263,23 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.workloadIdentity.enabled }}
+        {{- /*
+          A PROJECTED token, scoped to Tailscale's audience alone. Deliberately
+          not automountServiceAccountToken: that mounts a general-purpose
+          Kubernetes API token, which this exporter never uses and which is a far
+          more valuable credential to leak. The kubelet refreshes this file in
+          place and the exporter re-reads it on every exchange, so rotation needs
+          no restart (#343).
+        */}}
+        - name: tailscale-wif-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ include "tailscale2otel.wifAudience" . | quote }}
+                  expirationSeconds: {{ int .Values.workloadIdentity.expirationSeconds }}
+                  path: {{ .Values.workloadIdentity.fileName }}
+        {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
