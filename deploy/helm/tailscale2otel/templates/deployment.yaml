@@ -104,7 +104,7 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: tailscale2otel
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ include "tailscale2otel.image" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["-config", "/etc/tailscale2otel/config.yaml"]
           {{- /*
@@ -175,8 +175,10 @@ spec:
             {{- end }}
           {{- end }}
           {{- if .Values.config.admin.enabled }}
-          # Probes hit the admin server's /healthz and /readyz (never auth-gated).
-          # Only rendered when config.admin.enabled — the server is off by default.
+          # Probes hit the admin server's /healthz (liveness/readiness) and /readyz
+          # (readiness, startup) — never auth-gated. Only rendered when
+          # config.admin.enabled — the server is off by default. Each of the three
+          # is independently toggled by probes.<kind>.enabled (#350).
           {{- /*
             The binary serves the admin endpoints over HTTPS iff BOTH admin.tls
             files are set (internal/app/admin.go picks ListenAndServeTLS on
@@ -189,8 +191,13 @@ spec:
             HTTPS probe, so a self-signed admin cert needs nothing further.
             Setting admin TLS through TS2OTEL_ADMIN__TLS__* env vars instead of
             `config.admin.tls` is invisible to the chart; use the config keys.
+            This stays computed here, never a probes.*.scheme value (#350) —
+            an operator-set scheme could silently drift out of sync with the
+            TLS files that actually decide it.
           */}}
           {{- $adminTLS := and .Values.config.admin.tls.cert_file .Values.config.admin.tls.key_file }}
+          {{- include "tailscale2otel.validateProbes" . }}
+          {{- if .Values.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -198,8 +205,26 @@ spec:
               {{- if $adminTLS }}
               scheme: HTTPS
               {{- end }}
-            initialDelaySeconds: 5
-            periodSeconds: 15
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            {{- /*
+              timeoutSeconds/failureThreshold/successThreshold render ONLY when they
+              differ from Kubernetes' own probe defaults (1/3/1) — the chart's own
+              defaults for these three ARE those Kubernetes defaults, so the default
+              rendered manifest stays byte-identical to before this feature: only
+              initialDelaySeconds/periodSeconds were ever rendered previously.
+            */}}
+            {{- if ne (int .Values.probes.liveness.timeoutSeconds) 1 }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            {{- end }}
+            {{- if ne (int .Values.probes.liveness.failureThreshold) 3 }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            {{- end }}
+            {{- if ne (int .Values.probes.liveness.successThreshold) 1 }}
+            successThreshold: {{ .Values.probes.liveness.successThreshold }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
           readinessProbe:
             httpGet:
               path: /readyz
@@ -207,8 +232,35 @@ spec:
               {{- if $adminTLS }}
               scheme: HTTPS
               {{- end }}
-            initialDelaySeconds: 5
-            periodSeconds: 15
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            {{- if ne (int .Values.probes.readiness.timeoutSeconds) 1 }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            {{- end }}
+            {{- if ne (int .Values.probes.readiness.failureThreshold) 3 }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            {{- end }}
+            {{- if ne (int .Values.probes.readiness.successThreshold) 1 }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.startup.enabled }}
+          # Opt-in (#350): shields a slow first initialization from the steady-state
+          # liveness budget above — while this has not yet succeeded, the kubelet
+          # runs neither liveness nor readiness at all.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+              {{- if $adminTLS }}
+              scheme: HTTPS
+              {{- end }}
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            successThreshold: {{ .Values.probes.startup.successThreshold }}
+          {{- end }}
           {{- end }}
           volumeMounts:
             - name: config

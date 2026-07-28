@@ -28,6 +28,88 @@ app.kubernetes.io/name: {{ include "tailscale2otel.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{/*
+The rendered container image reference (#349). Digest wins deterministically over a
+tag: when image.digest is set, image.tag and .Chart.AppVersion are IGNORED entirely —
+the rendered reference is always `repository@digest`, NEVER `repository:tag@digest`.
+
+The pattern check is a SECOND layer, not the only one: values.schema.json's
+`@schema pattern:^sha256:[a-f0-9]{64}$` annotation on image.digest rejects a
+malformed digest for any schema-validated install (helm install/upgrade/template,
+which validate by default) before this template is ever reached. This `fail`
+exists for the input that check cannot see: `helm template
+--skip-schema-validation`, or any other schema-less path that reaches templating
+directly. Both layers must independently reject the same bad input, since neither
+implies the other runs.
+*/}}
+{{- define "tailscale2otel.image" -}}
+{{- if .Values.image.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.image.digest) -}}
+{{- fail (printf "image.digest must match ^sha256:[a-f0-9]{64}$ (got %q): not a valid immutable image digest. Fix the value, or clear image.digest to pin by image.tag instead." .Values.image.digest) -}}
+{{- end -}}
+{{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Probe timing/threshold guards (#350). Same two-layer split as
+terminationGracePeriodSeconds (#332):
+
+  - values.schema.json's `minimum`/`enum` annotations catch a NUMERIC value
+    outside range (periodSeconds: 0, successThreshold: 2 on liveness/startup) and
+    fire FIRST on any schema-validated install, so this helper never sees those.
+  - This helper is the second layer. It catches inputs the schema does NOT
+    reject: `null` (Helm/OpenAPIv3 `minimum`/`enum` do not fire on a null value —
+    `--set probes.liveness.periodSeconds=null` passes schema validation and
+    reaches the template as an empty value, which `int` below would otherwise
+    silently coerce to 0), and any schema-less path
+    (`--skip-schema-validation`) that reaches templating with no schema check
+    at all.
+
+Args: (dict "path" <dotted values path for messages, e.g. "probes.liveness">
+       "block" <the probe values map, e.g. .Values.probes.liveness>
+       "requireSuccessOne" <bool — true for liveness/startup, false for readiness>)
+*/}}
+{{- define "tailscale2otel.validateProbeBlock" -}}
+{{- $path := .path -}}
+{{- $b := .block -}}
+{{- if lt (int $b.initialDelaySeconds) 0 -}}
+{{- fail (printf "%s.initialDelaySeconds must be at least 0 (got %v)" $path $b.initialDelaySeconds) -}}
+{{- end -}}
+{{- if lt (int $b.periodSeconds) 1 -}}
+{{- fail (printf "%s.periodSeconds must be at least 1 (got %v): Kubernetes rejects a probe period below 1 second" $path $b.periodSeconds) -}}
+{{- end -}}
+{{- if lt (int $b.timeoutSeconds) 1 -}}
+{{- fail (printf "%s.timeoutSeconds must be at least 1 (got %v): Kubernetes rejects a probe timeout below 1 second" $path $b.timeoutSeconds) -}}
+{{- end -}}
+{{- if lt (int $b.failureThreshold) 1 -}}
+{{- fail (printf "%s.failureThreshold must be at least 1 (got %v)" $path $b.failureThreshold) -}}
+{{- end -}}
+{{- if .requireSuccessOne -}}
+{{- if ne (int $b.successThreshold) 1 -}}
+{{- fail (printf "%s.successThreshold must be 1 (got %v): Kubernetes rejects any other value for a liveness or startup probe" $path $b.successThreshold) -}}
+{{- end -}}
+{{- else -}}
+{{- if lt (int $b.successThreshold) 1 -}}
+{{- fail (printf "%s.successThreshold must be at least 1 (got %v)" $path $b.successThreshold) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "tailscale2otel.validateProbes" -}}
+{{- if .Values.probes.liveness.enabled -}}
+{{- include "tailscale2otel.validateProbeBlock" (dict "path" "probes.liveness" "block" .Values.probes.liveness "requireSuccessOne" true) -}}
+{{- end -}}
+{{- if .Values.probes.readiness.enabled -}}
+{{- include "tailscale2otel.validateProbeBlock" (dict "path" "probes.readiness" "block" .Values.probes.readiness "requireSuccessOne" false) -}}
+{{- end -}}
+{{- if .Values.probes.startup.enabled -}}
+{{- include "tailscale2otel.validateProbeBlock" (dict "path" "probes.startup" "block" .Values.probes.startup "requireSuccessOne" true) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "tailscale2otel.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "tailscale2otel.fullname" .) .Values.serviceAccount.name -}}

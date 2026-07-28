@@ -3,6 +3,29 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.22.0: three independent hardening additions (#349/#350/#351).
+#   #349 image.digest — pin the image by immutable digest instead of a tag; when set it wins
+#   deterministically over image.tag/appVersion (repository@digest, never repo:tag@digest).
+#   values.schema.json enforces the sha256:<64 hex> shape; a template `fail` covers the same input
+#   for a schema-less render path (--skip-schema-validation). New helper tailscale2otel.image is
+#   the one place that decides the rendered reference.
+#   #350 probes.{liveness,readiness,startup} — the previously-hardcoded probe timings
+#   (initialDelaySeconds 5, periodSeconds 15) are now values, each independently enabled/disabled,
+#   plus a new opt-in (default off) startupProbe targeting /readyz. The default rendered
+#   liveness/readiness manifest is byte-identical to before: timeoutSeconds/failureThreshold/
+#   successThreshold render ONLY when set away from Kubernetes' own probe defaults (1/3/1).
+#   successThreshold is schema-enforced to exactly 1 on liveness/startup (Kubernetes rejects any
+#   other value there); a template guard (tailscale2otel.validateProbes) covers null inputs the
+#   schema's minimum/enum do not reject. TLS scheme stays automatic from config.admin.tls, not a
+#   value. All probes still require config.admin.enabled, as before.
+#   #351 networkPolicy — new opt-in (default off) templates/networkpolicy.yaml. Ingress opens one
+#   rule per ENABLED listener/consumer (admin when any probe is on, prometheus when a
+#   Service/PodMonitor/ServiceMonitor consumes it, streaming/webhook when their Service is on) —
+#   derived from the same enablement templates/service.yaml already uses, so a disabled listener
+#   can never gain a hole. Egress defaults to allowAll: true — NetworkPolicy has no hostname
+#   selector, so the Tailscale control-plane API and an operator's OTLP endpoint cannot be
+#   expressed portably; this resource's real value is its ingress half. See the values.yaml
+#   comments for the full reasoning and the documented escape hatch (a CNI-specific policy CRD).
 # 0.21.0: add opt-in Ingress (templates/ingress.yaml) and Gateway API HTTPRoute
 # (templates/httproute.yaml) for the streaming and webhook receiver listeners ONLY (#346).
 # admin and prometheus never get one, at any value. Each requires a backing
@@ -103,7 +126,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.21.0
+version: 0.22.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "3.0.0" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/

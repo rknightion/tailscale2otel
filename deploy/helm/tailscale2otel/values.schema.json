@@ -1262,6 +1262,10 @@
         "image": {
             "type": "object",
             "properties": {
+                "digest": {
+                    "type": "string",
+                    "pattern": "^(sha256:[a-f0-9]{64})?$"
+                },
                 "pullPolicy": {
                     "type": "string"
                 },
@@ -1427,6 +1431,36 @@
         "nameOverride": {
             "type": "string"
         },
+        "networkPolicy": {
+            "type": "object",
+            "properties": {
+                "egress": {
+                    "type": "object",
+                    "properties": {
+                        "allowAll": {
+                            "type": "boolean"
+                        },
+                        "dns": {
+                            "type": "boolean"
+                        },
+                        "extra": {
+                            "type": "array"
+                        }
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "ingress": {
+                    "type": "object",
+                    "properties": {
+                        "extra": {
+                            "type": "array"
+                        }
+                    }
+                }
+            }
+        },
         "nodeSelector": {
             "type": "object"
         },
@@ -1473,6 +1507,99 @@
                     "properties": {
                         "type": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "probes": {
+            "type": "object",
+            "properties": {
+                "liveness": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "failureThreshold": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "initialDelaySeconds": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "periodSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "successThreshold": {
+                            "type": "integer",
+                            "enum": [
+                                1
+                            ]
+                        },
+                        "timeoutSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                },
+                "readiness": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "failureThreshold": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "initialDelaySeconds": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "periodSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "successThreshold": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "timeoutSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                },
+                "startup": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "failureThreshold": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "initialDelaySeconds": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "periodSeconds": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "successThreshold": {
+                            "type": "integer",
+                            "enum": [
+                                1
+                            ]
+                        },
+                        "timeoutSeconds": {
+                            "type": "integer",
+                            "minimum": 1
                         }
                     }
                 }

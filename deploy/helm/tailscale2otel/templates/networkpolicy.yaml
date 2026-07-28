@@ -1,0 +1,105 @@
+{{- /*
+Opt-in NetworkPolicy baseline (#351), default-off — the default chart render
+must stay completely unaffected, exactly like metrics.podMonitor/serviceMonitor
+and every service.<listener>.
+
+INGRESS is the half this chart can get portably right: one rule per
+enabled listener/consumer, derived from the SAME per-listener enablement
+templates/service.yaml already uses, so a listener that is off — or a
+Service/PodMonitor/ServiceMonitor that never got created — can never gain a
+matching hole (deploy/CLAUDE.md's "never map a receiver port without its
+credential" carries over here as "never open ingress for a receiver with
+nothing consuming it").
+
+Two of the four rules below have no portable `from` peer at all, and that is
+deliberate, not an oversight:
+  - admin: the kubelet reaches the admin port DIRECTLY (no Service in the
+    path — see deploy/CLAUDE.md's "No Kubernetes Service"), so this rule
+    tracks whether ANY probe is enabled, not service.admin.enabled. A kubelet
+    probe has no podSelector/namespaceSelector NetworkPolicy can express, so
+    the rule is left with no `from` (matches any peer) when open at all.
+  - prometheus: the same applies to a PodMonitor/ServiceMonitor scrape — the
+    Prometheus Operator's scraper pod is not something this chart can name
+    portably either, so that rule is also peer-unrestricted when the
+    listener is enabled AND something actually consumes it (a Service, a
+    PodMonitor, or a ServiceMonitor).
+
+EGRESS is deliberately NOT restricted by default (networkPolicy.egress.allowAll:
+true) — see the value's own comment in values.yaml for why a portable
+NetworkPolicy cannot express "the Tailscale control-plane API" or "an
+operator's OTLP endpoint" at all (no DNS-name selector in networking.k8s.io/v1,
+and Tailscale publishes no stable IP range). This resource's real value is its
+ingress half.
+
+Explanatory notes for individual rules below are kept as Go-template comments
+(never rendered) rather than YAML `#` comments: a YAML comment attached to a
+list item is preserved by yq/most YAML tooling as a head-comment on that node,
+which breaks a bare structural equality check like `.spec.egress[0] == "{}"`.
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $anyProbe := or .Values.probes.liveness.enabled (or .Values.probes.readiness.enabled .Values.probes.startup.enabled) }}
+{{- $prometheusConsumed := or .Values.service.prometheus.enabled (or .Values.metrics.podMonitor.enabled .Values.metrics.serviceMonitor.enabled) }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tailscale2otel.fullname" . }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "tailscale2otel.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- if and .Values.config.admin.enabled $anyProbe }}
+    {{- /* admin: opened by the kubelet probe(s), reached directly (no Service). No
+           portable `from` exists for "the node's kubelet", so any peer may reach it. */}}
+    - ports:
+        - protocol: TCP
+          port: {{ include "tailscale2otel.listenPort" .Values.config.admin.listen }}
+    {{- end }}
+    {{- if and .Values.config.prometheus.enabled $prometheusConsumed }}
+    {{- /* prometheus: opened by an enabled Service and/or a PodMonitor/ServiceMonitor
+           scrape. Same "no portable peer" reasoning as admin above. */}}
+    - ports:
+        - protocol: TCP
+          port: {{ include "tailscale2otel.listenPort" .Values.config.prometheus.listen }}
+    {{- end }}
+    {{- if and .Values.config.streaming.enabled .Values.service.streaming.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ include "tailscale2otel.listenPort" .Values.config.streaming.listen }}
+    {{- end }}
+    {{- if and .Values.config.webhook.enabled .Values.service.webhook.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ include "tailscale2otel.listenPort" .Values.config.webhook.listen }}
+    {{- end }}
+    {{- with .Values.networkPolicy.ingress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  egress:
+    {{- if .Values.networkPolicy.egress.allowAll }}
+    {{- /* See networkPolicy.egress.allowAll's comment in values.yaml: no portable
+           NetworkPolicy rule can name the Tailscale API or an operator's OTLP
+           endpoint, so this is the honest default rather than a fake restriction. */}}
+    - {}
+    {{- else }}
+    {{- if .Values.networkPolicy.egress.dns }}
+    {{- /* DNS to any pod in the cluster on port 53 — this chart cannot know which
+           namespace/labels your cluster's DNS provider (CoreDNS/kube-dns/other) uses. */}}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    {{- with .Values.networkPolicy.egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
+{{- end }}

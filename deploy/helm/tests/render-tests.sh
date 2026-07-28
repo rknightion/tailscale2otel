@@ -1034,5 +1034,292 @@ assert_rc0 "V: everything-on (including a forced admin/prometheus attempt) rende
 [[ -z "$(route_of "${FULLNAME}-prometheus" | tr -d '[:space:]-')" ]] \
   && ok "V: no prometheus HTTPRoute" || bad "V: a prometheus HTTPRoute rendered"
 
+# --------------------------------------------------------------------------
+case_ "W. immutable image digest (#349)"
+image_ref() { dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .image'; }
+
+render
+assert_rc0 "W: default renders"
+[[ "$(image_ref)" == "ghcr.io/rknightion/tailscale2otel:3.0.0" ]] \
+  && ok "W: default image is repository:appVersion" || bad "W: default image is $(image_ref)"
+
+render --set-string image.tag=v9.9.9
+assert_rc0 "W: tag override renders"
+[[ "$(image_ref)" == "ghcr.io/rknightion/tailscale2otel:v9.9.9" ]] \
+  && ok "W: tag override honoured" || bad "W: tag override is $(image_ref)"
+
+DIGEST="sha256:$(printf '%064d' 1)"
+render --set-string "image.digest=${DIGEST}"
+assert_rc0 "W: digest alone renders"
+[[ "$(image_ref)" == "ghcr.io/rknightion/tailscale2otel@${DIGEST}" ]] \
+  && ok "W: digest produces repository@digest" || bad "W: digest reference is $(image_ref)"
+
+# Digest wins deterministically over a tag left set alongside it — never repo:tag@digest.
+render --set-string image.tag=v9.9.9 --set-string "image.digest=${DIGEST}"
+assert_rc0 "W: digest+tag both set renders"
+[[ "$(image_ref)" == "ghcr.io/rknightion/tailscale2otel@${DIGEST}" ]] \
+  && ok "W: digest wins over a tag set alongside it" || bad "W: digest did not win, got $(image_ref)"
+grep -q 'v9.9.9' <<<"$(image_ref)" \
+  && bad "W: the ignored tag still leaked into the image reference" \
+  || ok "W: the ignored tag does not leak into the image reference"
+
+# Layer 1: values.schema.json's pattern rejects a malformed digest BEFORE templating.
+render --set-string "image.digest=sha256:not-hex"
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "W: schema rejects a malformed digest (bad hex)" \
+  || bad "W: a malformed digest (bad hex) was accepted"
+render --set-string "image.digest=not-even-sha256-shaped"
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "W: schema rejects a digest with no sha256: prefix" \
+  || bad "W: a digest with no sha256: prefix was accepted"
+render --set-string "image.digest=sha256:$(printf '%063d' 1)"
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "W: schema rejects a digest one hex character short" \
+  || bad "W: a too-short digest was accepted"
+
+# Layer 2: the template `fail` catches a malformed digest that reaches templating
+# with no schema check at all (--skip-schema-validation, or any schema-less path).
+render --set-string "image.digest=sha256:not-hex" --skip-schema-validation
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'image.digest' <<<"$RENDER"; then
+  ok "W: template guard also rejects a malformed digest with schema validation skipped"
+else
+  bad "W: --skip-schema-validation let a malformed digest reach the container image (rc=$RENDER_RC)"
+fi
+
+# --------------------------------------------------------------------------
+case_ "X. configurable probes + startup probe (#350)"
+probe_field() { dep_field ".spec.template.spec.containers[] | select(.name == \"tailscale2otel\") | .${1}Probe.${2}"; }
+has_probe() { dep_field ".spec.template.spec.containers[] | select(.name == \"tailscale2otel\") | has(\"${1}Probe\")"; }
+
+render
+assert_rc0 "X: default renders"
+# The default rendered liveness/readiness timings must be BYTE-IDENTICAL to the
+# hardcoded values this replaces — the only two fields the old template ever
+# rendered were initialDelaySeconds/periodSeconds, so the new
+# timeoutSeconds/failureThreshold/successThreshold fields must stay OMITTED at
+# their own Kubernetes-API-default values (1/3/1) rather than appearing as new,
+# functionally-inert lines in the manifest.
+[[ "$(probe_field liveness initialDelaySeconds)" == "5" ]] \
+  && ok "X: default liveness initialDelaySeconds unchanged (5)" || bad "X: liveness initialDelaySeconds is $(probe_field liveness initialDelaySeconds)"
+[[ "$(probe_field liveness periodSeconds)" == "15" ]] \
+  && ok "X: default liveness periodSeconds unchanged (15)" || bad "X: liveness periodSeconds is $(probe_field liveness periodSeconds)"
+[[ "$(probe_field readiness initialDelaySeconds)" == "5" ]] \
+  && ok "X: default readiness initialDelaySeconds unchanged (5)" || bad "X: readiness initialDelaySeconds is $(probe_field readiness initialDelaySeconds)"
+[[ "$(probe_field readiness periodSeconds)" == "15" ]] \
+  && ok "X: default readiness periodSeconds unchanged (15)" || bad "X: readiness periodSeconds is $(probe_field readiness periodSeconds)"
+for kind in liveness readiness; do
+  for field in timeoutSeconds failureThreshold successThreshold; do
+    v="$(probe_field "$kind" "$field")"
+    [[ -z "$v" || "$v" == "null" ]] \
+      && ok "X: default ${kind}.${field} stays omitted (matches k8s API default)" \
+      || bad "X: default ${kind}.${field} unexpectedly rendered ($v) — output is not byte-identical to before"
+  done
+done
+[[ "$(has_probe startup)" != "true" ]] \
+  && ok "X: no startupProbe by default" || bad "X: a startupProbe rendered by default"
+
+# TLS scheme stays automatic and is NOT an exposed value (#342 behavior preserved).
+render --set-string config.admin.tls.cert_file=/tls/tls.crt --set-string config.admin.tls.key_file=/tls/tls.key
+assert_rc0 "X: admin TLS renders"
+[[ "$(probe_field liveness httpGet.scheme)" == "HTTPS" ]] \
+  && ok "X: liveness still follows admin TLS automatically" || bad "X: liveness scheme did not follow admin TLS"
+
+# Each probe independently disableable.
+render --set probes.liveness.enabled=false
+assert_rc0 "X: liveness disabled renders"
+[[ "$(has_probe liveness)" != "true" ]] \
+  && ok "X: livenessProbe absent when disabled" || bad "X: livenessProbe still rendered when disabled"
+[[ "$(has_probe readiness)" == "true" ]] \
+  && ok "X: readinessProbe unaffected by disabling liveness" || bad "X: readinessProbe disappeared too"
+
+render --set probes.readiness.enabled=false
+assert_rc0 "X: readiness disabled renders"
+[[ "$(has_probe readiness)" != "true" ]] \
+  && ok "X: readinessProbe absent when disabled" || bad "X: readinessProbe still rendered when disabled"
+
+# Startup probe: opt-in, targets /readyz, full timing set rendered.
+render --set probes.startup.enabled=true
+assert_rc0 "X: startup enabled renders"
+[[ "$(has_probe startup)" == "true" ]] \
+  && ok "X: startupProbe renders when enabled" || bad "X: startupProbe missing when enabled"
+[[ "$(probe_field startup httpGet.path)" == "/readyz" ]] \
+  && ok "X: startup probe targets /readyz" || bad "X: startup probe path is $(probe_field startup httpGet.path)"
+[[ "$(probe_field startup periodSeconds)" == "10" ]] \
+  && ok "X: startup default periodSeconds is 10" || bad "X: startup periodSeconds is $(probe_field startup periodSeconds)"
+[[ "$(probe_field startup failureThreshold)" == "30" ]] \
+  && ok "X: startup default failureThreshold is 30" || bad "X: startup failureThreshold is $(probe_field startup failureThreshold)"
+
+# Overriding a non-default timing DOES render it explicitly.
+render --set probes.liveness.timeoutSeconds=5
+assert_rc0 "X: liveness timeoutSeconds override renders"
+[[ "$(probe_field liveness timeoutSeconds)" == "5" ]] \
+  && ok "X: overridden liveness timeoutSeconds renders explicitly" || bad "X: override not rendered"
+
+# admin disabled -> no probe may render at all, whatever probes.* says.
+render --set config.admin.enabled=false --set probes.startup.enabled=true
+assert_rc0 "X: admin disabled renders"
+[[ "$(has_probe liveness)" != "true" && "$(has_probe readiness)" != "true" && "$(has_probe startup)" != "true" ]] \
+  && ok "X: no probes at all when config.admin.enabled=false" \
+  || bad "X: a probe rendered despite config.admin.enabled=false"
+
+# successThreshold must be 1 on liveness/startup — Kubernetes rejects anything else.
+# Layer 1: schema `enum:[1]` rejects a numeric value other than 1 before templating.
+render --set probes.liveness.successThreshold=2
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "X: schema rejects liveness.successThreshold=2" || bad "X: liveness.successThreshold=2 was accepted"
+render --set probes.startup.successThreshold=2 --set probes.startup.enabled=true
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "X: schema rejects startup.successThreshold=2" || bad "X: startup.successThreshold=2 was accepted"
+# readiness has no such Kubernetes restriction — any value >=1 is valid.
+render --set probes.readiness.successThreshold=2
+assert_rc0 "X: readiness.successThreshold=2 is valid and renders"
+[[ "$(probe_field readiness successThreshold)" == "2" ]] \
+  && ok "X: readiness successThreshold=2 rendered" || bad "X: readiness successThreshold=2 not rendered"
+
+# Layer 2: the template guard catches null (schema minimum/enum do not reject null;
+# an explicit --set to null bypasses schema validation for that field entirely).
+render --set probes.liveness.successThreshold=null
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'probes.liveness.successThreshold must be 1' <<<"$RENDER"; then
+  ok "X: template guard catches null liveness.successThreshold, naming the field"
+else
+  bad "X: null liveness.successThreshold was not caught (rc=$RENDER_RC)"
+fi
+render --set probes.liveness.periodSeconds=null
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'probes.liveness.periodSeconds must be at least 1' <<<"$RENDER"; then
+  ok "X: template guard catches null liveness.periodSeconds, naming the field"
+else
+  bad "X: null liveness.periodSeconds was not caught (rc=$RENDER_RC)"
+fi
+
+# --------------------------------------------------------------------------
+case_ "Y. opt-in NetworkPolicy baseline (#351)"
+n_netpol() { grep -c '^kind: NetworkPolicy$' <<<"$RENDER" || true; }
+# Filter to the NetworkPolicy document FIRST, then query it, like docs_of/dep_field
+# do — NOT `select(...) | <query>` in one combined yq call: with an array/length
+# query, yq's array constructor `[...]` still yields an empty `[]` (length 0) for
+# every document select() has ALREADY excluded, so a single combined expression
+# prints one real count plus a spurious `0` per other document instead of nothing.
+netpol() { yq 'select(.kind == "NetworkPolicy")' <<<"$RENDER" | yq "$1"; }
+
+render
+assert_rc0 "Y: default renders"
+[[ "$(n_netpol)" == "0" ]] \
+  && ok "Y: default chart renders NO NetworkPolicy" || bad "Y: a NetworkPolicy rendered by default"
+
+render --set networkPolicy.enabled=true
+assert_rc0 "Y: bare enable renders"
+[[ "$(n_netpol)" == "1" ]] && ok "Y: exactly one NetworkPolicy" || bad "Y: expected 1 NetworkPolicy, got $(n_netpol)"
+[[ "$(netpol '.spec.podSelector.matchLabels."app.kubernetes.io/instance"')" == "$RELEASE" ]] \
+  && ok "Y: podSelector matches this release's pods" || bad "Y: podSelector wrong"
+[[ "$(netpol '.spec | has("egress")')" == "true" ]] \
+  && ok "Y: egress section present (default allowAll)" || bad "Y: egress section missing"
+[[ "$(netpol '.spec.egress[0]')" == "{}" ]] \
+  && ok "Y: default egress.allowAll renders an open {} rule" || bad "Y: default egress is not the open {} rule"
+# The default config has admin+its probes on, so bare-enable already opens
+# exactly the admin ingress rule (proven properly, isolated, further down);
+# here just confirm no OTHER listener leaks a rule with nothing else touched.
+[[ "$(netpol '[.spec.ingress[]?] | length')" == "1" ]] \
+  && ok "Y: bare enable opens only the (default-on) admin ingress rule" \
+  || bad "Y: expected exactly 1 ingress rule (admin) with nothing else touched, got $(netpol '[.spec.ingress[]?] | length')"
+
+# Ingress must match enabled Services/PodMonitor/probes exactly (acceptance: "Enabled
+# Services/PodMonitor/probes have matching ingress").
+render --set networkPolicy.enabled=true \
+       --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set service.prometheus.enabled=true
+assert_rc0 "Y: prometheus Service renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 2112)] | length')" == "1" ]] \
+  && ok "Y: prometheus Service enablement opens an ingress rule for its port" \
+  || bad "Y: prometheus Service enabled but no matching ingress rule"
+
+render --set networkPolicy.enabled=true \
+       --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true
+assert_rc0 "Y: PodMonitor renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 2112)] | length')" == "1" ]] \
+  && ok "Y: PodMonitor enablement opens an ingress rule for the prometheus port" \
+  || bad "Y: PodMonitor enabled but no matching ingress rule"
+
+render --set networkPolicy.enabled=true --set config.prometheus.enabled=true
+assert_rc0 "Y: prometheus listener alone (no consumer) renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 2112)] | length')" == "0" ]] \
+  && ok "Y: prometheus listener with NO Service/PodMonitor/ServiceMonitor consumer opens no ingress hole" \
+  || bad "Y: an ingress rule opened for prometheus with no consumer at all"
+
+# Admin/probes: the kubelet reaches the admin port directly (no Service in the
+# path), so the rule tracks whether any probe is enabled, not service.admin.enabled.
+render --set networkPolicy.enabled=true
+assert_rc0 "Y: default admin probes render with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 9091)] | length')" == "1" ]] \
+  && ok "Y: default liveness/readiness probes open an ingress rule for the admin port" \
+  || bad "Y: default probes enabled but no matching admin ingress rule"
+
+render --set networkPolicy.enabled=true \
+       --set probes.liveness.enabled=false --set probes.readiness.enabled=false
+assert_rc0 "Y: all probes disabled renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 9091)] | length')" == "0" ]] \
+  && ok "Y: no admin ingress rule once every probe is disabled" \
+  || bad "Y: an admin ingress rule opened despite every probe being disabled"
+
+render --set networkPolicy.enabled=true --set config.admin.enabled=false \
+       --set probes.liveness.enabled=false --set probes.readiness.enabled=false --set probes.startup.enabled=false
+assert_rc0 "Y: admin listener off renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 9091)] | length')" == "0" ]] \
+  && ok "Y: no admin ingress rule when config.admin.enabled=false" \
+  || bad "Y: an admin ingress rule opened for a disabled admin listener"
+
+render --set networkPolicy.enabled=true \
+       --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true
+assert_rc0 "Y: streaming Service renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 8088)] | length')" == "1" ]] \
+  && ok "Y: streaming Service enablement opens an ingress rule for its port" \
+  || bad "Y: streaming Service enabled but no matching ingress rule"
+
+render --set networkPolicy.enabled=true --set config.streaming.enabled=true
+assert_rc0 "Y: streaming listener alone (no Service) renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 8088)] | length')" == "0" ]] \
+  && ok "Y: streaming listener with no Service opens no ingress hole" \
+  || bad "Y: an ingress rule opened for streaming with no backing Service"
+
+render --set networkPolicy.enabled=true \
+       --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true
+assert_rc0 "Y: webhook Service renders with policy on"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 8089)] | length')" == "1" ]] \
+  && ok "Y: webhook Service enablement opens an ingress rule for its port" \
+  || bad "Y: webhook Service enabled but no matching ingress rule"
+
+# Receiver ports remain closed unless explicitly selected — no credential leak either.
+grep -q -- "$SENTINEL" <<<"$(docs_of NetworkPolicy)" \
+  && bad "Y: a credential leaked into the NetworkPolicy" || ok "Y: no credential in the NetworkPolicy"
+
+# egress.dns
+render --set networkPolicy.enabled=true --set networkPolicy.egress.allowAll=false
+assert_rc0 "Y: allowAll=false with dns default renders"
+[[ "$(netpol '[.spec.egress[]? | select(.ports[]?.port == 53)] | length')" == "1" ]] \
+  && ok "Y: DNS egress rule present when allowAll=false (dns default true)" \
+  || bad "Y: DNS egress rule missing when allowAll=false"
+[[ "$(netpol '[.spec.egress[]?] | length')" == "1" ]] \
+  && ok "Y: allowAll=false with dns only and no extra yields exactly one egress rule" \
+  || bad "Y: unexpected extra egress rules"
+
+render --set networkPolicy.enabled=true --set networkPolicy.egress.allowAll=false --set networkPolicy.egress.dns=false
+assert_rc0 "Y: allowAll=false, dns=false renders"
+[[ "$(netpol '[.spec.egress[]?] | length')" == "0" ]] \
+  && ok "Y: no egress rules at all with allowAll=false and dns=false and no extra" \
+  || bad "Y: an unexpected egress rule rendered"
+
+render --set networkPolicy.enabled=true --set networkPolicy.egress.allowAll=false \
+       --set-json 'networkPolicy.egress.extra=[{"to":[{"ipBlock":{"cidr":"203.0.113.0/24"}}]}]'
+assert_rc0 "Y: egress.extra passthrough renders"
+[[ "$(netpol '[.spec.egress[]? | select(.to[0].ipBlock.cidr == "203.0.113.0/24")] | length')" == "1" ]] \
+  && ok "Y: egress.extra rule passed through as-is" || bad "Y: egress.extra rule missing"
+
+render --set networkPolicy.enabled=true \
+       --set-json 'networkPolicy.ingress.extra=[{"from":[{"namespaceSelector":{}}],"ports":[{"protocol":"TCP","port":1234}]}]'
+assert_rc0 "Y: ingress.extra passthrough renders"
+[[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 1234)] | length')" == "1" ]] \
+  && ok "Y: ingress.extra rule passed through as-is" || bad "Y: ingress.extra rule missing"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
