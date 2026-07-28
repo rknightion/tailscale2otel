@@ -565,6 +565,19 @@ the hot path never blocks.
 > -preflight`, which runs one collection cycle without starting a listener, exporting, or
 > persisting a checkpoint — see
 > [Getting started](getting-started.md#smoke-test-prove-it-works-before-any-real-rollout).
+>
+> **`-print-effective-config` shows every key's effective value, redacted, and exits** — the same
+> complete key set and redaction rules (by TYPE, never by field name) the admin status page and
+> support bundle use: a `config.Secret` field (scalar or inside a `map[string]Secret`) never renders
+> a value, only `{secret: true, set, source}`; every other key, including each entry of a
+> multi-tailnet `tailnets:` list, prints its actual effective value. Output is JSON by default
+> (`-print-effective-config-format yaml` for YAML instead), one row per key, sorted by key for a
+> byte-identical result across runs. Add `-print-effective-config-provenance` to also see which
+> layer won for every key — `"default"`, `"file"`, or `"env"` — still never a secret's content, just
+> its origin; note this can only ever report `"value"`-style ambiguity as `"file"` or `"env"`
+> specifically, which is strictly more precise than the admin status page's own secret `source`
+> field (`"unset"` / `"value"` / `"file"`), where `"value"` cannot tell a YAML-set secret from an
+> env-set one apart. There is no flag anywhere in this command that disables redaction.
 
 > **Upgrade note — resolved names are now served past their TTL by default.** Previously a positive
 > entry became a miss the instant `cache_ttl` elapsed, so `tailscale.src.node` / `tailscale.dst.node`

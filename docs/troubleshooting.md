@@ -276,6 +276,22 @@ it.
 
 ---
 
+## Confirming the effective config without exposing secrets
+
+**Cause.** Layered config (defaults < YAML file < `TS2OTEL_*` env) makes it easy to lose track of
+which value actually took effect, or which layer set it — especially across a multi-tailnet `tailnets:`
+list.
+
+**Fix.** `tailscale2otel -print-effective-config -config <file>` loads the config exactly like a
+normal run and prints every effective key, redacted the same way the admin status page and support
+bundle are (`{secret, set, source}` for any secret, never a raw value), as a deterministic JSON array
+on stdout. Add `-print-effective-config-format yaml` for YAML instead, or
+`-print-effective-config-provenance` to also see which layer (`default`, `file`, or `env`) produced
+each key — still never the secret's content, just its origin. There is no flag that disables
+redaction; this command never prints a raw secret.
+
+---
+
 ## Still stuck?
 
 Nothing here matching your symptom is worth reporting — undiagnosable failure modes are bugs in this

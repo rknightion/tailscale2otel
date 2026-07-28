@@ -25,15 +25,17 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run parses flags and dispatches to one of six modes: -version (print and
+// run parses flags and dispatches to one of seven modes: -version (print and
 // exit), -healthcheck (probe the local admin readiness endpoint and exit),
 // -validate (load+validate the config and exit without starting the server),
-// -preflight (build the tailnet runtimes and run one collection cycle of
-// every enabled collector, side-effect-free by default; see preflight.go),
-// -once (the same single cycle, but with the real export/checkpoint
-// behavior), or the normal server run. -preflight and -once are mutually
-// exclusive. Splitting it out of main lets the flag modes be exercised by
-// tests without touching os.Args or process exit.
+// -print-effective-config (render the redacted effective config, optionally
+// with per-key provenance, and exit; see effectiveconfig.go), -preflight
+// (build the tailnet runtimes and run one collection cycle of every enabled
+// collector, side-effect-free by default; see preflight.go), -once (the same
+// single cycle, but with the real export/checkpoint behavior), or the normal
+// server run. -preflight and -once are mutually exclusive. Splitting it out
+// of main lets the flag modes be exercised by tests without touching
+// os.Args or process exit.
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("tailscale2otel", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -48,6 +50,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	preflightTimeout := fs.Duration("preflight-timeout", defaultPfDeadline, "overall deadline for -preflight or -once")
 	jsonOut := fs.Bool("json", false, "with -preflight or -once, emit one machine-readable JSON report instead of the human-readable one; with -validate, emit the config.Diagnostics() array instead of human-readable lines (#307)")
 	warningsAsErrors := fs.Bool("warnings-as-errors", false, "with -validate, exit 1 if any advisory warning is present, not just hard errors (#307)")
+	printEffectiveConfig := fs.Bool("print-effective-config", false, "load the config, render every effective key through the same redaction rules the admin status page uses, print it, and exit; never exposes secret values (#309)")
+	effectiveConfigFormat := fs.String("print-effective-config-format", "json", "output format for -print-effective-config: \"json\" or \"yaml\"")
+	effectiveConfigProvenance := fs.Bool("print-effective-config-provenance", false, "with -print-effective-config, also report which layer (default, file, or env) produced each key's effective value — never a secret's content (#309)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -63,6 +68,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if *validateOnly {
 		return runValidate(*configPath, *jsonOut, *warningsAsErrors, stdout, stderr)
+	}
+
+	if *printEffectiveConfig {
+		return runPrintEffectiveConfig(*configPath, *effectiveConfigFormat, *effectiveConfigProvenance, stdout, stderr)
 	}
 
 	if *preflight && *once {
