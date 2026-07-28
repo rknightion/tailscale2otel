@@ -101,6 +101,37 @@ extraVolumes: []
 # Paired with extraVolumes above by name.
 extraVolumeMounts: []
 
+# -- Extra environment variables appended to the container's `env`, as-is. Each entry is a
+# standard Kubernetes EnvVar: `{name, value}` or `{name, valueFrom: {...}}` (fieldRef,
+# resourceFieldRef, configMapKeyRef, secretKeyRef). For proxy settings, custom CA paths,
+# downward-API pod metadata, or a variable an external secret operator writes elsewhere.
+# Rendering FAILS rather than silently shadowing: an entry is rejected if it has no `name`,
+# if two entries share a name, or if the name is one the chart itself sets — a `secret:` key,
+# or GOGC/GOMEMLIMIT while goRuntime is setting them. Kubernetes resolves `env` AFTER
+# `envFrom`, so an unchecked entry here would quietly replace a credential injected from the
+# chart's Secret. Clear the chart's own value (e.g. goRuntime.gogc: "") to take a name over.
+# Example:
+#   extraEnv:
+#     - name: HTTPS_PROXY
+#       value: http://proxy.internal:3128
+#     - name: POD_NAME
+#       valueFrom:
+#         fieldRef:
+#           fieldPath: metadata.name
+extraEnv: [] # @schema item: object ; itemProperties: {"name":{"type":"string","minLength":1},"value":{"type":"string"},"valueFrom":{"type":"object"}}
+
+# -- Extra `envFrom` sources appended to the container's envFrom, as-is (configMapRef /
+# secretRef). The chart's own Secret is always FIRST, so a later source here can deliberately
+# override it — which is the documented way to let an external secret operator own a
+# TS2OTEL_* value — while the chart can never silently override yours.
+# Example:
+#   extraEnvFrom:
+#     - configMapRef:
+#         name: proxy-config
+#     - secretRef:
+#         name: external-tailscale-creds
+extraEnvFrom: [] # @schema item: object ; itemProperties: {"configMapRef":{"type":"object"},"secretRef":{"type":"object"},"prefix":{"type":"string"}}
+
 # --- Secrets ---
 # Provide credentials either inline here (rendered into a Secret) OR reference an
 # existing Secret via existingSecret. Inline values win only when existingSecret is "".

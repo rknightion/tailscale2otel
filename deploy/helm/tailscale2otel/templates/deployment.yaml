@@ -99,11 +99,22 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["-config", "/etc/tailscale2otel/config.yaml"]
+          {{- /*
+            The chart's own Secret is deliberately FIRST: Kubernetes resolves
+            later envFrom sources over earlier ones, so this lets an operator's
+            extraEnvFrom entry deliberately take over a TS2OTEL_* value (the
+            documented path for an external secret operator) while the chart can
+            never silently override theirs (#348).
+          */}}
           envFrom:
             - secretRef:
                 name: {{ include "tailscale2otel.secretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- $gomemlimit := include "tailscale2otel.gomemlimit" . }}
-          {{- if or .Values.goRuntime.gogc $gomemlimit }}
+          {{- include "tailscale2otel.validateExtraEnv" . }}
+          {{- if or .Values.goRuntime.gogc $gomemlimit .Values.extraEnv }}
           env:
             {{- if .Values.goRuntime.gogc }}
             - name: GOGC
@@ -112,6 +123,9 @@ spec:
             {{- if $gomemlimit }}
             - name: GOMEMLIMIT
               value: {{ $gomemlimit | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
           securityContext:

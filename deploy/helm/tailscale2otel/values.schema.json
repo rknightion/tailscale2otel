@@ -1150,6 +1150,41 @@
         "existingSecret": {
             "type": "string"
         },
+        "extraEnv": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "value": {
+                        "type": "string"
+                    },
+                    "valueFrom": {
+                        "type": "object"
+                    }
+                }
+            }
+        },
+        "extraEnvFrom": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "configMapRef": {
+                        "type": "object"
+                    },
+                    "prefix": {
+                        "type": "string"
+                    },
+                    "secretRef": {
+                        "type": "object"
+                    }
+                }
+            }
+        },
         "extraVolumeMounts": {
             "type": "array"
         },

@@ -433,5 +433,92 @@ else
   ok "L: NOTES prints no inline credential command"
 fi
 
+# --------------------------------------------------------------------------
+case_ "M. extraEnv / extraEnvFrom passthrough with a reserved-name policy (#348)"
+cenv() { dep_field ".spec.template.spec.containers[] | select(.name == \"tailscale2otel\") | ${1}"; }
+
+render
+assert_rc0 "M: default renders"
+[[ "$(cenv '[.env[]? | select(.name == "PROXY_TEST")] | length')" == "0" ]] \
+  && ok "M: nothing extra by default" || bad "M: unexpected default extra env"
+[[ "$(cenv '[.envFrom[]?] | length')" == "1" ]] \
+  && ok "M: default envFrom is only the chart Secret" || bad "M: default envFrom changed"
+
+render --set-string 'extraEnv[0].name=HTTPS_PROXY' --set-string 'extraEnv[0].value=http://proxy:3128'
+assert_rc0 "M: plain value renders"
+[[ "$(cenv '[.env[] | select(.name == "HTTPS_PROXY")][0].value')" == "http://proxy:3128" ]] \
+  && ok "M: extraEnv value passthrough" || bad "M: extraEnv value not rendered"
+# The chart's own GOGC must survive alongside it, not be replaced by the list.
+[[ "$(cenv '[.env[] | select(.name == "GOGC")] | length')" == "1" ]] \
+  && ok "M: chart-managed GOGC preserved next to extraEnv" || bad "M: chart-managed GOGC lost"
+
+render --set-string 'extraEnv[0].name=POD_NAME' \
+       --set-string 'extraEnv[0].valueFrom.fieldRef.fieldPath=metadata.name'
+assert_rc0 "M: downward API renders"
+[[ "$(cenv '[.env[] | select(.name == "POD_NAME")][0].valueFrom.fieldRef.fieldPath')" == "metadata.name" ]] \
+  && ok "M: valueFrom fieldRef passthrough" || bad "M: valueFrom fieldRef not rendered"
+
+render --set-string 'extraEnv[0].name=EXT_TOKEN' \
+       --set-string 'extraEnv[0].valueFrom.secretKeyRef.name=ext' \
+       --set-string 'extraEnv[0].valueFrom.secretKeyRef.key=token'
+assert_rc0 "M: secretKeyRef renders"
+[[ "$(cenv '[.env[] | select(.name == "EXT_TOKEN")][0].valueFrom.secretKeyRef.name')" == "ext" ]] \
+  && ok "M: valueFrom secretKeyRef passthrough" || bad "M: valueFrom secretKeyRef not rendered"
+
+render --set-string 'extraEnvFrom[0].configMapRef.name=proxy-cm' \
+       --set-string 'extraEnvFrom[1].secretRef.name=ext-creds'
+assert_rc0 "M: extraEnvFrom renders"
+[[ "$(cenv '[.envFrom[]] | length')" == "3" ]] \
+  && ok "M: extraEnvFrom appended to the chart Secret" || bad "M: envFrom count is $(cenv '[.envFrom[]] | length'), want 3"
+# Order matters: later envFrom entries win in Kubernetes, so the chart's Secret
+# must come FIRST for an operator's external source to be able to override it
+# deliberately — and so the chart never silently overrides theirs.
+[[ "$(cenv '.envFrom[0].secretRef.name')" == "$FULLNAME" ]] \
+  && ok "M: chart Secret stays first in envFrom" || bad "M: chart Secret is no longer first in envFrom"
+
+# --- the reserved-name policy -------------------------------------------------
+# `env` beats `envFrom` in Kubernetes, so an extraEnv entry naming a key the
+# chart injects from its Secret would SILENTLY replace a credential.
+render --set-string "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=${SENTINEL}" \
+       --set-string 'extraEnv[0].name=TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN' \
+       --set-string 'extraEnv[0].value=override'
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN' <<<"$RENDER"; then
+  ok "M: extraEnv shadowing a chart Secret key fails, naming the key"
+else
+  bad "M: extraEnv silently overrode a chart-managed credential (rc=$RENDER_RC)"
+fi
+grep -q -- "$SENTINEL" <<<"$RENDER" && bad "M: the failure echoed the credential VALUE" \
+  || ok "M: failure names the key without echoing its value"
+
+render --set-string 'extraEnv[0].name=GOGC' --set-string 'extraEnv[0].value=50'
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "M: extraEnv shadowing chart-managed GOGC fails" \
+  || bad "M: extraEnv silently overrode chart-managed GOGC"
+
+# ...but only while the chart is actually setting it. Clearing goRuntime.gogc
+# hands the name back to the operator.
+render --set-string goRuntime.gogc= --set-string 'extraEnv[0].name=GOGC' --set-string 'extraEnv[0].value=50'
+assert_rc0 "M: GOGC is settable via extraEnv once the chart stops setting it"
+[[ "$(cenv '[.env[] | select(.name == "GOGC")][0].value')" == "50" ]] \
+  && ok "M: operator GOGC applied when the chart yields the name" || bad "M: operator GOGC not applied"
+
+render --set-string 'extraEnv[0].name=DUP' --set-string 'extraEnv[0].value=a' \
+       --set-string 'extraEnv[1].name=DUP' --set-string 'extraEnv[1].value=b'
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "M: duplicate extraEnv names fail" || bad "M: duplicate extraEnv names accepted (last silently wins)"
+
+render --set-string 'extraEnv[0].value=orphan'
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "M: an extraEnv entry with no name fails" || bad "M: nameless extraEnv entry accepted"
+
+# Schema-level type checking, which the template `fail` cannot do: it runs after
+# values validation, so a structurally wrong value never reaches it.
+for bad_val in 'extraEnv=notalist' 'extraEnv[0].name.nested=x' 'extraEnv[0].value.nested=y' 'extraEnvFrom=notalist'; do
+  render --set "$bad_val"
+  [[ $RENDER_RC -ne 0 ]] \
+    && ok "M: schema rejects malformed --set $bad_val" \
+    || bad "M: schema accepted malformed --set $bad_val"
+done
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

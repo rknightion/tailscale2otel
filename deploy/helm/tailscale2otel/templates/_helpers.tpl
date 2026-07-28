@@ -209,3 +209,53 @@ Mi/Gi suffixes Kubernetes/this chart's default use are handled).
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Reject an extraEnv entry that would silently shadow something the chart owns (#348).
+
+WHY THIS FAILS RATHER THAN WARNS. Kubernetes resolves `env` AFTER `envFrom`, so
+an extraEnv entry naming a key the chart injects from its Secret wins — quietly.
+A credential the operator believes is coming from the chart's Secret (or from
+their existingSecret) would be replaced by an unrelated value, and nothing in
+the rendered manifest looks wrong. The same applies to GOGC/GOMEMLIMIT, which
+the chart sets from goRuntime: two entries with the same name in one `env` list
+is last-wins, so the operator's value would appear to work while the ordering
+that makes it work is an implementation detail of this template.
+
+The reserved set is DERIVED, not hardcoded: it is exactly the names this chart
+renders — the keys of `secret:` (skipped when existingSecret is in use, since
+the chart renders no Secret then and cannot know its keys) plus GOGC/GOMEMLIMIT
+while goRuntime is setting them. Clear the chart's own value to take a name
+over, e.g. goRuntime.gogc: "".
+
+Never echo a VALUE here — only names. This message is rendered into terminal
+output and CI logs.
+*/}}
+{{- define "tailscale2otel.validateExtraEnv" -}}
+{{- $reserved := dict -}}
+{{- if not .Values.existingSecret -}}
+  {{- range $k, $v := (.Values.secret | default dict) -}}
+    {{- $_ := set $reserved $k "the chart's `secret:` map (injected via envFrom)" -}}
+  {{- end -}}
+{{- end -}}
+{{- if .Values.goRuntime.gogc -}}
+  {{- $_ := set $reserved "GOGC" "goRuntime.gogc" -}}
+{{- end -}}
+{{- if include "tailscale2otel.gomemlimit" . -}}
+  {{- $_ := set $reserved "GOMEMLIMIT" "goRuntime.memLimit (or computed from resources.limits.memory)" -}}
+{{- end -}}
+{{- $seen := dict -}}
+{{- range $i, $e := (.Values.extraEnv | default list) -}}
+  {{- $name := $e.name | default "" -}}
+  {{- if not $name -}}
+    {{- fail (printf "extraEnv[%d] has no `name`; every entry must be a Kubernetes EnvVar with a name" $i) -}}
+  {{- end -}}
+  {{- if hasKey $seen $name -}}
+    {{- fail (printf "extraEnv has two entries named %q; a duplicate silently last-wins inside one env list, so this is rejected rather than resolved" $name) -}}
+  {{- end -}}
+  {{- $_ := set $seen $name true -}}
+  {{- if hasKey $reserved $name -}}
+    {{- fail (printf "extraEnv[%d] name %q is already set by %s. Kubernetes resolves `env` after `envFrom`, so this entry would SILENTLY override it. Remove the entry, or clear the chart's own value to take the name over." $i $name (index $reserved $name)) -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
