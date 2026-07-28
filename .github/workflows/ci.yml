@@ -369,6 +369,18 @@ jobs:
           HYGIENE_REQUIRE_DOCKER: "1"
         run: scripts/check-secret-hygiene.sh
 
+      # Nothing in CI ever resolved the Compose assets — this job builds from the
+      # Dockerfile directly, so a broken docker-compose.yaml could not fail
+      # anything. It shipped broken: the file told operators to uncomment a
+      # SECOND `volumes:` key for file-backed config, which Compose rejects
+      # outright (#333). Lives in this job for the same reason the hygiene gate
+      # above does — it already has a checkout and Docker, and is already in
+      # ci-success's `needs`, so the gate is blocking without a ruleset edit.
+      # --self-test mutates the resolved documents to prove the assertions can
+      # fail; a checker never shown to fail proves nothing.
+      - name: Compose assets resolve in both default and file-backed modes
+        run: deploy/tests/compose-tests.sh --self-test
+
       # The Dockerfile's `go build` step uses a BuildKit cache mount for the Go
       # build cache (/root/.cache/go-build). type=gha layer cache does NOT carry
       # cache-mount contents across runs, so restore/save it via actions/cache and

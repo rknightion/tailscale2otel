@@ -1,0 +1,24 @@
+# Optional override: run tailscale2otel from a YAML config file instead of
+# built-in defaults alone.
+#
+# Usage — pass BOTH files, base first:
+#   cp config.example.yaml deploy/config.yaml     # then edit
+#   docker compose -f deploy/docker-compose.yaml -f deploy/docker-compose.config.yaml up
+#
+# This is an override file rather than a commented-out block in the base file
+# on purpose. A Compose service map may carry only ONE `volumes:` key, so the
+# base file cannot show a second one even in a comment — uncommenting it is a
+# parse error, not a merge (#333). Across two `-f` files Compose MERGES the
+# volume lists by mount target, so the base file's checkpoint volume survives
+# and the config mount is added alongside it. `deploy/tests/compose-tests.sh`
+# asserts exactly that, because losing the checkpoint volume here would cold-
+# start every polled log collector from `initial_lookback` on each restart.
+#
+# Credentials still belong in deploy/.env as TS2OTEL_* variables, NOT in this
+# config file: env vars override file values, and deploy/.env is covered by
+# both .gitignore and .dockerignore. This file is not.
+services:
+  tailscale2otel:
+    volumes:
+      - ./config.yaml:/etc/tailscale2otel/config.yaml:ro
+    command: ["-config", "/etc/tailscale2otel/config.yaml"]

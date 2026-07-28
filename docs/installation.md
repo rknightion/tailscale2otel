@@ -82,6 +82,34 @@ See [Configuration](configuration.md) for the full list of options once you are 
     The compose file mounts a named volume at `/var/lib/tailscale2otel` for
     checkpoint persistence, so polling resumes without gaps after a restart.
 
+    ### Running from a config file
+
+    The compose file needs no config file — every setting has a `TS2OTEL_*`
+    variable. To drive it from YAML instead, add the override file as a second
+    `-f`:
+
+    ```sh
+    cp config.example.yaml deploy/config.yaml   # then edit
+    docker compose -f deploy/docker-compose.yaml \
+                   -f deploy/docker-compose.config.yaml up
+    ```
+
+    Keep credentials in `deploy/.env` even in this mode. Environment variables
+    override file values, `deploy/.env` is covered by both `.gitignore` and
+    `.dockerignore`, and `deploy/config.yaml` is git-ignored but is not a
+    secret-handling path.
+
+    !!! warning "Do not add the mount to the base compose file"
+        A Compose service map may carry only one `volumes:` key. Adding a second
+        one to `deploy/docker-compose.yaml` is a parse error, not a merge —
+        Compose refuses the whole file with `mapping key "volumes" already
+        defined`. Earlier versions of that file suggested exactly this in a
+        comment (#333). Across two `-f` files Compose *merges* the volume lists
+        by mount target, which is why the config mount lives in an override and
+        why the checkpoint volume survives it.
+        `deploy/tests/compose-tests.sh` asserts both modes resolve and that the
+        checkpoint mount is present in each.
+
     !!! warning "`.gitignore` is not a Docker build-context boundary"
         `deploy/.env` is covered by two *separate* mechanisms, and you need both:
 

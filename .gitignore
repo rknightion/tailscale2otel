@@ -29,6 +29,10 @@
 config.local.yaml
 config.smoke.yaml
 config.lowlog.yaml
+# The operator-supplied file that docker-compose.config.yaml mounts (#333).
+# Credentials belong in deploy/.env, but this is a real config file in a real
+# tree and must not be committable by accident.
+deploy/config.yaml
 .smoke.yaml
 # Checkpoint state (poller high-water marks). checkpoints.json is the default
 # file store; deploy/docker-compose.yaml documents a ./checkpoints bind-mount
