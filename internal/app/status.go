@@ -80,15 +80,8 @@ func (a *App) buildStatus() statusdata.Status {
 	if a.runtimeHist != nil {
 		cardPerMetric = a.runtimeHist.perMetricSeries()
 	}
-	cardThresholds := statusdata.CardinalityThresholds{
-		Warning:  a.cfg.Cardinality.WarningThreshold,
-		Critical: a.cfg.Cardinality.CriticalThreshold,
-	}
+	cardThresholds, metricByName := a.cardCatalogInputs()
 	metrics := catalog.Metrics()
-	metricByName := make(map[string]metricdoc.Metric, len(metrics))
-	for _, m := range metrics {
-		metricByName[m.Name] = m
-	}
 
 	s := statusdata.Status{
 		Provider:     string(a.primary().cp.Kind),
@@ -425,8 +418,28 @@ func (a *App) tailnetSummary() string {
 	return a.cfg.Tailscale.Tailnet
 }
 
-// tailnetStatuses builds the per-tailnet sections of the status page.
+// cardCatalogInputs returns the configured cardinality thresholds and the
+// metric-name -> catalog-entry index used to resolve a source metric's
+// Prometheus name for display. Shared by buildStatus (the combined cardinality
+// section) and tailnetStatuses (each tailnet's own section, #325) so the two
+// can never compute it differently.
+func (a *App) cardCatalogInputs() (statusdata.CardinalityThresholds, map[string]metricdoc.Metric) {
+	th := statusdata.CardinalityThresholds{
+		Warning:  a.cfg.Cardinality.WarningThreshold,
+		Critical: a.cfg.Cardinality.CriticalThreshold,
+	}
+	metrics := catalog.Metrics()
+	byName := make(map[string]metricdoc.Metric, len(metrics))
+	for _, m := range metrics {
+		byName[m.Name] = m
+	}
+	return th, byName
+}
+
+// tailnetStatuses builds the per-tailnet sections of the status page — the data
+// the admin page's tailnet selector (#325) filters onto.
 func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
+	th, metricByName := a.cardCatalogInputs()
 	out := make([]statusdata.TailnetStatus, 0, len(a.runtimes))
 	for _, rt := range a.runtimes {
 		name := a.runtimeName(rt)
@@ -442,13 +455,14 @@ func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
 			authMethod = a.cfg.Tailscale.Auth.Method // headscale / fallback
 		}
 		out = append(out, statusdata.TailnetStatus{
-			Name:       name,
-			AuthMethod: authMethod, // per-runtime (tailnets[] entry), not the unused top-level block (#116)
-			Cache:      runtimeCacheInfo(rt),
-			Collectors: cols,
-			Devices:    runtimeDeviceRows(rt),
-			API:        runtimeAPIInfo(rt),
-			Failing:    failing,
+			Name:        name,
+			AuthMethod:  authMethod, // per-runtime (tailnets[] entry), not the unused top-level block (#116)
+			Cache:       runtimeCacheInfo(rt),
+			Collectors:  cols,
+			Devices:     runtimeDeviceRows(rt),
+			API:         runtimeAPIInfo(rt),
+			Cardinality: runtimeCardinalityInfo(rt, a.cfg.SelfObservability.Enabled, th, metricByName),
+			Failing:     failing,
 		})
 	}
 	return out

@@ -7,6 +7,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
 func TestFreshnessState(t *testing.T) {
@@ -147,5 +148,58 @@ func TestCardinalityInfo_ThresholdsAlertsAndGating(t *testing.T) {
 	// Alerts: 2 (big, mid), critical first.
 	if len(info.Alerts) != 2 || info.Alerts[0].Metric != "big" || info.Alerts[0].Level != "critical" {
 		t.Errorf("alerts = %+v", info.Alerts)
+	}
+}
+
+// TestRuntimeCardinalityInfo_UsesOnlyThatRuntimesTracker asserts the per-tailnet
+// cardinality section (#325) is built from ONE runtime's own CardinalityTracker
+// and never folds in another runtime's (or the process provider's) series — the
+// per-tailnet view exists precisely so a busy tailnet's cardinality does not get
+// attributed to a quiet one.
+func TestRuntimeCardinalityInfo_UsesOnlyThatRuntimesTracker(t *testing.T) {
+	th := statusdata.CardinalityThresholds{Warning: 100, Critical: 500}
+	mbn := map[string]metricdoc.Metric{}
+
+	rec := telemetrytest.New()
+	trA := telemetry.NewCardinalityTracker()
+	trA.Observe("tailscale.device.online", telemetry.Attrs{"node": "a"})
+	trA.Observe("tailscale.device.online", telemetry.Attrs{"node": "b"})
+	trA.Report(rec.Emitter())
+
+	trB := telemetry.NewCardinalityTracker()
+	for i := 0; i < 5; i++ {
+		trB.Observe("tailscale.device.online", telemetry.Attrs{"node": i})
+	}
+	trB.Report(rec.Emitter())
+
+	rtA := &tailnetRuntime{name: "acme", card: trA}
+	rtB := &tailnetRuntime{name: "beta", card: trB}
+
+	infoA := runtimeCardinalityInfo(rtA, true, th, mbn)
+	if !infoA.Available || infoA.Total != 2 {
+		t.Fatalf("rtA cardinality = %+v, want Available total=2", infoA)
+	}
+	infoB := runtimeCardinalityInfo(rtB, true, th, mbn)
+	if !infoB.Available || infoB.Total != 5 {
+		t.Fatalf("rtB cardinality = %+v, want Available total=5", infoB)
+	}
+	// Growth is deliberately never populated per-tailnet: the retained-history
+	// sampler is process-wide, not per-runtime.
+	if len(infoA.Growth) != 0 {
+		t.Errorf("per-tailnet Growth should be empty, got %+v", infoA.Growth)
+	}
+
+	// self-obs off -> unavailable, same as the combined helper.
+	off := runtimeCardinalityInfo(rtA, false, th, mbn)
+	if off.Available {
+		t.Error("self-obs off should be Available=false")
+	}
+
+	// A nil tracker (self-obs was off when this runtime started) must not panic
+	// and must report unavailable rather than a zero-value "available" snapshot.
+	rtNil := &tailnetRuntime{name: "nilcard"}
+	nilInfo := runtimeCardinalityInfo(rtNil, true, th, mbn)
+	if nilInfo.Available {
+		t.Error("nil tracker should report Available=false, not a fake empty snapshot")
 	}
 }

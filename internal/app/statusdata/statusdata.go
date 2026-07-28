@@ -76,6 +76,14 @@ type TailnetStatus struct {
 	Collectors []CollectorStatus `json:"collectors"`
 	Devices    []DeviceRow       `json:"devices"`
 	API        APIInfo           `json:"api"`
+	// Cardinality is this tailnet's OWN active-series cardinality, from its own
+	// CardinalityTracker only — it never includes the process provider's series
+	// (self-obs, admin/metrics HTTP, etc.), which has no tailnet to attribute to.
+	// Growth is always empty here: the retained-history trend sampler runs once
+	// per process, not once per tailnet, so growth stays a combined-only figure
+	// (see the top-level Status.Cardinality.Growth) — the admin page labels it
+	// as such rather than pretending a per-tailnet trend exists (#325).
+	Cardinality CardinalityInfo `json:"cardinality"`
 	// Failing is the count of this tailnet's collectors whose last run failed.
 	Failing int `json:"failing"`
 }

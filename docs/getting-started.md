@@ -148,8 +148,13 @@ for it in Grafana Explore — if it appears, the pipeline is working end-to-end.
 **Admin status page:** the admin server is on by default and binds `127.0.0.1:9091`, giving live
 visibility into collector health without querying the backend. The status page shows each
 collector's last-run time, success or failure, active-series cardinality, OTLP delivery state per
-signal, the full metrics catalog, and a redacted config summary. The `/healthz` and `/readyz`
-endpoints are always available without authentication and are suitable for container health checks.
+signal, the full metrics catalog, and a redacted config summary. In multi-tailnet deployments
+(`tailnets:` with more than one entry) a **Tailnet** selector filters the Collectors, API,
+Cardinality and device-inventory tabs down to one tailnet, or "All" for the combined view; the
+selection round-trips through the URL (`?tailnet=`), so a refresh or a shared link keeps it. Runtime,
+OTLP delivery and process-level data are process-global and always cover every tailnet, labelled as
+such. The `/healthz` and `/readyz` endpoints are always available without authentication and are
+suitable for container health checks.
 
 A loopback default means "loopback **inside the container**", so reaching it from your machine takes
 both a published port and a bind the container will accept traffic on — plus a token, because a

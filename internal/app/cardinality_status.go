@@ -57,6 +57,25 @@ func (a *App) aggregateLabelSnapshot() []telemetry.LabelStat {
 // after merging across providers (matches the tracker's default value cap).
 const defaultLabelExampleMerge = 100
 
+// runtimeCardinalityInfo builds ONE tailnet runtime's own cardinality section
+// (#325), from rt.card alone — never merged with any other runtime's tracker or
+// the process provider's (self-obs, admin/metrics HTTP). That merge is exactly
+// what aggregateCardSnapshot/aggregateLabelSnapshot do for the COMBINED
+// top-level section; this is the per-tailnet counterpart the admin page's
+// tailnet selector filters onto.
+//
+// Growth is always empty: the retained-history sampler backing
+// Status.Cardinality.Growth runs once per process (a.runtimeHist), not once per
+// tailnet runtime, so there is no per-tailnet trend to report. rt.card being nil
+// (a runtime whose provider never got a tracker) degrades to the same
+// Available=false shape a real tracker reports before its first Report.
+func runtimeCardinalityInfo(rt *tailnetRuntime, selfObs bool, th statusdata.CardinalityThresholds, metricByName map[string]metricdoc.Metric) statusdata.CardinalityInfo {
+	if rt == nil || rt.card == nil {
+		return statusdata.CardinalityInfo{Available: false, Thresholds: th}
+	}
+	return cardinalityInfo(selfObs, rt.card.Snapshot(), rt.card.LabelSnapshot(), nil, th, metricByName)
+}
+
 // cardSeriesLevel classifies a metric's series count against the configured
 // thresholds: "critical" (>= critical, when set), "warning" (>= warning, when
 // set), or "" (below both / disabled).

@@ -151,6 +151,7 @@
   (function(){try{var t=localStorage.getItem('ts2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 <script>window.__refreshMs = {{if .RefreshMs}}{{.RefreshMs}}{{else}}5000{{end}};</script>
+<script>var TAILNETS = [{{range $i,$t := .Tailnets}}{{if $i}},{{end}}"{{$t.Name}}"{{end}}];</script>
 <noscript><style>
   /* Without JS the tabs can't switch — show every section stacked and hide the
      tab bar, preserving the static snapshot. */
@@ -179,6 +180,16 @@
   <button class="tab-btn" data-target="inventory">Inventory &amp; Catalog</button>
   <button class="tab-btn" data-target="config">Config</button>
 </nav>
+{{if gt (len .Tailnets) 1}}
+<div class="controls" id="tailnetSelectorWrap" style="padding:8px 24px 0;background:var(--bg)">
+  <label for="tnSel" class="muted" style="font-size:12px">Tailnet</label>
+  <select class="ctl" id="tnSel">
+    <option value="">All ({{len .Tailnets}})</option>
+    {{range .Tailnets}}<option value="{{.Name}}">{{.Name}}</option>{{end}}
+  </select>
+  <span class="muted" style="font-size:12px">Filters Collectors, API, Cardinality and the device inventory below. Runtime, OTLP delivery and other process-wide data always cover every tailnet.</span>
+</div>
+{{end}}
 <main>
 
   <!-- ═══ OVERVIEW ═══ -->
@@ -202,14 +213,14 @@
       <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">—</div><div class="sub">cycles/sec</div></div>
     </div>
 
-    <div class="sub-h">Runtime trend (~10 min)</div>
+    <div class="sub-h">Runtime trend (~10 min){{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:11px;text-transform:none;font-weight:400">— process-global, covers every tailnet</span>{{end}}</div>
     <div class="cards">
       <div class="card"><div class="k">Goroutines</div><div class="chart-wrap"><svg class="chart" id="chGoroutines"></svg><div class="chart-tip"></div></div></div>
       <div class="card"><div class="k">Heap in use</div><div class="chart-wrap"><svg class="chart" id="chHeap"></svg><div class="chart-tip"></div></div></div>
       <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC"></svg><div class="chart-tip"></div></div></div>
     </div>
 
-    <div class="sub-h">Throughput &amp; fleet trend (~10 min)</div>
+    <div class="sub-h">Throughput &amp; fleet trend (~10 min){{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:11px;text-transform:none;font-weight:400">— process-global, covers every tailnet</span>{{end}}</div>
     <div class="cards">
       <div class="card"><div class="k">Metric points/sec</div><div class="v" id="emitMetricRate">{{printf "%.1f" .Throughput.MetricPointsPerSec}}</div><div class="sub">{{.Throughput.MetricPoints}} emitted</div></div>
       <div class="card"><div class="k">Log records/sec</div><div class="v" id="emitLogRate">{{printf "%.1f" .Throughput.LogRecordsPerSec}}</div><div class="sub">{{.Throughput.LogRecords}} emitted</div></div>
@@ -223,6 +234,7 @@
     </div>
 
     {{if gt (len .Tailnets) 1}}
+    <div id="tailnets">
     <div class="sub-h">Tailnets ({{len .Tailnets}})</div>
     <table>
       <thead><tr><th>Tailnet</th><th>Auth</th><th class="num">Devices</th><th class="num">Collectors</th><th class="num">Failing</th></tr></thead>
@@ -238,7 +250,8 @@
       {{end}}
       </tbody>
     </table>
-    <p class="note">Per-tailnet detail is in <a href="/api/status.json"><code>/api/status.json</code></a> under <code>tailnets[]</code>. The tabs show the combined view across all tailnets.</p>
+    <p class="note">Per-tailnet detail is in <a href="/api/status.json"><code>/api/status.json</code></a> under <code>tailnets[]</code>. Use the <strong>Tailnet</strong> selector above to filter the Collectors, API, Cardinality and Inventory tabs to a single tailnet, or pick "All" for the combined view shown here.</p>
+    </div>
     {{end}}
   </section>
 
@@ -370,7 +383,7 @@
 
       {{if .Cardinality.Alerts}}
       <div class="sub-h">Active alerts</div>
-      <table style="margin-bottom:8px"><tbody>
+      <table style="margin-bottom:8px"><tbody id="cardAlertsBody">
         {{range .Cardinality.Alerts}}
         <tr><td><span class="badge {{.Level}}">{{.Level}}</span></td><td><code>{{.Metric}}</code></td><td class="num">{{.Count}} series</td></tr>
         {{end}}
@@ -382,7 +395,7 @@
       <div class="scroll">
       <table id="cardTable">
         <thead><tr><th>Metric</th><th>Prometheus name</th><th class="num">Series</th></tr></thead>
-        <tbody>
+        <tbody id="cardSeriesBody">
         {{range .Cardinality.Series}}
           <tr{{if eq .Level "critical"}} class="bad"{{end}}><td><code>{{.Metric}}</code>{{if .Level}} <span class="badge {{.Level}}">{{.Level}}</span>{{end}}</td><td class="mono">{{.PromName}}</td><td class="num">{{.Count}}{{if .Capped}} <span class="badge warn" title="cap reached; true cardinality is at least this high">capped</span>{{end}}</td></tr>
         {{end}}
@@ -395,7 +408,7 @@
       <div class="scroll">
       <table id="labelTable">
         <thead><tr><th>Label</th><th class="num">Distinct values</th><th>Top metrics (example values)</th></tr></thead>
-        <tbody>
+        <tbody id="cardLabelsBody">
         {{range .Cardinality.Labels}}
           <tr>
             <td><code>{{.Label}}</code>{{if .Capped}} <span class="badge warn">capped</span>{{end}}</td>
@@ -410,6 +423,7 @@
 
       {{if .Cardinality.Growth}}
       <div class="sub-h">Growth (change over retained window)</div>
+      {{if gt (len .Tailnets) 1}}<p class="note">Combined across all tailnets (global) — the retained-history trend is not tracked per tailnet.</p>{{end}}
       <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'growthTable')">
       <div class="scroll">
       <table id="growthTable">
@@ -432,12 +446,12 @@
   <!-- ═══ INVENTORY & CATALOG ═══ -->
   <section data-tab="inventory">
     {{if .Devices}}
-    <div class="sub-h">Devices ({{len .Devices}})</div>
+    <div class="sub-h">Devices (<span id="devCount">{{len .Devices}}</span>)</div>
     <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')">
     <div class="scroll">
     <table id="devTable">
       <thead><tr><th>Name</th><th>OS</th><th>User</th><th>Addresses</th><th>Tags</th><th>External</th></tr></thead>
-      <tbody>
+      <tbody id="devBody">
       {{range .Devices}}
         <tr>
           <td><code>{{if .Name}}{{.Name}}{{else}}{{.Hostname}}{{end}}</code></td>
@@ -554,11 +568,12 @@
       </tbody>
     </table>
 
-    <h3 style="margin-top:18px">OTLP delivery</h3>
+    <h3 style="margin-top:18px">OTLP delivery{{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:12px;font-weight:400">(global)</span>{{end}}</h3>
     <div class="sub">What the exporters actually <em>shipped</em>, per signal — as opposed to what was
       handed to them (see throughput). Sustained failure here drags overall health to
       <em>degraded</em> but deliberately does not affect <code>/readyz</code>: a backend outage is
-      not a reason to pull every replica out of rotation.</div>
+      not a reason to pull every replica out of rotation.{{if gt (len .Tailnets) 1}} One process-wide
+      exporter per signal serves every tailnet, so this is never per-tailnet data.{{end}}</div>
     <table style="margin-top:8px">
       <thead><tr><th>Signal</th><th>State</th><th class="num">Exports</th><th class="num">Failures</th><th>Last success</th><th>Last failure</th><th class="num">Last duration</th><th>Error class</th></tr></thead>
       <tbody id="deliveryBody">
@@ -577,9 +592,11 @@
       </tbody>
     </table>
 
-    <h3 style="margin-top:18px">Components</h3>
+    <h3 style="margin-top:18px">Components{{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:12px;font-weight:400">(global)</span>{{end}}</h3>
     <div class="sub">The long-running subsystems behind <code>/readyz</code>. A failure here is what
-      makes the health badge above say <em>degraded</em> and the readiness probe answer 503.</div>
+      makes the health badge above say <em>degraded</em> and the readiness probe answer 503.{{if gt (len .Tailnets) 1}} These
+      are process-wide (admin/metrics listeners, receivers, the ingress WAL) and are never scoped to
+      one tailnet.{{end}}</div>
     <table style="margin-top:8px">
       <thead><tr><th>Component</th><th>State</th><th>Reason</th></tr></thead>
       <tbody id="componentsBody">
@@ -623,6 +640,49 @@ var SVGNS = 'http://www.w3.org/2000/svg';
 var lastOkMs = Date.now();
 var pollTimer = null, paused = false;
 var lastData = null;
+
+// ── Tailnet selector (#325) ─────────────────────────────────────────────────
+// state.tailnet === "" means "All" (the combined view); otherwise it names one
+// entry of TAILNETS. Persisted in the ?tailnet= query parameter (same
+// convention as the /flows view's own tailnet selector, #298) so a refresh or a
+// shared link reproduces the selection — never in the hash, which the tab bar
+// already owns.
+var state = {tailnet: ""};
+function readTailnetFromURL(){
+  var p = new URLSearchParams(location.search);
+  var tn = p.get("tailnet");
+  return (tn && TAILNETS.indexOf(tn) !== -1) ? tn : "";
+}
+function syncTailnetURL(){
+  var p = new URLSearchParams(location.search);
+  if(state.tailnet) p.set("tailnet", state.tailnet); else p.delete("tailnet");
+  var qs = p.toString();
+  var url = location.pathname + (qs ? "?"+qs : "") + location.hash;
+  history.replaceState(null, "", url);
+}
+// tailnetView narrows the full /api/status.json payload d down to the section
+// this.tailnet asks for. "All" (state.tailnet==="") returns the combined
+// top-level fields unchanged. An unknown/removed tailnet name (e.g. a link
+// shared before a tailnet was dropped from config) degrades to "All" rather
+// than rendering empty tables.
+function tailnetView(d){
+  if(!state.tailnet || !d || !d.tailnets) return d;
+  for (var i=0;i<d.tailnets.length;i++){
+    if(d.tailnets[i].name === state.tailnet) return d.tailnets[i];
+  }
+  return d;
+}
+function initTailnetSelector(){
+  var sel = document.getElementById("tnSel");
+  if(!sel) return; // single-tailnet mode: selector not rendered, nothing to wire
+  state.tailnet = readTailnetFromURL();
+  sel.value = state.tailnet;
+  sel.addEventListener("change", function(){
+    state.tailnet = sel.value;
+    syncTailnetURL();
+    refresh();
+  });
+}
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function showTab(id){
@@ -974,6 +1034,92 @@ function rebuildAPI(info){
   }
 }
 
+// ── Devices table (Inventory tab) — filtered by the tailnet selector ───────
+function rebuildDevices(rows){
+  var tb=document.getElementById('devBody'); if(!tb) return;
+  rows = rows || [];
+  setText('devCount', rows.length);
+  tb.textContent='';
+  rows.forEach(function(dv){
+    var tr=el('tr');
+    var nameTd=el('td'); nameTd.appendChild(el('code',null, dv.name || dv.hostname)); tr.appendChild(nameTd);
+    var osTxt = dv.os || '';
+    if(dv.os_version) osTxt += ' '+dv.os_version;
+    tr.appendChild(el('td', null, osTxt));
+    tr.appendChild(el('td', null, dv.user || ''));
+    var addrTd=el('td',{'class':'mono'});
+    (dv.addrs||[]).forEach(function(a){ addrTd.appendChild(document.createTextNode(a+' ')); });
+    tr.appendChild(addrTd);
+    var tagTd=el('td',{'class':'mono'});
+    (dv.tags||[]).forEach(function(tg){ tagTd.appendChild(el('code',null,tg)); tagTd.appendChild(document.createTextNode(' ')); });
+    tr.appendChild(tagTd);
+    var extTd=el('td');
+    extTd.appendChild(dv.external ? el('span',{'class':'badge warn'},'external') : el('span',{'class':'badge pending'},'internal'));
+    tr.appendChild(extTd);
+    tb.appendChild(tr);
+  });
+}
+
+// ── Cardinality tab — filtered by the tailnet selector ─────────────────────
+// Series/alerts/labels are rebuilt from whichever section tailnetView(d)
+// picked; Growth stays whatever the server rendered (combined-only — see the
+// note on the page, and TailnetStatus.Cardinality.Growth's doc comment).
+function rebuildCardinality(info){
+  info = info || {available:false};
+  setText('cardTotal', info.available ? info.total : '—');
+  setText('cardAlertCount', (info.alerts||[]).length);
+
+  var alertsBody = document.getElementById('cardAlertsBody');
+  if(alertsBody){
+    alertsBody.textContent='';
+    (info.alerts||[]).forEach(function(a){
+      var tr=el('tr');
+      var lvlTd=el('td'); lvlTd.appendChild(el('span',{'class':'badge '+a.level}, a.level)); tr.appendChild(lvlTd);
+      var mTd=el('td'); mTd.appendChild(el('code',null,a.metric)); tr.appendChild(mTd);
+      tr.appendChild(el('td',{'class':'num'}, a.count+' series'));
+      alertsBody.appendChild(tr);
+    });
+  }
+
+  var seriesBody = document.getElementById('cardSeriesBody');
+  if(seriesBody){
+    seriesBody.textContent='';
+    (info.series||[]).forEach(function(s){
+      var tr=el('tr'); if(s.level==='critical') tr.className='bad';
+      var mTd=el('td'); mTd.appendChild(el('code',null,s.metric));
+      if(s.level) mTd.appendChild(el('span',{'class':'badge '+s.level}, ' '+s.level));
+      tr.appendChild(mTd);
+      tr.appendChild(el('td',{'class':'mono'}, s.prom_name||''));
+      var cTd=el('td',{'class':'num'});
+      cTd.appendChild(document.createTextNode(String(s.count)));
+      if(s.capped){ cTd.appendChild(document.createTextNode(' ')); cTd.appendChild(el('span',{'class':'badge warn','title':'cap reached; true cardinality is at least this high'},'capped')); }
+      tr.appendChild(cTd);
+      seriesBody.appendChild(tr);
+    });
+  }
+
+  var labelsBody = document.getElementById('cardLabelsBody');
+  if(labelsBody){
+    labelsBody.textContent='';
+    (info.labels||[]).forEach(function(l){
+      var tr=el('tr');
+      var lblTd=el('td'); lblTd.appendChild(el('code',null,l.label));
+      if(l.capped) lblTd.appendChild(el('span',{'class':'badge warn'},'capped'));
+      tr.appendChild(lblTd);
+      tr.appendChild(el('td',{'class':'num'}, String(l.total_distinct)));
+      var mTd=el('td');
+      (l.metrics||[]).forEach(function(m, i){
+        if(i) mTd.appendChild(el('br'));
+        mTd.appendChild(el('code',null,m.metric));
+        mTd.appendChild(document.createTextNode(' '+m.distinct+(m.capped?'+':'')));
+        if(m.examples && m.examples.length) mTd.appendChild(el('span',{'class':'ex'}, ' '+m.examples.join(', ')));
+      });
+      tr.appendChild(mTd);
+      labelsBody.appendChild(tr);
+    });
+  }
+}
+
 // ── Overview roll-up ──────────────────────────────────────────────────────
 function updateRollup(d){
   setText('ruHealth', d.health);
@@ -1045,12 +1191,19 @@ function refresh(){
     setText('cacheDevices', d.device_cache && d.device_cache.devices);
     setText('cacheAge', d.device_cache && d.device_cache.age);
     updateRDNS(d.reverse_dns);
-    if(d.cardinality){ setText('cardTotal', d.cardinality.total); setText('cardAlertCount', (d.cardinality.alerts||[]).length); }
     setText('generatedAt', d.generated_at);
     setHealth(d);
-    updateRollup(d);
-    rebuildCollectors(d.collectors);
-    rebuildAPI(d.api);
+    updateRollup(d); // always the combined figures — the roll-up is a process-wide dashboard, not filtered
+    // view is the tailnet-selector-filtered slice: the combined d itself for
+    // "All", or one d.tailnets[] entry. Collectors/API/Cardinality/Devices are
+    // the only sections that vary by tailnet (#325); everything else below
+    // (components, delivery, advisories, runtime) is process-global and always
+    // reads the top-level d.
+    var view = tailnetView(d);
+    rebuildCollectors(view.collectors);
+    rebuildAPI(view.api);
+    rebuildDevices(view.devices);
+    rebuildCardinality(view.cardinality);
     rebuildComponents(d.components);
     rebuildDelivery(d.delivery);
     rebuildAdvisories(d.advisories);
@@ -1105,6 +1258,7 @@ function tickFreshness(){
   registerChart('chDuration', function(d){ return d&&d.fleet ? [{name:'mean', points:d.fleet.mean_duration_ms_series||[]}] : []; }, function(v){ return v.toFixed(0)+'ms'; });
 
   initTabs();
+  initTailnetSelector();
   var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click', toggleTheme);
   var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click', togglePause);
   var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); refresh(); });

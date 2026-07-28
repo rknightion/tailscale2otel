@@ -400,6 +400,98 @@ func TestRender_ConfigAdvisoriesAreListed(t *testing.T) {
 	}
 }
 
+// TestRender_TailnetSelector asserts the per-tailnet selector (#325) renders
+// only in multi-tailnet mode, lists every tailnet plus an "All" option, and is
+// wired to the JS that filters Collectors/API/Cardinality/Devices.
+func TestRender_TailnetSelector(t *testing.T) {
+	multi := statusdata.Status{Tailnets: []statusdata.TailnetStatus{
+		{Name: "acme.example.com"},
+		{Name: "beta.example.com"},
+	}}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, multi); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="tnSel"`,
+		`<option value="">All (2)</option>`,
+		`<option value="acme.example.com">acme.example.com</option>`,
+		`<option value="beta.example.com">beta.example.com</option>`,
+		`var TAILNETS = ["acme.example.com","beta.example.com"];`,
+		"function tailnetView", "function initTailnetSelector", "function rebuildDevices", "function rebuildCardinality",
+		"initTailnetSelector();",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("multi-tailnet page missing %q", want)
+		}
+	}
+
+	// Single tailnet: no selector, empty TAILNETS array — verified by deleting
+	// the `{{if gt (len .Tailnets) 1}}` gate around the selector block, which
+	// made this branch fail with "unexpected id=\"tnSel\"" before being
+	// restored, so the guard is checking real markup rather than a name that
+	// never appears.
+	single := statusdata.Status{Tailnets: []statusdata.TailnetStatus{{Name: "solo.example.com"}}}
+	buf.Reset()
+	if err := statushtml.Render(&buf, single); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	sout := buf.String()
+	if strings.Contains(sout, `id="tnSel"`) {
+		t.Error("single-tailnet page should not render the tailnet selector")
+	}
+	if strings.Contains(sout, `id="tailnetSelectorWrap"`) {
+		t.Error("single-tailnet page should not render the selector wrapper")
+	}
+	if !strings.Contains(sout, `var TAILNETS = ["solo.example.com"];`) {
+		t.Error("TAILNETS should still list the one tailnet even though the selector is hidden")
+	}
+
+	// Zero tailnets (the zero-value Status a test or an early admin-server
+	// probe might render): TAILNETS must be a valid empty JS array, not "[,]"
+	// or similarly malformed from an empty range.
+	buf.Reset()
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "var TAILNETS = [];") {
+		t.Error("zero-tailnet page should render an empty TAILNETS array")
+	}
+}
+
+// TestRender_TailnetFilteredSections asserts the Devices and Cardinality
+// sections carry the DOM hooks (`id="devBody"`, `id="cardSeriesBody"`, etc.) the
+// tailnet-selector JS rebuilds on selection — a bare-phrase check would also
+// match the JS source itself, so these assert the actual table structure.
+func TestRender_TailnetFilteredSections(t *testing.T) {
+	s := statusdata.Status{
+		Devices: []statusdata.DeviceRow{{Name: "laptop", OS: "linux"}},
+		Cardinality: statusdata.CardinalityInfo{
+			Available: true, Total: 10,
+			Series: []statusdata.SeriesRow{{Metric: "m", Count: 10}},
+			Alerts: []statusdata.CardinalityAlert{{Metric: "m", Count: 10, Level: "warning"}},
+			Labels: []statusdata.LabelRow{{Label: "l", TotalDistinct: 1}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<tbody id="devBody">`,
+		`<tbody id="cardAlertsBody">`,
+		`<tbody id="cardSeriesBody">`,
+		`<tbody id="cardLabelsBody">`,
+		`id="devCount"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
 // An empty list must read as "checked, nothing wrong", not as a missing section.
 func TestRender_NoAdvisoriesSaysSo(t *testing.T) {
 	var buf bytes.Buffer
