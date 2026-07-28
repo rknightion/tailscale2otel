@@ -12,7 +12,7 @@ import (
 
 func TestCountingMetricExporterCountsDataPoints(t *testing.T) {
 	inner := &fakeMetricExporter{}
-	c := newCountingMetricExporter(inner)
+	c := newCountingMetricExporter(inner, true, nil)
 
 	rm := &metricdata.ResourceMetrics{ScopeMetrics: []metricdata.ScopeMetrics{{
 		Metrics: []metricdata.Metrics{
@@ -37,7 +37,7 @@ func TestCountingMetricExporterCountsDataPoints(t *testing.T) {
 
 func TestCountingLogExporterCountsRecords(t *testing.T) {
 	inner := &fakeLogExporter{}
-	c := newCountingLogExporter(inner)
+	c := newCountingLogExporter(inner, true, nil)
 	if err := c.Export(context.Background(), make([]sdklog.Record, 4)); err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCountingMetricExporterObservesDuration(t *testing.T) {
 	var gotSignal, gotOutcome string
 	var gotSeconds float64
 	var called int
-	c := newCountingMetricExporter(&fakeErrMetricExporter{})
+	c := newCountingMetricExporter(&fakeErrMetricExporter{}, true, nil)
 	c.setObserver(func(signal, outcome string, seconds float64) {
 		gotSignal, gotOutcome, gotSeconds = signal, outcome, seconds
 		called++
@@ -122,7 +122,7 @@ func TestCountingMetricExporterObservesDuration(t *testing.T) {
 func TestCountingMetricExporterObservesFailure(t *testing.T) {
 	var gotOutcome string
 	var called int
-	c := newCountingMetricExporter(&fakeErrMetricExporter{errOut: errors.New("boom")})
+	c := newCountingMetricExporter(&fakeErrMetricExporter{errOut: errors.New("boom")}, true, nil)
 	c.setObserver(func(_, outcome string, _ float64) { gotOutcome = outcome; called++ })
 	if err := c.Export(context.Background(), &metricdata.ResourceMetrics{}); err == nil {
 		t.Fatal("Export: want error, got nil")
@@ -136,7 +136,7 @@ func TestCountingMetricExporterObservesFailure(t *testing.T) {
 }
 
 func TestCountingMetricExporterNilObserver(t *testing.T) {
-	c := newCountingMetricExporter(&fakeErrMetricExporter{})
+	c := newCountingMetricExporter(&fakeErrMetricExporter{}, true, nil)
 	if err := c.Export(context.Background(), &metricdata.ResourceMetrics{}); err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestCountingMetricExporterNilObserver(t *testing.T) {
 func TestCountingLogExporterObservesDuration(t *testing.T) {
 	var signal, outcome string
 	var called int
-	c := newCountingLogExporter(&fakeErrLogExporter{})
+	c := newCountingLogExporter(&fakeErrLogExporter{}, true, nil)
 	c.setObserver(func(s, o string, _ float64) { signal, outcome = s, o; called++ })
 	if err := c.Export(context.Background(), nil); err != nil {
 		t.Fatalf("Export: %v", err)
@@ -157,7 +157,7 @@ func TestCountingLogExporterObservesDuration(t *testing.T) {
 
 func TestCountingLogExporterObservesFailure(t *testing.T) {
 	var outcome string
-	c := newCountingLogExporter(&fakeErrLogExporter{errOut: errors.New("boom")})
+	c := newCountingLogExporter(&fakeErrLogExporter{errOut: errors.New("boom")}, true, nil)
 	c.setObserver(func(_, o string, _ float64) { outcome = o })
 	if err := c.Export(context.Background(), nil); err == nil {
 		t.Fatal("want error")

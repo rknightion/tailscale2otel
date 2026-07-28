@@ -34,14 +34,17 @@ type Status struct {
 	// Components is every long-running non-collector subsystem and whether it
 	// has failed, from the same state /readyz reads (#318).
 	Components []ComponentStatus `json:"components"`
-	Profiling  ProfilingInfo     `json:"profiling"`
-	Runtime    RuntimeInfo       `json:"runtime"`
-	Throughput ThroughputInfo    `json:"throughput"`
-	Fleet      FleetInfo         `json:"fleet"`
-	API        APIInfo           `json:"api"`
-	Metrics    []MetricRow       `json:"metrics"`
-	LogEvents  []LogRow          `json:"log_events"`
-	Config     ConfigSummary     `json:"config"`
+	// Delivery is what the OTLP exporters actually shipped, per signal (#317).
+	// Distinct from Throughput, which counts what was HANDED to them.
+	Delivery   []DeliverySignal `json:"delivery"`
+	Profiling  ProfilingInfo    `json:"profiling"`
+	Runtime    RuntimeInfo      `json:"runtime"`
+	Throughput ThroughputInfo   `json:"throughput"`
+	Fleet      FleetInfo        `json:"fleet"`
+	API        APIInfo          `json:"api"`
+	Metrics    []MetricRow      `json:"metrics"`
+	LogEvents  []LogRow         `json:"log_events"`
+	Config     ConfigSummary    `json:"config"`
 	// CapabilityMatrix is the configuration-to-capability matrix (#425/#430): one
 	// row per enabled collector (plus its optional per-entity subrequests) joining
 	// the required API capability/scope, the provider's support for it, the live
@@ -367,6 +370,30 @@ type CardinalityAlert struct {
 type ReceiversInfo struct {
 	Streaming bool `json:"streaming_enabled"`
 	Webhook   bool `json:"webhook_enabled"`
+}
+
+// DeliverySignal is one OTLP signal's delivery state: metrics, logs or traces.
+//
+// It answers "is data reaching the backend", which the page previously guessed
+// at from collector success — so it could show a recent "last export" while
+// every OTLP request was failing (#317). Emitted and delivered are kept
+// separate on purpose: ThroughputInfo counts what was handed to an exporter,
+// this counts what came back.
+type DeliverySignal struct {
+	Signal   string `json:"signal"`
+	Exports  int64  `json:"exports"`
+	Failures int64  `json:"failures"`
+	// ConsecutiveFailures is the current streak; Failing marks it sustained
+	// rather than a blip, and is what drags overall health to degraded.
+	ConsecutiveFailures int64  `json:"consecutive_failures"`
+	Failing             bool   `json:"failing"`
+	LastSuccessAt       string `json:"last_success_at,omitempty"` // RFC3339
+	LastFailureAt       string `json:"last_failure_at,omitempty"` // RFC3339
+	LastDurationMs      int64  `json:"last_duration_ms"`
+	// LastErrorClass is a value from a CLOSED set (timeout, unauthenticated,
+	// rate_limited, unavailable, invalid, canceled, other) — never the backend's
+	// response text, which is where an echoed credential would be.
+	LastErrorClass string `json:"last_error_class,omitempty"`
 }
 
 // ComponentStatus is one long-running non-collector subsystem: the admin and

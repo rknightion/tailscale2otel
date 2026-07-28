@@ -64,7 +64,10 @@ type App struct {
 	procEmitter     telemetry.Emitter
 	procCard        *telemetry.CardinalityTracker // process provider's tracker; nil when self-obs off
 	procExportStats func() telemetry.ExportStats  // process provider's export volume; nil when self-obs off
-	metricGroups    map[string]string             // metric source-name -> catalog group, for series.by_group rollup
+	// delivery reports what the OTLP exporters actually shipped, per signal,
+	// across every provider. Populated regardless of self-obs (#317).
+	delivery     func() []telemetry.DeliveryState
+	metricGroups map[string]string // metric source-name -> catalog group, for series.by_group rollup
 
 	shutdown    func(context.Context) error // flushes telemetry on stop
 	restore     func()                      // restores the prior otel error handler
@@ -185,6 +188,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	a.checkpointReason = checkpointOut.Reason
 	a.procCard = ps.Process().Cardinality()
 	a.procExportStats = ps.Process().ExportStats
+	a.delivery = ps.Delivery
 	a.metricGroups = metricGroupMap()
 	a.buildProcessDeps()
 	constructionComplete := false

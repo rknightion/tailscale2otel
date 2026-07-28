@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -169,8 +170,60 @@ func (a *App) buildStatus() statusdata.Status {
 	// collectors alone and a dead receiver or listener read as "healthy".
 	failures := a.componentFailureReasons()
 	s.Components = a.componentStatuses(failures)
-	s.Health, s.HealthReasons = deriveHealth(s.Collectors, failures)
+	s.Delivery = a.deliverySignals()
+	// Sustained export failure explains the verdict but does NOT gate readiness
+	// (#317). A backend outage is not a reason to pull every pod out of
+	// rotation — that turns one vendor's bad afternoon into a cascading
+	// outage — but it is very much a reason for the page to stop saying
+	// healthy. Same deliberate asymmetry as a degraded collector.
+	healthFailures := slices.Concat(failures, deliveryHealthReasons(s.Delivery))
+	s.Health, s.HealthReasons = deriveHealth(s.Collectors, healthFailures)
 	return s
+}
+
+// deliverySignals renders the per-signal OTLP delivery state for the status
+// snapshot. Empty when no provider set is wired (the App-less test seams).
+func (a *App) deliverySignals() []statusdata.DeliverySignal {
+	if a.delivery == nil {
+		return nil
+	}
+	states := a.delivery()
+	out := make([]statusdata.DeliverySignal, 0, len(states))
+	for _, st := range states {
+		row := statusdata.DeliverySignal{
+			Signal:              st.Signal,
+			Exports:             st.Exports,
+			Failures:            st.Failures,
+			ConsecutiveFailures: st.ConsecutiveFailures,
+			Failing:             st.Failing(),
+			LastDurationMs:      int64(st.LastDurationSeconds * 1000),
+			LastErrorClass:      st.LastErrorClass,
+		}
+		if !st.LastSuccessAt.IsZero() {
+			row.LastSuccessAt = st.LastSuccessAt.UTC().Format(rfc3339)
+		}
+		if !st.LastFailureAt.IsZero() {
+			row.LastFailureAt = st.LastFailureAt.UTC().Format(rfc3339)
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// deliveryHealthReasons describes each signal whose export failures are
+// sustained. The error CLASS is included and the error text never is: an OTLP
+// failure can carry the backend's response body, and health reasons are
+// rendered on the page and returned by /api/status.json.
+func deliveryHealthReasons(signals []statusdata.DeliverySignal) []string {
+	var out []string
+	for _, s := range signals {
+		if !s.Failing {
+			continue
+		}
+		out = append(out, fmt.Sprintf("OTLP %s export failing: %d consecutive failures (%s)",
+			s.Signal, s.ConsecutiveFailures, s.LastErrorClass))
+	}
+	return out
 }
 
 // componentStatuses lists every long-running non-collector subsystem with

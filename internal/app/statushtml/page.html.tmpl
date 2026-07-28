@@ -536,6 +536,29 @@
       <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
       <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
     </div>
+    <h3 style="margin-top:18px">OTLP delivery</h3>
+    <div class="sub">What the exporters actually <em>shipped</em>, per signal — as opposed to what was
+      handed to them (see throughput). Sustained failure here drags overall health to
+      <em>degraded</em> but deliberately does not affect <code>/readyz</code>: a backend outage is
+      not a reason to pull every replica out of rotation.</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>Signal</th><th>State</th><th class="num">Exports</th><th class="num">Failures</th><th>Last success</th><th>Last failure</th><th class="num">Last duration</th><th>Error class</th></tr></thead>
+      <tbody id="deliveryBody">
+        {{range .Delivery}}
+        <tr>
+          <td class="mono"><code>{{.Signal}}</code></td>
+          <td>{{if .Failing}}<span class="badge err">failing</span>{{else if gt .ConsecutiveFailures 0}}<span class="badge warn">retrying</span>{{else if gt .Exports 0}}<span class="badge ok">ok</span>{{else}}<span class="badge pending">no exports yet</span>{{end}}</td>
+          <td class="num">{{.Exports}}</td>
+          <td class="num">{{.Failures}}</td>
+          <td>{{if .LastSuccessAt}}{{.LastSuccessAt}}{{else}}—{{end}}</td>
+          <td>{{if .LastFailureAt}}{{.LastFailureAt}}{{else}}—{{end}}</td>
+          <td class="num">{{.LastDurationMs}} ms</td>
+          <td class="mono">{{if .LastErrorClass}}{{.LastErrorClass}}{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
     <h3 style="margin-top:18px">Components</h3>
     <div class="sub">The long-running subsystems behind <code>/readyz</code>. A failure here is what
       makes the health badge above say <em>degraded</em> and the readiness probe answer 503.</div>
@@ -831,6 +854,29 @@ function rebuildCollectors(rows){
 }
 
 // ── API table ─────────────────────────────────────────────────────────────
+function rebuildDelivery(rows){
+  var tb=document.getElementById('deliveryBody'); if(!tb) return;
+  tb.textContent='';
+  (rows||[]).forEach(function(sig){
+    var tr=el('tr');
+    var nameTd=el('td',{'class':'mono'}); nameTd.appendChild(el('code',null,sig.signal)); tr.appendChild(nameTd);
+    var stateTd=el('td');
+    if(sig.failing){ stateTd.appendChild(el('span',{'class':'badge err'},'failing')); }
+    else if(sig.consecutive_failures>0){ stateTd.appendChild(el('span',{'class':'badge warn'},'retrying')); }
+    else if(sig.exports>0){ stateTd.appendChild(el('span',{'class':'badge ok'},'ok')); }
+    else { stateTd.appendChild(el('span',{'class':'badge pending'},'no exports yet')); }
+    tr.appendChild(stateTd);
+    tr.appendChild(el('td',{'class':'num'}, String(sig.exports)));
+    tr.appendChild(el('td',{'class':'num'}, String(sig.failures)));
+    tr.appendChild(el('td', null, sig.last_success_at ? relText(sig.last_success_at) : '—'));
+    tr.appendChild(el('td', null, sig.last_failure_at ? relText(sig.last_failure_at) : '—'));
+    tr.appendChild(el('td',{'class':'num'}, String(sig.last_duration_ms)+' ms'));
+    // A closed class set, never the backend's response text.
+    tr.appendChild(el('td',{'class':'mono'}, sig.last_error_class || '—'));
+    tb.appendChild(tr);
+  });
+}
+
 function rebuildComponents(rows){
   var tb=document.getElementById('componentsBody'); if(!tb) return;
   tb.textContent='';
@@ -905,10 +951,19 @@ function updateRollup(d){
   setText('ruFailing', failing);
   setText('ruStale', stale);
   if(d.cardinality) setText('ruSeries', d.cardinality.available ? d.cardinality.total : '—');
-  // Last export age = freshest collector success as a proxy for data flow.
-  var newest=0;
-  (d.collectors||[]).forEach(function(c){ if(c.last_success_at){ var t=Date.parse(c.last_success_at); if(!isNaN(t)&&t>newest) newest=t; } });
-  setText('ruExport', newest ? relMs(newest) : '—');
+  // Last export = the freshest OTLP exporter SUCCESS, not a collector's. The
+  // collector proxy this replaced reported recent data flow while every OTLP
+  // request was failing (#317).
+  var newest=0, failing=false;
+  (d.delivery||[]).forEach(function(sig){
+    if(sig.last_success_at){ var t=Date.parse(sig.last_success_at); if(!isNaN(t)&&t>newest) newest=t; }
+    if(sig.failing) failing=true;
+  });
+  var ex=document.getElementById('ruExport');
+  if(ex){
+    ex.textContent = newest ? relMs(newest) : '—';
+    ex.style.color = failing ? 'var(--err)' : '';
+  }
 }
 
 function updateSparks(d){
@@ -961,6 +1016,7 @@ function refresh(){
     rebuildCollectors(d.collectors);
     rebuildAPI(d.api);
     rebuildComponents(d.components);
+    rebuildDelivery(d.delivery);
     updateSparks(d);
     redrawCharts();
   }).catch(function(){ setStale(true); });

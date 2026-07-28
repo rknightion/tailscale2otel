@@ -25,7 +25,9 @@ func exportOutcome(err error) string {
 
 // ExportStats is the cumulative count of data points and log records handed to
 // the OTLP exporters since process start. Zero-valued when self-observability is
-// off (no counting wrappers installed).
+// off: the wrappers are always installed now (they also feed the delivery
+// tracker behind the admin page, which must work with self-obs off), but the
+// tally itself stays gated, since its only consumer is the self-obs reporter.
 type ExportStats struct {
 	Datapoints int64
 	LogRecords int64
@@ -36,21 +38,28 @@ type ExportStats struct {
 type countingMetricExporter struct {
 	sdkmetric.Exporter
 	datapoints atomic.Int64
-	obs        atomic.Pointer[exportObserver]
+	// counting gates the tally only. Observation is unconditional.
+	counting bool
+	obs      atomic.Pointer[exportObserver]
+	delivery *deliveryTracker
 }
 
-func newCountingMetricExporter(inner sdkmetric.Exporter) *countingMetricExporter {
-	return &countingMetricExporter{Exporter: inner}
+func newCountingMetricExporter(inner sdkmetric.Exporter, counting bool, d *deliveryTracker) *countingMetricExporter {
+	return &countingMetricExporter{Exporter: inner, counting: counting, delivery: d}
 }
 
 func (c *countingMetricExporter) setObserver(o exportObserver) { c.obs.Store(&o) }
 
 func (c *countingMetricExporter) Export(ctx context.Context, rm *metricdata.ResourceMetrics) error {
-	c.datapoints.Add(countDataPoints(rm))
+	if c.counting {
+		c.datapoints.Add(countDataPoints(rm))
+	}
 	start := time.Now()
 	err := c.Exporter.Export(ctx, rm)
+	seconds := time.Since(start).Seconds()
+	c.delivery.observe(SignalMetrics, err, seconds)
 	if o := c.obs.Load(); o != nil {
-		(*o)("metrics", exportOutcome(err), time.Since(start).Seconds())
+		(*o)(SignalMetrics, exportOutcome(err), seconds)
 	}
 	return err
 }
@@ -60,22 +69,28 @@ func (c *countingMetricExporter) count() int64 { return c.datapoints.Load() }
 // countingLogExporter decorates an sdklog.Exporter, tallying exported records.
 type countingLogExporter struct {
 	sdklog.Exporter
-	records atomic.Int64
-	obs     atomic.Pointer[exportObserver]
+	records  atomic.Int64
+	counting bool
+	obs      atomic.Pointer[exportObserver]
+	delivery *deliveryTracker
 }
 
-func newCountingLogExporter(inner sdklog.Exporter) *countingLogExporter {
-	return &countingLogExporter{Exporter: inner}
+func newCountingLogExporter(inner sdklog.Exporter, counting bool, d *deliveryTracker) *countingLogExporter {
+	return &countingLogExporter{Exporter: inner, counting: counting, delivery: d}
 }
 
 func (c *countingLogExporter) setObserver(o exportObserver) { c.obs.Store(&o) }
 
 func (c *countingLogExporter) Export(ctx context.Context, recs []sdklog.Record) error {
-	c.records.Add(int64(len(recs)))
+	if c.counting {
+		c.records.Add(int64(len(recs)))
+	}
 	start := time.Now()
 	err := c.Exporter.Export(ctx, recs)
+	seconds := time.Since(start).Seconds()
+	c.delivery.observe(SignalLogs, err, seconds)
 	if o := c.obs.Load(); o != nil {
-		(*o)("logs", exportOutcome(err), time.Since(start).Seconds())
+		(*o)(SignalLogs, exportOutcome(err), seconds)
 	}
 	return err
 }

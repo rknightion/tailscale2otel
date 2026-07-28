@@ -337,3 +337,38 @@ func TestRender_ComponentFailureIsVisible(t *testing.T) {
 		t.Error("a disabled component is missing from the page entirely")
 	}
 }
+
+// The page's "last export" was a collector-success proxy, so it could report
+// recent data flow while every OTLP request failed. Delivery is now its own
+// section, per signal, sourced from the exporters (#317).
+func TestRender_DeliveryIsPerSignalAndClassOnly(t *testing.T) {
+	s := statusdata.Status{
+		Delivery: []statusdata.DeliverySignal{
+			{Signal: "metrics", Exports: 12, LastSuccessAt: "2026-07-28T12:00:00Z", LastDurationMs: 250},
+			{Signal: "logs", Exports: 12, Failures: 5, ConsecutiveFailures: 5, Failing: true,
+				LastFailureAt: "2026-07-28T12:01:00Z", LastErrorClass: "unauthenticated"},
+			{Signal: "traces"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="deliveryBody"`, // the live-update target
+		"unauthenticated",   // the error CLASS is shown, so the failure is actionable
+		"2026-07-28T12:01:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page does not contain %q", want)
+		}
+	}
+	// A signal that has never exported is still a row: "no exports yet" is a
+	// finding, and omitting it reads as "fine". Asserted as the rendered badge
+	// markup, not the bare phrase — the JS updater builds the same words, so a
+	// substring check passes with the table deleted.
+	if !strings.Contains(out, `<span class="badge pending">no exports yet</span>`) {
+		t.Error("an idle signal is not rendered at all")
+	}
+}

@@ -283,6 +283,22 @@ In addition, an admin HTTP server (on by default, `:9091`) serves:
     page cannot disagree, and `/api/status.json` carries a `components[]` array naming each
     subsystem with `enabled`, `failed` and the failure `reason`. The overall `health` is `degraded`
     whenever any of them has failed.
+
+    **OTLP export failure is the one thing that degrades health without affecting readiness.**
+    `delivery[]` reports, per signal (`metrics`, `logs`, `traces`), what the exporters actually
+    shipped — attempts, failures, the current failure streak, the last success and failure times,
+    the last attempt's duration, and an error *class*. Three consecutive failures marks a signal
+    `failing`, which makes overall `health` `degraded`. It deliberately does **not** make `/readyz`
+    return 503: a backend outage would otherwise pull every replica out of rotation at once, turning
+    one vendor's bad afternoon into a cascading outage.
+
+    `delivery[]` counts what came *back*; `throughput` counts what was *handed to* the exporters.
+    Keep them distinct — the page's "last export" used to be the freshest collector success, which
+    reported healthy data flow while every OTLP request was failing.
+
+    `last_error_class` is one of `timeout`, `canceled`, `unauthenticated`, `rate_limited`,
+    `unavailable`, `invalid`, `other`. The backend's response text is never surfaced: an OTLP error
+    can carry the response body, which is exactly where an echoed credential or signed URL would be.
 - `/debug/pprof` — optional, requires `profiling.pprof.enabled: true`, which in turn requires
   **both** `admin.enabled: true` **and** `admin.auth.token` to be set (heap/goroutine dumps can
   expose in-memory secrets) — see [security.md](security.md#secrets-handling).

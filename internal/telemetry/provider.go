@@ -163,7 +163,8 @@ type Provider struct {
 	emitter Emitter
 	card    *CardinalityTracker // nil unless self-observability is enabled
 
-	metricCounter *countingMetricExporter // nil unless self-obs enabled
+	metricCounter *countingMetricExporter // always installed; tallies only under self-obs
+	delivery      *deliveryTracker        // per-signal OTLP delivery outcomes (#317)
 	logCounter    *countingLogExporter    // nil unless self-obs enabled
 
 	promReg *prometheus.Registry // nil unless Options.PrometheusEnabled
@@ -279,14 +280,15 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		return nil, fmt.Errorf("log exporter: %w", err)
 	}
 
-	var metricCounter *countingMetricExporter
-	var logCounter *countingLogExporter
-	if opts.SelfObsEnabled {
-		metricCounter = newCountingMetricExporter(metricExp)
-		metricExp = metricCounter
-		logCounter = newCountingLogExporter(logExp)
-		logExp = logCounter
-	}
+	// The wrappers are installed unconditionally: they feed the delivery tracker
+	// behind the admin page, which has to work on a deployment that exports no
+	// self-telemetry at all. Only the data-point/record TALLY is gated on
+	// self-obs, since its sole consumer is the self-obs export reporter (#317).
+	delivery := newDeliveryTracker()
+	metricCounter := newCountingMetricExporter(metricExp, opts.SelfObsEnabled, delivery)
+	metricExp = metricCounter
+	logCounter := newCountingLogExporter(logExp, opts.SelfObsEnabled, delivery)
+	logExp = logCounter
 
 	interval := opts.MetricInterval
 	if interval <= 0 {
@@ -327,6 +329,9 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		// snapshot — see the piiSpanExporter doc comment in trace.go. A no-op
 		// filter (no category disabled) returns traceExp unchanged.
 		traceExp = newPIISpanExporter(traceExp, opts.PIIFilter)
+		// Outermost, so it times and observes the whole export including the PII
+		// filter's work — that is what the backend's latency actually is.
+		traceExp = newObservingSpanExporter(traceExp, delivery)
 		tpOpts := []sdktrace.TracerProviderOption{
 			sdktrace.WithResource(logRes),
 			sdktrace.WithBatcher(traceExp),
@@ -373,6 +378,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 		metricCounter: metricCounter,
 		logCounter:    logCounter,
+		delivery:      delivery,
 
 		promReg: promReg,
 	}, nil
@@ -420,6 +426,11 @@ func (p *Provider) ExportStats() ExportStats {
 	}
 	return s
 }
+
+// Delivery returns this provider's per-signal OTLP delivery state: what the
+// exporters actually shipped, as opposed to what the collectors produced. Always
+// populated, self-obs or not.
+func (p *Provider) Delivery() []DeliveryState { return p.delivery.states() }
 
 // Emitter returns the Emitter collectors should use.
 func (p *Provider) Emitter() Emitter { return p.emitter }
