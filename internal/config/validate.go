@@ -674,36 +674,97 @@ func validateWorkloadIdentity(label string, a TailscaleAuth) error {
 }
 
 // Validate reports the first configuration error it finds, or nil if the
-// Config is valid.
+// Config is valid. It runs the exact same rule set as Diagnostics() (see
+// validationChecks), stopping at the first failure — this preserves the
+// historical "first error, same order" contract that config.Load and other
+// existing callers depend on. Diagnostics() runs the identical rules without
+// stopping, to report every independent failure in one pass (#307).
 func (c *Config) Validate() error {
-	// A "*_file" secret sibling whose paired value field was ALSO set (recorded
-	// by resolveSecretFiles at Load) — report the first one, matching this
-	// method's "first error found" contract.
-	if len(c.secretFileConflicts) > 0 {
-		return fmt.Errorf("%s: set only one, not both (value XOR file)", c.secretFileConflicts[0])
+	_, err := runChecks(c.validationChecks(), true)
+	return err
+}
+
+// resolvedProvider returns c.Provider with the "tailscale" default applied,
+// matching the historical local `provider` variable Validate() used to
+// compute once and read from every subsequent check.
+func (c *Config) resolvedProvider() string {
+	if c.Provider == "" {
+		return "tailscale"
 	}
+	return c.Provider
+}
+
+// validationChecks builds the full ordered rule set Validate() and
+// Diagnostics() both run. Each entry is a faithful copy of a rule from the
+// pre-#307 Validate() body — same condition, same error text — wrapped so it
+// can be run either fail-fast (Validate) or collected (Diagnostics).
+//
+// Loop-collapsing convention: a rule that iterates a dynamically-sized list
+// (c.Tailnets, node_metrics targets/metric_allow/metric_deny) is ONE entry
+// here and reports only the FIRST violation within that list, matching what
+// Validate() always did for that loop. A rule that iterates a small FIXED set
+// of named things (the four listeners, the two log collectors, the four TLS
+// blocks) is decomposed into one entry per name, because those are
+// independent problems an operator can and should see all of at once.
+//
+// Dependent checks: every entry here reads Config fields but never mutates
+// them, so a later entry's own gating condition (e.g. "resolvedProvider() ==
+// headscale", "OTLP.Protocol == grpc") is exactly as true or false whether or
+// not an earlier, unrelated entry failed. That is what makes an invalid
+// provider value skip every headscale.*/tailscale.* entry, and an invalid
+// otlp.protocol skip both protocol-specific endpoint-shape entries, with no
+// separate dependency graph required — see
+// TestDiagnostics_SkipsDependentChecks.
+func (c *Config) validationChecks() []configCheck {
+	var checks []configCheck
+	add := func(path, remediation string, fn func() error) {
+		checks = append(checks, configCheck{path: path, remediation: remediation, fn: fn})
+	}
+
+	// A "*_file" secret sibling whose paired value field was ALSO set (recorded
+	// by resolveSecretFiles at Load).
+	add("", "Set only the value field or the _file field for this secret, not both.", func() error {
+		if len(c.secretFileConflicts) > 0 {
+			return fmt.Errorf("%s: set only one, not both (value XOR file)", c.secretFileConflicts[0])
+		}
+		return nil
+	})
 
 	// Credentials embedded in a URL's userinfo are rejected before any other
 	// shape check, so no later error message can echo one back in its diagnostic
 	// (GHSA-qch3-gwff-r6pf, GHSA-jp5c-3282-6882, GHSA-h5p7-qj62-m8qx,
 	// GHSA-rm3x-hhrj-94v4).
-	if err := c.validateNoURLCredentials(); err != nil {
-		return err
-	}
+	add("", "Move the credential into the field's dedicated secret setting named in the error text.", func() error {
+		return c.validateNoURLCredentials()
+	})
 
-	provider := c.Provider
-	if provider == "" {
-		provider = "tailscale"
-	}
-	if !oneOf(provider, "tailscale", "headscale") {
-		return fmt.Errorf("provider: must be \"tailscale\" or \"headscale\", got %q", provider)
-	}
-	if provider == "headscale" {
+	add("provider", oneOfRemediation("provider", "tailscale", "headscale"), func() error {
+		if !oneOf(c.resolvedProvider(), "tailscale", "headscale") {
+			return fmt.Errorf("provider: must be \"tailscale\" or \"headscale\", got %q", c.resolvedProvider())
+		}
+		return nil
+	})
+	add("headscale.url", "Set headscale.url to your Headscale server's base URL.", func() error {
+		if c.resolvedProvider() != "headscale" {
+			return nil
+		}
 		if strings.TrimSpace(c.Headscale.URL) == "" {
 			return fmt.Errorf("headscale.url: required when provider=headscale")
 		}
+		return nil
+	})
+	add("headscale.api_key", "Set headscale.api_key (or TS2OTEL_HEADSCALE__API_KEY).", func() error {
+		if c.resolvedProvider() != "headscale" {
+			return nil
+		}
 		if c.Headscale.APIKey == "" {
 			return fmt.Errorf("headscale.api_key: required when provider=headscale (set TS2OTEL_HEADSCALE__API_KEY)")
+		}
+		return nil
+	})
+	add("headscale.max_response_bytes", "Set headscale.max_response_bytes to a positive byte count.", func() error {
+		if c.resolvedProvider() != "headscale" {
+			return nil
 		}
 		// Response decode budget (#488). Zero/negative would mean "no body may be
 		// decoded at all", which silently breaks every collector, so reject it here
@@ -712,52 +773,75 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("headscale.max_response_bytes must be > 0 (bytes); it caps a single " +
 				"Headscale API response body before decoding")
 		}
-	}
+		return nil
+	})
 
 	// log_level is documented (configuration.md) and framed as a validated enum,
 	// so reject a value outside the set here rather than silently failing open to
 	// info in cmd/tailscale2otel.parseLevel (the mismatch #106 flagged).
-	if !oneOf(c.LogFormat, "text", "json") {
-		return fmt.Errorf("log_format %q invalid: must be text or json", c.LogFormat)
-	}
-	if !oneOf(c.LogLevel, "debug", "info", "warn", "error") {
-		return fmt.Errorf("log_level %q invalid: must be one of debug, info, warn, error", c.LogLevel)
-	}
+	add("log_format", oneOfRemediation("log_format", "text", "json"), func() error {
+		if !oneOf(c.LogFormat, "text", "json") {
+			return fmt.Errorf("log_format %q invalid: must be text or json", c.LogFormat)
+		}
+		return nil
+	})
+	add("log_level", oneOfRemediation("log_level", "debug", "info", "warn", "error"), func() error {
+		if !oneOf(c.LogLevel, "debug", "info", "warn", "error") {
+			return fmt.Errorf("log_level %q invalid: must be one of debug, info, warn, error", c.LogLevel)
+		}
+		return nil
+	})
 
-	if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
-		return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
-	}
+	add("otlp.protocol", oneOfRemediation("otlp.protocol", "grpc", "http", "stdout"), func() error {
+		if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
+			return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
+		}
+		return nil
+	})
 	// The gRPC OTLP exporter (otlp*grpc.WithEndpoint) dials a host:port address,
 	// NOT a URL: a scheme or path (e.g. "https://gw.example/otlp", which is the
 	// correct shape for the http protocol) makes the gRPC dialer fail to connect.
 	// Catch the mismatch at load time rather than as an opaque runtime dial error.
 	// (http endpoints are full URLs; stdout ignores the endpoint entirely.)
-	if c.OTLP.Protocol == "grpc" && c.OTLP.Endpoint != "" {
-		if strings.Contains(c.OTLP.Endpoint, "://") || strings.Contains(c.OTLP.Endpoint, "/") {
-			return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=grpc: use a host:port "+
-				"address with no scheme or path (e.g. otlp-gateway-prod-us-central-0.grafana.net:443); "+
-				"a full URL is only valid for protocol=http", c.OTLP.Endpoint)
+	add("otlp.endpoint", "Use a bare host:port with no scheme or path for otlp.protocol=grpc.", func() error {
+		if c.OTLP.Protocol == "grpc" && c.OTLP.Endpoint != "" {
+			if strings.Contains(c.OTLP.Endpoint, "://") || strings.Contains(c.OTLP.Endpoint, "/") {
+				return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=grpc: use a host:port "+
+					"address with no scheme or path (e.g. otlp-gateway-prod-us-central-0.grafana.net:443); "+
+					"a full URL is only valid for protocol=http", c.OTLP.Endpoint)
+			}
 		}
-	}
+		return nil
+	})
 	// The http OTLP exporter dials a full URL. A scheme-less host:port (the grpc
 	// shape) parses to an empty host and silently zeroes the endpoint at runtime
 	// rather than failing at load; require an http/https scheme and a host so the
 	// mismatch is caught here (#52b).
-	if c.OTLP.Protocol == "http" {
-		u, err := url.Parse(c.OTLP.Endpoint)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=http: use a full URL with "+
-				"an http:// or https:// scheme and a host (e.g. "+
-				"https://otlp-gateway-prod-us-central-0.grafana.net/otlp); a scheme-less host:port "+
-				"is only valid for protocol=grpc", c.OTLP.Endpoint)
+	add("otlp.endpoint", "Use a full http:// or https:// URL with a host for otlp.protocol=http.", func() error {
+		if c.OTLP.Protocol == "http" {
+			u, err := url.Parse(c.OTLP.Endpoint)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=http: use a full URL with "+
+					"an http:// or https:// scheme and a host (e.g. "+
+					"https://otlp-gateway-prod-us-central-0.grafana.net/otlp); a scheme-less host:port "+
+					"is only valid for protocol=grpc", c.OTLP.Endpoint)
+			}
 		}
-	}
-	if c.OTLP.MetricInterval.D() <= 0 {
-		return fmt.Errorf("otlp.metric_interval must be > 0 (got %v); a zero or negative interval panics time.NewTicker at startup", c.OTLP.MetricInterval.D())
-	}
-	if c.OTLP.MetricExportBatchSize < 1 {
-		return fmt.Errorf("otlp.metric_export_batch_size must be > 0 (got %d); unbounded cumulative metric requests can exceed backend ingest limits", c.OTLP.MetricExportBatchSize)
-	}
+		return nil
+	})
+	add("otlp.metric_interval", "Set otlp.metric_interval to a positive duration.", func() error {
+		if c.OTLP.MetricInterval.D() <= 0 {
+			return fmt.Errorf("otlp.metric_interval must be > 0 (got %v); a zero or negative interval panics time.NewTicker at startup", c.OTLP.MetricInterval.D())
+		}
+		return nil
+	})
+	add("otlp.metric_export_batch_size", "Set otlp.metric_export_batch_size to a positive integer.", func() error {
+		if c.OTLP.MetricExportBatchSize < 1 {
+			return fmt.Errorf("otlp.metric_export_batch_size must be > 0 (got %d); unbounded cumulative metric requests can exceed backend ingest limits", c.OTLP.MetricExportBatchSize)
+		}
+		return nil
+	})
+
 	// Every enabled HTTP listener needs an address it can actually bind, and its
 	// own. Two enabled servers on the same address race on net.Listen: one binds,
 	// the other logs an ERROR and the process keeps running with that surface
@@ -769,99 +853,156 @@ func (c *Config) Validate() error {
 	// bare "9091" with no colon, or a port outside the 16-bit range, validated
 	// fine and then failed inside net.Listen after startup — and they could not
 	// see ":9091" and "0.0.0.0:9091" as the same socket.
-	listeners := []struct {
+	listenersOf := func() []struct {
 		name    string
 		addr    string
 		enabled bool
-	}{
-		{"admin.listen", c.Admin.Listen, c.Admin.Enabled},
-		{"prometheus.listen", c.Prometheus.Listen, c.Prometheus.Enabled},
-		{"streaming.listen", c.Streaming.Listen, c.Streaming.Enabled},
-		{"webhook.listen", c.Webhook.Listen, c.Webhook.Enabled},
-	}
-	for _, l := range listeners {
-		// A disabled listener binds nothing, so its address is never exercised
-		// and is not a reason to refuse to start.
-		if !l.enabled {
-			continue
-		}
-		if _, err := listenaddr.Canonical(l.addr); err != nil {
-			return fmt.Errorf("%s: %w", l.name, err)
+	} {
+		return []struct {
+			name    string
+			addr    string
+			enabled bool
+		}{
+			{"admin.listen", c.Admin.Listen, c.Admin.Enabled},
+			{"prometheus.listen", c.Prometheus.Listen, c.Prometheus.Enabled},
+			{"streaming.listen", c.Streaming.Listen, c.Streaming.Enabled},
+			{"webhook.listen", c.Webhook.Listen, c.Webhook.Enabled},
 		}
 	}
-	for i := range listeners {
-		for j := i + 1; j < len(listeners); j++ {
-			a, b := listeners[i], listeners[j]
-			if a.enabled && b.enabled && listenaddr.Collides(a.addr, b.addr) {
-				return fmt.Errorf("%s (%q) and %s (%q) bind the same socket: each enabled HTTP listener "+
-					"needs its own address (only one wins the net.Listen race; the other dies silently). "+
-					"A wildcard bind owns its port on every interface, so it collides with any address on "+
-					"that port", a.name, a.addr, b.name, b.addr)
+	add("", "Set the named listener to a bindable host:port address.", func() error {
+		for _, l := range listenersOf() {
+			// A disabled listener binds nothing, so its address is never exercised
+			// and is not a reason to refuse to start.
+			if !l.enabled {
+				continue
+			}
+			if _, err := listenaddr.Canonical(l.addr); err != nil {
+				return fmt.Errorf("%s: %w", l.name, err)
 			}
 		}
-	}
+		return nil
+	})
+	add("", "Give each enabled HTTP listener its own address.", func() error {
+		listeners := listenersOf()
+		for i := range listeners {
+			for j := i + 1; j < len(listeners); j++ {
+				a, b := listeners[i], listeners[j]
+				if a.enabled && b.enabled && listenaddr.Collides(a.addr, b.addr) {
+					return fmt.Errorf("%s (%q) and %s (%q) bind the same socket: each enabled HTTP listener "+
+						"needs its own address (only one wins the net.Listen race; the other dies silently). "+
+						"A wildcard bind owns its port on every interface, so it collides with any address on "+
+						"that port", a.name, a.addr, b.name, b.addr)
+				}
+			}
+		}
+		return nil
+	})
+
 	// flows.retention sizes an in-memory ring of one-minute buckets, so a bad
 	// value is a memory fault rather than a slow query. Below a minute the ring
 	// cannot hold a single bucket; beyond a day it is the wrong storage for the
 	// job. Unchecked when the view is off — the store is never built.
-	if c.Flows.Enabled {
+	add("flows.retention", "Set flows.retention between 1m and 24h.", func() error {
+		if !c.Flows.Enabled {
+			return nil
+		}
 		if d := c.Flows.Retention.D(); d < minFlowsRetention || d > maxFlowsRetention {
 			return fmt.Errorf("flows.retention must be between %v and %v (got %v): it sizes an "+
 				"in-memory ring of one-minute buckets, not a database",
 				minFlowsRetention, maxFlowsRetention, d)
 		}
+		return nil
+	})
+	add("flows.max_future_skew", "Set flows.max_future_skew between 0 and 1h.", func() error {
+		if !c.Flows.Enabled {
+			return nil
+		}
 		if d := c.Flows.MaxFutureSkew.D(); d < 0 || d > time.Hour {
 			return fmt.Errorf("flows.max_future_skew must be between 0 and 1h (got %v)", d)
 		}
-	}
+		return nil
+	})
+
 	// Listener TLS blocks: both-or-neither, every configured file readable, and
 	// the pair must actually LOAD. Readability alone let /dev/null and a
 	// cert-with-the-wrong-key through, and both then failed inside
 	// ListenAndServeTLS — on a goroutine, after startup, as a log line on a
 	// listener that never served rather than a refusal to run (#305).
-	if err := validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile); err != nil {
-		return err
-	}
-	if err := validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile); err != nil {
-		return err
-	}
+	add("admin.tls", "Set both admin.tls.cert_file and admin.tls.key_file to a matching, loadable keypair.", func() error {
+		return validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile)
+	})
+	add("prometheus.tls", "Set both prometheus.tls.cert_file and prometheus.tls.key_file to a matching, loadable keypair.", func() error {
+		return validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile)
+	})
 	// Streaming was the one listener with NO TLS validation at all — and the one
 	// where a half-configured block is worst: stream.Run serves plain HTTP unless
 	// BOTH fields are set, so a cert with a missing key silently downgraded a log
 	// receiver to plaintext while looking configured for TLS (#305).
-	if err := validateTLSFiles("streaming", c.Streaming.TLS.CertFile, c.Streaming.TLS.KeyFile); err != nil {
-		return err
-	}
-	if err := validateTLSFiles("webhook", c.Webhook.TLS.CertFile, c.Webhook.TLS.KeyFile); err != nil {
-		return err
-	}
-	if provider == "tailscale" {
+	add("streaming.tls", "Set both streaming.tls.cert_file and streaming.tls.key_file to a matching, loadable keypair.", func() error {
+		return validateTLSFiles("streaming", c.Streaming.TLS.CertFile, c.Streaming.TLS.KeyFile)
+	})
+	add("webhook.tls", "Set both webhook.tls.cert_file and webhook.tls.key_file to a matching, loadable keypair.", func() error {
+		return validateTLSFiles("webhook", c.Webhook.TLS.CertFile, c.Webhook.TLS.KeyFile)
+	})
+
+	add("tailscale.auth.method", oneOfRemediation("tailscale.auth.method", "oauth", "apikey", "workload_identity"), func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
+		}
 		if !oneOf(c.Tailscale.Auth.Method, "oauth", "apikey", "workload_identity") {
 			return fmt.Errorf("tailscale.auth.method %q invalid: must be one of oauth, apikey, workload_identity", c.Tailscale.Auth.Method)
 		}
-		if err := validateWorkloadIdentity("tailscale.auth", c.Tailscale.Auth); err != nil {
-			return err
+		return nil
+	})
+	add("tailscale.auth.workload_identity", "Set both tailscale.auth.workload_identity.client_id and id_token_file.", func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
 		}
-		// Response decode budgets (#474). Zero/negative would mean "no body may be
-		// decoded at all", which silently breaks every collector, so reject it here
-		// rather than at the first poll.
+		return validateWorkloadIdentity("tailscale.auth", c.Tailscale.Auth)
+	})
+	// Response decode budgets (#474). Zero/negative would mean "no body may be
+	// decoded at all", which silently breaks every collector, so reject it here
+	// rather than at the first poll.
+	add("tailscale.max_response_bytes", "Set tailscale.max_response_bytes to a positive byte count.", func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
+		}
 		if c.Tailscale.MaxResponseBytes <= 0 {
 			return fmt.Errorf("tailscale.max_response_bytes must be > 0 (bytes); it caps a single " +
 				"snapshot-endpoint response body before decoding")
+		}
+		return nil
+	})
+	add("tailscale.max_log_response_bytes", "Set tailscale.max_log_response_bytes to a positive byte count.", func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
 		}
 		if c.Tailscale.MaxLogResponseBytes <= 0 {
 			return fmt.Errorf("tailscale.max_log_response_bytes must be > 0 (bytes); it caps a single " +
 				"flow-log/audit-log response body before decoding")
 		}
-		// Single tailscale: block and a tailnets: list are mutually exclusive.
-		// Default() seeds tailscale.tailnet="-" (the "principal's default tailnet"
-		// sentinel), so only treat an EXPLICIT non-sentinel name as a conflict.
+		return nil
+	})
+	// Single tailscale: block and a tailnets: list are mutually exclusive.
+	// Default() seeds tailscale.tailnet="-" (the "principal's default tailnet"
+	// sentinel), so only treat an EXPLICIT non-sentinel name as a conflict.
+	add("tailscale.tailnet", "Use either the single tailscale: block or the tailnets: list, not both.", func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
+		}
 		if len(c.Tailnets) > 0 && c.Tailscale.Tailnet != "" && c.Tailscale.Tailnet != "-" {
 			return fmt.Errorf("tailscale.tailnet=%q and tailnets: are mutually exclusive — "+
 				"use the single tailscale: block OR the tailnets: list, not both", c.Tailscale.Tailnet)
 		}
-		// Multi-tailnet: every entry needs a name + a valid auth method (creds are
-		// never inherited from the top-level block).
+		return nil
+	})
+	// Multi-tailnet: every entry needs a name + a valid auth method (creds are
+	// never inherited from the top-level block). One entry here covers the whole
+	// list (loop-collapsing convention: reports the first violation only).
+	add("tailnets", "Give every tailnets[] entry a unique name and a valid auth.method.", func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
+		}
 		seenTailnet := map[string]bool{}
 		for i, t := range c.Tailnets {
 			if strings.TrimSpace(t.Name) == "" {
@@ -878,196 +1019,294 @@ func (c *Config) Validate() error {
 				return err
 			}
 		}
-		// Single-tailnet mode needs a tailnet name. The default is the "-" sentinel
-		// (the principal's default tailnet), so an empty value can only come from an
-		// explicit tailscale.tailnet: "" (or TS2OTEL_TAILSCALE__TAILNET=""). Catch it
-		// here with actionable guidance rather than letting tsapi.NewClient fail at
-		// startup with the opaque "Tailnet is required".
+		return nil
+	})
+	// Single-tailnet mode needs a tailnet name. The default is the "-" sentinel
+	// (the principal's default tailnet), so an empty value can only come from an
+	// explicit tailscale.tailnet: "" (or TS2OTEL_TAILSCALE__TAILNET=""). Catch it
+	// here with actionable guidance rather than letting tsapi.NewClient fail at
+	// startup with the opaque "Tailnet is required".
+	add("tailscale.tailnet", `Set tailscale.tailnet to your tailnet's name, or "-" for the default.`, func() error {
+		if c.resolvedProvider() != "tailscale" {
+			return nil
+		}
 		if len(c.Tailnets) == 0 && strings.TrimSpace(c.Tailscale.Tailnet) == "" {
 			return fmt.Errorf("tailscale.tailnet: required — set your tailnet's name " +
 				"(e.g. \"example.com\") or \"-\" for the auth principal's default tailnet")
 		}
-	}
-	if err := c.validateReceiverRoutes(); err != nil {
-		return err
-	}
-	if !oneOf(c.Checkpoint.Store, "memory", "file") {
-		return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
-	}
-	if err := c.validateIngressWAL(); err != nil {
-		return err
-	}
+		return nil
+	})
+
+	add("streaming.routes", "See the error text: routes conflicts vary by field.", func() error {
+		return c.validateReceiverRoutes()
+	})
+	add("checkpoint.store", oneOfRemediation("checkpoint.store", "memory", "file"), func() error {
+		if !oneOf(c.Checkpoint.Store, "memory", "file") {
+			return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
+		}
+		return nil
+	})
+	add("ingress_wal", "See the error text: ingress_wal has several independent field constraints.", func() error {
+		return c.validateIngressWAL()
+	})
 
 	// Source + window-timing validation. Only the two log collectors have a
-	// source; an empty value defaults to poll.
-	logCollectors := []struct {
+	// source; an empty value defaults to poll. flowlogs and auditlogs are
+	// decomposed into independent per-collector entries (not collapsed into one
+	// loop) since they are two distinct, equally-likely-to-be-misconfigured
+	// settings an operator should see both problems for at once.
+	type logCollectorSpec struct {
 		name            string
-		enabled         bool
-		source          string
-		lag             time.Duration
-		initialLookback time.Duration
-		maxWindow       time.Duration
-		interval        time.Duration
-	}{
-		{"flowlogs", c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Source,
-			c.Collectors.Flowlogs.Lag.D(), c.Collectors.Flowlogs.InitialLookback.D(),
-			c.Collectors.Flowlogs.MaxWindow.D(), c.Collectors.Flowlogs.Interval.D()},
-		{"auditlogs", c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Source,
-			c.Collectors.Auditlogs.Lag.D(), c.Collectors.Auditlogs.InitialLookback.D(),
-			c.Collectors.Auditlogs.MaxWindow.D(), c.Collectors.Auditlogs.Interval.D()},
+		enabled         func() bool
+		source          func() string
+		lag             func() time.Duration
+		initialLookback func() time.Duration
+		maxWindow       func() time.Duration
+		interval        func() time.Duration
 	}
-	for _, col := range logCollectors {
-		// Both log types are exported to object storage: network logs and, since
-		// #288, configuration logs — the latter verified against a live export on
-		// 2026-07-27. The earlier "flowlogs only" restriction here rested on the
-		// opposite premise and was wrong.
-		valid := []string{"poll", "stream", "both", "objectstore"}
-		if col.source != "" && !oneOf(col.source, valid...) {
-			return fmt.Errorf("collectors.%s.source %q invalid: must be one of %s",
-				col.name, col.source, strings.Join(valid, ", "))
-		}
-		if !col.enabled {
-			continue
-		}
+	logCollectorSpecs := []logCollectorSpec{
+		{
+			name:            "flowlogs",
+			enabled:         func() bool { return c.Collectors.Flowlogs.Enabled },
+			source:          func() string { return c.Collectors.Flowlogs.Source },
+			lag:             func() time.Duration { return c.Collectors.Flowlogs.Lag.D() },
+			initialLookback: func() time.Duration { return c.Collectors.Flowlogs.InitialLookback.D() },
+			maxWindow:       func() time.Duration { return c.Collectors.Flowlogs.MaxWindow.D() },
+			interval:        func() time.Duration { return c.Collectors.Flowlogs.Interval.D() },
+		},
+		{
+			name:            "auditlogs",
+			enabled:         func() bool { return c.Collectors.Auditlogs.Enabled },
+			source:          func() string { return c.Collectors.Auditlogs.Source },
+			lag:             func() time.Duration { return c.Collectors.Auditlogs.Lag.D() },
+			initialLookback: func() time.Duration { return c.Collectors.Auditlogs.InitialLookback.D() },
+			maxWindow:       func() time.Duration { return c.Collectors.Auditlogs.MaxWindow.D() },
+			interval:        func() time.Duration { return c.Collectors.Auditlogs.Interval.D() },
+		},
+	}
+	// Both log types are exported to object storage: network logs and, since
+	// #288, configuration logs — the latter verified against a live export on
+	// 2026-07-27. The earlier "flowlogs only" restriction here rested on the
+	// opposite premise and was wrong.
+	validSources := []string{"poll", "stream", "both", "objectstore"}
+	for _, spec := range logCollectorSpecs {
+		spec := spec
+		add(fmt.Sprintf("collectors.%s.source", spec.name), oneOfRemediation(fmt.Sprintf("collectors.%s.source", spec.name), validSources...), func() error {
+			s := spec.source()
+			if s != "" && !oneOf(s, validSources...) {
+				return fmt.Errorf("collectors.%s.source %q invalid: must be one of %s",
+					spec.name, s, strings.Join(validSources, ", "))
+			}
+			return nil
+		})
 		// (a) A pure-stream collector needs an ingestion path that actually exists.
-		if col.source == "stream" {
+		add(fmt.Sprintf("collectors.%s.source", spec.name), fmt.Sprintf("Set streaming.enabled: true (and streaming.routes in multi-tailnet mode) for collectors.%s.source=stream.", spec.name), func() error {
+			if !spec.enabled() || spec.source() != "stream" {
+				return nil
+			}
 			if len(c.Tailnets) > 1 && len(c.Streaming.Routes) == 0 {
-				return fmt.Errorf("collectors.%s.source=stream in multi-tailnet mode requires streaming.routes", col.name)
+				return fmt.Errorf("collectors.%s.source=stream in multi-tailnet mode requires streaming.routes", spec.name)
 			}
 			if !c.Streaming.Enabled {
 				return fmt.Errorf("collectors.%s.source=stream requires streaming.enabled: true — "+
-					"otherwise there is no ingestion path and %s are silently never collected", col.name, col.name)
+					"otherwise there is no ingestion path and %s are silently never collected", spec.name, spec.name)
 			}
-		}
+			return nil
+		})
 		// (b) The object-store path needs a bucket to read, and pointing at one
 		// that does not exist would look like a tailnet with no traffic. With a
 		// tailnets: list every runtime needs its OWN complete destination — see
 		// validateFlowObjectStore in objectstore.go for the frozen #284 contract.
-		if objectStoreSource(col.source) {
-			var err error
-			switch col.name {
+		add(fmt.Sprintf("collectors.%s", spec.name), "See the error text: the object-store destination has several independent field constraints.", func() error {
+			if !spec.enabled() || !objectStoreSource(spec.source()) {
+				return nil
+			}
+			switch spec.name {
 			case "flowlogs":
-				err = c.validateFlowObjectStore(col.name)
+				return c.validateFlowObjectStore(spec.name)
 			case "auditlogs":
-				err = c.validateAuditObjectStore(col.name)
+				return c.validateAuditObjectStore(spec.name)
 			}
-			if err != nil {
-				return err
-			}
-		}
-
+			return nil
+		})
 		// (c)/(d) Window timing applies only to the polling path.
-		if pollsSource(col.source) {
-			if col.initialLookback <= 0 {
+		add(fmt.Sprintf("collectors.%s.initial_lookback", spec.name), fmt.Sprintf("Set collectors.%s.initial_lookback to a positive duration.", spec.name), func() error {
+			if !spec.enabled() || !pollsSource(spec.source()) {
+				return nil
+			}
+			if spec.initialLookback() <= 0 {
 				return fmt.Errorf("collectors.%s.initial_lookback must be > 0 (got %v): a zero or "+
 					"negative cold-start lookback leaves the poll window's from >= to forever, so the "+
-					"collector never polls and never bootstraps its checkpoint", col.name, col.initialLookback)
+					"collector never polls and never bootstraps its checkpoint", spec.name, spec.initialLookback())
 			}
-			if col.lag < 0 {
+			return nil
+		})
+		add(fmt.Sprintf("collectors.%s.lag", spec.name), fmt.Sprintf("Set collectors.%s.lag to >= 0.", spec.name), func() error {
+			if !spec.enabled() || !pollsSource(spec.source()) {
+				return nil
+			}
+			if spec.lag() < 0 {
 				return fmt.Errorf("collectors.%s.lag must be >= 0 (got %v): a negative lag pushes the "+
 					"window end into the future, permanently skipping records that arrive within it",
-					col.name, col.lag)
+					spec.name, spec.lag())
 			}
-			// A positive max_window <= interval can never catch up: catch-up
-			// advances at most max_window per tick, so a backlogged poller falls
-			// further behind every tick without bound. A zero/negative max_window
-			// is the intentional "no cap" sentinel and is exempt.
-			if col.maxWindow > 0 && col.maxWindow <= col.interval {
+			return nil
+		})
+		// A positive max_window <= interval can never catch up: catch-up advances
+		// at most max_window per tick, so a backlogged poller falls further behind
+		// every tick without bound. A zero/negative max_window is the intentional
+		// "no cap" sentinel and is exempt.
+		add(fmt.Sprintf("collectors.%s.max_window", spec.name), fmt.Sprintf("Set collectors.%s.max_window > interval, or 0 for no cap.", spec.name), func() error {
+			if !spec.enabled() || !pollsSource(spec.source()) {
+				return nil
+			}
+			if spec.maxWindow() > 0 && spec.maxWindow() <= spec.interval() {
 				return fmt.Errorf("collectors.%s.max_window (%v) <= interval (%v): catch-up advances "+
 					"at most max_window per tick, so with interval >= max_window the checkpoint falls "+
 					"further behind every tick without bound; set max_window > interval, or 0 for no cap",
-					col.name, col.maxWindow, col.interval)
+					spec.name, spec.maxWindow(), spec.interval())
 			}
-			if col.name == "flowlogs" {
-				overlap := c.Collectors.Flowlogs.ReplayOverlap.D()
-				capacity := c.Collectors.Flowlogs.ReplaySeenCapacity
-				if overlap < 0 || overlap > time.Hour {
-					return fmt.Errorf("collectors.flowlogs.replay_overlap must be between 0 and 1h (got %v)", overlap)
-				}
-				if overlap > 0 && (capacity < 1 || capacity > 1048576) {
-					return fmt.Errorf("collectors.flowlogs.replay_seen_capacity must be between 1 and 1048576 "+
-						"when replay_overlap is enabled (got %d)", capacity)
-				}
-			}
-		}
+			return nil
+		})
 	}
+	add("collectors.flowlogs.replay_overlap", "Set collectors.flowlogs.replay_overlap between 0 and 1h.", func() error {
+		if !c.Collectors.Flowlogs.Enabled || !pollsSource(c.Collectors.Flowlogs.Source) {
+			return nil
+		}
+		overlap := c.Collectors.Flowlogs.ReplayOverlap.D()
+		if overlap < 0 || overlap > time.Hour {
+			return fmt.Errorf("collectors.flowlogs.replay_overlap must be between 0 and 1h (got %v)", overlap)
+		}
+		return nil
+	})
+	add("collectors.flowlogs.replay_seen_capacity", "Set collectors.flowlogs.replay_seen_capacity between 1 and 1048576.", func() error {
+		if !c.Collectors.Flowlogs.Enabled || !pollsSource(c.Collectors.Flowlogs.Source) {
+			return nil
+		}
+		overlap := c.Collectors.Flowlogs.ReplayOverlap.D()
+		capacity := c.Collectors.Flowlogs.ReplaySeenCapacity
+		if overlap > 0 && (capacity < 1 || capacity > 1048576) {
+			return fmt.Errorf("collectors.flowlogs.replay_seen_capacity must be between 1 and 1048576 "+
+				"when replay_overlap is enabled (got %d)", capacity)
+		}
+		return nil
+	})
 
 	// Feed collisions are checked once, across every destination this process will
 	// read, so a flow/audit collision and a tailnet/tailnet collision are one rule
 	// with one message rather than two that can disagree.
-	var inUse []objectStoreSignalSpec
-	if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) {
-		inUse = append(inUse, objectStoreFlowSpec)
-	}
-	if c.Collectors.Auditlogs.Enabled && objectStoreSource(c.Collectors.Auditlogs.Source) {
-		inUse = append(inUse, objectStoreAuditSpec)
-	}
-	if err := c.validateObjectStoreFeeds(inUse...); err != nil {
-		return err
-	}
+	add("", "See the error text: feed collisions vary by which destinations collide.", func() error {
+		var inUse []objectStoreSignalSpec
+		if c.Collectors.Flowlogs.Enabled && objectStoreSource(c.Collectors.Flowlogs.Source) {
+			inUse = append(inUse, objectStoreFlowSpec)
+		}
+		if c.Collectors.Auditlogs.Enabled && objectStoreSource(c.Collectors.Auditlogs.Source) {
+			inUse = append(inUse, objectStoreAuditSpec)
+		}
+		return c.validateObjectStoreFeeds(inUse...)
+	})
 
-	if !oneOf(c.Collectors.Flowlogs.LogMode, "per_connection", "per_record", "off") {
-		return fmt.Errorf("collectors.flowlogs.log_mode %q invalid: must be one of per_connection, per_record, off", c.Collectors.Flowlogs.LogMode)
-	}
+	add("collectors.flowlogs.log_mode", oneOfRemediation("collectors.flowlogs.log_mode", "per_connection", "per_record", "off"), func() error {
+		if !oneOf(c.Collectors.Flowlogs.LogMode, "per_connection", "per_record", "off") {
+			return fmt.Errorf("collectors.flowlogs.log_mode %q invalid: must be one of per_connection, per_record, off", c.Collectors.Flowlogs.LogMode)
+		}
+		return nil
+	})
 
-	if !oneOf(c.Cardinality.Flow.MetricsMode, "all", "rollup", "both") {
-		return fmt.Errorf("cardinality.flow.metrics_mode %q invalid: must be one of all, rollup, both", c.Cardinality.Flow.MetricsMode)
-	}
-	if c.Cardinality.Flow.RollupTopN < 0 {
-		return fmt.Errorf("cardinality.flow.rollup_top_n %d invalid: must be >= 0 (0 selects the default)", c.Cardinality.Flow.RollupTopN)
-	}
-	if c.Cardinality.LabelValueSampleCap < 0 {
-		return fmt.Errorf("cardinality.label_value_sample_cap %d invalid: must be >= 0 (0 disables label-value capture)", c.Cardinality.LabelValueSampleCap)
-	}
-	if w, cr := c.Cardinality.WarningThreshold, c.Cardinality.CriticalThreshold; w < 0 || cr < 0 {
-		return fmt.Errorf("cardinality warning_threshold/critical_threshold must be >= 0 (got %d/%d)", w, cr)
-	} else if w > 0 && cr > 0 && cr < w {
-		return fmt.Errorf("cardinality.critical_threshold %d invalid: must be >= warning_threshold %d", cr, w)
-	}
+	add("cardinality.flow.metrics_mode", oneOfRemediation("cardinality.flow.metrics_mode", "all", "rollup", "both"), func() error {
+		if !oneOf(c.Cardinality.Flow.MetricsMode, "all", "rollup", "both") {
+			return fmt.Errorf("cardinality.flow.metrics_mode %q invalid: must be one of all, rollup, both", c.Cardinality.Flow.MetricsMode)
+		}
+		return nil
+	})
+	add("cardinality.flow.rollup_top_n", "Set cardinality.flow.rollup_top_n to >= 0.", func() error {
+		if c.Cardinality.Flow.RollupTopN < 0 {
+			return fmt.Errorf("cardinality.flow.rollup_top_n %d invalid: must be >= 0 (0 selects the default)", c.Cardinality.Flow.RollupTopN)
+		}
+		return nil
+	})
+	add("cardinality.label_value_sample_cap", "Set cardinality.label_value_sample_cap to >= 0.", func() error {
+		if c.Cardinality.LabelValueSampleCap < 0 {
+			return fmt.Errorf("cardinality.label_value_sample_cap %d invalid: must be >= 0 (0 disables label-value capture)", c.Cardinality.LabelValueSampleCap)
+		}
+		return nil
+	})
+	add("cardinality.warning_threshold", "Set cardinality.warning_threshold and critical_threshold to >= 0.", func() error {
+		if w, cr := c.Cardinality.WarningThreshold, c.Cardinality.CriticalThreshold; w < 0 || cr < 0 {
+			return fmt.Errorf("cardinality warning_threshold/critical_threshold must be >= 0 (got %d/%d)", w, cr)
+		}
+		return nil
+	})
 	// The threshold-vs-metric_limit relationship is advisory (a threshold above
 	// the limit can never fire, since a metric's series pin at the limit) — see
 	// Warnings(). It is NOT a hard error, so lowering metric_limit never breaks an
-	// existing config that kept the default thresholds.
+	// existing config that kept the default thresholds. This check's own guard
+	// (w>0 && cr>0) is naturally false whenever the check above already failed on
+	// a negative value, so the two never both fire for the same root cause.
+	add("cardinality.critical_threshold", "Set cardinality.critical_threshold >= warning_threshold.", func() error {
+		w, cr := c.Cardinality.WarningThreshold, c.Cardinality.CriticalThreshold
+		if w > 0 && cr > 0 && cr < w {
+			return fmt.Errorf("cardinality.critical_threshold %d invalid: must be >= warning_threshold %d", cr, w)
+		}
+		return nil
+	})
 
-	if c.Collectors.Devices.PostureLogMode != "" &&
-		!oneOf(c.Collectors.Devices.PostureLogMode, "changes", "always", "off") {
-		return fmt.Errorf("collectors.devices.posture_log_mode %q invalid: must be one of changes, always, off", c.Collectors.Devices.PostureLogMode)
-	}
+	add("collectors.devices.posture_log_mode", oneOfRemediation("collectors.devices.posture_log_mode", "changes", "always", "off"), func() error {
+		if c.Collectors.Devices.PostureLogMode != "" &&
+			!oneOf(c.Collectors.Devices.PostureLogMode, "changes", "always", "off") {
+			return fmt.Errorf("collectors.devices.posture_log_mode %q invalid: must be one of changes, always, off", c.Collectors.Devices.PostureLogMode)
+		}
+		return nil
+	})
 
-	if !oneOf(c.Streaming.Decompress, "auto", "gzip", "zstd", "none") {
-		return fmt.Errorf("streaming.decompress %q invalid: must be one of auto, gzip, zstd, none", c.Streaming.Decompress)
-	}
+	add("streaming.decompress", oneOfRemediation("streaming.decompress", "auto", "gzip", "zstd", "none"), func() error {
+		if !oneOf(c.Streaming.Decompress, "auto", "gzip", "zstd", "none") {
+			return fmt.Errorf("streaming.decompress %q invalid: must be one of auto, gzip, zstd, none", c.Streaming.Decompress)
+		}
+		return nil
+	})
 
 	// Receiver paths are registered verbatim with http.ServeMux.HandleFunc, which
 	// panics at receiver startup on a malformed pattern. An empty path is fine (the
 	// receiver substitutes its default), but a configured path must be a rooted
 	// absolute path ("/...") — a value like "tailscale/webhook" is parsed by the mux
 	// as a host-scoped pattern and silently never matches. Validate it up front.
-	if err := validateReceiverPath("streaming.path", c.Streaming.Path); err != nil {
-		return err
-	}
-	if err := validateReceiverPath("webhook.path", c.Webhook.Path); err != nil {
-		return err
-	}
+	add("streaming.path", `Set streaming.path to a rooted absolute path (e.g. "/tailscale/webhook").`, func() error {
+		return validateReceiverPath("streaming.path", c.Streaming.Path)
+	})
+	add("webhook.path", `Set webhook.path to a rooted absolute path (e.g. "/tailscale/webhook").`, func() error {
+		return validateReceiverPath("webhook.path", c.Webhook.Path)
+	})
 
 	// Auto-configuring the log-streaming sink needs an enabled receiver and the
 	// externally reachable URL to register with Tailscale.
-	if c.Streaming.AutoConfigure {
-		if !c.Streaming.Enabled {
+	add("streaming.auto_configure", "Set streaming.enabled: true for streaming.auto_configure.", func() error {
+		if c.Streaming.AutoConfigure && !c.Streaming.Enabled {
 			return fmt.Errorf("streaming.auto_configure requires streaming.enabled: true")
 		}
-		if c.Streaming.PublicURL == "" {
+		return nil
+	})
+	add("streaming.public_url", "Set streaming.public_url for streaming.auto_configure.", func() error {
+		if c.Streaming.AutoConfigure && c.Streaming.PublicURL == "" {
 			return fmt.Errorf("streaming.auto_configure requires streaming.public_url to be set")
 		}
-		if err := validateLogStreamingPublicURL("streaming.public_url", c.Streaming.PublicURL); err != nil {
-			return err
+		return nil
+	})
+	add("streaming.public_url", "Use an absolute http(s) URL with a host (see validateLogStreamingPublicURL rules).", func() error {
+		if !c.Streaming.AutoConfigure || c.Streaming.PublicURL == "" {
+			return nil
 		}
-	}
+		return validateLogStreamingPublicURL("streaming.public_url", c.Streaming.PublicURL)
+	})
 
 	// Every static node-metrics target must have a URL when the scraper is
 	// enabled; when dynamic discovery is enabled its fields are validated too.
 	// Either static targets OR discovery is a valid way to have something to scrape.
-	if nm := c.Collectors.NodeMetrics; nm.Enabled {
+	add("collectors.node_metrics.targets", "Give every node_metrics target a url, and make duplicate identities distinct.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled {
+			return nil
+		}
 		seenTargetID := make(map[string]int, len(nm.Targets))
 		for i, t := range nm.Targets {
 			if t.URL == "" {
@@ -1087,106 +1326,214 @@ func (c *Config) Validate() error {
 			}
 			seenTargetID[id] = i
 		}
+		return nil
+	})
+	add("collectors.node_metrics.max_response_bytes", "Set collectors.node_metrics.max_response_bytes to a positive byte count.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled {
+			return nil
+		}
 		if nm.MaxResponseBytes <= 0 {
 			return fmt.Errorf("collectors.node_metrics.max_response_bytes must be > 0")
+		}
+		return nil
+	})
+	add("collectors.node_metrics.max_samples", "Set collectors.node_metrics.max_samples to a positive integer.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled {
+			return nil
 		}
 		if nm.MaxSamples <= 0 {
 			return fmt.Errorf("collectors.node_metrics.max_samples must be > 0")
 		}
-		// Passthrough metric-name filters are anchored regexes; compile them up
-		// front so a bad pattern is a config error rather than a silent no-op.
+		return nil
+	})
+	// Passthrough metric-name filters are anchored regexes; compile them up
+	// front so a bad pattern is a config error rather than a silent no-op.
+	add("collectors.node_metrics.metric_allow", "Fix the invalid regex in collectors.node_metrics.metric_allow.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled {
+			return nil
+		}
 		for i, p := range nm.MetricAllow {
 			if _, err := regexp.Compile(fmt.Sprintf("^(?:%s)$", p)); err != nil {
 				return fmt.Errorf("collectors.node_metrics.metric_allow[%d] %q: invalid regex: %w", i, p, err)
 			}
+		}
+		return nil
+	})
+	add("collectors.node_metrics.metric_deny", "Fix the invalid regex in collectors.node_metrics.metric_deny.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled {
+			return nil
 		}
 		for i, p := range nm.MetricDeny {
 			if _, err := regexp.Compile(fmt.Sprintf("^(?:%s)$", p)); err != nil {
 				return fmt.Errorf("collectors.node_metrics.metric_deny[%d] %q: invalid regex: %w", i, p, err)
 			}
 		}
-		if d := nm.Discovery; d.Enabled {
-			if !oneOf(d.Scheme, "http", "https") {
-				return fmt.Errorf("collectors.node_metrics.discovery.scheme %q invalid: must be one of http, https", d.Scheme)
-			}
-			if d.Port < 1 || d.Port > 65535 {
-				return fmt.Errorf("collectors.node_metrics.discovery.port %d invalid: must be 1-65535", d.Port)
-			}
-			if !oneOf(d.AddressOrder, "ipv4", "ipv6") {
-				return fmt.Errorf("collectors.node_metrics.discovery.address_order %q invalid: must be one of ipv4, ipv6", d.AddressOrder)
-			}
-			if !oneOf(d.InstanceSource, "address", "name", "hostname") {
-				return fmt.Errorf("collectors.node_metrics.discovery.instance_source %q invalid: must be one of address, name, hostname", d.InstanceSource)
-			}
-			if d.Interval.D() <= 0 {
-				return fmt.Errorf("collectors.node_metrics.discovery.interval must be > 0")
-			}
-			if d.MaxTargets <= 0 {
-				return fmt.Errorf("collectors.node_metrics.discovery.max_targets must be > 0")
-			}
+		return nil
+	})
+	add("collectors.node_metrics.discovery.scheme", oneOfRemediation("collectors.node_metrics.discovery.scheme", "http", "https"), func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
 		}
-	}
+		if !oneOf(nm.Discovery.Scheme, "http", "https") {
+			return fmt.Errorf("collectors.node_metrics.discovery.scheme %q invalid: must be one of http, https", nm.Discovery.Scheme)
+		}
+		return nil
+	})
+	add("collectors.node_metrics.discovery.port", "Set collectors.node_metrics.discovery.port between 1 and 65535.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
+		}
+		if nm.Discovery.Port < 1 || nm.Discovery.Port > 65535 {
+			return fmt.Errorf("collectors.node_metrics.discovery.port %d invalid: must be 1-65535", nm.Discovery.Port)
+		}
+		return nil
+	})
+	add("collectors.node_metrics.discovery.address_order", oneOfRemediation("collectors.node_metrics.discovery.address_order", "ipv4", "ipv6"), func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
+		}
+		if !oneOf(nm.Discovery.AddressOrder, "ipv4", "ipv6") {
+			return fmt.Errorf("collectors.node_metrics.discovery.address_order %q invalid: must be one of ipv4, ipv6", nm.Discovery.AddressOrder)
+		}
+		return nil
+	})
+	add("collectors.node_metrics.discovery.instance_source", oneOfRemediation("collectors.node_metrics.discovery.instance_source", "address", "name", "hostname"), func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
+		}
+		if !oneOf(nm.Discovery.InstanceSource, "address", "name", "hostname") {
+			return fmt.Errorf("collectors.node_metrics.discovery.instance_source %q invalid: must be one of address, name, hostname", nm.Discovery.InstanceSource)
+		}
+		return nil
+	})
+	add("collectors.node_metrics.discovery.interval", "Set collectors.node_metrics.discovery.interval to a positive duration.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
+		}
+		if nm.Discovery.Interval.D() <= 0 {
+			return fmt.Errorf("collectors.node_metrics.discovery.interval must be > 0")
+		}
+		return nil
+	})
+	add("collectors.node_metrics.discovery.max_targets", "Set collectors.node_metrics.discovery.max_targets to a positive integer.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
+		}
+		if nm.Discovery.MaxTargets <= 0 {
+			return fmt.Errorf("collectors.node_metrics.discovery.max_targets must be > 0")
+		}
+		return nil
+	})
 
 	// Reverse-DNS enrichment: when enabled, the resolver address (if set) must be
 	// an IP or IP:port, and the cache bound must be positive.
-	if rd := c.Enrichment.ReverseDNS; rd.Enabled {
-		if rd.Server != "" {
-			host := rd.Server
-			if h, _, err := net.SplitHostPort(rd.Server); err == nil {
-				host = h
-			}
-			if net.ParseIP(host) == nil {
-				return fmt.Errorf("enrichment.reverse_dns.server %q invalid: must be an IP or IP:port", rd.Server)
-			}
+	add("enrichment.reverse_dns.server", "Set enrichment.reverse_dns.server to an IP or IP:port.", func() error {
+		rd := c.Enrichment.ReverseDNS
+		if !rd.Enabled || rd.Server == "" {
+			return nil
+		}
+		host := rd.Server
+		if h, _, err := net.SplitHostPort(rd.Server); err == nil {
+			host = h
+		}
+		if net.ParseIP(host) == nil {
+			return fmt.Errorf("enrichment.reverse_dns.server %q invalid: must be an IP or IP:port", rd.Server)
+		}
+		return nil
+	})
+	add("enrichment.reverse_dns.max_entries", "Set enrichment.reverse_dns.max_entries to a positive integer.", func() error {
+		rd := c.Enrichment.ReverseDNS
+		if !rd.Enabled {
+			return nil
 		}
 		if rd.MaxEntries <= 0 {
 			return fmt.Errorf("enrichment.reverse_dns.max_entries must be > 0 when reverse DNS is enabled")
 		}
-		// A negative window is not a disable switch: it would make every entry
-		// unservable the instant it was written, quietly turning enrichment off
-		// while the config still reads enabled. Zero is the documented disable.
+		return nil
+	})
+	// A negative window is not a disable switch: it would make every entry
+	// unservable the instant it was written, quietly turning enrichment off
+	// while the config still reads enabled. Zero is the documented disable.
+	add("enrichment.reverse_dns.stale_ttl", "Set enrichment.reverse_dns.stale_ttl to >= 0 (0 disables serving stale names).", func() error {
+		rd := c.Enrichment.ReverseDNS
+		if !rd.Enabled {
+			return nil
+		}
 		if rd.StaleTTL.D() < 0 {
 			return fmt.Errorf("enrichment.reverse_dns.stale_ttl must be >= 0 (0 disables serving stale names)")
 		}
-	}
+		return nil
+	})
 
 	// Profiling is opt-in. The pprof handlers are mounted on the admin server, so
 	// they need it enabled; the Pyroscope push agent needs a server to push to.
-	if c.Profiling.Pprof.Enabled && !c.Admin.Enabled {
-		return fmt.Errorf("profiling.pprof.enabled requires admin.enabled: true")
-	}
+	add("profiling.pprof.enabled", "Set admin.enabled: true for profiling.pprof.enabled.", func() error {
+		if c.Profiling.Pprof.Enabled && !c.Admin.Enabled {
+			return fmt.Errorf("profiling.pprof.enabled requires admin.enabled: true")
+		}
+		return nil
+	})
 	// pprof exposes process internals (heap/goroutine dumps can contain
 	// in-memory secrets), so it must not be served unauthenticated: enabling it
 	// requires a shared admin.auth.token. The status page itself only warns
 	// (see Warnings); pprof is the stricter surface.
-	if c.Profiling.Pprof.Enabled && c.Admin.Auth.Token == "" {
-		return fmt.Errorf("profiling.pprof.enabled requires admin.auth.token to be set (pprof can expose in-memory secrets via heap dumps)")
-	}
-	if c.Profiling.Pyroscope.Enabled && c.Profiling.Pyroscope.ServerAddress == "" {
-		return fmt.Errorf("profiling.pyroscope.enabled requires profiling.pyroscope.server_address")
-	}
+	add("profiling.pprof.enabled", "Set admin.auth.token for profiling.pprof.enabled.", func() error {
+		if c.Profiling.Pprof.Enabled && c.Admin.Auth.Token == "" {
+			return fmt.Errorf("profiling.pprof.enabled requires admin.auth.token to be set (pprof can expose in-memory secrets via heap dumps)")
+		}
+		return nil
+	})
+	add("profiling.pyroscope.server_address", "Set profiling.pyroscope.server_address for profiling.pyroscope.enabled.", func() error {
+		if c.Profiling.Pyroscope.Enabled && c.Profiling.Pyroscope.ServerAddress == "" {
+			return fmt.Errorf("profiling.pyroscope.enabled requires profiling.pyroscope.server_address")
+		}
+		return nil
+	})
 
-	if !oneOf(c.Tracing.Sampler, "always_on", "always_off", "traceidratio",
-		"parentbased_always_on", "parentbased_traceidratio") {
-		return fmt.Errorf("tracing.sampler %q invalid: must be one of always_on, always_off, traceidratio, parentbased_always_on, parentbased_traceidratio", c.Tracing.Sampler)
-	}
-	if c.Tracing.SamplerArg < 0 || c.Tracing.SamplerArg > 1 {
-		return fmt.Errorf("tracing.sampler_arg %v invalid: must be in [0,1]", c.Tracing.SamplerArg)
-	}
+	add("tracing.sampler", oneOfRemediation("tracing.sampler", "always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"), func() error {
+		if !oneOf(c.Tracing.Sampler, "always_on", "always_off", "traceidratio",
+			"parentbased_always_on", "parentbased_traceidratio") {
+			return fmt.Errorf("tracing.sampler %q invalid: must be one of always_on, always_off, traceidratio, parentbased_always_on, parentbased_traceidratio", c.Tracing.Sampler)
+		}
+		return nil
+	})
+	add("tracing.sampler_arg", "Set tracing.sampler_arg within [0,1].", func() error {
+		if c.Tracing.SamplerArg < 0 || c.Tracing.SamplerArg > 1 {
+			return fmt.Errorf("tracing.sampler_arg %v invalid: must be in [0,1]", c.Tracing.SamplerArg)
+		}
+		return nil
+	})
 
-	if c.VersionChecks.Self.Enabled || c.VersionChecks.Devices.Enabled {
-		if c.VersionChecks.CacheTTL.D() < 5*time.Minute {
+	add("version_checks.cache_ttl", "Set version_checks.cache_ttl to >= 5m.", func() error {
+		if (c.VersionChecks.Self.Enabled || c.VersionChecks.Devices.Enabled) && c.VersionChecks.CacheTTL.D() < 5*time.Minute {
 			return fmt.Errorf("version_checks.cache_ttl must be >= 5m to avoid hammering the upstream release endpoints")
 		}
-		if c.VersionChecks.Timeout.D() <= 0 {
+		return nil
+	})
+	add("version_checks.timeout", "Set version_checks.timeout to a positive duration.", func() error {
+		if (c.VersionChecks.Self.Enabled || c.VersionChecks.Devices.Enabled) && c.VersionChecks.Timeout.D() <= 0 {
 			return fmt.Errorf("version_checks.timeout must be > 0")
 		}
-	}
-	if c.VersionChecks.Devices.Enabled && c.VersionChecks.Devices.OutdatedMinorThreshold < 1 {
-		return fmt.Errorf("version_checks.devices.outdated_minor_threshold must be >= 1")
-	}
+		return nil
+	})
+	add("version_checks.devices.outdated_minor_threshold", "Set version_checks.devices.outdated_minor_threshold to >= 1.", func() error {
+		if c.VersionChecks.Devices.Enabled && c.VersionChecks.Devices.OutdatedMinorThreshold < 1 {
+			return fmt.Errorf("version_checks.devices.outdated_minor_threshold must be >= 1")
+		}
+		return nil
+	})
 
-	return nil
+	return checks
 }
 
 func (c *Config) validateIngressWAL() error {

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -45,7 +46,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	once := fs.Bool("once", false, "run one real collection cycle (configured export path and checkpoint behavior) and exit; no listener is started")
 	preflightExport := fs.Bool("preflight-export", false, "with -preflight, actually export through the configured OTLP path instead of discarding it (ignored without -preflight)")
 	preflightTimeout := fs.Duration("preflight-timeout", defaultPfDeadline, "overall deadline for -preflight or -once")
-	jsonOut := fs.Bool("json", false, "with -preflight or -once, emit one machine-readable JSON report instead of the human-readable one")
+	jsonOut := fs.Bool("json", false, "with -preflight or -once, emit one machine-readable JSON report instead of the human-readable one; with -validate, emit the config.Diagnostics() array instead of human-readable lines (#307)")
+	warningsAsErrors := fs.Bool("warnings-as-errors", false, "with -validate, exit 1 if any advisory warning is present, not just hard errors (#307)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -60,7 +62,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if *validateOnly {
-		return runValidate(*configPath, stdout, stderr)
+		return runValidate(*configPath, *jsonOut, *warningsAsErrors, stdout, stderr)
 	}
 
 	if *preflight && *once {
@@ -75,19 +77,62 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 // runValidate loads the config at path via the same internal/config.Load path
-// the server uses, prints any Warnings() to stdout, and reports the load/
-// validate error (if any) to stderr. It never starts the exporter.
-func runValidate(configPath string, stdout, stderr io.Writer) int {
+// the server uses and reports every configuration Diagnostic in one pass
+// (#307) instead of stopping at the first error. It never starts the
+// exporter.
+//
+// config.Load returns the decoded Config alongside a Validate() error, so a
+// file that parses but breaks a rule still reports every OTHER problem in the
+// same pass. A nil config means the failure was earlier than that — the file
+// could not be read or decoded — and there is nothing to run diagnostics on,
+// so that case degrades to the single load error.
+func runValidate(configPath string, jsonOut, warningsAsErrors bool, stdout, stderr io.Writer) int {
 	cfg, err := config.Load(configPath)
-	if err != nil {
+	if cfg == nil {
 		fmt.Fprintf(stderr, "config invalid: %v\n", err)
 		return 1
 	}
 
-	for _, w := range cfg.Warnings() {
-		fmt.Fprintf(stdout, "WARN: %s\n", w)
+	diags := cfg.Diagnostics()
+	hasErrors := config.HasErrors(diags)
+	hasWarnings := config.HasWarnings(diags)
+
+	if jsonOut {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if encErr := enc.Encode(diags); encErr != nil {
+			fmt.Fprintf(stderr, "encode diagnostics: %v\n", encErr)
+			return 1
+		}
+	} else {
+		for _, d := range diags {
+			line := strings.ToUpper(string(d.Severity))
+			if d.Path != "" {
+				line += " " + d.Path
+			}
+			line += ": " + d.Message
+			if d.Remediation != "" {
+				line += " — " + d.Remediation
+			}
+			// Errors to stderr, advisories to stdout — the same split
+			// tools/configcheck uses, and the stream -validate has always
+			// written its failure to. Putting errors on stdout would make
+			// `tailscale2otel -validate >/dev/null` silently discard the very
+			// thing it was run to find.
+			w := stdout
+			if d.Severity == config.SeverityError {
+				w = stderr
+			}
+			fmt.Fprintln(w, line)
+		}
+		if !hasErrors {
+			fmt.Fprintln(stdout, "config OK")
+		}
 	}
-	fmt.Fprintln(stdout, "config OK")
+
+	if hasErrors || (warningsAsErrors && hasWarnings) {
+		return 1
+	}
 	return 0
 }
 

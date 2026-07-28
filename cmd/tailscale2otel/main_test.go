@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
 )
 
 const minimalValidYAML = `
@@ -102,10 +105,91 @@ func TestRun_ValidateMissingFile(t *testing.T) {
 	}
 }
 
+// TestRun_ValidateWarningsAsErrors is the #307 acceptance check for the
+// strict deployment gate: a config with only advisory warnings (no hard
+// errors) exits 0 by default but 1 under -warnings-as-errors.
+func TestRun_ValidateWarningsAsErrors(t *testing.T) {
+	path := writeTempConfig(t, warningYAML)
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-validate", "-config", path}, &stdout, &stderr); code != 0 {
+		t.Fatalf("without -warnings-as-errors: exit code = %d, want 0", code)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := run([]string{"-validate", "-warnings-as-errors", "-config", path}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("with -warnings-as-errors: exit code = %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+}
+
+// TestRun_ValidateJSON asserts -validate -json emits a parseable JSON array
+// of config.Diagnostic and includes the warning this fixture is known to
+// trigger.
+func TestRun_ValidateJSON(t *testing.T) {
+	path := writeTempConfig(t, warningYAML)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-validate", "-json", "-config", path}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	var diags []config.Diagnostic
+	if err := json.Unmarshal(stdout.Bytes(), &diags); err != nil {
+		t.Fatalf("stdout is not a JSON array of Diagnostic: %v\nstdout=%s", err, stdout.String())
+	}
+	var sawWarning bool
+	for _, d := range diags {
+		if d.Severity == config.SeverityWarning {
+			sawWarning = true
+		}
+	}
+	if !sawWarning {
+		t.Fatalf("expected at least one severity=warning diagnostic, got: %+v", diags)
+	}
+}
+
 func TestRun_UnknownFlag(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"-bogus"}, &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
+	}
+}
+
+// The whole point of #307 is that a config with several independent problems
+// reports all of them in one run, so repairing it is not a fix-run-fix loop.
+// That only works if Load hands back the decoded config alongside the Validate
+// error — otherwise there is nothing to call Diagnostics() on and the CLI
+// falls back to the historical single error, doing less than it advertises.
+func TestRun_ValidateJSONReportsEveryIndependentError(t *testing.T) {
+	const y = "otlp:\n  protocol: bogus\ncheckpoint:\n  store: bogus\n"
+	path := writeTempConfig(t, y)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-validate", "-json", "-config", path}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for an invalid config; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	var diags []config.Diagnostic
+	if err := json.Unmarshal(stdout.Bytes(), &diags); err != nil {
+		t.Fatalf("stdout is not a JSON array of Diagnostic: %v\nstdout=%s", err, stdout.String())
+	}
+	var sawProtocol, sawCheckpoint bool
+	for _, d := range diags {
+		if d.Severity != config.SeverityError {
+			continue
+		}
+		if strings.Contains(d.Message, "otlp.protocol") || d.Path == "otlp.protocol" {
+			sawProtocol = true
+		}
+		if strings.Contains(d.Message, "checkpoint.store") || d.Path == "checkpoint.store" {
+			sawCheckpoint = true
+		}
+	}
+	if !sawProtocol || !sawCheckpoint {
+		t.Fatalf("want BOTH independent errors reported in one pass (otlp.protocol=%v checkpoint.store=%v); got %+v",
+			sawProtocol, sawCheckpoint, diags)
 	}
 }

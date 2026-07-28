@@ -88,6 +88,7 @@ type Config struct {
 	// normal Validate error (naming the key pair) rather than a special-cased
 	// Load error.
 	secretFileConflicts []string
+
 }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
@@ -1218,8 +1219,16 @@ func Load(path string) (*Config, error) {
 	cfg.unknownEnv = unknownEnvVars(validKeys)
 	cfg.configFileWarning = cfgFileWarning
 
-	// 4. Resolve every *_file secret sibling (Docker-secrets style) now that file
-	//    + env layering is complete: read each configured file once, trim it, and
+	// 4. Resolve every path-bearing field (#310) against the YAML file's own
+	//    directory when it supplied a relative path; a path set via environment
+	//    keeps CWD semantics, and an absolute path (from either layer) is used
+	//    as-is. Done before resolveSecretFiles / Validate so both open the same
+	//    resolved path this process will actually use at runtime, and can name
+	//    it (alongside what the operator wrote) on failure. See paths.go.
+
+	// 5. Resolve every *_file secret sibling (Docker-secrets style) now that file
+	//    + env layering is complete AND every such field's path has already been
+	//    resolved per #310: read each configured file once, trim it, and
 	//    populate the paired Secret value. Done before Validate so a bad/missing
 	//    file surfaces as a Load error, and so Validate sees the resolved value.
 	if err := cfg.resolveSecretFiles(); err != nil {
@@ -1227,7 +1236,17 @@ func Load(path string) (*Config, error) {
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return nil, err
+		// The config is returned ALONGSIDE the error, unlike every failure above
+		// it. Those are decode failures, where the value is partial garbage and
+		// handing it back would invite acting on it. This one is different: the
+		// file decoded cleanly and only a rule rejected it, so the value is
+		// complete and Diagnostics() can report every OTHER problem in the same
+		// pass — which is the whole point of #307, and impossible if the only
+		// thing that survives is the first error.
+		//
+		// Safe for existing callers: all of them branch on err != nil and never
+		// look at the config after that.
+		return &cfg, err
 	}
 	return &cfg, nil
 }

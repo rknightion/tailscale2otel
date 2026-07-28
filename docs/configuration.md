@@ -516,6 +516,18 @@ the hot path never blocks.
 > sufficient:** run `tailscale2otel -validate` against your real config file as the authoritative
 > pre-flight check.
 >
+> **Every problem in one pass.** `-validate` reports ALL independent problems it can, not just the
+> first, so repairing a large config is not a fix-run-fix loop. A rule that cannot be evaluated
+> because an earlier value is invalid is skipped rather than reported as derived nonsense — twelve
+> diagnostics describing one root cause would be worse than the single error it replaced. Errors go
+> to stderr and advisories to stdout, so `-validate >/dev/null` still shows what failed.
+>
+> `-validate -json` emits a stable array of `{severity, path, message, remediation}` for CI and
+> editors. `-warnings-as-errors` makes any advisory fail the exit code, for a deployment gate that
+> refuses to ship on a warning. No diagnostic ever contains a secret VALUE — a complaint about a
+> malformed credential names the key. `tools/configcheck` reports every diagnostic per file too,
+> followed by a `FAIL <file>` summary line.
+>
 > `-validate` proves the config parses and its cross-field rules hold; it makes no network call.
 > To prove the credentials and every enabled collector actually work, use `tailscale2otel
 > -preflight`, which runs one collection cycle without starting a listener, exporting, or

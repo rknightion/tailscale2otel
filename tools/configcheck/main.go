@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 )
@@ -30,6 +31,14 @@ func main() {
 // The body lives here rather than in main so it can be tested. Without this the
 // module's `go test` leg would pass vacuously — a gate that cannot fail (#437).
 // Writers are injected for the same reason.
+//
+// Per file, every config.Diagnostic is reported (#307) instead of just the
+// first error — config.Load's own Validate() call still returns (nil, err) on
+// a validation failure (Load is out of this change's scope; see the
+// "config.go wiring" note in the #307 delivery report), so a file that fails
+// to decode/pre-validate at all degrades to the historical single-error FAIL
+// line, same as before. A file that decodes but fails Validate() rules gets
+// every diagnostic, one line each, followed by a FAIL summary line.
 func check(paths []string, stdout, stderr io.Writer) int {
 	if len(paths) == 0 {
 		fmt.Fprintln(stderr, "usage: configcheck <config.yaml> [config2.yaml ...]")
@@ -38,8 +47,36 @@ func check(paths []string, stdout, stderr io.Writer) int {
 
 	failed := false
 	for _, p := range paths {
-		if _, err := config.Load(p); err != nil {
+		cfg, err := config.Load(p)
+		if cfg == nil {
 			fmt.Fprintf(stderr, "FAIL %s: %v\n", p, err)
+			failed = true
+			continue
+		}
+
+		diags := cfg.Diagnostics()
+		for _, d := range diags {
+			sev := strings.ToUpper(string(d.Severity))
+			w := stdout
+			if d.Severity == config.SeverityError {
+				w = stderr
+			}
+			line := sev
+			if d.Path != "" {
+				line += " " + d.Path
+			}
+			line += ": " + d.Message
+			if d.Remediation != "" {
+				line += " — " + d.Remediation
+			}
+			fmt.Fprintf(w, "%s %s\n", p, line)
+		}
+		if config.HasErrors(diags) {
+			// A summary FAIL line per file, mirroring the OK line below. The
+			// per-diagnostic lines above say WHAT is wrong; this says which
+			// file is rejected, which is what a caller checking many files
+			// greps for — and what the pre-diagnostics output always emitted.
+			fmt.Fprintf(stderr, "FAIL %s\n", p)
 			failed = true
 			continue
 		}
