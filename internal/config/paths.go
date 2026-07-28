@@ -98,6 +98,14 @@ func (c *Config) pathFields() []pathField {
 		{"collectors.auditlogs.objectstore.access_key_id_file", &c.Collectors.Auditlogs.ObjectStore.AccessKeyIDFile},
 		{"collectors.auditlogs.objectstore.secret_access_key_file", &c.Collectors.Auditlogs.ObjectStore.SecretAccessKeyFile},
 		{"collectors.auditlogs.objectstore.session_token_file", &c.Collectors.Auditlogs.ObjectStore.SessionTokenFile},
+		{"enrichment.geoip.country_database", &c.Enrichment.GeoIP.CountryDatabase},
+		{"enrichment.geoip.asn_database", &c.Enrichment.GeoIP.ASNDatabase},
+		{"enrichment.geoip.download.license_key_file", &c.Enrichment.GeoIP.Download.LicenseKeyFile},
+		// The GeoIP download directory is a path the process WRITES to rather
+		// than reads, but it resolves by the same rule as every other one (#310):
+		// relative to the config file's directory, so a relative path in a
+		// mounted config means the same thing wherever the process is started.
+		{"enrichment.geoip.download.directory", &c.Enrichment.GeoIP.Download.Directory},
 	}
 
 	// tailnets[] entries embed TailscaleAuth and their own per-signal

@@ -58,6 +58,12 @@ var (
 			semconv.AttrDstService, semconv.AttrPath, semconv.AttrDERPRegionID,
 			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
 			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
+			// Only when cardinality.flow.geo_dims is on (and enrichment.geoip is
+			// configured). These two are the ONLY geo fields bounded enough for a
+			// metric: ~250 countries and 7 continents. The AS number/organization
+			// and any city-level detail stay on the flow logs.
+			semconv.SourceGeoCountryISO, semconv.SourceGeoContinentCode,
+			semconv.DestinationGeoCountryISO, semconv.DestGeoContinentCode,
 		},
 		Group: groupNetwork,
 	}
@@ -72,6 +78,12 @@ var (
 			semconv.AttrDstService, semconv.AttrPath, semconv.AttrDERPRegionID,
 			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
 			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
+			// Only when cardinality.flow.geo_dims is on (and enrichment.geoip is
+			// configured). These two are the ONLY geo fields bounded enough for a
+			// metric: ~250 countries and 7 continents. The AS number/organization
+			// and any city-level detail stay on the flow logs.
+			semconv.SourceGeoCountryISO, semconv.SourceGeoContinentCode,
+			semconv.DestinationGeoCountryISO, semconv.DestGeoContinentCode,
 		},
 		Group: groupNetwork,
 	}
@@ -142,6 +154,12 @@ var (
 			semconv.AttrPath, semconv.AttrDERPRegionID,
 			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
 			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
+			// Only when cardinality.flow.geo_dims is on (and enrichment.geoip is
+			// configured). These two are the ONLY geo fields bounded enough for a
+			// metric: ~250 countries and 7 continents. The AS number/organization
+			// and any city-level detail stay on the flow logs.
+			semconv.SourceGeoCountryISO, semconv.SourceGeoContinentCode,
+			semconv.DestinationGeoCountryISO, semconv.DestGeoContinentCode,
 		},
 		Group: groupNetwork,
 	}
@@ -156,6 +174,12 @@ var (
 			semconv.AttrPath, semconv.AttrDERPRegionID,
 			semconv.AttrSrcUser, semconv.AttrSrcTags, semconv.AttrSrcOS,
 			semconv.AttrDstUser, semconv.AttrDstTags, semconv.AttrDstOS,
+			// Only when cardinality.flow.geo_dims is on (and enrichment.geoip is
+			// configured). These two are the ONLY geo fields bounded enough for a
+			// metric: ~250 countries and 7 continents. The AS number/organization
+			// and any city-level detail stay on the flow logs.
+			semconv.SourceGeoCountryISO, semconv.SourceGeoContinentCode,
+			semconv.DestinationGeoCountryISO, semconv.DestGeoContinentCode,
 		},
 		Group: groupNetwork,
 	}
@@ -196,7 +220,7 @@ var (
 	docFlowLog = metricdoc.LogEvent{
 		Name:        eventNameFlow,
 		Severity:    "INFO",
-		Description: "Per-connection (per_connection) or per-record (per_record) network-flow detail: the 5-tuple, transport, traffic type, source/destination node, and tx/rx bytes & packets.",
+		Description: "Per-connection (per_connection) or per-record (per_record) network-flow detail: the 5-tuple, transport, traffic type, source/destination node, and tx/rx bytes & packets. With `enrichment.geoip` on, external (non-Tailscale) endpoints also carry geolocation and autonomous-system attributes — the full set, including the ones that are deliberately never allowed onto a metric.",
 		Attributes: []string{
 			semconv.SourceAddress, semconv.SourcePort, semconv.DestinationAddress, semconv.DestinationPort,
 			semconv.NetworkTransport, semconv.NetworkType, semconv.AttrTrafficType,
@@ -207,6 +231,18 @@ var (
 			"tailscale.connections", // per_record summary only
 			"tailscale.reporter.trust", "tailscale.reporter.consistency",
 			"tailscale.tx.bytes", "tailscale.rx.bytes", "tailscale.tx.packets", "tailscale.rx.packets",
+			// GeoIP enrichment (enrichment.geoip). Country and continent may also
+			// reach flow METRICS via cardinality.flow.geo_dims; the autonomous
+			// system and the city-level fields are LOGS ONLY, because neither is
+			// bounded by anything useful and a log record is not a series. The
+			// city/region/coordinate fields need a City database — a Country one
+			// leaves them absent. Tailnet addresses are never geolocated.
+			semconv.SourceGeoCountryISO, semconv.SourceGeoContinentCode,
+			semconv.DestinationGeoCountryISO, semconv.DestGeoContinentCode,
+			semconv.SourceGeoCity, semconv.SourceGeoRegionISO, semconv.SourceGeoLat, semconv.SourceGeoLon,
+			semconv.DestinationGeoCity, semconv.DestinationGeoRegionISO, semconv.DestinationGeoLat, semconv.DestinationGeoLon,
+			semconv.SourceASNumber, semconv.SourceASOrg,
+			semconv.DestinationASNumber, semconv.DestinationASOrg,
 		},
 		Group: groupNetwork,
 	}

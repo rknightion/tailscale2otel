@@ -10,7 +10,7 @@ import (
 // src/dst-address case) must fold into the single per-group __other__ remainder
 // rather than growing one map entry per key until the next 60s flush.
 func TestRollupAccumulatorBoundsEntriesUnderKeyFlood(t *testing.T) {
-	a := newRollupAccumulator(500, true, false)
+	a := newRollupAccumulator(500, true, false, false)
 	// One fixed (transport, trafficType, dstService) group; vary only the node
 	// dimensions so every record is a distinct rollupKey.
 	for i := range maxRollupKeys + 5000 {
@@ -32,7 +32,7 @@ func TestRollupAccumulatorBoundsEntriesUnderKeyFlood(t *testing.T) {
 // users/tags must fold into __other__ exactly like a flood of node names does,
 // rather than growing one live map entry per identity until the next flush.
 func TestRollupAccumulatorBoundsEntriesUnderIdentityFlood(t *testing.T) {
-	a := newRollupAccumulator(500, true, true)
+	a := newRollupAccumulator(500, true, true, false)
 	// Hold the node dimensions FIXED so identity is the only thing varying —
 	// otherwise the node cap would be what bounds this and the test would pass
 	// without exercising identity at all.
@@ -54,7 +54,7 @@ func TestRollupAccumulatorBoundsEntriesUnderIdentityFlood(t *testing.T) {
 // of an existing series and become the only dimension splitting the rollup —
 // reintroducing the cardinality that turning node_dims off is meant to shed.
 func TestRollupAccumulatorRefusesIdentityWithoutNodes(t *testing.T) {
-	a := newRollupAccumulator(500, false, true)
+	a := newRollupAccumulator(500, false, true, false)
 	if a.identity {
 		t.Fatal("identity must be forced off when node dimensions are off")
 	}
@@ -76,7 +76,7 @@ func TestRollupAccumulatorRefusesIdentityWithoutNodes(t *testing.T) {
 // peer/port sets are bounded in both dimensions: the number of source-node
 // buckets and each bucket's size.
 func TestRollupAccumulatorBoundsUniqueSetsUnderFlood(t *testing.T) {
-	a := newRollupAccumulator(500, true, false)
+	a := newRollupAccumulator(500, true, false, false)
 	for i := range maxUniqueSrcNodes + 2000 {
 		s := strconv.Itoa(i)
 		a.observeUnique("src"+s, "peer"+s, s)
@@ -89,7 +89,7 @@ func TestRollupAccumulatorBoundsUniqueSetsUnderFlood(t *testing.T) {
 	}
 
 	// A single source flooding distinct ports saturates its set, not grows it.
-	b := newRollupAccumulator(500, true, false)
+	b := newRollupAccumulator(500, true, false, false)
 	for p := range maxUniquePerSrc + 1000 {
 		b.observeUnique("hot", "peer", strconv.Itoa(p))
 	}

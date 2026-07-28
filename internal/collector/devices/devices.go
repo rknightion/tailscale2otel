@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/netip"
 	"sort"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/release"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -99,6 +101,7 @@ const (
 
 	metricConnHardNAT       = "tailscale.device.connectivity.hard_nat"
 	metricConnEndpoints     = "tailscale.device.connectivity.endpoints"
+	metricDevicesByCountry  = "tailscale.devices.by_country"
 	metricConnDirectCapable = "tailscale.device.connectivity.direct_capable"
 	metricConnUDP           = "tailscale.device.connectivity.udp"
 	metricConnIPv6          = "tailscale.device.connectivity.ipv6"
@@ -304,8 +307,11 @@ type Collector struct {
 	perEntity            bool
 	derpRollup           bool
 	collectConnectivity  bool
-	subnetRouteRollup    bool
-	postureLogMode       string // "changes" (default) | "always" | "off"
+	// geo supplies country/continent for a device's public magicsock endpoint;
+	// nil disables the fleet-geography gauge entirely.
+	geo               geoip.Lookup
+	subnetRouteRollup bool
+	postureLogMode    string // "changes" (default) | "always" | "off"
 
 	// attrNamespaces is the set of posture-attribute namespace prefixes (the part
 	// before ":") promoted to the tailscale.device.attribute{,.info} metrics, and
@@ -417,6 +423,13 @@ func WithDerpRegionRollup(enabled bool) Option {
 // Default true. Per-device gauges are additionally gated by per_entity.device.
 func WithConnectivity(enabled bool) Option {
 	return func(c *Collector) { c.collectConnectivity = enabled }
+}
+
+// WithGeo supplies the GeoIP databases used to derive fleet geography from each
+// device's advertised public endpoint. Nil (the default) leaves
+// tailscale.devices.by_country unemitted.
+func WithGeo(g geoip.Lookup) Option {
+	return func(c *Collector) { c.geo = g }
 }
 
 // WithSubnetRouteRollup gates the per-CIDR tailscale.subnet_routes.routers
@@ -1142,6 +1155,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		c.emitDERPRollup(devs)
 	}
 
+	// Gated on collect_connectivity as well as on geo being configured: the
+	// endpoints this reads are clientConnectivity data, and an operator who
+	// turned that collection off has said not to derive things from it.
+	if c.geo != nil && c.collectConnectivity {
+		c.emitGeoRollup(devs)
+	}
+
 	// Flush all churning per-entity/aggregate gauges accumulated this tick as
 	// observable-gauge snapshots, so a device (or version/tag/region/CIDR/posture
 	// series) that stopped appearing drops out of the export instead of ghosting
@@ -1154,6 +1174,68 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// WithCoverage is byte-identical to the pre-#421 behavior.
 	apistate.EmitCoverage(e, c.coverage)
 	return nil
+}
+
+// deviceGeoKey is the bounded label pair of the fleet-geography gauge.
+type deviceGeoKey struct {
+	country   string
+	continent string
+}
+
+// emitGeoRollup emits one gauge series per country the fleet is present in,
+// derived from each device's advertised public magicsock endpoint.
+//
+// A ROLLUP, not a per-device label, and that is the whole design. Country is
+// bounded (~250 values, in practice at most fleet-size), so a count-by-country
+// gauge stays cheap. Hanging the same label off the existing per-device gauges
+// would instead change those series' identity, silently breaking every
+// dashboard, alert and recording rule already querying them — and the AS number,
+// which is not bounded by anything useful, stays off metrics entirely.
+//
+// Devices whose endpoints yield no globally-routable address, or that the
+// databases do not cover, contribute nothing at all. There is deliberately no
+// "unknown" bucket: it would read as a country an operator could act on.
+func (c *Collector) emitGeoRollup(devs []tsapi.RichDevice) {
+	counts := make(map[deviceGeoKey]int)
+	for _, d := range devs {
+		res, ok := c.deviceGeo(d)
+		if !ok || res.CountryISO == "" {
+			continue
+		}
+		counts[deviceGeoKey{country: res.CountryISO, continent: res.ContinentCode}]++
+	}
+	for k, n := range counts {
+		attrs := telemetry.Attrs{semconv.DeviceGeoCountryISO: k.country}
+		if k.continent != "" {
+			attrs[semconv.DeviceGeoContinentCode] = k.continent
+		}
+		c.gsb.Add(docDevicesByCountry.Name, docDevicesByCountry.Unit, docDevicesByCountry.Description,
+			float64(n), attrs)
+	}
+}
+
+// deviceGeo locates a device from the first GLOBALLY ROUTABLE address among the
+// magicsock endpoints it advertises.
+//
+// The endpoint list routinely leads with LAN addresses (192.168.x, fe80::), which
+// say nothing about where the device is — magicsock advertises every candidate
+// path, not a location. geoip.Enrichable is what filters them, so the same rule
+// that keeps tailnet addresses out of the flow path applies here too.
+func (c *Collector) deviceGeo(d tsapi.RichDevice) (geoip.Result, bool) {
+	for _, ep := range d.Endpoints {
+		host := ep
+		if h, _, err := net.SplitHostPort(ep); err == nil {
+			host = h
+		}
+		addr, err := netip.ParseAddr(host)
+		if err != nil || !geoip.Enrichable(addr) {
+			continue
+		}
+		if res, ok := c.geo.Lookup(addr); ok {
+			return res, true
+		}
+	}
+	return geoip.Result{}, false
 }
 
 // distroKey is the bounded (name, codename) label pair for the distro

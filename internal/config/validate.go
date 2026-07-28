@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v3/internal/redact"
 )
@@ -453,6 +454,36 @@ func (c *Config) Warnings() []string {
 			"To keep the names on flow LOGS only, set cardinality.flow.node_dims=false; otherwise size "+
 			"cardinality.metric_limit for the added cardinality and set "+
 			"enrichment.reverse_dns.acknowledge_cardinality=true to acknowledge.")
+	}
+
+	// Geo dimensions on the RAW flow-metric families are the one genuinely
+	// expensive GeoIP combination, and only when external addresses are being
+	// collapsed. With collapse_external on, every external peer contributes a
+	// single "external" series today; adding a country label splits it up to
+	// ~250 ways, per transport/traffic_type/service already on the key.
+	//
+	// The ROLLUP family deliberately does NOT trigger this: it is top-N bounded
+	// on (src,dst) pairs whatever dimensions the key carries, so geo there costs
+	// label width, not series count. Warning about the default configuration
+	// would just train operators to ignore the advisory.
+	if c.Enrichment.GeoIP.Enabled && c.Cardinality.Flow.GeoDims &&
+		c.Cardinality.Flow.CollapseExternal &&
+		(c.Cardinality.Flow.MetricsMode == "all" || c.Cardinality.Flow.MetricsMode == "both") &&
+		!c.Enrichment.GeoIP.AcknowledgeCardinality {
+		w = append(w, "cardinality.flow.geo_dims=true with cardinality.flow.metrics_mode="+c.Cardinality.Flow.MetricsMode+
+			" and collapse_external=true: on the RAW flow families the country label splits the single \"external\" "+
+			"series into up to ~250, multiplying every transport/traffic_type/service combination. Prefer "+
+			"metrics_mode: rollup (top-N bounded, so geo is nearly free there), or size cardinality.metric_limit "+
+			"for the added series and set enrichment.geoip.acknowledge_cardinality=true to acknowledge. "+
+			"Flow LOGS carry the geo and ASN attributes regardless of this toggle.")
+	}
+	// Credentials over plaintext http would be visible to anything on the path.
+	// Only reachable via an explicitly overridden endpoint (a mirror or a test
+	// server); MaxMind's own is https.
+	if c.Enrichment.GeoIP.Enabled && c.Enrichment.GeoIP.Download.Enabled &&
+		strings.HasPrefix(c.Enrichment.GeoIP.Download.Endpoint, "http://") {
+		w = append(w, "enrichment.geoip.download.endpoint uses http:// — the MaxMind account ID and license key are "+
+			"sent as HTTP Basic auth and would travel in the clear. Use https unless this is a trusted local mirror.")
 	}
 
 	if c.VersionChecks.Devices.Enabled && !c.Collectors.Devices.Enabled {
@@ -1511,6 +1542,118 @@ func (c *Config) validationChecks() []configCheck {
 		return nil
 	})
 
+	// GeoIP enrichment: local databases, an optional MaxMind downloader, or both.
+	//
+	// applyGeoIPDefaults runs FIRST and mutates the config: with the downloader
+	// on and no explicit paths, it points country_database / asn_database at
+	// where the downloader installs each requested edition. Without that, the
+	// obvious minimal config — credentials and nothing else — would download
+	// databases and never load them, the worst kind of silent no-op. It runs
+	// before the checks below so "no source configured" is judged against the
+	// resolved paths, not the raw ones.
+	c.applyGeoIPDefaults()
+
+	add("enrichment.geoip.country_database", "Set enrichment.geoip.country_database / asn_database, or enable enrichment.geoip.download.", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled {
+			return nil
+		}
+		if g.CountryDatabase == "" && g.ASNDatabase == "" {
+			return fmt.Errorf("enrichment.geoip.enabled is true but neither country_database nor asn_database is set " +
+				"(and enrichment.geoip.download is not enabled): there is nothing to enrich from")
+		}
+		return nil
+	})
+	add("enrichment.geoip.download.account_id", "Set enrichment.geoip.download.account_id to your MaxMind account ID.", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled || !g.Download.Enabled {
+			return nil
+		}
+		if g.Download.AccountID == "" {
+			return fmt.Errorf("enrichment.geoip.download.enabled requires download.account_id (your MaxMind account ID)")
+		}
+		return nil
+	})
+	add("enrichment.geoip.download.license_key", "Set enrichment.geoip.download.license_key (or license_key_file).", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled || !g.Download.Enabled {
+			return nil
+		}
+		if g.Download.LicenseKey == "" {
+			return fmt.Errorf("enrichment.geoip.download.enabled requires download.license_key or download.license_key_file")
+		}
+		return nil
+	})
+	add("enrichment.geoip.download.editions", "List MaxMind edition IDs in enrichment.geoip.download.editions (e.g. GeoLite2-Country, GeoLite2-ASN).", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled || !g.Download.Enabled {
+			return nil
+		}
+		if len(g.Download.Editions) == 0 {
+			return fmt.Errorf("enrichment.geoip.download.enabled requires at least one entry in download.editions")
+		}
+		for _, ed := range g.Download.Editions {
+			// The edition name is interpolated into a URL path AND a filename,
+			// so it is checked here rather than sanitized later into something
+			// the operator never asked for.
+			if err := geoip.ValidateEdition(ed); err != nil {
+				return fmt.Errorf("enrichment.geoip.download.editions: %w", err)
+			}
+		}
+		return nil
+	})
+	add("enrichment.geoip.download.endpoint", "Set enrichment.geoip.download.endpoint to an absolute http(s) URL.", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled || !g.Download.Enabled || g.Download.Endpoint == "" {
+			return nil
+		}
+		u, err := url.Parse(g.Download.Endpoint)
+		if err != nil || !u.IsAbs() || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("enrichment.geoip.download.endpoint %q invalid: must be an absolute http(s) URL", g.Download.Endpoint)
+		}
+		return nil
+	})
+	// A negative reload interval is not a disable switch — 0 is the documented
+	// one. Accepting a negative would make time.NewTicker panic at startup.
+	add("enrichment.geoip.reload_interval", "Set enrichment.geoip.reload_interval to >= 0 (0 disables reloading).", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled {
+			return nil
+		}
+		if g.ReloadInterval.D() < 0 {
+			return fmt.Errorf("enrichment.geoip.reload_interval must be >= 0 (0 disables reloading changed database files)")
+		}
+		return nil
+	})
+	add("enrichment.geoip.download.interval", "Set enrichment.geoip.download.interval to a positive duration.", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled || !g.Download.Enabled {
+			return nil
+		}
+		if g.Download.Interval.D() <= 0 {
+			return fmt.Errorf("enrichment.geoip.download.interval must be > 0")
+		}
+		return nil
+	})
+	add("enrichment.geoip.download.timeout", "Set enrichment.geoip.download.timeout to a positive duration.", func() error {
+		g := c.Enrichment.GeoIP
+		if !g.Enabled || !g.Download.Enabled {
+			return nil
+		}
+		if g.Download.Timeout.D() <= 0 {
+			return fmt.Errorf("enrichment.geoip.download.timeout must be > 0")
+		}
+		return nil
+	})
+	// geo_dims with geoip off would silently emit nothing at all. Saying so is
+	// much kinder than letting an operator hunt for a label that can never appear.
+	add("cardinality.flow.geo_dims", "Set enrichment.geoip.enabled: true for cardinality.flow.geo_dims.", func() error {
+		if c.Cardinality.Flow.GeoDims && !c.Enrichment.GeoIP.Enabled {
+			return fmt.Errorf("cardinality.flow.geo_dims requires enrichment.geoip.enabled: true (nothing supplies the country labels otherwise)")
+		}
+		return nil
+	})
+
 	// Profiling is opt-in. The pprof handlers are mounted on the admin server, so
 	// they need it enabled; the Pyroscope push agent needs a server to push to.
 	add("profiling.pprof.enabled", "Set admin.enabled: true for profiling.pprof.enabled.", func() error {
@@ -1732,4 +1875,63 @@ func normalizeNodeMetricsURL(raw string) string {
 	u.Scheme = strings.ToLower(u.Scheme)
 	u.Host = strings.ToLower(u.Host)
 	return u.String()
+}
+
+// applyGeoIPDefaults fills in the database paths the downloader is about to
+// install to, when the operator enabled the downloader and did not name paths
+// explicitly.
+//
+// This exists because the obvious minimal configuration is `download.enabled`
+// plus credentials — and without this, that configuration would faithfully
+// download both databases and then load neither, because country_database and
+// asn_database were still empty. A feature that quietly does nothing is worse
+// than one that fails loudly, so the paths are derived rather than required.
+//
+// An explicitly-set path always wins, and a path is only derived for an edition
+// the operator actually requested: asking for GeoLite2-Country alone must not
+// invent an asn_database that will never exist.
+func (c *Config) applyGeoIPDefaults() {
+	g := &c.Enrichment.GeoIP
+	if !g.Enabled || !g.Download.Enabled {
+		return
+	}
+	dir := g.Download.Directory
+	if dir == "" {
+		dir = DefaultGeoIPDir()
+		g.Download.Directory = dir
+	}
+	for _, ed := range g.Download.Editions {
+		if geoip.ValidateEdition(ed) != nil {
+			// Refused by the editions check; deriving a path from it would put
+			// an attacker-influenced string into a filesystem path.
+			continue
+		}
+		switch {
+		case strings.HasSuffix(ed, "-ASN"):
+			if g.ASNDatabase == "" {
+				g.ASNDatabase = geoip.DatabasePath(dir, ed)
+			}
+		case strings.HasSuffix(ed, "-Country"), strings.HasSuffix(ed, "-City"), strings.HasSuffix(ed, "-Enterprise"):
+			// City and Enterprise are supersets of Country and decode the same
+			// country/continent fields, so any of them can back country_database.
+			if g.CountryDatabase == "" {
+				g.CountryDatabase = geoip.DatabasePath(dir, ed)
+			}
+		}
+	}
+}
+
+// DefaultGeoIPDir is where downloaded GeoIP databases live when
+// enrichment.geoip.download.directory is unset. It sits beside the checkpoint
+// file in the platform's state directory: a database is regenerable state, not
+// operator-edited configuration and not a cache that may vanish mid-run.
+func DefaultGeoIPDir() string {
+	dir := userStateDir()
+	if dir == "" {
+		// Same least-bad fallback as DefaultCheckpointPath: it may well be
+		// writable, and if it is not, the downloader's error is reported and
+		// enrichment simply stays empty.
+		return filepath.Join(filepath.Dir(LegacyCheckpointPath), "geoip")
+	}
+	return filepath.Join(dir, stateDirName, "geoip")
 }

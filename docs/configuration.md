@@ -498,6 +498,71 @@ the hot path never blocks.
 | `enrichment.reverse_dns.max_entries` | `50000` | Cache size bound. |
 | `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
 
+### `enrichment.geoip`
+
+Optional geolocation and autonomous-system enrichment of external (non-Tailscale) addresses, from
+MaxMind DB (`.mmdb`) files on local disk. Off by default.
+
+**Lookups never touch the network.** The databases are loaded into memory at startup and a lookup is
+a radix-tree walk, so nothing is added to the flow-processing hot path. **Tailnet addresses are never
+geolocated** — the CGNAT range `100.64.0.0/10` and the Tailscale ULA `fd7a:115c:a1e0::/48` are
+skipped by construction, along with loopback, RFC 1918 and link-local.
+
+Budget for the memory: roughly **9 MB for GeoLite2-Country plus 12 MB for GeoLite2-ASN**, held for the
+process lifetime, and several times that for a City database. The files are read into the heap rather
+than memory-mapped on purpose — truncating a mapped database (a plain `curl -o` over the old file,
+say) faults every in-flight lookup and kills the process.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enrichment.geoip.enabled` | `false` | Turn on geo/ASN enrichment. |
+| `enrichment.geoip.country_database` | `""` | Path to a GeoLite2/GeoIP2 **Country** `.mmdb`. A **City** database is also accepted — it is a superset, and supplying one additionally fills locality, region and coordinates on flow logs. Defaults to the downloader's install path when `download.enabled` is set. |
+| `enrichment.geoip.asn_database` | `""` | Path to a GeoLite2/GeoIP2 **ASN** `.mmdb`. Defaults to the downloader's install path when `download.enabled` is set. |
+| `enrichment.geoip.reload_interval` | `6h` | Re-stat the database paths and hot-swap a changed file. This is what makes an externally-managed database work — a `geoipupdate` cron, an init container, a mounted volume. `0` disables it. |
+| `enrichment.geoip.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the advisory that fires when `cardinality.flow.geo_dims` puts country labels on the **raw** flow-metric families. |
+| `enrichment.geoip.download.enabled` | `false` | Fetch databases from MaxMind directly, so no sidecar is needed. |
+| `enrichment.geoip.download.account_id` | `""` | MaxMind account ID. A free GeoLite2 account is enough. |
+| `enrichment.geoip.download.license_key` | `""` | MaxMind license key. Keep it in an environment variable (`TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY`), never in YAML. |
+| `enrichment.geoip.download.license_key_file` | `""` | Read the license key from a file instead (Docker/Kubernetes secret style). Mutually exclusive with the value above. |
+| `enrichment.geoip.download.editions` | `[GeoLite2-Country, GeoLite2-ASN]` | MaxMind edition IDs to fetch; each installs as `<directory>/<edition>.mmdb`. Swap `GeoLite2-Country` for `GeoLite2-City` to get locality and coordinates on flow logs. |
+| `enrichment.geoip.download.directory` | `""` | Where databases are installed. Empty uses the platform state directory, beside the checkpoint file. **Mount it**, or every restart re-downloads. |
+| `enrichment.geoip.download.interval` | `24h` | How often to ask MaxMind for a newer build. Each check is a conditional request, so an unchanged database costs a `304` and no download quota. |
+| `enrichment.geoip.download.timeout` | `5m` | Per-edition download timeout. |
+| `enrichment.geoip.download.endpoint` | MaxMind's | Download API base. Override only for a local mirror. |
+
+#### What lands where
+
+The split is deliberate, and it is the whole cardinality story of this feature.
+
+| Attribute | Flow **logs** | Flow **metrics** |
+|-----------|---------------|------------------|
+| `source.geo.country.iso_code`, `destination.geo.country.iso_code` | always | only with `cardinality.flow.geo_dims` |
+| `source.geo.continent.code`, `destination.geo.continent.code` | always | only with `cardinality.flow.geo_dims` |
+| `source.as.number`, `source.as.organization.name` (and `destination.*`) | always | **never** |
+| `source.geo.locality.name`, `.region.iso_code`, `.location.lat`, `.location.lon` (City database only) | always | **never** |
+
+Country and continent are bounded (~250 and 7 values) so they can safely become metric labels. The
+autonomous system and the city-level fields are not bounded by anything useful — a log record is not
+a time series, so they cost nothing there and would be a cardinality incident on a metric.
+
+An address the databases do not cover produces **no** geo attributes rather than an `unknown`
+placeholder: an absent attribute is queryable as absent, a fabricated one is a claim the data never
+supported.
+
+#### Attribute naming
+
+The geo attributes are OpenTelemetry-native (`geo.country.iso_code`, `geo.continent.code`,
+`geo.locality.name`, `geo.region.iso_code`, `geo.location.lat`/`.lon`), carried under the
+`source.`/`destination.` prefixes that OTel's own semantic conventions sanction for them. The
+autonomous-system attributes are **ECS** (`source.as.number`, `source.as.organization.name`), because
+OpenTelemetry defines no autonomous-system namespace at all.
+
+#### Licensing
+
+GeoLite2 databases are governed by [MaxMind's GeoLite End User License Agreement](https://www.maxmind.com/en/geolite/eula)
+and incorporate GeoNames data under CC BY 4.0. No database ships with this project — you supply your
+own, whether by mounting it or by letting the downloader fetch it with your credentials.
+
 > **Listener certificates reload without a restart.** Every TLS listener — admin, Prometheus, the
 > streaming receiver and the webhook receiver — serves its certificate through a loader that notices
 > an atomic file replacement and picks it up in place. There is no SIGHUP and no reload endpoint;

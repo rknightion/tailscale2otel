@@ -120,7 +120,8 @@ func TestEnvSetKeys_MatchesEnvironmentVariablePrefix(t *testing.T) {
 // HTTP route paths (webhook.path, streaming.path, the node-metrics scrape
 // path) are a bare "path" and deliberately do not match.
 func isPathTag(tag string) bool {
-	return strings.HasSuffix(tag, "_file") || tag == "file_path" || tag == "directory"
+	return strings.HasSuffix(tag, "_file") || strings.HasSuffix(tag, "_database") ||
+		tag == "file_path" || tag == "directory"
 }
 
 // expectedPathKeys derives the set of path-bearing dotted keys directly from

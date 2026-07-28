@@ -96,6 +96,11 @@
               "description": "emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count)",
               "type": "boolean"
             },
+            "geo_dims": {
+              "default": false,
+              "description": "add source/destination geo.country.iso_code + geo.continent.code to flow METRICS (needs enrichment.geoip). Nearly free under metrics_mode: rollup (top-N bounded); on the RAW families it splits the single \"external\" series ~250 ways. ASN/city NEVER reach a metric; flow LOGS carry everything regardless",
+              "type": "boolean"
+            },
             "identity_dims": {
               "default": false,
               "description": "add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics, on BOTH families. REQUIRES node_dims (identity is node-derived, so without it identity becomes the only splitting dimension); flow LOGS always carry them",
@@ -1187,6 +1192,101 @@
           ],
           "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
+        },
+        "geoip": {
+          "additionalProperties": false,
+          "properties": {
+            "acknowledge_cardinality": {
+              "default": false,
+              "description": "set true (once metric_limit is sized) to silence the geo_dims-on-raw-flow-metrics advisory",
+              "type": "boolean"
+            },
+            "asn_database": {
+              "default": "",
+              "description": "path to a GeoLite2/GeoIP2 ASN .mmdb; the AS number and organization ride flow LOGS only, never a metric",
+              "type": "string"
+            },
+            "country_database": {
+              "default": "",
+              "description": "path to a GeoLite2/GeoIP2 Country .mmdb; a City database also works and additionally fills locality/region/coordinates on flow LOGS",
+              "type": "string"
+            },
+            "download": {
+              "additionalProperties": false,
+              "properties": {
+                "account_id": {
+                  "default": "",
+                  "description": "MaxMind account ID (a free GeoLite2 account is enough)",
+                  "type": "string"
+                },
+                "directory": {
+                  "default": "",
+                  "description": "where databases are installed; empty = \u003cstate dir\u003e/geoip (same place as the checkpoint file)",
+                  "type": "string"
+                },
+                "editions": {
+                  "description": "MaxMind edition IDs; each installs as \u003cdirectory\u003e/\u003cedition\u003e.mmdb (swap in GeoLite2-City for locality/coordinates on logs)",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "off by default; leave off if something else supplies the .mmdb files",
+                  "type": "boolean"
+                },
+                "endpoint": {
+                  "default": "https://download.maxmind.com/geoip/databases",
+                  "description": "download API base; override only for a local mirror",
+                  "type": "string"
+                },
+                "interval": {
+                  "default": "24h",
+                  "description": "how often to ask MaxMind for a newer build; each check is conditional, so an unchanged database costs a 304 and no download quota",
+                  "examples": [
+                    "24h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "license_key": {
+                  "description": "MaxMind license key — set via TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY, never in YAML",
+                  "type": "string"
+                },
+                "license_key_file": {
+                  "default": "",
+                  "description": "read the license key from a file instead (Docker/Kubernetes secret style)",
+                  "type": "string"
+                },
+                "timeout": {
+                  "default": "5m",
+                  "description": "per-edition download timeout",
+                  "examples": [
+                    "5m"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "enabled": {
+              "default": false,
+              "description": "off by default; tailnet addresses (CGNAT 100.64/10, ULA fd7a:115c:a1e0::/48) are NEVER geolocated",
+              "type": "boolean"
+            },
+            "reload_interval": {
+              "default": "6h",
+              "description": "re-stat the files above and hot-swap a changed one (this is what makes an external geoipupdate cron work; 0 disables)",
+              "examples": [
+                "6h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
         },
         "reverse_dns": {
           "additionalProperties": false,

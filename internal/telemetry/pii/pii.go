@@ -97,7 +97,7 @@ func (r *Redactor) redactKey(key string, value any) bool {
 	if cat, ok := keyCategory[key]; ok {
 		return r.disabled(cat)
 	}
-	if nonIdentifier[key] {
+	if nonIdentifier[key] || geoNonIdentifier[key] {
 		return false
 	}
 	// Unknown key (e.g. nodemetrics pass-through label): value-classify IPs only.

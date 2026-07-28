@@ -17,6 +17,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/release"
@@ -102,6 +103,7 @@ type runtimeDeps struct {
 	store        collector.CheckpointStore
 	procEmitter  telemetry.Emitter  // for shared-infra self-obs (rdns)
 	rdnsCache    *rdns.Cache        // shared external-address resolver; nil when disabled
+	geoDB        *geoip.DB          // shared local GeoIP/ASN databases; nil when disabled
 	eventStore   *eventstore.Memory // shared bounded audit/webhook event store (#300); nil when disabled
 	webhookDedup *dedup.Set         // single-tailnet webhook<->audit cross set; nil otherwise
 	tsRelease    *release.Fetcher   // shared upstream-version fetcher; nil when disabled
@@ -142,6 +144,12 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	fopts.Dedup = rt.flowDedup
 	if d.rdnsCache != nil {
 		fopts.RDNS = d.rdnsCache
+	}
+	if d.geoDB != nil {
+		fopts.Geo = d.geoDB
+		// cardinality.flow.geo_dims governs the METRIC surface only; flow LOGS
+		// carry the full geo/AS detail whenever a database is loaded.
+		fopts.GeoDims = cfg.Cardinality.Flow.GeoDims
 	}
 	// The store is fed from the processor, so both ingestion paths (poll and the
 	// stream receiver, which share this processor) populate the flow view.

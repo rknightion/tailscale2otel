@@ -622,6 +622,16 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.devices.by_country",
+      "prom_name": "tailscale_devices_by_country_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Fleet geography, emitted only when the opt-in enrichment.geoip is configured. Deliberately not on the shipped dashboard: the feature is off by default, so a panel would render empty for almost every deployment, and a geographic breakdown is a question operators ask ad hoc rather than watch. Query it directly when you want it."
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.devices.by_distro",
       "prom_name": "tailscale_devices_by_distro_ratio",
       "surface": "operational",
@@ -860,6 +870,45 @@
       "dispositions": [
         "visualized"
       ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.geoip.database.build_time",
+      "prom_name": "tailscale_geoip_database_build_time_seconds",
+      "surface": "operational",
+      "dispositions": [
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.geoip.downloads",
+      "prom_name": "tailscale_geoip_downloads_total",
+      "surface": "operational",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Per-edition download outcomes for the opt-in MaxMind updater. Not alerted on directly: a run of failures is only a problem once it makes the database stale, which ts2o-geoip-database-stale catches on the build date. This is the metric that then tells you WHY — failure vs unmodified."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.geoip.lookups",
+      "prom_name": "tailscale_geoip_lookups_total",
+      "surface": "operational",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Enrichment hit/miss/skipped accounting for an opt-in feature that is off by default. Useful when answering 'why is this address not enriched' — a high country miss rate means the database does not cover the traffic, a high skipped count means the addresses were not globally routable — but it is a debugging query, not a standing panel."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.geoip.reloads",
+      "prom_name": "tailscale_geoip_reloads_total",
+      "surface": "operational",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Counts database hot-swaps for an opt-in feature. A reload failure already logs a WARN naming the file, and staleness is covered by the ts2o-geoip-database-stale alert on build_time, which is the signal that actually matters. Query this when diagnosing a specific swap."
     },
     {
       "kind": "metric",

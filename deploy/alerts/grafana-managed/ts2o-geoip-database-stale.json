@@ -1,0 +1,105 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-geoip-database-stale"
+  },
+  "spec": {
+    "annotations": {
+      "description": "The loaded database's MaxMind BUILD date is more than 14 days old. Enrichment has not failed \u2014 flow records still get country/ASN attributes \u2014 but they are increasingly answered from stale allocations, and address space that changed hands is attributed to the wrong country or network. Note this measures the build date, not the download: an updater that runs on schedule and quietly fails every fetch looks perfectly healthy to any \"did we download recently\" check, and shows up only here. Check tailscale_geoip_downloads_total by result \u2014 a run of `failure` points at expired MaxMind credentials or a blocked egress path, while `unmodified` throughout means the endpoint genuinely has nothing newer. With enrichment.geoip.download disabled, whatever supplies the files (a geoipupdate cron, a mounted volume) has stopped; confirm the file mtime changed and that enrichment.geoip.reload_interval is not 0.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery",
+      "summary": "The {{ $labels.geoip_database }} GeoIP database has not been rebuilt in over 14 days"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (geoip_database) (time() - tailscale_geoip_database_build_time_seconds)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  1209600
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "1h0m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "GeoIP database stale",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

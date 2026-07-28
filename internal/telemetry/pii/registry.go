@@ -84,6 +84,45 @@ var identityKeys = map[string]bool{
 	"tailscale.key.owner":              true, // #165: keys.by_owner series identity (CatUserIDs)
 }
 
+// geoNonIdentifier are the GeoIP-enrichment keys (#461). Every one is DERIVED
+// from an address that is already on the record — source.address /
+// destination.address are the redactable originals, classified above by IP
+// range. Enrichment therefore adds no new identifying surface: an operator who
+// has redacted external IPs has removed the input, and one who has not is
+// already exporting a more precise identifier than "Germany".
+//
+// The coordinates are the only entries worth a second look, and they are the
+// coordinates of an IP BLOCK, not of a person: MaxMind resolves to a city or
+// regional centroid, and the accuracy radius is measured in kilometers. They are
+// also confined to flow LOGS beside the full address, so they never widen what a
+// metric exposes. Geolocating a tailnet address is impossible by construction —
+// geoip.Enrichable refuses the CGNAT range and the ULA before any lookup.
+var geoNonIdentifier = map[string]bool{
+	"source.geo.country.iso_code":      true,
+	"source.geo.continent.code":        true,
+	"source.geo.locality.name":         true,
+	"source.geo.region.iso_code":       true,
+	"source.geo.location.lat":          true,
+	"source.geo.location.lon":          true,
+	"destination.geo.country.iso_code": true,
+	"destination.geo.continent.code":   true,
+	"destination.geo.locality.name":    true,
+	"destination.geo.region.iso_code":  true,
+	"destination.geo.location.lat":     true,
+	"destination.geo.location.lon":     true,
+	"source.as.number":                 true,
+	"source.as.organization.name":      true,
+	"destination.as.number":            true,
+	"destination.as.organization.name": true,
+	// Device geography, on the bounded fleet rollup only.
+	"geo.country.iso_code": true,
+	"geo.continent.code":   true,
+	// Self-observability dimensions: which database, which MaxMind edition.
+	// Closed sets naming software, not addresses or people.
+	"geoip.database": true,
+	"geoip.edition":  true,
+}
+
 // nonIdentifier is the explicit allowlist of keys that are never PII/identifiers.
 var nonIdentifier = map[string]bool{
 	"network.io.direction": true, "network.transport": true, "network.type": true,
@@ -236,5 +275,5 @@ func IsClassified(key string) bool {
 	if _, ok := keyCategory[key]; ok {
 		return true
 	}
-	return ipValueKeys[key] || nonIdentifier[key]
+	return ipValueKeys[key] || nonIdentifier[key] || geoNonIdentifier[key]
 }

@@ -335,7 +335,7 @@ tuning signals, not incidents.
 ## Enrichment and discovery {#enrichment-and-discovery}
 
 **Rules:** `ts2o-enrich-cache-stale`, `ts2o-nodemetrics-discovery-failing`,
-`ts2o-rdns-cache-overflowing`
+`ts2o-rdns-cache-overflowing`, `ts2o-geoip-database-stale`
 
 **What it means.** The IP/nodeID → name cache has not refreshed, or dynamic node-metrics target
 discovery is failing. Neither stops data flowing — both degrade it silently. Stale enrichment means
@@ -357,6 +357,35 @@ devices scrapes are failing — go to [Collector scrape health](#collector-scrap
 sustained rDNS overflow rate that does not clear after raising `max_entries` means the working set of
 distinct external IPs is larger than expected — check the flow-log volume before raising the limit
 further.
+
+### A stale GeoIP database
+
+`ts2o-geoip-database-stale` is the fourth signal in this family and the one whose failure mode is
+easiest to miss. It measures `time() - tailscale_geoip_database_build_time_seconds`, i.e. how old
+**MaxMind's build** is — not how recently anything was downloaded. That distinction is the whole
+point: an updater that runs on schedule and fails every fetch keeps its timer green, keeps logging
+activity, and looks perfectly healthy to any "did we sync recently" check. Only the build date
+exposes it. Enrichment does not fail meanwhile; flow records still get country and ASN attributes,
+just increasingly answered from allocations that have since moved.
+
+Triage in this order:
+
+1. **`sum by (result) (rate(tailscale_geoip_downloads_total[1h]))`.** A run of `failure` is expired
+   or revoked MaxMind credentials, or blocked egress to `download.maxmind.com` — the WARN log names
+   the HTTP status. All `unmodified` means the endpoint genuinely has nothing newer, which for
+   GeoLite2 (rebuilt twice a week) is only plausible for a few days.
+2. **No `downloads` series at all** means `enrichment.geoip.download.enabled` is off, so something
+   external supplies the files. Check that whatever writes them still runs, and that the file's mtime
+   actually changed — the process reloads on `(mtime, size)`, so a rewrite that preserves both is
+   invisible.
+3. **`enrichment.geoip.reload_interval: 0`** disables reloading entirely, so a database refreshed on
+   disk is never picked up until a restart. The status page shows the loaded build time, which will
+   disagree with the file on disk in that case.
+
+Reloading is failure-tolerant by design: a database that cannot be read leaves the previously loaded
+one serving, and `tailscale_geoip_reloads_total{result="failure"}` plus a WARN naming the file is the
+only symptom. That is deliberate — degraded enrichment must never become a degraded exporter — but it
+does mean a broken file can sit there indefinitely while everything looks fine except this rule.
 
 **First step.** **Enrich cache age** and **Enrich cache devices** on the Exporter Diagnostics tab.
 If the age is climbing, check the devices collector's scrape success. For discovery, **Discovery OK**

@@ -71,6 +71,9 @@
                                 "exit_node_attribution": {
                                     "type": "boolean"
                                 },
+                                "geo_dims": {
+                                    "type": "boolean"
+                                },
                                 "identity_dims": {
                                     "type": "boolean"
                                 },
@@ -631,6 +634,63 @@
                     "properties": {
                         "cache_ttl": {
                             "type": "string"
+                        },
+                        "geoip": {
+                            "type": "object",
+                            "properties": {
+                                "acknowledge_cardinality": {
+                                    "type": "boolean"
+                                },
+                                "asn_database": {
+                                    "type": "string"
+                                },
+                                "country_database": {
+                                    "type": "string"
+                                },
+                                "download": {
+                                    "type": "object",
+                                    "properties": {
+                                        "account_id": {
+                                            "type": "string"
+                                        },
+                                        "directory": {
+                                            "type": "string"
+                                        },
+                                        "editions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "endpoint": {
+                                            "type": "string"
+                                        },
+                                        "interval": {
+                                            "type": "string"
+                                        },
+                                        "license_key": {
+                                            "type": "string"
+                                        },
+                                        "license_key_file": {
+                                            "type": "string"
+                                        },
+                                        "timeout": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "reload_interval": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
                         },
                         "reverse_dns": {
                             "type": "object",

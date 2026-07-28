@@ -59,6 +59,7 @@ type rollupKey struct {
 	path        string
 	derpRegion  string
 	identity    identityKey
+	geo         geoKey
 }
 
 // identityKey is the node-derived identity half of a rollupKey, split out so the
@@ -66,6 +67,20 @@ type rollupKey struct {
 type identityKey struct {
 	srcUser, srcTags, srcOS string
 	dstUser, dstTags, dstOS string
+}
+
+// geoKey is the address-derived geography half of a rollupKey, split out for the
+// same reason identityKey is: the __other__ fold zeroes it in one assignment.
+//
+// Only the COUNTRY and CONTINENT live here. The autonomous system deliberately
+// does not: it is bounded by nothing useful, and #461 confines it to flow logs.
+// Unlike identity, geo is NOT node-derived, so it is not forced off when node
+// dimensions are off -- with nodes off and external addresses collapsed,
+// "which countries is this tailnet talking to" is precisely the question a
+// low-cardinality rollup should still be able to answer.
+type geoKey struct {
+	srcCountry, srcContinent string
+	dstCountry, dstContinent string
 }
 
 // rollupEntry accumulates a flow's bytes and packets (both directions) for one
@@ -91,6 +106,7 @@ type rollupAccumulator struct {
 	topN     int
 	nodes    bool
 	identity bool
+	geo      bool
 
 	mu       sync.Mutex
 	entries  map[rollupKey]*rollupEntry
@@ -108,7 +124,12 @@ type rollupAccumulator struct {
 // the rollup — exactly the cardinality an operator turning node_dims off is
 // trying to shed. Silently honoring it there would make node_dims a lever that
 // does not lower cardinality.
-func newRollupAccumulator(topN int, nodes, identity bool) *rollupAccumulator {
+//
+// geo mirrors cardinality.flow.geo_dims and is NOT gated on nodes: geography is
+// a property of the address, not of the node, so it stays meaningful (and
+// bounded -- the whole family is top-N capped whatever the key carries) with
+// node dimensions off.
+func newRollupAccumulator(topN int, nodes, identity, geo bool) *rollupAccumulator {
 	if topN <= 0 {
 		topN = defaultRollupTopN
 	}
@@ -116,6 +137,7 @@ func newRollupAccumulator(topN int, nodes, identity bool) *rollupAccumulator {
 		topN:     topN,
 		nodes:    nodes,
 		identity: identity && nodes,
+		geo:      geo,
 		entries:  map[rollupKey]*rollupEntry{},
 		dstPeers: map[string]map[string]struct{}{},
 		dstPorts: map[string]map[string]struct{}{},
@@ -142,6 +164,7 @@ type rollupDims struct {
 	path        string
 	derpRegion  string
 	identity    identityKey
+	geo         geoKey
 }
 
 // key builds the accumulator key for one connection, applying the node and
@@ -160,6 +183,9 @@ func (a *rollupAccumulator) key(d rollupDims) rollupKey {
 	}
 	if a.identity {
 		k.identity = d.identity
+	}
+	if a.geo {
+		k.geo = d.geo
 	}
 	return k
 }
@@ -184,6 +210,9 @@ func (a *rollupAccumulator) otherKey(d rollupDims) rollupKey {
 		k.srcNode = semconv.RollupOther
 		k.dstNode = semconv.RollupOther
 	}
+	// Geo drops out of the fold for the same reason identity does: the remainder
+	// spans many countries, and an __other__ country code would read as a real
+	// ISO code. Dropping it also keeps the fold's key space bounded.
 	return k
 }
 
@@ -392,6 +421,10 @@ func (k rollupKey) attrs() telemetry.Attrs {
 	setIfNotEmpty(a, semconv.AttrDstUser, k.identity.dstUser)
 	setIfNotEmpty(a, semconv.AttrDstTags, k.identity.dstTags)
 	setIfNotEmpty(a, semconv.AttrDstOS, k.identity.dstOS)
+	setIfNotEmpty(a, semconv.SourceGeoCountryISO, k.geo.srcCountry)
+	setIfNotEmpty(a, semconv.SourceGeoContinentCode, k.geo.srcContinent)
+	setIfNotEmpty(a, semconv.DestinationGeoCountryISO, k.geo.dstCountry)
+	setIfNotEmpty(a, semconv.DestGeoContinentCode, k.geo.dstContinent)
 	return a
 }
 
@@ -426,6 +459,10 @@ func lessRollupKey(a, b rollupKey) bool {
 		{a.identity.dstUser, b.identity.dstUser},
 		{a.identity.dstTags, b.identity.dstTags},
 		{a.identity.dstOS, b.identity.dstOS},
+		{a.geo.srcCountry, b.geo.srcCountry},
+		{a.geo.srcContinent, b.geo.srcContinent},
+		{a.geo.dstCountry, b.geo.dstCountry},
+		{a.geo.dstContinent, b.geo.dstContinent},
 	} {
 		if p[0] != p[1] {
 			return p[0] < p[1]

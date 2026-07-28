@@ -111,6 +111,7 @@ func (a *App) buildStatus() statusdata.Status {
 		Collectors:    a.collectorStatuses(now),
 		Cache:         a.cacheInfo(),
 		RDNS:          a.rdnsInfo(),
+		GeoIP:         a.geoipInfo(),
 		Dedup:         a.dedupInfo(),
 		Devices:       a.deviceRows(),
 		NodeDiscovery: a.nodeDiscovery(),
@@ -603,6 +604,42 @@ func (a *App) rdnsInfo() statusdata.RDNSInfo {
 	}
 	if !s.LastPurge.IsZero() {
 		info.LastPurge = s.LastPurge.UTC().Format(rfc3339)
+	}
+	return info
+}
+
+// geoipInfo snapshots the GeoIP databases for the status page. Like rdnsInfo it
+// reads Stats() directly, so the numbers show whether or not self-observability
+// (which gates the OTEL metrics) is on.
+func (a *App) geoipInfo() statusdata.GeoIPInfo {
+	if a.geoDB == nil {
+		return statusdata.GeoIPInfo{Enabled: false}
+	}
+	s := a.geoDB.Stats()
+	info := statusdata.GeoIPInfo{
+		Enabled:         true,
+		CountryPath:     s.CountryPath,
+		CountryType:     s.CountryType,
+		ASNPath:         s.ASNPath,
+		ASNType:         s.ASNType,
+		DownloadEnabled: a.cfg.Enrichment.GeoIP.Download.Enabled,
+		CountryHits:     s.CountryHits,
+		CountryMisses:   s.CountryMisses,
+		ASNHits:         s.ASNHits,
+		ASNMisses:       s.ASNMisses,
+		Skipped:         s.Skipped,
+		Reloads:         s.CountryReloads + s.ASNReloads,
+		ReloadFailures:  s.ReloadFailures,
+		GeoDims:         a.cfg.Cardinality.Flow.GeoDims,
+	}
+	now := time.Now()
+	if !s.CountryBuildTime.IsZero() {
+		info.CountryBuildTime = s.CountryBuildTime.UTC().Format(rfc3339)
+		info.CountryAge = humanDuration(now.Sub(s.CountryBuildTime))
+	}
+	if !s.ASNBuildTime.IsZero() {
+		info.ASNBuildTime = s.ASNBuildTime.UTC().Format(rfc3339)
+		info.ASNAge = humanDuration(now.Sub(s.ASNBuildTime))
 	}
 	return info
 }

@@ -1405,6 +1405,30 @@ def groups():
               domain="observability", paused=True,
               policy="optional", runbook="enrichment-and-discovery",
               panel="rDNS cache overflows vs lookups/s"),
+        # A stale GeoIP database degrades silently and indefinitely: lookups keep
+        # succeeding, they just answer from data that no longer reflects the
+        # internet. This is measured against MaxMind's BUILD date rather than the
+        # last download, which is what makes it catch an updater that is still
+        # running and no longer working — the failure mode a "did we download
+        # recently" check misses entirely. GeoLite2 rebuilds twice a week, so 14
+        # days is several missed builds, not one late one.
+        alert("ts2o-geoip-database-stale", "GeoIP database stale",
+              "max by (geoip_database) (time() - tailscale_geoip_database_build_time_seconds)",
+              "gt", 1209600, "1h", "warning",
+              "The {{ $labels.geoip_database }} GeoIP database has not been rebuilt in over 14 days",
+              "The loaded database's MaxMind BUILD date is more than 14 days old. Enrichment has not "
+              "failed — flow records still get country/ASN attributes — but they are increasingly "
+              "answered from stale allocations, and address space that changed hands is attributed to "
+              "the wrong country or network. Note this measures the build date, not the download: an "
+              "updater that runs on schedule and quietly fails every fetch looks perfectly healthy to "
+              "any \"did we download recently\" check, and shows up only here. Check "
+              "tailscale_geoip_downloads_total by result — a run of `failure` points at expired "
+              "MaxMind credentials or a blocked egress path, while `unmodified` throughout means the "
+              "endpoint genuinely has nothing newer. With enrichment.geoip.download disabled, whatever "
+              "supplies the files (a geoipupdate cron, a mounted volume) has stopped; confirm the file "
+              "mtime changed and that enrichment.geoip.reload_interval is not 0.",
+              domain="observability", paused=True,
+              policy="optional", runbook="enrichment-and-discovery"),
         alert("ts2o-stream-records-skipped", "Stream records skipped",
               "sum by (reason) (rate(tailscale_stream_skipped_total[15m]))",
               "gt", 0, "15m", "warning",

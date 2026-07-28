@@ -555,6 +555,66 @@ type TLSConfig struct {
 type EnrichmentConfig struct {
 	CacheTTL   Duration         `yaml:"cache_ttl"`
 	ReverseDNS ReverseDNSConfig `yaml:"reverse_dns"`
+	GeoIP      GeoIPConfig      `yaml:"geoip"`
+}
+
+// GeoIPConfig configures opt-in geolocation and autonomous-system enrichment of
+// EXTERNAL (non-Tailscale) addresses, from MaxMind DB files on local disk.
+//
+// Lookups are purely local — the databases are loaded into memory and a lookup
+// never touches the network. The optional Download block keeps those files
+// current from MaxMind's download API; an operator who already runs geoipupdate
+// (or mounts the files in) leaves it off and just points the two paths at them,
+// and ReloadInterval picks up whatever rewrites them.
+type GeoIPConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// CountryDatabase is a GeoLite2/GeoIP2 Country .mmdb. A City database is
+	// accepted (it is a superset) but only the country and continent fields are
+	// ever read — locality and lat/lon are a genuine cardinality problem and are
+	// deliberately not emitted.
+	CountryDatabase string `yaml:"country_database"`
+	// ASNDatabase is a GeoLite2/GeoIP2 ASN .mmdb.
+	ASNDatabase string `yaml:"asn_database"`
+	// ReloadInterval is how often the configured paths are re-stat'ed and a
+	// changed file hot-swapped in. This is what makes the operator-managed path
+	// work, and it is NOT the same clock as download.interval — that one asks
+	// MaxMind for a newer build, this one notices a file that changed on disk.
+	// 0 disables reloading (the databases are then loaded once at startup).
+	ReloadInterval Duration `yaml:"reload_interval"`
+	// Download keeps the database files current from MaxMind directly.
+	Download GeoIPDownloadConfig `yaml:"download"`
+	// AcknowledgeCardinality silences the startup advisory that fires when
+	// cardinality.flow.geo_dims puts country labels on the RAW flow-metric
+	// families. Purely an acknowledgement; it changes no emission.
+	AcknowledgeCardinality bool `yaml:"acknowledge_cardinality"`
+}
+
+// GeoIPDownloadConfig configures the built-in MaxMind downloader. It is a
+// convenience so a container needs no sidecar; leaving it off and supplying the
+// files by any other means is equally supported.
+type GeoIPDownloadConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// AccountID and LicenseKey are the MaxMind credentials, sent as HTTP Basic
+	// auth. A free GeoLite2 account is enough.
+	AccountID  string `yaml:"account_id"`
+	LicenseKey Secret `yaml:"license_key"`
+	// LicenseKeyFile is the *_file sibling of LicenseKey (value XOR file).
+	LicenseKeyFile string `yaml:"license_key_file"`
+	// Editions are the MaxMind edition IDs to fetch, e.g. GeoLite2-Country and
+	// GeoLite2-ASN. Each is installed as <directory>/<edition>.mmdb.
+	Editions []string `yaml:"editions"`
+	// Directory is where downloaded databases are installed. Empty selects
+	// <state dir>/geoip, the same platform-appropriate location the checkpoint
+	// file uses.
+	Directory string `yaml:"directory"`
+	// Interval is how often to ask MaxMind for a newer build. Each check is a
+	// conditional request, so an unchanged database costs a 304 and does not
+	// count against MaxMind's daily download limit.
+	Interval Duration `yaml:"interval"`
+	// Timeout bounds one edition's download end to end.
+	Timeout Duration `yaml:"timeout"`
+	// Endpoint is the download API base; empty selects MaxMind's.
+	Endpoint string `yaml:"endpoint"`
 }
 
 // ReverseDNSConfig configures opt-in reverse-DNS (PTR) enrichment of EXTERNAL
@@ -663,6 +723,18 @@ type FlowCardinality struct {
 	// tailscale.exit_node.io/packets counters attributing exit traffic to the
 	// relaying node. Bounded by exit-node count; independent of MetricsMode.
 	ExitNodeAttribution bool `yaml:"exit_node_attribution"`
+	// GeoDims adds source/destination geo.country.iso_code and
+	// geo.continent.code to flow METRICS when enrichment.geoip is on. Default
+	// false; flow LOGS always carry them (along with the ASN, which never
+	// reaches a metric at all).
+	//
+	// The cost depends entirely on MetricsMode. On the ROLLUP family it is
+	// nearly free: that family is top-N bounded on (src,dst) pairs regardless
+	// of how many dimensions the key carries. On the RAW family with
+	// collapse_external on, every external address is one "external" series
+	// today and a country label splits it up to ~250 ways — which is what the
+	// startup advisory warns about.
+	GeoDims bool `yaml:"geo_dims"`
 }
 
 // PerEntityCardinality gates the per-entity gauges of the inventory collectors.

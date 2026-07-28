@@ -81,6 +81,20 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__STALE_TTL` | `1h` | keep serving a resolved name this long past cache_ttl while one refresh runs (0 disables; stops the flow label flapping to external at every expiry) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__MAX_ENTRIES` | `50000` | PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ACKNOWLEDGE_CARDINALITY` | `false` | set true (once metric_limit is sized) to silence the enabled+node_dims cardinality advisory |
+| `TS2OTEL_ENRICHMENT__GEOIP__ENABLED` | `false` | off by default; tailnet addresses (CGNAT 100.64/10, ULA fd7a:115c:a1e0::/48) are NEVER geolocated |
+| `TS2OTEL_ENRICHMENT__GEOIP__COUNTRY_DATABASE` | `""` | path to a GeoLite2/GeoIP2 Country .mmdb; a City database also works and additionally fills locality/region/coordinates on flow LOGS |
+| `TS2OTEL_ENRICHMENT__GEOIP__ASN_DATABASE` | `""` | path to a GeoLite2/GeoIP2 ASN .mmdb; the AS number and organization ride flow LOGS only, never a metric |
+| `TS2OTEL_ENRICHMENT__GEOIP__RELOAD_INTERVAL` | `6h` | re-stat the files above and hot-swap a changed one (this is what makes an external geoipupdate cron work; 0 disables) |
+| `TS2OTEL_ENRICHMENT__GEOIP__ACKNOWLEDGE_CARDINALITY` | `false` | set true (once metric_limit is sized) to silence the geo_dims-on-raw-flow-metrics advisory |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__ENABLED` | `false` | off by default; leave off if something else supplies the .mmdb files |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__ACCOUNT_ID` | `""` | MaxMind account ID (a free GeoLite2 account is enough) |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY` | `""` | MaxMind license key — set via TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY, never in YAML |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY_FILE` | `""` | read the license key from a file instead (Docker/Kubernetes secret style) |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__EDITIONS` | `[GeoLite2-Country, GeoLite2-ASN]` | MaxMind edition IDs; each installs as <directory>/<edition>.mmdb (swap in GeoLite2-City for locality/coordinates on logs) _(comma-separated list)_ |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__DIRECTORY` | `""` | where databases are installed; empty = <state dir>/geoip (same place as the checkpoint file) |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__INTERVAL` | `24h` | how often to ask MaxMind for a newer build; each check is conditional, so an unchanged database costs a 304 and no download quota |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__TIMEOUT` | `5m` | per-edition download timeout |
+| `TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__ENDPOINT` | `https://download.maxmind.com/geoip/databases` | download API base; override only for a local mirror |
 | `TS2OTEL_CARDINALITY__METRIC_LIMIT` | `10000` | hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited) |
 | `TS2OTEL_CARDINALITY__DERP_REGION_ROLLUP` | `true` | emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*) |
 | `TS2OTEL_CARDINALITY__SUBNET_ROUTE_ROLLUP` | `true` | emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless |
@@ -95,6 +109,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CARDINALITY__FLOW__IDENTITY_DIMS` | `false` | add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics, on BOTH families. REQUIRES node_dims (identity is node-derived, so without it identity becomes the only splitting dimension); flow LOGS always carry them |
 | `TS2OTEL_CARDINALITY__FLOW__COLLAPSE_EXTERNAL` | `true` | bucket unresolved IPs as external/unknown (keeps cardinality bounded) |
 | `TS2OTEL_CARDINALITY__FLOW__EXIT_NODE_ATTRIBUTION` | `true` | emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count) |
+| `TS2OTEL_CARDINALITY__FLOW__GEO_DIMS` | `false` | add source/destination geo.country.iso_code + geo.continent.code to flow METRICS (needs enrichment.geoip). Nearly free under metrics_mode: rollup (top-N bounded); on the RAW families it splits the single "external" series ~250 ways. ASN/city NEVER reach a metric; flow LOGS carry everything regardless |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__DEVICE` | `true` | per-device gauges (online/last_seen/key_expiry/derp/routes) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__USER` | `true` | per-user gauges (devices/connected/last_seen) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__KEY` | `true` | per-key expiry gauge (the expiry WARN log fires regardless) |

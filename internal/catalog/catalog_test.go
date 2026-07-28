@@ -29,6 +29,7 @@ var canonicalGroups = map[string]bool{
 	"Receivers":              true,
 	"Node metrics":           true,
 	"Reverse DNS":            true,
+	"GeoIP":                  true,
 	"Object-store ingestion": true,
 }
 

@@ -52,7 +52,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| operational | 204 | 194 | 56 | 11 | 6 | 0 |
+| operational | 209 | 194 | 57 | 11 | 10 | 0 |
 | self_obs | 71 | 65 | 29 | 9 | 2 | 2 |
 
 ## Operational signals
@@ -122,6 +122,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device_invites.count` | metric | `tailscale_device_invites_count_ratio` | visualized, alertable |  |
 | `tailscale.device_invites.pending_age` | metric | `tailscale_device_invites_pending_age_seconds` | visualized |  |
 | `tailscale.devices.age` | metric | `tailscale_devices_age_seconds` | visualized |  |
+| `tailscale.devices.by_country` | metric | `tailscale_devices_by_country_ratio` | raw_only | Fleet geography, emitted only when the opt-in enrichment.geoip is configured. Deliberately not on the shipped dashboard: the feature is off by default, so a panel would render empty for almost every deployment, and a geographic breakdown is a question operators ask ad hoc rather than watch. Query it directly when you want it. |
 | `tailscale.devices.by_distro` | metric | `tailscale_devices_by_distro_ratio` | visualized |  |
 | `tailscale.devices.by_tag` | metric | `tailscale_devices_by_tag_ratio` | visualized |  |
 | `tailscale.devices.by_version` | metric | `tailscale_devices_by_version_ratio` | visualized |  |
@@ -148,6 +149,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.exit_nodes.count` | metric | `tailscale_exit_nodes_count_ratio` | visualized |  |
 | `tailscale.feature.enabled` | metric | `tailscale_feature_enabled_ratio` | visualized, alertable |  |
 | `tailscale.fleet.latest_version` | metric | `tailscale_fleet_latest_version_ratio` | visualized |  |
+| `tailscale.geoip.database.build_time` | metric | `tailscale_geoip_database_build_time_seconds` | alertable |  |
+| `tailscale.geoip.downloads` | metric | `tailscale_geoip_downloads_total` | raw_only | Per-edition download outcomes for the opt-in MaxMind updater. Not alerted on directly: a run of failures is only a problem once it makes the database stale, which ts2o-geoip-database-stale catches on the build date. This is the metric that then tells you WHY — failure vs unmodified. |
+| `tailscale.geoip.lookups` | metric | `tailscale_geoip_lookups_total` | raw_only | Enrichment hit/miss/skipped accounting for an opt-in feature that is off by default. Useful when answering 'why is this address not enriched' — a high country miss rate means the database does not cover the traffic, a high skipped count means the addresses were not globally routable — but it is a debugging query, not a standing panel. |
+| `tailscale.geoip.reloads` | metric | `tailscale_geoip_reloads_total` | raw_only | Counts database hot-swaps for an opt-in feature. A reload failure already logs a WARN naming the file, and staleness is covered by the ts2o-geoip-database-stale alert on build_time, which is the signal that actually matters. Query this when diagnosing a specific swap. |
 | `tailscale.key.allowed_tags` | metric | `tailscale_key_allowed_tags_ratio` | visualized |  |
 | `tailscale.key.expiry` | metric | `tailscale_key_expiry_seconds` | visualized, alertable |  |
 | `tailscale.key.preauthorized` | metric | `tailscale_key_preauthorized_ratio` | visualized |  |

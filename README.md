@@ -23,7 +23,7 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 |---|---|
 | **255** metrics + **15** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
-| **122** shipped rules | **99** alert + **23** recording, Grafana-managed |
+| **123** shipped rules | **100** alert + **23** recording, Grafana-managed |
 | **1** Grafana dashboard | flagship, 10 tabs, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
@@ -61,6 +61,11 @@ cardinality control that makes flow logs survivable on a metrics backend.
 - **Four ingestion paths into one pipeline** — poll the API, receive Tailscale's log stream on a
   built-in Splunk-HEC-compatible receiver, read Tailscale's flow-log export straight out of an
   S3-compatible bucket, or take real-time HMAC-verified webhooks. All four feed the same processors.
+- **Offline GeoIP and ASN enrichment of external peers.** Optional, from MaxMind `.mmdb` files on
+  local disk — no hosted lookup service, no per-address network call on the hot path. Country and
+  continent are bounded and can go on flow metrics; the autonomous system (and, with a City database,
+  locality and coordinates) ride the flow logs, where a breakdown costs nothing. Databases hot-swap on
+  a schedule, with a built-in MaxMind updater if you want one. Tailnet addresses are never geolocated.
 - **Multi-tailnet / MSP mode** — one process observing N tailnets, each with its own credentials, and
   `tailscale.tailnet` as a real label on every signal (no `target_info` join required).
 - **PII redaction on by default** — 13 opt-out categories covering emails, user IDs, hostnames, IPs,
@@ -225,8 +230,8 @@ receiver auth, object-gap handling, and `auto_configure` are in
   hard requirement** — 12.4 accepts the file with a `200` and renders nothing, and 11.5 rejects it
   with the misleading `Dashboard title cannot be empty`. Push it with `gcx resources push -f`. See
   [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
-- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **99 alert
-  rules and 23 recording rules** (122 total) as `rules.alerting.grafana.app` manifests, one JSON per
+- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **100 alert
+  rules and 23 recording rules** (123 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
   `runbook_url`, and 77 of 78 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and

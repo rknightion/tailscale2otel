@@ -29,6 +29,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/webhooks"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/stream"
@@ -62,6 +63,7 @@ var metricSources = []func() []metricdoc.Metric{
 	flowlog.Catalog,
 	audit.Catalog,
 	rdns.Catalog,
+	geoip.Catalog,
 	stream.Catalog,
 	webhook.Catalog,
 }

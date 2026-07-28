@@ -1,6 +1,10 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
+)
 
 // dur is a small helper to express a Duration default from a time.Duration.
 func dur(d time.Duration) Duration { return Duration(d) }
@@ -87,6 +91,25 @@ func Default() *Config {
 				// enough that a genuinely changed PTR is picked up the same day.
 				StaleTTL:   dur(time.Hour),
 				MaxEntries: 50000,
+			},
+			GeoIP: GeoIPConfig{
+				Enabled: false,
+				// Two independent clocks, both deliberately chosen: 6h notices a
+				// file an external updater rewrote (cheap — one stat per file),
+				// 24h asks MaxMind whether it has published a newer build.
+				// GeoLite2 rebuilds twice a week, and each check is a conditional
+				// request that costs a 304 when nothing changed.
+				ReloadInterval: dur(6 * time.Hour),
+				Download: GeoIPDownloadConfig{
+					Enabled:  false,
+					Editions: []string{"GeoLite2-Country", "GeoLite2-ASN"},
+					Interval: dur(24 * time.Hour),
+					// Generous: the ASN database is ~6 MB compressed and this
+					// runs on a background goroutine where a slow link costs
+					// nothing but a later retry.
+					Timeout:  dur(5 * time.Minute),
+					Endpoint: geoip.DefaultEndpoint,
+				},
 			},
 		},
 		Cardinality: CardinalityConfig{

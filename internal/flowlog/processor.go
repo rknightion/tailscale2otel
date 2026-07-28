@@ -3,6 +3,7 @@ package flowlog
 import (
 	"fmt"
 	"maps"
+	"math"
 	"net"
 	"net/netip"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/portservice"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
@@ -78,6 +80,17 @@ type Options struct {
 	// host (IP) instead of collapsing it to "external"/"unknown". The zero value
 	// (false) preserves the collapsing behavior.
 	KeepExternalAddrs bool
+	// Geo, when non-nil, supplies country/continent/AS (and, with a City
+	// database, city/region/coordinates) for EXTERNAL addresses from local
+	// MaxMind databases. Flow LOGS carry everything it returns; flow METRICS
+	// carry only the country and continent, and only when GeoDims is set.
+	Geo geoip.Lookup
+	// GeoDims adds the bounded source/destination country and continent to flow
+	// METRIC attributes (raw and rollup families). Default false. The AS number,
+	// AS organization, city, region and coordinates NEVER reach a metric under
+	// any setting -- none of them is bounded by anything useful, and the flow
+	// logs answer those breakdowns exactly.
+	GeoDims bool
 	// RDNS, when non-nil, supplies reverse-DNS (PTR) names for EXTERNAL addresses:
 	// a cached hit replaces "external"/raw-IP in src/dst node with the hostname.
 	// It is consulted only for non-Tailscale addresses and never blocks.
@@ -164,6 +177,8 @@ type Processor struct {
 	keepExternal bool
 	identity     bool
 	rdns         rdns.Resolver
+	geo          geoip.Lookup
+	geoDims      bool
 	dedup        *dedup.Set
 	maxLogs      int
 	// rollup is non-nil in "rollup"/"both" mode; it accumulates per-connection
@@ -208,6 +223,8 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		keepExternal:           opts.KeepExternalAddrs,
 		identity:               opts.IdentityDims,
 		rdns:                   opts.RDNS,
+		geo:                    opts.Geo,
+		geoDims:                opts.GeoDims,
 		dedup:                  opts.Dedup,
 		maxLogs:                opts.MaxLogRecordsPerWindow,
 		exitNode:               opts.ExitNodeAttribution,
@@ -217,7 +234,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		trustedReporterTags:    stringSet(opts.TrustedReporterTags),
 	}
 	if flowMode == flowModeRollup || flowMode == flowModeBoth {
-		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims, opts.IdentityDims)
+		p.rollup = newRollupAccumulator(opts.RollupTopN, opts.NodeDims, opts.IdentityDims, opts.GeoDims && opts.Geo != nil)
 	}
 	return p
 }
@@ -411,6 +428,13 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		dstService = serviceName(transport, dstPort)
 	}
 
+	// Geo/AS enrichment of the two endpoints. Both lookups are local and
+	// allocation-free, and geoip.Lookup itself refuses every non-global address
+	// -- including the tailnet CGNAT range and ULA -- so a tailnet endpoint
+	// simply comes back empty and contributes no attributes at all.
+	srcGeo := p.lookupGeo(srcAddr)
+	dstGeo := p.lookupGeo(dstAddr)
+
 	// Raw per-connection io/packets families (all/both mode). In rollup mode the
 	// bounded *.rollup families are emitted by FlushRollup from the accumulator
 	// instead; these high-cardinality raw families are suppressed.
@@ -448,6 +472,11 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		if p.identity {
 			addIdentityAttrs(metricAttrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
 		}
+		if p.geoDims {
+			// Country and continent only. The AS pair, and anything a City
+			// database adds, stay on the logs -- see Options.GeoDims.
+			addGeoMetricAttrs(metricAttrs, srcGeo, dstGeo)
+		}
 
 		// MetricIO (bytes): transmit + receive. Name/unit/description come from the
 		// catalog (catalog.go) so they cannot drift from the generated docs.
@@ -480,6 +509,12 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 		// actually key on identity — refByAddr walks the record's embedded blocks.
 		if p.rollup.wantsIdentity() {
 			d.identity = identityOf(flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+		}
+		d.geo = geoKey{
+			srcCountry:   srcGeo.CountryISO,
+			srcContinent: srcGeo.ContinentCode,
+			dstCountry:   dstGeo.CountryISO,
+			dstContinent: dstGeo.ContinentCode,
 		}
 		p.rollup.record(d,
 			float64(cc.TxBytes), float64(cc.RxBytes), float64(cc.TxPkts), float64(cc.RxPkts))
@@ -529,7 +564,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
-		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter, e)
+		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e)
 	}
 }
 
@@ -884,6 +919,77 @@ func addPathAttrs(attrs telemetry.Attrs, path, derpRegion string) {
 	}
 }
 
+// lookupGeo resolves one endpoint address through the configured GeoIP
+// databases. A nil resolver, an unparseable address, a tailnet or otherwise
+// non-global address, or an address the databases do not cover all yield the
+// zero Result -- which contributes no attributes anywhere.
+func (p *Processor) lookupGeo(host string) geoip.Result {
+	if p.geo == nil || host == "" {
+		return geoip.Result{}
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return geoip.Result{}
+	}
+	res, _ := p.geo.Lookup(addr)
+	return res
+}
+
+// addGeoMetricAttrs adds the BOUNDED half of a geo result -- country and
+// continent -- to metric attributes. Nothing else from a Result may go on a
+// metric: see Options.GeoDims.
+func addGeoMetricAttrs(attrs telemetry.Attrs, src, dst geoip.Result) {
+	setAttrIfNotEmpty(attrs, semconv.SourceGeoCountryISO, src.CountryISO)
+	setAttrIfNotEmpty(attrs, semconv.SourceGeoContinentCode, src.ContinentCode)
+	setAttrIfNotEmpty(attrs, semconv.DestinationGeoCountryISO, dst.CountryISO)
+	setAttrIfNotEmpty(attrs, semconv.DestGeoContinentCode, dst.ContinentCode)
+}
+
+// addGeoLogAttrs adds the FULL geo result to a flow log record. Logs are the
+// full-fidelity surface, so everything the databases returned goes here: the
+// bounded country/continent, the autonomous system, and -- when the operator
+// supplied a City database rather than a Country one -- the city, region and
+// coordinates. None of the latter is bounded enough for a metric, and a log
+// record is not a series, so there is no cardinality cost to carrying them.
+//
+// Every field is omitted when empty (or, for the AS number, zero). An address
+// the databases do not cover produces no geo attributes at all rather than a
+// row of "unknown" values that would read as facts.
+func addGeoLogAttrs(attrs telemetry.Attrs, src, dst geoip.Result) {
+	add := func(prefixCountry, prefixContinent, prefixCity, prefixRegion, prefixLat, prefixLon, prefixASN, prefixASOrg string, r geoip.Result) {
+		setAttrIfNotEmpty(attrs, prefixCountry, r.CountryISO)
+		setAttrIfNotEmpty(attrs, prefixContinent, r.ContinentCode)
+		setAttrIfNotEmpty(attrs, prefixCity, r.City)
+		setAttrIfNotEmpty(attrs, prefixRegion, r.RegionISO)
+		if r.HasLocation {
+			attrs[prefixLat] = r.Latitude
+			attrs[prefixLon] = r.Longitude
+		}
+		// int64, not a string: the AS number is numeric and a consumer filtering
+		// on it should not have to parse. Guarded rather than converted blindly —
+		// r.ASN is a uint read out of a database file, and a value past MaxInt64
+		// would wrap to a negative AS number, which is not a thing.
+		if r.ASN != 0 && r.ASN <= math.MaxInt64 {
+			attrs[prefixASN] = int64(r.ASN)
+		}
+		setAttrIfNotEmpty(attrs, prefixASOrg, r.ASOrg)
+	}
+	add(semconv.SourceGeoCountryISO, semconv.SourceGeoContinentCode, semconv.SourceGeoCity,
+		semconv.SourceGeoRegionISO, semconv.SourceGeoLat, semconv.SourceGeoLon,
+		semconv.SourceASNumber, semconv.SourceASOrg, src)
+	add(semconv.DestinationGeoCountryISO, semconv.DestGeoContinentCode, semconv.DestinationGeoCity,
+		semconv.DestinationGeoRegionISO, semconv.DestinationGeoLat, semconv.DestinationGeoLon,
+		semconv.DestinationASNumber, semconv.DestinationASOrg, dst)
+}
+
+// setAttrIfNotEmpty assigns v under key only when v is non-empty, so a field the
+// databases did not supply stays absent rather than becoming an empty label.
+func setAttrIfNotEmpty(attrs telemetry.Attrs, key, v string) {
+	if v != "" {
+		attrs[key] = v
+	}
+}
+
 // addIdentityAttrs adds the per-flow endpoint identity (user, tags, OS) carried
 // by the record's embedded srcNode/dstNodes blocks. Each attribute is omitted
 // when the corresponding ref is absent or does not carry that field — the
@@ -919,7 +1025,7 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 }
 
 // emitConnLog emits one per-connection flow log event.
-func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, reporter reporterDiagnosis, e telemetry.Emitter) {
+func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
 		semconv.NetworkTransport:         transport,
@@ -970,8 +1076,12 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 	p.addNodeHostname(attrs, flow.NodeID)
 	addFlowWindow(attrs, flow)
 	// Logs carry full detail by design, so identity is unconditional here — the
-	// IdentityDims toggle governs the metric surface only.
+	// IdentityDims toggle governs the metric surface only. Geo is the same: the
+	// full set (country, continent, AS, and city/region/coordinates when a City
+	// database is loaded) rides every flow log whenever geoip is on, and the
+	// GeoDims toggle governs only what reaches a metric.
 	addIdentityAttrs(attrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+	addGeoLogAttrs(attrs, srcGeo, dstGeo)
 	e.LogEvent(telemetry.Event{
 		Name:              docFlowLog.Name,
 		Body:              body,

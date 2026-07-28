@@ -409,6 +409,17 @@ var (
 		Attributes:  connIdentityAttrs,
 		Group:       groupDevices,
 	}
+	docDevicesByCountry = metricdoc.Metric{
+		Name:       metricDevicesByCountry,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Gauge,
+		Description: "Number of devices located in each country, derived from the first globally-routable magicsock endpoint each device advertises (`clientConnectivity.endpoints`) and the local GeoIP database. " +
+			"A **count**, despite `_ratio`. Requires `enrichment.geoip.enabled` and `collect_connectivity`. " +
+			"This is deliberately a fleet ROLLUP rather than a label on the per-device gauges: country is bounded (~250 values), whereas adding the label to an existing per-device series would change its identity and break queries already written against it. " +
+			"Devices with no globally-routable endpoint, or that the database does not cover, are simply absent — there is no `unknown` bucket. The autonomous system is never emitted as a metric at all.",
+		Attributes: []string{semconv.DeviceGeoCountryISO, semconv.DeviceGeoContinentCode},
+		Group:      groupDevices,
+	}
 	docConnEndpoints = metricdoc.Metric{
 		Name:        metricConnEndpoints,
 		Unit:        semconv.UnitDimensionless,
@@ -525,6 +536,7 @@ func Catalog() []metricdoc.Metric {
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
 		docAttribute, docAttributeInfo, docAttributeExpiry,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
+		docDevicesByCountry,
 		docConnHardNAT, docConnEndpoints, docConnDirectCapable, docConnUDP, docConnIPv6,
 		docDevicesHardNAT, docDevicesDirectCapable, docDevicesClientSupports,
 		docExitNodesCount, docSubnetRoutesAdv, docSubnetRoutesEnabled, docSubnetRoutesUnapproved,

@@ -22,6 +22,62 @@ const (
 	OSVersion = "os.version"
 )
 
+// GeoIP enrichment attributes for EXTERNAL (non-Tailscale) endpoints, populated
+// from local MaxMind databases when enrichment.geoip is on. Every one is omitted
+// when the databases have no answer — never filled with an "unknown" sentinel,
+// since an absent label is queryable as absent and a fabricated one is not.
+//
+// Two registries are in play here, deliberately:
+//
+//   - The geo half is OTEL-native. OTEL's semconv defines geo.country.iso_code
+//     and geo.continent.code, and states that geo attributes are "typically used
+//     under another namespace, such as client.*" — so the source./destination.
+//     prefixed forms below are the sanctioned spelling, not an invention.
+//   - The autonomous-system half is ECS. OTEL semconv has no AS namespace at
+//     all (checked against the whole model/ tree), and ECS's source.as.number /
+//     source.as.organization.name are the only widely-recognized names. Same
+//     precedent as the ECS-aligned user.* keys above.
+//
+// Cardinality: the geo pair is bounded (~250 countries, 7 continents) and may go
+// on flow METRICS via cardinality.flow.geo_dims. The AS pair is NOT bounded by
+// anything useful and is confined to flow LOGS.
+const (
+	SourceGeoCountryISO      = "source.geo.country.iso_code"
+	SourceGeoContinentCode   = "source.geo.continent.code"
+	DestinationGeoCountryISO = "destination.geo.country.iso_code"
+	DestGeoContinentCode     = "destination.geo.continent.code"
+
+	// City-level keys, populated only when the operator supplies a City database
+	// rather than a Country one. LOGS ONLY, like the AS pair: a city label would
+	// be tens of thousands of values on a metric, but a log record is not a
+	// series and carries the full-fidelity view by design.
+	//
+	// geo.locality.name, geo.region.iso_code, geo.location.lat and
+	// geo.location.lon are all OTEL-native, under the same prefixing rule as the
+	// country pair above.
+	SourceGeoCity           = "source.geo.locality.name"
+	SourceGeoRegionISO      = "source.geo.region.iso_code"
+	SourceGeoLat            = "source.geo.location.lat"
+	SourceGeoLon            = "source.geo.location.lon"
+	DestinationGeoCity      = "destination.geo.locality.name"
+	DestinationGeoRegionISO = "destination.geo.region.iso_code"
+	DestinationGeoLat       = "destination.geo.location.lat"
+	DestinationGeoLon       = "destination.geo.location.lon"
+
+	SourceASNumber      = "source.as.number"
+	SourceASOrg         = "source.as.organization.name"
+	DestinationASNumber = "destination.as.number"
+	DestinationASOrg    = "destination.as.organization.name"
+
+	// DeviceGeoCountryISO and DeviceGeoContinentCode describe where a DEVICE is,
+	// derived from the public magicsock endpoint it advertises. They ride the
+	// fleet-rollup gauge (bounded by country count), never the per-device series
+	// — adding a label to a live per-device gauge would change its identity and
+	// break every existing query against it.
+	DeviceGeoCountryISO    = "geo.country.iso_code"
+	DeviceGeoContinentCode = "geo.continent.code"
+)
+
 // Stable OTEL user/identity attribute keys (ECS-aligned user.* registry; the
 // deprecated enduser.* namespace is no longer used). Carried on security-audit
 // actors and the users collector's per-user gauges/log events.

@@ -512,6 +512,27 @@
     <p class="muted">Reverse-DNS enrichment is disabled (<code>enrichment.reverse_dns.enabled=false</code>). External flow addresses stay bucketed as <code>external</code>; no PTR lookups are made.</p>
     {{end}}
 
+    <div class="sub-h">GeoIP &amp; ASN enrichment</div>
+    {{if .GeoIP.Enabled}}
+    <div class="cards">
+      <div class="card"><div class="k">Country database</div><div class="v" style="font-size:16px">{{if .GeoIP.CountryType}}{{.GeoIP.CountryType}}{{else}}not loaded{{end}}</div><div class="sub">{{if .GeoIP.CountryBuildTime}}built {{.GeoIP.CountryAge}} ago ({{.GeoIP.CountryBuildTime}}){{else}}no database at {{if .GeoIP.CountryPath}}{{.GeoIP.CountryPath}}{{else}}any configured path{{end}}{{end}}</div></div>
+      <div class="card"><div class="k">ASN database</div><div class="v" style="font-size:16px">{{if .GeoIP.ASNType}}{{.GeoIP.ASNType}}{{else}}not loaded{{end}}</div><div class="sub">{{if .GeoIP.ASNBuildTime}}built {{.GeoIP.ASNAge}} ago ({{.GeoIP.ASNBuildTime}}){{else}}no database at {{if .GeoIP.ASNPath}}{{.GeoIP.ASNPath}}{{else}}any configured path{{end}}{{end}}</div></div>
+      <div class="card"><div class="k">Country lookups</div><div class="v">{{add64 .GeoIP.CountryHits .GeoIP.CountryMisses}}</div><div class="sub">hit {{.GeoIP.CountryHits}} · miss {{.GeoIP.CountryMisses}}</div></div>
+      <div class="card"><div class="k">ASN lookups</div><div class="v">{{add64 .GeoIP.ASNHits .GeoIP.ASNMisses}}</div><div class="sub">hit {{.GeoIP.ASNHits}} · miss {{.GeoIP.ASNMisses}}</div></div>
+      <div class="card"><div class="k">Skipped</div><div class="v">{{.GeoIP.Skipped}}</div><div class="sub">not globally routable — every tailnet address lands here</div></div>
+      <div class="card"><div class="k">Reloads</div><div class="v">{{.GeoIP.Reloads}}</div><div class="sub">{{if .GeoIP.ReloadFailures}}{{.GeoIP.ReloadFailures}} failed — see the logs{{else}}no failures{{end}}</div></div>
+    </div>
+    <p class="muted" style="margin-top:12px">
+      The build time above is MaxMind&rsquo;s, not the download time — an updater that runs on schedule and fails
+      every fetch still looks busy, and only the build date exposes it.
+      {{if .GeoIP.DownloadEnabled}}The built-in downloader is running.{{else}}The built-in downloader is off, so something else supplies these files.{{end}}
+      Flow logs carry country, continent, autonomous system and (with a City database) locality and coordinates;
+      flow metrics carry {{if .GeoIP.GeoDims}}country and continent as well (<code>cardinality.flow.geo_dims=true</code>){{else}}none of it (<code>cardinality.flow.geo_dims=false</code>){{end}}.
+    </p>
+    {{else}}
+    <p class="muted">GeoIP enrichment is disabled (<code>enrichment.geoip.enabled=false</code>). External flow addresses carry no country, continent or autonomous-system attributes. Tailnet addresses are never geolocated in any case.</p>
+    {{end}}
+
     <div class="sub-h">Metrics catalog ({{len .Metrics}})</div>
     <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'metricsTable')">
     <div class="scroll">

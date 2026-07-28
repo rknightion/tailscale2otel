@@ -782,6 +782,51 @@ config: # @schema additionalProperties:false
       # -- Acknowledge the flow-metric cardinality cost of enabled+node_dims and silence the startup
       # advisory (config_warnings_ratio). Set true once cardinality.metric_limit is sized for it.
       acknowledge_cardinality: false
+    geoip: # @schema additionalProperties:false
+      # -- Opt-in geolocation and autonomous-system enrichment of EXTERNAL flow addresses, from
+      # MaxMind .mmdb files on local disk. Lookups never touch the network. Tailnet addresses (the
+      # CGNAT range 100.64.0.0/10 and the ULA fd7a:115c:a1e0::/48) are never geolocated.
+      enabled: false
+      # -- Path to a GeoLite2/GeoIP2 Country .mmdb. A City database also works and additionally fills
+      # locality, region and coordinates on flow LOGS. Left empty when download.enabled is set, it
+      # defaults to where the downloader installs the file.
+      country_database: ""
+      # -- Path to a GeoLite2/GeoIP2 ASN .mmdb. The AS number and organization ride flow LOGS only.
+      asn_database: ""
+      # -- Re-stat the database paths and hot-swap a changed file. This is what makes an external
+      # updater (a geoipupdate CronJob, an init container, a mounted volume) work. 0 disables.
+      # Not the same clock as download.interval, which asks MaxMind for a newer build.
+      reload_interval: 6h
+      # -- Acknowledge the cardinality cost of cardinality.flow.geo_dims on the RAW flow families and
+      # silence the startup advisory. Set true once cardinality.metric_limit is sized for it.
+      acknowledge_cardinality: false
+      download: # @schema additionalProperties:false
+        # -- Fetch databases from MaxMind directly, so no geoipupdate sidecar is needed. Leave off if
+        # something else supplies the files. Note the databases are held in memory: budget roughly
+        # 9 MB for Country plus 12 MB for ASN on top of the container's normal footprint.
+        enabled: false
+        # -- MaxMind account ID (a free GeoLite2 account is enough).
+        account_id: ""
+        # -- MaxMind license key. Prefer existingSecret / an env var over putting it in values.yaml.
+        license_key: ""
+        # -- Read the license key from a file instead (mounted Kubernetes secret).
+        license_key_file: ""
+        # -- MaxMind edition IDs to fetch; each installs as <directory>/<edition>.mmdb. Swap
+        # GeoLite2-Country for GeoLite2-City to add locality and coordinates to flow logs.
+        editions:
+          - GeoLite2-Country
+          - GeoLite2-ASN
+        # -- Where downloaded databases are installed. Empty uses the platform state directory, which
+        # in the container image is the same volume as the checkpoint file — mount one, or the
+        # databases are re-downloaded on every restart.
+        directory: ""
+        # -- How often to ask MaxMind for a newer build. Each check is a conditional request, so an
+        # unchanged database costs a 304 and no download quota.
+        interval: 24h
+        # -- Per-edition download timeout.
+        timeout: 5m
+        # -- Download API base. Override only for a local mirror.
+        endpoint: "https://download.maxmind.com/geoip/databases"
 
   cardinality: # @schema additionalProperties:false
     # -- Hard per-metric series cap (0/negative = unlimited).
@@ -823,6 +868,12 @@ config: # @schema additionalProperties:false
       # -- Emit the bounded tailscale.exit_node.io/packets counters attributing exit traffic to the
       # relaying node (bounded by exit-node count); independent of metrics_mode.
       exit_node_attribution: true
+      # -- Add source/destination geo.country.iso_code and geo.continent.code to flow METRICS.
+      # Requires enrichment.geoip.enabled. Nearly free under metrics_mode: rollup, which is top-N
+      # bounded whatever the key carries; on the RAW families with collapse_external on it splits the
+      # single "external" series up to ~250 ways. The AS number/organization and any city-level
+      # fields NEVER reach a metric; flow LOGS carry all of them regardless of this toggle.
+      geo_dims: false
       # -- Add the per-flow endpoint identity — tailscale.{src,dst}.user, .tags and .os — to flow
       # METRICS, on the raw AND rollup families. Read from the node blocks the control plane embeds in
       # each flow record, so it costs no extra API call. Identity is a property of the NODE, so with

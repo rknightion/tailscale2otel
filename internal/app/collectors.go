@@ -124,6 +124,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// makes that partial blindness visible (#421).
 			devices.WithCoverage(rt.coverage),
 		}
+		if d.geoDB != nil {
+			// Fleet geography (tailscale.devices.by_country), derived from each
+			// device's public magicsock endpoint. Bounded by country count; the
+			// per-device gauges are deliberately left untouched.
+			devOpts = append(devOpts, devices.WithGeo(d.geoDB))
+		}
 		if d.tsRelease != nil {
 			devOpts = append(devOpts, devices.WithUpstreamLatest(
 				d.tsRelease.Latest, cfg.VersionChecks.Devices.OutdatedMinorThreshold))

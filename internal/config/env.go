@@ -32,6 +32,7 @@ var listEnvKeys = map[string]bool{
 	"collectors.node_metrics.discovery.include_tags": true,
 	"collectors.node_metrics.discovery.exclude_tags": true,
 	"collectors.webhooks.desired_events":             true,
+	"enrichment.geoip.download.editions":             true,
 }
 
 // structSliceEnvKeys are the config keys whose YAML value is a list of

@@ -161,7 +161,7 @@ func BenchmarkProcess_IdentityDims(b *testing.B) {
 // rollup_internal_test.go, but run inside the timed loop instead of a fixed
 // count so it reports steady-state per-record cost under permanent pressure.
 func BenchmarkRollupAccumulator_Record(b *testing.B) {
-	a := newRollupAccumulator(500, true, false)
+	a := newRollupAccumulator(500, true, false, false)
 	// Pre-flood the accumulator once so the timed loop starts already past
 	// maxRollupKeys and every iteration take the fold branch, not the
 	// map-growth branch.

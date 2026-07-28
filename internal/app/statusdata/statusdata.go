@@ -25,6 +25,7 @@ type Status struct {
 	Collectors    []CollectorStatus `json:"collectors"`
 	Cache         CacheInfo         `json:"device_cache"`
 	RDNS          RDNSInfo          `json:"reverse_dns"`
+	GeoIP         GeoIPInfo         `json:"geoip"`
 	Dedup         []DedupInfo       `json:"dedup_sets"`
 	Devices       []DeviceRow       `json:"devices"`
 	NodeDiscovery NodeDiscovery     `json:"node_discovery"`
@@ -245,6 +246,45 @@ type RDNSInfo struct {
 	Overflows      int64   `json:"overflows"`
 	HitRatePct     float64 `json:"hit_rate_pct"`
 	LastPurge      string  `json:"last_purge,omitempty"` // RFC3339
+}
+
+// GeoIPInfo summarizes the local GeoIP/ASN enrichment databases. Enabled is
+// false when enrichment.geoip.enabled is off, and the rest of the fields are
+// then zero.
+//
+// BuildTime is MaxMind's build date for each loaded database, NOT when it was
+// downloaded, because that is what actually tells an operator whether the data
+// is current: an updater that runs on schedule and fails every fetch looks
+// healthy by any download-recency measure. An empty Type/BuildTime means that
+// database is not loaded at all.
+type GeoIPInfo struct {
+	Enabled bool `json:"enabled"`
+
+	CountryPath      string `json:"country_path,omitempty"`
+	CountryType      string `json:"country_type,omitempty"`
+	CountryBuildTime string `json:"country_build_time,omitempty"` // RFC3339
+	CountryAge       string `json:"country_age,omitempty"`
+	ASNPath          string `json:"asn_path,omitempty"`
+	ASNType          string `json:"asn_type,omitempty"`
+	ASNBuildTime     string `json:"asn_build_time,omitempty"` // RFC3339
+	ASNAge           string `json:"asn_age,omitempty"`
+
+	// DownloadEnabled reports whether the built-in MaxMind updater is running,
+	// so a stale database can be attributed to the right thing.
+	DownloadEnabled bool `json:"download_enabled"`
+
+	CountryHits   int64 `json:"country_hits"`
+	CountryMisses int64 `json:"country_misses"`
+	ASNHits       int64 `json:"asn_hits"`
+	ASNMisses     int64 `json:"asn_misses"`
+	// Skipped counts addresses that never reached a database because they are
+	// not globally routable — every tailnet address lands here.
+	Skipped        int64 `json:"skipped"`
+	Reloads        int64 `json:"reloads"`
+	ReloadFailures int64 `json:"reload_failures"`
+	// GeoDims reports whether country labels are also going onto flow METRICS
+	// (cardinality.flow.geo_dims), since that is the setting with a cost.
+	GeoDims bool `json:"geo_dims"`
 }
 
 // FlowStoreInfo is the built-in flow view's store, combined across every

@@ -170,6 +170,22 @@ enrichment:
     stale_ttl: 1h                     # keep serving a resolved name this long past cache_ttl while one refresh runs (0 disables; stops the flow label flapping to external at every expiry)
     max_entries: 50000                # PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry)
     acknowledge_cardinality: false     # set true (once metric_limit is sized) to silence the enabled+node_dims cardinality advisory
+  geoip:                              # opt-in geo/ASN enrichment of EXTERNAL flow addresses, from local MaxMind .mmdb files (lookups never touch the network)
+    enabled: false                    # off by default; tailnet addresses (CGNAT 100.64/10, ULA fd7a:115c:a1e0::/48) are NEVER geolocated
+    country_database: ""              # path to a GeoLite2/GeoIP2 Country .mmdb; a City database also works and additionally fills locality/region/coordinates on flow LOGS
+    asn_database: ""                  # path to a GeoLite2/GeoIP2 ASN .mmdb; the AS number and organization ride flow LOGS only, never a metric
+    reload_interval: 6h               # re-stat the files above and hot-swap a changed one (this is what makes an external geoipupdate cron work; 0 disables)
+    acknowledge_cardinality: false     # set true (once metric_limit is sized) to silence the geo_dims-on-raw-flow-metrics advisory
+    download:                         # optional built-in MaxMind updater, so no geoipupdate sidecar is needed
+      enabled: false                  # off by default; leave off if something else supplies the .mmdb files
+      account_id: ""                  # MaxMind account ID (a free GeoLite2 account is enough)
+      license_key: ""                 # MaxMind license key — set via TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY, never in YAML
+      license_key_file: ""            # read the license key from a file instead (Docker/Kubernetes secret style)
+      editions: [GeoLite2-Country, GeoLite2-ASN]  # MaxMind edition IDs; each installs as <directory>/<edition>.mmdb (swap in GeoLite2-City for locality/coordinates on logs)
+      directory: ""                   # where databases are installed; empty = <state dir>/geoip (same place as the checkpoint file)
+      interval: 24h                   # how often to ask MaxMind for a newer build; each check is conditional, so an unchanged database costs a 304 and no download quota
+      timeout: 5m                     # per-edition download timeout
+      endpoint: "https://download.maxmind.com/geoip/databases"  # download API base; override only for a local mirror
 
 # ── Cardinality (metric/label volume trade-offs) ────────────────────────────────
 cardinality:
@@ -188,6 +204,7 @@ cardinality:
     identity_dims: false              # add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics, on BOTH families. REQUIRES node_dims (identity is node-derived, so without it identity becomes the only splitting dimension); flow LOGS always carry them
     collapse_external: true           # bucket unresolved IPs as external/unknown (keeps cardinality bounded)
     exit_node_attribution: true       # emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count)
+    geo_dims: false                   # add source/destination geo.country.iso_code + geo.continent.code to flow METRICS (needs enrichment.geoip). Nearly free under metrics_mode: rollup (top-N bounded); on the RAW families it splits the single "external" series ~250 ways. ASN/city NEVER reach a metric; flow LOGS carry everything regardless
   per_entity:                         # emit one gauge series per entity (true) or only the aggregate *.count (false)
     device: true                      # per-device gauges (online/last_seen/key_expiry/derp/routes)
     user: true                        # per-user gauges (devices/connected/last_seen)

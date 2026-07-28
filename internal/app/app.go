@@ -22,6 +22,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v3/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
@@ -106,6 +107,11 @@ type App struct {
 	metricsCerts *CertReloader
 	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
 	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
+	// geoDB holds the local MaxMind databases; nil unless enrichment.geoip.enabled.
+	// Like rdnsCache it is process-wide rather than per-tailnet: geography is a
+	// property of an address, not of the tailnet that observed it.
+	geoDB      *geoip.DB
+	geoUpdater *geoip.Updater // downloads/reloads geoDB; nil when geoDB is
 	// eventStore backs the /events explorer (#300). Unlike flowStore this is ONE
 	// store for the whole process, not one per tailnet: an audit or webhook event
 	// is already globally identified by its actor and target, so a shared store
@@ -146,6 +152,7 @@ const (
 	compProfiling   = "profiling"
 	compNodeMetrics = "nodemetrics"
 	compRelease     = "release"
+	compGeoIP       = "geoip"
 )
 
 // withComponent returns a logger that tags every record with its subsystem name.
@@ -452,6 +459,7 @@ func (a *App) buildProcessDeps() {
 		}
 		a.rdnsCache = rdns.New(ropts)
 	}
+	a.buildGeoIP()
 	// One store shared by every tailnet's audit processor and every webhook
 	// route; see the field comment for why this is not per-runtime.
 	a.eventStore = newEventStore(cfg)
@@ -542,6 +550,7 @@ func (a *App) addRuntimeConfigured(
 		store:        a.store,
 		procEmitter:  a.procEmitter,
 		rdnsCache:    a.rdnsCache,
+		geoDB:        a.geoDB,
 		eventStore:   a.eventStore,
 		webhookDedup: webhookDedup,
 		tsRelease:    a.tsRelease,
@@ -614,6 +623,15 @@ func (a *App) Run(ctx context.Context) error {
 	LogScopeWarnings(a.logger, a.capabilityMatrix(a.primaryAPIState()))
 	if a.profiler != nil {
 		defer func() { _ = a.profiler.Stop() }()
+	}
+	if a.geoUpdater != nil {
+		// The GeoIP update loop owns no shared state beyond the DB it swaps, so
+		// it just needs to stop before the DB is closed. ctx cancellation does
+		// that; the goroutine returns on its next select.
+		go a.geoUpdater.Run(ctx)
+	}
+	if a.geoDB != nil {
+		defer a.geoDB.Close()
 	}
 	if a.rdnsCache != nil {
 		// Drain background reverse-DNS workers on stop. This deferred Close runs
@@ -851,6 +869,9 @@ func (a *App) Close(ctx context.Context) error {
 	}
 	if a.rdnsCache != nil {
 		a.rdnsCache.Close()
+	}
+	if a.geoDB != nil {
+		a.geoDB.Close()
 	}
 	if a.profiler != nil {
 		_ = a.profiler.Stop()
