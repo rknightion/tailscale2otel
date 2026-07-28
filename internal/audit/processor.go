@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
@@ -96,6 +97,7 @@ type Processor struct {
 	crossDedup *dedup.Set
 	now        func() time.Time
 	logger     *slog.Logger
+	store      *eventstore.Memory
 
 	mu                  sync.Mutex
 	unknownSchemaValues map[string]struct{}
@@ -140,6 +142,15 @@ func WithClock(now func() time.Time) Option {
 // addition without exposing its raw value.
 func WithLogger(logger *slog.Logger) Option {
 	return func(p *Processor) { p.logger = logger }
+}
+
+// WithStore feeds a bounded, admin-facing event view (internal/eventstore,
+// #300) after the log record and counters have already been emitted. Passing
+// a nil store is a no-op, preserving default behavior. Feeding the store never
+// blocks or fails the emit path: eventstore.Memory.Record takes a short lock
+// and a single append, with no I/O and no error to report.
+func WithStore(store *eventstore.Memory) Option {
+	return func(p *Processor) { p.store = store }
 }
 
 // NewProcessor returns an audit Processor. With no options it behaves exactly
@@ -289,6 +300,68 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 	}
 
 	emitDelayHistograms(ev, acceptedAt, e)
+
+	// Feed the bounded event explorer view AFTER every OTLP emission above, so
+	// a full ring (or any bug in this path) can never affect what was already
+	// exported (#300). A nil store makes this a no-op.
+	if p.store != nil {
+		p.store.Record(storeEvent(ev, severity))
+	}
+}
+
+// storeEvent converts an audit Event into the eventstore's leaf Event shape.
+//
+// Details carries the raw old/new diff, UNFILTERED by pii_filter — the same
+// deliberate choice /flows makes for flow endpoint identity (#241): this view
+// is local, bounded, and admin-authenticated, and pii_filter governs what
+// this process EXPORTS over OTLP, not what an already-authenticated operator
+// can see about their own tailnet locally. eventstore.Memory.Record still
+// truncates Details to eventstore.MaxDetailBytes (#300's "policy-diff
+// truncation" requirement) — a policyUpdate old/new pair can carry an entire
+// ACL document, which would make this one field unbounded even though the
+// ring's event COUNT is bounded.
+func storeEvent(ev Event, severity telemetry.Severity) eventstore.Event {
+	sev := eventstore.SeverityInfo
+	if severity == telemetry.SeverityWarn || severity == telemetry.SeverityError {
+		sev = eventstore.SeverityWarn
+	}
+	return eventstore.Event{
+		Time:           ev.EventTime,
+		Source:         eventstore.SourceAudit,
+		Action:         ev.Action,
+		Type:           ev.Type,
+		Origin:         ev.Origin,
+		ActorID:        ev.Actor.ID,
+		ActorName:      ev.Actor.LoginName,
+		ActorType:      ev.Actor.Type,
+		TargetID:       ev.Target.ID,
+		TargetName:     ev.Target.Name,
+		TargetType:     ev.Target.Type,
+		TargetProperty: ev.Target.Property,
+		Severity:       sev,
+		Error:          ev.Error,
+		Summary:        summary(ev),
+		Details:        auditDiff(ev),
+	}
+}
+
+// auditDiff renders the old/new pair for the event explorer's Details column.
+// Unlike the log attributes (attrOld/attrNew), which omit an unset side
+// entirely, this labels whichever sides ARE present so the two are never
+// ambiguous once concatenated.
+func auditDiff(ev Event) string {
+	oldStr, oldOK := renderRaw(ev.Old)
+	newStr, newOK := renderRaw(ev.New)
+	switch {
+	case oldOK && newOK:
+		return "old: " + oldStr + "\nnew: " + newStr
+	case newOK:
+		return "new: " + newStr
+	case oldOK:
+		return "old: " + oldStr
+	default:
+		return ""
+	}
 }
 
 const schemaDriftWarningLimit = 128

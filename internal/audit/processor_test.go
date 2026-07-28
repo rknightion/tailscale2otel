@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
+	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
@@ -470,5 +472,107 @@ func TestProcessAllRendersPolymorphicOldNew(t *testing.T) {
 	}
 	if total != 4 {
 		t.Fatalf("counter total = %v, want 4", total)
+	}
+}
+
+func TestWithStore_NilIsNoOp(t *testing.T) {
+	rec := telemetrytest.New()
+	p := audit.NewProcessor(audit.WithStore(nil))
+	p.Process(sampleEvent(), rec.Emitter())
+	// No panic, no observable difference: this is exercised implicitly by every
+	// other test in this file constructing NewProcessor() with no options
+	// (nil store by default). This test names the case explicitly.
+}
+
+func TestWithStore_FeedsTheEventStoreAfterEmitting(t *testing.T) {
+	rec := telemetrytest.New()
+	store := eventstore.NewMemory(10)
+	p := audit.NewProcessor(audit.WithStore(store))
+
+	ev := sampleEvent()
+	ev.Error = "permission denied"
+	ev.Old = json.RawMessage(`"1.2.3.4/32"`)
+	ev.New = json.RawMessage(`"5.6.7.8/32"`)
+	p.Process(ev, rec.Emitter())
+
+	// The OTLP path must be entirely unaffected by attaching a store.
+	if len(rec.LogRecords()) != 1 {
+		t.Fatalf("log records = %d, want 1 (store attach must not change emission)", len(rec.LogRecords()))
+	}
+
+	page := store.Page(eventstore.Query{Limit: 10})
+	if len(page.Rows) != 1 {
+		t.Fatalf("store rows = %d, want 1", len(page.Rows))
+	}
+	got := page.Rows[0]
+	if got.Source != eventstore.SourceAudit {
+		t.Errorf("source = %q, want audit", got.Source)
+	}
+	if got.Action != "CREATE" || got.Type != "CONFIG" || got.Origin != "ADMIN_CONSOLE" {
+		t.Errorf("action/type/origin = %q/%q/%q, want CREATE/CONFIG/ADMIN_CONSOLE", got.Action, got.Type, got.Origin)
+	}
+	if got.ActorID != "u1" || got.ActorName != "a@example.com" || got.ActorType != "USER" {
+		t.Errorf("actor = %q/%q/%q, want u1/a@example.com/USER", got.ActorID, got.ActorName, got.ActorType)
+	}
+	if got.TargetID != "n1" || got.TargetName != "node.ts.net" || got.TargetType != "NODE" || got.TargetProperty != "ALLOWED_IPS" {
+		t.Errorf("target = %+v, unexpected", got)
+	}
+	if got.Severity != eventstore.SeverityWarn {
+		t.Errorf("severity = %q, want warn (event carries an Error)", got.Severity)
+	}
+	if got.Error != "permission denied" {
+		t.Errorf("error = %q, want permission denied", got.Error)
+	}
+	wantSummary := "CREATE on NODE.ALLOWED_IPS via ADMIN_CONSOLE"
+	if got.Summary != wantSummary {
+		t.Errorf("summary = %q, want %q", got.Summary, wantSummary)
+	}
+	wantDetails := "old: 1.2.3.4/32\nnew: 5.6.7.8/32"
+	if got.Details != wantDetails {
+		t.Errorf("details = %q, want %q", got.Details, wantDetails)
+	}
+}
+
+func TestWithStore_DedupedEventNeverReachesTheStore(t *testing.T) {
+	rec := telemetrytest.New()
+	store := eventstore.NewMemory(10)
+	dedupSet := dedup.New(100)
+	p := audit.NewProcessor(audit.WithDedup(dedupSet), audit.WithStore(store))
+
+	ev := sampleEvent()
+	p.Process(ev, rec.Emitter())
+	p.Process(ev, rec.Emitter()) // same key: dropped before the store is ever reached.
+
+	if len(rec.LogRecords()) != 1 {
+		t.Fatalf("log records = %d, want 1 (second call deduped)", len(rec.LogRecords()))
+	}
+	page := store.Page(eventstore.Query{Limit: 10})
+	if len(page.Rows) != 1 {
+		t.Fatalf("store rows = %d, want 1: a deduped event must not double-appear", len(page.Rows))
+	}
+}
+
+// TestWithStore_PolicyDiffLongerThanCapIsTruncated is the negative test for
+// #300's "policy-diff truncation" requirement: without it, a large
+// policyUpdate-style old/new pair would retain the WHOLE document per event,
+// which — held for up to the ring's capacity of events — defeats the "bounded
+// memory" contract this package promises.
+func TestWithStore_PolicyDiffLongerThanCapIsTruncated(t *testing.T) {
+	rec := telemetrytest.New()
+	store := eventstore.NewMemory(10)
+	p := audit.NewProcessor(audit.WithStore(store))
+
+	huge := strings.Repeat("x", eventstore.MaxDetailBytes*2)
+	ev := sampleEvent()
+	ev.New = json.RawMessage(`"` + huge + `"`)
+	p.Process(ev, rec.Emitter())
+
+	page := store.Page(eventstore.Query{Limit: 1})
+	got := page.Rows[0]
+	if !got.Truncated {
+		t.Fatal("Truncated = false, want true for an oversized policy diff")
+	}
+	if len(got.Details) >= len(huge) {
+		t.Errorf("stored details len = %d, want less than the original %d", len(got.Details), len(huge))
 	}
 }

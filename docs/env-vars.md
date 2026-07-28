@@ -279,6 +279,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_FLOWS__ENABLED` | `true` | keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_FLOWS__RETENTION` | `6h` | how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_FLOWS__MAX_FUTURE_SKEW` | `5m` | local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged |
+| `TS2OTEL_EVENTS__ENABLED` | `true` | keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise) |
+| `TS2OTEL_EVENTS__MAX_EVENTS` | `5000` | how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |
 | `TS2OTEL_PROMETHEUS__LISTEN` | `:2112` | bind for /metrics (default :2112); keep distinct from admin.listen |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |

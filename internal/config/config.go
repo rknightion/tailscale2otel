@@ -68,6 +68,7 @@ type Config struct {
 	PIIFilter         PIIFilterConfig         `yaml:"pii_filter"`
 	Admin             AdminConfig             `yaml:"admin"`
 	Flows             FlowsConfig             `yaml:"flows"`
+	Events            EventsConfig            `yaml:"events"`
 	Prometheus        PrometheusConfig        `yaml:"prometheus"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 	Tracing           TracingConfig           `yaml:"tracing"`
@@ -153,6 +154,29 @@ type FlowsConfig struct {
 	// MaxFutureSkew is the largest amount a record may lead the local clock and
 	// still enter the in-memory view. It does not affect OTLP emission.
 	MaxFutureSkew Duration `yaml:"max_future_skew"`
+}
+
+// EventsConfig configures the built-in bounded audit/webhook event explorer
+// served at /events on the admin server (#300). It retains a bounded, recent
+// window of audit and webhook events IN MEMORY so an operator can filter
+// what happened locally — by time, actor, action, target, severity, error
+// and type — without a metrics/logs backend in the loop. Nothing here
+// changes what is exported over OTLP — the backend remains the system of
+// record, and the store is lost on restart.
+//
+// Unlike FlowsConfig (a ring of one-minute buckets, sized by time), this
+// store is a plain ring of individual events sized by COUNT: an audit or
+// webhook event is already the meaningful unit, so there is nothing to
+// aggregate into a bucket.
+type EventsConfig struct {
+	// Enabled (default true) builds the store and serves /events. Its only
+	// consumer is the admin page, so turning the page off makes the store
+	// dead weight; Warnings() says so (mirrors flows.enabled).
+	Enabled bool `yaml:"enabled"`
+	// MaxEvents bounds the ring: the most recent MaxEvents audit+webhook
+	// events are retained, oldest evicted first. Bounded to [100, 100000] —
+	// this sizes process memory, not a database.
+	MaxEvents int `yaml:"max_events"`
 }
 
 // PrometheusConfig configures the optional Prometheus pull endpoint (GET /metrics)

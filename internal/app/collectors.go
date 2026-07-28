@@ -363,6 +363,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 			)))
 		}
 		wh := webhookOptions(a.cfg.Webhook)
+		wh.EventStore = a.eventStore // shared /events explorer store (#300); nil when disabled
 		wh.Secret = secret
 		wh.OnIngest = ingestObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
 		wh.OnAccepted = acceptedEventObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)

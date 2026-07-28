@@ -239,6 +239,13 @@ func (a *App) buildAdminServer() *http.Server {
 			mux.HandleFunc("/api/flows/export.csv", a.requireAdminAuth(a.handleFlowsExportCSV))
 			mux.HandleFunc("/api/flows/export.json", a.requireAdminAuth(a.handleFlowsExportJSON))
 		}
+		// Same rule as the flow view above: registered only when a store is being
+		// fed, so a disabled explorer 404s rather than serving an empty timeline
+		// that reads as "nothing has happened".
+		if a.eventsEnabled() {
+			mux.HandleFunc("/events", a.requireAdminAuth(a.handleEventsPage))
+			mux.HandleFunc("/api/events.json", a.requireAdminAuth(a.handleEventsJSON))
+		}
 	}
 	if a.cfg.Profiling.Pprof.Enabled {
 		registerPprof(mux, a.requireAdminAuth)

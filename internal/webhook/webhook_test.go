@@ -18,6 +18,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
@@ -743,5 +744,101 @@ func TestWebhookHandle_EmitsSpanOnReject(t *testing.T) {
 	spans := sr.Ended()
 	if len(spans) == 0 || spans[len(spans)-1].Name() != "webhook.receive" {
 		t.Fatalf("got %v, want a span named webhook.receive", webhookSpanNames(spans))
+	}
+}
+
+func TestEventStore_NilIsNoOp(t *testing.T) {
+	rec := telemetrytest.New()
+	s := New(Options{Path: "/webhook", Secret: testSecret, Tolerance: 0}, rec.Emitter(), discard())
+	sig := signBody(testSecret, time.Now(), twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (no EventStore configured must not change behavior)", resp.StatusCode)
+	}
+}
+
+func TestEventStore_FeedsTheEventStoreAfterEmitting(t *testing.T) {
+	rec := telemetrytest.New()
+	store := eventstore.NewMemory(10)
+	s := New(Options{Path: "/webhook", Secret: testSecret, Tolerance: 0, EventStore: store}, rec.Emitter(), discard())
+
+	ts := time.Now()
+	sig := signBody(testSecret, ts, twoEventBody)
+	resp := doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	// The OTLP path must be entirely unaffected by attaching a store.
+	if len(rec.LogRecords()) != 2 {
+		t.Fatalf("log records = %d, want 2 (store attach must not change emission)", len(rec.LogRecords()))
+	}
+
+	page := store.Page(eventstore.Query{Limit: 10})
+	if len(page.Rows) != 2 {
+		t.Fatalf("store rows = %d, want 2", len(page.Rows))
+	}
+	// Newest first: the nodeKeyExpiringInOneDay event (10:05) precedes nodeCreated (10:00).
+	warn := page.Rows[0]
+	if warn.Type != "nodeKeyExpiringInOneDay" || warn.Source != eventstore.SourceWebhook {
+		t.Errorf("rows[0] = %+v, want the nodeKeyExpiringInOneDay webhook event", warn)
+	}
+	if warn.Severity != eventstore.SeverityWarn {
+		t.Errorf("severity = %q, want warn (nodeKeyExpiringInOneDay is a WARN type)", warn.Severity)
+	}
+	if warn.TargetID != "n2" {
+		t.Errorf("target id = %q, want n2", warn.TargetID)
+	}
+	created := page.Rows[1]
+	if created.Type != "nodeCreated" || created.Severity != eventstore.SeverityInfo {
+		t.Errorf("rows[1] = %+v, want an INFO nodeCreated event", created)
+	}
+	if created.Tailnet != "example.com" {
+		t.Errorf("tailnet = %q, want example.com", created.Tailnet)
+	}
+}
+
+func TestEventStore_DuplicateDeliveryNeverDoubleRecorded(t *testing.T) {
+	rec := telemetrytest.New()
+	store := eventstore.NewMemory(10)
+	s := New(Options{Path: "/webhook", Secret: testSecret, Tolerance: 0, EventStore: store}, rec.Emitter(), discard())
+
+	ts := time.Now()
+	sig := signBody(testSecret, ts, twoEventBody)
+	doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+	// Same delivery again (same timestamp+body -> same digests): delivery-dedup
+	// suppresses it before emit is ever called.
+	doPost(t, s.Handler(), "/webhook", twoEventBody, sig)
+
+	page := store.Page(eventstore.Query{Limit: 10})
+	if len(page.Rows) != 2 {
+		t.Fatalf("store rows = %d, want 2 (the retry must not double-appear)", len(page.Rows))
+	}
+}
+
+// TestEventStore_LongMessageIsTruncated is the negative test for #300's
+// "policy-diff truncation" requirement on the webhook side: a policyUpdate
+// event's message can carry an entire ACL document, which would defeat the
+// ring's bounded-memory contract if stored verbatim.
+func TestEventStore_LongMessageIsTruncated(t *testing.T) {
+	rec := telemetrytest.New()
+	store := eventstore.NewMemory(10)
+	s := New(Options{Path: "/webhook", Secret: testSecret, Tolerance: 0, EventStore: store}, rec.Emitter(), discard())
+
+	huge := strings.Repeat("y", eventstore.MaxDetailBytes*2)
+	body := fmt.Sprintf(`[{"timestamp":"2026-06-02T10:00:00Z","version":1,"type":"policyUpdate","tailnet":"example.com","message":%q,"data":{}}]`, huge)
+	sig := signBody(testSecret, time.Now(), body)
+	resp := doPost(t, s.Handler(), "/webhook", body, sig)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, body)
+	}
+
+	page := store.Page(eventstore.Query{Limit: 1})
+	got := page.Rows[0]
+	if !got.Truncated {
+		t.Fatal("Truncated = false, want true for an oversized message")
+	}
+	if len(got.Details) >= len(huge) {
+		t.Errorf("stored details len = %d, want less than the original %d", len(got.Details), len(huge))
 	}
 }

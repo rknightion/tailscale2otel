@@ -166,6 +166,7 @@
   {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
   <span class="spacer"></span>
   {{if .Flows.Enabled}}<a href="/flows" title="Explore this tailnet's traffic">flows &rarr;</a>{{end}}
+  {{if .Events.Enabled}}<a href="/events" title="Explore recent audit and webhook events">events &rarr;</a>{{end}}
   <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
   <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
 </header>

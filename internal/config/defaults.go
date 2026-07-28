@@ -286,6 +286,15 @@ func Default() *Config {
 			// tailnet.
 			Retention: dur(6 * time.Hour),
 		},
+		Events: EventsConfig{
+			Enabled: true,
+			// 5000 individual audit+webhook events. Unlike flows.retention this is
+			// a plain event count, not a time span: a busy tailnet's audit log can
+			// run to hundreds of events a day, so this comfortably covers a
+			// multi-day window without the unbounded growth a per-event ring
+			// would otherwise have.
+			MaxEvents: 5000,
+		},
 		Prometheus: PrometheusConfig{
 			Enabled: false,
 			Listen:  ":2112",

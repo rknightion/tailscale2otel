@@ -116,6 +116,7 @@ func (a *App) buildStatus() statusdata.Status {
 		NodeDiscovery: a.nodeDiscovery(),
 		Cardinality:   cardinalityInfo(a.cfg.SelfObservability.Enabled, cardSeries, cardLabels, cardPerMetric, cardThresholds, metricByName),
 		Flows:         a.flowStoreInfo(),
+		Events:        a.eventStoreInfo(),
 		Receivers: statusdata.ReceiversInfo{
 			Streaming: a.cfg.Streaming.Enabled,
 			Webhook:   a.cfg.Webhook.Enabled,

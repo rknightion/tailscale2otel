@@ -21,6 +21,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
@@ -105,6 +106,13 @@ type App struct {
 	metricsCerts *CertReloader
 	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
 	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
+	// eventStore backs the /events explorer (#300). Unlike flowStore this is ONE
+	// store for the whole process, not one per tailnet: an audit or webhook event
+	// is already globally identified by its actor and target, so a shared store
+	// gives the unified timeline the explorer is for, where per-tailnet stores
+	// would force the operator to check each tailnet separately for a change that
+	// may only have happened once. Nil when the explorer is disabled.
+	eventStore *eventstore.Memory
 
 	selfRelease *release.Fetcher // nil unless version_checks.self.enabled
 	tsRelease   *release.Fetcher // nil unless version_checks.devices.enabled
@@ -444,6 +452,9 @@ func (a *App) buildProcessDeps() {
 		}
 		a.rdnsCache = rdns.New(ropts)
 	}
+	// One store shared by every tailnet's audit processor and every webhook
+	// route; see the field comment for why this is not per-runtime.
+	a.eventStore = newEventStore(cfg)
 	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents && len(cfg.Webhook.Routes) == 0 {
 		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook and
 		// the audit logs is counted once (single-tailnet only; webhook requires it).
@@ -531,6 +542,7 @@ func (a *App) addRuntimeConfigured(
 		store:        a.store,
 		procEmitter:  a.procEmitter,
 		rdnsCache:    a.rdnsCache,
+		eventStore:   a.eventStore,
 		webhookDedup: webhookDedup,
 		tsRelease:    a.tsRelease,
 		multi:        multi,

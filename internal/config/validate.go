@@ -26,6 +26,14 @@ const (
 	maxIngressWALReceiverBodyBytes = int64(64 << 20)
 )
 
+// Bounds on events.max_events (#300). The floor keeps the explorer usable at
+// all; the ceiling reflects that this is a process-memory ring, not durable
+// storage.
+const (
+	minEventsMaxEvents = 100
+	maxEventsMaxEvents = 100000
+)
+
 // oneOf reports whether v equals one of the allowed values.
 func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
@@ -310,6 +318,15 @@ func (c *Config) Warnings() []string {
 			"landing page, which is disabled (admin.enabled / admin.landing_page). The flow "+
 			"store is not built, so no traffic history is retained. Enable the admin page to "+
 			"use the flow view.")
+	}
+
+	// The event store's only consumer is the /events page on the admin server,
+	// exactly like the flow store above (#300).
+	if c.Events.Enabled && (!c.Admin.Enabled || !c.Admin.LandingPage) {
+		w = append(w, "events.enabled=true has no effect: /events is served by the admin "+
+			"landing page, which is disabled (admin.enabled / admin.landing_page). The event "+
+			"store is not built, so no audit/webhook event history is retained. Enable the "+
+			"admin page to use the event explorer.")
 	}
 
 	if c.Admin.Enabled && c.Admin.LandingPage && c.Admin.Auth.Token == "" && !listenaddr.IsLoopback(c.Admin.Listen) {
@@ -923,6 +940,21 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		if d := c.Flows.MaxFutureSkew.D(); d < 0 || d > time.Hour {
 			return fmt.Errorf("flows.max_future_skew must be between 0 and 1h (got %v)", d)
+		}
+		return nil
+	})
+
+	// events.max_events sizes an in-memory ring of individual audit/webhook
+	// events (#300), so a bad value is a memory fault, mirroring flows.retention
+	// above. Unchecked when the view is off — the store is never built.
+	add("events.max_events", "Set events.max_events between 100 and 100000.", func() error {
+		if !c.Events.Enabled {
+			return nil
+		}
+		if n := c.Events.MaxEvents; n < minEventsMaxEvents || n > maxEventsMaxEvents {
+			return fmt.Errorf("events.max_events must be between %d and %d (got %d): it sizes an "+
+				"in-memory ring of individual events, not a database",
+				minEventsMaxEvents, maxEventsMaxEvents, n)
 		}
 		return nil
 	})

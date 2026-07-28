@@ -505,3 +505,35 @@ func TestRender_NoAdvisoriesSaysSo(t *testing.T) {
 		t.Error("an empty advisory list renders nothing at all, which reads as a missing section")
 	}
 }
+
+// TestRender_EventsLinkFollowsTheStore asserts the /events explorer (#300) is
+// reachable from the status page exactly when its store is being fed.
+//
+// This guard exists because the two were built by separate lanes and the link
+// was missing entirely: the explorer's routes register only when a store is
+// fed, so the page is the only way an operator would ever find it, and nothing
+// else in either package's tests would have noticed a page nobody can reach.
+// The inverse matters just as much — linking unconditionally hands the operator
+// a link that 404s, which reads as a broken exporter rather than a disabled
+// feature.
+func TestRender_EventsLinkFollowsTheStore(t *testing.T) {
+	const link = `<a href="/events" title="Explore recent audit and webhook events">events &rarr;</a>`
+
+	var on bytes.Buffer
+	if err := statushtml.Render(&on, statusdata.Status{
+		Events: statusdata.EventStoreInfo{Enabled: true, Capacity: 5000},
+	}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if !strings.Contains(on.String(), link) {
+		t.Errorf("event store enabled but the page offers no /events link; want %q", link)
+	}
+
+	var off bytes.Buffer
+	if err := statushtml.Render(&off, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if strings.Contains(off.String(), `href="/events"`) {
+		t.Error("event store disabled but the page links /events, which is not registered and would 404")
+	}
+}

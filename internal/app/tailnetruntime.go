@@ -14,6 +14,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
@@ -99,12 +100,13 @@ type runtimeDeps struct {
 	logger       *slog.Logger
 	tracer       trace.Tracer
 	store        collector.CheckpointStore
-	procEmitter  telemetry.Emitter // for shared-infra self-obs (rdns)
-	rdnsCache    *rdns.Cache       // shared external-address resolver; nil when disabled
-	webhookDedup *dedup.Set        // single-tailnet webhook<->audit cross set; nil otherwise
-	tsRelease    *release.Fetcher  // shared upstream-version fetcher; nil when disabled
-	multi        bool              // true when >1 tailnet (enables checkpoint namespacing)
-	primary      bool              // true for the first runtime; owns process-global static node_metrics targets (#59)
+	procEmitter  telemetry.Emitter  // for shared-infra self-obs (rdns)
+	rdnsCache    *rdns.Cache        // shared external-address resolver; nil when disabled
+	eventStore   *eventstore.Memory // shared bounded audit/webhook event store (#300); nil when disabled
+	webhookDedup *dedup.Set         // single-tailnet webhook<->audit cross set; nil otherwise
+	tsRelease    *release.Fetcher   // shared upstream-version fetcher; nil when disabled
+	multi        bool               // true when >1 tailnet (enables checkpoint namespacing)
+	primary      bool               // true for the first runtime; owns process-global static node_metrics targets (#59)
 }
 
 // newRuntime assembles a per-tailnet runtime: emitter/provider/client are already
@@ -166,6 +168,11 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	}
 	if d.webhookDedup != nil {
 		auditOpts = append(auditOpts, audit.WithCrossDedup(d.webhookDedup))
+	}
+	if d.eventStore != nil {
+		// Fed AFTER emission and only for events that survive both dedup gates,
+		// so the local explorer can never delay or drop an OTLP record (#300).
+		auditOpts = append(auditOpts, audit.WithStore(d.eventStore))
 	}
 	rt.auditProc = audit.NewProcessor(auditOpts...)
 

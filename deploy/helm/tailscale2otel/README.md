@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.26.0](https://img.shields.io/badge/Version-0.26.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.27.0](https://img.shields.io/badge/Version-0.27.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -354,6 +354,8 @@ extraVolumeMounts:
 | config.enrichment.reverse_dns.server | string | `""` | Resolver to query as "ip" or "ip:port" (default port 53); empty = system/container resolver. |
 | config.enrichment.reverse_dns.stale_ttl | string | `"1h"` | Keep serving a resolved name this long past cache_ttl while one background refresh runs. Stops the flow label flapping to "external" at every TTL expiry. 0 disables stale serving. |
 | config.enrichment.reverse_dns.timeout | string | `"2s"` | Per-lookup timeout. |
+| config.events.enabled | bool | `true` | Build the bounded audit/webhook event store and serve /events. No effect without admin.enabled + admin.landing_page. |
+| config.events.max_events | int | `5000` | How many individual audit+webhook events /events can see (100–100000). A plain count, not a time span — oldest evicted first. |
 | config.flows.enabled | bool | `true` | Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page. |
 | config.flows.max_future_skew | string | `"5m"` | Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged. |
 | config.flows.retention | string | `"6h"` | How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store. |

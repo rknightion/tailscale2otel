@@ -1253,6 +1253,22 @@
       },
       "type": "object"
     },
+    "events": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise)",
+          "type": "boolean"
+        },
+        "max_events": {
+          "default": 5000,
+          "description": "how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "flows": {
       "additionalProperties": false,
       "properties": {

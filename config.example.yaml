@@ -458,6 +458,11 @@ flows:
   retention: 6h                       # how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record
   max_future_skew: 5m                 # local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged
 
+# ── Built-in audit/webhook event explorer (served at /events on the admin server) ──
+events:
+  enabled: true                       # keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise)
+  max_events: 5000                    # how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record
+
 # ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
 prometheus:
   enabled: false                      # run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push

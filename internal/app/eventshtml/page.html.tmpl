@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.ServiceName}} — events</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234493f8'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+  header{padding:16px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:19px;font-weight:600}
+  header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
+  header .spacer{flex:1}
+  main{max-width:1320px;margin:0 auto;padding:18px 24px 60px}
+  section{margin:0 0 24px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:5px}
+  .card .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card.warn2{border-color:var(--warn)}
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;
+    padding:11px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .controls label{color:var(--muted);font-size:12px}
+  button.ctl,select.ctl,input.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer}
+  input.ctl{cursor:text}
+  button.ctl:hover,select.ctl:hover{border-color:var(--accent)}
+  button.ctl[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+  .spacer{flex:1}
+  .banner{display:none;padding:8px 24px;font-size:13px;border-bottom:1px solid var(--line)}
+  .banner.show{display:block}
+  #errBanner{background:rgba(248,81,73,.16);color:var(--err)}
+  #truncBanner{background:rgba(210,153,34,.16);color:var(--warn)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{text-align:left;padding:7px 11px;border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums;vertical-align:top}
+  th{color:var(--muted);font-size:12px;font-weight:600;background:var(--panel2)}
+  tr:last-child td{border-bottom:0}
+  td.mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+  td.details{max-width:420px;overflow-wrap:anywhere;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .sev{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-weight:600}
+  .sev-info{background:rgba(63,185,80,.16);color:var(--ok)}
+  .sev-warn{background:rgba(210,153,34,.16);color:var(--warn)}
+  .src{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-family:var(--mono);
+    background:var(--panel2);color:var(--muted)}
+  .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>{{.ServiceName}} events</h1>
+  <span class="ver">{{.Version}}</span>
+  <span class="spacer"></span>
+  <a href="/">status</a>
+</header>
+<div id="errBanner" class="banner"></div>
+<div id="truncBanner" class="banner"></div>
+<main>
+  <section>
+    <div class="cards" id="statsCards">
+      <div class="card"><div class="k">Retained</div><div class="v" id="statRetained">—</div></div>
+      <div class="card"><div class="k">Capacity</div><div class="v" id="statCapacity">—</div></div>
+      <div class="card"><div class="k">Recorded (total)</div><div class="v" id="statRecorded">—</div></div>
+      <div class="card" id="statEvictedCard"><div class="k">Evicted (overflow)</div><div class="v" id="statEvicted">—</div></div>
+      <div class="card"><div class="k">Matched</div><div class="v" id="statMatched">—</div></div>
+    </div>
+  </section>
+  <section>
+    <div class="controls">
+      <label for="fSource">source</label>
+      <select class="ctl" id="fSource">
+        <option value="">any</option>
+        <option value="audit">audit</option>
+        <option value="webhook">webhook</option>
+      </select>
+      <label for="fSeverity">severity</label>
+      <select class="ctl" id="fSeverity">
+        <option value="">any</option>
+        <option value="info">info</option>
+        <option value="warn">warn</option>
+      </select>
+      <label for="fActor">actor</label>
+      <input class="ctl" id="fActor" type="text" placeholder="substring">
+      <label for="fAction">action</label>
+      <input class="ctl" id="fAction" type="text" placeholder="substring">
+      <label for="fTarget">target</label>
+      <input class="ctl" id="fTarget" type="text" placeholder="substring">
+      <label for="fType">type</label>
+      <input class="ctl" id="fType" type="text" placeholder="exact">
+      <label><input type="checkbox" id="fErrors"> errors only</label>
+      <span class="spacer"></span>
+      <button class="ctl" id="btnApply">apply</button>
+      <button class="ctl" id="btnClear">clear</button>
+    </div>
+  </section>
+  <section>
+    <table>
+      <thead>
+        <tr>
+          <th>time</th><th>source</th><th>severity</th><th>action / type</th>
+          <th>actor</th><th>target</th><th>error</th><th>details</th>
+        </tr>
+      </thead>
+      <tbody id="eventsBody"></tbody>
+    </table>
+    <div class="empty" id="emptyState" style="display:none">no events match the current filters</div>
+  </section>
+</main>
+<script>
+(function(){
+  "use strict";
+  var refreshMs = {{.RefreshMs}};
+  var qs = function(id){ return document.getElementById(id); };
+  var esc = function(s){
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  };
+  var fmtTime = function(t){
+    if (!t) return "";
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return t;
+    return d.toISOString().replace("T"," ").replace("Z","");
+  };
+
+  function currentFilters(){
+    return {
+      source: qs("fSource").value,
+      severity: qs("fSeverity").value,
+      actor: qs("fActor").value,
+      action: qs("fAction").value,
+      target: qs("fTarget").value,
+      type: qs("fType").value,
+      errors: qs("fErrors").checked
+    };
+  }
+
+  function buildQuery(){
+    var f = currentFilters();
+    var p = new URLSearchParams();
+    if (f.source) p.set("source", f.source);
+    if (f.severity) p.set("severity", f.severity);
+    if (f.actor) p.set("actor", f.actor);
+    if (f.action) p.set("action", f.action);
+    if (f.target) p.set("target", f.target);
+    if (f.type) p.set("type", f.type);
+    if (f.errors) p.set("errors", "1");
+    return p.toString();
+  }
+
+  function renderStats(stats, matched){
+    qs("statRetained").textContent = stats.retained;
+    qs("statCapacity").textContent = stats.capacity;
+    qs("statRecorded").textContent = stats.recorded;
+    qs("statEvicted").textContent = stats.evicted;
+    qs("statMatched").textContent = matched;
+    var card = qs("statEvictedCard");
+    if (stats.evicted > 0) { card.classList.add("warn2"); } else { card.classList.remove("warn2"); }
+  }
+
+  function severityBadge(sev){
+    var cls = sev === "warn" ? "sev-warn" : "sev-info";
+    return '<span class="sev ' + cls + '">' + esc(sev || "info") + '</span>';
+  }
+
+  function sourceBadge(src){
+    return '<span class="src">' + esc(src) + '</span>';
+  }
+
+  function renderRows(rows){
+    var body = qs("eventsBody");
+    var frag = document.createDocumentFragment();
+    rows.forEach(function(e){
+      var tr = document.createElement("tr");
+      var actor = e.actor_name || e.actor_id || "";
+      var target = e.target_name || e.target_id || "";
+      var actionType = e.action || "";
+      if (e.type && e.type !== e.action) { actionType += " / " + e.type; }
+      tr.innerHTML =
+        '<td class="mono">' + esc(fmtTime(e.time)) + '</td>' +
+        '<td>' + sourceBadge(e.source) + '</td>' +
+        '<td>' + severityBadge(e.severity) + '</td>' +
+        '<td class="mono">' + esc(actionType) + '</td>' +
+        '<td class="mono">' + esc(actor) + '</td>' +
+        '<td class="mono">' + esc(target) + '</td>' +
+        '<td class="mono">' + esc(e.error || "") + '</td>' +
+        '<td class="details">' + esc(e.summary || "") + (e.details ? ("<br>" + esc(e.details)) : "") +
+          (e.truncated ? ' <em>(truncated)</em>' : '') + '</td>';
+      frag.appendChild(tr);
+    });
+    body.innerHTML = "";
+    body.appendChild(frag);
+    qs("emptyState").style.display = rows.length === 0 ? "block" : "none";
+  }
+
+  function poll(){
+    var url = "/api/events.json" + (buildQuery() ? "?" + buildQuery() : "");
+    fetch(url, {credentials: "same-origin"}).then(function(resp){
+      if (!resp.ok) { throw new Error("http " + resp.status); }
+      return resp.json();
+    }).then(function(data){
+      qs("errBanner").classList.remove("show");
+      renderStats(data.stats, data.matched);
+      renderRows(data.rows || []);
+      var trunc = qs("truncBanner");
+      if (data.truncated) {
+        trunc.textContent = "the event ring is at capacity: older matching events may already have been evicted.";
+        trunc.classList.add("show");
+      } else {
+        trunc.classList.remove("show");
+      }
+    }).catch(function(err){
+      var banner = qs("errBanner");
+      banner.textContent = "failed to load events: " + err.message;
+      banner.classList.add("show");
+    });
+  }
+
+  qs("btnApply").addEventListener("click", poll);
+  qs("btnClear").addEventListener("click", function(){
+    qs("fSource").value = "";
+    qs("fSeverity").value = "";
+    qs("fActor").value = "";
+    qs("fAction").value = "";
+    qs("fTarget").value = "";
+    qs("fType").value = "";
+    qs("fErrors").checked = false;
+    poll();
+  });
+
+  poll();
+  if (refreshMs > 0) { setInterval(poll, refreshMs); }
+})();
+</script>
+</body>
+</html>

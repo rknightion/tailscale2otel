@@ -54,6 +54,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
@@ -220,6 +221,11 @@ type Options struct {
 	// OnAccepted, when non-nil, observes each authenticated, delivery-dedup
 	// surviving event after it is handed to the webhook processor.
 	OnAccepted ingest.AcceptedObserver
+	// EventStore optionally feeds a bounded, admin-facing event view
+	// (internal/eventstore, #300) after telemetry has already been emitted for
+	// an accepted event. Nil disables it with no change in behavior — the OTLP
+	// emit path never blocks or fails on this (see Server.emit).
+	EventStore *eventstore.Memory
 }
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
@@ -233,6 +239,7 @@ type Server struct {
 	onIngest      func(source, signal string, records, bytes int)
 	onAccepted    ingest.AcceptedObserver
 	tracer        trace.Tracer
+	eventStore    *eventstore.Memory
 
 	// tlsReloader backs tls.Config.GetCertificate when both TLS files are set,
 	// so a rotated certificate is picked up without restarting the listener
@@ -530,6 +537,7 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 		now:          time.Now,
 		onIngest:     opts.OnIngest,
 		onAccepted:   opts.OnAccepted,
+		eventStore:   opts.EventStore,
 		admit:        admit,
 		insecureOpen: opts.Secret == "" && !listenaddr.IsLoopback(opts.Listen),
 	}
@@ -906,6 +914,52 @@ func (s *Server) emit(ev event) {
 	s.e.Counter(docWebhookSchemaDrift.Name, docWebhookSchemaDrift.Unit, docWebhookSchemaDrift.Description, 1, telemetry.Attrs{
 		attrSchemaField: "version", attrSchemaStatus: status,
 	})
+
+	// Feed the bounded event explorer view AFTER every OTLP emission above, so
+	// a full ring (or any bug in this path) can never affect what was already
+	// exported (#300). A nil store makes this a no-op.
+	if s.eventStore != nil {
+		s.eventStore.Record(storeEvent(ev, dim))
+	}
+}
+
+// storeEvent converts a webhook event into the eventstore's leaf Event shape.
+//
+// Details carries the free-text message body UNFILTERED by pii_filter — the
+// same deliberate choice /flows makes for flow endpoint identity (#241) and
+// internal/audit's storeEvent makes for its old/new diff: this view is local,
+// bounded, and admin-authenticated, and pii_filter governs what this process
+// EXPORTS over OTLP, not what an already-authenticated operator can see
+// locally. eventstore.Memory.Record still truncates Details to
+// eventstore.MaxDetailBytes — a policyUpdate event's message can carry an
+// entire ACL document, which would make this one field unbounded even though
+// the ring's event COUNT is bounded.
+func storeEvent(ev event, dim string) eventstore.Event {
+	out := eventstore.Event{
+		Time:     parseTimestamp(ev.Timestamp),
+		Source:   eventstore.SourceWebhook,
+		Tailnet:  ev.Tailnet,
+		Action:   dim,
+		Type:     dim,
+		Severity: eventstore.SeverityInfo,
+		Summary:  ev.Message,
+		Details:  ev.Message,
+	}
+	if severityForType(ev.Type) != telemetry.SeverityInfo {
+		out.Severity = eventstore.SeverityWarn
+	}
+	if actor, ok := eventDataString(ev, "actor"); ok {
+		out.ActorID = actor
+	}
+	if nodeID, ok := eventDataString(ev, "nodeID"); ok {
+		out.TargetID = nodeID
+	} else if user, ok := eventDataString(ev, "user"); ok {
+		out.TargetID = user
+	}
+	if name, ok := eventDataString(ev, "deviceName"); ok {
+		out.TargetName = name
+	}
+	return out
 }
 
 func decodeEvent(raw json.RawMessage) (event, error) {

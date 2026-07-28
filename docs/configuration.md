@@ -1417,6 +1417,38 @@ Notes:
 
 ---
 
+## `events` — built-in audit/webhook event explorer
+
+`/events` on the admin server: a bounded, filterable list of recent audit and webhook events — by
+time, actor, action, target, severity, error and type — without a metrics/logs backend in the loop.
+It is a convenience view, not a second telemetry pipeline: OTLP remains the system of record, and
+the store is lost on restart.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `events.enabled` | `true` | Build the store and serve `/events`. Requires `admin.enabled` **and** `admin.landing_page`; with either off the store is not built at all and a startup advisory says so. |
+| `events.max_events` | `5000` | How many individual audit+webhook events `/events` can see. Must be between `100` and `100000` — this is a plain event count, not a time span, and sizes process memory, not a database. |
+
+Notes:
+
+- **Both audit and webhook feed one shared store.** Unlike the flow store (one per tailnet), a
+  single event store is shared across every configured tailnet's audit processor and webhook
+  receiver, matching the issue's framing of "one bounded view of what happened".
+- **Local, admin-authenticated identity is shown in full**, the same way `/flows` shows raw endpoint
+  identity: this view sits behind admin auth and never crosses a process boundary, so it is not
+  subject to `pii_filter` (that setting governs what this process exports over OTLP).
+- **Policy diffs and message bodies are truncated**, not dropped. An audit `old`/`new` pair or a
+  webhook `policyUpdate` message can carry an entire ACL document; retaining that verbatim for every
+  event in the ring would make one field unbounded even though the event count is bounded. A
+  truncated entry is marked as such rather than shown as if it were complete.
+- **It is bounded by count, not time.** Once the ring hits `events.max_events` the oldest retained
+  event is evicted to make room for the newest; the eviction count is surfaced, never silent.
+- **It never slows ingestion.** Recording is a short lock and a single append, after the
+  corresponding OTLP log record and counters have already been emitted; there is no I/O and no
+  backpressure onto the export path.
+
+---
+
 ## `prometheus` — Prometheus pull endpoint
 
 An opt-in, off-by-default `GET /metrics` endpoint on a **dedicated listener** (`prometheus.listen`,

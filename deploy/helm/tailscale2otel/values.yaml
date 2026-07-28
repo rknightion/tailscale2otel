@@ -1427,6 +1427,12 @@ config: # @schema additionalProperties:false
     # -- Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged.
     max_future_skew: 5m
 
+  events: # @schema additionalProperties:false
+    # -- Build the bounded audit/webhook event store and serve /events. No effect without admin.enabled + admin.landing_page.
+    enabled: true
+    # -- How many individual audit+webhook events /events can see (100–100000). A plain count, not a time span — oldest evicted first.
+    max_events: 5000
+
   # Optional continuous/on-demand profiling. Everything here is OFF by default and
   # carries no Tailscale data. The pprof handlers mount on the admin server, so
   # profiling.pprof.enabled requires admin.enabled: true AND admin.auth.token

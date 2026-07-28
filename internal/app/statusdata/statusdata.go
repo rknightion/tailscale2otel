@@ -30,6 +30,7 @@ type Status struct {
 	NodeDiscovery NodeDiscovery     `json:"node_discovery"`
 	Cardinality   CardinalityInfo   `json:"cardinality"`
 	Flows         FlowStoreInfo     `json:"flow_store"`
+	Events        EventStoreInfo    `json:"event_store"`
 	Receivers     ReceiversInfo     `json:"receivers"`
 	// Components is every long-running non-collector subsystem and whether it
 	// has failed, from the same state /readyz reads (#318).
@@ -263,6 +264,22 @@ type FlowStoreInfo struct {
 	// which is shorter until the ring fills. Empty when nothing is retained.
 	Retention string `json:"retention"`
 	Covered   string `json:"covered,omitempty"`
+}
+
+// EventStoreInfo summarizes the bounded audit/webhook event explorer's store
+// (#300) for the status page. It carries only what the page needs to decide
+// whether to offer the /events link and to disclose overflow at a glance; the
+// explorer itself serves the full Stats.
+//
+// Evicted is the overflow the issue requires be counted and DISCLOSED rather
+// than silent: a ring that has dropped events is showing a partial timeline,
+// and an operator reading it as complete would draw the wrong conclusion.
+type EventStoreInfo struct {
+	Enabled  bool  `json:"enabled"`
+	Capacity int   `json:"capacity"`
+	Retained int   `json:"retained"`
+	Recorded int64 `json:"recorded"`
+	Evicted  int64 `json:"evicted"`
 }
 
 // DedupInfo is one cross-source de-duplication set's occupancy.
