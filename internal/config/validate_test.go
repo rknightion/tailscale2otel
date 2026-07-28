@@ -131,9 +131,12 @@ func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
 		}
 	}
 
-	// Enabled, landing page on the default wildcard bind, no token => advisory.
+	// Enabled, landing page on a wildcard bind, no token => advisory. The bind is
+	// set explicitly because the DEFAULT is loopback since #314, and a loopback
+	// bind is deliberately advisory-free — it is the safe first-run configuration.
 	c = config.Default()
-	c.Admin.Enabled = true // landing_page defaults true, listen defaults ":9091"
+	c.Admin.Enabled = true // landing_page defaults true
+	c.Admin.Listen = "0.0.0.0:9091"
 	w := strings.Join(c.Warnings(), "\n")
 	if !strings.Contains(w, "admin.auth.token") {
 		t.Fatalf("admin exposed on a wildcard bind without a token should advise admin.auth.token; got %q", w)

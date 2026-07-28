@@ -328,7 +328,11 @@ func TestLoopbackHostHeader(t *testing.T) {
 
 func TestAdminAuth_NoTokenRejectionEmitsMetric(t *testing.T) {
 	rec := telemetrytest.New()
-	cfg := config.Default() // self-observability defaults on; wildcard bind, no token
+	cfg := config.Default() // self-observability defaults on
+	// The bind is set explicitly: since #314 the DEFAULT is loopback, which takes
+	// the tokenless-loopback path and rejects on Host rather than on auth. This
+	// test is about the auth_required reason, so it needs the network bind.
+	cfg.Admin.Listen = "0.0.0.0:9091"
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
 	srv := a.buildAdminServer()
 
@@ -413,5 +417,27 @@ func TestAdminAuth_PprofGatedByToken(t *testing.T) {
 	authed.SetBasicAuth("admin", testAdminToken)
 	if w := do(srv, authed); w.Code != http.StatusOK {
 		t.Errorf("GET /debug/pprof/ with correct creds = %d, want 200", w.Code)
+	}
+}
+
+// TestAdminAuth_DefaultConfigServesTheLandingPage is the acceptance criterion of
+// #314 stated as behavior rather than as a config value: with NOTHING configured,
+// a local operator opening the status page gets the status page.
+//
+// It used to get 403. admin.enabled and admin.landing_page both default true, but
+// admin.listen defaulted to the wildcard ":9091", and the page fails closed on a
+// network-reachable bind with no token — so the exporter's headline UI did not
+// work under the exporter's own defaults.
+func TestAdminAuth_DefaultConfigServesTheLandingPage(t *testing.T) {
+	a := baseTestApp(t, config.Default(), "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	for _, path := range []string{"/", "/api/status.json"} {
+		w := do(srv, loopbackReq(http.MethodGet, path))
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s with default config = %d, want 200. The landing page is enabled by "+
+				"default, so a default install must serve it to a local caller without first "+
+				"requiring a token.", path, w.Code)
+		}
 	}
 }

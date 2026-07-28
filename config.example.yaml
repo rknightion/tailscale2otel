@@ -434,7 +434,7 @@ self_observability:
 # are never authenticated so health checks keep working.
 admin:
   enabled: true                       # run the admin HTTP server (probes + status page + optional pprof mount)
-  listen: ":9091"                     # serves /healthz, /readyz, and the status page
+  listen: "127.0.0.1:9091"            # serves /healthz, /readyz, and the status page. Loopback by default: the status page is REFUSED (403) on a network-reachable bind without admin.auth.token, so widen this only together with a token
   landing_page: true                  # serve the human status page at / and machine-readable /api/status.json
   status_refresh_interval: 5s         # how often the status page re-polls /api/status.json (1s freshness ticker is independent)
   auth:

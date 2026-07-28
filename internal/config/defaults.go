@@ -257,8 +257,19 @@ func Default() *Config {
 			SamplerArg: 1.0,
 		},
 		Admin: AdminConfig{
-			Enabled:               true,
-			Listen:                ":9091",
+			Enabled: true,
+			// Loopback, NOT the wildcard ":9091" this used to be (#314). The landing
+			// page is on by default and refuses every request on a network-reachable
+			// bind with no token, so a wildcard default served 403 to the one surface
+			// a new operator is most likely to open — the exporter's own UI, broken
+			// under the exporter's own defaults.
+			//
+			// Anything that genuinely needs to be reached from another host sets a
+			// bind explicitly: the Helm chart already pins ":9091" in values.yaml, and
+			// Compose maps no admin port at all. Container probes are unaffected
+			// either way — /healthz and /readyz are never gated, and the -healthcheck
+			// subcommand runs inside the container where loopback is the right answer.
+			Listen:                "127.0.0.1:9091",
 			LandingPage:           true,
 			StatusRefreshInterval: dur(5 * time.Second),
 		},

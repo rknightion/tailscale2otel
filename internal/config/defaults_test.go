@@ -171,8 +171,8 @@ func TestLoadAppliesDefaultsWhenOmitted(t *testing.T) {
 	if !cfg.Admin.Enabled {
 		t.Errorf("Admin.Enabled = false, want default true")
 	}
-	if cfg.Admin.Listen != ":9091" {
-		t.Errorf("Admin.Listen = %q, want default :9091", cfg.Admin.Listen)
+	if cfg.Admin.Listen != "127.0.0.1:9091" {
+		t.Errorf("Admin.Listen = %q, want the loopback default 127.0.0.1:9091 (#314)", cfg.Admin.Listen)
 	}
 }
 
@@ -218,8 +218,8 @@ admin:
 		t.Errorf("Admin.LandingPage = true, want false (explicit override of default true)")
 	}
 	// Sibling default untouched.
-	if cfg.Admin.Listen != ":9091" {
-		t.Errorf("Admin.Listen = %q, want default :9091 preserved", cfg.Admin.Listen)
+	if cfg.Admin.Listen != "127.0.0.1:9091" {
+		t.Errorf("Admin.Listen = %q, want the loopback default preserved (#314)", cfg.Admin.Listen)
 	}
 }
 

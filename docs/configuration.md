@@ -97,6 +97,14 @@ silently ignored) — the error names the full dotted key path and, when a close
 suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metrics target's
 `headers`/`labels`) are always accepted.
 
+!!! warning "Upgrading: `admin.listen` now defaults to loopback"
+    It was `:9091` (all interfaces). If you relied on that default to reach the status page from
+    another host — or to map the port out of a container — set `admin.listen` explicitly **and**
+    set `admin.auth.token`; a network-reachable bind without a token is refused with HTTP 403
+    either way, so the old default was serving 403 to those callers already. `/healthz` and
+    `/readyz` are never gated and are unaffected. The Helm chart pins its own `:9091` in
+    `values.yaml` and is unchanged; Compose maps no admin port.
+
 !!! warning "Upgrading: a key that used to be ignored now stops startup"
     Before this change every unrecognized file key was silently dropped, so a config carrying a
     typo — or a key removed by an earlier release — started fine and quietly ran on defaults. Those
@@ -1230,7 +1238,7 @@ internet.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `admin.enabled` | `true` | Run the admin server (`/healthz`, `/readyz`, and — unless disabled — the status page). |
-| `admin.listen` | `:9091` | Listen address. For defense-in-depth bind to loopback (`127.0.0.1:9091`) or a tailnet IP. |
+| `admin.listen` | `127.0.0.1:9091` | Listen address. **Loopback by default.** The status page is enabled by default and is refused with HTTP 403 on any network-reachable bind without `admin.auth.token`, so a wildcard default made the exporter's own UI unusable out of the box. Widen it only together with a token (or a tailnet IP plus network controls). |
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
 | `admin.status_refresh_interval` | `5s` | How often the status page's JS re-polls `/api/status.json` to patch the live view. The 1s freshness ticker is independent. |
 | `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. When **empty**, the status page and JSON APIs are served only on a **loopback** `admin.listen`; on any other bind they are refused with HTTP 403 (see below). `/healthz` and `/readyz` are never gated either way. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
