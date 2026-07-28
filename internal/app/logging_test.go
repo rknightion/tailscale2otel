@@ -50,7 +50,7 @@ func TestRecordReceiverStop_CleanShutdownSilent(t *testing.T) {
 	for _, err := range []error{context.Canceled, context.DeadlineExceeded, http.ErrServerClosed, nil} {
 		var buf bytes.Buffer
 		a := appWithLog(t, &buf)
-		a.recordReceiverStop(appcatalog.ComponentStream, err)
+		a.recordComponentStop(appcatalog.ComponentStream, err)
 		if buf.Len() != 0 {
 			t.Fatalf("clean shutdown err=%v logged %q, want nothing", err, buf.String())
 		}
@@ -62,7 +62,7 @@ func TestRecordReceiverStop_CleanShutdownSilent(t *testing.T) {
 func TestRecordReceiverStop_RealErrorLogsWithComponent(t *testing.T) {
 	var buf bytes.Buffer
 	a := appWithLog(t, &buf)
-	a.recordReceiverStop(appcatalog.ComponentWebhook, errors.New("boom"))
+	a.recordComponentStop(appcatalog.ComponentWebhook, errors.New("boom"))
 	out := buf.String()
 	if !strings.Contains(out, "level=ERROR") {
 		t.Fatalf("log = %q, want level=ERROR", out)

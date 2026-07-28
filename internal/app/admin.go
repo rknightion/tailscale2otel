@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"crypto/subtle"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -275,9 +274,10 @@ func (a *App) runAdmin(ctx context.Context) {
 		defer cancel()
 		_ = a.adminSrv.Shutdown(shutdownCtx)
 	case err := <-errCh:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.logger.Error("admin server stopped", "error", err)
-			a.componentError(appcatalog.ComponentAdmin)
-		}
+		// Through the same path as a receiver stop, so a listener that fails to
+		// bind reaches readiness rather than stopping at a log line and a
+		// counter. /readyz answering 200 while the admin surface is dead is the
+		// apparently-healthy process #306 is about.
+		a.recordComponentStop(appcatalog.ComponentAdmin, err)
 	}
 }

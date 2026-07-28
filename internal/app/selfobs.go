@@ -103,20 +103,26 @@ func (a *App) adminAuthRejected(reason string) {
 	}
 }
 
-// recordReceiverStop logs a receiver's terminal error (tagged with its
-// component for per-subsystem log filtering) and flags a component error. A
-// normal stop signal — context cancellation/deadline or a closed server — is
-// suppressed entirely, so a SIGTERM is neither logged at ERROR nor counted,
-// matching runAdmin's handling of http.ErrServerClosed.
-func (a *App) recordReceiverStop(component string, err error) {
+// recordComponentStop logs a long-running component's terminal error (tagged
+// with its component for per-subsystem log filtering) and flags a component
+// error. A normal stop signal — context cancellation/deadline or a closed
+// server — is suppressed entirely, so a SIGTERM is neither logged at ERROR nor
+// counted.
+//
+// It is the ONE path by which a subsystem failure reaches readiness, and every
+// long-running component uses it: the stream and webhook receivers (#57) and,
+// since #306, the admin and Prometheus listeners. A listener that failed to
+// bind used to stop at a log line and a counter, leaving /readyz answering 200
+// for a surface that was dead.
+func (a *App) recordComponentStop(component string, err error) {
 	if isCleanShutdownErr(err) {
 		return
 	}
-	a.logger.With(semconv.AttrComponent, component).Error("receiver stopped", "error", err)
+	a.logger.With(semconv.AttrComponent, component).Error("component stopped", "error", err)
 	a.componentError(component)
-	// Flag the receiver as failed so /readyz reports the service unready: an
-	// enabled receiver that terminated with a non-clean error can no longer
-	// ingest, so the pod should be pulled from rotation (#57).
+	// Flag the component as failed so /readyz reports the service unready: a
+	// receiver that terminated can no longer ingest and a listener that never
+	// bound can no longer serve, so the pod should be pulled from rotation.
 	a.readyState.fail(component, err)
 }
 

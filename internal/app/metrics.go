@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -110,9 +109,9 @@ func (a *App) runMetrics(ctx context.Context) {
 		defer cancel()
 		_ = a.metricsSrv.Shutdown(shutdownCtx)
 	case err := <-errCh:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.logger.Error("metrics server stopped", "error", err)
-			a.componentError(appcatalog.ComponentMetrics)
-		}
+		// Same one readiness source as the admin server and the receivers (#306):
+		// a Prometheus listener that never bound must not leave the process
+		// reporting itself ready.
+		a.recordComponentStop(appcatalog.ComponentMetrics, err)
 	}
 }

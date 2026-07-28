@@ -755,10 +755,17 @@ func (c *Config) Validate() error {
 	if c.OTLP.MetricExportBatchSize < 1 {
 		return fmt.Errorf("otlp.metric_export_batch_size must be > 0 (got %d); unbounded cumulative metric requests can exceed backend ingest limits", c.OTLP.MetricExportBatchSize)
 	}
-	// Every enabled HTTP listener needs its own bind address. Two enabled servers
-	// on the same address race on net.Listen: one binds, the other logs an ERROR
-	// and the process keeps running with that surface silently dead. Check ALL
-	// four listeners pairwise, not just admin/prometheus (#52f).
+	// Every enabled HTTP listener needs an address it can actually bind, and its
+	// own. Two enabled servers on the same address race on net.Listen: one binds,
+	// the other logs an ERROR and the process keeps running with that surface
+	// silently dead. Check ALL four listeners pairwise, not just admin/prometheus
+	// (#52f).
+	//
+	// Both halves compare CANONICAL addresses rather than raw strings (#306).
+	// Raw strings had no opinion on whether an address was bindable at all — a
+	// bare "9091" with no colon, or a port outside the 16-bit range, validated
+	// fine and then failed inside net.Listen after startup — and they could not
+	// see ":9091" and "0.0.0.0:9091" as the same socket.
 	listeners := []struct {
 		name    string
 		addr    string
@@ -769,12 +776,24 @@ func (c *Config) Validate() error {
 		{"streaming.listen", c.Streaming.Listen, c.Streaming.Enabled},
 		{"webhook.listen", c.Webhook.Listen, c.Webhook.Enabled},
 	}
+	for _, l := range listeners {
+		// A disabled listener binds nothing, so its address is never exercised
+		// and is not a reason to refuse to start.
+		if !l.enabled {
+			continue
+		}
+		if _, err := listenaddr.Canonical(l.addr); err != nil {
+			return fmt.Errorf("%s: %w", l.name, err)
+		}
+	}
 	for i := range listeners {
 		for j := i + 1; j < len(listeners); j++ {
 			a, b := listeners[i], listeners[j]
-			if a.enabled && b.enabled && a.addr != "" && a.addr == b.addr {
-				return fmt.Errorf("%s and %s both bind %q: each enabled HTTP listener needs its own "+
-					"address (only one wins the net.Listen race; the other dies silently)", a.name, b.name, a.addr)
+			if a.enabled && b.enabled && listenaddr.Collides(a.addr, b.addr) {
+				return fmt.Errorf("%s (%q) and %s (%q) bind the same socket: each enabled HTTP listener "+
+					"needs its own address (only one wins the net.Listen race; the other dies silently). "+
+					"A wildcard bind owns its port on every interface, so it collides with any address on "+
+					"that port", a.name, a.addr, b.name, b.addr)
 			}
 		}
 	}

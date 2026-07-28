@@ -56,7 +56,9 @@ func TestReadinessVerdict(t *testing.T) {
 		}
 	})
 
-	t.Run("receiver failure with no pending collectors -> not ready, reason mentions receiver failure", func(t *testing.T) {
+	// The tracker stopped being receiver-specific when the admin and Prometheus
+	// listeners started feeding it (#306), so the reason says "component".
+	t.Run("component failure with no pending collectors -> not ready, reason mentions the failure", func(t *testing.T) {
 		ready, reason := readinessVerdict(
 			[]statusdata.CollectorStatus{readyRan("devices", true)},
 			[]string{"stream: listen tcp :8088: bind: address already in use"},
@@ -64,8 +66,8 @@ func TestReadinessVerdict(t *testing.T) {
 		if ready {
 			t.Fatal("got ready=true, want not-ready when a receiver has terminally failed")
 		}
-		if !strings.Contains(reason, "receiver failure") || !strings.Contains(reason, "8088") {
-			t.Fatalf("reason = %q, want it to mention receiver failure + the underlying error", reason)
+		if !strings.Contains(reason, "component failure") || !strings.Contains(reason, "8088") {
+			t.Fatalf("reason = %q, want it to mention the component failure + the underlying error", reason)
 		}
 	})
 
@@ -111,7 +113,7 @@ func TestReadyzHandler_GatesOnIngressWALLifecycle(t *testing.T) {
 	} {
 		t.Run(string(state), func(t *testing.T) {
 			a := &App{
-				readyState: newReceiverHealth(),
+				readyState: newComponentHealth(),
 				ingressWAL: &ingressWALCoordinator{state: state},
 			}
 			w := httptest.NewRecorder()
@@ -132,7 +134,7 @@ func TestReadyzHandler_GatesOnIngressWALLifecycle(t *testing.T) {
 	} {
 		t.Run(string(state), func(t *testing.T) {
 			a := &App{
-				readyState: newReceiverHealth(),
+				readyState: newComponentHealth(),
 				ingressWAL: &ingressWALCoordinator{state: state},
 			}
 			w := httptest.NewRecorder()

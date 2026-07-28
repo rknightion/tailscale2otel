@@ -100,10 +100,11 @@ type App struct {
 	selfRelease *release.Fetcher // nil unless version_checks.self.enabled
 	tsRelease   *release.Fetcher // nil unless version_checks.devices.enabled
 
-	// readyState tracks terminal stream/webhook receiver failures so /readyz
-	// reports unready after a receiver fails to bind or stops unexpectedly (#57).
-	// Written by recordReceiverStop, read by the readyz handler.
-	readyState *receiverHealth
+	// readyState is the ONE source of component-failure state behind /readyz and
+	// the status page: stream/webhook receivers (#57) plus the admin and
+	// Prometheus listeners (#306). Written by recordComponentStop, read by the
+	// readyz handler.
+	readyState *componentHealth
 }
 
 // receiver is the small common surface shared by legacy single-tailnet servers
@@ -383,7 +384,7 @@ func newAppShell(
 		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
 		store:       store,
 		logger:      logger,
-		readyState:  newReceiverHealth(),
+		readyState:  newComponentHealth(),
 	}
 }
 
@@ -699,7 +700,7 @@ func (a *App) Run(ctx context.Context) error {
 		receiverWG.Add(1)
 		go func() {
 			defer receiverWG.Done()
-			a.recordReceiverStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
+			a.recordComponentStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
 		if a.hasAutoConfigureStreaming() {
 			// Off the hot path: registering the sink makes a network call to
@@ -717,7 +718,7 @@ func (a *App) Run(ctx context.Context) error {
 		receiverWG.Add(1)
 		go func() {
 			defer receiverWG.Done()
-			a.recordReceiverStop(appcatalog.ComponentWebhook, a.webhookSrv.Run(ctx))
+			a.recordComponentStop(appcatalog.ComponentWebhook, a.webhookSrv.Run(ctx))
 		}()
 	}
 	// One scheduler per tailnet, each driving its own registry. Aggregate their

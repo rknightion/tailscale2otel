@@ -118,6 +118,25 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
     `cardinality.flow.destination_port`, and taking that suggestion would silently change your
     metric cardinality.
 
+!!! warning "Upgrading: listener addresses are parsed, not just compared"
+    Every enabled listener (`admin.listen`, `prometheus.listen`, `streaming.listen`,
+    `webhook.listen`) is now parsed at startup, and a listener that cannot be bound is refused
+    rather than accepted. A bare port with no colon (`admin.listen: "9091"`), a host with no port,
+    a service name (`127.0.0.1:http`) and a port outside `0-65535` all used to validate and then
+    fail inside `net.Listen` — on a goroutine, after startup, as a log line on a listener that
+    never served while the process reported itself healthy.
+
+    Collisions are compared the same way. `:9091`, `0.0.0.0:9091` and `[::]:9091` are one socket
+    however they are spelled, and a wildcard bind owns its port on **every** interface — so
+    `admin.listen: ":9091"` alongside `prometheus.listen: "127.0.0.1:9091"` is now rejected. Only
+    one of them would ever have bound; the other died silently. A disabled listener binds nothing
+    and its address is not checked. Run `tailscale2otel -config <file> -validate` before rolling
+    out.
+
+    Related: an enabled listener that fails to bind now makes `/readyz` return **503** with the
+    component named in the body, instead of leaving an apparently healthy process. Receivers
+    already did this; the admin and Prometheus listeners now use the same one source.
+
 ## Conventions
 
 - **Default** is the value used when the key is not set in either the file or an env var.
