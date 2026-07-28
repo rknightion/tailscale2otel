@@ -134,3 +134,9 @@ func reservedPromotedLabels(opts Options) map[string]struct{} {
 	}
 	return r
 }
+
+// ResourceOptions carries opt-in standard Resource enrichment (#380). Owned by
+// the #380 lane. A zero value must produce byte-identical Resources to today's,
+// including the deliberate omission of service.version from the metrics
+// Resource (#187).
+type ResourceOptions struct{}

@@ -112,6 +112,43 @@ type Options struct {
 	// StdoutWriter overrides the destination in "stdout" protocol (default os.Stdout).
 	StdoutWriter io.Writer
 
+	// The blocks below are the frozen seams for the remaining EPIC-04 (#480)
+	// children. Each nested type is DEFINED in the file that owns the behaviour it
+	// configures, so a lane adds fields to its own struct in its own file rather
+	// than contending for this one. A zero value must always mean "behave exactly
+	// as before the block existed".
+
+	// Transport tunes the OTLP request itself: compression, timeouts, retry policy,
+	// request-size ceiling, gRPC connection options (#360). Defined in exporters.go.
+	Transport TransportOptions
+
+	// Signals carries per-signal destination and enablement overrides; an unset
+	// signal inherits the common Protocol/Endpoint/Headers/TLS/Transport (#361).
+	// Defined in exporters.go.
+	Signals SignalOptions
+
+	// Batch tunes the log and span processor queues — capacity, batch size,
+	// interval, export timeout — and their drop accounting (#358). Defined in
+	// processors.go.
+	Batch BatchOptions
+
+	// Stdout makes the "stdout" protocol an immediate debugging sink rather than
+	// one on production batching schedules (#384). Defined in processors.go.
+	Stdout StdoutOptions
+
+	// Sampling carries per-workload head-sampling classes and the inbound
+	// traceparent trust policy (#372, #373). Defined in sampler.go.
+	Sampling SamplingOptions
+
+	// Resource carries opt-in standard Resource enrichment — service namespace,
+	// deployment environment, bounded custom attributes, controlled
+	// OTEL_RESOURCE_ATTRIBUTES (#380). Defined in resource.go.
+	Resource ResourceOptions
+
+	// Profiles carries the opt-in Pyroscope span-profile correlation settings
+	// (#370). Defined in spanprofile.go.
+	Profiles ProfileOptions
+
 	// Logger receives diagnostics from the telemetry pipeline (currently
 	// label-collision resolutions in the Emitter). Nil disables that logging.
 	Logger *slog.Logger

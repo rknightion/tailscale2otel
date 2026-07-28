@@ -31,3 +31,9 @@ func buildSampler(name string, arg float64) sdktrace.Sampler {
 		return sdktrace.ParentBased(sdktrace.AlwaysSample())
 	}
 }
+
+// SamplingOptions carries per-workload head-sampling classes and the inbound
+// traceparent trust policy (#372, #373). Owned by the #372/#373 lane. A zero
+// value must resolve to the single global sampler built from TraceSampler /
+// TraceSamplerArg, with remote parents trusted, exactly as today.
+type SamplingOptions struct{}

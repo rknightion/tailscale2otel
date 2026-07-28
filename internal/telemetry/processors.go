@@ -191,3 +191,11 @@ func (p constAttrSpanProcessor) OnStart(_ context.Context, s sdktrace.ReadWriteS
 func (constAttrSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
 func (constAttrSpanProcessor) Shutdown(context.Context) error   { return nil }
 func (constAttrSpanProcessor) ForceFlush(context.Context) error { return nil }
+
+// BatchOptions tunes the log and span processor queues (#358). Owned by the
+// #358/#384 lane. A zero value must reproduce the SDK defaults exactly.
+type BatchOptions struct{}
+
+// StdoutOptions makes the "stdout" protocol immediate rather than batched
+// (#384). Owned by the #358/#384 lane. A zero value keeps current behaviour.
+type StdoutOptions struct{}

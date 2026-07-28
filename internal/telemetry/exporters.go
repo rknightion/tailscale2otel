@@ -216,3 +216,12 @@ func newTraceExporter(ctx context.Context, opts Options) (sdktrace.SpanExporter,
 		return nil, fmt.Errorf("unknown otlp protocol %q (want grpc, http, or stdout)", opts.Protocol)
 	}
 }
+
+// TransportOptions tunes the OTLP request itself (#360). Owned by the #360/#361
+// lane. Every zero value must reproduce the pre-#360 behaviour: the SDK default.
+type TransportOptions struct{}
+
+// SignalOptions carries per-signal destination and enablement overrides (#361).
+// Owned by the #360/#361 lane. A zero value means every signal inherits the
+// common Protocol/Endpoint/Headers/TLS/Transport settings.
+type SignalOptions struct{}
