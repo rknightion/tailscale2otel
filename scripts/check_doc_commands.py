@@ -28,6 +28,22 @@ value is accepted silently and only surfaces as a confusing runtime symptom:
      mistyped variable is simply ignored by the config loader, so the exporter
      starts with a default nobody intended.
 
+  3. No documented `helm` command puts a CREDENTIAL inline on the command line
+     (#341). `--set secret.TS2OTEL_..._TOKEN=<token>` works, which is exactly
+     why it survived: the credential lands in the operator's shell history and
+     is visible in `ps` output to every other user on the machine for the
+     duration of the install. This is not a typo class — the command does what
+     it says — so nothing else in this file would ever have caught it. The
+     credential surface is derived from the chart's own authoritative list
+     (`tailscale2otel.credentialPaths` in `_helpers.tpl`) plus everything under
+     `secret.`, which is by definition the credential env map, so adding a new
+     credential field to the chart extends this check with no edit here.
+
+     `--set-file` and `-f/--values` are the supported alternatives and are
+     allowed: the value comes from a file rather than argv. `--set-file` keys
+     are validated against the schema like any other, because it was previously
+     invisible to the extractor.
+
 WHAT IT DOES NOT DO. It does not execute anything. Running `helm install` or
 `docker run` from CI would need a cluster or a registry pull, and — the reason
 the issue calls it out — must never touch a real control plane. Checking the
@@ -54,11 +70,24 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMA = os.path.join(REPO, "deploy", "helm", "tailscale2otel", "values.schema.json")
 ENV_DOC = os.path.join(REPO, "docs", "env-vars.md")
+HELPERS = os.path.join(REPO, "deploy", "helm", "tailscale2otel", "templates", "_helpers.tpl")
 
-# --set/--set-string flags, quoted or bare, up to the '='.
+# --set/--set-string flags, quoted or bare, up to the '='. NOT --set-file: that
+# reads the value from a file rather than argv, which is the whole point of
+# allowing it, so it is extracted separately by SET_FILE_RE below.
 SET_RE = re.compile(r"--set(?:-string)?[= ]+[\"']?([A-Za-z0-9_.\[\]-]+)=")
+# --set-file keys. Schema-validated like any other key; never a credential
+# exposure, because the value never appears on the command line.
+SET_FILE_RE = re.compile(r"--set-file[= ]+[\"']?([A-Za-z0-9_.\[\]-]+)=")
+# The chart's authoritative credential list, between the define and its end.
+CRED_BLOCK_RE = re.compile(
+    r'{{-\s*define\s+"tailscale2otel\.credentialPaths"\s*-}}(.*?){{-\s*end\s*-}}', re.S)
 # -e / --env NAME=..., restricted to this project's prefix.
 ENV_RE = re.compile(r"(?:-e|--env)[= ]+[\"']?(TS2OTEL_[A-Z0-9_]+)")
+# `kubectl create secret ... --from-literal=TS2OTEL_X=value`. Same exposure as
+# an inline --set and the obvious way to write the existingSecret quick start
+# wrongly, so it is screened too; --from-file/--from-env-file are the safe forms.
+FROM_LITERAL_RE = re.compile(r"--from-literal[= ]+[\"']?(TS2OTEL_[A-Z0-9_]+)=")
 # Env-var reference rows: | `TS2OTEL_FOO` | ... |
 ENV_DOC_RE = re.compile(r"^\|\s*`(TS2OTEL_[A-Z0-9_]+)`\s*\|", re.M)
 
@@ -116,9 +145,46 @@ def load_known_env():
     return names
 
 
+def load_credential_prefixes():
+    """Chart value prefixes whose value is a credential.
+
+    Derived from `tailscale2otel.credentialPaths` — the chart's own list, which
+    `deploy/CLAUDE.md` names as authoritative and which every template routes
+    through — so a new credential field added to the chart is covered here
+    without touching this file. `secret.` is added because the whole point of
+    that map is TS2OTEL_* credential env vars.
+    """
+    try:
+        with open(HELPERS, encoding="utf-8") as f:
+            body = f.read()
+    except OSError as exc:
+        die("cannot read %s: %s" % (HELPERS, exc))
+    m = CRED_BLOCK_RE.search(body)
+    if not m:
+        die("%s no longer defines tailscale2otel.credentialPaths in the expected shape; "
+            "an empty credential set would make the inline-credential check pass vacuously"
+            % HELPERS)
+    paths = [p.strip() for p in m.group(1).split("\n") if p.strip()]
+    if not paths:
+        die("tailscale2otel.credentialPaths parsed as empty; refusing to check nothing")
+    prefixes = {"secret"}
+    prefixes.update("config.%s" % p for p in paths)
+    return prefixes
+
+
+def is_credential(key, prefixes):
+    clean = re.sub(r"\[\d+\]", "", key)
+    return any(clean == p or clean.startswith(p + ".") for p in prefixes)
+
+
 def doc_files():
     files = [os.path.join(REPO, "README.md")]
     files += sorted(glob.glob(os.path.join(REPO, "docs", "*.md")))
+    # NOTES.txt is the post-install text every `helm install` prints, so it is a
+    # documented command surface exactly like the README — and it taught inline
+    # `--set secret.*` for just as long (#341). It is a Go template, but the
+    # command lines in it are literal, so the same extractors apply.
+    files.append(os.path.join(REPO, "deploy", "helm", "tailscale2otel", "templates", "NOTES.txt"))
     return files
 
 
@@ -132,7 +198,8 @@ def extract(path):
     """
     with open(path, encoding="utf-8") as f:
         body = f.read()
-    return SET_RE.findall(body), ENV_RE.findall(body)
+    return (SET_RE.findall(body), ENV_RE.findall(body),
+            SET_FILE_RE.findall(body), FROM_LITERAL_RE.findall(body))
 
 
 def main():
@@ -143,32 +210,58 @@ def main():
 
     known_paths, open_prefixes = load_schema_paths()
     known_env = load_known_env()
+    cred_prefixes = load_credential_prefixes()
+
+    def resolves(key):
+        # Strip list indices; the schema describes the element, not the slot.
+        clean = re.sub(r"\[\d+\]", "", key)
+        if clean in known_paths:
+            return True
+        return any(clean == p or clean.startswith(p + ".") for p in open_prefixes)
 
     problems, checked = [], 0
+    inline_cred_checked = 0
     for path in doc_files():
         rel = os.path.relpath(path, REPO)
-        set_keys, env_vars = extract(path)
-        for key in set_keys:
+        set_keys, env_vars, set_file_keys, literals = extract(path)
+        for var in literals:
+            inline_cred_checked += 1
+            problems.append((rel, "--from-literal %s=<value>" % var,
+                             "puts a CREDENTIAL inline on the command line, same exposure as "
+                             "--set. Use --from-file or --from-env-file with a mode-0600 file "
+                             "(#341)"))
+        for key in set_keys + set_file_keys:
             checked += 1
-            # Strip list indices; the schema describes the element, not the slot.
-            clean = re.sub(r"\[\d+\]", "", key)
-            if clean in known_paths:
-                continue
-            if any(clean == p or clean.startswith(p + ".") for p in open_prefixes):
-                continue
-            problems.append((rel, "--set %s" % key,
-                             "no such chart value; helm accepts unknown --set paths "
-                             "SILENTLY, so this documented command installs without it"))
+            if not resolves(key):
+                problems.append((rel, "--set %s" % key,
+                                 "no such chart value; helm accepts unknown --set paths "
+                                 "SILENTLY, so this documented command installs without it"))
+        for key in set_keys:
+            inline_cred_checked += 1
+            if is_credential(key, cred_prefixes):
+                problems.append((rel, "--set %s=<value>" % key,
+                                 "puts a CREDENTIAL inline on the command line, where it lands "
+                                 "in shell history and is visible in `ps` to every other user on "
+                                 "the machine. Document a pre-created existingSecret, --set-file, "
+                                 "or -f with a mode-0600 values file instead (#341)"))
         for var in env_vars:
             checked += 1
             if var not in known_env:
                 problems.append((rel, "-e %s" % var,
                                  "not a real TS2OTEL_* variable; the config loader ignores "
                                  "unknown variables, so this silently takes the default"))
-        if args.list and (set_keys or env_vars):
-            print("%s: %d --set keys, %d env vars" % (rel, len(set_keys), len(env_vars)))
+        if args.list and (set_keys or env_vars or set_file_keys):
+            print("%s: %d --set keys, %d --set-file keys, %d env vars"
+                  % (rel, len(set_keys), len(set_file_keys), len(env_vars)))
 
-    print("checked %d documented keys across %d files" % (checked, len(doc_files())))
+    print("checked %d documented keys across %d files (%d --set keys screened for inline "
+          "credentials against %d credential prefixes)"
+          % (checked, len(doc_files()), inline_cred_checked, len(cred_prefixes)))
+    if not inline_cred_checked:
+        print("check_doc_commands: no --set key was screened for inline credentials — the "
+              "extractor is broken or the docs carry no helm commands; either way the #341 "
+              "check passed vacuously and this is not a pass", file=sys.stderr)
+        return 1
     if not checked:
         print("check_doc_commands: extracted nothing at all — the extractor is broken or the "
               "docs no longer carry install commands, either way this is not a pass",

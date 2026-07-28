@@ -340,9 +340,16 @@ budget="$(dep_field '.spec.template.spec.terminationGracePeriodSeconds')"
 
 # An operator lowering this is making a data-durability decision. The render
 # must fail and say so, rather than truncating a drain silently.
+#
+# TWO layers enforce it, on different inputs, and both are needed:
+#   - values.schema.json `minimum: 45` catches any NUMBER below the floor, and
+#     fires first, so the template guard never sees those.
+#   - the template's `fail` catches null/absent, which JSON Schema `minimum`
+#     does NOT reject and which would otherwise render a budget of ZERO —
+#     an immediate SIGKILL, the worst possible outcome.
 render --set terminationGracePeriodSeconds=20
-if [[ $RENDER_RC -ne 0 ]] && grep -q 'terminationGracePeriodSeconds must be at least 45' <<<"$RENDER"; then
-  ok "K: a budget below the drain fails the render and names the floor"
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'want 45' <<<"$RENDER"; then
+  ok "K: a numeric budget below the floor is rejected by the schema, naming 45"
 else
   bad "K: terminationGracePeriodSeconds=20 rendered (rc=$RENDER_RC) instead of failing"
 fi
@@ -355,10 +362,76 @@ render --set terminationGracePeriodSeconds=30
   && ok "K: 30 (the k8s default, == the drain, no margin) also fails" \
   || bad "K: terminationGracePeriodSeconds=30 rendered; it leaves no headroom"
 
+# null slips past the schema. Without the template guard this renders
+# `terminationGracePeriodSeconds: 0` — a zero budget, killed instantly.
+render --set terminationGracePeriodSeconds=null
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'terminationGracePeriodSeconds must be at least 45' <<<"$RENDER"; then
+  ok "K: null is caught by the template guard, which explains the drain"
+else
+  bad "K: terminationGracePeriodSeconds=null rendered (rc=$RENDER_RC); a zero budget would ship"
+fi
+grep -q 'staged drain is 30s' <<<"$RENDER" \
+  && ok "K: the failure explains WHY 45, not just that 45 is required" \
+  || bad "K: failure message does not state the drain arithmetic"
+
 render --set terminationGracePeriodSeconds=120
 assert_rc0 "K: a larger budget renders"
 [[ "$(dep_field '.spec.template.spec.terminationGracePeriodSeconds')" == "120" ]] \
   && ok "K: a larger budget is passed through" || bad "K: larger budget not honoured"
+
+# --------------------------------------------------------------------------
+case_ "L. the documented credential quick starts actually work (#341)"
+# The README's preferred quick start, verbatim in shape: a pre-created Secret
+# referenced by name. Assert it reaches the pod AND that the chart renders no
+# Secret of its own — the whole point is that no credential passes through Helm.
+render --set-string config.tailscale.tailnet=example.com \
+       --set-string existingSecret=tailscale2otel-creds
+assert_rc0 "L: existingSecret quick start renders"
+[[ "$(dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | [.envFrom[]?.secretRef.name] | join(",")')" == "tailscale2otel-creds" ]] \
+  && ok "L: credentials injected via envFrom from the pre-created Secret" \
+  || bad "L: envFrom does not reference tailscale2otel-creds"
+[[ -z "$(yq "select(.kind == \"Secret\" and .metadata.name == \"${FULLNAME}\")" <<<"$RENDER" | tr -d '[:space:]-')" ]] \
+  && ok "L: chart renders no Secret of its own (nothing passed through Helm)" \
+  || bad "L: chart still rendered its own Secret alongside existingSecret"
+
+# The -f secrets.yaml alternative: values under `secret:` must reach a Secret and
+# nothing else. Reuses the SEC-07 assertion, so a leak fails the same way.
+render --set-string "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=${SENTINEL}"
+assert_rc0 "L: chart-managed secret renders"
+assert_secret_only "L[secret.* from a values file]"
+
+# NOTES must be mode-aware: each mode names its own rotation path, and neither
+# tells the operator to put a credential on the command line.
+# `helm template` does NOT render NOTES.txt — it silently emits nothing, which
+# made the two negative-shaped assertions below pass vacuously on first write.
+# `helm install --dry-run=client` is what renders it, with no cluster contacted.
+notes_of() {
+  local out
+  out="$(helm install "$RELEASE" "$CHART_DIR" --dry-run=client "$@" 2>&1 | sed -n '/^NOTES:/,$p')"
+  if [[ -z "$out" ]]; then
+    bad "L: NOTES rendered EMPTY — every assertion over it would pass vacuously"
+    return 1
+  fi
+  printf '%s' "$out"
+}
+n_ext="$(notes_of --set-string existingSecret=tailscale2otel-creds)"
+n_own="$(notes_of)"
+grep -q 'tailscale2otel-creds' <<<"$n_ext" \
+  && ok "L: NOTES names the existing Secret in existingSecret mode" \
+  || bad "L: NOTES does not name the existing Secret"
+grep -q 'Rendered into Secret' <<<"$n_own" \
+  && ok "L: NOTES describes the chart-managed Secret in default mode" \
+  || bad "L: NOTES does not describe the chart-managed Secret"
+grep -q 'Rendered into Secret' <<<"$n_ext" \
+  && bad "L: NOTES describes a chart-managed Secret while existingSecret is set" \
+  || ok "L: NOTES is mode-aware (no chart-Secret text under existingSecret)"
+# An inline `--set secret.KEY=` form in the printed output is the defect #341 is
+# about — it is the single most-copied text the chart emits.
+if grep -qE -- '--set(-string)? +"?secret\.[A-Za-z0-9_]+=' <<<"$n_own$n_ext"; then
+  bad "L: NOTES still prints an inline --set secret.<KEY>=<value> command"
+else
+  ok "L: NOTES prints no inline credential command"
+fi
 
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

@@ -88,12 +88,29 @@ pass `-config /etc/tailscale2otel/config.yaml` if you prefer.
 
 ### Kubernetes (Helm)
 
+Put the credentials in a Secret first, then point the chart at it. They never
+reach your shell history, and never pass through Helm at all:
+
 ```sh
+cat > creds.env <<'EOF'
+TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=...
+TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=...
+TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=...
+TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=...
+EOF
+chmod 600 creds.env
+
+kubectl create secret generic tailscale2otel-creds --from-env-file=creds.env
+rm creds.env
+
 helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
   --set-string config.tailscale.tailnet=example.com \
-  --set-string secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
-  --set-string secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret>
+  --set-string existingSecret=tailscale2otel-creds
 ```
+
+Do **not** pass a credential as an inline `--set secret.<KEY>` value: it lands in your
+shell history and is visible in `ps` to every other user on the machine.
+`scripts/check_doc_commands.py` fails CI if any documented command does.
 
 See [Installation](https://m7kni.io/tailscale2otel/installation/) for docker-compose, prebuilt
 binaries (Linux/macOS/Windows × amd64/arm64), and the full chart values.

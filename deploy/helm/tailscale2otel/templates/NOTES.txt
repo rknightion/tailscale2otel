@@ -19,9 +19,18 @@ endpoint ({{ .Values.config.otlp.endpoint }}) every {{ .Values.config.otlp.metri
      helm upgrade {{ .Release.Name }} <chart> --reuse-values --set rolloutTrigger=$(date +%s)
    or run Stakater Reloader and set podAnnotations."reloader.stakater.com/auto"="true".
 {{- else }}
-   Rendered into Secret "{{ include "tailscale2otel.fullname" . }}". Set values via
-   --set secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=... etc., or point
-   existingSecret at your own.
+   Rendered into Secret "{{ include "tailscale2otel.fullname" . }}" from the chart's
+   `secret:` values.
+
+   Do NOT pass a credential as an inline "--set secret.<KEY>" value: it lands in
+   your shell history and is visible in `ps` to other users on the machine. Supply
+   it from a file instead:
+     -f secrets.yaml            (chmod 600; a `secret:` map)
+     --set-file secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=./client-secret.txt
+   Better still, keep them out of Helm entirely — pre-create a Secret and set
+   existingSecret, so the values never enter the release either:
+     kubectl create secret generic <name> --from-env-file=creds.env
+     helm upgrade {{ .Release.Name }} <chart> --reuse-values --set-string existingSecret=<name>
 
    Changing a `secret:` value does NOT roll this pod on its own (same envFrom
    staleness as above) — bump rolloutTrigger or run Reloader after every change.

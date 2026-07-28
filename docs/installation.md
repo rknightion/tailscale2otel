@@ -156,20 +156,89 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     ## Helm
 
-    The chart is published as an OCI artifact. Install it with:
+    The chart is published as an OCI artifact.
+
+    !!! danger "Never pass a credential with `--set`"
+        Passing a credential as an inline `--set secret.<KEY>` value works,
+        which is why it is easy to reach for. It also writes the credential
+        into your shell history and
+        exposes it in `ps` output to every other user on the machine for the
+        duration of the install. Use one of the three modes below instead;
+        `scripts/check_doc_commands.py` fails CI if any documented command in
+        this repository puts a credential inline.
+
+    ### Preferred: a pre-created Secret (`existingSecret`)
+
+    The credential never passes through Helm, so it is not in the release values
+    either — only in the Secret object, under normal Secret RBAC:
+
+    ```sh
+    cat > creds.env <<'EOF'
+    TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=...
+    TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=...
+    TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=...
+    TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=...
+    EOF
+    chmod 600 creds.env
+
+    kubectl create secret generic tailscale2otel-creds --from-env-file=creds.env
+    rm creds.env
+
+    helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
+      --set-string config.tailscale.tailnet=example.com \
+      --set-string existingSecret=tailscale2otel-creds
+    ```
+
+    Use `--from-env-file` or `--from-file`, not `--from-literal` — the latter has
+    exactly the same command-line exposure as an inline `--set`.
+
+    Rotating that Secret does not reach a running pod on its own; see
+    [Rotating an externally managed Secret](#rotating-an-externally-managed-secret)
+    below.
+
+    ### Alternative: a values file the chart turns into a Secret
+
+    If you would rather Helm manage the Secret, keep the values in a file with
+    restrictive permissions rather than on the command line:
+
+    ```sh
+    cat > secrets.yaml <<'EOF'
+    secret:
+      TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID: ...
+      TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET: ...
+      TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ...
+      TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN: ...
+    EOF
+    chmod 600 secrets.yaml
+
+    helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
+      -f secrets.yaml --set-string config.tailscale.tailnet=example.com
+    ```
+
+    A single credential can also come from its own file, which keeps it out of
+    both argv and any multi-value file:
 
     ```sh
     helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
-      --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id>" \
-      --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret>" \
-      --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=<stack-id>" \
-      --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token>"
+      --set-file secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=./client-secret.txt
     ```
+
+    Both forms store the value in the Helm release, which lives in a Secret in
+    the release namespace — protected by Secret RBAC, but readable by anyone who
+    can run `helm get values`. `existingSecret` avoids that; these do not.
+
+    ### Development only: inline
+
+    An inline `--set secret.<KEY>` value is acceptable **only** against a
+    throwaway cluster with a throwaway credential. It is not a quick start, and
+    it is deliberately not written out here as a copy-pasteable command.
+
+    ---
 
     The entire application config lives under the `config:` key in `values.yaml`
     and is rendered verbatim as `config.yaml`. Keep credentials out of it: inject
-    them as `TS2OTEL_*` environment variables via the chart's Secret (the `--set
-    secret.*` flags above) or point `existingSecret` at your own.
+    them as `TS2OTEL_*` environment variables via `existingSecret` or the chart's
+    own Secret, as above.
 
     !!! warning "Credentials never land in a ConfigMap"
         A ConfigMap is readable by anyone holding `get configmaps` in the namespace,
@@ -204,14 +273,13 @@ See [Configuration](configuration.md) for the full list of options once you are 
         `checksum/config` and `checksum/secret` annotations already cover
         chart-managed config and inline `secret:` values.
 
-    To also override a config field:
+    Config fields carry no credentials, so they are fine on the command line —
+    combine them with whichever credential mode you chose above:
 
     ```sh
     helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
-      --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=..." \
-      --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=..." \
-      --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=..." \
-      --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=..." \
+      --set-string existingSecret=tailscale2otel-creds \
+      --set-string config.tailscale.tailnet=example.com \
       --set config.log_level=debug
     ```
 

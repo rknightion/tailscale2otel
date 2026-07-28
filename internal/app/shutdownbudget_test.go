@@ -16,6 +16,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -102,19 +103,48 @@ func TestChartTerminationGracePeriodCoversDrain(t *testing.T) {
 	}
 }
 
-// TestChartMinimumMatchesDrain pins the chart's own guard: an operator
-// who lowers terminationGracePeriodSeconds past the drain gets a render-time
+// TestChartMinimumMatchesDrain pins BOTH chart-side floors. An operator who
+// lowers terminationGracePeriodSeconds past the drain must get a render-time
 // failure naming the minimum, not a pod that loses data on every rollout.
-// The guard itself is exercised by deploy/helm/tests/render-tests.sh; this
-// asserts the minimum it enforces still matches the code.
+//
+// There are two enforcement layers because neither covers the other's input:
+// values.schema.json's `minimum` rejects any NUMBER below the floor and fires
+// before templating, while the template's `fail` catches null/absent — which
+// JSON Schema `minimum` does not reject and which would otherwise render a
+// budget of ZERO. Both encode the number, so both must track the code.
+// The behavior is exercised by deploy/helm/tests/render-tests.sh case K;
+// this asserts the numbers they enforce still match the derived requirement.
 func TestChartMinimumMatchesDrain(t *testing.T) {
-	body := string(repoFile(t, "deploy/helm/tailscale2otel/templates/deployment.yaml"))
 	want := int(requiredBudget() / time.Second)
+
+	body := string(repoFile(t, "deploy/helm/tailscale2otel/templates/deployment.yaml"))
 	needle := "terminationGracePeriodSeconds must be at least " + strconv.Itoa(want)
 	if !strings.Contains(body, needle) {
-		t.Errorf("deployment.yaml's minimum-budget guard does not name %d seconds.\n"+
+		t.Errorf("deployment.yaml's null/absent guard does not name %d seconds.\n"+
 			"The worst-case staged drain is %s, so the enforced minimum must be %s. "+
 			"Expected the failure message to contain %q.",
 			want, worstCaseDrain(), requiredBudget(), needle)
+	}
+
+	var schema struct {
+		Properties struct {
+			TerminationGracePeriodSeconds struct {
+				Minimum *int `json:"minimum"`
+			} `json:"terminationGracePeriodSeconds"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(repoFile(t, "deploy/helm/tailscale2otel/values.schema.json"), &schema); err != nil {
+		t.Fatalf("parse values.schema.json: %v", err)
+	}
+	min := schema.Properties.TerminationGracePeriodSeconds.Minimum
+	if min == nil {
+		t.Fatalf("values.schema.json declares no minimum for terminationGracePeriodSeconds; "+
+			"any number below %s would then be accepted. Restore the `@schema minimum:%d` "+
+			"annotation in values.yaml and regenerate.", requiredBudget(), want)
+	}
+	if *min != want {
+		t.Errorf("values.schema.json enforces a minimum of %d; the worst-case staged drain is %s "+
+			"so it must be %d. Update the `@schema minimum:` annotation in values.yaml and "+
+			"regenerate with scripts/regen-generated.sh helm.", *min, worstCaseDrain(), want)
 	}
 }
