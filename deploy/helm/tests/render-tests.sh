@@ -284,5 +284,50 @@ assert_rc0 "I: existing PVC renders"
 [[ -z "$(docs_of PersistentVolumeClaim | tr -d '[:space:]-')" ]] \
   && ok "I: existingClaim does not create another PVC" || bad "I: unexpected managed PVC with existingClaim"
 
+# --------------------------------------------------------------------------
+case_ "J. probes follow admin TLS (#342)"
+# The binary serves the admin server over HTTPS iff BOTH admin.tls files are set
+# (internal/app/admin.go: ListenAndServeTLS when certFile != "" && keyFile != "").
+# Probes with no httpGet.scheme default to HTTP, so enabling a supported chart
+# setting made every probe fail the TLS handshake — the pod never becomes ready
+# and the kubelet restarts it forever.
+probe() { dep_field ".spec.template.spec.containers[] | select(.name == \"tailscale2otel\") | .${1}Probe.httpGet.scheme"; }
+
+render
+assert_rc0 "J: plain HTTP renders"
+# Absent scheme means HTTP to Kubernetes; assert it is not HTTPS rather than
+# demanding a literal, so either `null` or an explicit HTTP both pass.
+[[ "$(probe liveness)" != "HTTPS" && "$(probe readiness)" != "HTTPS" ]] \
+  && ok "J: no admin TLS -> probes are not HTTPS" \
+  || bad "J: probes went HTTPS without admin TLS (liveness=$(probe liveness) readiness=$(probe readiness))"
+
+render --set-string config.admin.tls.cert_file=/tls/tls.crt \
+       --set-string config.admin.tls.key_file=/tls/tls.key
+assert_rc0 "J: admin TLS renders"
+[[ "$(probe liveness)" == "HTTPS" ]] \
+  && ok "J: admin TLS -> liveness scheme HTTPS" || bad "J: liveness scheme is $(probe liveness), want HTTPS"
+[[ "$(probe readiness)" == "HTTPS" ]] \
+  && ok "J: admin TLS -> readiness scheme HTTPS" || bad "J: readiness scheme is $(probe readiness), want HTTPS"
+
+# Only ONE of the pair set is not a TLS server — it is a config error the app
+# rejects at startup (validateTLSFiles, #170). The chart must not pre-emptively
+# flip the probes to HTTPS for a pod that will never serve TLS.
+render --set-string config.admin.tls.cert_file=/tls/tls.crt
+assert_rc0 "J: cert-only renders"
+[[ "$(probe liveness)" != "HTTPS" ]] \
+  && ok "J: cert_file alone does not flip the probe scheme" || bad "J: cert_file alone flipped the probe to HTTPS"
+render --set-string config.admin.tls.key_file=/tls/tls.key
+assert_rc0 "J: key-only renders"
+[[ "$(probe liveness)" != "HTTPS" ]] \
+  && ok "J: key_file alone does not flip the probe scheme" || bad "J: key_file alone flipped the probe to HTTPS"
+
+# The workaround warning in values.yaml must not outlive the defect it warns
+# about: it tells operators to patch the probes by hand, which is now wrong.
+if grep -q 'patch the probes' "$CHART_DIR/values.yaml"; then
+  bad "J: values.yaml still tells operators to patch the probes by hand"
+else
+  ok "J: stale probe workaround warning removed from values.yaml"
+fi
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

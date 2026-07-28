@@ -995,9 +995,10 @@ config:
       token_file: ""
     tls:
       # -- HTTPS certificate for the admin server. Set together with key_file (both-or-neither);
-      # leaving both empty serves plain HTTP. NOTE: this chart's liveness/readiness probes set no
-      # httpGet.scheme, so they speak HTTP — serving the admin server over HTTPS breaks them until
-      # you patch the probes to scheme: HTTPS.
+      # leaving both empty serves plain HTTP. The chart's liveness/readiness probes follow this
+      # automatically: setting both files renders them with scheme: HTTPS (#342). Setting admin
+      # TLS through TS2OTEL_ADMIN__TLS__* env vars instead is invisible to the chart and leaves
+      # the probes on HTTP — use these config keys.
       cert_file: ""
       # -- HTTPS private key paired with cert_file. Both paths must exist and be readable at startup.
       key_file: ""

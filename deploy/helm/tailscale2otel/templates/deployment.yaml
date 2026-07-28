@@ -104,16 +104,36 @@ spec:
           ports:
             - name: admin
               containerPort: {{ .Values.config.admin.listen | splitList ":" | last | int }}
+          {{- /*
+            The binary serves the admin endpoints over HTTPS iff BOTH admin.tls
+            files are set (internal/app/admin.go picks ListenAndServeTLS on
+            certFile != "" && keyFile != ""). A probe with no scheme defaults to
+            HTTP, so the probes must follow that same both-or-neither condition
+            or enabling admin TLS leaves the pod permanently unready and
+            restarting (#342). One file alone is a startup error the app
+            rejects (validateTLSFiles, #170), never a TLS server — so `and`,
+            not `or`. The kubelet does not verify the server certificate on an
+            HTTPS probe, so a self-signed admin cert needs nothing further.
+            Setting admin TLS through TS2OTEL_ADMIN__TLS__* env vars instead of
+            `config.admin.tls` is invisible to the chart; use the config keys.
+          */}}
+          {{- $adminTLS := and .Values.config.admin.tls.cert_file .Values.config.admin.tls.key_file }}
           livenessProbe:
             httpGet:
               path: /healthz
               port: admin
+              {{- if $adminTLS }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /readyz
               port: admin
+              {{- if $adminTLS }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 15
           {{- end }}

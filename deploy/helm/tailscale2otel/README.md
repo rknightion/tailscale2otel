@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.14.7](https://img.shields.io/badge/Version-0.14.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
+![Version: 0.14.8](https://img.shields.io/badge/Version-0.14.8-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.0.2](https://img.shields.io/badge/AppVersion-2.0.2-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -198,7 +198,7 @@ extraVolumeMounts:
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
 | config.admin.listen | string | `":9091"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
 | config.admin.status_refresh_interval | string | `"5s"` | How often the status page's JS re-polls /api/status.json to patch the live view. The page's 1s freshness ticker is independent of this. |
-| config.admin.tls.cert_file | string | `""` | HTTPS certificate for the admin server. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. NOTE: this chart's liveness/readiness probes set no httpGet.scheme, so they speak HTTP — serving the admin server over HTTPS breaks them until you patch the probes to scheme: HTTPS. |
+| config.admin.tls.cert_file | string | `""` | HTTPS certificate for the admin server. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. The chart's liveness/readiness probes follow this automatically: setting both files renders them with scheme: HTTPS (#342). Setting admin TLS through TS2OTEL_ADMIN__TLS__* env vars instead is invisible to the chart and leaves the probes on HTTP — use these config keys. |
 | config.admin.tls.key_file | string | `""` | HTTPS private key paired with cert_file. Both paths must exist and be readable at startup. |
 | config.cardinality.critical_threshold | int | `8000` | Status-page cardinality view flags a metric critically at/above this count (>= warning_threshold; <= metric_limit when set; 0 disables). |
 | config.cardinality.derp_region_rollup | bool | `true` | Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector. |
