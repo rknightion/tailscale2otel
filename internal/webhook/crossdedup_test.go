@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -53,8 +54,8 @@ func TestEmit_CrossDedupSuppressesAfterAudit(t *testing.T) {
 	}, auditRec.Emitter())
 
 	s := New(Options{}, rec.Emitter(), discard(), WithDedup(set))
-	s.emit(nodeCreatedEvent("n1")) // same change -> suppressed
-	s.emit(nodeCreatedEvent("n2")) // different node -> emitted
+	s.emit(context.Background(), nodeCreatedEvent("n1")) // same change -> suppressed
+	s.emit(context.Background(), nodeCreatedEvent("n2")) // different node -> emitted
 
 	logs := rec.LogRecords()
 	if len(logs) != 1 {
@@ -76,8 +77,8 @@ func TestEmit_WebhookSelfDedup(t *testing.T) {
 	set := dedup.New(0)
 	s := New(Options{}, rec.Emitter(), discard(), WithDedup(set))
 
-	s.emit(nodeCreatedEvent("n1"))
-	s.emit(nodeCreatedEvent("n1"))
+	s.emit(context.Background(), nodeCreatedEvent("n1"))
+	s.emit(context.Background(), nodeCreatedEvent("n1"))
 
 	if got := len(rec.LogRecords()); got != 1 {
 		t.Fatalf("log records = %d, want 1 (self cross-dedup)", got)
@@ -94,8 +95,8 @@ func TestEmit_UnmappedTypeNeverSuppressed(t *testing.T) {
 
 	ev := nodeCreatedEvent("n1")
 	ev.Type = "nodeNeedsApproval" // not in the cross-source map
-	s.emit(ev)
-	s.emit(ev)
+	s.emit(context.Background(), ev)
+	s.emit(context.Background(), ev)
 
 	if got := len(rec.LogRecords()); got != 2 {
 		t.Fatalf("log records = %d, want 2 (unmapped type not deduped)", got)
@@ -108,8 +109,8 @@ func TestEmit_NoDedupSetEmitsAll(t *testing.T) {
 	rec := telemetrytest.New()
 	s := New(Options{}, rec.Emitter(), discard())
 
-	s.emit(nodeCreatedEvent("n1"))
-	s.emit(nodeCreatedEvent("n1"))
+	s.emit(context.Background(), nodeCreatedEvent("n1"))
+	s.emit(context.Background(), nodeCreatedEvent("n1"))
 
 	if got := len(rec.LogRecords()); got != 2 {
 		t.Fatalf("log records = %d, want 2 (no dedup set)", got)

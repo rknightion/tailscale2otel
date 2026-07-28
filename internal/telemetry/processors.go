@@ -197,5 +197,5 @@ func (constAttrSpanProcessor) ForceFlush(context.Context) error { return nil }
 type BatchOptions struct{}
 
 // StdoutOptions makes the "stdout" protocol immediate rather than batched
-// (#384). Owned by the #358/#384 lane. A zero value keeps current behaviour.
+// (#384). Owned by the #358/#384 lane. A zero value keeps current behavior.
 type StdoutOptions struct{}

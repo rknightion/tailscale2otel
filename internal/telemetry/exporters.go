@@ -218,7 +218,7 @@ func newTraceExporter(ctx context.Context, opts Options) (sdktrace.SpanExporter,
 }
 
 // TransportOptions tunes the OTLP request itself (#360). Owned by the #360/#361
-// lane. Every zero value must reproduce the pre-#360 behaviour: the SDK default.
+// lane. Every zero value must reproduce the pre-#360 behavior: the SDK default.
 type TransportOptions struct{}
 
 // SignalOptions carries per-signal destination and enablement overrides (#361).

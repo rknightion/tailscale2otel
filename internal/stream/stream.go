@@ -1006,7 +1006,7 @@ classifyLoop:
 	// either decoded cleanly or is a forward-compatible unknown). NOW emit —
 	// route the staged records, count skips, and ack success. Nothing above this
 	// point touched a processor.
-	if _, err := s.applyDecoded(raw, batch, time.Now, r.Context().Err); err != nil {
+	if _, err := s.applyDecoded(ctx, raw, batch, time.Now, r.Context().Err); err != nil {
 		s.phase2DeadlineExceeded(r.Context(), w, span)
 		return
 	}
@@ -1051,7 +1051,7 @@ func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.
 	if err := ctx.Err(); err != nil {
 		return ApplyResult{}, err
 	}
-	return s.applyDecoded(body, batch, func() time.Time { return acceptedAt }, noEffectGuard)
+	return s.applyDecoded(ctx, body, batch, func() time.Time { return acceptedAt }, noEffectGuard)
 }
 
 func noEffectGuard() error { return nil }
@@ -1098,7 +1098,12 @@ func decodeDurableBatch(body []byte) (decodedBatch, error) {
 // applyDecoded owns every accepted-delivery side effect shared by the
 // synchronous and durable-replay paths. nowAccepted supplies time.Now in
 // stateless mode and the one persisted timestamp in durable mode.
+// ctx carries the receiver's server span (or the replay caller's span) so the
+// flow and audit log records this emits are children of it. Without it the
+// streaming path emits orphaned records while the poll path emits correlated
+// ones (#367) — the same signal, joinable on one route and not the other.
 func (s *Server) applyDecoded(
+	ctx context.Context,
 	raw []byte,
 	batch decodedBatch,
 	nowAccepted func() time.Time,
@@ -1118,7 +1123,7 @@ func (s *Server) applyDecoded(
 			return ApplyResult{}, err
 		}
 		flow := batch.flows[i].log
-		s.flowProc.Process(flow, s.emitter)
+		s.flowProc.ProcessCtx(ctx, flow, s.emitter)
 		if s.onAccepted != nil {
 			s.onAccepted(ingest.AcceptedEvent{
 				Source:      semconv.IngestSourceStream,
@@ -1134,7 +1139,7 @@ func (s *Server) applyDecoded(
 			return ApplyResult{}, err
 		}
 		auditRecord := batch.audits[i]
-		s.auditProc.Process(auditRecord.event, s.emitter)
+		s.auditProc.ProcessCtx(ctx, auditRecord.event, s.emitter)
 		if s.onAccepted != nil {
 			s.onAccepted(ingest.AcceptedEvent{
 				Source:      semconv.IngestSourceStream,

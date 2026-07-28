@@ -113,7 +113,7 @@ type Options struct {
 	StdoutWriter io.Writer
 
 	// The blocks below are the frozen seams for the remaining EPIC-04 (#480)
-	// children. Each nested type is DEFINED in the file that owns the behaviour it
+	// children. Each nested type is DEFINED in the file that owns the behavior it
 	// configures, so a lane adds fields to its own struct in its own file rather
 	// than contending for this one. A zero value must always mean "behave exactly
 	// as before the block existed".

@@ -707,7 +707,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		s.applyAcceptedBatch(batch, len(body), s.now)
+		s.applyAcceptedBatch(ctx, batch, len(body), s.now)
 	}
 
 	// Record aggregate counts and body size on the span before the success response.
@@ -732,7 +732,7 @@ func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	s.applyAcceptedBatch(batch, len(body), func() time.Time { return acceptedAt })
+	s.applyAcceptedBatch(ctx, batch, len(body), func() time.Time { return acceptedAt })
 	return nil
 }
 
@@ -760,7 +760,10 @@ func decodeAcceptedBatch(body []byte) (acceptedBatch, error) {
 	return batch, nil
 }
 
-func (s *Server) applyAcceptedBatch(batch acceptedBatch, bodyBytes int, acceptedAt func() time.Time) {
+// ctx carries the receiver's server span (or the replay caller's span) so each
+// emitted log record is a child of it. Without it the webhook path emits
+// orphaned records while the poll path emits correlated ones (#367).
+func (s *Server) applyAcceptedBatch(ctx context.Context, batch acceptedBatch, bodyBytes int, acceptedAt func() time.Time) {
 	if s.onIngest != nil {
 		s.onIngest(semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(batch.events), bodyBytes)
 	}
@@ -769,7 +772,7 @@ func (s *Server) applyAcceptedBatch(batch acceptedBatch, bodyBytes int, accepted
 			s.e.Counter(docWebhookDuplicates.Name, docWebhookDuplicates.Unit, docWebhookDuplicates.Description, 1, nil)
 			continue
 		}
-		s.emit(ev)
+		s.emit(ctx, ev)
 		if s.onAccepted != nil {
 			s.onAccepted(ingest.AcceptedEvent{
 				Source:     semconv.IngestSourceWebhook,
@@ -877,7 +880,7 @@ func (s *Server) expectedSignature(ts time.Time, body []byte) string {
 
 // emit converts one event into an OTEL log record plus a counter increment.
 // The counter carries only the low-cardinality event type.
-func (s *Server) emit(ev event) {
+func (s *Server) emit(ctx context.Context, ev event) {
 	if s.dedup != nil {
 		if key, ok := crossKey(ev); ok && !s.dedup.Add(key) {
 			// Same change already emitted via the audit logs (or a prior webhook):
@@ -901,7 +904,7 @@ func (s *Server) emit(ev event) {
 		}
 	}
 
-	s.e.LogEvent(telemetry.Event{
+	s.e.LogEventCtx(ctx, telemetry.Event{
 		Name:      eventNamePrefix + dim,
 		Body:      ev.Message,
 		Severity:  severityForType(ev.Type),

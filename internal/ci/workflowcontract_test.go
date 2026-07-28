@@ -309,7 +309,14 @@ func goModules(t *testing.T) []string {
 		}
 		if info.IsDir() {
 			switch info.Name() {
-			case ".git", "node_modules", "dist", ".capture":
+			// .claude holds agent git worktrees — each is a full checkout of this
+			// same repository, so walking into one rediscovers every module under a
+			// second path and reports all of them as missing from the CI matrices.
+			// The paths are real and the go.mod files are real, which is why the
+			// failure reads as a genuine coverage gap rather than as noise; the
+			// modules simply are not this checkout's. Local-only, never in CI, and
+			// nothing under it is tracked.
+			case ".git", ".claude", "node_modules", "dist", ".capture":
 				return filepath.SkipDir
 			}
 			return nil
@@ -804,7 +811,10 @@ func fuzzTargetsInTree(t *testing.T) map[string]bool {
 			return err
 		}
 		if d.IsDir() {
-			if name := d.Name(); name == ".git" || name == "testdata" || name == "node_modules" {
+			// .claude is skipped for the same reason goModules skips it: it holds
+			// agent git worktrees, each a full checkout of this repository, so
+			// walking in rediscovers every fuzz target under a second path.
+			if name := d.Name(); name == ".git" || name == ".claude" || name == "testdata" || name == "node_modules" {
 				return fs.SkipDir
 			}
 			return nil

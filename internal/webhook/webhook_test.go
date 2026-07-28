@@ -459,7 +459,7 @@ func TestEmit_SeverityClassification(t *testing.T) {
 		t.Run(tc.eventType, func(t *testing.T) {
 			rec := telemetrytest.New()
 			s := New(Options{}, rec.Emitter(), discard())
-			s.emit(event{Type: tc.eventType, Tailnet: "example.com", Message: "m", Timestamp: "2026-06-02T10:00:00Z"})
+			s.emit(context.Background(), event{Type: tc.eventType, Tailnet: "example.com", Message: "m", Timestamp: "2026-06-02T10:00:00Z"})
 			logs := rec.LogRecords()
 			if len(logs) != 1 {
 				t.Fatalf("log records = %d, want 1", len(logs))
@@ -485,7 +485,7 @@ func TestEmit_BoundsEventTypeCardinality(t *testing.T) {
 
 	const flood = maxDistinctEventTypes * 8
 	for i := range flood {
-		s.emit(event{Type: fmt.Sprintf("evil-%d", i), Tailnet: "example.com", Message: "m"})
+		s.emit(context.Background(), event{Type: fmt.Sprintf("evil-%d", i), Tailnet: "example.com", Message: "m"})
 	}
 
 	// Metric: distinct tailscale.webhook.type attribute values must be bounded.
@@ -521,7 +521,7 @@ func TestEmit_KnownTypesNotBucketed(t *testing.T) {
 	s := New(Options{}, rec.Emitter(), discard())
 
 	for i := range maxDistinctEventTypes {
-		s.emit(event{Type: fmt.Sprintf("type-%d", i), Tailnet: "example.com", Message: "m"})
+		s.emit(context.Background(), event{Type: fmt.Sprintf("type-%d", i), Tailnet: "example.com", Message: "m"})
 	}
 	for _, lr := range rec.LogRecords() {
 		if lr.EventName == eventNamePrefix+overflowType {
