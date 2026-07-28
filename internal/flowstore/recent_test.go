@@ -121,3 +121,106 @@ func TestMemory_RecentDoesNotAffectAggregates(t *testing.T) {
 		t.Errorf("flows = %d, want 2", res.Totals.Flows)
 	}
 }
+
+// #301: the ring must order by the observation's OWN event time, not by the
+// order Record happened to be called in. A late poll or object-store replay
+// can be ingested after genuinely newer traffic; if the ring just appends,
+// that late arrival lands on top and evicts real current activity.
+func TestMemory_RecentOrdersByEventTimeNotIngestionOrder(t *testing.T) {
+	s := newMemory(0)
+	// Three observations, ingested in increasing event-time order.
+	s.Record(conn(base, "a:1", "b:2", 0))
+	s.Record(conn(base.Add(time.Second), "a:1", "b:2", 1))
+	s.Record(conn(base.Add(2*time.Second), "a:1", "b:2", 2))
+	// A late arrival: ingested last, but its event time is BEFORE all three.
+	s.Record(conn(base.Add(-10*time.Second), "a:1", "b:2", -1))
+
+	got := s.Recent(1)
+	if len(got) != 1 {
+		t.Fatalf("Recent(1) returned %d entries, want 1", len(got))
+	}
+	if want := base.Add(2 * time.Second); !got[0].Time.Equal(want) {
+		t.Errorf("newest by event time = %v, want %v (late-ingested backfill must not appear newest)",
+			got[0].Time, want)
+	}
+	if got[0].Counts.TxBytes != 2 {
+		t.Errorf("newest tx = %d, want 2", got[0].Counts.TxBytes)
+	}
+}
+
+// #301: once the ring is full of genuinely newer rows, a late/backfilled
+// observation older than everything retained must not evict any of them —
+// it simply does not make the cut.
+func TestMemory_RecentLateBackfillCannotEvictNewerRows(t *testing.T) {
+	s := newMemory(0)
+	for i := range flowstore.MaxRecent {
+		s.Record(conn(base.Add(time.Duration(i)*time.Second), "a:1", "b:2", int64(i)))
+	}
+	before := s.Recent(flowstore.MaxRecent)
+
+	// A restart-replay style backfill: far older than anything currently retained.
+	s.Record(conn(base.Add(-time.Hour), "a:1", "b:2", -999))
+
+	after := s.Recent(flowstore.MaxRecent)
+	if len(after) != flowstore.MaxRecent {
+		t.Fatalf("ring size after late backfill = %d, want %d", len(after), flowstore.MaxRecent)
+	}
+	for i := range before {
+		if !before[i].Time.Equal(after[i].Time) || before[i].Counts.TxBytes != after[i].Counts.TxBytes {
+			t.Fatalf("entry %d changed after an older backfill arrived: before=%+v after=%+v",
+				i, before[i], after[i])
+		}
+	}
+}
+
+// #301: equal event timestamps must resolve deterministically (repeated runs,
+// not undefined ordering) rather than merely "some order".
+func TestMemory_RecentEqualTimestampsAreDeterministic(t *testing.T) {
+	s := newMemory(0)
+	s.Record(conn(base, "a:1", "b:2", 1))
+	s.Record(conn(base, "a:1", "b:2", 2))
+	s.Record(conn(base, "a:1", "b:2", 3))
+
+	first := s.Recent(3)
+	for range 5 {
+		got := s.Recent(3)
+		for i := range got {
+			if got[i].Counts.TxBytes != first[i].Counts.TxBytes {
+				t.Fatalf("equal-timestamp order is not stable: %+v then %+v", first, got)
+			}
+		}
+	}
+	// Deterministic tie-break: within an equal-time group, later-ingested sorts
+	// newest — so repeated calls agree, and the ingestion sequence is knowable
+	// rather than arbitrary.
+	want := []int64{3, 2, 1}
+	for i, w := range want {
+		if first[i].Counts.TxBytes != w {
+			t.Errorf("entry %d tx = %d, want %d (equal-timestamp tie-break order)", i, first[i].Counts.TxBytes, w)
+		}
+	}
+}
+
+// #301: a ring wrap (capacity exceeded) combined with strictly increasing
+// event times must still behave like the simple FIFO case — the newest N
+// survive, in event-time order.
+func TestMemory_RecentRingWrapWithIncreasingEventTimes(t *testing.T) {
+	s := newMemory(0)
+	for i := range flowstore.MaxRecent + 500 {
+		s.Record(conn(base.Add(time.Duration(i)*time.Millisecond), "a:1", "b:2", int64(i)))
+	}
+
+	got := s.Recent(flowstore.MaxRecent)
+	if len(got) != flowstore.MaxRecent {
+		t.Fatalf("Recent returned %d entries, want %d", len(got), flowstore.MaxRecent)
+	}
+	for i := 0; i < len(got)-1; i++ {
+		if got[i].Time.Before(got[i+1].Time) {
+			t.Fatalf("entries %d and %d are out of event-time order: %v before %v",
+				i, i+1, got[i].Time, got[i+1].Time)
+		}
+	}
+	if want := int64(flowstore.MaxRecent + 499); got[0].Counts.TxBytes != want {
+		t.Errorf("newest tx = %d, want %d", got[0].Counts.TxBytes, want)
+	}
+}

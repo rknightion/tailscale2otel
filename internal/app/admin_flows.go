@@ -145,13 +145,16 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 	})
 
 	resp := flowsdata.Response{
-		Tailnet:     a.runtimeName(rt),
-		Tailnets:    a.flowTailnets(),
-		Window:      window.String(),
-		Retention:   retention.String(),
-		Stats:       rt.flowStore.Stats(),
-		Result:      result,
-		Recent:      rt.flowStore.Recent(recent),
+		Tailnet:   a.runtimeName(rt),
+		Tailnets:  a.flowTailnets(),
+		Window:    window.String(),
+		Retention: retention.String(),
+		Stats:     rt.flowStore.Stats(),
+		Result:    result,
+		// The SAME window the aggregates just used. Asking for the newest rows
+		// outright put a live connection list beside a historical chart whenever
+		// the scrubber was pinned to the past (#295).
+		Recent:      rt.flowStore.RecentRange(end.Add(-window), end, recent),
 		Policy:      policyInfo(rt.policy),
 		Exercised:   exercisedRules(rt.policy, result.Rules),
 		GeneratedAt: now.Format(time.RFC3339),

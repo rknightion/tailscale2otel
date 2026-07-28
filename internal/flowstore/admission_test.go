@@ -63,8 +63,31 @@ func TestMemory_RecordResultAcceptsRetentionAndFutureBoundaries(t *testing.T) {
 	if got, want := m.Stats().Observations, int64(3); got != want {
 		t.Fatalf("observations = %d, want %d", got, want)
 	}
-	if got := m.Recent(1)[0].Time; !got.Equal(now) {
-		t.Errorf("zero timestamp recorded at %v, want %v", got, now)
+	// Recent orders by event time (#301), not by which Record() call happened
+	// last. "future skew limit" carries the latest admitted event time
+	// (now+5m) and must rank newest even though the zero-timestamp record —
+	// stamped to `now` — was ingested after it. This is the future-skew case
+	// #301's acceptance criteria call out as composing with A12: admission
+	// already decided the future-stamped row is legitimate, so ordering must
+	// respect its stamped time rather than silently falling back to
+	// ingestion order.
+	recent := m.Recent(3)
+	if len(recent) != 3 {
+		t.Fatalf("Recent(3) = %d entries, want 3", len(recent))
+	}
+	if want := now.Add(5 * time.Minute); !recent[0].Time.Equal(want) {
+		t.Errorf("newest by event time = %v, want %v (future skew limit)", recent[0].Time, want)
+	}
+	// The zero-timestamp record must still have been stamped to `now`,
+	// findable among the three regardless of its rank.
+	var sawStamped bool
+	for _, r := range recent {
+		if r.Time.Equal(now) {
+			sawStamped = true
+		}
+	}
+	if !sawStamped {
+		t.Errorf("no recent row carries the zero-timestamp record's stamped time %v: %+v", now, recent)
 	}
 }
 
