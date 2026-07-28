@@ -5,14 +5,24 @@ on:
     - cron: "45 6 * * *" # Daily 06:45 UTC
   workflow_dispatch:
 
-# No id-token/OIDC: there is no published OIDC->Tailscale-API action. Instead we mint a
-# short-lived token from Tailscale's documented OAuth endpoint using a READ-ONLY (all:read)
-# OAuth client. Its credentials are GitHub secrets, which is safe here precisely because this
-# lane is schedule + workflow_dispatch only: a fork PR never runs it, so it can never reach
-# them. Worst case on a leak is "can read the tailnet". The minted token is masked and lives
-# only for this run.
+# AUTH: Workload Identity Federation. No Tailscale secret is stored in GitHub at all (#355).
 #
-# This deliberately replaces an earlier design that kept the creds off GitHub, in the env of a
+# A header here previously said "there is no published OIDC->Tailscale-API action". That was
+# WRONG, and it is why this lane carried a stored OAuth client for months. Tailscale supports
+# federated identities directly: POST /api/v2/oauth/token-exchange takes a provider OIDC token
+# and returns a short-lived API token. The federated identity is pinned to this repo by its
+# issuer and `sub` claim, so possession of the client ID grants nothing on its own.
+#
+# TS_WIF_CLIENT_ID and TS_WIF_AUDIENCE are IDENTIFIERS, not credentials. They live in repo
+# secrets only to keep tailnet identifiers out of tracked files; leaking either grants nothing
+# without a GitHub-signed OIDC token whose `sub` matches
+# repo:rknightion/tailscale2otel:ref:refs/heads/main.
+#
+# The lane stays schedule + workflow_dispatch only. That is no longer about protecting a stored
+# secret, but the subject pin is anchored on refs/heads/main, so a fork-reachable trigger would
+# simply fail the exchange — and `issues: write` below is still worth keeping away from forks.
+#
+# This also deliberately replaces an earlier design that kept creds off GitHub in the env of a
 # dedicated self-hosted runner. That runner was never provisioned, so the lane queued forever
 # and was auto-cancelled at 24h every week — it produced no signal at all between 413b314 and
 # the fix (see #160). Standing a self-hosted runner up on a PUBLIC repo is also a risk GitHub
@@ -20,6 +30,7 @@ on:
 permissions:
   contents: read
   issues: write
+  id-token: write # mint the GitHub OIDC token exchanged for a Tailscale API token
 
 concurrency:
   group: live-contract
@@ -39,28 +50,73 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Mint short-lived read-only API token
+      # NEGATIVE CASE FIRST, so a broken exchange cannot be mistaken for a working one.
+      #
+      # Note what this can and cannot assert. Tailscale returns an IDENTICAL opaque
+      # `400 invalid request` for an unknown client, a malformed JWT, a wrong audience and an
+      # expired token — verified against the live endpoint. That is correct API design (telling
+      # them apart is an oracle) but it means #355's "wrong audience/issuer/expired token fail
+      # predictably" cannot be four assertions. They fail INDISTINGUISHABLY, so this is one
+      # case: a token this identity must not accept is rejected, and no access_token comes back.
+      - name: A wrong-audience token must be rejected
+        env:
+          TS_WIF_CLIENT_ID: ${{ secrets.TS_WIF_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "${TS_WIF_CLIENT_ID:-}" ] || { echo "secrets.TS_WIF_CLIENT_ID is unset" >&2; exit 1; }
+          bad=$(curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api.tailscale.com/not-this-identity" | jq -r '.value')
+          echo "::add-mask::$bad"
+          [ -n "$bad" ] && [ "$bad" != "null" ] || { echo "GitHub did not mint the negative-case token" >&2; exit 1; }
+
+          code=$(curl -s -o /tmp/neg.json -w '%{http_code}' -X POST \
+            'https://api.tailscale.com/api/v2/oauth/token-exchange' \
+            --data-urlencode "client_id=${TS_WIF_CLIENT_ID}" --data-urlencode "jwt=${bad}")
+          if [ "$code" = "200" ]; then
+            echo "SECURITY: the exchange ACCEPTED a token minted for a different audience." >&2
+            exit 1
+          fi
+          if jq -e '.access_token // empty' /tmp/neg.json >/dev/null 2>&1; then
+            echo "SECURITY: a rejected exchange still returned an access_token." >&2
+            exit 1
+          fi
+          echo "wrong-audience token rejected with HTTP $code, no access_token issued"
+
+      - name: Exchange the GitHub OIDC token for a short-lived API token
         # Missing config is a misconfiguration of this lane, not a reason to pass quietly:
         # fail here rather than self-skipping, or the lane reports green having checked nothing.
         env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          TS_WIF_CLIENT_ID: ${{ secrets.TS_WIF_CLIENT_ID }}
+          TS_WIF_AUDIENCE: ${{ secrets.TS_WIF_AUDIENCE }}
           TS_TAILNET: ${{ vars.TS_TAILNET }}
         run: |
           set -euo pipefail
           missing=""
-          [ -n "${TS_OAUTH_CLIENT_ID:-}" ] || missing="$missing secrets.TS_OAUTH_CLIENT_ID"
-          [ -n "${TS_OAUTH_CLIENT_SECRET:-}" ] || missing="$missing secrets.TS_OAUTH_CLIENT_SECRET"
+          [ -n "${TS_WIF_CLIENT_ID:-}" ] || missing="$missing secrets.TS_WIF_CLIENT_ID"
+          [ -n "${TS_WIF_AUDIENCE:-}" ] || missing="$missing secrets.TS_WIF_AUDIENCE"
           [ -n "${TS_TAILNET:-}" ] || missing="$missing vars.TS_TAILNET"
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || missing="$missing id-token:write"
           if [ -n "$missing" ]; then
             echo "live contract is misconfigured — unset:$missing" >&2
             exit 1
           fi
-          token=$(curl -fsSL -u "${TS_OAUTH_CLIENT_ID}:${TS_OAUTH_CLIENT_SECRET}" \
-            -d 'grant_type=client_credentials' \
-            'https://api.tailscale.com/api/v2/oauth/token' | jq -r '.access_token')
+
+          # The audience is what binds this token to this federated identity; a token minted
+          # for any other audience is refused by the exchange (proven by the step above).
+          aud=$(jq -rn --arg a "$TS_WIF_AUDIENCE" '$a|@uri')
+          jwt=$(curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${aud}" | jq -r '.value')
+          echo "::add-mask::$jwt"
+          if [ -z "$jwt" ] || [ "$jwt" = "null" ]; then
+            echo "GitHub returned no OIDC token — is id-token: write set on this job?" >&2
+            exit 1
+          fi
+
+          token=$(curl -fsSL -X POST 'https://api.tailscale.com/api/v2/oauth/token-exchange' \
+            --data-urlencode "client_id=${TS_WIF_CLIENT_ID}" \
+            --data-urlencode "jwt=${jwt}" | jq -r '.access_token')
           if [ -z "$token" ] || [ "$token" = "null" ]; then
-            echo "OAuth token exchange returned no access_token." >&2
+            echo "Workload identity exchange returned no access_token." >&2
             exit 1
           fi
           echo "::add-mask::$token"
