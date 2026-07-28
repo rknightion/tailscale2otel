@@ -72,7 +72,14 @@ jobs:
           bad=$(curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api.tailscale.com/not-this-identity" | jq -r '.value')
           echo "::add-mask::$bad"
-          [ -n "$bad" ] && [ "$bad" != "null" ] || { echo "GitHub did not mint the negative-case token" >&2; exit 1; }
+          # Deliberately an `if`, not `A && B || C` — that idiom runs C when B is false as well
+          # as when A is, so it is not if-then-else (shellcheck SC2015). Here the distinction
+          # would be harmless, but a negative-case guard is the last place to leave a
+          # control-flow shape that reads as something it is not.
+          if [ -z "$bad" ] || [ "$bad" = "null" ]; then
+            echo "GitHub did not mint the negative-case token" >&2
+            exit 1
+          fi
 
           code=$(curl -s -o /tmp/neg.json -w '%{http_code}' -X POST \
             'https://api.tailscale.com/api/v2/oauth/token-exchange' \

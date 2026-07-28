@@ -18,6 +18,16 @@ go generate ./...                    # regenerate portservice data + install the
 
 `govulncheck` is a CI gate: `go install golang.org/x/vuln/cmd/govulncheck@v1.3.0 && govulncheck ./...`.
 
+> **A clean local `actionlint` does NOT mean the actionlint CI lane will pass.** actionlint shells
+> out to whatever `shellcheck` is on PATH, and its findings depend on that version. A local
+> shellcheck **0.11.0** does not emit **SC2015** (`A && B || C` is not if-then-else) at all, while
+> the runner's older shellcheck does — so a workflow edit can pass locally on both actionlint
+> 1.7.7 and the CI-pinned 1.7.12 and still fail CI. Confirmed 2026-07-28: `[ -n "$x" ] && [ "$x" !=
+> "null" ] || { …; }` in `live-contract.yml` was clean under both local actionlint versions and
+> failed the lane. The version gap is the reverse of the usual one — local is NEWER and reports
+> LESS — so "my tool is up to date" is not reassurance here. When a workflow's `run:` block is
+> edited, prefer a plain `if` over `A && B || C` rather than trusting the local run.
+
 ### Regenerate generated artifacts (required before commit when you touch them)
 
 Seven files are committed but **generated** — each a pure function of its inputs and each gated in CI
