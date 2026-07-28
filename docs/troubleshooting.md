@@ -255,6 +255,27 @@ do not have to find the startup log of a pod that may since have restarted.
 
 ---
 
+## Generating a support bundle
+
+**Cause.** Reporting an issue used to mean manually gathering the startup log, `-validate` output,
+config, and version, and redacting them by hand yourself — slow, and easy to get wrong.
+
+**Fix.** With the admin server enabled (`admin.enabled: true`), download
+`GET /api/support-bundle.zip` (behind the same admin auth as every other admin route) to get a
+deterministic, bounded zip archive containing: the running `version`, every configuration
+`diagnostics` finding (the same checks `-validate` reports, but ALL of them, not just the first),
+the full effective configuration with every secret reduced to `{secret, set, source}` (never a raw
+value), component/API/OTLP-export state, and the metric/log-event catalogs — plus a `manifest.json`
+stating exactly which files are included.
+
+The device inventory (device names, hostnames, users, IP addresses) is PII-heavy and is **excluded
+by default**; add `?include_devices=1` to opt in only when you intend to share it. Flow-log records
+and raw audit/webhook log content are **never** included by this bundle — there is no opt-in for
+either — so nothing beyond the bounded flow/event *counts* already on the status page travels with
+it.
+
+---
+
 ## Still stuck?
 
 Nothing here matching your symptom is worth reporting — undiagnosable failure modes are bugs in this
@@ -262,11 +283,11 @@ page as much as in the code.
 
 - **[Search existing issues](https://github.com/rknightion/tailscale2otel/issues)** — someone may have
   hit it already.
-- **[Open a new issue](https://github.com/rknightion/tailscale2otel/issues/new)** — include the
-  startup log (it lists validation errors, advisory warnings, and any unrecognised `TS2OTEL_*`
-  variables), the output of `tailscale2otel -validate -config <file>`, and the version from
-  `tailscale2otel -version`.
+- **[Open a new issue](https://github.com/rknightion/tailscale2otel/issues/new)** — attach the support
+  bundle above (or, without the admin server, the startup log, the output of
+  `tailscale2otel -validate -config <file>`, and the version from `tailscale2otel -version`).
 - **[Check the latest release notes](https://github.com/rknightion/tailscale2otel/releases/latest)** —
   the behaviour may have changed since your build.
 
-Please redact tailnet names, device names, and IP addresses from anything you paste.
+Please redact tailnet names, device names, and IP addresses from anything you paste that did not
+come from the support bundle above.
