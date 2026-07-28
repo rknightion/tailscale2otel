@@ -530,7 +530,6 @@ var state = {
   // always restarts pagination from page 1).
   recentExtra: [],
   data: null,
-  timer: null,
   positions: {}       // topology layout, kept across polls so it does not jump
 };
 
@@ -721,24 +720,150 @@ function query(){
   return "/api/flows.json?" + baseParams().toString();
 }
 
-function poll(){
-  fetch(query(), {headers:{"Accept":"application/json"}, credentials:"same-origin"})
+// === shared poller helper (#328) — keep byte-for-byte identical across
+// statushtml, flowhtml and eventshtml; see TestPollerHelperIdenticalAcrossPages
+// in each package. createPoller wraps a periodic fetch with:
+//   - single-flight: a tick that lands while the previous one is still
+//     outstanding is folded into the next scheduled tick rather than firing
+//     a second concurrent request.
+//   - a per-call timeout via AbortController, so a hung request cannot pin
+//     the poller in the in-flight state forever.
+//   - exponential backoff on failure (capped at maxMs), reset to baseMs by
+//     the next success, by start(), or by kick().
+//   - automatic pause while the tab is hidden (visibilitychange stops the
+//     timer outright), and an immediate poll with backoff reset when the
+//     tab becomes visible again — but only while periodic polling is
+//     actually enabled (paused===false); a caller-initiated stop() (a
+//     paused/pinned view) is never silently resumed by a visibility flip.
+//   - stale-response rejection: every tick is tagged with a monotonically
+//     increasing sequence number, and a response only reaches onResult (or
+//     onError) if no later tick has already landed — a slow response that
+//     resolves after a newer one arrived is dropped, never applied.
+// start() arms the periodic timer but does not fetch immediately (a caller
+// that also wants an immediate fetch calls kick() itself, since several
+// call sites — a filter change, a pinned-window click — want a fetch
+// without necessarily re-arming periodic polling). kick() always fires one
+// fetch right now regardless of paused, and never conflicts with an
+// in-flight request thanks to the single-flight guard above.
+function createPoller(opts){
+  var fetchFn = opts.fetchFn;     // function(signal) -> Promise(data)
+  var onResult = opts.onResult;   // function(data)
+  var onError = opts.onError;     // function(err), optional
+  var baseMs = opts.baseMs;       // steady-state interval; <=0 disables periodic scheduling
+  var maxMs = opts.maxMs || (baseMs > 0 ? baseMs * 8 : 0);
+  var timeoutMs = opts.timeoutMs || 10000;
+
+  var timer = null;
+  var inFlight = false;
+  var seq = 0;
+  var maxSeenSeq = 0;
+  var backoffMs = baseMs;
+  var paused = true;
+
+  function clearTimer(){ if (timer) { clearTimeout(timer); timer = null; } }
+
+  function scheduleNext(delay){
+    clearTimer();
+    if (paused || baseMs <= 0) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    timer = setTimeout(tick, delay);
+  }
+
+  function tick(){
+    if (inFlight) { scheduleNext(baseMs); return; }
+    inFlight = true;
+    var mySeq = ++seq;
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timedOut = false;
+    var timeoutId = controller ? setTimeout(function(){ timedOut = true; controller.abort(); }, timeoutMs) : null;
+    fetchFn(controller ? controller.signal : undefined).then(function(data){
+      if (timeoutId) clearTimeout(timeoutId);
+      inFlight = false;
+      if (mySeq <= maxSeenSeq) return;
+      maxSeenSeq = mySeq;
+      backoffMs = baseMs;
+      onResult(data);
+      scheduleNext(backoffMs);
+    }, function(err){
+      if (timeoutId) clearTimeout(timeoutId);
+      inFlight = false;
+      if (mySeq <= maxSeenSeq) return;
+      maxSeenSeq = mySeq;
+      backoffMs = baseMs > 0 ? Math.min(maxMs, Math.max(baseMs, backoffMs * 2)) : baseMs;
+      if (onError) onError(timedOut ? new Error("timed out") : err);
+      scheduleNext(backoffMs);
+    });
+  }
+
+  function start(){
+    paused = false;
+    backoffMs = baseMs;
+    scheduleNext(baseMs);
+  }
+  function stop(){
+    paused = true;
+    clearTimer();
+  }
+  function kick(){
+    backoffMs = baseMs;
+    clearTimer();
+    tick();
+  }
+
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function"){
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden){
+        clearTimer();
+      } else if (!paused){
+        backoffMs = baseMs;
+        clearTimer();
+        tick();
+      }
+    });
+  }
+
+  return {start: start, stop: stop, kick: kick};
+}
+// === end shared poller helper ===
+
+function fetchFlows(signal){
+  return fetch(query(), {headers:{"Accept":"application/json"}, credentials:"same-origin", signal: signal})
     .then(function(r){
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
-    })
-    .then(function(d){
-      banner("errBanner", "");
-      state.data = d;
-      // A fresh top-level poll always restarts recent-connection pagination
-      // at page 1 — whatever "load more" had accumulated belonged to the
-      // previous poll's page 1, which this response has just replaced.
-      state.recentExtra = [];
-      render(d);
-    })
-    .catch(function(e){
-      banner("errBanner", "Could not load flow data: " + e.message + ". Retrying.");
     });
+}
+
+function applyFlows(d){
+  banner("errBanner", "");
+  state.data = d;
+  // A fresh top-level poll always restarts recent-connection pagination
+  // at page 1 — whatever "load more" had accumulated belonged to the
+  // previous poll's page 1, which this response has just replaced.
+  state.recentExtra = [];
+  render(d);
+}
+
+// flowsPoller drives /api/flows.json on a timer (#328): single-flight,
+// AbortController-backed timeout, capped exponential backoff, paused while
+// the tab is hidden or a time window is pinned, and immune to a stale
+// response landing after a newer one (a slow response for a filter that has
+// since changed again is dropped rather than overwriting the current view).
+var flowsPoller = createPoller({
+  fetchFn: fetchFlows,
+  onResult: applyFlows,
+  onError: function(e){ banner("errBanner", "Could not load flow data: " + e.message + ". Retrying."); },
+  baseMs: Math.max(1000, REFRESH_MS)
+});
+
+// poll() is the single entry point every call site already used before
+// #328 — a window preset click, a filter change, popstate, the refresh
+// button — kept as a thin facade over flowsPoller.kick() so none of those
+// call sites needed to change: kick() always fetches immediately regardless
+// of the periodic on/off state, is single-flight-safe, and discards a stale
+// response the same way the timer-driven path does.
+function poll(){
+  flowsPoller.kick();
 }
 
 // loadMore fetches the next page of recent connections using the cursor the
@@ -776,10 +901,14 @@ function banner(id, msg){
   b.classList.toggle("show", !!msg);
 }
 
+// schedule() only arms/disarms flowsPoller's periodic timer — it never
+// fetches by itself. Every call site that changes state.end also calls
+// poll() (== flowsPoller.kick()) itself, so schedule() staying fetch-free
+// here means going live vs. re-pinning never double-fires a request.
 function schedule(){
-  if (state.timer) clearInterval(state.timer);
-  // Paused (a span is pinned) means no polling: the answer cannot change.
-  if (!state.end) state.timer = setInterval(poll, Math.max(1000, REFRESH_MS));
+  // Paused (a span is pinned) means no periodic polling: the answer cannot
+  // change until the pin is lifted.
+  if (state.end) flowsPoller.stop(); else flowsPoller.start();
 }
 
 // ------------------------------------------------------------------ rendering

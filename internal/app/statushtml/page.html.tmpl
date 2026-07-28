@@ -674,7 +674,7 @@
 <script>
 var SVGNS = 'http://www.w3.org/2000/svg';
 var lastOkMs = Date.now();
-var pollTimer = null, paused = false;
+var paused = false;
 var lastData = null;
 
 // ── Tailnet selector (#325) ─────────────────────────────────────────────────
@@ -716,7 +716,7 @@ function initTailnetSelector(){
   sel.addEventListener("change", function(){
     state.tailnet = sel.value;
     syncTailnetURL();
-    refresh();
+    statusPoller.kick();
   });
 }
 
@@ -1295,40 +1295,162 @@ function setUpdateInfo(d){
   }
 }
 
-function refresh(){
-  fetch('/api/status.json',{cache:'no-store'}).then(function(r){
+// === shared poller helper (#328) — keep byte-for-byte identical across
+// statushtml, flowhtml and eventshtml; see TestPollerHelperIdenticalAcrossPages
+// in each package. createPoller wraps a periodic fetch with:
+//   - single-flight: a tick that lands while the previous one is still
+//     outstanding is folded into the next scheduled tick rather than firing
+//     a second concurrent request.
+//   - a per-call timeout via AbortController, so a hung request cannot pin
+//     the poller in the in-flight state forever.
+//   - exponential backoff on failure (capped at maxMs), reset to baseMs by
+//     the next success, by start(), or by kick().
+//   - automatic pause while the tab is hidden (visibilitychange stops the
+//     timer outright), and an immediate poll with backoff reset when the
+//     tab becomes visible again — but only while periodic polling is
+//     actually enabled (paused===false); a caller-initiated stop() (a
+//     paused/pinned view) is never silently resumed by a visibility flip.
+//   - stale-response rejection: every tick is tagged with a monotonically
+//     increasing sequence number, and a response only reaches onResult (or
+//     onError) if no later tick has already landed — a slow response that
+//     resolves after a newer one arrived is dropped, never applied.
+// start() arms the periodic timer but does not fetch immediately (a caller
+// that also wants an immediate fetch calls kick() itself, since several
+// call sites — a filter change, a pinned-window click — want a fetch
+// without necessarily re-arming periodic polling). kick() always fires one
+// fetch right now regardless of paused, and never conflicts with an
+// in-flight request thanks to the single-flight guard above.
+function createPoller(opts){
+  var fetchFn = opts.fetchFn;     // function(signal) -> Promise(data)
+  var onResult = opts.onResult;   // function(data)
+  var onError = opts.onError;     // function(err), optional
+  var baseMs = opts.baseMs;       // steady-state interval; <=0 disables periodic scheduling
+  var maxMs = opts.maxMs || (baseMs > 0 ? baseMs * 8 : 0);
+  var timeoutMs = opts.timeoutMs || 10000;
+
+  var timer = null;
+  var inFlight = false;
+  var seq = 0;
+  var maxSeenSeq = 0;
+  var backoffMs = baseMs;
+  var paused = true;
+
+  function clearTimer(){ if (timer) { clearTimeout(timer); timer = null; } }
+
+  function scheduleNext(delay){
+    clearTimer();
+    if (paused || baseMs <= 0) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    timer = setTimeout(tick, delay);
+  }
+
+  function tick(){
+    if (inFlight) { scheduleNext(baseMs); return; }
+    inFlight = true;
+    var mySeq = ++seq;
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timedOut = false;
+    var timeoutId = controller ? setTimeout(function(){ timedOut = true; controller.abort(); }, timeoutMs) : null;
+    fetchFn(controller ? controller.signal : undefined).then(function(data){
+      if (timeoutId) clearTimeout(timeoutId);
+      inFlight = false;
+      if (mySeq <= maxSeenSeq) return;
+      maxSeenSeq = mySeq;
+      backoffMs = baseMs;
+      onResult(data);
+      scheduleNext(backoffMs);
+    }, function(err){
+      if (timeoutId) clearTimeout(timeoutId);
+      inFlight = false;
+      if (mySeq <= maxSeenSeq) return;
+      maxSeenSeq = mySeq;
+      backoffMs = baseMs > 0 ? Math.min(maxMs, Math.max(baseMs, backoffMs * 2)) : baseMs;
+      if (onError) onError(timedOut ? new Error("timed out") : err);
+      scheduleNext(backoffMs);
+    });
+  }
+
+  function start(){
+    paused = false;
+    backoffMs = baseMs;
+    scheduleNext(baseMs);
+  }
+  function stop(){
+    paused = true;
+    clearTimer();
+  }
+  function kick(){
+    backoffMs = baseMs;
+    clearTimer();
+    tick();
+  }
+
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function"){
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden){
+        clearTimer();
+      } else if (!paused){
+        backoffMs = baseMs;
+        clearTimer();
+        tick();
+      }
+    });
+  }
+
+  return {start: start, stop: stop, kick: kick};
+}
+// === end shared poller helper ===
+
+function fetchStatus(signal){
+  return fetch('/api/status.json',{cache:'no-store', signal:signal}).then(function(r){
     if(!r.ok) throw new Error('status '+r.status);
     return r.json();
-  }).then(function(d){
-    lastData=d; lastOkMs=Date.now(); setStale(false);
-    setText('uptime', d.service && d.service.uptime);
-    setText('goroutines', d.runtime && d.runtime.goroutines);
-    setText('heapAlloc', d.runtime && d.runtime.heap_alloc);
-    setText('numGC', d.runtime && d.runtime.num_gc);
-    setText('cacheDevices', d.device_cache && d.device_cache.devices);
-    setText('cacheAge', d.device_cache && d.device_cache.age);
-    updateRDNS(d.reverse_dns);
-    setText('generatedAt', d.generated_at);
-    setHealth(d);
-    setUpdateInfo(d);
-    updateRollup(d); // always the combined figures — the roll-up is a process-wide dashboard, not filtered
-    // view is the tailnet-selector-filtered slice: the combined d itself for
-    // "All", or one d.tailnets[] entry. Collectors/API/Cardinality/Devices are
-    // the only sections that vary by tailnet (#325); everything else below
-    // (components, delivery, advisories, runtime) is process-global and always
-    // reads the top-level d.
-    var view = tailnetView(d);
-    rebuildCollectors(view.collectors);
-    rebuildAPI(view.api);
-    rebuildDevices(view.devices);
-    rebuildCardinality(view.cardinality);
-    rebuildComponents(d.components);
-    rebuildDelivery(d.delivery);
-    rebuildAdvisories(d.advisories);
-    updateSparks(d);
-    redrawCharts();
-  }).catch(function(){ setStale(true); });
+  });
 }
+
+function applyStatus(d){
+  lastData=d; lastOkMs=Date.now(); setStale(false);
+  setText('uptime', d.service && d.service.uptime);
+  setText('goroutines', d.runtime && d.runtime.goroutines);
+  setText('heapAlloc', d.runtime && d.runtime.heap_alloc);
+  setText('numGC', d.runtime && d.runtime.num_gc);
+  setText('cacheDevices', d.device_cache && d.device_cache.devices);
+  setText('cacheAge', d.device_cache && d.device_cache.age);
+  updateRDNS(d.reverse_dns);
+  setText('generatedAt', d.generated_at);
+  setHealth(d);
+  setUpdateInfo(d);
+  updateRollup(d); // always the combined figures — the roll-up is a process-wide dashboard, not filtered
+  // view is the tailnet-selector-filtered slice: the combined d itself for
+  // "All", or one d.tailnets[] entry. Collectors/API/Cardinality/Devices are
+  // the only sections that vary by tailnet (#325); everything else below
+  // (components, delivery, advisories, runtime) is process-global and always
+  // reads the top-level d.
+  var view = tailnetView(d);
+  rebuildCollectors(view.collectors);
+  rebuildAPI(view.api);
+  rebuildDevices(view.devices);
+  rebuildCardinality(view.cardinality);
+  rebuildComponents(d.components);
+  rebuildDelivery(d.delivery);
+  rebuildAdvisories(d.advisories);
+  updateSparks(d);
+  redrawCharts();
+}
+
+// statusPoller drives /api/status.json on a timer (#328): single-flight,
+// AbortController-backed timeout, capped exponential backoff, paused while
+// the tab is hidden, and immune to a stale response landing after a newer
+// one. window.__refreshMs<=0 still falls back to the 5s default here — this
+// page has never had a way to disable its auto-refresh entirely (unlike
+// /events's refreshMs<=0 path), and that pre-existing behavior is preserved
+// rather than changed as part of this fix.
+var statusPoller = createPoller({
+  fetchFn: fetchStatus,
+  onResult: applyStatus,
+  onError: function(){ setStale(true); },
+  baseMs: (window.__refreshMs>0?window.__refreshMs:5000)
+});
 
 function updateRDNS(r){
   if(!r || !r.enabled) return;
@@ -1346,16 +1468,15 @@ function purgeRDNS(){
   var btn=document.getElementById('rdnsPurgeBtn'); if(btn) btn.disabled=true;
   fetch('/api/rdns/purge',{method:'POST',headers:{'X-Requested-With':'fetch'},cache:'no-store'})
     .then(function(r){ if(!r.ok) throw new Error('status '+r.status); return r.json(); })
-    .then(function(d){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purged '+d.purged+' entr'+(d.purged===1?'y':'ies'); refresh(); })
+    .then(function(d){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purged '+d.purged+' entr'+(d.purged===1?'y':'ies'); statusPoller.kick(); })
     .catch(function(e){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purge failed: '+e.message; })
     .finally(function(){ if(btn) btn.disabled=false; });
 }
-function startPolling(){ if(pollTimer) clearInterval(pollTimer); var ms=(window.__refreshMs>0?window.__refreshMs:5000); pollTimer=setInterval(refresh, ms); }
 function togglePause(){
   paused=!paused;
   var btn=document.getElementById('pauseBtn');
-  if(paused){ if(pollTimer){clearInterval(pollTimer); pollTimer=null;} if(btn) btn.textContent='Resume'; }
-  else { if(btn) btn.textContent='Pause'; refresh(); startPolling(); }
+  if(paused){ statusPoller.stop(); if(btn) btn.textContent='Resume'; }
+  else { if(btn) btn.textContent='Pause'; statusPoller.kick(); statusPoller.start(); }
 }
 function tickFreshness(){
   setText('updatedAgo', relMs(lastOkMs));
@@ -1379,11 +1500,11 @@ function tickFreshness(){
   initTailnetSelector();
   var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click', toggleTheme);
   var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click', togglePause);
-  var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); refresh(); });
+  var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); statusPoller.kick(); });
   var pb=document.getElementById('rdnsPurgeBtn'); if(pb) pb.addEventListener('click', purgeRDNS);
   window.addEventListener('resize', redrawCharts);
-  refresh();
-  startPolling();
+  statusPoller.kick();
+  statusPoller.start();
   setInterval(tickFreshness, 1000);
 })();
 </script>

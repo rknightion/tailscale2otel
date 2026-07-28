@@ -721,7 +721,9 @@ func TestRender_UpdateCardReflectsState(t *testing.T) {
 // that rebuilds the update badge/card on every refresh is actually present —
 // this is the dominant vacuity shape in this file (a string that matches the
 // JS source itself rather than server-rendered markup), so this checks the
-// function definition AND that it is wired into refresh().
+// function definition AND that it is wired into applyStatus() (the poller's
+// onResult callback, formerly the body of a function literally named
+// refresh() before #328 split it into fetchStatus/applyStatus).
 func TestRender_UpdateCardJSMirrorsTemplate(t *testing.T) {
 	var buf bytes.Buffer
 	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
