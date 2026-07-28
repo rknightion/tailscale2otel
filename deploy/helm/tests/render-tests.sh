@@ -1008,21 +1008,8 @@ render --set config.admin.enabled=true --set-string "config.admin.auth.token=${S
        --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
        --set service.webhook.enabled=true \
        --set gateway.webhook.enabled=true \
-       --set-json 'gateway.webhook.parentRefs=[{"name":"my-gateway"}]' \
-       --set ingress.admin.enabled=true --set-string ingress.admin.host=admin.example.com \
-       --set-string ingress.admin.tls.secretName=admin-tls \
-       --set ingress.prometheus.enabled=true --set-string ingress.prometheus.host=prom.example.com \
-       --set-string ingress.prometheus.tls.secretName=prom-tls \
-       --set gateway.admin.enabled=true --set-json 'gateway.admin.parentRefs=[{"name":"my-gateway"}]' \
-       --set gateway.prometheus.enabled=true --set-json 'gateway.prometheus.parentRefs=[{"name":"my-gateway"}]'
-# ingress.admin / ingress.prometheus / gateway.admin / gateway.prometheus are
-# not real keys this chart defines or reads anywhere — templates/ingress.yaml
-# and templates/httproute.yaml only ever range over a hardcoded streaming/webhook
-# list, so setting them is a no-op rather than a rejected value. Set them
-# anyway to prove that structural protection: even an operator who tries this
-# gets nothing, which is the strongest form of "admin/prometheus are never
-# exposable this way".
-assert_rc0 "V: everything-on (including a forced admin/prometheus attempt) renders"
+       --set-json 'gateway.webhook.parentRefs=[{"name":"my-gateway"}]'
+assert_rc0 "V: everything-on (admin/prometheus/streaming/webhook) renders"
 [[ "$(n_ingress)" == "1" ]] && ok "V: only the streaming Ingress rendered" || bad "V: expected 1 Ingress total, got $(n_ingress)"
 [[ "$(n_httproute)" == "1" ]] && ok "V: only the webhook HTTPRoute rendered" || bad "V: expected 1 HTTPRoute total, got $(n_httproute)"
 [[ -z "$(ing_of "${FULLNAME}-admin" | tr -d '[:space:]-')" ]] \
@@ -1033,6 +1020,28 @@ assert_rc0 "V: everything-on (including a forced admin/prometheus attempt) rende
   && ok "V: no admin HTTPRoute" || bad "V: an admin HTTPRoute rendered"
 [[ -z "$(route_of "${FULLNAME}-prometheus" | tr -d '[:space:]-')" ]] \
   && ok "V: no prometheus HTTPRoute" || bad "V: a prometheus HTTPRoute rendered"
+
+# ingress.admin / ingress.prometheus / gateway.admin / gateway.prometheus are not
+# real keys this chart defines or reads anywhere — templates/ingress.yaml and
+# templates/httproute.yaml only ever range over a hardcoded streaming/webhook
+# list. Since #304, values.schema.json now rejects them at the schema level
+# (ingress:/gateway: are additionalProperties:false, and admin/prometheus are not
+# among their declared properties) — a STRONGER guarantee than the old "silently a
+# no-op": an operator who tries this now gets a hard failure naming the mistake,
+# not silent nothing.
+render --set ingress.admin.enabled=true --set-string ingress.admin.host=admin.example.com \
+       --set-string ingress.admin.tls.secretName=admin-tls \
+       --set ingress.prometheus.enabled=true --set-string ingress.prometheus.host=prom.example.com \
+       --set-string ingress.prometheus.tls.secretName=prom-tls \
+       --set gateway.admin.enabled=true --set-json 'gateway.admin.parentRefs=[{"name":"my-gateway"}]' \
+       --set gateway.prometheus.enabled=true --set-json 'gateway.prometheus.parentRefs=[{"name":"my-gateway"}]'
+if [[ $RENDER_RC -ne 0 ]] \
+   && grep -q "at '/ingress'.*'admin'.*'prometheus'\|at '/ingress'.*'prometheus'.*'admin'" <<<"$RENDER" \
+   && grep -q "at '/gateway'.*'admin'.*'prometheus'\|at '/gateway'.*'prometheus'.*'admin'" <<<"$RENDER"; then
+  ok "V: ingress.admin/prometheus and gateway.admin/prometheus are rejected by the schema, naming both"
+else
+  bad "V: a forced admin/prometheus ingress/gateway attempt was NOT rejected by the schema (rc=$RENDER_RC)"
+fi
 
 # --------------------------------------------------------------------------
 case_ "W. immutable image digest (#349)"
@@ -1320,6 +1329,99 @@ render --set networkPolicy.enabled=true \
 assert_rc0 "Y: ingress.extra passthrough renders"
 [[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 1234)] | length')" == "1" ]] \
   && ok "Y: ingress.extra rule passed through as-is" || bad "Y: ingress.extra rule missing"
+
+# --------------------------------------------------------------------------
+case_ "Z. values.schema.json strictness (#304)"
+# The generated schema (deploy/helm/tailscale2otel/values.schema.json, regenerated
+# from values.yaml's `# @schema additionalProperties:false` annotations by
+# `scripts/regen-generated.sh helm`) rejects an unknown key on every CHART-AUTHORED
+# object, while intentionally free-form maps (labels/annotations/headers/tags/
+# nodeSelector/resources.requests|limits/extraEnv valueFrom/...) stay open.
+
+render
+assert_rc0 "Z: known-good default render still succeeds"
+
+# A typo'd nested config.* key fails (the issue's core acceptance case, one level
+# down from the chart root: config.tailscale is additionalProperties:false).
+render --set config.tailscale.bogus_key=1
+[[ $RENDER_RC -ne 0 ]] && grep -q "additional properties 'bogus_key' not allowed" <<<"$RENDER" \
+  && ok "Z: unknown config.tailscale.* key fails, naming the key" \
+  || bad "Z: unknown config.tailscale.* key was accepted (rc=$RENDER_RC)"
+
+# A near-miss typo of a real key (singular "device" vs the real "devices") fails
+# the same way — this is exactly the class of mistake #304 was filed over.
+render --set config.collectors.device.enabled=true
+[[ $RENDER_RC -ne 0 ]] && grep -q "additional properties 'device' not allowed" <<<"$RENDER" \
+  && ok "Z: near-miss config.collectors.device (vs devices) fails" \
+  || bad "Z: near-miss config.collectors.device was accepted (rc=$RENDER_RC)"
+
+# Another near-miss one level up: config.otlp.header (singular) instead of headers.
+render --set config.otlp.header.X-Foo=bar
+[[ $RENDER_RC -ne 0 ]] && grep -q "additional properties 'header' not allowed" <<<"$RENDER" \
+  && ok "Z: near-miss config.otlp.header (vs headers) fails" \
+  || bad "Z: near-miss config.otlp.header was accepted (rc=$RENDER_RC)"
+
+# --- free-form maps must stay usable: one arbitrary key each, real render, no error ---
+render --set podAnnotations.example\\.com/foo=bar
+assert_rc0 "Z: podAnnotations accepts an arbitrary key"
+[[ "$(dep_field '.spec.template.metadata.annotations."example.com/foo"')" == "bar" ]] \
+  && ok "Z: podAnnotations arbitrary key rendered" || bad "Z: podAnnotations arbitrary key missing"
+
+render --set podLabels.example\\.com/team=sre
+assert_rc0 "Z: podLabels accepts an arbitrary key"
+[[ "$(dep_field '.spec.template.metadata.labels."example.com/team"')" == "sre" ]] \
+  && ok "Z: podLabels arbitrary key rendered" || bad "Z: podLabels arbitrary key missing"
+
+render --set nodeSelector.disktype=ssd
+assert_rc0 "Z: nodeSelector accepts an arbitrary key"
+[[ "$(dep_field '.spec.template.spec.nodeSelector.disktype')" == "ssd" ]] \
+  && ok "Z: nodeSelector arbitrary key rendered" || bad "Z: nodeSelector arbitrary key missing"
+
+render --set serviceAccount.annotations.example\\.com/role-arn=arn:aws:iam::1:role/x
+assert_rc0 "Z: serviceAccount.annotations accepts an arbitrary key"
+
+render --set-string config.otlp.headers.X-Scope-OrgID=tenant-a
+assert_rc0 "Z: config.otlp.headers accepts an arbitrary key"
+
+render --set-string config.profiling.pyroscope.tags.env=prod
+assert_rc0 "Z: config.profiling.pyroscope.tags accepts an arbitrary key"
+
+render --set service.admin.enabled=true --set config.admin.auth.token=abc \
+       --set service.admin.annotations.example\\.com/lb-type=internal
+assert_rc0 "Z: service.admin.annotations accepts an arbitrary key"
+
+render --set ingress.webhook.annotations.cert-manager\\.io/cluster-issuer=letsencrypt \
+       --set config.webhook.enabled=true --set config.webhook.secret=abc \
+       --set service.webhook.enabled=true --set ingress.webhook.enabled=true \
+       --set ingress.webhook.host=example.com
+assert_rc0 "Z: ingress.webhook.annotations accepts an arbitrary key"
+
+render --set resources.requests.nvidia\\.com/gpu=1
+assert_rc0 "Z: resources.requests accepts an arbitrary (custom) resource-name key"
+[[ "$(dep_field '.spec.template.spec.containers[0].resources.requests."nvidia.com/gpu"')" == "1" ]] \
+  && ok "Z: resources.requests custom key rendered" || bad "Z: resources.requests custom key missing"
+
+render --set-json 'metrics.podMonitor.labels={"release":"prometheus"}' \
+       --set metrics.podMonitor.enabled=true --set config.prometheus.enabled=true
+assert_rc0 "Z: metrics.podMonitor.labels accepts an arbitrary key"
+
+# --- Root-level strictness. `--set secrets.foo=bar` is the issue's own repro: a
+# plausible typo for a real key that Helm accepted happily, producing a release
+# with no credential rendered and no error anywhere (#304).
+#
+# Root strictness is the one part of the schema that does NOT come from a values.yaml
+# annotation — a `# @schema` comment at the top of the file attaches to the first KEY,
+# not to the root mapping. It comes from --schema-root.additional-properties=false in
+# scripts/regen-generated.sh and the matching `additionalProperties: false` input in
+# .github/workflows/helm.yml. Those two must move together: drop either and this
+# assertion is the thing that notices.
+render --set secrets.foo=bar
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "Z: root-level typo 'secrets.foo' is rejected" \
+  || bad "Z: root-level typo 'secrets.foo' still renders"
+grep -q "additional properties 'secrets' not allowed" <<<"$RENDER" \
+  && ok "Z: rejection names the offending root key" \
+  || bad "Z: rejection did not name 'secrets'"
 
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

@@ -1,6 +1,6 @@
 # Default values for tailscale2otel.
 
-image:
+image: # @schema additionalProperties:false
   # -- Container image repository.
   repository: ghcr.io/rknightion/tailscale2otel
   # -- Image tag. Defaults to .Chart.appVersion when empty. IGNORED entirely when image.digest is
@@ -30,8 +30,8 @@ imagePullSecrets: []
 # timeoutSeconds/failureThreshold/successThreshold are Kubernetes' own probe defaults (1/3/1) —
 # rendering stays byte-identical to before at these defaults; only a non-default value renders
 # those fields explicitly.
-probes:
-  liveness:
+probes: # @schema additionalProperties:false
+  liveness: # @schema additionalProperties:false
     # -- Enable the liveness probe (GET /healthz).
     enabled: true
     # -- Seconds after container start before the first liveness probe.
@@ -45,7 +45,7 @@ probes:
     # -- Consecutive successes required to consider the probe passing again. Kubernetes REJECTS
     # any value other than 1 for a liveness probe — enforced here, not just documented.
     successThreshold: 1 # @schema enum:[1]
-  readiness:
+  readiness: # @schema additionalProperties:false
     # -- Enable the readiness probe (GET /readyz).
     enabled: true
     # -- Seconds after container start before the first readiness probe.
@@ -59,7 +59,7 @@ probes:
     # -- Consecutive successes required to mark the pod Ready again after a failure. Unlike
     # liveness/startup, Kubernetes allows any value >=1 here.
     successThreshold: 1 # @schema minimum:1
-  startup:
+  startup: # @schema additionalProperties:false
     # -- Enable a startup probe (GET /readyz). Off by default: opt in to shield a slow first
     # initialization (e.g. the first poll cycle against a large multi-tailnet fleet) with its own
     # budget, separate from the steady-state liveness timing above — while a startup probe is
@@ -91,7 +91,7 @@ nameOverride: ""
 # -- Fully override the generated resource names.
 fullnameOverride: ""
 
-serviceAccount:
+serviceAccount: # @schema additionalProperties:false
   # -- Create a ServiceAccount.
   create: true
   # -- ServiceAccount name. Generated when empty.
@@ -134,7 +134,7 @@ securityContext:
 # -- Resource requests and limits. The defaults suit a few-hundred-device tailnet;
 # raise limits if you enable high-volume flow-log streaming or many node-metrics
 # targets.
-resources:
+resources: # @schema additionalProperties:false
   requests:
     cpu: 50m
     memory: 64Mi
@@ -145,7 +145,7 @@ resources:
 # -- Go runtime tuning, injected as container env vars. This is a near-idle poller
 # with a tiny live heap, so the Go default GOGC=100 fires frequent (individually
 # cheap) collections that dominate the CPU profile; raising GOGC cuts that GC share.
-goRuntime:
+goRuntime: # @schema additionalProperties:false
   # -- GOGC: heap-growth percentage between collections (Go default 100). Empty ("") leaves the Go default.
   gogc: "200"
   # -- GOMEMLIMIT soft memory cap, e.g. "230MiB". Empty ("") auto-computes ~90% of
@@ -193,7 +193,7 @@ extraVolumeMounts: []
 # scoped to Tailscale's audience only — it does NOT turn on automountServiceAccountToken,
 # which would mount a general-purpose Kubernetes API token the exporter has no use for and
 # which would be a far more valuable credential to leak.
-workloadIdentity:
+workloadIdentity: # @schema additionalProperties:false
   # -- Mount a projected, audience-scoped ServiceAccount token and point the exporter at it.
   # Requires config.tailscale.auth.method: workload_identity and a client_id.
   enabled: false
@@ -214,8 +214,8 @@ workloadIdentity:
 # enabled, so a cluster without the Prometheus Operator CRDs installed is unaffected:
 # `helm template` never emits the resource, and there is nothing for the API server to
 # reject. The chart cannot detect whether a CRD exists, so this is opt-in by design.
-metrics:
-  podMonitor:
+metrics: # @schema additionalProperties:false
+  podMonitor: # @schema additionalProperties:false
     # -- Render a PodMonitor. Requires config.prometheus.enabled. A PodMonitor scrapes
     # pods DIRECTLY, so it needs no Service — prefer it over serviceMonitor unless you
     # specifically want the Service in the path.
@@ -241,7 +241,7 @@ metrics:
     metricRelabelings: []
     # -- Cap on samples accepted per scrape; 0 leaves it unset.
     sampleLimit: 0
-  serviceMonitor:
+  serviceMonitor: # @schema additionalProperties:false
     # -- Render a ServiceMonitor. Requires config.prometheus.enabled AND
     # service.prometheus.enabled — a ServiceMonitor selects a Service, so without one it
     # matches nothing and silently reports no data. Prefer podMonitor unless you
@@ -278,8 +278,8 @@ metrics:
 # what turns a local misconfiguration into a cluster-reachable one: `prometheus` serves
 # every series unauthenticated with an empty token, and `webhook` fails OPEN — an empty
 # secret skips HMAC verification entirely.
-service:
-  admin:
+service: # @schema additionalProperties:false
+  admin: # @schema additionalProperties:false
     # -- Render a Service for the admin listener. Requires config.admin.auth.token.
     # Probes do NOT need this — the kubelet reaches the pod directly.
     enabled: false
@@ -290,7 +290,7 @@ service:
     port: ""
     # -- Extra annotations on this Service (e.g. cloud LB or ServiceMonitor selectors).
     annotations: {}
-  prometheus:
+  prometheus: # @schema additionalProperties:false
     # -- Render a Service for the Prometheus pull endpoint. Requires config.prometheus.auth.token.
     enabled: false
     # -- Service type.
@@ -299,7 +299,7 @@ service:
     port: ""
     # -- Extra annotations on this Service.
     annotations: {}
-  streaming:
+  streaming: # @schema additionalProperties:false
     # -- Render a Service for the Splunk-HEC receiver. Requires config.streaming.token.
     enabled: false
     # -- Service type.
@@ -308,7 +308,7 @@ service:
     port: ""
     # -- Extra annotations on this Service.
     annotations: {}
-  webhook:
+  webhook: # @schema additionalProperties:false
     # -- Render a Service for the webhook receiver. Requires config.webhook.secret.
     enabled: false
     # -- Service type.
@@ -329,8 +329,8 @@ service:
 # Rendering FAILS if you enable an Ingress for a listener with no backing
 # Service (service.<listener>.enabled), no credential set, no host, or with
 # tls.enabled and neither a secretName nor an annotation to terminate it.
-ingress:
-  streaming:
+ingress: # @schema additionalProperties:false
+  streaming: # @schema additionalProperties:false
     # -- Render an Ingress for the Splunk-HEC receiver. Requires
     # service.streaming.enabled and config.streaming.token (or token_file).
     enabled: false
@@ -345,7 +345,7 @@ ingress:
     path: /
     # -- Ingress pathType.
     pathType: Prefix
-    tls:
+    tls: # @schema additionalProperties:false
       # -- Terminate TLS at the Ingress (the default). Tailscale streaming/webhook
       # delivery requires HTTPS, so disabling this is only correct when a mesh or
       # sidecar upstream of the controller terminates TLS for you instead.
@@ -354,7 +354,7 @@ ingress:
       # cert-manager (or similar) annotation to provision and name it for you —
       # but at least one of secretName or an annotation must be set.
       secretName: ""
-  webhook:
+  webhook: # @schema additionalProperties:false
     # -- Render an Ingress for the webhook receiver. Requires
     # service.webhook.enabled and config.webhook.secret (or secret_file).
     enabled: false
@@ -369,7 +369,7 @@ ingress:
     path: /
     # -- Ingress pathType.
     pathType: Prefix
-    tls:
+    tls: # @schema additionalProperties:false
       # -- Terminate TLS at the Ingress (the default). Tailscale webhooks are
       # HTTPS-only, so disabling this only makes sense when a mesh upstream of
       # the controller terminates TLS instead — Tailscale itself will not
@@ -388,8 +388,8 @@ ingress:
 # Rendering FAILS if you enable an HTTPRoute for a listener with no backing
 # Service, no credential set, or no parentRefs entry naming the Gateway to
 # attach to.
-gateway:
-  streaming:
+gateway: # @schema additionalProperties:false
+  streaming: # @schema additionalProperties:false
     # -- Render an HTTPRoute for the Splunk-HEC receiver. Requires
     # service.streaming.enabled and config.streaming.token (or token_file).
     enabled: false
@@ -406,7 +406,7 @@ gateway:
     path: /
     # -- Extra annotations on the HTTPRoute object.
     annotations: {}
-  webhook:
+  webhook: # @schema additionalProperties:false
     # -- Render an HTTPRoute for the webhook receiver. Requires
     # service.webhook.enabled and config.webhook.secret (or secret_file).
     enabled: false
@@ -427,10 +427,10 @@ gateway:
 # every ENABLED listener/consumer (derived the same way templates/service.yaml is — a listener
 # that is off, or a Service/PodMonitor/ServiceMonitor that never got created, can never get a
 # matching hole) plus a deliberately honest egress posture — see egress.allowAll below.
-networkPolicy:
+networkPolicy: # @schema additionalProperties:false
   # -- Render a NetworkPolicy for this pod.
   enabled: false
-  egress:
+  egress: # @schema additionalProperties:false
     # -- Allow DNS (UDP+TCP port 53) egress. Almost always required: the pod resolves the
     # Tailscale API host, the OTLP endpoint host, and (if configured) an S3-compatible
     # object-store endpoint by name. Only consulted while allowAll is false.
@@ -452,7 +452,7 @@ networkPolicy:
     # -- Raw NetworkPolicyEgressRule entries appended as-is (e.g. an ipBlock scoped to your OTLP
     # gateway or object-store endpoint). Only consulted while allowAll is false.
     extra: []
-  ingress:
+  ingress: # @schema additionalProperties:false
     # -- Raw NetworkPolicyIngressRule entries appended as-is, alongside the rules this chart
     # generates automatically for each enabled listener/consumer (see templates/networkpolicy.yaml).
     extra: []
@@ -523,7 +523,7 @@ existingConfigSecret: ""
 existingConfigKey: config.yaml
 
 # Where the rendered config.yaml is stored.
-configStorage:
+configStorage: # @schema additionalProperties:false
   # -- Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`.
   # `auto` (default) renders it into a ConfigMap while it is credential-free, and into
   # Secret `<fullname>-config` as soon as any credential-bearing key is set inline under
@@ -544,7 +544,7 @@ configStorage:
 # runtime — secrets never appear in the ConfigMap. Keys left empty ("") are NOT
 # rendered into the Secret: an empty env var would override — and blank — the same
 # key set under `config:` (env beats file), silently disabling e.g. receiver auth.
-secret:
+secret: # @schema additionalProperties:false
   # -- Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet.
   TS2OTEL_TAILSCALE__TAILNET: ""
   # -- OAuth client ID (recommended auth; needs the "all:read" scope). Used when config.tailscale.auth.method=oauth.
@@ -598,7 +598,7 @@ secret:
 # Helm deep-merges maps, so single-key overrides keep working, e.g.:
 #   --set config.log_level=debug
 #   --set config.collectors.flowlogs.interval=30s
-config:
+config: # @schema additionalProperties:false
   # -- Log verbosity: debug | info | warn | error.
   log_level: info
 
@@ -627,7 +627,7 @@ config:
 
   # Headscale control-plane connection. Used only when provider: headscale. The api_key is a
   # Bearer token — set it via the secret TS2OTEL_HEADSCALE__API_KEY (above), not here.
-  headscale:
+  headscale: # @schema additionalProperties:false
     # -- Headscale control-plane base URL, e.g. https://headscale.example.org.
     url: ""
     # -- Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value.
@@ -641,28 +641,28 @@ config:
     # raise the container memory limit alongside it, since decoding costs several
     # times the wire size. A value above 64 MiB triggers a startup warning.
     max_response_bytes: 4194304
-    http:
+    http: # @schema additionalProperties:false
       # -- Per-request timeout for Headscale API calls (the only http knob applied in v1).
       timeout: 30s
       # retry/rate_limit are accepted for parity with tailscale.http but not applied by the v1 client.
-      retry:
+      retry: # @schema additionalProperties:false
         max_attempts: 0
         base_delay: 0s
         max_delay: 0s
       rate_limit: 0
 
-  tailscale:
+  tailscale: # @schema additionalProperties:false
     # -- Tailnet name, or "-" for the auth principal's default tailnet (the default,
     # which works out of the box for single-tailnet OAuth). Override with the
     # TS2OTEL_TAILSCALE__TAILNET env var (set via secret above).
     tailnet: "-"
-    auth:
+    auth: # @schema additionalProperties:false
       # -- Auth method: oauth (recommended) | apikey | workload_identity. Prefer an OAuth client
       # (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is
       # user-tied, and the exporter logs a WARN when apikey is selected. workload_identity is the
       # keyless OIDC exchange — no stored secret at all, ideal for a Kubernetes ServiceAccount token.
       method: oauth
-      oauth:
+      oauth: # @schema additionalProperties:false
         # -- OAuth client ID. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID (secret).
         client_id: ""
         # -- OAuth client secret. Set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET (secret).
@@ -681,7 +681,7 @@ config:
       # Keyless OIDC token exchange, used only when method: workload_identity. Pair a projected
       # ServiceAccount token volume with a federated OAuth client in the Tailscale admin console
       # and the deployment holds no long-lived Tailscale credential at all.
-      workload_identity:
+      workload_identity: # @schema additionalProperties:false
         # -- Federated OAuth client ID from the Tailscale admin console. Required for this method.
         client_id: ""
         # -- Path to the OIDC ID token exchanged for a Tailscale access token. In Kubernetes this
@@ -689,10 +689,10 @@ config:
         # /var/run/secrets/tokens/tailscale. Re-read on every exchange, so
         # kubelet rotation is picked up without a restart.
         id_token_file: ""
-    http:
+    http: # @schema additionalProperties:false
       # -- Per-request HTTP timeout for Tailscale API calls.
       timeout: 30s
-      retry:
+      retry: # @schema additionalProperties:false
         # -- Max attempts per request (incl. the first) before giving up.
         max_attempts: 4
         # -- Initial backoff delay; doubles each retry up to max_delay.
@@ -710,13 +710,13 @@ config:
     # budgets well under resources.limits.memory — above 64 MiB the app raises a startup advisory.
     max_log_response_bytes: 33554432
 
-  otlp:
+  otlp: # @schema additionalProperties:false
     # -- Export protocol: http | grpc | stdout (stdout = local debug).
     protocol: http
     # -- OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region
     # (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol).
     endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
-    grafana_cloud:
+    grafana_cloud: # @schema additionalProperties:false
       # -- Grafana Cloud instance/stack ID. Convenience: expands to an
       # "Authorization: Basic <base64(instance_id:token)>" header.
       # Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret).
@@ -729,7 +729,7 @@ config:
       token_file: ""
     # -- Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend).
     headers: {}
-    tls:
+    tls: # @schema additionalProperties:false
       # -- Disable transport security ENTIRELY (plaintext) — this is NOT a certificate-verification
       # skip, see insecure_skip_verify for that. The Authorization header built from grafana_cloud
       # rides on whatever transport this selects, so `true` puts that credential on the wire
@@ -749,11 +749,11 @@ config:
     # -- Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads.
     metric_export_batch_size: 10000
 
-  enrichment:
+  enrichment: # @schema additionalProperties:false
     # -- Staleness alarm threshold for the device-enrichment cache (drives the
     # tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries.
     cache_ttl: 5m
-    reverse_dns:
+    reverse_dns: # @schema additionalProperties:false
       # -- Opt-in reverse-DNS (PTR) enrichment of EXTERNAL flow addresses; resolved names replace
       # the "external" bucket in tailscale.src/dst.node (flow logs always; flow metrics when
       # cardinality.flow.node_dims is on). On flow METRICS this can add ~one series per external IP.
@@ -772,7 +772,7 @@ config:
       # advisory (config_warnings_ratio). Set true once cardinality.metric_limit is sized for it.
       acknowledge_cardinality: false
 
-  cardinality:
+  cardinality: # @schema additionalProperties:false
     # -- Hard per-metric series cap (0/negative = unlimited).
     metric_limit: 10000
     # -- Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector.
@@ -786,7 +786,7 @@ config:
     critical_threshold: 8000
     # -- Distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture).
     label_value_sample_cap: 100
-    flow:
+    flow: # @schema additionalProperties:false
       # -- Which flow metric families to emit: rollup (default) | all | both. rollup = bounded top-N
       # *.rollup families (busiest src/dst node pairs by bytes; remainder folds into an __other__ series so
       # totals are preserved; no L4 ports; adds tailscale.network.unique.* gauges). all = raw per-connection
@@ -821,7 +821,7 @@ config:
       # is many nodes, so it has no single user to report. Off by default only because `user` is an
       # email address; pii_filter.emails still applies. Flow LOGS carry these regardless.
       identity_dims: false
-    per_entity:
+    per_entity: # @schema additionalProperties:false
       # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
       # aggregate tailscale.devices.count rollup.
       device: true
@@ -834,8 +834,8 @@ config:
       # -- Emit the per-service ports/hosts gauges; false emits only tailscale.services.count.
       service: true
 
-  collectors:
-    devices:
+  collectors: # @schema additionalProperties:false
+    devices: # @schema additionalProperties:false
       # -- Enable the devices collector (device.online/last_seen/key_expiry/update_available).
       enabled: true
       # -- Poll interval.
@@ -866,7 +866,7 @@ config:
       # -- Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest
       # fold into tailscale.tag="__other__". 0 or negative = unlimited.
       tag_rollup_limit: 50
-    flowlogs:
+    flowlogs: # @schema additionalProperties:false
       # -- Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs).
       enabled: true
       # -- Ingestion source: poll | stream | objectstore | both. PICK ONE method per log
@@ -903,7 +903,7 @@ config:
       # -- Cap on flow LOG records per poll window (0 = unlimited). Excess is counted into
       # tailscale.network.flow.logs_dropped; METRICS are never capped, only logs.
       max_log_records_per_window: 0
-      objectstore:
+      objectstore: # @schema additionalProperties:false
         # -- Service URL of the S3-compatible store holding Tailscale's flow-log export, e.g.
         # https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when source is
         # objectstore; never derived from the region, because a non-AWS implementation would be
@@ -982,7 +982,7 @@ config:
         # -- Read the temporary S3 session token from this mounted file instead of an inline value.
         # Set the value or the file, never both.
         session_token_file: ""
-    auditlogs:
+    auditlogs: # @schema additionalProperties:false
       # -- Enable the configuration-audit-logs collector.
       enabled: true
       # -- Ingestion source: poll | stream | both | objectstore. Pick ONE method per log type (see
@@ -997,7 +997,7 @@ config:
       initial_lookback: 5m
       # -- Maximum width of a single poll window.
       max_window: 6h
-      objectstore:
+      objectstore: # @schema additionalProperties:false
         # -- Service URL of the S3-compatible store holding Tailscale's CONFIGURATION-log export,
         # e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when auditlogs.source
         # is objectstore. This is a SEPARATE export from the flow one: nothing here is inherited from
@@ -1072,65 +1072,65 @@ config:
         # -- Read the temporary S3 session token from this mounted file instead of an inline value.
         # Set the value or the file, never both.
         session_token_file: ""
-    users:
+    users: # @schema additionalProperties:false
       # -- Enable the users collector (users.count, per-user devices/connected/last_seen).
       enabled: true
       # -- Poll interval (user data changes slowly).
       interval: 300s
-    keys:
+    keys: # @schema additionalProperties:false
       # -- Enable the auth/API keys collector (key.expiry, keys.count).
       enabled: true
       # -- Poll interval.
       interval: 300s
       # -- Emit a tailscale.key.expiring WARN log when a key expires within this window.
       expiry_warn: 168h
-    settings:
+    settings: # @schema additionalProperties:false
       # -- Enable the tailnet-settings collector (setting.enabled flags, key-duration).
       enabled: true
       # -- Poll interval (settings change rarely).
       interval: 600s
-    acl:
+    acl: # @schema additionalProperties:false
       # -- Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section).
       enabled: true
       # -- Poll interval.
       interval: 600s
       # -- Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only.
       validate: true
-    dns:
+    dns: # @schema additionalProperties:false
       # -- Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS).
       enabled: true
       # -- Poll interval.
       interval: 600s
-    contacts:
+    contacts: # @schema additionalProperties:false
       # -- Enable the contacts collector (account/support/security contact verification; no emails emitted).
       enabled: true
       # -- Poll interval.
       interval: 600s
-    webhooks:
+    webhooks: # @schema additionalProperties:false
       # -- Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret).
       enabled: true
       # -- Poll interval.
       interval: 600s
       # -- Optional expected webhook event categories (e.g. `["nodeCreated","userSuspended"]`); empty means no expectation is checked.
       desired_events: []
-    posture_integrations:
+    posture_integrations: # @schema additionalProperties:false
       # -- Enable the device-posture-integration collector (MDM/EDR matched counts + last_sync staleness).
       enabled: true
       # -- Poll interval.
       interval: 600s
-    log_stream:
+    log_stream: # @schema additionalProperties:false
       # -- Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error)
       # when no SIEM sink is configured for a log type.
       enabled: true
       # -- Poll interval.
       interval: 600s
-    oauth_apps:
+    oauth_apps: # @schema additionalProperties:false
       # -- Enable the OAuth-application inventory collector (count, per-app scope/node-attribute
       # gauges). Alpha API — idles silently, with no error, on tailnets that do not have it.
       enabled: true
       # -- Poll interval.
       interval: 300s
-    services:
+    services: # @schema additionalProperties:false
       # -- Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts).
       enabled: true
       # -- Poll interval.
@@ -1140,7 +1140,7 @@ config:
       collect_hosts: false
     # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
     # them centrally over OTLP. Off by default; disabled when no targets are configured.
-    node_metrics:
+    node_metrics: # @schema additionalProperties:false
       # -- Enable the node-metrics scraper. Requires at least one entry in `targets`.
       enabled: false
       # -- Scrape interval for every target.
@@ -1170,7 +1170,7 @@ config:
       # Discover scrape targets from the Tailscale devices API instead of (or alongside) the
       # static `targets` list above. Discovered targets are unioned with the static ones,
       # deduped by URL with static winning, on this block's own interval.
-      discovery:
+      discovery: # @schema additionalProperties:false
         # -- Turn on dynamic target discovery.
         enabled: false
         # -- How often the devices API is polled for targets (independent of the scrape interval).
@@ -1202,7 +1202,7 @@ config:
         # -- Attach the tailscale.tags label to scraped series.
         include_tags_label: true
 
-  checkpoint:
+  checkpoint: # @schema additionalProperties:false
     # -- Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does
     # initial_lookback); "file" persists them atomically (needs a writable volume at file_path).
     store: file
@@ -1212,7 +1212,7 @@ config:
   # Process-global write-ahead log for accepted streaming/webhook request bodies.
   # Disabled is the stateless default. When enabled, ACK means durable local acceptance,
   # not OTLP/backend acknowledgement; replay is at-least-once and can duplicate after a crash.
-  ingress_wal:
+  ingress_wal: # @schema additionalProperties:false
     # -- Persist accepted receiver bodies before acknowledging them. Off by default.
     enabled: false
     # -- Absolute, clean, non-root WAL directory. Must live on the state volume for persistence.
@@ -1229,7 +1229,7 @@ config:
   # exactly ONE path; running both the poller and this receiver for the same log type risks
   # double-counting (cross-source de-dup is a best-effort failsafe, WARNed at startup).
   # Token: set via TS2OTEL_STREAMING__TOKEN (secret).
-  streaming:
+  streaming: # @schema additionalProperties:false
     # -- Enable the HEC-style streaming receiver.
     enabled: false
     # -- Address the receiver binds (host:port).
@@ -1243,7 +1243,7 @@ config:
     token_file: ""
     # -- Externally reachable receiver URL; REQUIRED when auto_configure: true.
     public_url: ""
-    tls:
+    tls: # @schema additionalProperties:false
       # -- TLS certificate file; set with key_file to serve the receiver over HTTPS.
       cert_file: ""
       # -- TLS private key file paired with cert_file.
@@ -1267,7 +1267,7 @@ config:
 
   # Optional webhook receiver for real-time Tailscale events.
   # Secret: set via TS2OTEL_WEBHOOK__SECRET (secret).
-  webhook:
+  webhook: # @schema additionalProperties:false
     # -- Enable the webhook receiver.
     enabled: false
     # -- Address the receiver binds (host:port).
@@ -1281,7 +1281,7 @@ config:
     # -- Read webhook.secret from this path instead of an inline value (mounted-Secret style).
     # Set the value or the file, not both; the file's content is whitespace-trimmed.
     secret_file: ""
-    tls:
+    tls: # @schema additionalProperties:false
       # -- TLS certificate file; set with key_file for native webhook HTTPS. Leave both empty
       # when an HTTPS reverse proxy terminates TLS.
       cert_file: ""
@@ -1307,7 +1307,7 @@ config:
     # -- Best-effort: drop a webhook event already counted via the audit logs (off by default).
     dedup_audit_events: false
 
-  self_observability:
+  self_observability: # @schema additionalProperties:false
     # -- Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime).
     enabled: true
     # -- service.instance.id resource attribute; empty falls back to the pod/host name. Override
@@ -1317,7 +1317,7 @@ config:
   # PII / identifier redaction. All categories default true (emitted). Set a category to
   # false to drop those identifiers from metrics and logs at runtime (opt-out). Disabling a
   # category whose label is a gauge's sole identity suppresses that gauge's datapoints.
-  pii_filter:
+  pii_filter: # @schema additionalProperties:false
     # -- Emit user/actor login names (often emails).
     emails: true
     # -- Emit actor display (human) names.
@@ -1350,19 +1350,19 @@ config:
   # Off by default. Bind to a loopback/tailnet address or set prometheus.auth.token for
   # defense-in-depth — the endpoint exposes every series (incl. device/flow identifiers).
   # Token: set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret above).
-  prometheus:
+  prometheus: # @schema additionalProperties:false
     # -- Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener.
     enabled: false
     # -- Address the Prometheus endpoint binds. Keep distinct from admin.listen.
     listen: ":2112"
-    auth:
+    auth: # @schema additionalProperties:false
       # -- Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>").
       # Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret).
       token: ""
       # -- Read prometheus.auth.token from this path instead of an inline value (mounted-Secret
       # style). Set the value or the file, not both; the file's content is whitespace-trimmed.
       token_file: ""
-    tls:
+    tls: # @schema additionalProperties:false
       # -- HTTPS certificate for the Prometheus endpoint. Set together with key_file
       # (both-or-neither); leaving both empty serves plain HTTP.
       cert_file: ""
@@ -1372,20 +1372,20 @@ config:
   # Admin HTTP server: liveness/readiness probes plus an optional status landing page.
   # The page exposes operational metadata (collector health, cardinality, discovered
   # nodes, redacted config) but NEVER secret values.
-  admin:
+  admin: # @schema additionalProperties:false
     # -- Enable the admin probe server.
     enabled: true
     # -- Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth.
     listen: ":9091"
     # -- Serve the human status page at / and machine-readable JSON at /api/status.json.
     landing_page: true
-    auth:
+    auth: # @schema additionalProperties:false
       # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled.
       token: ""
       # -- Read admin.auth.token from this path instead of an inline value (mounted-Secret style).
       # Set the value or the file, not both; the file's content is whitespace-trimmed.
       token_file: ""
-    tls:
+    tls: # @schema additionalProperties:false
       # -- HTTPS certificate for the admin server. Set together with key_file (both-or-neither);
       # leaving both empty serves plain HTTP. The chart's liveness/readiness probes follow this
       # automatically: setting both files renders them with scheme: HTTPS (#342). Setting admin
@@ -1402,7 +1402,7 @@ config:
   # picture of recent traffic (topology, timeline, top talkers, recent connections)
   # that needs no metrics backend. It changes nothing about what is exported over
   # OTLP, and the store is lost on restart. Requires admin.enabled + admin.landing_page.
-  flows:
+  flows: # @schema additionalProperties:false
     # -- Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page.
     enabled: true
     # -- How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store.
@@ -1414,11 +1414,11 @@ config:
   # carries no Tailscale data. The pprof handlers mount on the admin server, so
   # profiling.pprof.enabled requires admin.enabled: true AND admin.auth.token
   # (heap/goroutine dumps can expose in-memory secrets).
-  profiling:
-    pprof:
+  profiling: # @schema additionalProperties:false
+    pprof: # @schema additionalProperties:false
       # -- Mount net/http/pprof on the admin server so Grafana Alloy's pyroscope.scrape can PULL profiles. Requires admin.enabled + admin.auth.token.
       enabled: false
-    pyroscope:
+    pyroscope: # @schema additionalProperties:false
       # -- Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK).
       enabled: false
       # -- Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled.
@@ -1447,7 +1447,7 @@ config:
 
   # -- OTEL traces pillar (spans for the exporter's own work). OFF by default;
   # reuses otlp.* for the endpoint/protocol/headers/TLS.
-  tracing:
+  tracing: # @schema additionalProperties:false
     # -- Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration.
     enabled: false
     # -- Head sampler (always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio).
@@ -1455,11 +1455,11 @@ config:
     # -- Sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise).
     sampler_arg: 1.0
 
-  version_checks:
-    self:
+  version_checks: # @schema additionalProperties:false
+    self: # @schema additionalProperties:false
       # -- Emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release). Makes an outbound HTTPS call; fail-open. Disable for air-gapped deployments.
       enabled: true
-    devices:
+    devices: # @schema additionalProperties:false
       # -- Emit per-device tailscale.device.version_skew + fleet roll-ups (device client version vs latest Tailscale stable). Makes an outbound HTTPS call; fail-open. Needs the devices collector.
       enabled: true
       # -- A device this many minor releases behind the latest Tailscale stable counts toward tailscale.devices.outdated.
@@ -1470,7 +1470,7 @@ config:
     timeout: 10s
 
 # --- Process-state persistence (checkpoints plus an enabled receiver WAL) ---
-persistence:
+persistence: # @schema additionalProperties:false
   # -- Persist process state across pod replacement/rescheduling. When false, an emptyDir is used:
   # it survives container restarts within the same pod, but is lost with pod replacement,
   # rescheduling, or node loss. When true, a PVC is created or existingClaim is mounted.

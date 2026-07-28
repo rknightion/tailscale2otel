@@ -136,10 +136,16 @@ regen_helm_docs() {
 regen_helm_schema() {
   have_tool helm-values-schema-json "$HELM_SCHEMA_VERSION" tools || return 0
   note "values.schema.json (draft 7, helm-values-schema-json $HELM_SCHEMA_VERSION)"
-  # Mirrors losisin/helm-values-schema-json-action@v2 in helm.yml (draft: 7).
+  # Mirrors losisin/helm-values-schema-json-action in helm.yml (draft: 7,
+  # additionalProperties: false). Keep the two in step: the schema-root flag has
+  # no values.yaml annotation equivalent — a `# @schema` comment at the top of the
+  # file attaches to the first KEY, not to the root mapping — so root strictness
+  # exists only here and in the workflow input. Drop it from either side and
+  # `--set secrets.foo=bar` silently starts rendering again (#304).
   helm-values-schema-json \
     --values "$CHART_DIR/values.yaml" \
     --output "$CHART_DIR/values.schema.json" \
+    --schema-root.additional-properties=false \
     --draft 7
 }
 

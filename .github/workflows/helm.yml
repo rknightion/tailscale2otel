@@ -66,6 +66,12 @@ jobs:
           values: ${{ env.CHART_DIR }}/values.yaml
           output: ${{ env.CHART_DIR }}/values.schema.json
           draft: 7
+          # Root-level strictness, so a typo'd TOP-level key (the classic
+          # `--set secrets.foo=...`, which renders no credential) is rejected.
+          # It has no values.yaml annotation equivalent, so it must be set here
+          # AND as --schema-root.additional-properties=false in
+          # scripts/regen-generated.sh, or local regeneration drifts from CI.
+          additionalProperties: false
           fail-on-diff: true
 
       # Regenerate the chart README from README.md.gotmpl + value annotations and

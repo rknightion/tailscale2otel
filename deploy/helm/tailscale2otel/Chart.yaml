@@ -3,6 +3,20 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.23.0: values.schema.json strictness (#304) — every chart-authored object gained
+# additionalProperties:false via `# @schema` annotations in values.yaml (config.*, the
+# per-listener service/ingress/gateway/networkPolicy blocks, probes, image, secret, etc.),
+# so a typo'd or unknown key now fails `helm lint`/`helm template` instead of silently
+# rendering nothing for it. Free-form maps stay open on purpose: labels/annotations,
+# otlp.headers, profiling.pyroscope.tags, nodeSelector, resources.requests/limits, and
+# the extraEnv/extraEnvFrom item shapes. Root-level keys are strict too, so the issue's
+# own repro `--set secrets.foo=...` (a plausible typo that rendered NO credential and no
+# error) is now rejected by name. Root strictness is the one part of the schema with no
+# values.yaml annotation — a `# @schema` comment at the top of the file attaches to the
+# first key, not the root mapping — so it lives in scripts/regen-generated.sh
+# (--schema-root.additional-properties=false) and .github/workflows/helm.yml
+# (additionalProperties: false). Those two must move together or local regeneration
+# drifts from CI; render-tests case Z is what notices.
 # 0.22.0: three independent hardening additions (#349/#350/#351).
 #   #349 image.digest — pin the image by immutable digest instead of a tag; when set it wins
 #   deterministically over image.tag/appVersion (repository@digest, never repo:tag@digest).
@@ -126,7 +140,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.22.0
+version: 0.23.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "3.0.0" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/

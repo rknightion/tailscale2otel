@@ -20,7 +20,8 @@
                                 "token_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "enabled": {
                             "type": "boolean"
@@ -43,9 +44,11 @@
                                 "key_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "cardinality": {
                     "type": "object",
@@ -83,7 +86,8 @@
                                 "source_port": {
                                     "type": "boolean"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "label_value_sample_cap": {
                             "type": "integer"
@@ -109,7 +113,8 @@
                                 "webhook": {
                                     "type": "boolean"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "subnet_route_rollup": {
                             "type": "boolean"
@@ -117,7 +122,8 @@
                         "warning_threshold": {
                             "type": "integer"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "checkpoint": {
                     "type": "object",
@@ -128,7 +134,8 @@
                         "store": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "collectors": {
                     "type": "object",
@@ -145,7 +152,8 @@
                                 "validate": {
                                     "type": "boolean"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "auditlogs": {
                             "type": "object",
@@ -237,12 +245,14 @@
                                         "session_token_file": {
                                             "type": "string"
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "source": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "contacts": {
                             "type": "object",
@@ -253,7 +263,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "devices": {
                             "type": "object",
@@ -291,7 +302,8 @@
                                 "tag_rollup_limit": {
                                     "type": "integer"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "dns": {
                             "type": "object",
@@ -302,7 +314,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "flowlogs": {
                             "type": "object",
@@ -400,7 +413,8 @@
                                         "session_token_file": {
                                             "type": "string"
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "replay_overlap": {
                                     "type": "string"
@@ -417,7 +431,8 @@
                                 "trusted_reporter_tags": {
                                     "type": "array"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "keys": {
                             "type": "object",
@@ -431,7 +446,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "log_stream": {
                             "type": "object",
@@ -442,7 +458,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "node_metrics": {
                             "type": "object",
@@ -492,7 +509,8 @@
                                         "scheme": {
                                             "type": "string"
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "drop_labels": {
                                     "type": "array"
@@ -524,7 +542,8 @@
                                 "timeout": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "oauth_apps": {
                             "type": "object",
@@ -535,7 +554,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "posture_integrations": {
                             "type": "object",
@@ -546,7 +566,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "services": {
                             "type": "object",
@@ -560,7 +581,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "settings": {
                             "type": "object",
@@ -571,7 +593,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "users": {
                             "type": "object",
@@ -582,7 +605,8 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "webhooks": {
                             "type": "object",
@@ -596,9 +620,11 @@
                                 "interval": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "enrichment": {
                     "type": "object",
@@ -630,9 +656,11 @@
                                 "timeout": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "flows": {
                     "type": "object",
@@ -646,7 +674,8 @@
                         "retention": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "headscale": {
                     "type": "object",
@@ -675,12 +704,14 @@
                                         "max_delay": {
                                             "type": "string"
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "timeout": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "max_response_bytes": {
                             "type": "integer"
@@ -688,7 +719,8 @@
                         "url": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "ingress_wal": {
                     "type": "object",
@@ -708,7 +740,8 @@
                         "max_entries": {
                             "type": "integer"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "log_level": {
                     "type": "string"
@@ -731,7 +764,8 @@
                                 "token_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "headers": {
                             "type": "object"
@@ -763,9 +797,11 @@
                                 "key_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "pii_filter": {
                     "type": "object",
@@ -809,7 +845,8 @@
                         "user_ids": {
                             "type": "boolean"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "profiling": {
                     "type": "object",
@@ -826,7 +863,8 @@
                                 "enabled": {
                                     "type": "boolean"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "pyroscope": {
                             "type": "object",
@@ -855,9 +893,11 @@
                                 "upload_rate": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "prometheus": {
                     "type": "object",
@@ -871,7 +911,8 @@
                                 "token_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "enabled": {
                             "type": "boolean"
@@ -888,9 +929,11 @@
                                 "key_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "provider": {
                     "type": "string"
@@ -904,7 +947,8 @@
                         "instance_id": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "streaming": {
                     "type": "object",
@@ -945,7 +989,8 @@
                                 "key_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "token": {
                             "type": "string"
@@ -953,7 +998,8 @@
                         "token_file": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "tailnets": {
                     "type": "array"
@@ -991,7 +1037,8 @@
                                                 "type": "string"
                                             }
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "workload_identity": {
                                     "type": "object",
@@ -1002,9 +1049,11 @@
                                         "id_token_file": {
                                             "type": "string"
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "http": {
                             "type": "object",
@@ -1024,12 +1073,14 @@
                                         "max_delay": {
                                             "type": "string"
                                         }
-                                    }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "timeout": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "max_log_response_bytes": {
                             "type": "integer"
@@ -1040,7 +1091,8 @@
                         "tailnet": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "tracing": {
                     "type": "object",
@@ -1054,7 +1106,8 @@
                         "sampler_arg": {
                             "type": "number"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "version_checks": {
                     "type": "object",
@@ -1071,7 +1124,8 @@
                                 "outdated_minor_threshold": {
                                     "type": "integer"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "self": {
                             "type": "object",
@@ -1079,12 +1133,14 @@
                                 "enabled": {
                                     "type": "boolean"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "timeout": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "webhook": {
                     "type": "object",
@@ -1125,14 +1181,17 @@
                                 "key_file": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         },
                         "tolerance": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "configStorage": {
             "type": "object",
@@ -1145,7 +1204,8 @@
                         "configmap"
                     ]
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "existingConfigKey": {
             "type": "string"
@@ -1224,7 +1284,8 @@
                         "path": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "webhook": {
                     "type": "object",
@@ -1244,9 +1305,19 @@
                         "path": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
+        },
+        "global": {
+            "description": "Global values shared between all subcharts",
+            "$comment": "Added automatically by 'helm schema' to allow this chart to be used as a Helm dependency, as the `additionalProperties` setting would otherwise collide with Helm's special 'global' values key.",
+            "type": [
+                "object",
+                "null"
+            ]
         },
         "goRuntime": {
             "type": "object",
@@ -1257,7 +1328,8 @@
                 "memLimit": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "image": {
             "type": "object",
@@ -1275,7 +1347,8 @@
                 "tag": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "imagePullSecrets": {
             "type": "array"
@@ -1313,9 +1386,11 @@
                                 "secretName": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "webhook": {
                     "type": "object",
@@ -1347,11 +1422,14 @@
                                 "secretName": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "metrics": {
             "type": "object",
@@ -1389,7 +1467,8 @@
                         "tlsConfig": {
                             "type": "object"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "serviceMonitor": {
                     "type": "object",
@@ -1424,9 +1503,11 @@
                         "tlsConfig": {
                             "type": "object"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "nameOverride": {
             "type": "string"
@@ -1446,7 +1527,8 @@
                         "extra": {
                             "type": "array"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "enabled": {
                     "type": "boolean"
@@ -1457,9 +1539,11 @@
                         "extra": {
                             "type": "array"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "nodeSelector": {
             "type": "object"
@@ -1482,7 +1566,8 @@
                 "storageClass": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "podAnnotations": {
             "type": "object"
@@ -1543,7 +1628,8 @@
                             "type": "integer",
                             "minimum": 1
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "readiness": {
                     "type": "object",
@@ -1571,7 +1657,8 @@
                             "type": "integer",
                             "minimum": 1
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "startup": {
                     "type": "object",
@@ -1601,9 +1688,11 @@
                             "type": "integer",
                             "minimum": 1
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "replicaCount": {
             "type": "integer",
@@ -1635,7 +1724,8 @@
                         }
                     }
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "rolloutTrigger": {
             "type": "string"
@@ -1691,7 +1781,8 @@
                 "TS2OTEL_WEBHOOK__SECRET": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "securityContext": {
             "type": "object",
@@ -1739,7 +1830,8 @@
                         "type": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "prometheus": {
                     "type": "object",
@@ -1756,7 +1848,8 @@
                         "type": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "streaming": {
                     "type": "object",
@@ -1773,7 +1866,8 @@
                         "type": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 },
                 "webhook": {
                     "type": "object",
@@ -1790,9 +1884,11 @@
                         "type": {
                             "type": "string"
                         }
-                    }
+                    },
+                    "additionalProperties": false
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "serviceAccount": {
             "type": "object",
@@ -1809,7 +1905,8 @@
                 "name": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         },
         "terminationGracePeriodSeconds": {
             "type": "integer",
@@ -1836,7 +1933,9 @@
                 "mountPath": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         }
-    }
+    },
+    "additionalProperties": false
 }
