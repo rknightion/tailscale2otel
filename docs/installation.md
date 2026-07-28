@@ -495,6 +495,17 @@ See [Configuration](configuration.md) for the full list of options once you are 
     are signed with cosign keyless signatures. See
     [Verifying a release](#verifying-a-release) below before installing one.
 
+    !!! warning "Running the binary directly is not a supported deployment"
+
+        The container image is the only supported way to run tailscale2otel in
+        production, whether via Docker Compose or the Helm chart. A local binary
+        is for development, `-validate` runs and quick experiments. There is no
+        `systemd` unit, no service packaging and no package-manager path, and
+        none is planned — the image already carries the runtime contract
+        (non-root uid 65532, a pre-seeded state directory, a read-only
+        filesystem, the shutdown budget) that a native install would have to
+        reproduce by hand and keep in step.
+
 ---
 
 ## Verifying a release
