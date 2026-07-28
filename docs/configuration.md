@@ -498,6 +498,24 @@ the hot path never blocks.
 | `enrichment.reverse_dns.max_entries` | `50000` | Cache size bound. |
 | `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
 
+> **Editor validation (JSON Schema).** `config.schema.json` at the repository root is a generated
+> draft-07 JSON Schema covering every configuration key's shape — name, type, closed value sets, and
+> the numeric ranges that are validated unconditionally. Point an editor at it via
+> [yaml-language-server](https://github.com/redhat-developer/yaml-language-server) by putting this
+> line in your `config.yaml` (`config.example.yaml` already carries it):
+>
+> ```yaml
+> # yaml-language-server: $schema=https://raw.githubusercontent.com/rknightion/tailscale2otel/main/config.schema.json
+> ```
+>
+> The schema cannot express cross-field rules — mutually exclusive keys (a value field and its
+> `*_file` sibling), a field required only when another takes a particular value, or relationships
+> between whole sections (`tailscale.tailnet` vs. `tailnets:`). Those are enforced only at runtime by
+> `Config.Validate()`, and bounds that apply only when a gating field is enabled are deliberately
+> left out rather than encoded as unconditional ones. **Passing the schema is necessary, not
+> sufficient:** run `tailscale2otel -validate` against your real config file as the authoritative
+> pre-flight check.
+
 > **Upgrade note — resolved names are now served past their TTL by default.** Previously a positive
 > entry became a miss the instant `cache_ttl` elapsed, so `tailscale.src.node` / `tailscale.dst.node`
 > fell back to `external` for the whole time the background refresh took, and flapped

@@ -15,6 +15,12 @@
 # Every option below is shown with its default value and an explanatory comment.
 # Most users only need to set tailscale.* + otlp.* and leave the rest at defaults.
 # Prose reference: docs/configuration.md.
+#
+# The line below points editors at the generated JSON Schema (config.schema.json)
+# for completion and shape checking. It validates NAMES, TYPES and closed value
+# sets only — cross-field rules are enforced at runtime, so `tailscale2otel
+# -validate` is still the authoritative pre-flight check.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/rknightion/tailscale2otel/main/config.schema.json
 
 log_level: info                       # exporter's own log verbosity: debug | info | warn | error
 log_format: text                      # operational log encoding: text | json (json = one record per line)

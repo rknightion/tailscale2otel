@@ -1,0 +1,2450 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "JSON Schema for tailscale2otel's config.yaml. This schema covers SHAPE ONLY: field names, types, closed enums, and the numeric ranges internal/config/validate.go enforces unconditionally. It does NOT and CANNOT express cross-field rules — mutually exclusive keys (e.g. a value field and its *_file sibling), fields required only when another field takes a particular value, or relationships between two sections (e.g. tailscale.tailnet vs. tailnets:). Those are enforced only at runtime by Config.Validate(). Passing this schema is necessary, not sufficient: `tailscale2otel -validate` (or a normal startup) against the real config file is the authoritative pre-flight check.",
+  "properties": {
+    "admin": {
+      "additionalProperties": false,
+      "properties": {
+        "auth": {
+          "additionalProperties": false,
+          "properties": {
+            "token": {
+              "description": "gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty is allowed only on a loopback listen — on any other bind the status page + JSON APIs are REFUSED with 403 (/healthz and /readyz stay open)",
+              "type": "string"
+            },
+            "token_file": {
+              "default": "",
+              "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "enabled": {
+          "default": true,
+          "description": "run the admin HTTP server (probes + status page + optional pprof mount)",
+          "type": "boolean"
+        },
+        "landing_page": {
+          "default": true,
+          "description": "serve the human status page at / and machine-readable /api/status.json",
+          "type": "boolean"
+        },
+        "listen": {
+          "default": "127.0.0.1:9091",
+          "description": "serves /healthz, /readyz, and the status page. Loopback by default: the status page is REFUSED (403) on a network-reachable bind without admin.auth.token, so widen this only together with a token",
+          "type": "string"
+        },
+        "status_refresh_interval": {
+          "default": "5s",
+          "description": "how often the status page re-polls /api/status.json (1s freshness ticker is independent)",
+          "examples": [
+            "5s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "tls": {
+          "additionalProperties": false,
+          "properties": {
+            "cert_file": {
+              "default": "",
+              "description": "serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)",
+              "type": "string"
+            },
+            "key_file": {
+              "default": "",
+              "description": "HTTPS key for admin.tls.cert_file",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "cardinality": {
+      "additionalProperties": false,
+      "properties": {
+        "critical_threshold": {
+          "default": 8000,
+          "description": "status-page cardinality view flags a metric critically at/above this count (must be \u003e= warning_threshold; \u003c= metric_limit when set; 0 disables)",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "derp_region_rollup": {
+          "default": true,
+          "description": "emit tailnet-wide per-DERP-region rollup gauges (tailscale.derp.region.*)",
+          "type": "boolean"
+        },
+        "flow": {
+          "additionalProperties": false,
+          "properties": {
+            "collapse_external": {
+              "default": true,
+              "description": "bucket unresolved IPs as external/unknown (keeps cardinality bounded)",
+              "type": "boolean"
+            },
+            "destination_port": {
+              "default": false,
+              "description": "add destination.port to flow metrics. INERT under metrics_mode: rollup (raw modes only); dst.service below is the bounded stand-in and is always on",
+              "type": "boolean"
+            },
+            "exit_node_attribution": {
+              "default": true,
+              "description": "emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count)",
+              "type": "boolean"
+            },
+            "identity_dims": {
+              "default": false,
+              "description": "add per-flow tailscale.{src,dst}.{user,tags,os} to flow metrics, on BOTH families. REQUIRES node_dims (identity is node-derived, so without it identity becomes the only splitting dimension); flow LOGS always carry them",
+              "type": "boolean"
+            },
+            "metrics_mode": {
+              "default": "rollup",
+              "description": "rollup (bounded top-N, lowest cardinality) | all (raw per-connection) | both (≈2x series; summing double-counts)",
+              "enum": [
+                "all",
+                "rollup",
+                "both"
+              ],
+              "type": "string"
+            },
+            "node_dims": {
+              "default": true,
+              "description": "include src/dst device names on flow metrics (who talked to whom); off keeps totals but drops the per-peer breakdown and suppresses the unique.* gauges",
+              "type": "boolean"
+            },
+            "rollup_top_n": {
+              "default": 500,
+              "description": "rollup mode: busiest src/dst node pairs kept per flush; the rest fold into an __other__ series (0 = default 500)",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source_port": {
+              "default": false,
+              "description": "add source.port to flow metrics. INERT under metrics_mode: rollup (raw modes only) — and the most expensive knob here, ephemeral ports are unbounded",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "label_value_sample_cap": {
+          "default": 100,
+          "description": "distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture)",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "metric_limit": {
+          "default": 10000,
+          "description": "hard per-metric series cap; beyond it the SDK collapses extras into otel_metric_overflow (0/negative = unlimited)",
+          "type": "integer"
+        },
+        "per_entity": {
+          "additionalProperties": false,
+          "properties": {
+            "device": {
+              "default": true,
+              "description": "per-device gauges (online/last_seen/key_expiry/derp/routes)",
+              "type": "boolean"
+            },
+            "key": {
+              "default": true,
+              "description": "per-key expiry gauge (the expiry WARN log fires regardless)",
+              "type": "boolean"
+            },
+            "service": {
+              "default": true,
+              "description": "per-service ports/hosts gauges",
+              "type": "boolean"
+            },
+            "user": {
+              "default": true,
+              "description": "per-user gauges (devices/connected/last_seen)",
+              "type": "boolean"
+            },
+            "webhook": {
+              "default": true,
+              "description": "per-endpoint webhook-subscriptions gauge",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "subnet_route_rollup": {
+          "default": true,
+          "description": "emit per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); fleet exit/subnet counts emit regardless",
+          "type": "boolean"
+        },
+        "warning_threshold": {
+          "default": 2000,
+          "description": "status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables)",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "checkpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "file_path": {
+          "default": "/var/lib/tailscale2otel/checkpoints.json",
+          "description": "used when store: file — mount a writable, persistent path here (the dir is auto-created). This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.",
+          "type": "string"
+        },
+        "store": {
+          "default": "file",
+          "description": "file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)",
+          "enum": [
+            "memory",
+            "file"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "collectors": {
+      "additionalProperties": false,
+      "properties": {
+        "acl": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "ACL policy snapshot",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "ACL policy snapshot",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "validate": {
+              "default": true,
+              "description": "run the non-mutating POST /acl/validate (policy_file:read scope) each tick; set false to keep the client strictly GET-only",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "auditlogs": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "configuration/audit events -\u003e event logs + a counter",
+              "type": "boolean"
+            },
+            "initial_lookback": {
+              "default": "5m",
+              "description": "poll only",
+              "examples": [
+                "5m"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "interval": {
+              "default": "60s",
+              "description": "poll only",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "lag": {
+              "default": "60s",
+              "description": "poll only",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "max_window": {
+              "default": "6h",
+              "description": "poll only",
+              "examples": [
+                "6h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "objectstore": {
+              "additionalProperties": false,
+              "properties": {
+                "access_key_id": {
+                  "description": "SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile",
+                  "type": "string"
+                },
+                "access_key_id_file": {
+                  "default": "",
+                  "description": "read the access key ID from this path instead; value XOR file",
+                  "type": "string"
+                },
+                "allow_insecure_http": {
+                  "default": false,
+                  "description": "remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development",
+                  "type": "boolean"
+                },
+                "bucket": {
+                  "default": "",
+                  "description": "required — the bucket Tailscale exports configuration logs into",
+                  "type": "string"
+                },
+                "endpoint": {
+                  "default": "",
+                  "description": "required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)",
+                  "type": "string"
+                },
+                "initial_lookback": {
+                  "default": "6h",
+                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)",
+                  "examples": [
+                    "6h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "interval": {
+                  "default": "60s",
+                  "description": "how often the bucket is listed",
+                  "examples": [
+                    "60s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "layout": {
+                  "default": "partitioned",
+                  "description": "partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) | flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk)",
+                  "enum": [
+                    "",
+                    "partitioned",
+                    "flat"
+                  ],
+                  "type": "string"
+                },
+                "lookback": {
+                  "default": "1h",
+                  "description": "how far back past the cursor each listing reaches, so a late-arriving object is still found",
+                  "examples": [
+                    "1h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_cycle_decompressed_bytes": {
+                  "default": 268435456,
+                  "description": "defer untouched objects after 256 MiB of decoded data in one cycle",
+                  "type": "integer"
+                },
+                "max_cycle_records": {
+                  "default": 500000,
+                  "description": "defer untouched objects after this many decoded records in one cycle",
+                  "type": "integer"
+                },
+                "max_cycle_wire_bytes": {
+                  "default": 536870912,
+                  "description": "defer untouched objects after 512 MiB of GET response data in one cycle",
+                  "type": "integer"
+                },
+                "max_object_decompressed_bytes": {
+                  "default": 33554432,
+                  "description": "reject and quarantine one object that expands beyond 32 MiB",
+                  "type": "integer"
+                },
+                "max_object_records": {
+                  "default": 100000,
+                  "description": "reject and quarantine one object containing more than this many records",
+                  "type": "integer"
+                },
+                "max_object_wire_bytes": {
+                  "default": 67108864,
+                  "description": "reject and quarantine one object requiring more than 64 MiB of GET response bytes",
+                  "type": "integer"
+                },
+                "max_objects": {
+                  "default": 200,
+                  "description": "objects ingested per cycle; the remainder is counted, logged and picked up next cycle",
+                  "type": "integer"
+                },
+                "path_style": {
+                  "default": false,
+                  "description": "address as \u003cendpoint\u003e/\u003cbucket\u003e/\u003ckey\u003e; required by most non-AWS implementations",
+                  "type": "boolean"
+                },
+                "prefix": {
+                  "default": "",
+                  "description": "the export's root within the bucket, above the YYYY/MM/DD partitions; use a distinct prefix when flow and configuration logs share one bucket. NO leading slash (see flowlogs)",
+                  "type": "string"
+                },
+                "region": {
+                  "default": "",
+                  "description": "required — part of the request signature; a wrong value fails every request with HTTP 403",
+                  "type": "string"
+                },
+                "secret_access_key": {
+                  "description": "SET VIA ENV ONLY",
+                  "type": "string"
+                },
+                "secret_access_key_file": {
+                  "default": "",
+                  "description": "read the secret access key from this path instead; value XOR file",
+                  "type": "string"
+                },
+                "session_token": {
+                  "description": "SET VIA ENV ONLY — temporary credentials only",
+                  "type": "string"
+                },
+                "session_token_file": {
+                  "default": "",
+                  "description": "read the temporary session token from this path instead; value XOR file",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "source": {
+              "default": "poll",
+              "description": "poll | stream | both | objectstore (see flowlogs)",
+              "enum": [
+                "poll",
+                "stream",
+                "both",
+                "objectstore"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "contacts": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "account/support/security contact verification status (no emails emitted)",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "account/support/security contact verification status (no emails emitted)",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "devices": {
+          "additionalProperties": false,
+          "properties": {
+            "attribute_namespaces": {
+              "description": "needs collect_posture: posture-key namespaces promoted to attribute metrics; [\"*\"] = all, [] = disable",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "collect_connectivity": {
+              "default": true,
+              "description": "emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls)",
+              "type": "boolean"
+            },
+            "collect_device_invites": {
+              "default": true,
+              "description": "also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count",
+              "type": "boolean"
+            },
+            "collect_posture": {
+              "default": false,
+              "description": "also fetch device posture (MDM/EDR) — enables the posture metrics + log",
+              "type": "boolean"
+            },
+            "collect_routes": {
+              "default": false,
+              "description": "also fetch advertised/primary subnet routes per device",
+              "type": "boolean"
+            },
+            "collect_tag_rollup": {
+              "default": true,
+              "description": "emit tailscale.devices.by_tag (one series per ACL tag); false keeps the other fleet-hygiene aggregates",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": true,
+              "description": "device inventory — REQUIRED for flow/audit IP-\u003ename enrichment (disabling it degrades names to unknown/external)",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "60s",
+              "description": "how often the device snapshot is polled",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "posture_log_mode": {
+              "default": "changes",
+              "description": "needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted",
+              "enum": [
+                "changes",
+                "always",
+                "off"
+              ],
+              "type": "string"
+            },
+            "tag_rollup_limit": {
+              "default": 50,
+              "description": "cap distinct tag series on by_tag; busiest N kept, rest fold into tag=\"__other__\" (0/negative = unlimited)",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "dns": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "DNS/MagicDNS settings snapshot",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "DNS/MagicDNS settings snapshot",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "flowlogs": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "network flow logs -\u003e traffic counters + per-connection logs",
+              "type": "boolean"
+            },
+            "initial_lookback": {
+              "default": "5m",
+              "description": "poll only — cold-start reach-back when there is no checkpoint yet",
+              "examples": [
+                "5m"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "interval": {
+              "default": "60s",
+              "description": "poll only — how often a window is polled",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "lag": {
+              "default": "120s",
+              "description": "poll only — query only up to now-lag so late-arriving records aren't missed",
+              "examples": [
+                "120s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "log_mode": {
+              "default": "per_connection",
+              "description": "per_connection | per_record | off — log detail level (applies to poll AND stream)",
+              "enum": [
+                "per_connection",
+                "per_record",
+                "off"
+              ],
+              "type": "string"
+            },
+            "max_log_records_per_window": {
+              "default": 0,
+              "description": "cap flow LOG records per window (0 = unlimited); excess -\u003e tailscale.network.flow.logs_dropped (metrics are never capped)",
+              "type": "integer"
+            },
+            "max_window": {
+              "default": "1h",
+              "description": "poll only — cap one tick's window so a long outage catches up over several ticks",
+              "examples": [
+                "1h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "objectstore": {
+              "additionalProperties": false,
+              "properties": {
+                "access_key_id": {
+                  "description": "SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile",
+                  "type": "string"
+                },
+                "access_key_id_file": {
+                  "default": "",
+                  "description": "read the access key ID from this path instead; value XOR file",
+                  "type": "string"
+                },
+                "allow_insecure_http": {
+                  "default": false,
+                  "description": "remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development",
+                  "type": "boolean"
+                },
+                "bucket": {
+                  "default": "",
+                  "description": "required — the bucket Tailscale exports into",
+                  "type": "string"
+                },
+                "endpoint": {
+                  "default": "",
+                  "description": "required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)",
+                  "type": "string"
+                },
+                "initial_lookback": {
+                  "default": "6h",
+                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)",
+                  "examples": [
+                    "6h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "interval": {
+                  "default": "60s",
+                  "description": "how often the bucket is listed",
+                  "examples": [
+                    "60s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "layout": {
+                  "default": "partitioned",
+                  "description": "partitioned (Tailscale's own export: objects under prefix/YYYY/MM/DD/) | flat (a COPIED export whose self-contained YYYY-MM-DD-HH-MM-SS basenames sit directly under prefix; finds partitioned objects too, but costs more LIST requests since nothing bounds the re-walk)",
+                  "enum": [
+                    "",
+                    "partitioned",
+                    "flat"
+                  ],
+                  "type": "string"
+                },
+                "lookback": {
+                  "default": "1h",
+                  "description": "how far back past the cursor each listing reaches, so a late-arriving object is still found",
+                  "examples": [
+                    "1h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_cycle_decompressed_bytes": {
+                  "default": 268435456,
+                  "description": "defer untouched objects after 256 MiB of decoded data in one cycle",
+                  "type": "integer"
+                },
+                "max_cycle_records": {
+                  "default": 500000,
+                  "description": "defer untouched objects after this many decoded records in one cycle",
+                  "type": "integer"
+                },
+                "max_cycle_wire_bytes": {
+                  "default": 536870912,
+                  "description": "defer untouched objects after 512 MiB of GET response data in one cycle",
+                  "type": "integer"
+                },
+                "max_object_decompressed_bytes": {
+                  "default": 33554432,
+                  "description": "reject and quarantine one object that expands beyond 32 MiB",
+                  "type": "integer"
+                },
+                "max_object_records": {
+                  "default": 100000,
+                  "description": "reject and quarantine one object containing more than this many records",
+                  "type": "integer"
+                },
+                "max_object_wire_bytes": {
+                  "default": 67108864,
+                  "description": "reject and quarantine one object requiring more than 64 MiB of GET response bytes",
+                  "type": "integer"
+                },
+                "max_objects": {
+                  "default": 200,
+                  "description": "objects ingested per cycle; the remainder is counted, logged and picked up next cycle",
+                  "type": "integer"
+                },
+                "path_style": {
+                  "default": false,
+                  "description": "address as \u003cendpoint\u003e/\u003cbucket\u003e/\u003ckey\u003e; required by most non-AWS implementations",
+                  "type": "boolean"
+                },
+                "prefix": {
+                  "default": "",
+                  "description": "the export's root within the bucket, above the YYYY/MM/DD partitions; NO leading slash (it becomes part of this feed's durable checkpoint identity, so removing it later re-emits history)",
+                  "type": "string"
+                },
+                "region": {
+                  "default": "",
+                  "description": "required — part of the request signature; a wrong value fails every request with HTTP 403",
+                  "type": "string"
+                },
+                "secret_access_key": {
+                  "description": "SET VIA ENV ONLY",
+                  "type": "string"
+                },
+                "secret_access_key_file": {
+                  "default": "",
+                  "description": "read the secret access key from this path instead; value XOR file",
+                  "type": "string"
+                },
+                "session_token": {
+                  "description": "SET VIA ENV ONLY — temporary credentials only",
+                  "type": "string"
+                },
+                "session_token_file": {
+                  "default": "",
+                  "description": "read the temporary session token from this path instead; value XOR file",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "replay_overlap": {
+              "default": "5m",
+              "description": "poll only — reread this completed-window overlap for records that became available late (0 disables)",
+              "examples": [
+                "5m"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "replay_seen_capacity": {
+              "default": 131072,
+              "description": "poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled)",
+              "type": "integer"
+            },
+            "source": {
+              "default": "poll",
+              "description": "poll (this exporter PULLS) | stream (Tailscale PUSHES to the streaming receiver) | objectstore (read Tailscale's S3 export) | both (discouraged: double-counts)",
+              "enum": [
+                "poll",
+                "stream",
+                "both",
+                "objectstore"
+              ],
+              "type": "string"
+            },
+            "trusted_reporter_node_ids": {
+              "description": "verified FlowLog.NodeID values classified as configured; empty with trusted_reporter_tags means trust policy is unconfigured",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "trusted_reporter_tags": {
+              "description": "authoritative device tags (e.g. [\"tag:router\"]) classified as tagged; embedded flow tags never grant trust",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "keys": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "auth-key inventory + expiry warnings",
+              "type": "boolean"
+            },
+            "expiry_warn": {
+              "default": "168h",
+              "description": "log a WARN when a key expires within this window (default 7d)",
+              "examples": [
+                "168h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "interval": {
+              "default": "300s",
+              "description": "auth-key inventory + expiry warnings",
+              "examples": [
+                "300s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "log_stream": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "node_metrics": {
+          "additionalProperties": false,
+          "properties": {
+            "discovery": {
+              "additionalProperties": false,
+              "properties": {
+                "address_order": {
+                  "default": "ipv4",
+                  "description": "ipv4 | ipv6 — preferred address family (falls back to the other)",
+                  "enum": [
+                    "ipv4",
+                    "ipv6"
+                  ],
+                  "type": "string"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "OPTIONAL: discover scrape targets from the Tailscale devices API (unioned with static targets)",
+                  "type": "boolean"
+                },
+                "exclude_external": {
+                  "default": true,
+                  "description": "skip shared/external devices",
+                  "type": "boolean"
+                },
+                "exclude_tags": {
+                  "description": "devices with any of these tags are skipped (wins over include_tags)",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "include_host_labels": {
+                  "default": true,
+                  "description": "attach host.name/host.id for joins with tailscale.device.*",
+                  "type": "boolean"
+                },
+                "include_tags": {
+                  "description": "only devices with one of these tags (empty = all), e.g. [\"tag:server\"]",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "include_tags_label": {
+                  "default": true,
+                  "description": "attach tailscale.tags to each target's series",
+                  "type": "boolean"
+                },
+                "instance_source": {
+                  "default": "name",
+                  "description": "identity label per target: name (MagicDNS short name, unique+friendly — default) | address (Tailscale host:port, always unique) | hostname (OS hostname, NOT unique — collisions like \"localhost\" are auto-suffixed)",
+                  "enum": [
+                    "address",
+                    "name",
+                    "hostname"
+                  ],
+                  "type": "string"
+                },
+                "interval": {
+                  "default": "5m",
+                  "description": "how often the device inventory is re-scanned for targets",
+                  "examples": [
+                    "5m"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_targets": {
+                  "default": 1000,
+                  "description": "cap discovered targets per refresh",
+                  "type": "integer"
+                },
+                "online_only": {
+                  "default": true,
+                  "description": "only devices currently connected to the control plane",
+                  "type": "boolean"
+                },
+                "path": {
+                  "default": "/metrics",
+                  "description": "metrics endpoint path",
+                  "type": "string"
+                },
+                "port": {
+                  "default": 5252,
+                  "description": "tailscaled client-metrics port",
+                  "maximum": 65535,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "scheme": {
+                  "default": "http",
+                  "description": "http | https — metrics endpoint scheme on each device",
+                  "enum": [
+                    "http",
+                    "https"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "drop_labels": {
+              "description": "label keys stripped from every forwarded series (the tailscale.node identity label is never dropped)",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "enabled": {
+              "default": false,
+              "description": "OPTIONAL: scrape tailscaled per-node Prometheus /metrics and forward them centrally. Off by default; see docs/node-metrics.md",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "60s",
+              "description": "how often each target is scraped",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "max_distinct_metrics": {
+              "default": 2000,
+              "description": "cap on DISTINCT forwarded metric NAMES over the process lifetime (targets choose their own names and each new one creates a permanent instrument); 0 = 2000 default, negative = unlimited (over-budget names are dropped and counted)",
+              "type": "integer"
+            },
+            "max_response_bytes": {
+              "default": 4194304,
+              "description": "per-target response cap (4 MiB) — bounds memory",
+              "type": "integer"
+            },
+            "max_samples": {
+              "default": 50000,
+              "description": "per-target sample cap per scrape — bounds cardinality",
+              "type": "integer"
+            },
+            "metric_allow": {
+              "description": "if non-empty, only forwarded metric names matching one of these anchored regexes are kept",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "metric_deny": {
+              "description": "forwarded metric names matching any of these anchored regexes are dropped (after allow)",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "targets": {
+              "description": "static targets (FILE-ONLY — a list of objects can't be set via env). Example:",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "bearer_token": {
+                    "type": "string"
+                  },
+                  "bearer_token_file": {
+                    "type": "string"
+                  },
+                  "headers": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "instance": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "tls": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "ca_file": {
+                        "type": "string"
+                      },
+                      "cert_file": {
+                        "type": "string"
+                      },
+                      "insecure_skip_verify": {
+                        "type": "boolean"
+                      },
+                      "key_file": {
+                        "type": "string"
+                      },
+                      "server_name": {
+                        "type": "string"
+                      }
+                    },
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "timeout": {
+              "default": "10s",
+              "description": "per-scrape HTTP timeout",
+              "examples": [
+                "10s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "oauth_apps": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it)",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "300s",
+              "description": "OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it)",
+              "examples": [
+                "300s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "posture_integrations": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "MDM/EDR posture-integration sync health: matched counts + last_sync staleness",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "MDM/EDR posture-integration sync health: matched counts + last_sync staleness",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "services": {
+          "additionalProperties": false,
+          "properties": {
+            "collect_hosts": {
+              "default": false,
+              "description": "also fetch per-service backing-host detail — one extra API call per service (N+1)",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Tailscale Services (VIP) inventory",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "Tailscale Services (VIP) inventory",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "settings": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "tailnet settings snapshot",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "tailnet settings snapshot",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "users": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "user inventory (devices/connected/last_seen per user)",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "300s",
+              "description": "user inventory (devices/connected/last_seen per user)",
+              "examples": [
+                "300s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "webhooks": {
+          "additionalProperties": false,
+          "properties": {
+            "desired_events": {
+              "description": "optional expected event categories (e.g. [\"nodeCreated\",\"userSuspended\"]); empty means no expectation",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "enabled": {
+              "default": true,
+              "description": "webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "enrichment": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_ttl": {
+          "default": "5m",
+          "description": "staleness alarm threshold for the IP/nodeID -\u003e name device cache",
+          "examples": [
+            "5m"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "reverse_dns": {
+          "additionalProperties": false,
+          "properties": {
+            "acknowledge_cardinality": {
+              "default": false,
+              "description": "set true (once metric_limit is sized) to silence the enabled+node_dims cardinality advisory",
+              "type": "boolean"
+            },
+            "cache_ttl": {
+              "default": "24h",
+              "description": "how long a resolved name is cached (PTRs rarely change, so a long TTL keeps resolver load low)",
+              "examples": [
+                "24h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "off by default (can add ~one flow-metric series per external IP when on)",
+              "type": "boolean"
+            },
+            "max_entries": {
+              "default": 50000,
+              "description": "PTR cache size bound (new external IPs beyond this are not resolved; ~150 bytes/entry)",
+              "type": "integer"
+            },
+            "negative_ttl": {
+              "default": "5m",
+              "description": "how long a failed lookup is remembered (suppresses retries)",
+              "examples": [
+                "5m"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "server": {
+              "default": "",
+              "description": "resolver \"ip\" or \"ip:port\" (default :53); empty = system/container resolver",
+              "type": "string"
+            },
+            "stale_ttl": {
+              "default": "1h",
+              "description": "keep serving a resolved name this long past cache_ttl while one refresh runs (0 disables; stops the flow label flapping to external at every expiry)",
+              "examples": [
+                "1h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "timeout": {
+              "default": "2s",
+              "description": "per-lookup timeout",
+              "examples": [
+                "2s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "flows": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise)",
+          "type": "boolean"
+        },
+        "max_future_skew": {
+          "default": "5m",
+          "description": "local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged",
+          "examples": [
+            "5m"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "retention": {
+          "default": "6h",
+          "description": "how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record",
+          "examples": [
+            "6h"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "headscale": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key": {
+          "description": "Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY)",
+          "type": "string"
+        },
+        "api_key_file": {
+          "default": "",
+          "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+          "type": "string"
+        },
+        "http": {
+          "additionalProperties": false,
+          "properties": {
+            "rate_limit": {
+              "default": 0,
+              "description": "HTTP client used for all Headscale API calls",
+              "type": "number"
+            },
+            "retry": {
+              "additionalProperties": false,
+              "properties": {
+                "base_delay": {
+                  "default": "0s",
+                  "description": "accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_attempts": {
+                  "default": 0,
+                  "description": "accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client",
+                  "type": "integer"
+                },
+                "max_delay": {
+                  "default": "0s",
+                  "description": "accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "timeout": {
+              "default": "30s",
+              "description": "per-request timeout (the ONLY http knob applied in v1)",
+              "examples": [
+                "30s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "max_response_bytes": {
+          "default": 4194304,
+          "description": "cap (4 MiB) on ONE Headscale API response body before decoding; ~5800 nodes at ~715 B each — raise it (and the container memory limit) on a bigger deployment, these endpoints are not paginated",
+          "type": "integer"
+        },
+        "url": {
+          "default": "",
+          "description": "Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ingress_wal": {
+      "additionalProperties": false,
+      "properties": {
+        "corruption": {
+          "default": "fail",
+          "description": "only supported mode: fail closed rather than discard corrupt state",
+          "enum": [
+            "fail"
+          ],
+          "type": "string"
+        },
+        "directory": {
+          "default": "/var/lib/tailscale2otel/ingress-wal",
+          "description": "absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "description": "opt in to durable local acceptance and oldest-first replay for receiver payloads",
+          "type": "boolean"
+        },
+        "max_bytes": {
+          "default": 268435456,
+          "description": "encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction",
+          "type": "integer"
+        },
+        "max_entries": {
+          "default": 10000,
+          "description": "encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "log_format": {
+      "default": "text",
+      "description": "operational log encoding: text | json (json = one record per line)",
+      "enum": [
+        "text",
+        "json"
+      ],
+      "type": "string"
+    },
+    "log_level": {
+      "default": "info",
+      "description": "exporter's own log verbosity: debug | info | warn | error",
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error"
+      ],
+      "type": "string"
+    },
+    "otlp": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "default": "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
+          "description": "OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself)",
+          "type": "string"
+        },
+        "grafana_cloud": {
+          "additionalProperties": false,
+          "properties": {
+            "instance_id": {
+              "default": "",
+              "description": "Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID)",
+              "type": "string"
+            },
+            "token": {
+              "description": "Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN)",
+              "type": "string"
+            },
+            "token_file": {
+              "default": "",
+              "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "extra raw OTLP headers, e.g. {X-Scope-OrgID: \"1\"} (alternative to grafana_cloud); FILE-ONLY (maps aren't settable via env)",
+          "type": "object"
+        },
+        "metric_export_batch_size": {
+          "default": 10000,
+          "description": "maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels)",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "metric_interval": {
+          "default": "60s",
+          "description": "how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape)",
+          "examples": [
+            "60s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "protocol": {
+          "default": "http",
+          "description": "http | grpc | stdout (stdout = print signals to the console for local debug, no backend)",
+          "enum": [
+            "grpc",
+            "http",
+            "stdout"
+          ],
+          "type": "string"
+        },
+        "tls": {
+          "additionalProperties": false,
+          "properties": {
+            "ca_file": {
+              "default": "",
+              "description": "path to a custom CA bundle to trust",
+              "type": "string"
+            },
+            "cert_file": {
+              "default": "",
+              "description": "client certificate path (for mutual TLS)",
+              "type": "string"
+            },
+            "insecure": {
+              "default": false,
+              "description": "disable TLS entirely (plaintext h2c/http) — NOT a cert-verify skip; do not use in production",
+              "type": "boolean"
+            },
+            "insecure_skip_verify": {
+              "default": false,
+              "description": "keep TLS but skip server-cert verification (self-signed/private-CA gateways, testing only — prefer ca_file)",
+              "type": "boolean"
+            },
+            "key_file": {
+              "default": "",
+              "description": "client private key path (for mutual TLS)",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "pii_filter": {
+      "additionalProperties": false,
+      "properties": {
+        "emails": {
+          "default": true,
+          "description": "user/actor login names (often email addresses)",
+          "type": "boolean"
+        },
+        "endpoint_paths": {
+          "default": true,
+          "description": "Tailscale API endpoint paths (self-obs)",
+          "type": "boolean"
+        },
+        "external_ips": {
+          "default": true,
+          "description": "public/routable addresses",
+          "type": "boolean"
+        },
+        "free_text_details": {
+          "default": true,
+          "description": "audit old/new/details, target names, key descriptions, posture values",
+          "type": "boolean"
+        },
+        "hostnames": {
+          "default": true,
+          "description": "device + collector-host hostnames",
+          "type": "boolean"
+        },
+        "internal_ips": {
+          "default": true,
+          "description": "RFC1918 / ULA / link-local addresses",
+          "type": "boolean"
+        },
+        "network_topology": {
+          "default": true,
+          "description": "route CIDRs + split-DNS domains + search paths",
+          "type": "boolean"
+        },
+        "node_ids": {
+          "default": true,
+          "description": "Tailscale node IDs",
+          "type": "boolean"
+        },
+        "service_addrs": {
+          "default": true,
+          "description": "VIP service names",
+          "type": "boolean"
+        },
+        "tailnet_name": {
+          "default": true,
+          "description": "tailnet identifier",
+          "type": "boolean"
+        },
+        "tailscale_ips": {
+          "default": true,
+          "description": "100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses",
+          "type": "boolean"
+        },
+        "user_display_names": {
+          "default": true,
+          "description": "actor display (human) names",
+          "type": "boolean"
+        },
+        "user_ids": {
+          "default": true,
+          "description": "numeric/opaque user IDs (user.id)",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "profiling": {
+      "additionalProperties": false,
+      "properties": {
+        "block_profile_rate": {
+          "default": 100000,
+          "description": "runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled",
+          "type": "integer"
+        },
+        "mutex_profile_fraction": {
+          "default": 5,
+          "description": "runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled",
+          "type": "integer"
+        },
+        "pprof": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "mount net/http/pprof on the admin server (REQUIRES admin.enabled + admin.auth.token — heap dumps can expose in-memory secrets)",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "pyroscope": {
+          "additionalProperties": false,
+          "properties": {
+            "basic_auth_password": {
+              "description": "Grafana Cloud: a profiles:write access-policy token (..._BASIC_AUTH_PASSWORD)",
+              "type": "string"
+            },
+            "basic_auth_password_file": {
+              "default": "",
+              "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+              "type": "string"
+            },
+            "basic_auth_user": {
+              "default": "",
+              "description": "Grafana Cloud: the profiles instance ID (set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER)",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "run the Pyroscope continuous-profiling push agent",
+              "type": "boolean"
+            },
+            "server_address": {
+              "default": "",
+              "description": "REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net",
+              "type": "string"
+            },
+            "tags": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "extra static labels merged onto every profile, e.g. { env: prod }",
+              "type": "object"
+            },
+            "tenant_id": {
+              "default": "",
+              "description": "X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)",
+              "type": "string"
+            },
+            "upload_rate": {
+              "default": "60s",
+              "description": "how often profiles are flushed",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "prometheus": {
+      "additionalProperties": false,
+      "properties": {
+        "auth": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_unauthenticated": {
+              "default": false,
+              "description": "acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this",
+              "type": "boolean"
+            },
+            "token": {
+              "description": "gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN",
+              "type": "string"
+            },
+            "token_file": {
+              "default": "",
+              "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "enabled": {
+          "default": false,
+          "description": "run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push",
+          "type": "boolean"
+        },
+        "listen": {
+          "default": ":2112",
+          "description": "bind for /metrics (default :2112); keep distinct from admin.listen",
+          "type": "string"
+        },
+        "tls": {
+          "additionalProperties": false,
+          "properties": {
+            "cert_file": {
+              "default": "",
+              "description": "serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)",
+              "type": "string"
+            },
+            "key_file": {
+              "default": "",
+              "description": "HTTPS key for prometheus.tls.cert_file",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "provider": {
+      "default": "tailscale",
+      "description": "control-plane backend: tailscale (default) | headscale",
+      "enum": [
+        "tailscale",
+        "headscale"
+      ],
+      "type": "string"
+    },
+    "self_observability": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "emit tailscale2otel.up, api.requests, runtime metrics, etc.",
+          "type": "boolean"
+        },
+        "instance_id": {
+          "default": "",
+          "description": "service.instance.id resource attr; empty =\u003e host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "streaming": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_configure": {
+          "default": false,
+          "description": "on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope",
+          "type": "boolean"
+        },
+        "decompress": {
+          "default": "auto",
+          "description": "auto | gzip | zstd | none — request body decompression",
+          "enum": [
+            "auto",
+            "gzip",
+            "zstd",
+            "none"
+          ],
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "description": "run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream)",
+          "type": "boolean"
+        },
+        "listen": {
+          "default": ":8088",
+          "description": "bind address for the Splunk-HEC-compatible receiver",
+          "type": "string"
+        },
+        "max_body_bytes": {
+          "default": 0,
+          "description": "cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value \u003c= 64 MiB",
+          "type": "integer"
+        },
+        "max_concurrent_requests": {
+          "default": 0,
+          "description": "how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)",
+          "type": "integer"
+        },
+        "path": {
+          "default": "/services/collector/event",
+          "description": "HEC endpoint path Tailscale POSTs to",
+          "type": "string"
+        },
+        "public_url": {
+          "default": "",
+          "description": "externally reachable receiver URL; REQUIRED only when auto_configure: true",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "auto_configure": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "public_url": {
+                "type": "string"
+              },
+              "tailnet": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              },
+              "token_file": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "tls": {
+          "additionalProperties": false,
+          "properties": {
+            "cert_file": {
+              "default": "",
+              "description": "HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints)",
+              "type": "string"
+            },
+            "key_file": {
+              "default": "",
+              "description": "HTTPS key",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "token": {
+          "description": "shared secret; Tailscale sends HTTP Basic auth (base64 user:token), \"Authorization: Splunk \u003ctoken\u003e\" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty on a NON-loopback listen = every request REFUSED with 403 (empty is allowed only on a loopback bind)",
+          "type": "string"
+        },
+        "token_file": {
+          "default": "",
+          "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tailnets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "additionalProperties": false,
+            "properties": {
+              "apikey": {
+                "type": "string"
+              },
+              "apikey_file": {
+                "type": "string"
+              },
+              "method": {
+                "enum": [
+                  "oauth",
+                  "apikey",
+                  "workload_identity"
+                ],
+                "type": "string"
+              },
+              "oauth": {
+                "additionalProperties": false,
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "client_secret": {
+                    "type": "string"
+                  },
+                  "client_secret_file": {
+                    "type": "string"
+                  },
+                  "scopes": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "workload_identity": {
+                "additionalProperties": false,
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  },
+                  "id_token_file": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "http": {
+            "additionalProperties": false,
+            "properties": {
+              "rate_limit": {
+                "type": "number"
+              },
+              "retry": {
+                "additionalProperties": false,
+                "properties": {
+                  "base_delay": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "max_attempts": {
+                    "type": "integer"
+                  },
+                  "max_delay": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "timeout": {
+                "default": "30s",
+                "examples": [
+                  "30s"
+                ],
+                "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "objectstore": {
+            "additionalProperties": false,
+            "properties": {
+              "audit": {
+                "additionalProperties": false,
+                "properties": {
+                  "access_key_id": {
+                    "type": "string"
+                  },
+                  "access_key_id_file": {
+                    "type": "string"
+                  },
+                  "allow_insecure_http": {
+                    "type": "boolean"
+                  },
+                  "bucket": {
+                    "type": "string"
+                  },
+                  "endpoint": {
+                    "type": "string"
+                  },
+                  "initial_lookback": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "interval": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "layout": {
+                    "enum": [
+                      "",
+                      "partitioned",
+                      "flat"
+                    ],
+                    "type": "string"
+                  },
+                  "lookback": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "max_cycle_decompressed_bytes": {
+                    "type": "integer"
+                  },
+                  "max_cycle_records": {
+                    "type": "integer"
+                  },
+                  "max_cycle_wire_bytes": {
+                    "type": "integer"
+                  },
+                  "max_object_decompressed_bytes": {
+                    "type": "integer"
+                  },
+                  "max_object_records": {
+                    "type": "integer"
+                  },
+                  "max_object_wire_bytes": {
+                    "type": "integer"
+                  },
+                  "max_objects": {
+                    "type": "integer"
+                  },
+                  "path_style": {
+                    "type": "boolean"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "secret_access_key": {
+                    "type": "string"
+                  },
+                  "secret_access_key_file": {
+                    "type": "string"
+                  },
+                  "session_token": {
+                    "type": "string"
+                  },
+                  "session_token_file": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "flow": {
+                "additionalProperties": false,
+                "properties": {
+                  "access_key_id": {
+                    "type": "string"
+                  },
+                  "access_key_id_file": {
+                    "type": "string"
+                  },
+                  "allow_insecure_http": {
+                    "type": "boolean"
+                  },
+                  "bucket": {
+                    "type": "string"
+                  },
+                  "endpoint": {
+                    "type": "string"
+                  },
+                  "initial_lookback": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "interval": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "layout": {
+                    "enum": [
+                      "",
+                      "partitioned",
+                      "flat"
+                    ],
+                    "type": "string"
+                  },
+                  "lookback": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "max_cycle_decompressed_bytes": {
+                    "type": "integer"
+                  },
+                  "max_cycle_records": {
+                    "type": "integer"
+                  },
+                  "max_cycle_wire_bytes": {
+                    "type": "integer"
+                  },
+                  "max_object_decompressed_bytes": {
+                    "type": "integer"
+                  },
+                  "max_object_records": {
+                    "type": "integer"
+                  },
+                  "max_object_wire_bytes": {
+                    "type": "integer"
+                  },
+                  "max_objects": {
+                    "type": "integer"
+                  },
+                  "path_style": {
+                    "type": "boolean"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "secret_access_key": {
+                    "type": "string"
+                  },
+                  "secret_access_key_file": {
+                    "type": "string"
+                  },
+                  "session_token": {
+                    "type": "string"
+                  },
+                  "session_token_file": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tailscale": {
+      "additionalProperties": false,
+      "properties": {
+        "auth": {
+          "additionalProperties": false,
+          "properties": {
+            "apikey": {
+              "description": "personal API key (set via TS2OTEL_TAILSCALE__AUTH__APIKEY); used only when method: apikey — expires \u003c=90d and is tied to its creator",
+              "type": "string"
+            },
+            "apikey_file": {
+              "default": "",
+              "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+              "type": "string"
+            },
+            "method": {
+              "default": "oauth",
+              "description": "oauth (recommended) | apikey | workload_identity (keyless OIDC exchange)",
+              "enum": [
+                "oauth",
+                "apikey",
+                "workload_identity"
+              ],
+              "type": "string"
+            },
+            "oauth": {
+              "additionalProperties": false,
+              "properties": {
+                "client_id": {
+                  "default": "",
+                  "description": "OAuth client ID (set via TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID)",
+                  "type": "string"
+                },
+                "client_secret": {
+                  "description": "OAuth client secret — keep in env, not here (..._CLIENT_SECRET)",
+                  "type": "string"
+                },
+                "client_secret_file": {
+                  "default": "",
+                  "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+                  "type": "string"
+                },
+                "scopes": {
+                  "description": "least-privilege read scopes requested for the token",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "workload_identity": {
+              "additionalProperties": false,
+              "properties": {
+                "client_id": {
+                  "default": "",
+                  "description": "federated OAuth client ID from the Tailscale admin console (TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__CLIENT_ID)",
+                  "type": "string"
+                },
+                "id_token_file": {
+                  "default": "",
+                  "description": "path to the OIDC ID token, e.g. a Kubernetes projected service-account token; re-read on every exchange (rotation-safe)",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "http": {
+          "additionalProperties": false,
+          "properties": {
+            "rate_limit": {
+              "default": 0,
+              "description": "global requests/sec across ALL collectors (0 = unlimited)",
+              "type": "number"
+            },
+            "retry": {
+              "additionalProperties": false,
+              "properties": {
+                "base_delay": {
+                  "default": "500ms",
+                  "description": "initial backoff delay",
+                  "examples": [
+                    "500ms"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_attempts": {
+                  "default": 4,
+                  "description": "total attempts per request (1 = no retry); exponential backoff between tries",
+                  "type": "integer"
+                },
+                "max_delay": {
+                  "default": "10s",
+                  "description": "backoff ceiling",
+                  "examples": [
+                    "10s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "timeout": {
+              "default": "30s",
+              "description": "per-attempt timeout (each retry attempt; a retried request may take longer, and long Retry-After waits are honored)",
+              "examples": [
+                "30s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "max_log_response_bytes": {
+          "default": 33554432,
+          "description": "cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it",
+          "type": "integer"
+        },
+        "max_response_bytes": {
+          "default": 4194304,
+          "description": "cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated",
+          "type": "integer"
+        },
+        "tailnet": {
+          "default": "-",
+          "description": "\"-\" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. \"example.com\"",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tracing": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "emit spans. TS2OTEL_TRACING__ENABLED",
+          "type": "boolean"
+        },
+        "sampler": {
+          "default": "parentbased_always_on",
+          "description": "head sampler: always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER",
+          "enum": [
+            "always_on",
+            "always_off",
+            "traceidratio",
+            "parentbased_always_on",
+            "parentbased_traceidratio"
+          ],
+          "type": "string"
+        },
+        "sampler_arg": {
+          "default": 1,
+          "description": "sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). TS2OTEL_TRACING__SAMPLER_ARG",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "version_checks": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_ttl": {
+          "default": "1h",
+          "description": "how long a fetched \"latest version\" is cached before re-fetching (minimum 5m)",
+          "examples": [
+            "1h"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "devices": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "emit per-device tailscale.device.version_skew + fleet rollups (device client version vs latest Tailscale stable). Needs the devices collector.",
+              "type": "boolean"
+            },
+            "outdated_minor_threshold": {
+              "default": 3,
+              "description": "a device this many minor releases behind counts toward tailscale.devices.outdated",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "self": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release)",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "timeout": {
+          "default": "10s",
+          "description": "per-request timeout for the external version fetch",
+          "examples": [
+            "10s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "dedup_audit_events": {
+          "default": false,
+          "description": "best-effort: drop a webhook event already counted via the audit logs",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": false,
+          "description": "run the receiver for real-time Tailscale webhook events",
+          "type": "boolean"
+        },
+        "listen": {
+          "default": ":8089",
+          "description": "bind address for the webhook receiver",
+          "type": "string"
+        },
+        "max_body_bytes": {
+          "default": 0,
+          "description": "cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value \u003c= 64 MiB",
+          "type": "integer"
+        },
+        "max_concurrent_requests": {
+          "default": 0,
+          "description": "how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)",
+          "type": "integer"
+        },
+        "path": {
+          "default": "/tailscale/webhook",
+          "description": "endpoint path Tailscale POSTs events to",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "secret": {
+                "type": "string"
+              },
+              "secret_file": {
+                "type": "string"
+              },
+              "tailnet": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "secret": {
+          "description": "HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read",
+          "type": "string"
+        },
+        "secret_file": {
+          "default": "",
+          "description": "read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed",
+          "type": "string"
+        },
+        "tls": {
+          "additionalProperties": false,
+          "properties": {
+            "cert_file": {
+              "default": "",
+              "description": "serve native HTTPS when paired with key_file; leave both empty behind an HTTPS reverse proxy",
+              "type": "string"
+            },
+            "key_file": {
+              "default": "",
+              "description": "private key paired with cert_file; both paths are validated as readable at startup",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "tolerance": {
+          "default": "5m",
+          "description": "reject signed timestamps older than this (replay window); \"0\" disables the check",
+          "examples": [
+            "5m"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "tailscale2otel configuration",
+  "type": "object"
+}
