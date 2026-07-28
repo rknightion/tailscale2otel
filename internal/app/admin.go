@@ -240,8 +240,10 @@ func (a *App) buildAdminServer() *http.Server {
 		registerPprof(mux, a.requireAdminAuth)
 	}
 	return &http.Server{
-		Addr:              a.cfg.Admin.Listen,
-		Handler:           mux,
+		Addr: a.cfg.Admin.Listen,
+		// Wrapped at the mux, not per route: a handler registered later cannot
+		// then be born without the defensive headers (#322).
+		Handler:           a.securityHeaders(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// 120s, not the 30s the other listeners use: /debug/pprof/profile?seconds=N

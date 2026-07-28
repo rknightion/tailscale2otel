@@ -152,6 +152,17 @@ loopback (these behaviours are also noted in
   costs you ingestion, not silent acceptance of forged records.
 - Leaving `admin.auth.token` empty likewise **refuses** the status page and its JSON APIs with
   HTTP 403 on any non-loopback `admin.listen` (`/healthz` and `/readyz` stay open).
+- Every admin response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, applied at the mux so a route added
+  later cannot be served bare. The CSP is `default-src 'none'` with **no origin permitted in any
+  directive**, which turns the "entirely self-contained, no CDN" property into something enforced:
+  no remote asset can load, and the page cannot become an exfiltration channel for the inventory it
+  displays. `frame-ancestors 'none'` keeps the mutating rDNS purge out of a frame. Scripts and
+  styles are `'unsafe-inline'` — both pages are one inline bundle and use inline event handlers,
+  which a nonce does not cover — so contextual escaping in `html/template`, not the CSP, is what
+  stands between tailnet data and the DOM. `Strict-Transport-Security` is sent **only** when
+  `admin.tls` is configured: on a plaintext listener a browser that saw it once would refuse
+  `http://` to that host and port and lock you out of your own page.
 
 !!! warning "The flow view is not covered by `pii_filter`"
     [`/flows`](flow-view.md) shows device names, addresses and users **in full**. `pii_filter`
