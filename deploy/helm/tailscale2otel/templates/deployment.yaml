@@ -35,7 +35,15 @@ spec:
         annotation, which anyone with workload-read (but no Secret-read) could
         compare against offline guesses. Removed; see rolloutTrigger below.
         */}}
-        {{- if not (include "tailscale2otel.configStoresSecret" .) }}
+        {{- /*
+          No checksum for an operator-managed config (#347): the chart cannot
+          read another object's contents, so any hash it produced would be of
+          its own inert `config:` tree — a checksum that changes when the pod's
+          real config does NOT, and vice versa. That is worse than none.
+          rolloutTrigger / Reloader are the rollout path, as with a rotated
+          existingSecret.
+        */}}
+        {{- if and (not (include "tailscale2otel.configStoresSecret" .)) (not (include "tailscale2otel.usesExternalConfig" .)) }}
         # Roll the pod when the (credential-free) rendered config changes.
         checksum/config: {{ include "tailscale2otel.config" . | sha256sum }}
         {{- end }}
@@ -114,6 +122,7 @@ spec:
             {{- end }}
           {{- $gomemlimit := include "tailscale2otel.gomemlimit" . }}
           {{- include "tailscale2otel.validateExtraEnv" . }}
+          {{- include "tailscale2otel.validateExternalConfig" . }}
           {{- if or .Values.goRuntime.gogc $gomemlimit .Values.extraEnv }}
           env:
             {{- if .Values.goRuntime.gogc }}
@@ -207,7 +216,26 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config
-          {{- if include "tailscale2otel.configStoresSecret" . }}
+          {{- if include "tailscale2otel.usesExternalConfig" . }}
+          {{- /*
+            Operator-managed config (#347). The chart renders no config object;
+            the key is projected to config.yaml so the container's -config path
+            is unchanged whatever the source key is called.
+          */}}
+          {{- if .Values.existingConfigSecret }}
+          secret:
+            secretName: {{ .Values.existingConfigSecret }}
+            items:
+              - key: {{ .Values.existingConfigKey }}
+                path: config.yaml
+          {{- else }}
+          configMap:
+            name: {{ .Values.existingConfigMap }}
+            items:
+              - key: {{ .Values.existingConfigKey }}
+                path: config.yaml
+          {{- end }}
+          {{- else if include "tailscale2otel.configStoresSecret" . }}
           # This config carries credentials (multi-tailnet entries, an inline
           # credential key, or configStorage.mode: secret) — served from a Secret.
           secret:

@@ -299,3 +299,31 @@ Args: (dict "ctx" $ "name" "prometheus" "enabled" <bool> "cred" <string> "credFi
 {{- fail (printf "service.%s.enabled requires a credential on that listener (%s). Publishing it with no credential exposes it to the whole cluster; set the value or its _file sibling, or leave the Service disabled and reach the pod directly." $name .credKey) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Whether config.yaml comes from a resource the OPERATOR manages (#347).
+
+GitOps, ExternalSecrets and SOPS users produce the config outside Helm. Before
+this, the only way to mount it was a generic extraVolumes override that fought
+the chart's own config volume, or putting multi-tailnet credentials into Helm
+values where `helm get values` exposes them.
+
+When either is set the chart renders NO config object and the entire `config:`
+tree is inert. That is deliberate and total: a partially-applied config would be
+worse than none, because `helm template` would show values the pod never sees.
+*/}}
+{{- define "tailscale2otel.usesExternalConfig" -}}
+{{- if or .Values.existingConfigMap .Values.existingConfigSecret -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Validate the external-config combination (#347). Fails rather than picking one.
+*/}}
+{{- define "tailscale2otel.validateExternalConfig" -}}
+{{- if and .Values.existingConfigMap .Values.existingConfigSecret -}}
+{{- fail "existingConfigMap and existingConfigSecret are mutually exclusive: set exactly one, since only one object can back the config volume" -}}
+{{- end -}}
+{{- if and (include "tailscale2otel.usesExternalConfig" .) (not .Values.existingConfigKey) -}}
+{{- fail "existingConfigKey must name the key holding the config YAML inside your ConfigMap/Secret (it is mounted as that filename)" -}}
+{{- end -}}
+{{- end -}}

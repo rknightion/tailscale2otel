@@ -716,5 +716,52 @@ grep -q 'podMonitor' <<<"$RENDER" \
 render --set metrics.serviceMonitor.enabled=true --set service.prometheus.enabled=true
 [[ $RENDER_RC -ne 0 ]] && ok "P: ServiceMonitor without the listener fails" || bad "P: rendered with no listener"
 
+# --------------------------------------------------------------------------
+case_ "Q. externally managed config resources (#347)"
+cfgvol() { dep_field '.spec.template.spec.volumes[] | select(.name == "config")'; }
+
+render --set-string existingConfigMap=my-cfg
+assert_rc0 "Q: existingConfigMap renders"
+[[ "$(cfgvol | yq '.configMap.name')" == "my-cfg" ]] \
+  && ok "Q: config volume is the operator's ConfigMap" || bad "Q: config volume is not my-cfg"
+[[ "$(cfgvol | yq '.configMap.items[0].path')" == "config.yaml" ]] \
+  && ok "Q: key projected to config.yaml (the -config path is unchanged)" || bad "Q: key not projected"
+[[ "$(docs_of ConfigMap | tr -d '[:space:]-')" == "" ]] \
+  && ok "Q: chart renders no ConfigMap of its own" || bad "Q: chart still rendered its own ConfigMap"
+grep -q 'checksum/config' <<<"$RENDER" \
+  && bad "Q: a checksum was emitted for a config the chart cannot read" \
+  || ok "Q: no checksum/config for an operator-managed config"
+
+render --set-string existingConfigSecret=my-cfg-secret
+assert_rc0 "Q: existingConfigSecret renders"
+[[ "$(cfgvol | yq '.secret.secretName')" == "my-cfg-secret" ]] \
+  && ok "Q: config volume is the operator's Secret" || bad "Q: config volume is not my-cfg-secret"
+# This is the multi-tailnet case the issue names: credentials reach the pod
+# without ever entering Helm values.
+[[ -z "$(yq "select(.kind == \"Secret\" and .metadata.name == \"${FULLNAME}-config\")" <<<"$RENDER" | tr -d '[:space:]-')" ]] \
+  && ok "Q: chart renders no config Secret of its own" || bad "Q: chart still rendered its own config Secret"
+
+render --set-string existingConfigKey=tailscale2otel.yml --set-string existingConfigMap=my-cfg
+assert_rc0 "Q: custom key renders"
+[[ "$(cfgvol | yq '.configMap.items[0].key')" == "tailscale2otel.yml" ]] \
+  && ok "Q: existingConfigKey selects the source key" || bad "Q: custom key ignored"
+[[ "$(cfgvol | yq '.configMap.items[0].path')" == "config.yaml" ]] \
+  && ok "Q: a custom key is still projected to config.yaml" || bad "Q: custom key not projected to config.yaml"
+
+render --set-string existingConfigMap=a --set-string existingConfigSecret=b
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "Q: both external sources at once fails" || bad "Q: accepted two config sources"
+
+render --set-string existingConfigMap=my-cfg --set-string existingConfigKey=
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "Q: an empty existingConfigKey fails" || bad "Q: accepted an empty config key"
+
+# Unchanged default: no external config means the chart's own objects.
+render
+[[ "$(cfgvol | yq '.configMap.name')" == "$FULLNAME" ]] \
+  && ok "Q: default still uses the chart's own ConfigMap" || bad "Q: default config volume changed"
+grep -q 'checksum/config' <<<"$RENDER" \
+  && ok "Q: default still carries checksum/config" || bad "Q: default lost its checksum/config"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

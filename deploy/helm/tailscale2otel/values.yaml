@@ -280,6 +280,18 @@ rolloutTrigger: ""
 # stage timeout; `internal/app` fails the build if the two stop agreeing (#332).
 terminationGracePeriodSeconds: 45 # @schema minimum:45
 
+# -- Mount config.yaml from a ConfigMap YOU manage instead of one the chart renders.
+# For GitOps/ExternalSecrets/SOPS setups where the config is produced outside Helm.
+# Mutually exclusive with existingConfigSecret; either one makes the chart render no
+# config object of its own and ignore the whole `config:` tree.
+existingConfigMap: ""
+# -- Mount config.yaml from a Secret YOU manage. Same as existingConfigMap but for a
+# config carrying credentials — this is how multi-tailnet credentials reach the pod
+# without ever passing through Helm values (and so without appearing in `helm get values`).
+existingConfigSecret: ""
+# -- Key inside existingConfigMap/existingConfigSecret holding the config YAML.
+existingConfigKey: config.yaml
+
 # Where the rendered config.yaml is stored.
 configStorage:
   # -- Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`.

@@ -312,6 +312,31 @@ See [Configuration](configuration.md) for the full list of options once you are 
         `configStorage.mode` to `secret` or `configmap` to override; `configmap`
         with a credential set inline makes `helm template` fail and names the keys.
 
+    !!! tip "GitOps: bring your own config object"
+        For ExternalSecrets, SOPS or any flow that produces `config.yaml` outside
+        Helm, point the chart at an object you manage:
+
+        ```sh
+        helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
+          --set-string existingConfigSecret=tailscale2otel-config
+        ```
+
+        `existingConfigMap` and `existingConfigSecret` are mutually exclusive, and
+        `existingConfigKey` (default `config.yaml`) names the key inside it — it is
+        projected to `config.yaml` in the container, so the `-config` path never
+        changes. This is how **multi-tailnet credentials reach the pod without
+        entering Helm values**, and therefore without showing up in
+        `helm get values`.
+
+        Either setting makes the chart render **no** config object and ignore the
+        whole `config:` tree. That is total on purpose: a partially-applied config
+        would mean `helm template` shows values the pod never sees. No
+        `checksum/config` annotation is emitted either — the chart cannot read
+        another object's contents, so any hash would be of its own inert
+        `config:` tree, changing when the pod's real config does not and vice
+        versa. Use `rolloutTrigger` or Reloader to roll after a config change,
+        exactly as for a rotated `existingSecret`.
+
     !!! note "Rotating an externally managed Secret"
         Credentials reach the container through `envFrom`, and Kubernetes never
         refreshes environment variables in a running container. So rotating the

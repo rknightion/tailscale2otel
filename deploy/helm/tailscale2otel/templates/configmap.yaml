@@ -4,6 +4,7 @@ credential-bearing key is set inline under `config:` (or configStorage.mode is
 `secret`), it moves to a Secret instead — see secret-config.yaml and the
 tailscale2otel.configStoresSecret helper.
 */}}
+{{- if not (include "tailscale2otel.usesExternalConfig" .) }}
 {{- if not (include "tailscale2otel.configStoresSecret" .) }}
 apiVersion: v1
 kind: ConfigMap
@@ -14,4 +15,5 @@ metadata:
 data:
   config.yaml: |
     {{- include "tailscale2otel.config" . | nindent 4 }}
+{{- end }}
 {{- end }}
