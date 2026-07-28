@@ -516,6 +516,124 @@ func TestRender_NoAdvisoriesSaysSo(t *testing.T) {
 // The inverse matters just as much — linking unconditionally hands the operator
 // a link that 404s, which reads as a broken exporter rather than a disabled
 // feature.
+// TestRender_TabsHaveARIARoles asserts the tab bar and its panels carry the
+// standard ARIA tabs pattern: a tablist owning tab buttons that each name the
+// panel they control, and panels that name the tab that owns them. This is
+// what lets a screen reader announce "tab, 1 of 7, selected" instead of just
+// "button" for a control that behaves nothing like one.
+func TestRender_TabsHaveARIARoles(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<nav class="tabs" id="tabs" role="tablist" aria-label="Status sections">`,
+		`id="tab-overview" data-target="overview" role="tab" aria-controls="panel-overview" aria-selected="true" tabindex="0"`,
+		`id="tab-collectors" data-target="collectors" role="tab" aria-controls="panel-collectors" aria-selected="false" tabindex="-1"`,
+		`<section data-tab="overview" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">`,
+		`<section data-tab="config" id="panel-config" role="tabpanel" aria-labelledby="tab-config" tabindex="0">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_TabsHaveArrowKeyNavigation asserts the keydown handler that
+// implements roving-tabindex arrow-key navigation across the tab bar is wired
+// up. This cannot assert the actual keyboard behavior (no browser here), only
+// that the handler exists and is attached to the tablist.
+func TestRender_TabsHaveArrowKeyNavigation(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"function handleTabsKeydown",
+		`tabs.addEventListener('keydown', handleTabsKeydown)`,
+		"ArrowRight", "ArrowLeft", "'Home'", "'End'",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_ChartsHaveAccessibleNamesAndSummaries asserts every chart <svg>
+// carries role="img" plus a static accessible name rendered by the server,
+// and a data-chart-name hook the client uses to compute a live textual
+// summary (min/max/latest) once data arrives. The live summary text itself is
+// JS-computed and cannot be asserted from a server-rendered fixture.
+func TestRender_ChartsHaveAccessibleNamesAndSummaries(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<svg class="chart" id="chGoroutines" role="img" aria-label="Goroutines over the last 10 minutes" data-chart-name="Goroutines"></svg>`,
+		`<svg class="chart" id="chHeap" role="img" aria-label="Heap in use over the last 10 minutes" data-chart-name="Heap in use"></svg>`,
+		`<svg class="chart" id="chGC" role="img" aria-label="GC rate over the last 10 minutes" data-chart-name="GC rate"></svg>`,
+		`<svg class="chart" id="chEmit" role="img" aria-label="Emitted throughput over the last 10 minutes" data-chart-name="Emitted throughput"></svg>`,
+		`<svg class="chart" id="chFailing" role="img" aria-label="Collectors failing over the last 10 minutes" data-chart-name="Collectors failing"></svg>`,
+		`<svg class="chart" id="chDuration" role="img" aria-label="Mean run duration over the last 10 minutes" data-chart-name="Mean run duration"></svg>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_LiveRegionsAnnounceHealthAndStaleness asserts the health-reasons
+// strip and the disconnected/stale banner are announced by assistive tech
+// when their text changes, not just visually shown.
+func TestRender_LiveRegionsAnnounceHealthAndStaleness(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<div class="reasons" id="healthReasons" role="status"`,
+		`<div id="staleBanner" role="alert"></div>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_FocusVisibleStylesPresent asserts a focus-visible rule exists and
+// that the old collector-info rule which unconditionally suppressed the
+// outline on focus (not just on mouse hover) is gone.
+func TestRender_FocusVisibleStylesPresent(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, ":focus-visible{outline:") {
+		t.Error("no :focus-visible outline rule present")
+	}
+	if strings.Contains(out, ".collector-info:hover,.collector-info:focus{color:var(--accent);outline:none}") {
+		t.Error("collector-info still unconditionally suppresses the focus outline (only :hover should lose it)")
+	}
+}
+
+// TestRender_ReducedMotionRespected asserts a prefers-reduced-motion rule is
+// present in the stylesheet.
+func TestRender_ReducedMotionRespected(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "@media (prefers-reduced-motion: reduce)") {
+		t.Error("no prefers-reduced-motion rule present")
+	}
+}
+
 func TestRender_EventsLinkFollowsTheStore(t *testing.T) {
 	const link = `<a href="/events" title="Explore recent audit and webhook events">events &rarr;</a>`
 

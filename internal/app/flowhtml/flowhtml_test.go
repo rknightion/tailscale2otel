@@ -510,6 +510,137 @@ func extractJSFunction(t *testing.T, out, name string) string {
 // The real guarantee is structural — flowsdata.Page has no field a credential
 // could travel in, so the JS that builds the URL has nothing to put there
 // (#298). This pins that, and fails the moment the DTO grows a way to break it.
+// TestRender_TimelineAndTopologyChartsAreAccessible asserts the two
+// hand-drawn SVG charts carry role="img" plus a static accessible name
+// rendered by the server; the live textual summary each gets is computed in
+// JS from data that only exists client-side and cannot be asserted from a
+// server-rendered fixture.
+func TestRender_TimelineAndTopologyChartsAreAccessible(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`<svg class="chart" id="timeline" preserveAspectRatio="none" role="img" aria-label="Traffic over time">`,
+		`<svg id="topo" role="img" aria-label="Device topology graph">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_ErrorAndTruncationBannersAreLiveRegions asserts the two banners
+// that report a fetch failure and a truncated-window warning are announced
+// by assistive tech when their text is set, not just shown visually.
+func TestRender_ErrorAndTruncationBannersAreLiveRegions(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`<div class="banner" id="errBanner" role="alert"></div>`,
+		`<div class="banner" id="truncBanner" role="status"></div>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_TableRowSelectionIsKeyboardOperable asserts the shared
+// buildTable() row-picking path (used today only by the top-devices table)
+// makes a clickable row keyboard-focusable and operable, and gives it an
+// accessible name — not just a bare "button" with no indication of what
+// picking it does. This is checked in the JS SOURCE (there is no browser
+// here to actually press Enter and observe the click fire); see the package
+// doc comment on why that gap is real, not covered, and cannot be closed
+// without a browser harness this repo deliberately does not add.
+func TestRender_TableRowSelectionIsKeyboardOperable(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`tr.tabIndex = 0;`,
+		`tr.setAttribute("role", "button");`,
+		`tr.setAttribute("aria-pressed", r.selected ? "true" : "false");`,
+		`if (r.label) tr.setAttribute("aria-label", r.label);`,
+		`if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); r.pick(); }`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_TopNodesRowsCarryAnAccessibleLabel asserts renderNodes() (the
+// one buildTable() caller that sets r.pick) also sets r.label, so the
+// keyboard/screen-reader affordance added in buildTable() actually has
+// something to announce for this table rather than falling back to reading
+// out every cell.
+func TestRender_TopNodesRowsCarryAnAccessibleLabel(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, `label: "Filter the page to device " + n.node,`) {
+		t.Error("renderNodes() rows do not carry an accessible label for the pickable row")
+	}
+}
+
+// TestRender_TopologyNodesAreKeyboardOperable asserts each topology node
+// circle is made focusable, announces itself, and responds to Enter/Space the
+// same way a click does (select/deselect). Checked in JS source for the same
+// reason as the table-row test above.
+func TestRender_TopologyNodesAreKeyboardOperable(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`n.el.setAttribute("tabindex", "0");`,
+		`n.el.setAttribute("role", "button");`,
+		`n.el.setAttribute("aria-label", n.id + ", sent " + fmtBytes(bytes(n.stat.sent)) + ", received " + fmtBytes(bytes(n.stat.received)));`,
+		`select(state.selected === n.id ? null : n.id);`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_MatrixCellsAreKeyboardOperable asserts each non-empty
+// "who talks to whom" matrix cell is focusable, announces the connection it
+// represents, and responds to Enter/Space the same way a click does.
+func TestRender_MatrixCellsAreKeyboardOperable(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`div.tabIndex = 0;`,
+		`div.setAttribute("role", "button");`,
+		`div.setAttribute("aria-pressed", picked ? "true" : "false");`,
+		`if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); pickCell(r, c); }`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_FocusVisibleAndReducedMotionPresent asserts explicit
+// focus-visible styling for the newly-focusable topology nodes, matrix cells
+// and pickable rows, and a prefers-reduced-motion rule exists.
+func TestRender_FocusVisibleAndReducedMotionPresent(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		"#topo .node:focus-visible{",
+		".cell:focus-visible{",
+		"tbody tr.pick:focus-visible{",
+		"@media (prefers-reduced-motion: reduce){",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// TestRender_TopologySimulationSkipsAnimationWhenMotionIsReduced asserts
+// runSim() checks prefers-reduced-motion and, when set, settles the
+// force-directed layout in one synchronous pass instead of animating it
+// frame-by-frame across ~30 requestAnimationFrame calls. This is the one
+// genuinely animated element on either embedded page.
+func TestRender_TopologySimulationSkipsAnimationWhenMotionIsReduced(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, `matchMedia('(prefers-reduced-motion: reduce)').matches`) {
+		t.Error("runSim() does not check prefers-reduced-motion")
+	}
+}
+
 func TestPageDTOCannotCarryACredential(t *testing.T) {
 	t.Parallel()
 	rt := reflect.TypeOf(flowsdata.Page{})

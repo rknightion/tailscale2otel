@@ -130,7 +130,17 @@
   /* Per-collector info affordance (see collectorInfo in JS). */
   .collector-info{position:relative;display:inline-block;margin-left:6px;
     color:var(--muted);font-size:12px;line-height:1;cursor:help;user-select:none}
-  .collector-info:hover,.collector-info:focus{color:var(--accent);outline:none}
+  .collector-info:hover,.collector-info:focus{color:var(--accent)}
+  /* Focus-visible: keyboard focus always gets a visible ring; a mouse click
+     alone does not (browsers already suppress :focus-visible for pointer
+     interaction on non-form elements), so this never adds a ring a mouse
+     user didn't ask for. */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .tab-btn:focus-visible{outline-offset:-2px}
+  .collector-info:focus-visible{outline:2px solid var(--accent);outline-offset:2px;color:var(--accent)}
+  @media (prefers-reduced-motion: reduce){
+    *{scroll-behavior:auto!important}
+  }
   .cinfo-tip{position:fixed;left:0;top:0;z-index:50;display:none;width:360px;
     max-height:340px;overflow:auto;background:var(--panel2);
     border:1px solid var(--line);border-radius:8px;padding:10px 12px;
@@ -170,16 +180,16 @@
   <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
   <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
 </header>
-<div class="reasons" id="healthReasons"{{if not .HealthReasons}} style="display:none"{{end}}>{{range .HealthReasons}}{{.}} · {{end}}</div>
-<div id="staleBanner"></div>
-<nav class="tabs" id="tabs">
-  <button class="tab-btn" data-target="overview">Overview</button>
-  <button class="tab-btn" data-target="collectors">Collectors</button>
-  <button class="tab-btn" data-target="api">API</button>
-  <button class="tab-btn" data-target="capabilities">Capabilities</button>
-  <button class="tab-btn" data-target="cardinality">Cardinality</button>
-  <button class="tab-btn" data-target="inventory">Inventory &amp; Catalog</button>
-  <button class="tab-btn" data-target="config">Config</button>
+<div class="reasons" id="healthReasons" role="status"{{if not .HealthReasons}} style="display:none"{{end}}>{{range .HealthReasons}}{{.}} · {{end}}</div>
+<div id="staleBanner" role="alert"></div>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Status sections">
+  <button class="tab-btn" id="tab-overview" data-target="overview" role="tab" aria-controls="panel-overview" aria-selected="true" tabindex="0">Overview</button>
+  <button class="tab-btn" id="tab-collectors" data-target="collectors" role="tab" aria-controls="panel-collectors" aria-selected="false" tabindex="-1">Collectors</button>
+  <button class="tab-btn" id="tab-api" data-target="api" role="tab" aria-controls="panel-api" aria-selected="false" tabindex="-1">API</button>
+  <button class="tab-btn" id="tab-capabilities" data-target="capabilities" role="tab" aria-controls="panel-capabilities" aria-selected="false" tabindex="-1">Capabilities</button>
+  <button class="tab-btn" id="tab-cardinality" data-target="cardinality" role="tab" aria-controls="panel-cardinality" aria-selected="false" tabindex="-1">Cardinality</button>
+  <button class="tab-btn" id="tab-inventory" data-target="inventory" role="tab" aria-controls="panel-inventory" aria-selected="false" tabindex="-1">Inventory &amp; Catalog</button>
+  <button class="tab-btn" id="tab-config" data-target="config" role="tab" aria-controls="panel-config" aria-selected="false" tabindex="-1">Config</button>
 </nav>
 {{if gt (len .Tailnets) 1}}
 <div class="controls" id="tailnetSelectorWrap" style="padding:8px 24px 0;background:var(--bg)">
@@ -194,7 +204,7 @@
 <main>
 
   <!-- ═══ OVERVIEW ═══ -->
-  <section data-tab="overview">
+  <section data-tab="overview" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
     <div class="rollup" id="rollup">
       <div class="rc"><span class="rv" id="ruHealth">{{.Health}}</span><span class="rk">health</span></div>
       <div class="rc"><span class="rv" id="ruCollectors">—</span><span class="rk">collectors ok</span></div>
@@ -216,9 +226,9 @@
 
     <div class="sub-h">Runtime trend (~10 min){{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:11px;text-transform:none;font-weight:400">— process-global, covers every tailnet</span>{{end}}</div>
     <div class="cards">
-      <div class="card"><div class="k">Goroutines</div><div class="chart-wrap"><svg class="chart" id="chGoroutines"></svg><div class="chart-tip"></div></div></div>
-      <div class="card"><div class="k">Heap in use</div><div class="chart-wrap"><svg class="chart" id="chHeap"></svg><div class="chart-tip"></div></div></div>
-      <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Goroutines</div><div class="chart-wrap"><svg class="chart" id="chGoroutines" role="img" aria-label="Goroutines over the last 10 minutes" data-chart-name="Goroutines"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="chart-wrap"><svg class="chart" id="chHeap" role="img" aria-label="Heap in use over the last 10 minutes" data-chart-name="Heap in use"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC" role="img" aria-label="GC rate over the last 10 minutes" data-chart-name="GC rate"></svg><div class="chart-tip"></div></div></div>
     </div>
 
     <div class="sub-h">Throughput &amp; fleet trend (~10 min){{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:11px;text-transform:none;font-weight:400">— process-global, covers every tailnet</span>{{end}}</div>
@@ -229,9 +239,9 @@
       <div class="card"><div class="k">Mean run duration</div><div class="v" id="fleetMeanDur">{{printf "%.0f" .Fleet.MeanDurationMs}}ms</div><div class="sub">across all collectors</div></div>
     </div>
     <div class="cards">
-      <div class="card"><div class="k">Emitted throughput</div><div class="chart-wrap"><svg class="chart" id="chEmit"></svg><div class="chart-tip"></div></div></div>
-      <div class="card"><div class="k">Collectors failing</div><div class="chart-wrap"><svg class="chart" id="chFailing"></svg><div class="chart-tip"></div></div></div>
-      <div class="card"><div class="k">Mean run duration</div><div class="chart-wrap"><svg class="chart" id="chDuration"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Emitted throughput</div><div class="chart-wrap"><svg class="chart" id="chEmit" role="img" aria-label="Emitted throughput over the last 10 minutes" data-chart-name="Emitted throughput"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Collectors failing</div><div class="chart-wrap"><svg class="chart" id="chFailing" role="img" aria-label="Collectors failing over the last 10 minutes" data-chart-name="Collectors failing"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="chart-wrap"><svg class="chart" id="chDuration" role="img" aria-label="Mean run duration over the last 10 minutes" data-chart-name="Mean run duration"></svg><div class="chart-tip"></div></div></div>
     </div>
 
     {{if gt (len .Tailnets) 1}}
@@ -257,7 +267,7 @@
   </section>
 
   <!-- ═══ COLLECTORS ═══ -->
-  <section data-tab="collectors">
+  <section data-tab="collectors" id="panel-collectors" role="tabpanel" aria-labelledby="tab-collectors" tabindex="0">
     <table>
       <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Success</th><th>Freshness</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th><th class="num">Duration</th><th>Recent</th><th>Last error</th></tr></thead>
       <tbody id="collBody">
@@ -305,7 +315,7 @@
   </section>
 
   <!-- ═══ API ═══ -->
-  <section data-tab="api">
+  <section data-tab="api" id="panel-api" role="tabpanel" aria-labelledby="tab-api" tabindex="0">
     <div class="cards" style="margin-bottom:12px">
       <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px" id="apiAuthMethod">{{if .API.Auth.Method}}{{.API.Auth.Method}}{{else}}—{{end}}</div>{{if .API.Auth.Warning}}<div class="sub" style="color:var(--warn)" id="apiAuthWarn">{{.API.Auth.Warning}}</div>{{else}}<div class="sub" id="apiAuthWarn"></div>{{end}}</div>
       <div class="card"><div class="k">Total API calls</div><div class="v" id="apiTotalCalls">{{.API.Auth.TotalCalls}}</div></div>
@@ -340,7 +350,7 @@
   </section>
 
   <!-- ═══ CAPABILITIES ═══ -->
-  <section data-tab="capabilities">
+  <section data-tab="capabilities" id="panel-capabilities" role="tabpanel" aria-labelledby="tab-capabilities" tabindex="0">
     <div class="cards" style="margin-bottom:12px">
       <div class="card"><div class="k">Active capabilities</div><div class="v">{{capCount .CapabilityMatrix "active"}}</div><div class="sub">of {{len .CapabilityMatrix}} configurable</div></div>
       <div class="card{{if gt (capCount .CapabilityMatrix "actionable") 0}} warn2{{end}}"><div class="k">Needing attention</div><div class="v">{{capCount .CapabilityMatrix "actionable"}}</div><div class="sub">permission or transient failures</div></div>
@@ -374,12 +384,12 @@
   </section>
 
   <!-- ═══ CARDINALITY ═══ -->
-  <section data-tab="cardinality">
+  <section data-tab="cardinality" id="panel-cardinality" role="tabpanel" aria-labelledby="tab-cardinality" tabindex="0">
     {{if .Cardinality.Available}}
       <div class="cards" style="margin-bottom:12px">
         <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{.Cardinality.TotalMetrics}} metrics</div></div>
         <div class="card{{if .Cardinality.Alerts}} warn2{{end}}"><div class="k">Threshold alerts</div><div class="v" id="cardAlertCount">{{len .Cardinality.Alerts}}</div><div class="sub">warn ≥ {{.Cardinality.Thresholds.Warning}} · crit ≥ {{.Cardinality.Thresholds.Critical}}</div></div>
-        <div class="card"><div class="k">Series trend (~10 min)</div><div class="chart-wrap"><svg class="chart" id="chCard" style="height:70px"></svg><div class="chart-tip"></div></div></div>
+        <div class="card"><div class="k">Series trend (~10 min)</div><div class="chart-wrap"><svg class="chart" id="chCard" style="height:70px" role="img" aria-label="Active series over the last 10 minutes" data-chart-name="Active series"></svg><div class="chart-tip"></div></div></div>
       </div>
 
       {{if .Cardinality.Alerts}}
@@ -445,7 +455,7 @@
   </section>
 
   <!-- ═══ INVENTORY & CATALOG ═══ -->
-  <section data-tab="inventory">
+  <section data-tab="inventory" id="panel-inventory" role="tabpanel" aria-labelledby="tab-inventory" tabindex="0">
     {{if .Devices}}
     <div class="sub-h">Devices (<span id="devCount">{{len .Devices}}</span>)</div>
     <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')">
@@ -543,7 +553,7 @@
   </section>
 
   <!-- ═══ CONFIG ═══ -->
-  <section data-tab="config">
+  <section data-tab="config" id="panel-config" role="tabpanel" aria-labelledby="tab-config" tabindex="0">
     <div class="cards">
       <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
       <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px">{{.Config.AuthMethod}}</div></div>
@@ -696,16 +706,47 @@ function showTab(id){
   }
   var btns = document.querySelectorAll('#tabs .tab-btn');
   for (var j=0;j<btns.length;j++){
-    btns[j].classList.toggle('active', btns[j].getAttribute('data-target')===id);
+    var b = btns[j];
+    var on2 = b.getAttribute('data-target')===id;
+    b.classList.toggle('active', on2);
+    // ARIA tabs pattern: the active tab is aria-selected + the only one in the
+    // Tab order (tabindex 0); the rest are reachable only via the arrow-key
+    // roving handler below, per the standard "automatic activation" tabs
+    // pattern (moving focus also switches the panel).
+    b.setAttribute('aria-selected', on2 ? 'true' : 'false');
+    b.tabIndex = on2 ? 0 : -1;
   }
   if(found && location.hash!=='#'+id){ history.replaceState(null,'','#'+id); }
   redrawCharts(); // charts need a laid-out (visible) container to size against
+}
+// handleTabsKeydown implements the standard ARIA tabs roving-tabindex
+// keyboard pattern: Left/Right (and Up/Down, since the bar can wrap onto
+// multiple visual rows) move focus one tab over, Home/End jump to the first
+// or last tab, and moving focus also activates the panel (automatic
+// activation) so a screen-reader or keyboard user never has to press a
+// second key to see the result.
+function handleTabsKeydown(ev){
+  var list = Array.prototype.slice.call(document.querySelectorAll('#tabs .tab-btn'));
+  var idx = list.indexOf(document.activeElement);
+  if(idx===-1) return;
+  var next = -1;
+  if(ev.key==='ArrowRight'||ev.key==='ArrowDown'){ next=(idx+1)%list.length; }
+  else if(ev.key==='ArrowLeft'||ev.key==='ArrowUp'){ next=(idx-1+list.length)%list.length; }
+  else if(ev.key==='Home'){ next=0; }
+  else if(ev.key==='End'){ next=list.length-1; }
+  if(next>=0){
+    ev.preventDefault();
+    list[next].focus();
+    showTab(list[next].getAttribute('data-target'));
+  }
 }
 function initTabs(){
   var btns = document.querySelectorAll('#tabs .tab-btn');
   for (var i=0;i<btns.length;i++){
     (function(b){ b.addEventListener('click', function(){ showTab(b.getAttribute('data-target')); }); })(btns[i]);
   }
+  var tabs = document.getElementById('tabs');
+  if(tabs) tabs.addEventListener('keydown', handleTabsKeydown);
   var initial = (location.hash||'').replace('#','');
   var valid = document.querySelector('section[data-tab="'+initial+'"]');
   showTab(valid ? initial : 'overview');
@@ -788,6 +829,7 @@ function drawChart(svgId, series, fmt){
   var svg=document.getElementById(svgId); if(!svg) return;
   var wrap=svg.parentNode;
   var tip=wrap ? wrap.querySelector('.chart-tip') : null;
+  var chartName=svg.getAttribute('data-chart-name')||'Chart';
   while(svg.firstChild) svg.removeChild(svg.firstChild);
   series = (series||[]).filter(function(s){ return s.points && s.points.length; });
   var rect=svg.getBoundingClientRect();
@@ -799,9 +841,21 @@ function drawChart(svgId, series, fmt){
   if(!series.length || maxLen<2){
     var t=document.createElementNS(SVGNS,'text'); t.setAttribute('x',8); t.setAttribute('y',H/2);
     t.setAttribute('fill',cssVar('--muted')); t.setAttribute('font-size','11'); t.textContent='collecting…';
-    svg.appendChild(t); return;
+    svg.appendChild(t);
+    svg.setAttribute('aria-label', chartName+': not enough data yet to summarize.');
+    return;
   }
   if(mn===mx){ mx=mn+1; }
+  // A textual summary for assistive tech: this is the only accessible
+  // description of what the chart shows, since the SVG's own shapes carry no
+  // text. Built entirely from the series data already computed above.
+  var latest=series[0].points[series[0].points.length-1];
+  var summary=chartName+': latest '+fmt(latest)+', ranging from '+fmt(mn)+' to '+fmt(mx)
+    +' over '+maxLen+' samples.';
+  if(series.length>1){
+    summary+=' Also shown: '+series.slice(1).map(function(s){ return s.name; }).join(', ')+'.';
+  }
+  svg.setAttribute('aria-label', summary);
   var padL=44, padR=8, padT=8, padB=16;
   var plotW=W-padL-padR, plotH=H-padT-padB;
   function xAt(i){ return padL + i*plotW/(maxLen-1); }

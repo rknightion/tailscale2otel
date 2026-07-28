@@ -89,7 +89,15 @@
   td.mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
   tbody tr.pick{cursor:pointer}
   tbody tr.pick:hover{background:var(--panel2)}
+  tbody tr.pick:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   tbody tr.sel{background:rgba(68,147,248,.12)}
+  /* Focus-visible: keyboard focus always gets a visible ring; a mouse click
+     alone does not. Covers the newly keyboard-operable topology nodes, matrix
+     cells and pickable table rows, plus every ordinary control. */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){
+    *{scroll-behavior:auto!important}
+  }
   .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
   .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:18px}
   .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:18px}
@@ -114,6 +122,7 @@
   #topo .edge.dim{stroke-opacity:.06}
   #topo .node{fill:var(--accent);stroke:var(--panel);stroke-width:1.5}
   #topo .node.sel{stroke:var(--fg);stroke-width:2.5}
+  #topo .node:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
   #topo .node.dim{opacity:.2}
   #topo .node.ext{fill:var(--pending)}
   #topo .lbl{fill:var(--fg);font-size:10px;font-family:var(--mono);pointer-events:none;
@@ -146,6 +155,7 @@
   .cell.hot{color:#fff}
   .cell.sel{outline:2px solid var(--fg);outline-offset:-2px}
   .cell.zero{cursor:default;opacity:.35}
+  .cell:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   .coverage{color:var(--muted);font-size:12px;padding:0 12px 11px}
   .coverage b{color:var(--fg);font-weight:600}
   /* Policy reconciliation */
@@ -192,8 +202,8 @@
   <a href="/">status &rarr;</a>
   <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">&#9686;</button>
 </header>
-<div class="banner" id="errBanner"></div>
-<div class="banner" id="truncBanner"></div>
+<div class="banner" id="errBanner" role="alert"></div>
+<div class="banner" id="truncBanner" role="status"></div>
 
 <main>
 <p id="noJS" style="display:none" class="empty">
@@ -231,7 +241,7 @@
 <section>
   <h2>Traffic over time <span class="hint">drag on the chart to zoom into a span &middot; double-click to reset</span></h2>
   <div class="chart-wrap">
-    <svg class="chart" id="timeline" preserveAspectRatio="none"></svg>
+    <svg class="chart" id="timeline" preserveAspectRatio="none" role="img" aria-label="Traffic over time"></svg>
     <div class="legend">
       <span class="lg"><i class="sw" style="background:var(--tx)"></i>transmitted</span>
       <span class="lg"><i class="sw" style="background:var(--rx)"></i>received</span>
@@ -242,7 +252,7 @@
 <section>
   <h2>Topology <span class="hint" id="topoHint"></span></h2>
   <div id="topoWrap">
-    <svg id="topo"></svg>
+    <svg id="topo" role="img" aria-label="Device topology graph"></svg>
     <div class="topo-note">drag a device to reposition &middot; click to filter &middot; click empty space to clear</div>
   </div>
 </section>
@@ -844,6 +854,7 @@ function renderTimeline(d){
   if (!pts.length){
     svg.appendChild(svgEl("text", {x:W/2, y:H/2, "text-anchor":"middle", fill:"var(--muted)",
       "font-size":"12"})).textContent = "no traffic recorded in this window";
+    svg.setAttribute("aria-label", "Traffic over time: no traffic recorded in this window.");
     timelineGeom = null;
     return;
   }
@@ -852,8 +863,16 @@ function renderTimeline(d){
   var t0 = new Date(pts[0].time).getTime();
   var t1 = new Date(pts[pts.length-1].time).getTime();
   if (t1 <= t0) t1 = t0 + 60000;
-  var maxV = 1;
-  pts.forEach(function(p){ maxV = Math.max(maxV, p.counts.tx_bytes||0, p.counts.rx_bytes||0); });
+  var maxV = 1, totalTx = 0, totalRx = 0;
+  pts.forEach(function(p){
+    maxV = Math.max(maxV, p.counts.tx_bytes||0, p.counts.rx_bytes||0);
+    totalTx += p.counts.tx_bytes||0; totalRx += p.counts.rx_bytes||0;
+  });
+  // A textual summary for assistive tech: the only accessible description of
+  // what the chart shows, since the SVG's own shapes carry no text.
+  svg.setAttribute("aria-label", "Traffic over time from " + fmtTime(pts[0].time) + " to "
+    + fmtTime(pts[pts.length-1].time) + ": " + fmtBytes(totalTx) + " transmitted, "
+    + fmtBytes(totalRx) + " received, across " + pts.length + " samples.");
 
   var x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
   timelineGeom = {x0:x0, x1:x1, t0:t0, t1:t1};
@@ -987,6 +1006,11 @@ function renderTopology(d){
   el("topoHint").textContent = nodeStats.length
     ? nodeStats.length + " devices · " + edges.length + " conversations"
     : "";
+  // A textual summary for assistive tech: the only accessible description of
+  // what the graph shows, since the SVG's own shapes carry no text.
+  svg.setAttribute("aria-label", "Device topology graph: " + (nodeStats.length
+    ? nodeStats.length + " devices, " + edges.length + " conversations."
+    : "no device-to-device traffic in this window."));
 
   if (!nodeStats.length){
     var t = svgEl("text", {x:W/2, y:H/2, "text-anchor":"middle", fill:"var(--muted)", "font-size":"13"});
@@ -1054,6 +1078,19 @@ function renderTopology(d){
       ev.stopPropagation();
       select(state.selected === n.id ? null : n.id);
     });
+    // Keyboard equivalent of the click-to-filter above: each device is a
+    // graph node with no other way to reach it, so it needs its own stop in
+    // the Tab order (SVG shapes are not natively focusable), a name to
+    // announce, and an Enter/Space activation matching the click handler.
+    n.el.setAttribute("tabindex", "0");
+    n.el.setAttribute("role", "button");
+    n.el.setAttribute("aria-label", n.id + ", sent " + fmtBytes(bytes(n.stat.sent)) + ", received " + fmtBytes(bytes(n.stat.received)));
+    n.el.addEventListener("keydown", function(ev){
+      if (ev.key === "Enter" || ev.key === " "){
+        ev.preventDefault(); ev.stopPropagation();
+        select(state.selected === n.id ? null : n.id);
+      }
+    });
     attachDrag(svg, n);
     gNodes.appendChild(n.el);
     gLabels.appendChild(n.lbl);
@@ -1097,8 +1134,23 @@ function attachDrag(svg, n){
 }
 
 var simRAF = null;
+function prefersReducedMotion(){
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
 function runSim(){
   if (simRAF) return;
+  if (!topoSim) return;
+  // The force-directed relaxation is the one genuinely animated element on
+  // either embedded page: normally it eases into place across ~30
+  // requestAnimationFrame steps. With reduced motion requested, settle it in
+  // one synchronous pass and paint the final layout directly instead.
+  if (prefersReducedMotion()){
+    while (topoSim.alpha > 0.02){ tick(topoSim); topoSim.alpha *= 0.97; }
+    paint(topoSim);
+    rememberPositions();
+    return;
+  }
   function step(){
     simRAF = null;
     if (!topoSim) return;
@@ -1192,6 +1244,7 @@ function applySelection(){
   }
   topoSim.nodes.forEach(function(p){
     var base = (p.id === "external" || p.id === "unknown") ? "node ext" : "node";
+    p.el.setAttribute("aria-pressed", p.id === sel ? "true" : "false");
     if (!sel) { p.el.setAttribute("class", base); p.lbl.setAttribute("class", "lbl"); return; }
     p.el.setAttribute("class", base + (p.id === sel ? " sel" : (adjacent[p.id] ? "" : " dim")));
     p.lbl.setAttribute("class", "lbl" + (adjacent[p.id] ? "" : " dim"));
@@ -1272,7 +1325,18 @@ function buildTable(host, headers, rows, emptyMsg){
     var tr = document.createElement("tr");
     if (r.pick){
       tr.className = "pick" + (r.selected ? " sel" : "");
+      // A pickable row acts like a toggle button with no other way to reach
+      // it, so it needs its own stop in the Tab order, a name to announce
+      // (a bare "button" reading out every cell is not that), a pressed
+      // state, and an Enter/Space activation matching the click handler.
+      tr.tabIndex = 0;
+      tr.setAttribute("role", "button");
+      tr.setAttribute("aria-pressed", r.selected ? "true" : "false");
+      if (r.label) tr.setAttribute("aria-label", r.label);
       tr.addEventListener("click", r.pick);
+      tr.addEventListener("keydown", function(ev){
+        if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); r.pick(); }
+      });
     }
     r.cells.forEach(function(c){
       var td = document.createElement("td");
@@ -1293,6 +1357,7 @@ function renderNodes(d){
     return {
       pick: function(){ select(state.selected === n.node ? null : n.node); },
       selected: state.selected === n.node,
+      label: "Filter the page to device " + n.node,
       cells: [
         {text: label(n.node), cls:"mono"},
         {text: fmtBytes(bytes(n.sent)), cls:"num"},
@@ -1449,7 +1514,19 @@ function renderMatrix(d){
         div.textContent = fmtShort(v);
         div.title = label(r) + " → " + label(c) + "\n" + fmtBytes(v)
           + "  (" + fmtNum(cell.counts.flows) + " conns)";
+        // A cell acts like a toggle button reachable only here, so it needs
+        // its own stop in the Tab order, a name (the div's visible text is
+        // just a byte count, not the connection it represents), a pressed
+        // state, and an Enter/Space activation matching the click handler.
+        div.tabIndex = 0;
+        div.setAttribute("role", "button");
+        div.setAttribute("aria-label", label(r) + " to " + label(c) + ", " + fmtBytes(v)
+          + ", " + fmtNum(cell.counts.flows) + " connections");
+        div.setAttribute("aria-pressed", picked ? "true" : "false");
         div.addEventListener("click", function(){ pickCell(r, c); });
+        div.addEventListener("keydown", function(ev){
+          if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); pickCell(r, c); }
+        });
       } else {
         div.textContent = "·";
       }
