@@ -5,18 +5,22 @@ package statusdata
 // hand-picked subset (ConfigSummary's named fields above), which meant the one
 // endpoint an operator reaches for to debug a config problem was exactly the
 // one that omitted the field they needed. ConfigFull fixes that by reflecting
-// over the live *config.Config (internal/app/status.go's buildFullConfigMap)
+// over the live *config.Config (internal/configexport.Build)
 // and rendering EVERY key, keyed by the same dotted path the rest of the repo
 // already uses for config keys (matching the TS2OTEL_* env-var convention with
 // "." in place of "__", e.g. "otlp.endpoint", "tailnets.0.auth.method").
 //
 // Redaction here is structural, not name-based: a field is only ever rendered
 // through the Secret/Set/Source form below when its SOURCE TYPE is
-// config.Secret, or (a narrower, deliberate exception — see status.go) when it
-// is a generic map[string]string, which can carry a credential in a value as
-// easily as a header can and has no type-level marker to say otherwise. Every
-// other field renders through Value. There is no field-name denylist anywhere
-// in this path.
+// config.Secret — including a map[string]Secret entry, which is how
+// otlp.headers and the node-metrics per-target headers are covered. A generic
+// map[string]string (profiling.pyroscope.tags, a node-metrics target's labels)
+// is NOT redacted: those values are already published verbatim to the backend
+// as profile tags and metric attributes, so hiding them locally protects
+// nothing and costs the operator asking "why is my label not applied" the one
+// place they could check. Every other field renders through Value, with any
+// string containing "://" passed through redact.URL to strip embedded
+// userinfo. There is no field-name denylist anywhere in this path.
 type ConfigFieldValue struct {
 	// Value is the field's plain rendering for a non-secret field: a string,
 	// bool, number, []string, or (for an EMPTY map/slice, matching the leaf
@@ -26,8 +30,9 @@ type ConfigFieldValue struct {
 	// code path that can accidentally populate both.
 	Value any `json:"value,omitempty"`
 	// Secret marks a field whose value is never shown — only presence and
-	// origin. True for every config.Secret-typed field, and for every
-	// non-empty entry of a generic map[string]string (see status.go for why).
+	// origin. True for every config.Secret-typed field, including every entry
+	// of a map[string]Secret. A generic map[string]string is not secret-typed
+	// and renders through Value (see internal/configexport for why).
 	Secret bool `json:"secret,omitempty"`
 	// Set reports whether the field holds a value. Only meaningful when Secret
 	// is true.

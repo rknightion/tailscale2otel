@@ -340,6 +340,23 @@ func TestAdminServer_ConfigJSON(t *testing.T) {
 	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
 		t.Errorf("content-disposition = %q, want an attachment", cd)
 	}
+
+	// The complete effective-config projection (#320) must actually be ATTACHED
+	// to this endpoint, not merely correct in isolation. internal/configexport
+	// carries thorough completeness and leak tests, but every one of them calls
+	// configexport.Build directly — so deleting the assignment in
+	// redactedConfigSummary left the whole suite green while /api/config.json
+	// silently reverted to the hand-picked subset #320 exists to replace.
+	// Verified by mutation: this is the only assertion that fails when the
+	// projection is not wired in.
+	if len(got.Full) == 0 {
+		t.Fatal("/api/config.json carries no `full` projection — configexport.Build is not wired into redactedConfigSummary (#320)")
+	}
+	for _, key := range []string{"otlp.endpoint", "admin.listen", "log_level"} {
+		if _, ok := got.Full[key]; !ok {
+			t.Errorf("`full` is missing the key %q; got %d keys", key, len(got.Full))
+		}
+	}
 }
 
 func TestAdminServer_PprofGatedByConfig(t *testing.T) {

@@ -1,4 +1,4 @@
-package app
+package configexport_test
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/configexport"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,14 +18,14 @@ import (
 // internal/config/completeness_test.go: it derives the authoritative "every
 // config key" set by flattening the YAML encoding of config.Default() (every
 // field, because the config structs carry no `omitempty`), and asserts
-// buildFullConfigMap produces EXACTLY that key set. Because buildFullConfigMap
+// configexport.Build produces EXACTLY that key set. Because configexport.Build
 // is a generic reflect walk over every exported field (no hand-maintained
 // list), the only way this test can fail from a genuinely new config field is
 // if the walker's type-switch doesn't know how to render that field's Go
 // kind — which is exactly the failure #320 is about.
 func TestBuildFullConfigMap_CompletenessMatchesDefaultKeys(t *testing.T) {
 	want := defaultKeySet(t)
-	got := buildFullConfigMap(config.Default())
+	got := configexport.Build(config.Default())
 
 	gotKeys := make(map[string]bool, len(got))
 	for k := range got {
@@ -45,10 +46,10 @@ func TestBuildFullConfigMap_CompletenessMatchesDefaultKeys(t *testing.T) {
 	sort.Strings(missing)
 	sort.Strings(extra)
 	if len(missing) > 0 {
-		t.Errorf("buildFullConfigMap is missing keys present in config.Default(): %v", missing)
+		t.Errorf("configexport.Build is missing keys present in config.Default(): %v", missing)
 	}
 	if len(extra) > 0 {
-		t.Errorf("buildFullConfigMap has keys not in config.Default(): %v", extra)
+		t.Errorf("configexport.Build has keys not in config.Default(): %v", extra)
 	}
 }
 
@@ -92,11 +93,11 @@ func defaultKeySet(t *testing.T) map[string]bool {
 // TestBuildFullConfigMap_SecretFieldsNeverLeakValue is the sentinel leak test
 // issue #320 asks for: it plants a distinctive, unique-per-field sentinel into
 // every config.Secret-typed field (scalar and map[string]Secret) and every
-// generic map[string]string field (which status.go also redacts — see its
+// generic map[string]string field (which configexport shows rather than redacts — see its
 // comment for why), across every populated slice (tailnets, streaming routes,
 // webhook routes, node-metrics targets — the multi-tailnet/dynamic-map
 // coverage #320 calls for), then asserts NONE of those sentinels appear
-// anywhere in the JSON-encoded buildFullConfigMap output. It also asserts the
+// anywhere in the JSON-encoded configexport.Build output. It also asserts the
 // corresponding "*_file" PATH sentinels DO appear — the file path itself is
 // safe to show (only the file's content is not, and this map never reads file
 // contents), so a passing leak test must not depend on hiding those too.
@@ -115,7 +116,7 @@ func TestBuildFullConfigMap_SecretFieldsNeverLeakValue(t *testing.T) {
 		t.Fatal("plantSentinels planted nothing — the walk found no secret-bearing field, which would make this test vacuous")
 	}
 
-	body, err := json.Marshal(buildFullConfigMap(cfg))
+	body, err := json.Marshal(configexport.Build(cfg))
 	if err != nil {
 		t.Fatalf("marshal full config map: %v", err)
 	}
