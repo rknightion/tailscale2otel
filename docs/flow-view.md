@@ -328,6 +328,43 @@ right, behind the same auth.
 | `top` | `20` | Length of each ranked list. Capped at 200. |
 | `recent` | `200` | Raw connections returned. Capped at 1000; `0` omits them. |
 | `tailnet` | first | Which tailnet to report on. An unknown name is a 404, never another tailnet's data. |
+| `device` | — | Substring, case-insensitive, matched against either endpoint's node name. |
+| `addr` | — | Substring, case-insensitive, matched against either endpoint's address. |
+| `service` | — | Substring, case-insensitive, matched against the destination service. |
+| `identity` | — | Substring, case-insensitive, matched against either endpoint's user or tags. |
+| `type` | — | Exact: `virtual`, `subnet`, `exit` or `physical`. |
+| `verdict` | — | Exact: `permitted`, `no_rule` or `undetermined`. |
+| `path` | — | Exact: `direct` or `derp`. |
+| `cursor` | — | Opaque page token from a previous response's `next_cursor`. |
+
+### Filtering and pagination
+
+The seven filter parameters run **server-side against the whole retained connection ring**, not
+against the page a request happened to return. Before #296 the browser filtered only the rows the
+API had already sent, so a connection matching your search but sitting outside the returned tail was
+invisible — and the page gave no sign of it. Filters combine with AND, and apply to `recent` only;
+the ranked aggregates always describe the unfiltered window.
+
+Each filter value is capped at 128 bytes. A longer one is rejected with `400 Bad Request` naming the
+parameter rather than being truncated: a truncated filter matches **more** than you asked for, and
+would read as an answer.
+
+Pagination uses `next_cursor`, an opaque token — pass it back as `cursor` for the next page of
+matching rows. An absent, malformed or unrecognized cursor is treated as "start from the newest"
+rather than an error, so a token held across a restart degrades to a fresh view instead of breaking
+it. Do not parse it; its contents are not a stable interface.
+
+Four counters describe what you are looking at, and they are not interchangeable:
+
+| Field | Meaning |
+|---|---|
+| `recent_matched` | Rows in the window satisfying the filter, ignoring pagination. |
+| `recent_returned` | Rows in **this** response. |
+| `recent_retained` | Rows the ring currently holds, ignoring both window and filter. |
+| `recent_truncated` | The ring is at capacity, so a matching connection older than the oldest row shown may already have been evicted. |
+
+`recent_truncated` is the one that matters when a search comes back empty: it distinguishes "nothing
+matched" from "the ring no longer goes back that far".
 
 Alongside the ranked lists, `result` carries `tag_matrix`, `user_matrix` and `os_matrix` — each an
 array of `{src, dst, counts}` cells ranked by bytes and capped at 400. Entries in `recent` carry the

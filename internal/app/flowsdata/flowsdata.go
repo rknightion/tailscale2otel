@@ -38,6 +38,47 @@ type Response struct {
 	// Always an array, never null.
 	Exercised   []ExercisedRule `json:"exercised"`
 	GeneratedAt string          `json:"generated_at"`
+
+	// Filters echoes back the server-side filter this response was computed
+	// with, so the page can restore its inputs across a reload without a
+	// second round trip. Omitted (empty struct) on an unfiltered request.
+	// omitzero, not omitempty: omitempty is a silent no-op on a struct field, so
+	// an unfiltered response would always carry "filters":{}. omitzero drops the
+	// key when no filter was applied, which keeps that response exactly as it
+	// was before #296 — new fields appear only once they mean something.
+	Filters Filters `json:"filters,omitzero"`
+	// RecentMatched is how many rows in the window satisfy Filters, ignoring
+	// pagination — "how many are there", not "how many this page returned".
+	RecentMatched int `json:"recent_matched"`
+	// RecentReturned is len(Recent) — how many rows this response actually
+	// carries, always <= the requested page size.
+	RecentReturned int `json:"recent_returned"`
+	// RecentRetained is how many rows the ring currently holds, independent of
+	// both the window and Filters, so the page can tell "nothing matches"
+	// apart from "the ring holds less than expected".
+	RecentRetained int `json:"recent_retained"`
+	// RecentTruncated reports that the raw-connection ring is at its capacity,
+	// so a matching row older than what's shown may already have been
+	// evicted rather than simply not existing.
+	RecentTruncated bool `json:"recent_truncated"`
+	// NextCursor resumes Recent past this page, oldest-row-first order intact.
+	// Empty when there is no further page. Opaque on the wire — see
+	// internal/app's encodeCursor/decodeCursor for the format.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+// Filters is the server-side filter /api/flows.json applied to Recent, one
+// field per flowstore.RecentFilter dimension. Every field is optional and
+// omitted when unset, so an unfiltered request's response carries an empty
+// object rather than seven empty strings.
+type Filters struct {
+	Device   string `json:"device,omitempty"`
+	Addr     string `json:"addr,omitempty"`
+	Service  string `json:"service,omitempty"`
+	Identity string `json:"identity,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Verdict  string `json:"verdict,omitempty"`
+	Path     string `json:"path,omitempty"`
 }
 
 // ExercisedRule is how much traffic one rule of one policy revision permitted,

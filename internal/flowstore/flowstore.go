@@ -1050,6 +1050,154 @@ func (m *Memory) RecentRange(start, end time.Time, limit int) []Recent {
 	return out
 }
 
+// RecentFilter narrows RecentPage to rows matching every non-empty field
+// (an AND across dimensions). Device/Addr/Service/Identity are
+// case-insensitive substring matches — the operator is searching, not
+// querying a key/value store. Type/Verdict/Path are exact, case-insensitive
+// matches: each is a closed enumeration (e.g. Verdict is one of "permitted",
+// "no_rule", "undetermined"), and a substring match on those would make "no"
+// match both "no_rule" and anything else containing it.
+type RecentFilter struct {
+	Device   string // substring, case-insensitive, matches SrcNode OR DstNode
+	Addr     string // substring, case-insensitive, matches SrcAddr OR DstAddr
+	Service  string // substring, case-insensitive, matches DstService
+	Identity string // substring, case-insensitive, matches SrcUser, DstUser, SrcTags OR DstTags
+	Type     string // exact, case-insensitive, matches TrafficType
+	Verdict  string // exact, case-insensitive, matches Verdict
+	Path     string // exact, case-insensitive, matches Path
+}
+
+// isZero reports whether every field is unset, so RecentPage can skip
+// per-row filter work entirely for the common unfiltered case.
+func (f RecentFilter) isZero() bool {
+	return f == RecentFilter{}
+}
+
+// matches reports whether r satisfies every non-empty field of f.
+func (f RecentFilter) matches(r Recent) bool {
+	if f.Device != "" && !containsFold(r.SrcNode, f.Device) && !containsFold(r.DstNode, f.Device) {
+		return false
+	}
+	if f.Addr != "" && !containsFold(r.SrcAddr, f.Addr) && !containsFold(r.DstAddr, f.Addr) {
+		return false
+	}
+	if f.Service != "" && !containsFold(r.DstService, f.Service) {
+		return false
+	}
+	if f.Identity != "" &&
+		!containsFold(r.SrcUser, f.Identity) && !containsFold(r.DstUser, f.Identity) &&
+		!containsFold(r.SrcTags, f.Identity) && !containsFold(r.DstTags, f.Identity) {
+		return false
+	}
+	if f.Type != "" && !strings.EqualFold(r.TrafficType, f.Type) {
+		return false
+	}
+	if f.Verdict != "" && !strings.EqualFold(r.Verdict, f.Verdict) {
+		return false
+	}
+	if f.Path != "" && !strings.EqualFold(r.Path, f.Path) {
+		return false
+	}
+	return true
+}
+
+func containsFold(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
+
+// RecentQuery is one request against the raw-connection ring: a time window
+// (matching Query's [Start, End) convention), a page size, a resume point,
+// and an optional filter.
+type RecentQuery struct {
+	Start, End time.Time
+	Limit      int
+	// Cursor resumes after a previous page: 0 means "start from the newest",
+	// otherwise only rows with seq < Cursor are considered. It is the seq of
+	// the last row a previous RecentPage call returned.
+	Cursor uint64
+	Filter RecentFilter
+}
+
+// RecentPage is one page of the raw-connection ring, plus the bookkeeping an
+// operator needs to tell "nothing else matches" apart from "the ring no
+// longer holds it".
+type RecentPage struct {
+	// Rows is newest-first, same convention as Recent and RecentRange.
+	Rows []Recent
+	// NextCursor is the seq of the last row in Rows when further matching rows
+	// remain beyond Limit, and 0 when there are none.
+	NextCursor uint64
+	// Matched is how many rows in [Start, End] satisfy Filter, ignoring both
+	// Limit and Cursor — it answers "how many are there", not "how many did
+	// this page return".
+	Matched int
+	// Retained is how many rows the ring currently holds, ignoring both the
+	// window and the filter.
+	Retained int
+	// Truncated reports that the ring is at MaxRecent capacity, so older
+	// matching rows may already have been evicted rather than simply not
+	// existing.
+	Truncated bool
+}
+
+// RecentPage returns a filtered, cursor-paginated page of the raw-connection
+// ring. An empty Filter and a zero Cursor make it equivalent to RecentRange —
+// RecentPage is a superset, not a replacement, so every existing caller of
+// RecentRange sees identical behavior (#296).
+//
+// Filtering happens entirely here, at query time. Record must stay a short
+// lock and a handful of map writes (a live capture carried 44,825 calls in a
+// single poll — see recentbench_test.go); this walks the already-retained
+// ring under the same lock instead of adding any per-observation cost.
+func (m *Memory) RecentPage(q RecentQuery) RecentPage {
+	end := q.End
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if end.IsZero() {
+		end = m.now()
+	}
+
+	live := m.liveRecentLocked()
+	page := RecentPage{Retained: len(live), Truncated: len(live) >= MaxRecent}
+
+	var rows []Recent
+	if q.Limit > 0 {
+		rows = make([]Recent, 0, min(q.Limit, len(live)))
+	}
+	var haveMore bool
+	for i := len(live) - 1; i >= 0; i-- {
+		r := live[i]
+		if r.Time.After(end) {
+			continue
+		}
+		if !q.Start.IsZero() && r.Time.Before(q.Start) {
+			// live is sorted ascending by Time, so everything further back is
+			// also before Start.
+			break
+		}
+		if !q.Filter.isZero() && !q.Filter.matches(r) {
+			continue
+		}
+		// Matched counts every in-window match regardless of Cursor/Limit, so
+		// it keeps counting after this page has filled up below.
+		page.Matched++
+		if q.Cursor != 0 && r.seq >= q.Cursor {
+			// Already served by an earlier page.
+			continue
+		}
+		if q.Limit <= 0 || len(rows) >= q.Limit {
+			haveMore = true
+			continue
+		}
+		rows = append(rows, r)
+	}
+	page.Rows = rows
+	if haveMore && len(rows) > 0 {
+		page.NextCursor = rows[len(rows)-1].seq
+	}
+	return page
+}
+
 // evictLocked drops the oldest buckets until the ring is within capacity.
 func (m *Memory) evictLocked() {
 	for len(m.buckets) > m.capacity {

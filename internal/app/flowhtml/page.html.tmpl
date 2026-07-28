@@ -361,11 +361,47 @@
     <b>observed completeness</b>, not proof of the tailnet's Destination Logging configuration:
     missing destination or port fields can be expected privacy-driven omissions.
   </p>
-  <div class="controls" style="margin-bottom:10px">
-    <input class="ctl" id="flowFilter" type="search" placeholder="filter by device, reporter, address, port, service or protocol" style="flex:1;min-width:240px">
-    <button class="ctl" id="flowClear">clear</button>
+  <p class="coverage">
+    The filters below run on the server against the FULL retained ring, not just the rows already on
+    screen — a match outside the current page is reached by <b>load more</b>, not lost (#296).
+  </p>
+  <div class="controls" style="margin-bottom:10px; flex-wrap:wrap">
+    <label for="filterDevice">Device</label>
+    <input class="ctl" id="filterDevice" type="search" placeholder="node name" style="width:130px">
+    <label for="filterAddr">Address</label>
+    <input class="ctl" id="filterAddr" type="search" placeholder="ip or port" style="width:120px">
+    <label for="filterService">Service</label>
+    <input class="ctl" id="filterService" type="search" placeholder="e.g. https" style="width:100px">
+    <label for="filterIdentity">Identity</label>
+    <input class="ctl" id="filterIdentity" type="search" placeholder="user or tag" style="width:120px">
+    <label for="filterType">Type</label>
+    <select class="ctl" id="filterType">
+      <option value="">any</option>
+      <option value="virtual">virtual</option>
+      <option value="subnet">subnet</option>
+      <option value="exit">exit</option>
+      <option value="physical">physical</option>
+    </select>
+    <label for="filterVerdict">Verdict</label>
+    <select class="ctl" id="filterVerdict">
+      <option value="">any</option>
+      <option value="permitted">permitted</option>
+      <option value="no_rule">no_rule</option>
+      <option value="undetermined">undetermined</option>
+    </select>
+    <label for="filterPath">Path</label>
+    <select class="ctl" id="filterPath">
+      <option value="">any</option>
+      <option value="direct">direct</option>
+      <option value="derp">derp</option>
+    </select>
+    <button class="ctl" id="flowClear">clear filters</button>
   </div>
   <div class="panel" id="flowList"></div>
+  <p class="coverage" id="flowPageNote"></p>
+  <div class="controls" style="justify-content:center">
+    <button class="ctl" id="flowLoadMore" style="display:none">load more</button>
+  </div>
 </section>
 
 <p class="foot">
@@ -466,7 +502,15 @@ var state = {
   selected: null,     // a device name, or null
   matrixKind: "tag",  // which identity matrix is on screen
   cell: null,         // {src, dst} from a clicked matrix cell, or null
-  filter: "",
+  // filters mirror the server-side RecentFilter dimensions (#296): the
+  // server now does the matching against the FULL retained ring, not just
+  // whatever page happened to be on screen, so a match outside the visible
+  // rows is reached via load-more instead of being invisible.
+  filters: {device:"", addr:"", service:"", identity:"", type:"", verdict:"", path:""},
+  // recentExtra holds rows fetched via "load more", appended after the
+  // current poll's own Recent page. Reset on every fresh poll (a new poll
+  // always restarts pagination from page 1).
+  recentExtra: [],
   data: null,
   timer: null,
   positions: {}       // topology layout, kept across polls so it does not jump
@@ -474,13 +518,25 @@ var state = {
 
 // ------------------------------------------------------------------ fetching
 
-function query(){
+// baseParams builds the query params every /api/flows.json request shares:
+// the window/top/tailnet/end the aggregates use, plus the seven recent-
+// connection filters. cursor is added by the caller (poll vs. load-more want
+// a different one), never here.
+function baseParams(){
   var p = new URLSearchParams();
   p.set("window", state.window);
   p.set("top", String(state.top));
   if (state.tailnet) p.set("tailnet", state.tailnet);
   if (state.end) p.set("end", state.end);
-  return "/api/flows.json?" + p.toString();
+  var f = state.filters;
+  ["device", "addr", "service", "identity", "type", "verdict", "path"].forEach(function(k){
+    if (f[k]) p.set(k, f[k]);
+  });
+  return p;
+}
+
+function query(){
+  return "/api/flows.json?" + baseParams().toString();
 }
 
 function poll(){
@@ -492,11 +548,44 @@ function poll(){
     .then(function(d){
       banner("errBanner", "");
       state.data = d;
+      // A fresh top-level poll always restarts recent-connection pagination
+      // at page 1 — whatever "load more" had accumulated belonged to the
+      // previous poll's page 1, which this response has just replaced.
+      state.recentExtra = [];
       render(d);
     })
     .catch(function(e){
       banner("errBanner", "Could not load flow data: " + e.message + ". Retrying.");
     });
+}
+
+// loadMore fetches the next page of recent connections using the cursor the
+// last response carried, and appends it — a filter matching a connection
+// beyond the first page is reached this way, never dropped (#296). It
+// updates only the recent-connections section; the aggregates above it stay
+// exactly as the last poll left them.
+function loadMore(){
+  var d = state.data;
+  if (!d || !d.next_cursor) return;
+  var p = baseParams();
+  p.set("cursor", d.next_cursor);
+  el("flowLoadMore").disabled = true;
+  fetch("/api/flows.json?" + p.toString(), {headers:{"Accept":"application/json"}, credentials:"same-origin"})
+    .then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(more){
+      state.recentExtra = state.recentExtra.concat(more.recent || []);
+      // The NEXT load-more call must resume where THIS page left off, so the
+      // cursor on state.data (what loadMore reads) has to move forward too.
+      state.data.next_cursor = more.next_cursor;
+      renderFlows(state.data);
+    })
+    .catch(function(e){
+      banner("errBanner", "Could not load more connections: " + e.message + ".");
+    })
+    .then(function(){ el("flowLoadMore").disabled = false; });
 }
 
 function banner(id, msg){
@@ -1599,24 +1688,38 @@ function identityOf(user, tags, os){
   return bits.join(" · ");
 }
 
+// renderFlows draws the recent-connections table. The seven filter fields
+// and the load-more cursor are already applied SERVER-side (#296) — the
+// server walks the full retained ring, not just whatever page happens to be
+// on screen, so a match beyond the visible rows is one "load more" click
+// away rather than invisible. state.selected (a topology click) and
+// state.cell (a matrix-cell click) remain a client-side narrowing ON TOP of
+// that server-filtered set, so clicking a device or cell in the graphs above
+// doesn't cost a re-fetch.
 function renderFlows(d){
-  var q = state.filter.toLowerCase();
-  var all = d.recent || [];
+  var all = (d.recent || []).concat(state.recentExtra || []);
   var rows = all.filter(function(f){
     if (state.selected && f.src_node !== state.selected && f.dst_node !== state.selected) return false;
     if (!matchesCell(f)) return false;
-    if (!q) return true;
-    // Identity is searchable too: "rob@" or "tag:servers" is how an operator
-    // actually looks for a connection.
-    return [f.src_node, f.dst_node, f.src_addr, f.dst_addr, f.dst_service, f.transport,
-            f.traffic_type, f.src_user, f.dst_user, f.src_tags, f.dst_tags, f.src_os, f.dst_os,
-            f.reporter_node_id, f.reporter_trust, f.reporter_consistency,
-            verdictText(f.verdict, f.reversed), pathText(f.path)]
-      .some(function(v){ return v && v.toLowerCase().indexOf(q) >= 0; });
+    return true;
   });
-  el("flowCount").textContent = rows.length === all.length
-    ? all.length + " retained"
-    : rows.length + " of " + all.length + " retained";
+
+  var narrowed = state.selected || state.cell;
+  var matched = d.recent_matched || 0, retained = d.recent_retained || 0;
+  el("flowCount").textContent = narrowed
+    ? rows.length + " of " + all.length + " shown"
+    : all.length + (matched > all.length ? " of " + matched + " matched" : " shown");
+
+  var noteParts = [];
+  if (matched > all.length) noteParts.push((matched - all.length) + " more match the current filters — use load more.");
+  if (d.recent_truncated) {
+    noteParts.push("The connection ring holds only the newest " + fmtNum(retained) +
+      "; older matching connections may already have been evicted rather than simply not existing.");
+  }
+  el("flowPageNote").textContent = noteParts.join(" ");
+
+  var more = el("flowLoadMore");
+  more.style.display = d.next_cursor ? "" : "none";
 
   buildTable(el("flowList"), [
     {text:"Time"}, {text:"Source"}, {text:"Destination"}, {text:"Verified reporter"}, {text:"Service"},
@@ -1649,9 +1752,17 @@ function renderFlows(d){
         {text: fmtBytes(f.counts.rx_bytes), cls:"num"}
       ]
     };
-  }), state.filter || state.selected || state.cell
+  }), anyFilterSet() || state.selected || state.cell
     ? "nothing matches the current filter"
     : "no connections retained yet");
+}
+
+// anyFilterSet reports whether any of the seven server-side filter fields is
+// non-empty, so the empty-table message can distinguish "genuinely nothing
+// retained yet" from "your filter matched nothing".
+function anyFilterSet(){
+  var f = state.filters;
+  return !!(f.device || f.addr || f.service || f.identity || f.type || f.verdict || f.path);
 }
 
 // ------------------------------------------------------------------- wiring
@@ -1726,15 +1837,35 @@ function init(){
     });
   }
 
-  var filter = el("flowFilter");
-  filter.addEventListener("input", function(){
-    state.filter = this.value;
-    if (state.data) renderFlows(state.data);
+  // The seven filter fields are server-side (#296): every change refetches
+  // rather than re-filtering the DOM, because the whole point is to reach
+  // rows the current page does not hold. Text fields are debounced so a
+  // fast typist doesn't fire a request per keystroke; the two closed-
+  // enumeration selects (type/verdict/path) refetch immediately.
+  var filterFieldIds = {
+    device: "filterDevice", addr: "filterAddr", service: "filterService",
+    identity: "filterIdentity", type: "filterType", verdict: "filterVerdict", path: "filterPath"
+  };
+  var filterDebounce = null;
+  function onFilterChanged(){
+    Object.keys(filterFieldIds).forEach(function(k){ state.filters[k] = el(filterFieldIds[k]).value; });
+    state.selected = null; // a server-side search supersedes a topology click
+    poll();
+  }
+  Object.keys(filterFieldIds).forEach(function(key){
+    var input = el(filterFieldIds[key]);
+    var debounced = input.tagName === "SELECT";
+    input.addEventListener(debounced ? "change" : "input", function(){
+      if (debounced){ onFilterChanged(); return; }
+      if (filterDebounce) clearTimeout(filterDebounce);
+      filterDebounce = setTimeout(onFilterChanged, 300);
+    });
   });
   el("flowClear").addEventListener("click", function(){
-    filter.value = ""; state.filter = "";
-    if (state.data) renderFlows(state.data);
+    Object.keys(filterFieldIds).forEach(function(key){ el(filterFieldIds[key]).value = ""; });
+    onFilterChanged();
   });
+  el("flowLoadMore").addEventListener("click", loadMore);
 
   // Re-lay-out on resize: the SVGs are sized in CSS pixels, so their viewBox has
   // to follow the element rather than the other way round.

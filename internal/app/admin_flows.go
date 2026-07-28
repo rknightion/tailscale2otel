@@ -1,8 +1,12 @@
 package app
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
@@ -23,7 +27,54 @@ const (
 	maxFlowsTopN       = 200
 	defaultFlowsRecent = 200
 	maxFlowsRecent     = 1000
+	// maxFlowsFilterLen bounds each recent-connection filter parameter. Unlike
+	// window/top/recent, a filter is the one input where CLAMPING would be
+	// wrong: silently truncating it could turn a specific search into one that
+	// matches more than the operator asked for, which reads as an answer
+	// rather than as "your input was too long" (#296). So an oversized filter
+	// is a 400, not a clamp.
+	maxFlowsFilterLen = 128
 )
+
+// flowsCursorPrefix versions the opaque wire format of the ?cursor= parameter
+// (base64url, no padding, of "v1:<seq>"). It exists so a future format change
+// has something to key on; decodeFlowsCursor rejects anything else.
+const flowsCursorPrefix = "v1:"
+
+// encodeFlowsCursor renders seq as the opaque cursor /api/flows.json hands
+// back in NextCursor. A zero seq (no further page) encodes to the empty
+// string, which the page's absent-cursor convention already treats as
+// "no more data".
+func encodeFlowsCursor(seq uint64) string {
+	if seq == 0 {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(flowsCursorPrefix + strconv.FormatUint(seq, 10)))
+}
+
+// decodeFlowsCursor parses the ?cursor= parameter. An absent, malformed,
+// wrongly-versioned, or unparseable cursor decodes to 0 ("from the newest")
+// rather than an error: a cursor is a value the page merely round-trips, and
+// one gone stale after a process restart (the ring's seq counter resets) must
+// fail safe to the start of the list, never break the view (#296).
+func decodeFlowsCursor(s string) uint64 {
+	if s == "" {
+		return 0
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return 0
+	}
+	text, ok := strings.CutPrefix(string(raw), flowsCursorPrefix)
+	if !ok {
+		return 0
+	}
+	seq, err := strconv.ParseUint(text, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return seq
+}
 
 // newFlowStore builds this process's per-tailnet flow store, or nil when the
 // view is switched off or cannot be reached. The store's only consumer is
@@ -132,6 +183,11 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 	topN := clampInt(q.Get("top"), defaultFlowsTopN, 1, maxFlowsTopN)
 	recent := clampInt(q.Get("recent"), defaultFlowsRecent, 0, maxFlowsRecent)
 
+	filter, filters, ok := parseFlowsFilter(w, q)
+	if !ok {
+		return // parseFlowsFilter already wrote the 400.
+	}
+
 	// The timeline scrubber selects a span ending somewhere in the past, so the
 	// window's right-hand edge is a parameter too. It cannot run ahead of now or
 	// behind what the store retains.
@@ -144,26 +200,80 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 		TopN:  topN,
 	})
 
+	// The SAME window the aggregates just used. Asking for the newest rows
+	// outright put a live connection list beside a historical chart whenever
+	// the scrubber was pinned to the past (#295). Filtering and cursor
+	// pagination move server-side here so a connection matching the filter but
+	// outside the returned page is still reachable via NextCursor, rather than
+	// invisible the way client-side filtering over one fixed page was (#296).
+	page := rt.flowStore.RecentPage(flowstore.RecentQuery{
+		Start:  end.Add(-window),
+		End:    end,
+		Limit:  recent,
+		Cursor: decodeFlowsCursor(q.Get("cursor")),
+		Filter: filter,
+	})
+
 	resp := flowsdata.Response{
-		Tailnet:   a.runtimeName(rt),
-		Tailnets:  a.flowTailnets(),
-		Window:    window.String(),
-		Retention: retention.String(),
-		Stats:     rt.flowStore.Stats(),
-		Result:    result,
-		// The SAME window the aggregates just used. Asking for the newest rows
-		// outright put a live connection list beside a historical chart whenever
-		// the scrubber was pinned to the past (#295).
-		Recent:      rt.flowStore.RecentRange(end.Add(-window), end, recent),
-		Policy:      policyInfo(rt.policy),
-		Exercised:   exercisedRules(rt.policy, result.Rules),
-		GeneratedAt: now.Format(time.RFC3339),
+		Tailnet:         a.runtimeName(rt),
+		Tailnets:        a.flowTailnets(),
+		Window:          window.String(),
+		Retention:       retention.String(),
+		Stats:           rt.flowStore.Stats(),
+		Result:          result,
+		Recent:          page.Rows,
+		Policy:          policyInfo(rt.policy),
+		Exercised:       exercisedRules(rt.policy, result.Rules),
+		GeneratedAt:     now.Format(time.RFC3339),
+		Filters:         filters,
+		RecentMatched:   page.Matched,
+		RecentReturned:  len(page.Rows),
+		RecentRetained:  page.Retained,
+		RecentTruncated: page.Truncated,
+		NextCursor:      encodeFlowsCursor(page.NextCursor),
 	}
 	// The page iterates Recent unconditionally, and a nil slice marshals to null.
 	if resp.Recent == nil {
 		resp.Recent = []flowstore.Recent{}
 	}
 	writeIndentedJSON(w, resp, a.logger, "encode flows json")
+}
+
+// flowsFilterParam is one recent-connection filter query parameter and the
+// flowstore.RecentFilter/flowsdata.Filters field it feeds.
+type flowsFilterParam struct {
+	query string
+	store *string
+	wire  *string
+}
+
+// parseFlowsFilter reads the seven recent-connection filter parameters off q.
+// A value over maxFlowsFilterLen writes a 400 naming the offending parameter
+// to w and returns ok=false; the caller must not write anything else to w in
+// that case. Silently clamping here (the way window/top/recent do) would be
+// wrong for a filter specifically: it would let a request that typed a long,
+// specific search silently fall back to a shorter, less specific one and
+// return MORE rows than asked for, which reads as an answer rather than as
+// "your input was rejected" (#296).
+func parseFlowsFilter(w http.ResponseWriter, q url.Values) (filter flowstore.RecentFilter, wire flowsdata.Filters, ok bool) {
+	for _, p := range []flowsFilterParam{
+		{"device", &filter.Device, &wire.Device},
+		{"addr", &filter.Addr, &wire.Addr},
+		{"service", &filter.Service, &wire.Service},
+		{"identity", &filter.Identity, &wire.Identity},
+		{"type", &filter.Type, &wire.Type},
+		{"verdict", &filter.Verdict, &wire.Verdict},
+		{"path", &filter.Path, &wire.Path},
+	} {
+		v := q.Get(p.query)
+		if len(v) > maxFlowsFilterLen {
+			http.Error(w, fmt.Sprintf("query parameter %q exceeds %d bytes", p.query, maxFlowsFilterLen), http.StatusBadRequest)
+			return flowstore.RecentFilter{}, flowsdata.Filters{}, false
+		}
+		*p.store = v
+		*p.wire = v
+	}
+	return filter, wire, true
 }
 
 // policyInfo describes the policy this tailnet's traffic was reconciled

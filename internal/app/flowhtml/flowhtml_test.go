@@ -232,6 +232,51 @@ func TestRender_ExplainsReporterTrustAndPrivacyOmissions(t *testing.T) {
 
 // "Undecidable" is not "unexplained", and the page must say so where an operator
 // reads it, not only in the Go doc comments.
+// #296: server-side filtering and cursor pagination for the recent-connection
+// list. The seven filter inputs and the load-more control are static markup
+// (the page carries no per-request data — everything arrives from
+// /api/flows.json), so asserting their exact rendered elements is not at risk
+// of the template/JS duplication trap: there is exactly one place these tags
+// are written.
+func TestRender_RecentConnectionsHasSevenServerSideFilterInputs(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`id="filterDevice"`, `id="filterAddr"`, `id="filterService"`,
+		`id="filterIdentity"`, `id="filterType"`, `id="filterVerdict"`, `id="filterPath"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recent-connections filter input %q is missing from the rendered page", want)
+		}
+	}
+}
+
+// The load-more control and the matched/returned/retained status line must
+// both exist as real elements the JS can populate — not just be described in
+// prose.
+func TestRender_RecentConnectionsHasLoadMoreAndStatusLine(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`id="flowLoadMore"`, `id="flowPageNote"`, `id="flowCount"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recent-connections page is missing %q", want)
+		}
+	}
+}
+
+// The page must say, in terms an operator reads, that filtering runs against
+// the full retained ring rather than just the visible page — the entire
+// point of #296 over the old client-side filter.
+func TestRender_ExplainsServerSideFilteringReachesTheWholeRing(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, "load more") {
+		t.Error("the recent-connections section does not mention load more")
+	}
+	if !strings.Contains(out, "FULL retained ring") {
+		t.Error("the recent-connections section does not say filtering covers the whole ring, not just the visible page")
+	}
+}
+
 func TestRender_ExplainsTheUndecidableVerdict(t *testing.T) {
 	out := render(t, samplePage())
 	if !strings.Contains(out, "Never a finding.") {

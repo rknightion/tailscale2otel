@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -424,6 +425,245 @@ func TestFlowsJSON_EmptyStore(t *testing.T) {
 	}
 	if got.Recent == nil {
 		t.Error("recent is null; the page expects an array it can iterate")
+	}
+}
+
+// #296: server-side filtering and cursor pagination for the recent-connection
+// list. Before this, /api/flows.json returned at most maxFlowsRecent rows and
+// the browser filtered only that returned tail — a connection matching the
+// operator's filter but sitting outside the returned window was invisible.
+
+// An unfiltered request (no filter/cursor params at all) must be byte-for-byte
+// what the pre-#296 response looked like on every existing field, with the
+// new fields simply appended and empty/zero. This is the compatibility
+// contract: adding filtering must not perturb a caller that doesn't use it.
+func TestFlowsJSON_UnfilteredResponseIsUnchanged(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	seedFlows(t, a)
+
+	w, got := getFlows(t, a, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/flows.json = %d: %s", w.Code, w.Body.String())
+	}
+
+	// Every pre-existing field still populated exactly as the dedicated tests
+	// above already assert; here we assert the NEW fields take their
+	// documented "nothing requested" values rather than perturbing anything.
+	if got.Filters != (flowsdata.Filters{}) {
+		t.Errorf("Filters = %+v, want the zero value with no filter params", got.Filters)
+	}
+	if got.RecentMatched != len(got.Recent) {
+		t.Errorf("RecentMatched = %d, want %d (equal to RecentReturned with no filter/cursor)", got.RecentMatched, len(got.Recent))
+	}
+	if got.RecentReturned != len(got.Recent) {
+		t.Errorf("RecentReturned = %d, want %d", got.RecentReturned, len(got.Recent))
+	}
+	if got.RecentRetained != len(got.Recent) {
+		t.Errorf("RecentRetained = %d, want %d (only one flow was ever seeded)", got.RecentRetained, len(got.Recent))
+	}
+	if got.RecentTruncated {
+		t.Error("RecentTruncated = true with a single seeded flow")
+	}
+	if got.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want empty (everything fit on one page)", got.NextCursor)
+	}
+
+	// And the raw body must still decode the OLD fields exactly as before:
+	// a map-level check that nothing already-shipped silently changed shape.
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw body: %v", err)
+	}
+	for _, key := range []string{
+		"tailnet", "tailnets", "window", "retention", "stats", "result",
+		"recent", "policy", "exercised", "generated_at",
+	} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("response is missing pre-existing field %q", key)
+		}
+	}
+}
+
+// A filter matching a connection OUTSIDE the first page must still be found
+// by paging through NextCursor — the exact defect #296 reports: client-side
+// filtering over a fixed 1000-row tail made an out-of-page match invisible.
+func TestFlowsJSON_FilterReachesBeyondTheFirstPage(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	now := time.Now().UTC()
+	store := a.runtimes[0].flowStore
+
+	// The needle is the OLDEST row, so on a small page size it never appears
+	// on page 1 unless the store itself excludes non-matching rows.
+	store.Record(flowstore.Observation{
+		Time: now.Add(-50 * time.Minute), SrcNode: "needle-device", DstNode: "b",
+		Counts: flowstore.Counts{Flows: 1, TxBytes: 1},
+	})
+	for i := range 20 {
+		store.Record(flowstore.Observation{
+			Time: now.Add(-time.Duration(49-i) * time.Minute), SrcNode: "haystack", DstNode: "b",
+			Counts: flowstore.Counts{Flows: 1, TxBytes: 1},
+		})
+	}
+
+	w, got := getFlows(t, a, "?window=1h&recent=5&device=needle-device")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET with a device filter = %d: %s", w.Code, w.Body.String())
+	}
+	if len(got.Recent) != 1 || got.Recent[0].SrcNode != "needle-device" {
+		t.Fatalf("recent = %+v, want exactly the needle row", got.Recent)
+	}
+	if got.RecentMatched != 1 {
+		t.Errorf("RecentMatched = %d, want 1", got.RecentMatched)
+	}
+	if got.Filters.Device != "needle-device" {
+		t.Errorf("Filters.Device = %q, want the applied filter echoed back", got.Filters.Device)
+	}
+}
+
+// Paging via NextCursor must walk the whole matching set without gaps or
+// duplicates, and the last page must report no further cursor.
+func TestFlowsJSON_CursorPaginatesWithoutGapsOrDuplicates(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	now := time.Now().UTC()
+	store := a.runtimes[0].flowStore
+	for i := range 10 {
+		store.Record(flowstore.Observation{
+			Time: now.Add(-time.Duration(9-i) * time.Minute), SrcNode: "paged", DstNode: "b",
+			Counts: flowstore.Counts{Flows: 1, TxBytes: int64(i)},
+		})
+	}
+
+	var seen []int64
+	cursor := ""
+	for page := 0; page < 20; page++ {
+		q := "?window=1h&recent=3&device=paged"
+		if cursor != "" {
+			q += "&cursor=" + cursor
+		}
+		w, got := getFlows(t, a, q)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page %d: GET = %d: %s", page, w.Code, w.Body.String())
+		}
+		for _, r := range got.Recent {
+			seen = append(seen, r.Counts.TxBytes)
+		}
+		if got.NextCursor == "" {
+			break
+		}
+		cursor = got.NextCursor
+	}
+
+	if len(seen) != 10 {
+		t.Fatalf("paginated through %d rows, want all 10: %v", len(seen), seen)
+	}
+	dup := map[int64]bool{}
+	for _, tx := range seen {
+		if dup[tx] {
+			t.Fatalf("tx %d returned on more than one page: %v", tx, seen)
+		}
+		dup[tx] = true
+	}
+}
+
+// A cursor is opaque to the caller; a garbage value must fail safe to "from
+// the newest" rather than 400 or panic — the page round-trips this value
+// unmodified, and a stale one after a restart must not break the view.
+func TestFlowsJSON_MalformedCursorFallsBackToNewest(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	seedFlows(t, a)
+
+	// A base64url-valid payload whose decoded text does not start with the
+	// versioned "v1:" prefix, exercising the version-mismatch branch of
+	// decodeFlowsCursor distinctly from "not base64 at all".
+	wrongVersion := base64.RawURLEncoding.EncodeToString([]byte("v99:1"))
+	// Right prefix, non-numeric payload: exercises the ParseUint failure
+	// branch distinctly from "wrong prefix" and "not base64 at all".
+	nonNumeric := base64.RawURLEncoding.EncodeToString([]byte("v1:not-a-number"))
+
+	for _, cursor := range []string{"not-base64!!!", "", wrongVersion, nonNumeric} {
+		w, got := getFlows(t, a, "?cursor="+cursor)
+		if w.Code != http.StatusOK {
+			t.Errorf("cursor %q: GET = %d, want 200 (fail safe, never an error)", cursor, w.Code)
+		}
+		if len(got.Recent) != 1 {
+			t.Errorf("cursor %q: recent = %d entries, want the one seeded flow (fell back to newest)", cursor, len(got.Recent))
+		}
+	}
+}
+
+// The cursor is opaque on the wire and never leaks the plain seq. Round-trip
+// coverage for the encode/decode pair the HTTP-level tests above exercise
+// indirectly through the whole handler.
+func TestFlowsCursor_RoundTrips(t *testing.T) {
+	for _, seq := range []uint64{1, 42, 999999999} {
+		wire := encodeFlowsCursor(seq)
+		if wire == "" {
+			t.Fatalf("seq %d encoded to empty string", seq)
+		}
+		if got := decodeFlowsCursor(wire); got != seq {
+			t.Errorf("decodeFlowsCursor(encodeFlowsCursor(%d)) = %d", seq, got)
+		}
+	}
+}
+
+// A zero seq (no further page) must encode to the empty string, matching the
+// absent-cursor convention decodeFlowsCursor already treats as "from the
+// newest" — so a page whose NextCursor is 0 produces a URL the page can
+// simply omit ?cursor= from rather than round-tripping a sentinel value.
+func TestFlowsCursor_ZeroEncodesToEmpty(t *testing.T) {
+	if got := encodeFlowsCursor(0); got != "" {
+		t.Errorf("encodeFlowsCursor(0) = %q, want empty", got)
+	}
+}
+
+// A cursor claiming a version this build does not speak must be ignored
+// (fail safe to "from the newest"), not parsed anyway — protects a future
+// format change from having to keep parsing the old shape forever.
+func TestFlowsCursor_RejectsAnUnknownVersion(t *testing.T) {
+	wire := base64.RawURLEncoding.EncodeToString([]byte("v2:42"))
+	if got := decodeFlowsCursor(wire); got != 0 {
+		t.Errorf("decodeFlowsCursor with an unknown version = %d, want 0 (ignored, not parsed)", got)
+	}
+}
+
+// A filter value over the 128-byte bound is a 400, not a silent clamp: this
+// is the one input where clamping would return MORE than was asked for and
+// look like an honest answer.
+func TestFlowsJSON_OversizedFilterIsRejected(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	seedFlows(t, a)
+
+	long := strings.Repeat("x", maxFlowsFilterLen+1)
+	for _, param := range []string{"device", "addr", "service", "identity", "type", "verdict", "path"} {
+		w := httptest.NewRecorder()
+		a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/api/flows.json?"+param+"="+long))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("param %q at %d bytes: status = %d, want 400", param, len(long), w.Code)
+		}
+		if !strings.Contains(w.Body.String(), param) {
+			t.Errorf("param %q: 400 body %q does not name the offending parameter", param, w.Body.String())
+		}
+	}
+
+	// Exactly at the bound must still be accepted.
+	w := httptest.NewRecorder()
+	ok := strings.Repeat("x", maxFlowsFilterLen)
+	a.buildAdminServer().Handler.ServeHTTP(w, loopbackReq(http.MethodGet, "/api/flows.json?device="+ok))
+	if w.Code != http.StatusOK {
+		t.Errorf("device filter at exactly %d bytes = %d, want 200", maxFlowsFilterLen, w.Code)
+	}
+}
+
+// The exact/substring split matters: Verdict, Type and Path are closed
+// enumerations, so a filter value must match in full, not as a fragment.
+func TestFlowsJSON_ExactFiltersDoNotSubstringMatch(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	seedFlows(t, a)
+
+	// seedFlows records virtual traffic; "virt" must not match "virtual".
+	_, got := getFlows(t, a, "?type=virt")
+	if len(got.Recent) != 0 {
+		t.Errorf("type=virt matched %d rows against traffic_type virtual; type must be an exact match", len(got.Recent))
 	}
 }
 
