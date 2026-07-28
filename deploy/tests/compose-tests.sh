@@ -181,6 +181,38 @@ nfile="$(svc '[.environment | to_entries[] | select(.key | test("^TS2OTEL_.*_FIL
   || bad "D: $nfile *_FILE variables rendered, want 6 (a category was added or dropped)"
 
 # --------------------------------------------------------------------------
+case_ "E. published-image default vs explicit developer build (#335)"
+DEV_OVERRIDE="${DEPLOY_DIR}/docker-compose.dev.yaml"
+
+resolve -f "$BASE"
+assert_rc0 "E: base resolves"
+img="$(svc '.image')"
+[[ "$img" == ghcr.io/rknightion/tailscale2otel:* ]] \
+  && ok "E: default is the published image ($img)" || bad "E: default image is $img"
+[[ "$img" != *:latest ]] \
+  && ok "E: default tag is a pinned release, not :latest" \
+  || bad "E: default tag is :latest, which moves under a running deployment"
+[[ "$(svc '.build')" == "null" ]] \
+  && ok "E: base declares no build (up is unambiguously the published image)" \
+  || bad "E: base still declares a build section"
+
+# Configurable, per the acceptance criterion.
+TS2OTEL_VERSION=9.9.9 resolve -f "$BASE"
+[[ "$(svc '.image')" == "ghcr.io/rknightion/tailscale2otel:9.9.9" ]] \
+  && ok "E: TS2OTEL_VERSION overrides the tag" || bad "E: TS2OTEL_VERSION did not override the tag: $(svc '.image')"
+
+resolve -f "$BASE" -f "$DEV_OVERRIDE"
+assert_rc0 "E: dev override resolves"
+[[ "$(svc '.build.dockerfile')" == *"deploy/Dockerfile" ]] \
+  && ok "E: dev override builds from deploy/Dockerfile" || bad "E: dev override has no build context"
+# The dev image must NOT reuse the published repository, or a local build is
+# indistinguishable from a release in `docker images`.
+[[ "$(svc '.image')" != ghcr.io/* ]] \
+  && ok "E: dev build is tagged separately ($(svc '.image'))" \
+  || bad "E: dev build reuses the published image name $(svc '.image')"
+assert_checkpoint_mount "E"
+
+# --------------------------------------------------------------------------
 # --self-test mutates the inputs to prove each assertion above can actually
 # fail. Three guard tests in this repository have shipped passing while
 # asserting nothing; a checker that is never shown to fail proves nothing.

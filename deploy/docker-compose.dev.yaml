@@ -1,0 +1,26 @@
+# Optional override: build the image from this working tree instead of pulling
+# the published one.
+#
+# Usage — pass BOTH files, base first:
+#   docker compose -f deploy/docker-compose.yaml \
+#                  -f deploy/docker-compose.dev.yaml up --build
+#
+# WHY THIS IS A SEPARATE FILE. The base file used to carry `build:` AND
+# `image: ...:latest` together. `up` then pulled the published image while
+# `up --build` built the working tree and tagged it with the SAME published
+# name — so a developer's local build silently masqueraded as the release, and
+# `docker images` could not tell them apart. The shipped compose header said
+# `up --build` while docs/installation.md said plain `up`, so which one you got
+# depended on which instruction you had read (#335).
+#
+# The dev image is tagged `:dev` rather than reusing the published repository,
+# so a local build can never be confused with a released one.
+services:
+  tailscale2otel:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    image: tailscale2otel:dev
+    pull_policy: build

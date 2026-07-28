@@ -7,7 +7,7 @@
 #        TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=...
 #        TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=...
 #        TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=...
-#   2. docker compose -f deploy/docker-compose.yaml up --build
+#   2. docker compose -f deploy/docker-compose.yaml up
 #
 # deploy/.env is the ONE canonical credential file for Compose. Compose loads its
 # env file from the PROJECT directory — the directory holding the compose file —
@@ -29,12 +29,15 @@
 # See deploy/docker-compose.config.yaml for why it is a separate file.
 services:
   tailscale2otel:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      args:
-        VERSION: ${VERSION:-compose}
-    image: ghcr.io/rknightion/tailscale2otel:latest
+    # The PUBLISHED image, pinned to a real release. Deliberately no `build:`
+    # here: with both, `up` pulls the published image while `up --build` tags a
+    # working tree as that same name, and nothing afterwards can tell the two
+    # apart — the shipped header said `up --build` while the docs said `up`
+    # (#335). Local builds live in docker-compose.dev.yaml.
+    # Override the tag with TS2OTEL_VERSION (e.g. TS2OTEL_VERSION=latest, or a
+    # digest-pinned ref). The default tracks the current release automatically:
+    # release-please rewrites the line below on every release.
+    image: ghcr.io/rknightion/tailscale2otel:${TS2OTEL_VERSION:-3.0.0} # x-release-please-version
     restart: unless-stopped
     # Shutdown is STAGED and each stage is separately bounded in the binary:
     # the receivers drain already-ACKed requests (10s), the ingress WAL does one

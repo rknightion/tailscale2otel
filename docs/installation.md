@@ -80,6 +80,20 @@ See [Configuration](configuration.md) for the full list of options once you are 
     docker compose -f deploy/docker-compose.yaml up
     ```
 
+    That runs the **published** image, pinned to a specific release rather than
+    `latest` (which moves under a running deployment). Override the tag with
+    `TS2OTEL_VERSION`, e.g. `TS2OTEL_VERSION=latest docker compose ... up`. The
+    default tracks the current release automatically — release-please rewrites
+    the pin on each release, and a test fails the release PR if it stops.
+
+    To build from a working tree instead, add the dev override — the local image
+    is tagged `tailscale2otel:dev`, so it can never be mistaken for a release:
+
+    ```sh
+    docker compose -f deploy/docker-compose.yaml \
+                   -f deploy/docker-compose.dev.yaml up --build
+    ```
+
     Compose loads its env file from the **project directory** — the directory
     holding the compose file — not from your shell's cwd, so `deploy/.env` is
     read whichever directory you run that command from. A `.env` at the
