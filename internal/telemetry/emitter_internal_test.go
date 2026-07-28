@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -445,5 +446,56 @@ func BenchmarkBuildAttrs_WithCollision(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = e.buildAttrs("tailscale.node.up", attrs)
+	}
+}
+
+// TestTruncateLogValue is a white-box unit test of the #366 truncation
+// primitive: under-limit values pass through untouched, over-limit values are
+// cut at a valid UTF-8 boundary (never splitting a multi-byte rune) with the
+// marker appended, and a non-positive limit disables truncation entirely.
+func TestTruncateLogValue(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        string
+		limit     int
+		wantTrunc bool
+	}{
+		{"under limit unchanged", "short", 100, false},
+		{"exactly at limit unchanged", "12345", 5, false},
+		{"zero limit disables truncation", "anything", 0, false},
+		{"negative limit disables truncation", "anything", -1, false},
+		{"over limit truncates", strings.Repeat("a", 100), 20, true},
+		// A 3-byte "€" placed right at the cut boundary must not be split: the
+		// result must always be valid UTF-8.
+		{"multi-byte rune at boundary", strings.Repeat("a", 20) + "€€€€€€€€€€", 25, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, dropped, truncated := truncateLogValue(c.in, c.limit)
+			if truncated != c.wantTrunc {
+				t.Fatalf("truncated = %v, want %v", truncated, c.wantTrunc)
+			}
+			if !c.wantTrunc {
+				if out != c.in {
+					t.Fatalf("out = %q, want unchanged %q", out, c.in)
+				}
+				if dropped != 0 {
+					t.Fatalf("dropped = %d, want 0", dropped)
+				}
+				return
+			}
+			if len(out) > c.limit {
+				t.Fatalf("len(out) = %d, exceeds limit %d", len(out), c.limit)
+			}
+			if !strings.HasSuffix(out, logTruncationMarker) {
+				t.Fatalf("out = %q, missing truncation marker", out)
+			}
+			if !utf8.ValidString(out) {
+				t.Fatalf("out = %q is not valid UTF-8 (split a multi-byte rune)", out)
+			}
+			if dropped <= 0 {
+				t.Fatalf("dropped = %d, want > 0 for a truncated value", dropped)
+			}
+		})
 	}
 }

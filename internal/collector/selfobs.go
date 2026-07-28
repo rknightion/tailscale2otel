@@ -38,6 +38,15 @@ const (
 	// — little headroom, risk of overrun. The unit-`1` gauge normalizes to
 	// tailscale2otel_scrape_budget_ratio under OTLP→Prometheus.
 	MetricScrapeBudget = "tailscale2otel.scrape.budget"
+	// MetricScrapeDurationHistogram is an explicit-bucket histogram of the same
+	// wall-clock scrape duration as MetricScrapeDuration, ADDITIONAL to (not a
+	// replacement for) that last-value gauge. Recorded via HistogramCtx with the
+	// scrape's own span context still live, so the SDK's trace-based exemplar
+	// filter attaches an exemplar pointing at the scrape span — something a
+	// last-value gauge cannot provide (#369). Use it for cross-instance
+	// latency distributions (p50/p95/p99) and clickable exemplars; keep using
+	// MetricScrapeDuration for a simple last-value panel.
+	MetricScrapeDurationHistogram = "tailscale2otel.scrape.duration.histogram"
 	// MetricCheckpointPersistErrors is a monotonic counter incremented when a
 	// window collector's high-water mark fails to persist to the checkpoint
 	// store (e.g. a disk error). The window itself succeeded, and both store
@@ -63,6 +72,19 @@ const (
 	scrapeErrorGeneric = "error"
 )
 
+// scrapeDurationHistogramBoundsSeconds are the explicit bucket boundaries for
+// MetricScrapeDurationHistogram. Bounds bind on first instrument creation, so
+// this slice must be passed verbatim on every record (it is — only
+// emitScrapeMetrics records it). Chosen to cover both a normal scrape (well
+// under a second for most collectors) and an overrun one: the largest default
+// collector poll interval in config/defaults.go is 600s (10 minutes, e.g.
+// logstream/postureintegrations), so the top bucket reaches that far to make a
+// scrape that is eating its whole interval visible rather than falling into a
+// "+Inf" catch-all with no resolution.
+var scrapeDurationHistogramBoundsSeconds = []float64{
+	0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600,
+}
+
 // scrapeResult captures the outcome of a single collector run for self-obs
 // emission. A non-nil err marks a failure; panicked overrides err's
 // classification with the "panic" error.type.
@@ -78,12 +100,23 @@ type scrapeResult struct {
 
 // emitScrapeMetrics records the per-collector scrape metrics for one run using
 // the given emitter. It always emits the gauges; the errors counter is
-// incremented only when the run failed.
-func emitScrapeMetrics(e telemetry.Emitter, res scrapeResult) {
+// incremented only when the run failed. ctx should still carry the scrape's
+// span context (the caller records this AFTER ending the span, which is fine:
+// exemplar attachment keys off the trace context captured in ctx, not span
+// liveness) so the duration histogram's exemplar points at the right span.
+func emitScrapeMetrics(ctx context.Context, e telemetry.Emitter, res scrapeResult) {
 	attrs := telemetry.Attrs{semconv.AttrCollector: res.collector}
 
 	e.Gauge(docScrapeDuration.Name, docScrapeDuration.Unit, docScrapeDuration.Description,
 		res.duration.Seconds(), attrs)
+
+	// Additional to (never a replacement for) the gauge above: an explicit-bucket
+	// histogram recorded WITH the scrape's span context, so the SDK's
+	// trace-based exemplar filter attaches an exemplar pointing at the scrape
+	// span for a slow/overrun run.
+	e.HistogramCtx(ctx, docScrapeDurationHistogram.Name, docScrapeDurationHistogram.Unit,
+		docScrapeDurationHistogram.Description, res.duration.Seconds(),
+		scrapeDurationHistogramBoundsSeconds, attrs)
 
 	failed := res.err != nil || res.panicked
 	success := 1.0

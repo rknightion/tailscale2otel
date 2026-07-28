@@ -262,7 +262,7 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 	stale := c.pruneExpiredReplay(c.now())
 	resp = c.validRecords(resp, e)
 	deduped, additions := c.dedupe(resp, e)
-	c.proc.ProcessAll(deduped, e)
+	c.proc.ProcessAllCtx(ctx, deduped, e)
 	if c.acceptedObserver != nil {
 		acceptedAt := c.now()
 		for i := range deduped.Logs {

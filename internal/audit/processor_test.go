@@ -1,12 +1,15 @@
 package audit_test
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
@@ -574,5 +577,63 @@ func TestWithStore_PolicyDiffLongerThanCapIsTruncated(t *testing.T) {
 	}
 	if len(got.Details) >= len(huge) {
 		t.Errorf("stored details len = %d, want less than the original %d", len(got.Details), len(huge))
+	}
+}
+
+// TestProcessCtxThreadsTraceContextOntoLog is the #367 acceptance test for the
+// audit processor: a sampled ctx passed via ProcessCtx must produce a log
+// record carrying the SAME native TraceID/SpanID, and Process (unchanged,
+// ctx-free) must remain exactly as before — no trace context on its log.
+func TestProcessCtxThreadsTraceContextOntoLog(t *testing.T) {
+	rec := telemetrytest.New()
+	p := audit.NewProcessor()
+
+	wantTraceID := trace.TraceID{0x11, 0x22}
+	wantSpanID := trace.SpanID{0x33, 0x44}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    wantTraceID,
+		SpanID:     wantSpanID,
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	p.ProcessCtx(ctx, sampleEvent(), rec.Emitter())
+
+	recs := rec.LogRecords()
+	if len(recs) != 1 {
+		t.Fatalf("log records = %d, want 1", len(recs))
+	}
+	if recs[0].TraceID != wantTraceID.String() {
+		t.Errorf("TraceID = %q, want %q", recs[0].TraceID, wantTraceID.String())
+	}
+	if recs[0].SpanID != wantSpanID.String() {
+		t.Errorf("SpanID = %q, want %q", recs[0].SpanID, wantSpanID.String())
+	}
+}
+
+// TestProcessAllCtxThreadsTraceContext is the ProcessAll-side analog: every
+// event in the batch gets the same ctx's trace context.
+func TestProcessAllCtxThreadsTraceContext(t *testing.T) {
+	rec := telemetrytest.New()
+	p := audit.NewProcessor()
+
+	wantTraceID := trace.TraceID{0x55, 0x66}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    wantTraceID,
+		SpanID:     trace.SpanID{0x77},
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	ev1, ev2 := sampleEvent(), sampleEvent()
+	ev2.Target.ID = "n2"
+	p.ProcessAllCtx(ctx, audit.ConfigurationResponse{Logs: []audit.Event{ev1, ev2}}, rec.Emitter())
+
+	recs := rec.LogRecords()
+	if len(recs) != 2 {
+		t.Fatalf("log records = %d, want 2", len(recs))
+	}
+	for i, r := range recs {
+		if r.TraceID != wantTraceID.String() {
+			t.Errorf("record %d TraceID = %q, want %q", i, r.TraceID, wantTraceID.String())
+		}
 	}
 }

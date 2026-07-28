@@ -386,8 +386,8 @@ def tab_diagnostics():
                desc="Objects fully ingested and flow-log records decoded out of them. Compare the "
                     "record rate against the flow metrics to see what de-duplication removed."), 8, 7),
         (panel("Object bytes read vs decompressed", "timeseries",
-               [prom_t("sum(rate(tailscale2otel_objectstore_bytes_bytes_total[%s]))" % RI, legend="compressed read"),
-                prom_t("sum(rate(tailscale2otel_objectstore_decompressed_bytes_bytes_total[%s]))" % RI, legend="decompressed", refid="B")],
+               [prom_t("sum(rate(tailscale2otel_objectstore_bytes_total[%s]))" % RI, legend="compressed read"),
+                prom_t("sum(rate(tailscale2otel_objectstore_decompressed_bytes_total[%s]))" % RI, legend="decompressed", refid="B")],
                unit="Bps", custom=ts_custom(), options=ts_opts(), novalue=_OBJ_EMPTY,
                desc="Transfer cost (compressed bytes actually read, including unsuccessful "
                     "attempts) against expansion (decompressed bytes consumed, including attempts "

@@ -2,11 +2,15 @@ package collector_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"runtime/pprof"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,7 +61,8 @@ func (noopEmitter) UpDownCounter(string, string, string, float64, telemetry.Attr
 func (noopEmitter) Histogram(string, string, string, float64, []float64, telemetry.Attrs) {}
 func (noopEmitter) HistogramCtx(context.Context, string, string, string, float64, []float64, telemetry.Attrs) {
 }
-func (noopEmitter) LogEvent(telemetry.Event) {}
+func (noopEmitter) LogEvent(telemetry.Event)                     {}
+func (noopEmitter) LogEventCtx(context.Context, telemetry.Event) {}
 
 func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
 	t.Helper()
@@ -506,5 +511,207 @@ func TestRunTick_NonShutdownCancellationStillCountsAsFailure(t *testing.T) {
 	}
 	if !strings.Contains(logBuf.String(), "collector failed") {
 		t.Errorf("expected a \"collector failed\" WARN log for a genuine (non-shutdown) failure, got: %s", logBuf.String())
+	}
+}
+
+// --- #376: bounded collector labels on continuous profiles ---
+
+// profileLabelProbe is a collector that, from inside its own Collect, reports
+// what the goroutine's pprof labelset actually contains. Reading the label off
+// the goroutine profile (rather than only off the ctx) is what proves it reaches
+// a PROFILE: pprof.Do sets both, and a ctx-only assertion would pass even if the
+// goroutine label never got set.
+type profileLabelProbe struct {
+	name     string
+	ctxLabel atomic.Pointer[string]
+	inProf   atomic.Bool
+	runs     atomic.Int64
+}
+
+func (p *profileLabelProbe) Name() string                   { return p.name }
+func (p *profileLabelProbe) DefaultInterval() time.Duration { return time.Millisecond }
+
+func (p *profileLabelProbe) Collect(ctx context.Context, _ telemetry.Emitter) error {
+	if v, ok := pprof.Label(ctx, collector.PprofLabelCollector); ok {
+		p.ctxLabel.Store(&v)
+	}
+	p.inProf.Store(goroutineProfileContains(labelMarker(collector.PprofLabelCollector, p.wantLabel())))
+	p.runs.Add(1)
+	return nil
+}
+
+// wantLabel is the label value the probe expects to find; it is the bounded form
+// of its own name.
+func (p *profileLabelProbe) wantLabel() string {
+	if v := p.ctxLabel.Load(); v != nil {
+		return *v
+	}
+	return p.name
+}
+
+// labelMarker renders a key/value the way the pprof proto's string table stores
+// them, so a substring search over the decompressed profile is unambiguous.
+func labelMarker(key, value string) []string { return []string{key, value} }
+
+// goroutineProfileContains snapshots the live goroutine profile in proto form and
+// reports whether every marker string appears in it. Goroutine labels are carried
+// in the proto's string table, so a present marker means the label is attached to
+// a sample in a real profile.
+func goroutineProfileContains(markers []string) bool {
+	var buf bytes.Buffer
+	if err := pprof.Lookup("goroutine").WriteTo(&buf, 0); err != nil {
+		return false
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		return false
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		return false
+	}
+	for _, m := range markers {
+		if !bytes.Contains(raw, []byte(m)) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestRunTick_CollectorLabelReachesProfile is #376's core acceptance check: a
+// collector's work is attributable in a CPU/allocation profile, which previously
+// it was not — the profile showed only shared framework frames.
+//
+// Tracing is deliberately NOT configured here. The labels must not depend on it:
+// profiles are the cheap always-on signal and tracing is opt-in and sampled.
+func TestRunTick_CollectorLabelReachesProfile(t *testing.T) {
+	probe := &profileLabelProbe{name: "devices"}
+	r := collector.NewRegistry()
+	r.Register(probe, time.Millisecond)
+
+	// No WithTracer: the scheduler falls back to its no-op tracer.
+	runScheduler(t, r, collector.NewMemoryStore())
+	waitFor(t, func() bool { return probe.runs.Load() > 0 }, 2*time.Second)
+
+	got := probe.ctxLabel.Load()
+	if got == nil {
+		t.Fatalf("no %q label on the collector's context with tracing disabled", collector.PprofLabelCollector)
+	}
+	if *got != "devices" {
+		t.Errorf("%s label = %q, want devices", collector.PprofLabelCollector, *got)
+	}
+	if !probe.inProf.Load() {
+		t.Errorf("the %q=devices label did not appear in a live goroutine profile", collector.PprofLabelCollector)
+	}
+	// Negative control: the containment check must DISCRIMINATE. Without this, a
+	// profile that happens to contain the marker as a symbol name — "collector" is
+	// in this package's own import path — would make the assertion above pass
+	// vacuously.
+	if goroutineProfileContains(labelMarker(collector.PprofLabelCollector, "zznosuchcollector")) {
+		t.Error("goroutineProfileContains matched a label value that was never set — the assertion above proves nothing")
+	}
+}
+
+// TestRunTick_CollectorLabelWithTracingEnabled checks the label is present with
+// tracing ON as well, so enabling tracing neither removes it nor is required for
+// it. #370 (span profiles) may later attach its own labels — see the
+// SPAN-PROFILE COORDINATION note in scheduler.go's runTick before adding any, so
+// the collector dimension is not applied twice under two different keys.
+func TestRunTick_CollectorLabelWithTracingEnabled(t *testing.T) {
+	probe := &profileLabelProbe{name: "auditlogs"}
+	r := collector.NewRegistry()
+	r.Register(probe, time.Millisecond)
+
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	runScheduler(t, r, collector.NewMemoryStore(), collector.WithTracer(tp.Tracer("test")))
+	waitFor(t, func() bool { return probe.runs.Load() > 0 }, 2*time.Second)
+
+	got := probe.ctxLabel.Load()
+	if got == nil || *got != "auditlogs" {
+		t.Fatalf("label with tracing enabled = %v, want auditlogs", got)
+	}
+}
+
+// TestRunTick_CollectorLabelIsBounded proves no device, node, flow, or address
+// identifier can become a profile label. A pprof label is a permanent dimension
+// on stored profiles, so an unbounded value here is the profiling equivalent of a
+// cardinality explosion — and profiles are retained per label combination.
+//
+// The bound is enforced on the VALUE rather than trusted from the registration
+// path, so it holds even for a collector name assembled at runtime.
+func TestRunTick_CollectorLabelIsBounded(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"devices", "devices"},
+		{"node_metrics", "node_metrics"},
+		{"flowlogs-feature", "other"},      // a hyphen is outside the bounded shape
+		{"100.64.1.7", "other"},            // a tailnet address
+		{"laptop.tailnet.ts.net", "other"}, // a MagicDNS name
+		{"user@example.com", "other"},      // an identity
+		{"nodeid-abc123XYZ", "other"},      // a node id
+		{"", "other"},                      // nothing at all
+		{strings.Repeat("a", 64), "other"}, // unbounded length
+		{"Devices", "other"},               // not the lowercase identifier shape
+	}
+	for _, c := range cases {
+		probe := &profileLabelProbe{name: c.name}
+		r := collector.NewRegistry()
+		r.Register(probe, time.Millisecond)
+		runScheduler(t, r, collector.NewMemoryStore())
+		waitFor(t, func() bool { return probe.runs.Load() > 0 }, 2*time.Second)
+
+		got := probe.ctxLabel.Load()
+		if got == nil {
+			t.Errorf("collector %q: no label set at all", c.name)
+			continue
+		}
+		if *got != c.want {
+			t.Errorf("collector %q: label = %q, want %q", c.name, *got, c.want)
+		}
+	}
+}
+
+// TestRunTick_CollectorLabelSeriesGrowthIsBounded is the bounded-growth
+// assertion: the distinct label set is a function of the number of COLLECTORS,
+// never of the number of ticks. Repeated ticks must reuse label values, or stored
+// profiles would fan out over time on a dimension that looks static.
+func TestRunTick_CollectorLabelSeriesGrowthIsBounded(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]int{}
+	names := []string{"devices", "users", "keys"}
+
+	r := collector.NewRegistry()
+	total := &atomic.Int64{}
+	for _, n := range names {
+		r.Register(snapFunc{name: n, def: time.Millisecond, fn: func(ctx context.Context, _ telemetry.Emitter) error {
+			v, _ := pprof.Label(ctx, collector.PprofLabelCollector)
+			mu.Lock()
+			seen[v]++
+			mu.Unlock()
+			total.Add(1)
+			return nil
+		}}, time.Millisecond)
+	}
+
+	runScheduler(t, r, collector.NewMemoryStore())
+	// Many ticks across all three collectors.
+	waitFor(t, func() bool { return total.Load() >= 60 }, 5*time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if total.Load() < 60 {
+		t.Fatalf("only %d ticks ran, need >=60 to make growth measurable", total.Load())
+	}
+	if len(seen) != len(names) {
+		t.Fatalf("distinct label values = %d (%v) after %d ticks, want exactly %d — labels must not grow with ticks",
+			len(seen), seen, total.Load(), len(names))
+	}
+	for _, n := range names {
+		if seen[n] == 0 {
+			t.Errorf("collector %q never appeared as a label value: %v", n, seen)
+		}
 	}
 }

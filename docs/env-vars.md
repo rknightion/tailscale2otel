@@ -72,6 +72,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TLS__KEY_FILE` | `""` | client private key path (for mutual TLS) |
 | `TS2OTEL_OTLP__METRIC_INTERVAL` | `60s` | how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape) |
 | `TS2OTEL_OTLP__METRIC_EXPORT_BATCH_SIZE` | `10000` | maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels) |
+| `TS2OTEL_OTLP__LIMITS__LOG_BODY_BYTES` | `32768` | cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting |
+| `TS2OTEL_OTLP__LIMITS__LOG_ATTRIBUTE_VALUE_BYTES` | `4096` | cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split) |
 | `TS2OTEL_ENRICHMENT__CACHE_TTL` | `5m` | staleness alarm threshold for the IP/nodeID -> name device cache |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ENABLED` | `false` | off by default (can add ~one flow-metric series per external IP when on) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__SERVER` | `""` | resolver "ip" or "ip:port" (default :53); empty = system/container resolver |
@@ -302,8 +304,13 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED` | `false` | acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this |
+| `TS2OTEL_PROMETHEUS__MAX_REQUESTS_IN_FLIGHT` | `0` | cap concurrent /metrics gathers (excess gets 503); a Gather walks every series, so N slow scrapes cost N walks. 0 = unlimited |
+| `TS2OTEL_PROMETHEUS__TIMEOUT` | `0s` | give up on a single /metrics gather after this long (503). 0 = no timeout; keep below the scraper's own timeout |
+| `TS2OTEL_PROMETHEUS__COALESCE_GATHER` | `false` | serve scrapes arriving during an in-flight gather from that same gather (helps HA scraper pairs; costs slight staleness) |
 | `TS2OTEL_PROMETHEUS__TLS__CERT_FILE` | `""` | serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither) |
 | `TS2OTEL_PROMETHEUS__TLS__KEY_FILE` | `""` | HTTPS key for prometheus.tls.cert_file |
+| `TS2OTEL_PROMETHEUS__TLS__CLIENT_CA_FILE` | `""` | require scrapers to present a client certificate signed by this CA (mTLS); needs cert_file/key_file, composes with auth.token |
+| `TS2OTEL_PROMETHEUS__TLS__CLIENT_AUTH` | `""` | how hard to check the client cert: require_and_verify (default when client_ca_file set)\|verify_if_given\|require\|request\|none |
 | `TS2OTEL_PROFILING__PPROF__ENABLED` | `false` | mount net/http/pprof on the admin server (REQUIRES admin.enabled + admin.auth.token — heap dumps can expose in-memory secrets) |
 | `TS2OTEL_PROFILING__PYROSCOPE__ENABLED` | `false` | run the Pyroscope continuous-profiling push agent |
 | `TS2OTEL_PROFILING__PYROSCOPE__SERVER_ADDRESS` | `""` | REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net |
@@ -312,6 +319,10 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROFILING__PYROSCOPE__TENANT_ID` | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud) |
 | `TS2OTEL_PROFILING__PYROSCOPE__UPLOAD_RATE` | `60s` | how often profiles are flushed |
+| `TS2OTEL_PROFILING__PYROSCOPE__TLS__INSECURE_SKIP_VERIFY` | `false` | keep TLS but skip server-certificate verification — a footgun; prefer ca_file |
+| `TS2OTEL_PROFILING__PYROSCOPE__TLS__CA_FILE` | `""` | PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway) |
+| `TS2OTEL_PROFILING__PYROSCOPE__TLS__CERT_FILE` | `""` | client certificate for mTLS to the profiles endpoint; set together with key_file (both-or-neither) |
+| `TS2OTEL_PROFILING__PYROSCOPE__TLS__KEY_FILE` | `""` | client key for profiling.pyroscope.tls.cert_file |
 | `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `5` | runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled |
 | `TS2OTEL_PROFILING__BLOCK_PROFILE_RATE` | `100000` | runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled |
 | `TS2OTEL_TRACING__ENABLED` | `false` | emit spans. TS2OTEL_TRACING__ENABLED |
@@ -323,6 +334,6 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_VERSION_CHECKS__CACHE_TTL` | `1h` | how long a fetched "latest version" is cached before re-fetching (minimum 5m) |
 | `TS2OTEL_VERSION_CHECKS__TIMEOUT` | `10s` | per-request timeout for the external version fetch |
 
-**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `collectors.node_metrics.targets`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`.
+**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `collectors.node_metrics.targets`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`, `profiling.pyroscope.headers`.
 
 <!-- END GENERATED: env-vars -->

@@ -14593,7 +14593,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_bytes_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_total[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_logstream_type}}",
@@ -31454,7 +31454,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale2otel_objectstore_bytes_bytes_total[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale2otel_objectstore_bytes_total[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "compressed read",
@@ -31476,7 +31476,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale2otel_objectstore_decompressed_bytes_bytes_total[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale2otel_objectstore_decompressed_bytes_total[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "decompressed",

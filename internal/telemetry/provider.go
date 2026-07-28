@@ -94,6 +94,15 @@ type Options struct {
 	// for direct package callers.
 	MetricExportBatchSize int
 
+	// MaxLogBodyBytes and MaxLogAttrValueBytes bound one log record before
+	// export (#366): a single oversized HEC, audit or webhook record must not
+	// dominate a batch or breach a backend's per-record limit. Zero leaves the
+	// package defaults (32 KiB / 4 KiB) in place, so a direct package caller is
+	// bounded without opting in. Truncation is UTF-8 safe, happens after
+	// redaction, and never touches metric labels.
+	MaxLogBodyBytes      int
+	MaxLogAttrValueBytes int
+
 	// CardinalityLimit is the hard per-instrument limit on the number of distinct
 	// attribute sets collected per cycle; sets beyond it collapse into the SDK's
 	// otel_metric_overflow series. 0 or negative means unlimited. The app layer
@@ -353,6 +362,13 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	}
 
 	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger, opts.PIIFilter, constAttrs)
+	// Set rather than passed: newOtelEmitter already takes seven positional
+	// arguments across fourteen call sites, and a zero here correctly resolves to
+	// the package defaults.
+	emitter.logLimits = logLimits{
+		bodyBytes:      opts.MaxLogBodyBytes,
+		attrValueBytes: opts.MaxLogAttrValueBytes,
+	}
 
 	if opts.SelfObsEnabled {
 		// Late-bind the duration observer now that the Emitter exists (the

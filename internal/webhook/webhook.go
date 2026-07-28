@@ -601,19 +601,15 @@ func (s *Server) Run(ctx context.Context) error {
 // handle is the core request handler: it accepts only POST, verifies the
 // signature, parses the event array, and emits telemetry.
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	// Record in-flight count and request duration unconditionally, balanced even
-	// on panic or early return. +1 immediately, -1 in defer (balanced pair).
 	start := time.Now()
-	s.e.UpDownCounter(docWebhookInflight.Name, docWebhookInflight.Unit, docWebhookInflight.Description, 1, nil)
-	defer func() {
-		s.e.UpDownCounter(docWebhookInflight.Name, docWebhookInflight.Unit, docWebhookInflight.Description, -1, nil)
-		s.e.Histogram(docWebhookRequestDuration.Name, docWebhookRequestDuration.Unit, docWebhookRequestDuration.Description,
-			time.Since(start).Seconds(), requestDurationBucketsSeconds, nil)
-	}()
 
-	// Start a server span for this request. W3C trace-context is extracted from
-	// headers; Tailscale's sender won't send a traceparent, so the span becomes a
-	// root — that's correct. The span ends via defer regardless of exit path.
+	// Start a server span for this request BEFORE the request-duration defer
+	// below, so that defer can close over ctx (#367: HistogramCtx needs the
+	// span-carrying ctx in scope when it is DECLARED, not just when it runs —
+	// a Go closure can only reference a variable already declared at the point
+	// of the "defer" statement). W3C trace-context is extracted from headers;
+	// Tailscale's sender won't send a traceparent, so the span becomes a root
+	// — that's correct. The span ends via defer regardless of exit path.
 	tr := s.tracer
 	if tr == nil {
 		tr = noopWebhookTracer
@@ -622,6 +618,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tr.Start(ctx, "webhook.receive", trace.WithSpanKind(trace.SpanKindServer))
 	defer span.End()
 	r = r.WithContext(ctx)
+
+	// Record in-flight count and request duration unconditionally, balanced even
+	// on panic or early return. +1 immediately, -1 in defer (balanced pair).
+	s.e.UpDownCounter(docWebhookInflight.Name, docWebhookInflight.Unit, docWebhookInflight.Description, 1, nil)
+	defer func() {
+		s.e.UpDownCounter(docWebhookInflight.Name, docWebhookInflight.Unit, docWebhookInflight.Description, -1, nil)
+		// HistogramCtx (not Histogram): ctx carries the "webhook.receive" span
+		// started above, so a sampled request attaches an exemplar to this
+		// duration histogram (#367).
+		s.e.HistogramCtx(ctx, docWebhookRequestDuration.Name, docWebhookRequestDuration.Unit, docWebhookRequestDuration.Description,
+			time.Since(start).Seconds(), requestDurationBucketsSeconds, nil)
+	}()
 
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)

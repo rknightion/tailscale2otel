@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"math"
 	"net"
@@ -33,7 +34,10 @@ const (
 // storage.
 const (
 	minEventsMaxEvents = 100
-	maxEventsMaxEvents = 100000
+	// Floor for otlp.limits.*: comfortably above the truncation marker so a
+	// bounded record still carries usable content.
+	minOTLPLogLimitBytes = 64
+	maxEventsMaxEvents   = 100000
 )
 
 // oneOf reports whether v equals one of the allowed values.
@@ -702,6 +706,44 @@ func (c *Config) validateTLSFiles(label, certFile, keyFile string) error {
 	return nil
 }
 
+// validateCAFile checks that a CA bundle is readable AND actually yields at
+// least one certificate. Readability alone is not enough for the same reason it
+// was not enough for keypairs (#305): x509.CertPool.AppendCertsFromPEM reports
+// failure by returning false, and a pool built from an empty or non-PEM file
+// silently trusts nothing — so mutual TLS would reject every scraper, or an
+// outbound client would fail every handshake, with no hint why.
+func (c *Config) validateCAFile(field, path string) error {
+	pem, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("%s %s: %w", field, c.pathForError(field, path), err)
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM(pem) {
+		return fmt.Errorf("%s %q contains no usable PEM certificate: a CA bundle that parses to an "+
+			"empty pool trusts nothing, which fails every handshake rather than erroring here", field, path)
+	}
+	return nil
+}
+
+// validateClientKeypair enforces the both-or-neither + actually-loadable
+// contract for an OUTBOUND client certificate. Same rules as
+// validateTLSFiles, but the field prefix is the caller's full config path
+// because outbound blocks do not all sit under a `.tls` suffix the way the
+// listener blocks do.
+func (c *Config) validateClientKeypair(field, certFile, keyFile string) error {
+	if (certFile == "") != (keyFile == "") {
+		return fmt.Errorf("%s.cert_file and %s.key_file must both be set or both be empty "+
+			"(got cert_file=%q, key_file=%q)", field, field, certFile, keyFile)
+	}
+	if certFile == "" {
+		return nil
+	}
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		return fmt.Errorf("%s cert_file %q + key_file %q do not form a usable keypair: %w",
+			field, certFile, keyFile, err)
+	}
+	return nil
+}
+
 // validateWorkloadIdentity enforces the workload-identity auth contract when
 // that method is selected: both client_id and id_token_file are required, and
 // the token file must exist and be readable now — startup-time failure beats a
@@ -1019,6 +1061,84 @@ func (c *Config) validationChecks() []configCheck {
 	})
 	add("prometheus.tls", "Set both prometheus.tls.cert_file and prometheus.tls.key_file to a matching, loadable keypair.", func() error {
 		return c.validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile)
+	})
+	// Client-cert auth on /metrics is worthless without server TLS: crypto/tls
+	// only ever asks for a client certificate during a TLS handshake, so a
+	// client_ca_file on a plaintext listener is silently inert — exactly the
+	// half-configured-looks-configured shape #305 refused to keep tolerating.
+	add("prometheus.tls.client_ca_file", "Set prometheus.tls.cert_file and key_file too: a client CA only takes effect on a TLS listener.", func() error {
+		if c.Prometheus.TLS.ClientCAFile == "" {
+			return nil
+		}
+		if c.Prometheus.TLS.CertFile == "" || c.Prometheus.TLS.KeyFile == "" {
+			return fmt.Errorf("prometheus.tls.client_ca_file is set but prometheus.tls.cert_file/key_file are not: " +
+				"client-certificate authentication requires the listener to serve TLS, otherwise it never runs")
+		}
+		return c.validateCAFile("prometheus.tls.client_ca_file", c.Prometheus.TLS.ClientCAFile)
+	})
+	add("prometheus.tls.client_auth", oneOfRemediation("prometheus.tls.client_auth",
+		"require_and_verify", "verify_if_given", "require", "request", "none"), func() error {
+		m := c.Prometheus.TLS.ClientAuth
+		if m == "" {
+			return nil
+		}
+		if !oneOf(m, "require_and_verify", "verify_if_given", "require", "request", "none") {
+			return fmt.Errorf("prometheus.tls.client_auth %q invalid: must be one of "+
+				"require_and_verify, verify_if_given, require, request, none", m)
+		}
+		// verify_if_given and require_and_verify are the only modes that check the
+		// presented chain, and both need something to check it against.
+		if (m == "require_and_verify" || m == "verify_if_given") && c.Prometheus.TLS.ClientCAFile == "" {
+			return fmt.Errorf("prometheus.tls.client_auth %q requires prometheus.tls.client_ca_file: "+
+				"there is no CA to verify the client certificate against", m)
+		}
+		return nil
+	})
+	// A limit below the truncation marker's own length would leave no room for
+	// any payload, so every record would truncate to just the marker. That is a
+	// silent total data loss dressed up as a working config.
+	add("otlp.limits", "Set otlp.limits.log_body_bytes and log_attribute_value_bytes to at least 64.", func() error {
+		for _, f := range [...]struct {
+			field string
+			value int
+		}{
+			{"log_body_bytes", c.OTLP.Limits.LogBodyBytes},
+			{"log_attribute_value_bytes", c.OTLP.Limits.LogAttributeValueBytes},
+		} {
+			if f.value < minOTLPLogLimitBytes {
+				return fmt.Errorf("otlp.limits.%s must be at least %d bytes (got %d): a smaller "+
+					"bound leaves no room for content beside the truncation marker, so every "+
+					"record would collapse to the marker alone. There is no unlimited setting — "+
+					"set a large value if you want effectively no bound",
+					f.field, minOTLPLogLimitBytes, f.value)
+			}
+		}
+		return nil
+	})
+	add("prometheus.max_requests_in_flight", "Set prometheus.max_requests_in_flight to 0 (unlimited) or a positive count.", func() error {
+		if n := c.Prometheus.MaxRequestsInFlight; n < 0 {
+			return fmt.Errorf("prometheus.max_requests_in_flight must be 0 (unlimited) or positive (got %d)", n)
+		}
+		return nil
+	})
+	add("prometheus.timeout", "Set prometheus.timeout to 0 (no timeout) or a positive duration.", func() error {
+		if d := c.Prometheus.Timeout.D(); d < 0 {
+			return fmt.Errorf("prometheus.timeout must be 0 (no timeout) or positive (got %s)", d)
+		}
+		return nil
+	})
+	// The Pyroscope upload client is OUTBOUND, so its keypair is a client
+	// certificate for mTLS and is both-or-neither just like a listener's;
+	// ca_file is independent (trusting a private CA needs no client cert).
+	add("profiling.pyroscope.tls", "Set both profiling.pyroscope.tls.cert_file and key_file to a matching, loadable keypair.", func() error {
+		return c.validateClientKeypair("profiling.pyroscope.tls",
+			c.Profiling.Pyroscope.TLS.CertFile, c.Profiling.Pyroscope.TLS.KeyFile)
+	})
+	add("profiling.pyroscope.tls.ca_file", "Point profiling.pyroscope.tls.ca_file at a readable PEM bundle containing at least one certificate.", func() error {
+		if c.Profiling.Pyroscope.TLS.CAFile == "" {
+			return nil
+		}
+		return c.validateCAFile("profiling.pyroscope.tls.ca_file", c.Profiling.Pyroscope.TLS.CAFile)
 	})
 	// Streaming was the one listener with NO TLS validation at all — and the one
 	// where a half-configured block is worst: stream.Run serves plain HTTP unless

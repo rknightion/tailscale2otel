@@ -2,7 +2,9 @@ package app
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,7 +173,7 @@ func TestNodeMetricsOptions_AuthAndTLS(t *testing.T) {
 			},
 		}},
 	}
-	tg := nodeMetricsOptions(nm, nil, nil, nil).Targets[0]
+	tg := nodeMetricsOptions(nm, nil, nil, nil, nil).Targets[0]
 	if tg.BearerToken != "tok" || tg.BearerTokenFile != "/f" {
 		t.Errorf("bearer = %q/%q", tg.BearerToken, tg.BearerTokenFile)
 	}
@@ -189,7 +191,7 @@ func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
 	nm.Discovery.Enabled = true
 	nm.Discovery.Interval = config.Duration(2 * time.Minute)
 
-	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil)
+	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil, nil)
 	if opts.Discoverer == nil {
 		t.Fatal("Discoverer = nil, want a discoverer when discovery is enabled")
 	}
@@ -198,7 +200,7 @@ func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
 	}
 
 	nm.Discovery.Enabled = false
-	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil); got.Discoverer != nil {
+	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil, nil); got.Discoverer != nil {
 		t.Fatal("Discoverer != nil, want nil when discovery is disabled")
 	}
 }
@@ -282,13 +284,65 @@ func TestTSAPIOptionsForResolvedTailnet(t *testing.T) {
 }
 
 func TestInstanceForMultiAndSingle(t *testing.T) {
-	if got := instanceFor("host", "acme", false); got != "host" {
+	if got := instanceFor("host", "acme", false, true); got != "host" {
 		t.Errorf("single mode: instanceFor = %q, want host", got)
 	}
-	if got := instanceFor("host", "acme", true); got != "host/acme" {
+	if got := instanceFor("host", "acme", true, true); got != "host/acme" {
 		t.Errorf("multi mode: instanceFor = %q, want host/acme", got)
 	}
-	if got := instanceFor("", "acme", true); got != "acme" {
+	if got := instanceFor("", "acme", true, true); got != "acme" {
 		t.Errorf("multi mode empty base: instanceFor = %q, want acme", got)
+	}
+}
+
+// TestInstanceForPseudonymizesTailnet covers #356: with pii_filter.tailnet_name
+// disabled, suppressing the tailscale.tailnet ATTRIBUTE was not enough — the raw
+// tailnet name was still embedded in service.instance.id, which Grafana Cloud
+// promotes to the `instance` label and which appears in target_info and on every
+// log/trace Resource. The dimension has to survive (providers must stay
+// distinct) while the name does not.
+func TestInstanceForPseudonymizesTailnet(t *testing.T) {
+	const tailnet = "acme.example.com"
+
+	got := instanceFor("host", tailnet, true, false)
+	if strings.Contains(got, tailnet) {
+		t.Fatalf("instanceFor = %q, must not contain the raw tailnet name when the "+
+			"tailnet_name PII category is disabled", got)
+	}
+	if !strings.HasPrefix(got, "host/") {
+		t.Errorf("instanceFor = %q, want the base instance retained as a prefix", got)
+	}
+
+	// Stable across calls: the instance must not change on restart, or every
+	// restart starts a new series.
+	if again := instanceFor("host", tailnet, true, false); again != got {
+		t.Errorf("instanceFor not stable: %q then %q", got, again)
+	}
+
+	// Distinct per tailnet: collapsing two tailnets onto one instance would
+	// collide their series, which is the whole reason instanceFor exists.
+	other := instanceFor("host", "other.example.com", true, false)
+	if other == got {
+		t.Errorf("two tailnets pseudonymized to the same instance %q", got)
+	}
+
+	// Mirrors instanceID's hostname treatment: 12 hex chars, so the suffix is
+	// recognizably an opaque identifier rather than a truncated name.
+	suffix := strings.TrimPrefix(got, "host/")
+	if len(suffix) != 12 {
+		t.Errorf("pseudonymous suffix %q: want 12 chars like instanceID's hostname hash", suffix)
+	}
+	if _, err := hex.DecodeString(suffix); err != nil {
+		t.Errorf("pseudonymous suffix %q is not hex: %v", suffix, err)
+	}
+
+	// An empty base must still yield the pseudonym, never the bare raw name.
+	if bare := instanceFor("", tailnet, true, false); bare != suffix {
+		t.Errorf("empty base: instanceFor = %q, want the bare pseudonym %q", bare, suffix)
+	}
+
+	// Single-tailnet mode has no suffix to leak, so it is unchanged either way.
+	if single := instanceFor("host", tailnet, false, false); single != "host" {
+		t.Errorf("single mode: instanceFor = %q, want host", single)
 	}
 }

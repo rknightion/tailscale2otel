@@ -1,6 +1,7 @@
 package flowlog
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"math"
@@ -288,11 +289,19 @@ func (b *logBudget) allow() bool {
 // ProcessAll converts every flow log in resp. The MaxLogRecordsPerWindow cap (if
 // set) applies across the whole call (the poll window): one shared budget gates
 // every flow log record, and any suppressed records are flushed into
-// MetricLogsDropped once the loop completes.
+// MetricLogsDropped once the loop completes. Equivalent to ProcessAllCtx with
+// context.Background() — the logs carry no trace context.
 func (p *Processor) ProcessAll(resp NetworkResponse, e telemetry.Emitter) {
+	p.ProcessAllCtx(context.Background(), resp, e)
+}
+
+// ProcessAllCtx is ProcessAll, but ctx is threaded to every flow log's log
+// record(s) so a sampled span context (the poll window's or the streaming
+// request's) produces a native TraceID/SpanID on each one (#367).
+func (p *Processor) ProcessAllCtx(ctx context.Context, resp NetworkResponse, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
 	for i := range resp.Logs {
-		p.process(resp.Logs[i], e, budget)
+		p.process(ctx, resp.Logs[i], e, budget)
 	}
 	p.flushDropped(budget, e)
 }
@@ -306,10 +315,17 @@ type trafficSet struct {
 // Process converts a single FlowLog into metrics and (per LogMode) log records.
 // When MaxLogRecordsPerWindow is set, this standalone entry point (used by the
 // stream receiver) applies the cap per single call with its own budget and
-// flushes any dropped count before returning.
+// flushes any dropped count before returning. Equivalent to ProcessCtx with
+// context.Background().
 func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
+	p.ProcessCtx(context.Background(), flow, e)
+}
+
+// ProcessCtx is Process, but ctx is used to emit any resulting log record(s)
+// so a sampled span context produces a native TraceID/SpanID on them (#367).
+func (p *Processor) ProcessCtx(ctx context.Context, flow FlowLog, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
-	p.process(flow, e, budget)
+	p.process(ctx, flow, e, budget)
 	p.flushDropped(budget, e)
 }
 
@@ -327,7 +343,7 @@ func (p *Processor) FlushRollup(e telemetry.Emitter) {
 // budget. Metrics are always emitted; only log records consume the budget. The
 // caller owns the budget (one per ProcessAll window, or one per standalone
 // Process call) and is responsible for flushing the dropped count.
-func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitter, budget *logBudget) {
 	// Seed the UNVERIFIED tier from the identity the record embeds BEFORE
 	// resolving any of its connections, so a record enriches itself even when the
 	// devices collector is disabled or has not yet run. The embedded identity is
@@ -370,7 +386,7 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 					continue
 				}
 			}
-			p.processConn(flow, set.typ, cc, reporter, e, budget)
+			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget)
 
 			totalConns++
 			totalTxBytes += cc.TxBytes
@@ -385,7 +401,7 @@ func (p *Processor) process(flow FlowLog, e telemetry.Emitter, budget *logBudget
 	// dedup off, preserve the original always-emit behavior. The summary log also
 	// consumes the volume budget.
 	if p.logMode == logPerRecord && (totalConns > 0 || p.dedup == nil) && budget.allow() {
-		p.emitRecordLog(flow, reporter, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
+		p.emitRecordLog(ctx, flow, reporter, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
 	}
 }
 
@@ -401,7 +417,7 @@ func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 // processConn emits metrics (and, in per_connection mode, a log) for one
 // ConnectionCounts entry. Metrics are always emitted; the per-connection log is
 // gated through budget so the volume guard never suppresses metrics.
-func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget) {
 	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitEndpoint(cc.Src)
 	dstAddr, dstPort := splitEndpoint(cc.Dst)
@@ -564,7 +580,7 @@ func (p *Processor) processConn(flow FlowLog, trafficType string, cc ConnectionC
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
-		p.emitConnLog(flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e)
+		p.emitConnLog(ctx, flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e)
 	}
 }
 
@@ -1025,7 +1041,7 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 }
 
 // emitConnLog emits one per-connection flow log event.
-func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter) {
+func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
 		semconv.NetworkTransport:         transport,
@@ -1082,7 +1098,7 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 	// GeoDims toggle governs only what reaches a metric.
 	addIdentityAttrs(attrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
 	addGeoLogAttrs(attrs, srcGeo, dstGeo)
-	e.LogEvent(telemetry.Event{
+	e.LogEventCtx(ctx, telemetry.Event{
 		Name:              docFlowLog.Name,
 		Body:              body,
 		Severity:          telemetry.SeverityInfo,
@@ -1093,7 +1109,7 @@ func (p *Processor) emitConnLog(flow FlowLog, trafficType string, cc ConnectionC
 }
 
 // emitRecordLog emits one summary log event for an entire FlowLog.
-func (p *Processor) emitRecordLog(flow FlowLog, reporter reporterDiagnosis, conns int, txBytes, rxBytes, txPkts, rxPkts int64, e telemetry.Emitter) {
+func (p *Processor) emitRecordLog(ctx context.Context, flow FlowLog, reporter reporterDiagnosis, conns int, txBytes, rxBytes, txPkts, rxPkts int64, e telemetry.Emitter) {
 	body := fmt.Sprintf("node %s: %d connections tx=%dB rx=%dB", flow.NodeID, conns, txBytes, rxBytes)
 	attrs := telemetry.Attrs{
 		semconv.AttrNodeID:               flow.NodeID,
@@ -1107,7 +1123,7 @@ func (p *Processor) emitRecordLog(flow FlowLog, reporter reporterDiagnosis, conn
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	addFlowWindow(attrs, flow)
-	e.LogEvent(telemetry.Event{
+	e.LogEventCtx(ctx, telemetry.Event{
 		Name:              docFlowLog.Name,
 		Body:              body,
 		Severity:          telemetry.SeverityInfo,

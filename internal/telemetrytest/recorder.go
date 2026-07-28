@@ -36,6 +36,11 @@ type MetricPoint struct {
 	Count        uint64
 	Bounds       []float64
 	BucketCounts []uint64
+	// Exemplars is the number of exemplars attached to this histogram data
+	// point. A HistogramCtx call made under a sampled span context attaches
+	// one; a context-free Histogram call (or an unsampled ctx) attaches none —
+	// this is how a test proves a call site was upgraded to HistogramCtx (#367).
+	Exemplars int
 }
 
 // LogRecord is a single captured log record, flattened for assertions.
@@ -49,6 +54,15 @@ type LogRecord struct {
 	// seen, as opposed to when it happened). Zero when the emitter left it unset.
 	ObservedTimestamp time.Time
 	Attrs             map[string]string
+	// TraceID/SpanID/Sampled surface the LogRecord's NATIVE trace context (#367)
+	// — set by the log SDK itself from the context passed to LogEventCtx, never
+	// by a raw trace_id/span_id attribute. TraceID/SpanID are the zero value
+	// ("00000000000000000000000000000000"/"0000000000000000") and Sampled is
+	// false when the emitting call carried no sampled span context (e.g. a
+	// plain LogEvent).
+	TraceID string
+	SpanID  string
+	Sampled bool
 }
 
 // Recorder wires a telemetry.Emitter to in-memory readers.
@@ -217,6 +231,7 @@ func metricPoints(m metricdata.Metrics) []MetricPoint {
 				Bounds:       dp.Bounds,
 				BucketCounts: dp.BucketCounts,
 				Attrs:        attrMap(dp.Attributes),
+				Exemplars:    len(dp.Exemplars),
 			})
 		}
 		return out
@@ -250,6 +265,9 @@ func flattenLogRecord(rec sdklog.Record) LogRecord {
 		Timestamp:         rec.Timestamp(),
 		ObservedTimestamp: rec.ObservedTimestamp(),
 		Attrs:             attrs,
+		TraceID:           rec.TraceID().String(),
+		SpanID:            rec.SpanID().String(),
+		Sampled:           rec.TraceFlags().IsSampled(),
 	}
 }
 

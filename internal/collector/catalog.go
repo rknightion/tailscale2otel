@@ -66,6 +66,14 @@ var (
 		Attributes:  []string{semconv.AttrCollector},
 		Group:       groupSelfObs,
 	}
+	docScrapeDurationHistogram = metricdoc.Metric{
+		Name:        MetricScrapeDurationHistogram,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Histogram,
+		Description: "Distribution of scrape wall-clock durations, per collector; additional to `scrape.duration`, recorded with the scrape span so exemplars link a bucket back to the trace.",
+		Attributes:  []string{semconv.AttrCollector},
+		Group:       groupSelfObs,
+	}
 	docCheckpointPersistErrors = metricdoc.Metric{
 		Name:        MetricCheckpointPersistErrors,
 		Unit:        semconv.UnitDimensionless,
@@ -93,7 +101,7 @@ var (
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docCheckpointPersistErrors, docCheckpointDiskSize, docCheckpointPersistAge}
+	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docScrapeDurationHistogram, docCheckpointPersistErrors, docCheckpointDiskSize, docCheckpointPersistAge}
 }
 
 // LogCatalog returns the log events this package emits (none).

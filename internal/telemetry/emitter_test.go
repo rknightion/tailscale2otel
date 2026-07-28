@@ -3,8 +3,11 @@ package telemetry_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -261,5 +264,191 @@ func TestHistogramCtxAttachesExemplar(t *testing.T) {
 	}
 	if exemplars != 1 {
 		t.Errorf("got %d exemplar(s); want 1 via HistogramCtx", exemplars)
+	}
+}
+
+// TestEmitter_LogEventCtxSetsNativeTraceContext is the #367 acceptance test: a
+// log emitted inside a sampled span context via LogEventCtx must carry the
+// NATIVE TraceID/SpanID on the LogRecord (no per-record span, no raw
+// trace_id/span_id attribute) — the log SDK derives these itself from ctx.
+func TestEmitter_LogEventCtxSetsNativeTraceContext(t *testing.T) {
+	exp := &recordingLogExporter{}
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)))
+	t.Cleanup(func() { _ = lp.Shutdown(context.Background()) })
+	mp := sdkmetric.NewMeterProvider()
+	e := telemetry.NewEmitter(mp.Meter("test"), lp.Logger("test"))
+
+	wantTraceID := trace.TraceID{0x01, 0x02, 0x03}
+	wantSpanID := trace.SpanID{0x04, 0x05}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    wantTraceID,
+		SpanID:     wantSpanID,
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	e.LogEventCtx(ctx, telemetry.Event{Name: "tailscale.test.event", Body: "sampled"})
+
+	recs := exp.all()
+	if len(recs) != 1 {
+		t.Fatalf("got %d log records, want 1", len(recs))
+	}
+	r := recs[0]
+	if r.TraceID() != wantTraceID {
+		t.Errorf("TraceID() = %v, want %v", r.TraceID(), wantTraceID)
+	}
+	if r.SpanID() != wantSpanID {
+		t.Errorf("SpanID() = %v, want %v", r.SpanID(), wantSpanID)
+	}
+	attrs := logAttrs(r)
+	if _, ok := attrs["trace_id"]; ok {
+		t.Errorf("must not carry a raw trace_id attribute; got %q", attrs["trace_id"])
+	}
+	if _, ok := attrs["span_id"]; ok {
+		t.Errorf("must not carry a raw span_id attribute; got %q", attrs["span_id"])
+	}
+}
+
+// TestEmitter_LogEventBackgroundContextUnchanged pins the "unsampled/background
+// behavior unchanged" #367 acceptance criterion: LogEvent (== LogEventCtx with
+// context.Background()) must not set a trace/span ID.
+func TestEmitter_LogEventBackgroundContextUnchanged(t *testing.T) {
+	exp := &recordingLogExporter{}
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)))
+	t.Cleanup(func() { _ = lp.Shutdown(context.Background()) })
+	mp := sdkmetric.NewMeterProvider()
+	e := telemetry.NewEmitter(mp.Meter("test"), lp.Logger("test"))
+
+	e.LogEvent(telemetry.Event{Name: "tailscale.test.event", Body: "background"})
+
+	recs := exp.all()
+	if len(recs) != 1 {
+		t.Fatalf("got %d log records, want 1", len(recs))
+	}
+	r := recs[0]
+	if r.TraceID().IsValid() {
+		t.Errorf("TraceID() = %v, want invalid (no span context)", r.TraceID())
+	}
+	if r.SpanID().IsValid() {
+		t.Errorf("SpanID() = %v, want invalid (no span context)", r.SpanID())
+	}
+}
+
+// TestEmitter_LogEventTruncatesOversizedBodyAfterRedaction is the #366
+// acceptance test: a Body far beyond the default bound is truncated UTF-8-safe
+// with an explicit marker, AFTER redaction (a disabled-category body is fully
+// replaced first, so nothing is ever half-redacted then truncated), and event
+// identity/timestamps survive.
+func TestEmitter_LogEventTruncatesOversizedBodyAfterRedaction(t *testing.T) {
+	exp := &recordingLogExporter{}
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)))
+	t.Cleanup(func() { _ = lp.Shutdown(context.Background()) })
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	e := telemetry.NewEmitter(mp.Meter("test"), lp.Logger("test"))
+
+	// A multi-byte rune (3-byte "€") straddling the cut point exercises the
+	// UTF-8-safety requirement: a naive byte-slice truncation would split it.
+	longBody := strings.Repeat("a", 40000) + "€€€"
+	ts := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	e.LogEvent(telemetry.Event{Name: "tailscale.test.event", Body: longBody, Timestamp: ts})
+
+	recs := exp.all()
+	if len(recs) != 1 {
+		t.Fatalf("got %d log records, want 1", len(recs))
+	}
+	r := recs[0]
+	got := r.Body().AsString()
+	if len(got) >= len(longBody) {
+		t.Fatalf("body was not truncated: len=%d", len(got))
+	}
+	if !strings.Contains(got, "[truncated]") {
+		t.Fatalf("truncated body missing marker: %q", got[max(0, len(got)-40):])
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated body split a multi-byte rune: %q", got)
+	}
+	if !r.Timestamp().Equal(ts) {
+		t.Fatalf("Timestamp() = %v, want %v (must survive truncation)", r.Timestamp(), ts)
+	}
+	if got := r.EventName(); got != "tailscale.test.event" {
+		t.Fatalf("EventName() = %q, want tailscale.test.event (must survive truncation)", got)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	foundRecords, foundBytes := false, false
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			switch m.Name {
+			case "tailscale2otel.log.record.truncated":
+				foundRecords = true
+			case "tailscale2otel.log.truncated.bytes":
+				foundBytes = true
+			}
+		}
+	}
+	if !foundRecords {
+		t.Errorf("missing tailscale2otel.log.record.truncated counter")
+	}
+	if !foundBytes {
+		t.Errorf("missing tailscale2otel.log.truncated.bytes counter")
+	}
+}
+
+// TestEmitter_LogEventTruncatesOversizedAttributeValue covers the attribute
+// side of #366: a long string attribute value is truncated independently of
+// the body, while non-string attribute values (fixed-size by construction) are
+// left alone, and operational metric labels are never touched by this path
+// (LogEvent only — Counter/Gauge/etc. attrs are untouched by design).
+func TestEmitter_LogEventTruncatesOversizedAttributeValue(t *testing.T) {
+	exp := &recordingLogExporter{}
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)))
+	t.Cleanup(func() { _ = lp.Shutdown(context.Background()) })
+	mp := sdkmetric.NewMeterProvider()
+	e := telemetry.NewEmitter(mp.Meter("test"), lp.Logger("test"))
+
+	longVal := strings.Repeat("b", 10000)
+	e.LogEvent(telemetry.Event{
+		Name: "tailscale.test.event",
+		Body: "short",
+		Attrs: telemetry.Attrs{
+			"long_attr":  longVal,
+			"short_attr": "fine",
+			"int_attr":   int64(12345),
+		},
+	})
+
+	recs := exp.all()
+	if len(recs) != 1 {
+		t.Fatalf("got %d log records, want 1", len(recs))
+	}
+	attrs := logAttrs(recs[0])
+	if len(attrs["long_attr"]) >= len(longVal) {
+		t.Fatalf("long_attr was not truncated: len=%d", len(attrs["long_attr"]))
+	}
+	if !strings.Contains(attrs["long_attr"], "[truncated]") {
+		t.Fatalf("truncated long_attr missing marker: %q", attrs["long_attr"])
+	}
+	if attrs["short_attr"] != "fine" {
+		t.Fatalf("short_attr = %q, want unchanged %q", attrs["short_attr"], "fine")
+	}
+	// int64 log attrs can't be asserted by value through AsString() (it only
+	// supports the String kind), so just confirm the key survived untouched by
+	// the truncation path — see the recs walk below for the Kind check.
+	if _, ok := attrs["int_attr"]; !ok {
+		t.Fatalf("int_attr missing")
+	}
+	var sawInt64Kind bool
+	recs[0].WalkAttributes(func(kv log.KeyValue) bool {
+		if kv.Key == "int_attr" {
+			sawInt64Kind = kv.Value.Kind() == log.KindInt64 && kv.Value.AsInt64() == 12345
+		}
+		return true
+	})
+	if !sawInt64Kind {
+		t.Fatalf("int_attr was not preserved as an unchanged int64 value")
 	}
 }

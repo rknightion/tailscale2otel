@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -21,6 +22,86 @@ import (
 // noopSchedulerTracer is the shared fallback for a nil Scheduler.tracer, so span
 // creation in runTick never allocates a fresh no-op provider on every tick.
 var noopSchedulerTracer = tracenoop.NewTracerProvider().Tracer("")
+
+// PprofLabelCollector is the pprof label key naming which collector a profile
+// sample belongs to (#376).
+//
+// Before this, a CPU or allocation profile of a running exporter showed only the
+// shared framework frames — every collector polls through the same scheduler,
+// emitter and HTTP client — so "which collector is burning the CPU" was
+// unanswerable, most acutely in multi-tailnet mode where the same collector runs
+// N times over.
+//
+// The key is the bare "collector" rather than semconv.AttrCollector
+// ("tailscale.collector") on purpose: pprof labels are a separate namespace from
+// OTEL attributes, Pyroscope surfaces them as its own label selectors, and the
+// dotted form reads as a foreign key there. Exported so tests — and any future
+// profile-labeling code — use one spelling.
+const PprofLabelCollector = "collector"
+
+// maxCollectorLabelLen bounds the label VALUE's length as part of the bounded
+// shape below.
+const maxCollectorLabelLen = 32
+
+// boundedCollectorLabel maps a collector name onto the bounded label value set,
+// collapsing anything outside it to "other".
+//
+// A pprof label is a permanent dimension on every stored profile, so an unbounded
+// value here is the profiling equivalent of a metric-cardinality explosion — worse,
+// because a profiles backend retains data per label combination and there is no
+// series-count metric to notice it.
+//
+// The bound is enforced on the VALUE rather than trusted from the registration
+// path. Registered collector names are a closed set today, but the guarantee that
+// matters is that no device name, node id, tailnet address, user identity or flow
+// endpoint can ever reach a profile label — and that must hold for a name
+// assembled at runtime, not only for the names currently compiled in. The
+// accepted shape (a short lowercase identifier) excludes all of those by
+// construction: they carry dots, hyphens, `@`, uppercase, or length.
+func boundedCollectorLabel(name string) string {
+	if len(name) == 0 || len(name) > maxCollectorLabelLen {
+		return collectorLabelOther
+	}
+	for i := range len(name) {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= '0' && c <= '9', c == '_':
+			if i == 0 { // must start with a letter
+				return collectorLabelOther
+			}
+		default:
+			return collectorLabelOther
+		}
+	}
+	return name
+}
+
+// collectorLabelOther is the catch-all label value for a name outside the bounded
+// shape. It is a real value rather than an omitted label so a profile is never
+// silently unattributed.
+const collectorLabelOther = "other"
+
+// NOT EMITTED, deliberately: a tailnet/provider profile label.
+//
+// #376 raised it as optional, and in multi-tailnet mode "which TAILNET's devices
+// collector is the expensive one" is a genuinely useful question — the scheduler
+// already holds the value as s.namespace (the per-tailnet checkpoint namespace).
+//
+// It is withheld because a tailnet name is a customer/organization identifier, and
+// the README's profiling section states plainly that profiles carry no Tailscale
+// data. Adding it would make that claim false, so it has to be opt-in and
+// pseudonymous rather than a default — which is a configuration decision, not one
+// to make inside the scheduler.
+//
+// The key it would need is `profiling.pyroscope.tailnet_label`, an enum mirroring
+// the existing pii_filter vocabulary: "off" (default, today's behavior), "hashed"
+// (the same truncated SHA-256 treatment instanceID applies to a hostname when
+// pii_filter.hostnames is false), and "name" (the raw tailnet, for an operator who
+// owns every tailnet observed). Cardinality is bounded by the configured tailnet
+// count either way, so only the disclosure question is at stake. When it lands, add
+// it as a second pprof.Labels pair in runTick and update the README claim in the
+// same commit.
 
 // Scheduler runs each registered collector on its own goroutine and ticker,
 // isolating failures so one collector cannot stop the others.
@@ -265,7 +346,7 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 			staleness = 0
 		}
 		if s.selfObs {
-			emitScrapeMetrics(s.emitter, scrapeResult{
+			emitScrapeMetrics(ctx, s.emitter, scrapeResult{
 				collector:  e.Collector.Name(),
 				duration:   duration,
 				interval:   e.Interval,
@@ -286,22 +367,43 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 			s.status.record(e.Collector.Name(), startedWall, finishedWall, duration, errStr)
 		}
 	}()
-	switch c := e.Collector.(type) {
-	case WindowCollector:
-		runErr = s.runWindow(ctx, c, e)
-	case SnapshotCollector:
-		runErr = c.Collect(ctx, s.emitter)
-		if runErr != nil && !isShutdownCancellation(ctx, runErr) {
-			s.logger.Warn("collector failed", "collector", c.Name(), "error", runErr)
+
+	// Attach the bounded collector label to the goroutine for the duration of the
+	// collection, so continuous CPU/allocation profiles can attribute work to a
+	// collector instead of showing only shared framework frames (#376).
+	//
+	// Deliberately independent of tracing: the span above is opt-in and sampled,
+	// while profiles are the always-on signal, so the label must not be reachable
+	// only when a tracer is configured. It wraps just the collection — the deferred
+	// metric/status bookkeeping outside it is not where the CPU goes, and keeping it
+	// out means the label describes collector work and nothing else.
+	//
+	// SPAN-PROFILE COORDINATION (#370): if span profiles are added, pyroscope-go's
+	// otelpyroscope tracer wrapper attaches its OWN goroutine labels
+	// (span_id/span_name, and a profile_id on the span). Those are span identity;
+	// this is the collector dimension. DO NOT add a second collector-valued label
+	// there — it would double-label every sample under two keys and split the
+	// profile aggregation. If #370 needs the collector name in span-profile terms,
+	// read this key rather than adding another.
+	label := pprof.Labels(PprofLabelCollector, boundedCollectorLabel(e.Collector.Name()))
+	pprof.Do(ctx, label, func(ctx context.Context) {
+		switch c := e.Collector.(type) {
+		case WindowCollector:
+			runErr = s.runWindow(ctx, c, e)
+		case SnapshotCollector:
+			runErr = c.Collect(ctx, s.emitter)
+			if runErr != nil && !isShutdownCancellation(ctx, runErr) {
+				s.logger.Warn("collector failed", "collector", c.Name(), "error", runErr)
+			}
+		default:
+			// Defensive-only: Register requires SnapshotCollector and RegisterWindow
+			// requires WindowCollector, both compile-time (#58), so a registered
+			// collector always matches a case above. This branch can only be reached by
+			// a future code path that appends to Registry.entries directly.
+			s.logger.Warn("collector implements neither SnapshotCollector nor WindowCollector",
+				"collector", c.Name())
 		}
-	default:
-		// Defensive-only: Register requires SnapshotCollector and RegisterWindow
-		// requires WindowCollector, both compile-time (#58), so a registered
-		// collector always matches a case above. This branch can only be reached by
-		// a future code path that appends to Registry.entries directly.
-		s.logger.Warn("collector implements neither SnapshotCollector nor WindowCollector",
-			"collector", c.Name())
-	}
+	})
 }
 
 // runWindow polls a window collector's next [from, to] range and advances the

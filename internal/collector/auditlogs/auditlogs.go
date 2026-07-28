@@ -124,7 +124,7 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		resp.Logs = kept
 	}
 	for _, ev := range resp.Logs {
-		c.proc.Process(ev, e)
+		c.proc.ProcessCtx(ctx, ev, e)
 		if c.acceptedObserver != nil {
 			c.acceptedObserver(ingest.AcceptedEvent{
 				Source:     semconv.IngestSourcePoll,

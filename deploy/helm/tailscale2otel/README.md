@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.28.0](https://img.shields.io/badge/Version-0.28.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.29.0](https://img.shields.io/badge/Version-0.29.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -396,6 +396,8 @@ extraVolumeMounts:
 | config.otlp.grafana_cloud.token | string | `""` | Grafana Cloud OTLP token paired with instance_id. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN (secret). |
 | config.otlp.grafana_cloud.token_file | string | `""` | Read the Grafana Cloud token from this path instead of an inline value. Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.otlp.headers | object | `{}` | Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend). |
+| config.otlp.limits.log_attribute_value_bytes | int | `4096` | Cap each individual string-valued log attribute. Never applied to metric labels, which must stay byte-exact or the series splits. Minimum 64. |
+| config.otlp.limits.log_body_bytes | int | `32768` | Cap one log record's body before export. A receiver's request-body limit bounds a whole inbound request, but a valid request can still carry one enormous record that dominates a batch or breaches the backend's per-record limit. Truncation is UTF-8 safe, runs AFTER redaction so a secret can never be half-redacted, and leaves an explicit marker. Minimum 64; there is deliberately no unlimited setting. |
 | config.otlp.metric_export_batch_size | int | `10000` | Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads. |
 | config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed (the metric export interval). |
 | config.otlp.protocol | string | `"http"` | Export protocol: http | grpc | stdout (stdout = local debug). |
@@ -424,16 +426,26 @@ extraVolumeMounts:
 | config.profiling.pyroscope.basic_auth_password_file | string | `""` | Read the Pyroscope basic-auth password from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; content is whitespace-trimmed. |
 | config.profiling.pyroscope.basic_auth_user | string | `""` | Basic-auth user (Grafana Cloud: the profiles instance ID). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER (secret). |
 | config.profiling.pyroscope.enabled | bool | `false` | Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK). |
+| config.profiling.pyroscope.headers | object | `{}` | Extra HTTP headers sent on every profile upload, e.g. { X-Api-Key: abc }. Values are secrets and redact from the status page and logs. Reserved headers (Authorization when basic auth is set, and the tenant header) win over anything set here. |
 | config.profiling.pyroscope.server_address | string | `""` | Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled. |
 | config.profiling.pyroscope.tags | object | `{}` | Extra static labels merged onto every profile, e.g. { env: prod }. |
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
+| config.profiling.pyroscope.tls.ca_file | string | `""` | PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway). Must contain at least one certificate. |
+| config.profiling.pyroscope.tls.cert_file | string | `""` | Client certificate for mutual TLS to the profiles endpoint. Set together with key_file. |
+| config.profiling.pyroscope.tls.insecure_skip_verify | bool | `false` | Keep TLS on but skip server-certificate verification on profile uploads. A footgun — prefer ca_file with the gateway's CA. |
+| config.profiling.pyroscope.tls.key_file | string | `""` | Client key paired with profiling.pyroscope.tls.cert_file. |
 | config.profiling.pyroscope.upload_rate | string | `"60s"` | How often profiles are flushed to the server. |
 | config.prometheus.auth.allow_unauthenticated | bool | `false` | Acknowledge serving /metrics with NO token on a network-reachable bind. In a cluster this is the normal case — the scrape is controlled by a NetworkPolicy rather than a credential — but it must be stated, because /metrics carries device names, flow endpoints and audit identities. A loopback bind never needs this. Ignored when token is set. |
 | config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty on a network-reachable bind is REFUSED with 403 unless allow_unauthenticated is set. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
 | config.prometheus.auth.token_file | string | `""` | Read prometheus.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
+| config.prometheus.coalesce_gather | bool | `false` | Serve scrapes that arrive during an in-flight gather from that same gather instead of starting another. Useful for an HA scraper pair hitting one instance; costs slight staleness. |
 | config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
 | config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |
+| config.prometheus.max_requests_in_flight | int | `0` | Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. 0 = unlimited. |
+| config.prometheus.timeout | string | `"0s"` | Give up on a single /metrics gather after this long, answering 503. 0 = no timeout. Keep it below the scraper's own timeout so this process, not the scraper, decides. |
 | config.prometheus.tls.cert_file | string | `""` | HTTPS certificate for the Prometheus endpoint. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. |
+| config.prometheus.tls.client_auth | string | `""` | How strictly the client certificate is checked: require_and_verify (the default once client_ca_file is set), verify_if_given, require, request, or none. Only require_and_verify and verify_if_given actually validate the chain; the weaker modes are for staged rollouts. |
+| config.prometheus.tls.client_ca_file | string | `""` | Require scrapers to present a client certificate signed by this CA (mutual TLS). Needs cert_file/key_file — a client CA on a plaintext listener never runs. Composes with auth.token: when both are set a request must satisfy both. |
 | config.prometheus.tls.key_file | string | `""` | HTTPS private key paired with cert_file. Both paths must exist and be readable at startup. |
 | config.provider | string | `"tailscale"` | Control-plane backend: tailscale (default) | headscale. Under headscale only the devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable. |
 | config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |

@@ -27,6 +27,27 @@ var (
 		Attributes:  []string{"version", "go.version"},
 		Group:       groupSelfObs,
 	}
+	// A log record is bounded before export (#366) so one oversized HEC, audit
+	// or webhook record cannot dominate a batch or breach a backend's per-record
+	// limit. Truncation is silent on the wire apart from the marker, so these two
+	// counters are the only way to notice it is happening. `field` is a closed
+	// set ("body" or "attribute"), never derived from record content.
+	docLogRecordTruncated = metricdoc.Metric{
+		Name:        "tailscale2otel.log.record.truncated",
+		Unit:        "1",
+		Instrument:  metricdoc.Counter,
+		Description: "Count of log records whose body or an attribute value was truncated to a bounded length before export, by field.",
+		Attributes:  []string{"field"},
+		Group:       groupSelfObs,
+	}
+	docLogTruncatedBytes = metricdoc.Metric{
+		Name:        "tailscale2otel.log.truncated.bytes",
+		Unit:        "By",
+		Instrument:  metricdoc.Counter,
+		Description: "Bytes dropped from log record bodies/attribute values by truncation, by field.",
+		Attributes:  []string{"field"},
+		Group:       groupSelfObs,
+	}
 	docExportFailures = metricdoc.Metric{
 		Name:        "tailscale2otel.export.failures",
 		Unit:        "1",
@@ -85,7 +106,11 @@ var (
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docExportDuration, docSeriesActive, docSeriesLimit, docSeriesOverflowing}
+	return []metricdoc.Metric{
+		docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docExportDuration,
+		docSeriesActive, docSeriesLimit, docSeriesOverflowing,
+		docLogRecordTruncated, docLogTruncatedBytes,
+	}
 }
 
 // LogCatalog returns the log events this package emits (none).

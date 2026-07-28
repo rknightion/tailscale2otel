@@ -15,6 +15,11 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 // versionRe captures the leading MAJOR.MINOR.PATCH, tolerating a leading "v"
@@ -124,12 +129,35 @@ type Fetcher struct {
 	ttl       time.Duration
 	logger    *slog.Logger
 
+	// tracer emits one client span per fetch() call, mirroring
+	// internal/tsapi/transport.go's retryTransport.startSpan. Resolved to
+	// noopAPITracer in NewFetcher when no WithTracer option is given, so fetch
+	// never needs a nil-guard.
+	tracer trace.Tracer
+
 	mu        sync.RWMutex
 	latest    string
 	ok        bool
 	checkedAt time.Time
 	errClass  string
 }
+
+// FetcherOption configures optional Fetcher behavior not carried by
+// NewFetcher's required positional parameters. This package's constructor
+// convention is positional (see NewFetcher), so a new optional dependency is
+// added as a trailing variadic option rather than growing the positional list
+// or breaking existing call sites.
+type FetcherOption func(*Fetcher)
+
+// WithTracer sets the tracer used to emit one client span per fetch. A nil
+// tracer (the default, or explicitly passed) falls back to a no-op tracer.
+func WithTracer(tracer trace.Tracer) FetcherOption {
+	return func(f *Fetcher) { f.tracer = tracer }
+}
+
+// noopAPITracer is the shared fallback for a Fetcher with no WithTracer
+// option, so the nil-tracer path allocates no tracer per fetch() call.
+var noopAPITracer = tracenoop.NewTracerProvider().Tracer("")
 
 // Snapshot is a point-in-time view of a Fetcher's state, for a consumer (the
 // admin status page, #330) that needs to explain WHY no value is available —
@@ -161,14 +189,24 @@ func (f *Fetcher) Snapshot() Snapshot {
 }
 
 // NewFetcher builds a Fetcher. logger may be nil (falls back to slog.Default).
-func NewFetcher(name, url, userAgent string, parse Parser, client *http.Client, ttl time.Duration, logger *slog.Logger) *Fetcher {
+// opts are applied after defaults (currently just WithTracer); a fully
+// backward-compatible extension point (see FetcherOption) so this constructor's
+// existing positional call sites need no changes.
+func NewFetcher(name, url, userAgent string, parse Parser, client *http.Client, ttl time.Duration, logger *slog.Logger, opts ...FetcherOption) *Fetcher {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Fetcher{name: name, url: url, userAgent: userAgent, parse: parse, client: client, ttl: ttl, logger: logger}
+	f := &Fetcher{name: name, url: url, userAgent: userAgent, parse: parse, client: client, ttl: ttl, logger: logger, tracer: noopAPITracer}
+	for _, opt := range opts {
+		opt(f)
+	}
+	if f.tracer == nil {
+		f.tracer = noopAPITracer
+	}
+	return f
 }
 
 // Latest returns the last successfully fetched version and whether one exists.
@@ -219,10 +257,43 @@ func (f *Fetcher) Refresh(ctx context.Context) {
 	f.mu.Unlock()
 }
 
+// fetch performs one GET of f.url, emitting a single client span for the
+// call (see WithTracer), mirroring internal/tsapi/transport.go's
+// retryTransport pattern. The span name is "release.check " + f.name: name is
+// always one of a small fixed set of literal strings chosen by the caller
+// (e.g. "self", "tailscale"), so — like hsapi's endpointLabel — the label
+// space is bounded by construction, needing no further elision.
 func (f *Fetcher) fetch(ctx context.Context) (string, error) {
+	spanCtx, span := f.tracer.Start(ctx, "release.check "+f.name, trace.WithSpanKind(trace.SpanKindClient))
+	v, status, err := f.doFetch(spanCtx)
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.String("release.source", f.name),
+			attribute.String("http.request.method", http.MethodGet),
+			attribute.String("url.full", f.url),
+		)
+		if status != 0 {
+			span.SetAttributes(attribute.Int("http.response.status_code", status))
+		}
+		switch {
+		case err != nil:
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		case status >= 400:
+			span.SetStatus(codes.Error, http.StatusText(status))
+		}
+	}
+	span.End()
+	return v, err
+}
+
+// doFetch is fetch's transport body, split out so fetch can wrap it in a span
+// without duplicating the status bookkeeping. status is 0 when no HTTP
+// response was received.
+func (f *Fetcher) doFetch(ctx context.Context) (v string, status int, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.url, nil)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", errNetwork, err)
+		return "", 0, fmt.Errorf("%w: %w", errNetwork, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	if f.userAgent != "" {
@@ -230,21 +301,22 @@ func (f *Fetcher) fetch(ctx context.Context) (string, error) {
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", errNetwork, err)
+		return "", 0, fmt.Errorf("%w: %w", errNetwork, err)
 	}
 	defer resp.Body.Close()
+	status = resp.StatusCode
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("%w: %s: status %d", errHTTP, f.url, resp.StatusCode)
+		return "", status, fmt.Errorf("%w: %s: status %d", errHTTP, f.url, resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", errNetwork, err)
+		return "", status, fmt.Errorf("%w: %w", errNetwork, err)
 	}
-	v, err := f.parse(body)
+	v, err = f.parse(body)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", errParse, err)
+		return "", status, fmt.Errorf("%w: %w", errParse, err)
 	}
-	return v, nil
+	return v, status, nil
 }
 
 // Run refreshes immediately, then every ttl until ctx is canceled. Intended to

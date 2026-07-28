@@ -79,6 +79,13 @@ func Default() *Config {
 			// interval (1 data-point-per-minute), avoiding Grafana Cloud DPM churn.
 			MetricInterval:        dur(60 * time.Second),
 			MetricExportBatchSize: 10000,
+			// Generous enough to be a no-op for every record this exporter
+			// normally produces, so the bound only engages on a genuinely
+			// pathological record rather than quietly reshaping normal output.
+			Limits: OTLPLimits{
+				LogBodyBytes:           32 * 1024,
+				LogAttributeValueBytes: 4 * 1024,
+			},
 		},
 		Enrichment: EnrichmentConfig{
 			CacheTTL: dur(5 * time.Minute),

@@ -216,7 +216,7 @@ def tab_events():
                novalue="No delivery status — no configured log stream has reported one.",
                desc="1 if any stream's last delivery reported an error (see the Delivery errors log)."), 4, 6),
         (panel("Delivery throughput by type", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_bytes_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
+               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
                unit="Bps", custom=ts_custom(), options=ts_opts(),
                desc="Bytes sent to the configured SIEM sink, by log type."), 8, 6),
         (panel("Entries delivered/s by type", "timeseries",

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
@@ -811,5 +813,39 @@ func TestCollectWindow_EmptyAndNullResponseEmitNothing(t *testing.T) {
 				t.Errorf("emitted %d log record(s), want 0: %+v", len(logs), logs)
 			}
 		})
+	}
+}
+
+// TestCollectWindow_ThreadsTraceContextOntoFlowLog is the #367 acceptance test
+// for the poll path: CollectWindow's ctx (the scheduler's poll-tick context)
+// must reach the processor so a sampled span produces a native TraceID/SpanID
+// on the emitted flow log — the ctx must not be silently discarded in favor of
+// context.Background().
+func TestCollectWindow_ThreadsTraceContextOntoFlowLog(t *testing.T) {
+	a := &fakeAPI{resp: oneTCPResponse()}
+	c := New(a, newProcessor(), 0, 0, nil, nil)
+	rec := telemetrytest.New()
+
+	wantTraceID := trace.TraceID{0x0c, 0x0d}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    wantTraceID,
+		SpanID:     trace.SpanID{0x0e},
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 2, 11, 59, 0, 0, time.UTC)
+	if _, err := c.CollectWindow(ctx, from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() error = %v", err)
+	}
+
+	recs := rec.LogRecords()
+	if len(recs) == 0 {
+		t.Fatalf("no log records emitted")
+	}
+	for i, r := range recs {
+		if r.TraceID != wantTraceID.String() {
+			t.Errorf("record %d TraceID = %q, want %q", i, r.TraceID, wantTraceID.String())
+		}
 	}
 }

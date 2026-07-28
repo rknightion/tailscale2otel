@@ -43,6 +43,11 @@ type otelEmitter struct {
 	// cannot duplicate the promoted label (which Mimir rejects as
 	// otlp_parse_error). Nil means none are reserved.
 	reserved map[string]struct{}
+	// logLimits bounds one log record before export (#366). A zero field falls
+	// back to the corresponding default* constant below, so a directly
+	// constructed emitter (tests, the New/NewFiltered shorthands) is bounded
+	// without every call site having to say so.
+	logLimits logLimits
 	// diag logs label-collision resolutions (nil = silent). collisionSeen bounds
 	// that logging to once per distinct (metric, dropped-key) so a steady-state
 	// collision does not log on every export. collisionCount tracks the number of
@@ -286,12 +291,130 @@ func (e *otelEmitter) HistogramCtx(ctx context.Context, name, unit, desc string,
 	}
 }
 
+// Default UTF-8-safe bounds applied to every log record before export (#366).
+// Both are generous enough to be a no-op for a realistic record — the intent
+// is to bound a pathological outlier (a raw upstream error string, an audit
+// old/new JSON blob, an attacker-supplied webhook message), not to compress
+// normal payloads. limit <= 0 would disable the corresponding bound, but
+// these defaults are always positive.
+const (
+	defaultMaxLogBodyBytes      = 32 * 1024 // 32 KiB
+	defaultMaxLogAttrValueBytes = 4 * 1024  // 4 KiB
+)
+
+// logLimits carries the effective per-record bounds. Zero means "unset", which
+// resolves to the defaults above rather than to "unbounded" — an accidentally
+// zero-valued struct must not silently remove the protection.
+type logLimits struct {
+	bodyBytes      int
+	attrValueBytes int
+}
+
+func (l logLimits) body() int {
+	if l.bodyBytes > 0 {
+		return l.bodyBytes
+	}
+	return defaultMaxLogBodyBytes
+}
+
+func (l logLimits) attrValue() int {
+	if l.attrValueBytes > 0 {
+		return l.attrValueBytes
+	}
+	return defaultMaxLogAttrValueBytes
+}
+
+// logTruncationMarker is appended to a value shortened by truncateLogValue, so
+// a truncated body/attribute is visibly distinguishable from one that
+// genuinely ended there. It counts toward the configured limit itself, so the
+// returned value never exceeds it.
+const logTruncationMarker = "…[truncated]"
+
+// truncateLogValue returns s unchanged (with truncated=false) when it already
+// fits within limit bytes; limit <= 0 also disables truncation. Otherwise it
+// returns the longest valid-UTF-8 prefix of s — never splitting a multi-byte
+// rune — with logTruncationMarker appended, plus the number of bytes dropped
+// from the ORIGINAL value (excluding the marker itself). The result stays
+// within limit bytes for any limit >= len(logTruncationMarker), which both
+// defaultMaxLogBodyBytes and defaultMaxLogAttrValueBytes comfortably satisfy;
+// a pathologically small limit smaller than the marker itself may overrun by
+// the marker's length rather than silently mis-truncate.
+func truncateLogValue(s string, limit int) (out string, droppedBytes int, truncated bool) {
+	if limit <= 0 || len(s) <= limit {
+		return s, 0, false
+	}
+	keep := limit - len(logTruncationMarker)
+	if keep < 0 {
+		keep = 0
+	}
+	for keep > 0 && !utf8.RuneStart(s[keep]) {
+		keep--
+	}
+	return s[:keep] + logTruncationMarker, len(s) - keep, true
+}
+
+// observeLogTruncation records that one field (body or attribute) was
+// truncated and how many bytes it dropped. field is a fixed, bounded value
+// ("body" or "attribute") — never attacker-controlled — so it is safe as a
+// metric label.
+func (e *otelEmitter) observeLogTruncation(field string, droppedBytes int) {
+	attrs := Attrs{"field": field}
+	e.Counter(docLogRecordTruncated.Name, docLogRecordTruncated.Unit, docLogRecordTruncated.Description, 1, attrs)
+	if droppedBytes > 0 {
+		e.Counter(docLogTruncatedBytes.Name, docLogTruncatedBytes.Unit, docLogTruncatedBytes.Description, float64(droppedBytes), attrs)
+	}
+}
+
+// boundedLogKV truncates every STRING-valued log key-value in kvs to
+// defaultMaxLogAttrValueBytes, in place. Non-string kinds (bool/int64/float64)
+// are fixed-size by construction and left untouched. This only ever runs over
+// LOG attributes (built from an Event's Attrs by toLogKV) — it never touches a
+// metric data-point attribute, so operational metric labels are never
+// truncated or merged by this path.
+func (e *otelEmitter) boundedLogKV(kvs []log.KeyValue) []log.KeyValue {
+	for i := range kvs {
+		if kvs[i].Value.Kind() != log.KindString {
+			continue
+		}
+		s := kvs[i].Value.AsString()
+		truncatedVal, dropped, truncated := truncateLogValue(s, e.logLimits.attrValue())
+		if !truncated {
+			continue
+		}
+		kvs[i].Value = log.StringValue(truncatedVal)
+		e.observeLogTruncation("attribute", dropped)
+	}
+	return kvs
+}
+
 func (e *otelEmitter) LogEvent(ev Event) {
+	e.LogEventCtx(context.Background(), ev)
+}
+
+// LogEventCtx emits ev using ctx as the recording context. When ctx carries a
+// sampled span, the log SDK's Logger.Emit derives the LogRecord's TraceID/
+// SpanID directly from ctx's span context (go.opentelemetry.io/otel/sdk/log's
+// logger.newRecord calls trace.SpanContextFromContext(ctx)) — no per-record
+// span is started here, and no raw trace_id/span_id attribute is added; the
+// trace/span IDs are native LogRecord fields. context.Background() (what
+// LogEvent uses) carries no span context, so the record is unchanged from
+// before #367.
+func (e *otelEmitter) LogEventCtx(ctx context.Context, ev Event) {
 	// Redact the body BEFORE the attrs — the body scrub reads the original attr
 	// values to know what to strip (a disabled category's value must not survive
 	// in the body just because bodies bypass the attribute filter, #197).
 	body := e.redactor.RedactBody(ev.Body, ev.BodyPII, ev.Attrs)
 	ev.Attrs = Attrs(e.redactor.Log(ev.Attrs))
+
+	// Bound the body AFTER redaction (#366): a disabled-category body has
+	// already been fully replaced by RedactBody above, so truncation can only
+	// ever shorten already-safe content, never cut a secret into a
+	// partially-redacted string.
+	if truncatedBody, dropped, truncated := truncateLogValue(body, e.logLimits.body()); truncated {
+		body = truncatedBody
+		e.observeLogTruncation("body", dropped)
+	}
+
 	var r log.Record
 	if !ev.Timestamp.IsZero() {
 		r.SetTimestamp(ev.Timestamp)
@@ -307,12 +430,12 @@ func (e *otelEmitter) LogEvent(ev Event) {
 	if ev.Name != "" {
 		r.SetEventName(ev.Name)
 	}
-	r.AddAttributes(toLogKV(ev.Attrs)...)
+	r.AddAttributes(e.boundedLogKV(toLogKV(ev.Attrs))...)
 	if len(e.constAttrs) > 0 {
 		r.AddAttributes(constAttrsToLogKV(e.constAttrs)...)
 	}
 	e.emittedLogs.Add(1)
-	e.logger.Emit(context.Background(), r)
+	e.logger.Emit(ctx, r)
 }
 
 // constAttrsToLogKV converts provider-scoped const attrs (string-valued) to log

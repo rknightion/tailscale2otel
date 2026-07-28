@@ -890,8 +890,55 @@
         "pyroscope_enabled": {
           "type": "boolean"
         },
+        "pyroscope_header_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "pyroscope_server": {
           "type": "string"
+        },
+        "pyroscope_tls_client_cert": {
+          "type": "boolean"
+        },
+        "pyroscope_tls_custom_ca": {
+          "type": "boolean"
+        },
+        "pyroscope_tls_insecure_skip_verify": {
+          "type": "boolean"
+        },
+        "pyroscope_upload": {
+          "properties": {
+            "attempts": {
+              "type": "integer"
+            },
+            "consecutive_failures": {
+              "type": "integer"
+            },
+            "failures": {
+              "type": "integer"
+            },
+            "healthy": {
+              "type": "boolean"
+            },
+            "last_duration_seconds": {
+              "type": "number"
+            },
+            "last_error_class": {
+              "type": "string"
+            },
+            "last_failure_at": {
+              "type": "string"
+            },
+            "last_success_at": {
+              "type": "string"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
         }
       },
       "type": "object"

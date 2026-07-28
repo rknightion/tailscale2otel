@@ -734,7 +734,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// Request duration histogram: record wall-clock time of the whole handler.
 	start := time.Now()
 	defer func() {
-		s.emitter.Histogram(docStreamRequestDuration.Name, docStreamRequestDuration.Unit,
+		// HistogramCtx (not Histogram): ctx carries the "stream.receive" span
+		// started above, so a sampled request attaches an exemplar to this
+		// duration histogram (#367).
+		s.emitter.HistogramCtx(ctx, docStreamRequestDuration.Name, docStreamRequestDuration.Unit,
 			docStreamRequestDuration.Description, time.Since(start).Seconds(),
 			requestDurationBucketsSeconds, nil)
 	}()

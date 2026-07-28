@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/auditlogs"
@@ -93,6 +95,44 @@ func TestCollectWindow_SuccessEmitsAndReturnsTo(t *testing.T) {
 	}
 	if got := logs[0].Attrs["tailscale.audit.action"]; got != "CREATE" {
 		t.Fatalf("audit action attr = %q, want %q", got, "CREATE")
+	}
+}
+
+// TestCollectWindow_ThreadsTraceContextOntoAuditLog is the #367 acceptance
+// test for the poll path: CollectWindow's ctx must reach the shared audit
+// processor so a sampled span produces a native TraceID/SpanID on the
+// emitted audit log, rather than being discarded in favor of
+// context.Background().
+func TestCollectWindow_ThreadsTraceContextOntoAuditLog(t *testing.T) {
+	api := &fakeAPI{resp: audit.ConfigurationResponse{
+		Logs: []audit.Event{{
+			EventTime:    from.Add(30 * time.Second),
+			EventGroupID: "g1",
+			Actor:        audit.Actor{ID: "u1"},
+			Target:       audit.Target{ID: "n1"},
+			Action:       "CREATE",
+		}},
+	}}
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
+
+	wantTraceID := trace.TraceID{0x0f, 0x10}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    wantTraceID,
+		SpanID:     trace.SpanID{0x11},
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	if _, err := c.CollectWindow(ctx, from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+
+	logs := rec.LogRecords()
+	if len(logs) != 1 {
+		t.Fatalf("LogRecords = %d, want 1", len(logs))
+	}
+	if logs[0].TraceID != wantTraceID.String() {
+		t.Errorf("TraceID = %q, want %q", logs[0].TraceID, wantTraceID.String())
 	}
 }
 

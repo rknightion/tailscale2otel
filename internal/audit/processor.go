@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -203,17 +204,33 @@ func DedupKey(ev Event) string {
 }
 
 // ProcessAll converts every Event in resp, emitting one log record and one
-// counter increment per event.
+// counter increment per event. Equivalent to ProcessAllCtx with
+// context.Background() — the logs carry no trace context.
 func (p *Processor) ProcessAll(resp ConfigurationResponse, e telemetry.Emitter) {
+	p.ProcessAllCtx(context.Background(), resp, e)
+}
+
+// ProcessAllCtx is ProcessAll, but ctx is threaded to every event's log
+// record so a sampled span context (the poll window's or the streaming
+// request's) produces a native TraceID/SpanID on each log (#367).
+func (p *Processor) ProcessAllCtx(ctx context.Context, resp ConfigurationResponse, e telemetry.Emitter) {
 	for _, ev := range resp.Logs {
-		p.Process(ev, e)
+		p.ProcessCtx(ctx, ev, e)
 	}
 }
 
 // Process converts a single Event into an OTEL log record plus a counter
 // increment. The log carries the full actor/target context; the counter carries
-// only low-cardinality action and origin attributes.
+// only low-cardinality action and origin attributes. Equivalent to ProcessCtx
+// with context.Background().
 func (p *Processor) Process(ev Event, e telemetry.Emitter) {
+	p.ProcessCtx(context.Background(), ev, e)
+}
+
+// ProcessCtx is Process, but ctx is used to emit the log record so a sampled
+// span context produces a native TraceID/SpanID on it (#367). The dedup/
+// severity/attribute logic is unchanged from Process.
+func (p *Processor) ProcessCtx(ctx context.Context, ev Event, e telemetry.Emitter) {
 	if p.dedup != nil && !p.dedup.Add(DedupKey(ev)) {
 		// Already seen via another source: emit nothing.
 		return
@@ -270,7 +287,7 @@ func (p *Processor) Process(ev Event, e telemetry.Emitter) {
 		attrs[attrDeferredAt] = ev.DeferredAt.UTC().Format(time.RFC3339Nano)
 	}
 
-	e.LogEvent(telemetry.Event{
+	e.LogEventCtx(ctx, telemetry.Event{
 		Name:      docAuditLog.Name,
 		Body:      summary(ev),
 		Severity:  severity,

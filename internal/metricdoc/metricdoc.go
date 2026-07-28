@@ -7,7 +7,46 @@
 // hand-maintained), and validated against what the processors actually emit.
 package metricdoc
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/prometheus/otlptranslator"
+)
+
+// promMetricNamer is the OTLP→Prometheus metric-name translator, configured with
+// the SAME translation strategy the pull-path exporter pins
+// (telemetry.PromTranslationStrategy — duplicated as a literal here because
+// internal/telemetry imports this package, so the dependency cannot be
+// reversed; internal/catalog's promname manifest test asserts the two agree).
+//
+// Delegating to prometheus/otlptranslator rather than hand-rolling the rules is
+// deliberate (#379): this is the exact library used BOTH by the OTEL Prometheus
+// exporter on the pull path AND by Mimir's OTLP ingest on the Grafana Cloud push
+// path, so the documented Prometheus name cannot drift from either. The
+// hand-rolled predecessor got three real catalog metrics wrong — it appended a
+// unit suffix that the translator DEDUPES against tokens already in the name, so
+// docs/metrics.md and the generated dashboard advertised
+// `tailscale2otel_objectstore_bytes_bytes_total`, a series nothing emits.
+var promMetricNamer = otlptranslator.NewMetricNamer("", otlptranslator.UnderscoreEscapingWithSuffixes)
+
+// promMetricType maps a documented instrument onto the translator's metric type,
+// mirroring what the OTEL Prometheus exporter derives from the aggregated
+// metricdata (Sum monotonic→MonotonicCounter, Sum non-monotonic→
+// NonMonotonicCounter, Gauge→Gauge, Histogram→Histogram).
+func promMetricType(i Instrument) otlptranslator.MetricType {
+	switch i {
+	case Counter:
+		return otlptranslator.MetricTypeMonotonicCounter
+	case UpDownCounter:
+		return otlptranslator.MetricTypeNonMonotonicCounter
+	case Gauge:
+		return otlptranslator.MetricTypeGauge
+	case Histogram:
+		return otlptranslator.MetricTypeHistogram
+	default:
+		return otlptranslator.MetricTypeUnknown
+	}
+}
 
 // Instrument is the OTEL instrument kind backing a metric. It drives the
 // OTLP→Prometheus name normalization (only monotonic counters get _total; only
@@ -47,31 +86,38 @@ type LogEvent struct {
 	Group       string   // docs/metrics.md section heading this event belongs under
 }
 
-// PromName returns the metric's Prometheus name after Grafana Cloud's
-// OTLP→Prometheus normalization (see docs/metrics.md "Naming conventions"):
-// dots→underscores; a known UCUM unit suffix (By→_bytes, s→_seconds, d→_days);
-// a unit of "1" on a GAUGE→_ratio (annotation units in {curly braces} are
-// dropped); and a monotonic counter→_total. Applied in that order.
+// PromName returns the metric's Prometheus name after OTLP→Prometheus
+// normalization — the same name on BOTH the pull path (`/metrics`, the OTEL
+// Prometheus exporter) and the Grafana Cloud OTLP push path (Mimir), because
+// both apply prometheus/otlptranslator with the UnderscoreEscapingWithSuffixes
+// strategy, which this function delegates to. See docs/metrics.md "Naming
+// conventions". The rules, in the order the translator applies them:
+//
+//  1. the name is split into tokens of [A-Za-z0-9:]; every other rune (notably
+//     the dots) is a separator, so runs of them collapse to one underscore;
+//  2. a known UCUM unit contributes a token (By→bytes, s→seconds, d→days);
+//     annotation units in {curly braces} contribute nothing;
+//  3. a monotonic counter contributes a `total` token;
+//  4. a unit-"1" GAUGE contributes a `ratio` token — so a plain integer count
+//     declared as a unit-"1" gauge becomes `*_ratio`. A unit-"1" counter does
+//     NOT get `ratio`, only `total`. A histogram gets neither.
+//  5. TOKEN DEDUPE: a suffix token already present anywhere in the name is not
+//     appended again (`tailscale2otel.objectstore.bytes` + `By` stays
+//     `tailscale2otel_objectstore_bytes_total`), and a `total`/`ratio` token
+//     found mid-name is MOVED to the end rather than duplicated;
+//  6. a leading digit is prefixed with `_`.
+//
+// This returns the empty string only if normalization degenerates (empty name,
+// or a name made entirely of separators) — an input the catalog never contains,
+// and one the per-package catalog consistency guards would reject.
 func (m Metric) PromName() string {
-	name := strings.ReplaceAll(m.Name, ".", "_")
-	switch m.Unit {
-	case "By":
-		name += "_bytes"
-	case "s":
-		name += "_seconds"
-	case "d":
-		name += "_days"
-	case "1":
-		// A dimensionless "1" gets _ratio only on a gauge; on a counter it is a
-		// plain count and gets no unit suffix (just _total below).
-		if m.Instrument == Gauge {
-			name += "_ratio"
-		}
-	default:
-		// Annotation units like {packet}/{flow}/{route} are dropped entirely.
-	}
-	if m.Instrument == Counter {
-		name += "_total"
+	name, err := promMetricNamer.Build(otlptranslator.Metric{
+		Name: m.Name,
+		Unit: m.Unit,
+		Type: promMetricType(m.Instrument),
+	})
+	if err != nil {
+		return ""
 	}
 	return name
 }

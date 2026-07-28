@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const serviceName = "tailscale2otel"
@@ -47,6 +48,8 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		KeyFile:                  cfg.OTLP.TLS.KeyFile,
 		MetricInterval:           cfg.OTLP.MetricInterval.D(),
 		MetricExportBatchSize:    cfg.OTLP.MetricExportBatchSize,
+		MaxLogBodyBytes:          cfg.OTLP.Limits.LogBodyBytes,
+		MaxLogAttrValueBytes:     cfg.OTLP.Limits.LogAttributeValueBytes,
 		SelfObsEnabled:           cfg.SelfObservability.Enabled,
 		CardinalityLimit:         cfg.Cardinality.MetricLimit,
 		CardinalityLabelValueCap: cfg.Cardinality.LabelValueSampleCap,
@@ -107,12 +110,19 @@ func instanceID(cfg *config.Config) string {
 
 // hsapiOptions maps the Headscale config into hsapi.Options. Auth is the Bearer
 // API key; the minimal client uses only the request timeout (no retry in v1).
-func hsapiOptions(cfg *config.Config) hsapi.Options {
+//
+// tracer produces one client span per Headscale API call, bringing it to parity
+// with the Tailscale client, which has been traced since #371's baseline. The
+// span-name label space is bounded by construction — the client only ever calls
+// five literal paths — so no per-item elision is needed. A no-op tracer (which
+// is what Provider hands over when tracing.enabled=false) makes this free.
+func hsapiOptions(cfg *config.Config, tracer trace.Tracer) hsapi.Options {
 	return hsapi.Options{
 		URL:              cfg.Headscale.URL,
 		APIKey:           cfg.Headscale.APIKey.Reveal(),
 		Timeout:          cfg.Headscale.HTTP.Timeout.D(),
 		MaxResponseBytes: cfg.Headscale.MaxResponseBytes,
+		Tracer:           tracer,
 	}
 }
 
@@ -159,14 +169,32 @@ func tsapiOptionsFor(rt config.ResolvedTailnet, version string) tsapi.Options {
 // is its own OTLP target (resource attributes other than job/instance/service_*
 // live only in target_info on Grafana Cloud, so a shared instance would collide
 // series). Single-tailnet keeps the bare base instance for output continuity.
-func instanceFor(base, tailnet string, multi bool) string {
+//
+// piiTailnet is pii_filter.tailnet_name. When it is false, suppressing the
+// tailscale.tailnet ATTRIBUTE is not enough (#356): the raw name was still
+// embedded here, and service.instance.id is promoted to Grafana's `instance`
+// label and appears in target_info and on every log/trace Resource — so
+// disabling the category did not honor its contract. The tailnet must remain a
+// distinct DIMENSION (otherwise two tailnets collide on one instance, the exact
+// collision this function exists to prevent) while ceasing to be a NAME. Same
+// treatment as instanceID gives a hostname: 12 hex chars of SHA-256, stable
+// across restarts so the series is continuous, non-reversible so the name is not
+// disclosed.
+//
+// Single-tailnet mode has no suffix and so nothing to leak; it is unaffected.
+func instanceFor(base, tailnet string, multi, piiTailnet bool) string {
 	if !multi {
 		return base
 	}
-	if base == "" {
-		return tailnet
+	label := tailnet
+	if !piiTailnet {
+		sum := sha256.Sum256([]byte(tailnet))
+		label = hex.EncodeToString(sum[:])[:12]
 	}
-	return base + "/" + tailnet
+	if base == "" {
+		return label
+	}
+	return base + "/" + label
 }
 
 // nodeMetricsOptions maps the node-metrics scraper config into
@@ -175,7 +203,12 @@ func instanceFor(base, tailnet string, multi bool) string {
 // collector) is offered to the discoverer so it reuses that inventory instead
 // of issuing its own DevicesRich() poll against the heaviest Tailscale endpoint
 // (#85); a nil/empty cache transparently falls back to the API poll.
-func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache deviceCacheReader, logger *slog.Logger) nodemetrics.Options {
+//
+// tracer produces one client span per target scrape (#371). The span NAME is the
+// fixed class "nodemetrics.scrape", never the target URL: targets are discovered
+// dynamically and are therefore unbounded, so per-target detail belongs in an
+// attribute rather than in the name.
+func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache deviceCacheReader, logger *slog.Logger, tracer trace.Tracer) nodemetrics.Options {
 	targets := make([]nodemetrics.Target, 0, len(nm.Targets))
 	for _, t := range nm.Targets {
 		var headers map[string]string
@@ -220,6 +253,7 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache
 		// Needed so a target whose custom TLS material fails to build is
 		// reported rather than silently falling back (GHSA-2q4v-rrm9-966w).
 		Logger: logger,
+		Tracer: tracer,
 	}
 	// Dynamic discovery: poll the Tailscale device inventory on its own interval
 	// and union the result with the static targets (handled by the collector).

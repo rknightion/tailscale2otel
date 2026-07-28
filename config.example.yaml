@@ -157,6 +157,9 @@ otlp:
     key_file: ""                      # client private key path (for mutual TLS)
   metric_interval: 60s                # how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape)
   metric_export_batch_size: 10000     # maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels)
+  limits:                             # bound ONE log record before export (a valid request can still carry one enormous record)
+    log_body_bytes: 32768             # cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting
+    log_attribute_value_bytes: 4096   # cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split)
 
 # ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
 enrichment:
@@ -489,9 +492,14 @@ prometheus:
     token: ""                         # gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
     allow_unauthenticated: false      # acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this
+  max_requests_in_flight: 0           # cap concurrent /metrics gathers (excess gets 503); a Gather walks every series, so N slow scrapes cost N walks. 0 = unlimited
+  timeout: 0s                         # give up on a single /metrics gather after this long (503). 0 = no timeout; keep below the scraper's own timeout
+  coalesce_gather: false              # serve scrapes arriving during an in-flight gather from that same gather (helps HA scraper pairs; costs slight staleness)
   tls:
     cert_file: ""                     # serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)
     key_file: ""                      # HTTPS key for prometheus.tls.cert_file
+    client_ca_file: ""                # require scrapers to present a client certificate signed by this CA (mTLS); needs cert_file/key_file, composes with auth.token
+    client_auth: ""                   # how hard to check the client cert: require_and_verify (default when client_ca_file set)|verify_if_given|require|request|none
 
 # ── Profiling (OPTIONAL: all off by default, carries no Tailscale data) ─────────
 profiling:
@@ -506,6 +514,12 @@ profiling:
     tenant_id: ""                     # X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)
     upload_rate: 60s                  # how often profiles are flushed
     tags: {}                          # extra static labels merged onto every profile, e.g. { env: prod }
+    headers: {}                       # extra HTTP headers on every profile upload, e.g. { X-Api-Key: abc }; values are secrets and redact from status/logs. Reserved headers (Authorization, tenant) win over these
+    tls:                              # TLS for the OUTBOUND profile-upload client (used when server_address is https)
+      insecure_skip_verify: false     # keep TLS but skip server-certificate verification — a footgun; prefer ca_file
+      ca_file: ""                     # PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway)
+      cert_file: ""                   # client certificate for mTLS to the profiles endpoint; set together with key_file (both-or-neither)
+      key_file: ""                    # client key for profiling.pyroscope.tls.cert_file
   mutex_profile_fraction: 5           # runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled
   block_profile_rate: 100000          # runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled
 

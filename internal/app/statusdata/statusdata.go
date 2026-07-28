@@ -602,11 +602,57 @@ type TLSListenerStatus struct {
 	LastReloadFailureReason string `json:"last_reload_failure_reason,omitempty"`
 }
 
-// ProfilingInfo reports the continuous-profiling configuration (no credentials).
+// ProfilingInfo reports the continuous-profiling configuration and, when the
+// Pyroscope push agent is enabled, its live upload health (no credentials).
 type ProfilingInfo struct {
 	PprofEnabled     bool   `json:"pprof_enabled"`
 	PyroscopeEnabled bool   `json:"pyroscope_enabled"`
 	PyroscopeServer  string `json:"pyroscope_server,omitempty"`
+	// PyroscopeUpload is the push agent's delivery health. Nil when the agent is
+	// disabled — "configured but never uploaded" and "not configured" are
+	// different states and an operator needs to tell them apart.
+	PyroscopeUpload *ProfilingUploadHealth `json:"pyroscope_upload,omitempty"`
+	// PyroscopeHeaderNames lists the CANONICAL names of the operator-supplied
+	// extra upload headers, sorted. Names only, deliberately: an extra Pyroscope
+	// header is the documented place to put a bearer token, so every value is
+	// treated as a secret and never leaves the process.
+	PyroscopeHeaderNames []string `json:"pyroscope_header_names,omitempty"`
+	// PyroscopeTLS reports which TLS customizations are active, as flags. File
+	// paths are omitted — they are operator-chosen strings on the host, and the
+	// useful operational question is "is a custom CA in play", not "where is it".
+	PyroscopeTLSCustomCA   bool `json:"pyroscope_tls_custom_ca"`
+	PyroscopeTLSClientCert bool `json:"pyroscope_tls_client_cert"`
+	PyroscopeTLSSkipVerify bool `json:"pyroscope_tls_insecure_skip_verify"`
+}
+
+// ProfilingUploadHealth is the Pyroscope push agent's delivery history: what
+// actually reached the profiles backend, as opposed to how it was configured.
+//
+// The distinction is the whole point, and it mirrors telemetry.DeliveryState for
+// OTLP: the page used to report only that Pyroscope was ENABLED, so a push agent
+// that had been rejected on every upload since startup read as healthy.
+type ProfilingUploadHealth struct {
+	// Attempts is every completed upload attempt; Failures is how many failed.
+	Attempts int64 `json:"attempts"`
+	Failures int64 `json:"failures"`
+	// ConsecutiveFailures is the current unbroken failure streak, reset by any
+	// success. It is what distinguishes a blip from an outage.
+	ConsecutiveFailures int64 `json:"consecutive_failures"`
+	// LastSuccessAt/LastFailureAt are RFC3339, omitted while unset. A failure
+	// timestamp is deliberately retained after a recovery: "recovered two minutes
+	// ago after failing for an hour" is what an operator is trying to establish.
+	LastSuccessAt string `json:"last_success_at,omitempty"`
+	LastFailureAt string `json:"last_failure_at,omitempty"`
+	// LastDurationSeconds is the wall-clock duration of the most recent attempt,
+	// successful or not.
+	LastDurationSeconds float64 `json:"last_duration_seconds"`
+	// LastErrorClass is a member of a CLOSED class set, never the server's error
+	// text — a Pyroscope error body echoes whatever the request contained.
+	LastErrorClass string `json:"last_error_class,omitempty"`
+	// Healthy is false once the failure streak reaches the sustained-outage
+	// threshold. It never gates the readiness probe: profiling is a diagnostic
+	// side-channel and a profiles-backend outage must not stall a rollout.
+	Healthy bool `json:"healthy"`
 }
 
 // RuntimeInfo is a point-in-time Go runtime snapshot plus short-term trend

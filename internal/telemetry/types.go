@@ -95,6 +95,13 @@ type Emitter interface {
 	// so the metric SDK can attach a trace exemplar when ctx carries a sampled
 	// span. Histogram is exactly HistogramCtx with context.Background().
 	HistogramCtx(ctx context.Context, name, unit, desc string, value float64, bounds []float64, attrs Attrs)
-	// LogEvent emits a single OTEL log record.
+	// LogEvent emits a single OTEL log record. Equivalent to LogEventCtx with
+	// context.Background() — the record carries no trace/span context.
 	LogEvent(ev Event)
+	// LogEventCtx emits like LogEvent but uses ctx as the recording context, so
+	// the log SDK attaches the NATIVE TraceID/SpanID from ctx's span context
+	// (when sampled) directly onto the LogRecord — no per-record span, no raw
+	// trace_id/span_id attributes. An unsampled or background ctx leaves the
+	// record exactly as LogEvent would.
+	LogEventCtx(ctx context.Context, ev Event)
 }

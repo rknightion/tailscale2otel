@@ -659,6 +659,32 @@ func TestWebhookHandle_EmitsSpan(t *testing.T) {
 	}
 }
 
+// TestWebhookHandle_RequestDurationCarriesExemplar is the #367 acceptance test
+// for the webhook receiver's request-duration histogram: under a configured
+// tracer the per-request span is sampled (default AlwaysSample), and the ctx
+// the span lives on must reach the histogram recording (HistogramCtx, not the
+// context-free Histogram) so the metric SDK attaches an exemplar.
+func TestWebhookHandle_RequestDurationCarriesExemplar(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	rec := telemetrytest.New()
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"}, rec.Emitter(), discard(), WithTracer(tp.Tracer("test")))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader("[]"))
+	rw := httptest.NewRecorder()
+	s.handle(rw, req)
+
+	pts := rec.MetricPoints("tailscale.webhook.request.duration")
+	if len(pts) == 0 {
+		t.Fatalf("tailscale.webhook.request.duration: no points recorded")
+	}
+	if pts[0].Exemplars == 0 {
+		t.Fatalf("tailscale.webhook.request.duration: 0 exemplars, want >0 (histogram must be recorded via HistogramCtx under the sampled request span)")
+	}
+}
+
 // TestHandler_RequestDurationRecorded verifies that a successfully handled
 // webhook POST records exactly one tailscale.webhook.request.duration histogram
 // sample with a non-negative value and no attributes.

@@ -1571,6 +1571,22 @@
           "description": "extra raw OTLP headers, e.g. {X-Scope-OrgID: \"1\"} (alternative to grafana_cloud); FILE-ONLY (maps aren't settable via env)",
           "type": "object"
         },
+        "limits": {
+          "additionalProperties": false,
+          "properties": {
+            "log_attribute_value_bytes": {
+              "default": 4096,
+              "description": "cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split)",
+              "type": "integer"
+            },
+            "log_body_bytes": {
+              "default": 32768,
+              "description": "cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
         "metric_export_batch_size": {
           "default": 10000,
           "description": "maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels)",
@@ -1747,6 +1763,13 @@
               "description": "run the Pyroscope continuous-profiling push agent",
               "type": "boolean"
             },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "extra HTTP headers on every profile upload, e.g. { X-Api-Key: abc }; values are secrets and redact from status/logs. Reserved headers (Authorization, tenant) win over these",
+              "type": "object"
+            },
             "server_address": {
               "default": "",
               "description": "REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net",
@@ -1763,6 +1786,32 @@
               "default": "",
               "description": "X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud)",
               "type": "string"
+            },
+            "tls": {
+              "additionalProperties": false,
+              "properties": {
+                "ca_file": {
+                  "default": "",
+                  "description": "PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway)",
+                  "type": "string"
+                },
+                "cert_file": {
+                  "default": "",
+                  "description": "client certificate for mTLS to the profiles endpoint; set together with key_file (both-or-neither)",
+                  "type": "string"
+                },
+                "insecure_skip_verify": {
+                  "default": false,
+                  "description": "keep TLS but skip server-certificate verification — a footgun; prefer ca_file",
+                  "type": "boolean"
+                },
+                "key_file": {
+                  "default": "",
+                  "description": "client key for profiling.pyroscope.tls.cert_file",
+                  "type": "string"
+                }
+              },
+              "type": "object"
             },
             "upload_rate": {
               "default": "60s",
@@ -1802,6 +1851,11 @@
           },
           "type": "object"
         },
+        "coalesce_gather": {
+          "default": false,
+          "description": "serve scrapes arriving during an in-flight gather from that same gather (helps HA scraper pairs; costs slight staleness)",
+          "type": "boolean"
+        },
         "enabled": {
           "default": false,
           "description": "run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push",
@@ -1812,12 +1866,36 @@
           "description": "bind for /metrics (default :2112); keep distinct from admin.listen",
           "type": "string"
         },
+        "max_requests_in_flight": {
+          "default": 0,
+          "description": "cap concurrent /metrics gathers (excess gets 503); a Gather walks every series, so N slow scrapes cost N walks. 0 = unlimited",
+          "type": "integer"
+        },
+        "timeout": {
+          "default": "0s",
+          "description": "give up on a single /metrics gather after this long (503). 0 = no timeout; keep below the scraper's own timeout",
+          "examples": [
+            "0s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
         "tls": {
           "additionalProperties": false,
           "properties": {
             "cert_file": {
               "default": "",
               "description": "serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)",
+              "type": "string"
+            },
+            "client_auth": {
+              "default": "",
+              "description": "how hard to check the client cert: require_and_verify (default when client_ca_file set)|verify_if_given|require|request|none",
+              "type": "string"
+            },
+            "client_ca_file": {
+              "default": "",
+              "description": "require scrapers to present a client certificate signed by this CA (mTLS); needs cert_file/key_file, composes with auth.token",
               "type": "string"
             },
             "key_file": {

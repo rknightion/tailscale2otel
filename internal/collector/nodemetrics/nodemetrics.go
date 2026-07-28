@@ -39,10 +39,19 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 // Compile-time assertion: *Collector is a SnapshotCollector.
 var _ collector.SnapshotCollector = (*Collector)(nil)
+
+// noopAPITracer is the shared fallback for a nil Options.Tracer, so the
+// nil-tracer path allocates no tracer per scrape, mirroring
+// internal/tsapi/transport.go's retryTransport.startSpan pattern.
+var noopAPITracer = tracenoop.NewTracerProvider().Tracer("")
 
 const (
 	defaultInterval          = 60 * time.Second
@@ -205,6 +214,18 @@ type Options struct {
 	MetricAllow []string
 	MetricDeny  []string
 	DropLabels  []string
+
+	// Tracer, when non-nil, emits one client span per target scrape (the GET of
+	// the target's /metrics endpoint), mirroring
+	// internal/tsapi/transport.go's retryTransport.startSpan. A nil Tracer is
+	// replaced with a no-op at span-start (see noopAPITracer), so callers never
+	// need a nil-guard. The span NAME is a single fixed class ("nodemetrics.scrape"),
+	// never the per-target URL/host/instance — see fetchAndEmit's span-name
+	// comment for why: node_metrics.discovery can add an unbounded, externally
+	// discovered set of targets over the collector's lifetime, so anything
+	// target-specific in the name would make span-name cardinality unbounded.
+	// Per-target detail rides as span ATTRIBUTES instead.
+	Tracer trace.Tracer
 }
 
 // resolvedTarget pairs a Target with the *http.Client to scrape it through,
@@ -243,6 +264,7 @@ type Collector struct {
 	maxSamples        int
 	concurrency       int // resolved worker-pool size for scrapeAll (#80)
 	logger            *slog.Logger
+	tracer            trace.Tracer // never nil; resolved in New (see noopAPITracer)
 
 	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
 	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
@@ -334,6 +356,10 @@ func New(opts Options) *Collector {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	tracer := opts.Tracer
+	if tracer == nil {
+		tracer = noopAPITracer
+	}
 	maxDistinctMetrics := opts.MaxDistinctMetrics
 	switch {
 	case maxDistinctMetrics == 0:
@@ -354,6 +380,7 @@ func New(opts Options) *Collector {
 		maxSamples:         maxSamples,
 		concurrency:        concurrency,
 		logger:             logger,
+		tracer:             tracer,
 		metricAllow:        compileAnchored(opts.MetricAllow),
 		metricDeny:         compileAnchored(opts.MetricDeny),
 		dropLabels:         toSet(opts.DropLabels),
@@ -853,21 +880,11 @@ func (c *Collector) scrapeTarget(ctx context.Context, rt *resolvedTarget, client
 // returns an error on any transport, status, read, or parse failure. targetID is
 // the scrape target's stable identity, threaded down to key delta baselines (#199).
 func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, targetID string, client *http.Client, instance string, e telemetry.Emitter) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.URL, nil)
-	if err != nil {
-		return err
-	}
-	if err := applyAuthHeaders(req, t); err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
+	resp, err := c.scrapeHTTP(ctx, t, client, instance)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("nodemetrics: GET %s: status %d", t.URL, resp.StatusCode)
-	}
 
 	samples, err := parse(limitedReadCloser(resp.Body, c.maxResponseBytes), c.maxSamples)
 	if err != nil {
@@ -877,6 +894,69 @@ func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, targetID string
 		c.emitSample(&samples[i], t, targetID, instance, e)
 	}
 	return nil
+}
+
+// scrapeHTTP performs the GET of one target's /metrics endpoint inside a
+// single client span, and returns the response on a 2xx status (caller closes
+// the body). The span covers only the HTTP round trip and status check — like
+// internal/tsapi/transport.go's retryTransport, it ends BEFORE the body is
+// parsed, so sample decoding is never attributed to network latency.
+//
+// The span NAME is the fixed class "nodemetrics.scrape", never t.URL or
+// instance: node_metrics.discovery (see internal/collector/CLAUDE.md) can add
+// an unbounded, externally discovered set of targets over the collector's
+// lifetime, so any per-target text in the span NAME would make span-name
+// cardinality unbounded. Per-target detail (instance, url.full) rides as span
+// ATTRIBUTES instead — the same tradeoff tsapi's transport makes with
+// url.full (a bounded endpoint-class name, an unbounded-but-attribute URL).
+func (c *Collector) scrapeHTTP(ctx context.Context, t *Target, client *http.Client, instance string) (*http.Response, error) {
+	spanCtx, span := c.tracer.Start(ctx, "nodemetrics.scrape", trace.WithSpanKind(trace.SpanKindClient))
+
+	req, err := http.NewRequestWithContext(spanCtx, http.MethodGet, t.URL, nil)
+	if err != nil {
+		c.observeScrape(span, instance, t.URL, 0, err)
+		return nil, err
+	}
+	if err := applyAuthHeaders(req, t); err != nil {
+		c.observeScrape(span, instance, t.URL, 0, err)
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.observeScrape(span, instance, t.URL, 0, err)
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		statusErr := fmt.Errorf("nodemetrics: GET %s: status %d", t.URL, resp.StatusCode)
+		c.observeScrape(span, instance, t.URL, resp.StatusCode, statusErr)
+		_ = resp.Body.Close()
+		return nil, statusErr
+	}
+	c.observeScrape(span, instance, t.URL, resp.StatusCode, nil)
+	return resp, nil
+}
+
+// observeScrape finalizes one scrapeHTTP span: status/error attributes, span
+// status, and End. status is 0 when no HTTP response was received.
+func (c *Collector) observeScrape(span trace.Span, instance, url string, status int, err error) {
+	if span.IsRecording() {
+		span.SetAttributes(
+			attribute.String(attrInstance, instance),
+			attribute.String("http.request.method", http.MethodGet),
+			attribute.String("url.full", url),
+		)
+		if status != 0 {
+			span.SetAttributes(attribute.Int("http.response.status_code", status))
+		}
+		switch {
+		case err != nil:
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		case status >= 400:
+			span.SetStatus(codes.Error, http.StatusText(status))
+		}
+	}
+	span.End()
 }
 
 // applyAuthHeaders sets the target's custom headers and bearer Authorization on

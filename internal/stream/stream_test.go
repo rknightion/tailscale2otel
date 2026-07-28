@@ -1244,6 +1244,36 @@ func TestStreamHandle_EmitsSpan(t *testing.T) {
 	}
 }
 
+// TestStreamHandle_RequestDurationCarriesExemplar is the #367 acceptance test
+// for the receiver's request-duration histogram: under a configured tracer the
+// per-request span is sampled (default AlwaysSample), and the ctx the span
+// lives on must reach the histogram recording (HistogramCtx, not the
+// context-free Histogram) so the metric SDK attaches an exemplar.
+func TestStreamHandle_RequestDurationCarriesExemplar(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	rec := telemetrytest.New()
+	cache := enrich.NewDeviceCache()
+	flowProc := flowlog.NewProcessor(cache, flowlog.Options{})
+	auditProc := audit.NewProcessor()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := stream.New(stream.Options{Listen: loopbackListen}, flowProc, auditProc, rec.Emitter(), logger, stream.WithTracer(tp.Tracer("test")))
+
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event",
+		http.Header{}, strings.NewReader("{}"))
+	_ = resp
+
+	pts := rec.MetricPoints(stream.MetricRequestDuration)
+	if len(pts) == 0 {
+		t.Fatalf("%s: no points recorded", stream.MetricRequestDuration)
+	}
+	if pts[0].Exemplars == 0 {
+		t.Fatalf("%s: 0 exemplars, want >0 (histogram must be recorded via HistogramCtx under the sampled request span)", stream.MetricRequestDuration)
+	}
+}
+
 // TestStreamHandle_EmitsSpanOnAuthReject verifies that the span is emitted and
 // marked Error even when the request is rejected for bad auth.
 func TestStreamHandle_EmitsSpanOnAuthReject(t *testing.T) {

@@ -220,7 +220,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	for i := range resolved {
 		perTN[i] = telemetry.PerTailnetOptions{
 			Name:       labels[i],
-			InstanceID: instanceFor(base.InstanceID, labels[i], multi),
+			InstanceID: instanceFor(base.InstanceID, labels[i], multi, cfg.PIIFilter.TailnetName),
 		}
 	}
 	ps, err := telemetry.NewProviderSet(ctx, base, perTN)
@@ -270,7 +270,31 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 
 	// Build one runtime per tailnet (Tailscale), or a single Headscale runtime.
 	if cfg.Provider == "headscale" {
-		hsClient := hsapi.NewClient(hsapiOptions(cfg))
+		// Headscale API requests were dark: untraced, and absent from both the
+		// api.* self-obs metrics and the status page's API panel, while the
+		// equivalent Tailscale calls had all three (#371). Give it the same
+		// treatment. hsapi has no retry and no client-side rate limiter, so
+		// Attempts is always 1 and WaitDuration always 0 — stated here rather
+		// than left as two silently-zero columns.
+		hsAPIStats := NewAPIStats()
+		var hsObs func(context.Context, string, int, int, time.Duration, time.Duration)
+		if cfg.SelfObservability.Enabled {
+			hsObs = apiObserver(a.procEmitter)
+		}
+		hsOpts := hsapiOptions(cfg, a.tracer)
+		hsOpts.OnRequest = func(ctx context.Context, i hsapi.RequestInfo) {
+			if hsObs != nil {
+				hsObs(ctx, i.Endpoint, i.Status, 1, i.Duration, 0)
+			}
+			hsAPIStats.Record(tsapi.RequestInfo{
+				Endpoint: i.Endpoint,
+				Status:   i.Status,
+				Attempts: 1,
+				Duration: i.Duration,
+				Err:      i.Err,
+			})
+		}
+		hsClient := hsapi.NewClient(hsOpts)
 		cp := provider.Headscale(hsapi.NewProvider(hsClient))
 		// Headscale has no tailnet fan-out: collect under the process provider's
 		// emitter (no tailscale.tailnet attribute), matching v1 single-Resource output.
@@ -282,7 +306,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		// state, inflating export.* ~2x and corrupting series.active (#54). This
 		// mirrors the newApp test seam and the multi-tailnet design (distinct
 		// providers get their own trackers; a shared provider gets none).
-		a.addRuntimeConfigured(
+		hsRuntime := a.addRuntimeConfigured(
 			"headscale",
 			"",
 			a.procEmitter,
@@ -292,6 +316,11 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			cp,
 			multi,
 		)
+		// addRuntimeConfigured mints its own APIStats, but the request hook above
+		// had to be closed over one that existed before the client was built.
+		// Swap in the one actually being written to, or the status page's API
+		// panel reads an object nothing ever records into.
+		hsRuntime.apiStats = hsAPIStats
 	} else {
 		for i, rt := range resolved {
 			label := labels[i]
@@ -352,8 +381,12 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// Continuous profiling is opt-in. startProfiling also applies the runtime
 	// mutex/block sampling rates needed by the /debug/pprof pull path. A failure
 	// to reach Pyroscope is non-fatal: the exporter's core job is unaffected.
+	// The emitter turns on the profiling.upload.* self-obs metrics (#374). The
+	// health tracker records regardless — the admin status page must work on a
+	// deployment that exports no self-telemetry at all — so this only controls
+	// whether that state also leaves the process as metrics.
 	profLogger := withComponent(logger, compProfiling)
-	prof, err := startProfiling(cfg, version, profLogger)
+	prof, err := startProfiling(cfg, version, profLogger, withProfilingEmitter(a.procEmitter))
 	if err != nil {
 		profLogger.Error("pyroscope profiler failed to start", "error", err)
 	}
@@ -477,12 +510,12 @@ func (a *App) buildProcessDeps() {
 	if vc.Self.Enabled {
 		a.selfRelease = release.NewFetcher("self", release.GitHubLatestURL, ua,
 			release.ParseGitHubLatest, newReleaseHTTPClient(vc.Timeout.D()),
-			vc.CacheTTL.D(), releaseLogger)
+			vc.CacheTTL.D(), releaseLogger, release.WithTracer(a.tracer))
 	}
 	if vc.Devices.Enabled {
 		a.tsRelease = release.NewFetcher("tailscale", release.TailscalePkgsURL, ua,
 			release.ParseTailscalePkgs, newReleaseHTTPClient(vc.Timeout.D()),
-			vc.CacheTTL.D(), releaseLogger)
+			vc.CacheTTL.D(), releaseLogger, release.WithTracer(a.tracer))
 	}
 }
 

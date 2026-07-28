@@ -1,7 +1,10 @@
 package telemetrytest_test
 
 import (
+	"context"
 	"testing"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
@@ -107,6 +110,50 @@ func TestRecorderCapturesLogEvent(t *testing.T) {
 	}
 	if lr.Attrs["network.transport"] != "tcp" {
 		t.Fatalf("network.transport attr = %q, want tcp", lr.Attrs["network.transport"])
+	}
+}
+
+// TestRecorderCapturesLogEventCtxTraceContext proves the Recorder exposes a
+// log record's NATIVE trace context (#367), so a collector test can assert
+// that a log emitted inside a sampled span carries the same TraceID/SpanID —
+// this is the capability the gotcha in internal/telemetry/CLAUDE.md's testing
+// section flagged as needing verification/addition.
+func TestRecorderCapturesLogEventCtxTraceContext(t *testing.T) {
+	rec := telemetrytest.New()
+	e := rec.Emitter()
+
+	wantTraceID := trace.TraceID{0xAA, 0xBB}
+	wantSpanID := trace.SpanID{0xCC, 0xDD}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    wantTraceID,
+		SpanID:     wantSpanID,
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	e.LogEventCtx(ctx, telemetry.Event{Name: "tailscale.test.event", Body: "sampled"})
+	e.LogEvent(telemetry.Event{Name: "tailscale.test.event", Body: "background"})
+
+	recs := rec.LogRecords()
+	if len(recs) != 2 {
+		t.Fatalf("log records = %d, want 2", len(recs))
+	}
+	sampled, background := recs[0], recs[1]
+
+	if sampled.TraceID != wantTraceID.String() {
+		t.Errorf("sampled TraceID = %q, want %q", sampled.TraceID, wantTraceID.String())
+	}
+	if sampled.SpanID != wantSpanID.String() {
+		t.Errorf("sampled SpanID = %q, want %q", sampled.SpanID, wantSpanID.String())
+	}
+	if !sampled.Sampled {
+		t.Errorf("sampled record's Sampled = false, want true")
+	}
+
+	if background.TraceID != (trace.TraceID{}).String() {
+		t.Errorf("background TraceID = %q, want zero value", background.TraceID)
+	}
+	if background.Sampled {
+		t.Errorf("background record's Sampled = true, want false")
 	}
 }
 

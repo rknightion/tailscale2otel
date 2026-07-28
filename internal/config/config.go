@@ -198,6 +198,20 @@ type PrometheusConfig struct {
 	// TLS optionally serves the prometheus listener over HTTPS instead of plain
 	// HTTP.
 	TLS PrometheusTLS `yaml:"tls"`
+	// MaxRequestsInFlight bounds concurrent /metrics gathers. A Gather walks
+	// every series in the registry, so N simultaneous slow scrapes cost N times
+	// that walk; excess requests get 503 rather than piling up. 0 = unlimited
+	// (the promhttp default).
+	MaxRequestsInFlight int `yaml:"max_requests_in_flight"`
+	// Timeout caps how long a single /metrics gather may run before the handler
+	// gives up with 503. 0 = no timeout (the promhttp default). Keep it below
+	// the scraper's own timeout so the app, not the scraper, decides.
+	Timeout Duration `yaml:"timeout"`
+	// CoalesceGather serves concurrent scrapes that arrive during one in-flight
+	// gather from that single gather's result instead of starting another. Helps
+	// when several replicas of a scraper hit the same instance; costs a small
+	// amount of staleness.
+	CoalesceGather bool `yaml:"coalesce_gather"`
 }
 
 // PrometheusTLS configures TLS for the prometheus pull-endpoint server. Mirrors
@@ -206,6 +220,17 @@ type PrometheusConfig struct {
 type PrometheusTLS struct {
 	CertFile string `yaml:"cert_file"`
 	KeyFile  string `yaml:"key_file"`
+	// ClientCAFile enables mutual TLS on the prometheus listener: only scrapers
+	// presenting a certificate signed by this CA are served. Requires
+	// cert_file/key_file (there is no client-cert check without server TLS).
+	// Composes with auth.token — a request must satisfy both when both are set.
+	ClientCAFile string `yaml:"client_ca_file"`
+	// ClientAuth selects how hard the client certificate is checked:
+	// require_and_verify (default when client_ca_file is set), verify_if_given,
+	// require, request, or none. Only require_and_verify and verify_if_given
+	// actually validate against client_ca_file; the weaker modes exist for
+	// staged rollouts and are warned about.
+	ClientAuth string `yaml:"client_auth"`
 }
 
 // PrometheusAuth optionally gates /metrics behind a shared secret presented as the
@@ -268,6 +293,27 @@ type ProfilingPyroscope struct {
 	TenantID              string            `yaml:"tenant_id"`
 	UploadRate            Duration          `yaml:"upload_rate"`
 	Tags                  map[string]string `yaml:"tags"`
+	// Headers are sent on every profile upload. Values are Secret: a profiles
+	// endpoint behind a gateway commonly wants an API key here. Reserved
+	// headers (Authorization when basic auth is set, and the tenant header)
+	// win over anything set here rather than being silently overridden.
+	Headers map[string]Secret `yaml:"headers"`
+	// TLS configures the profile-upload client's TLS when server_address is
+	// https. Distinct from the listener TLS blocks: this is an outbound client,
+	// so it takes a CA to trust plus an optional client keypair for mTLS.
+	TLS PyroscopeTLS `yaml:"tls"`
+}
+
+// PyroscopeTLS configures TLS for the OUTBOUND Pyroscope profile-upload client.
+// Mirrors the field names of otlp.tls minus `insecure`: there is no plaintext
+// toggle because the scheme in server_address already decides http vs https.
+type PyroscopeTLS struct {
+	// InsecureSkipVerify keeps TLS on but skips server-certificate
+	// verification. A footgun — prefer ca_file with the gateway's CA.
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	CAFile             string `yaml:"ca_file"`
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
 }
 
 // VersionChecksConfig configures the optional outbound "is a newer release
@@ -527,9 +573,13 @@ type OTLPConfig struct {
 	// Headers values are Secret: an OTLP header commonly carries an
 	// Authorization token (the documented way to auth against a non-Grafana-Cloud
 	// gateway), so the values redact themselves in any config dump/log (#73).
-	Headers        map[string]Secret `yaml:"headers"`
-	TLS            TLSConfig         `yaml:"tls"`
-	MetricInterval Duration          `yaml:"metric_interval"`
+	Headers map[string]Secret `yaml:"headers"`
+	// Limits bound one individual log record before export. Distinct from the
+	// receivers' request-body caps, which bound a whole inbound request: a
+	// request can be perfectly valid and still contain one enormous record.
+	Limits         OTLPLimits `yaml:"limits"`
+	TLS            TLSConfig  `yaml:"tls"`
+	MetricInterval Duration   `yaml:"metric_interval"`
 	// MetricExportBatchSize bounds the number of datapoints in each OTLP metric
 	// request. This is a count, not a serialized-byte limit.
 	MetricExportBatchSize int `yaml:"metric_export_batch_size"`
@@ -557,6 +607,26 @@ type TLSConfig struct {
 	CAFile             string `yaml:"ca_file"`
 	CertFile           string `yaml:"cert_file"`
 	KeyFile            string `yaml:"key_file"`
+}
+
+// OTLPLimits bounds an individual OTLP log record (#366). One oversized HEC,
+// audit or webhook record could otherwise dominate a batch or breach a backend's
+// per-record limit even though the request carrying it was valid.
+//
+// Truncation is UTF-8 safe (a multi-byte rune is never split), happens AFTER
+// redaction so a secret can never be truncated into a partially-redacted string,
+// and leaves an explicit marker. It applies only to log bodies and log attribute
+// VALUES — never to metric labels, which must stay byte-exact or series split.
+//
+// There is deliberately no "unlimited" setting: bounding the record is the point.
+// An operator who wants effectively no bound sets a very large value, which is an
+// explicit choice rather than a zero that silently means "no protection".
+type OTLPLimits struct {
+	// LogBodyBytes caps the log record body.
+	LogBodyBytes int `yaml:"log_body_bytes"`
+	// LogAttributeValueBytes caps each individual string-valued log attribute.
+	// Non-string attribute kinds are fixed-size by construction and unaffected.
+	LogAttributeValueBytes int `yaml:"log_attribute_value_bytes"`
 }
 
 // EnrichmentConfig configures device-enrichment caching.

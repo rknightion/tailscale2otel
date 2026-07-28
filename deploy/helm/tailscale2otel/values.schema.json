@@ -856,6 +856,18 @@
                         "headers": {
                             "type": "object"
                         },
+                        "limits": {
+                            "type": "object",
+                            "properties": {
+                                "log_attribute_value_bytes": {
+                                    "type": "integer"
+                                },
+                                "log_body_bytes": {
+                                    "type": "integer"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
                         "metric_export_batch_size": {
                             "type": "integer"
                         },
@@ -967,6 +979,9 @@
                                 "enabled": {
                                     "type": "boolean"
                                 },
+                                "headers": {
+                                    "type": "object"
+                                },
                                 "server_address": {
                                     "type": "string"
                                 },
@@ -975,6 +990,24 @@
                                 },
                                 "tenant_id": {
                                     "type": "string"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ca_file": {
+                                            "type": "string"
+                                        },
+                                        "cert_file": {
+                                            "type": "string"
+                                        },
+                                        "insecure_skip_verify": {
+                                            "type": "boolean"
+                                        },
+                                        "key_file": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
                                 },
                                 "upload_rate": {
                                     "type": "string"
@@ -1003,16 +1036,31 @@
                             },
                             "additionalProperties": false
                         },
+                        "coalesce_gather": {
+                            "type": "boolean"
+                        },
                         "enabled": {
                             "type": "boolean"
                         },
                         "listen": {
                             "type": "string"
                         },
+                        "max_requests_in_flight": {
+                            "type": "integer"
+                        },
+                        "timeout": {
+                            "type": "string"
+                        },
                         "tls": {
                             "type": "object",
                             "properties": {
                                 "cert_file": {
+                                    "type": "string"
+                                },
+                                "client_auth": {
+                                    "type": "string"
+                                },
+                                "client_ca_file": {
                                     "type": "string"
                                 },
                                 "key_file": {

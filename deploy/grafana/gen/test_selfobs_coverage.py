@@ -46,8 +46,8 @@ COVERED = {
     # --- object-store ingestion, #399 (all 17) --------------------------------
     "tailscale2otel_objectstore_objects_total": DIAGNOSTICS,
     "tailscale2otel_objectstore_records_total": DIAGNOSTICS,
-    "tailscale2otel_objectstore_bytes_bytes_total": DIAGNOSTICS,
-    "tailscale2otel_objectstore_decompressed_bytes_bytes_total": DIAGNOSTICS,
+    "tailscale2otel_objectstore_bytes_total": DIAGNOSTICS,
+    "tailscale2otel_objectstore_decompressed_bytes_total": DIAGNOSTICS,
     "tailscale2otel_objectstore_expansion_limit_failures_total": DIAGNOSTICS,
     "tailscale2otel_objectstore_skipped_total": DIAGNOSTICS,
     "tailscale2otel_objectstore_backlog_ratio": DIAGNOSTICS,

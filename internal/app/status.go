@@ -124,14 +124,7 @@ func (a *App) buildStatus() statusdata.Status {
 			Streaming: a.cfg.Streaming.Enabled,
 			Webhook:   a.cfg.Webhook.Enabled,
 		},
-		Profiling: statusdata.ProfilingInfo{
-			PprofEnabled:     a.cfg.Profiling.Pprof.Enabled,
-			PyroscopeEnabled: a.cfg.Profiling.Pyroscope.Enabled,
-			// Same treatment as the OTLP endpoint: a push target can carry userinfo
-			// or a signed query, and the dedicated basic_auth_* fields express the
-			// same thing (GHSA-jp5c-3282-6882).
-			PyroscopeServer: redact.URL(a.cfg.Profiling.Pyroscope.ServerAddress),
-		},
+		Profiling:  a.profilingInfo(),
 		Runtime:    runtimeInfo(),
 		Throughput: throughputInfo(a.emitStats()),
 		Fleet:      fleetInfo(a.collectorFleet()),

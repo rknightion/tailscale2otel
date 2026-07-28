@@ -192,6 +192,94 @@ const MetricSeriesByGroup = "tailscale2otel.series.by_group"
 // MetricPIIFilterCategory is the PII-redaction-state gauge name.
 const MetricPIIFilterCategory = "tailscale2otel.pii_filter.category"
 
+// Prometheus pull-endpoint (/metrics) serving metrics (#377). The pull path used
+// to be entirely unobservable from the outside: a scrape that was rejected,
+// throttled, timed out, or that hit a Gather collision left nothing behind but a
+// log line (or, for a Gather collision under ContinueOnError, a silently
+// truncated response with an HTTP 200). These are the exporter watching its own
+// pull endpoint, so an operator can tell "the scraper is not asking" apart from
+// "the endpoint is failing to answer".
+//
+// Every attribute set here is CLOSED: `outcome` is one of three classified
+// values and `reason` is one of three rejection causes, so no amount of scrape
+// traffic can grow the series count.
+const (
+	// MetricMetricsScrapeRequests counts /metrics requests that passed the auth
+	// gate, by classified outcome.
+	MetricMetricsScrapeRequests = "tailscale2otel.metrics.scrape.requests"
+	// MetricMetricsScrapeInFlight is the number of /metrics requests currently
+	// being served (an UpDownCounter, so it comes back down).
+	MetricMetricsScrapeInFlight = "tailscale2otel.metrics.scrape.in_flight"
+	// MetricMetricsScrapeDuration is the /metrics serving-latency histogram.
+	MetricMetricsScrapeDuration = "tailscale2otel.metrics.scrape.duration"
+	// MetricMetricsScrapeGatherErrors counts Gather errors encountered while
+	// serving /metrics. Under ContinueOnError these do NOT fail the request, so
+	// nothing else makes them visible.
+	MetricMetricsScrapeGatherErrors = "tailscale2otel.metrics.scrape.gather_errors"
+	// MetricMetricsAuthRejected counts /metrics requests refused by the auth
+	// gate, by a closed set of reasons. It replaces a per-request WARN.
+	MetricMetricsAuthRejected = "tailscale2otel.metrics.auth.rejected"
+)
+
+// Prometheus pull-endpoint serving descriptors (#377).
+var (
+	DocMetricsScrapeRequests = metricdoc.Metric{
+		Name:       MetricMetricsScrapeRequests,
+		Unit:       semconv.UnitRequests,
+		Instrument: metricdoc.Counter,
+		Description: "Prometheus `/metrics` scrapes served after passing the auth gate, by classified " +
+			"`outcome`: `success` (2xx), `unavailable` (503 — the request was shed by " +
+			"`prometheus.max_requests_in_flight` or exceeded `prometheus.timeout`), or `error` (any other " +
+			"status). Rejected requests are NOT counted here; they are counted by " +
+			"tailscale2otel.metrics.auth.rejected. A flat `success` rate is how you tell a scraper that " +
+			"stopped asking apart from an endpoint that stopped answering.",
+		Attributes: []string{"outcome"},
+		Group:      GroupSelfObs,
+	}
+	DocMetricsScrapeInFlight = metricdoc.Metric{
+		Name:       MetricMetricsScrapeInFlight,
+		Unit:       semconv.UnitRequests,
+		Instrument: metricdoc.UpDownCounter,
+		Description: "Prometheus `/metrics` requests currently being served. A value pinned at " +
+			"`prometheus.max_requests_in_flight` means scrapes are being shed; a value that climbs and " +
+			"never returns to zero means collection is hanging rather than slow.",
+		Group: GroupSelfObs,
+	}
+	DocMetricsScrapeDuration = metricdoc.Metric{
+		Name:       MetricMetricsScrapeDuration,
+		Unit:       semconv.UnitSeconds,
+		Instrument: metricdoc.Histogram,
+		Description: "Wall-clock seconds spent serving one Prometheus `/metrics` request, by the same " +
+			"classified `outcome` as tailscale2otel.metrics.scrape.requests. Covers gather plus encode plus " +
+			"write, so it is what the scraper's own timeout is racing against.",
+		Attributes: []string{"outcome"},
+		Group:      GroupSelfObs,
+	}
+	DocMetricsScrapeGatherErrors = metricdoc.Metric{
+		Name:       MetricMetricsScrapeGatherErrors,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Counter,
+		Description: "Prometheus registry Gather errors hit while serving `/metrics`. The handler runs with " +
+			"`ContinueOnError` (#103), so these return HTTP 200 with the *remaining* series and are " +
+			"otherwise invisible — a non-zero rate means some series are being dropped from every scrape, " +
+			"most commonly a duplicate-series collision after `pii_filter.tailnet_name` removed the " +
+			"distinguishing label.",
+		Group: GroupSelfObs,
+	}
+	DocMetricsAuthRejected = metricdoc.Metric{
+		Name:       MetricMetricsAuthRejected,
+		Unit:       semconv.UnitDimensionless,
+		Instrument: metricdoc.Counter,
+		Description: "Prometheus `/metrics` requests refused by the auth gate, by `reason`: " +
+			"`missing_credentials`, `bad_credentials`, or `auth_required` (no `prometheus.auth.token` on a " +
+			"network-reachable bind — misconfiguration rather than a bad caller). Counted per request; the " +
+			"`auth_required` misconfiguration is logged once per process rather than once per scrape, so " +
+			"this counter is the only per-request signal.",
+		Attributes: []string{"reason"},
+		Group:      GroupSelfObs,
+	}
+)
+
 // Descriptors for the app layer's self-observability metrics. Exported so the
 // emit sites in package app can reference them.
 var (
@@ -638,6 +726,10 @@ func Catalog() []metricdoc.Metric {
 		DocSeriesByGroup,
 		DocPIIFilterCategory,
 		DocTLSCertNotBefore, DocTLSCertNotAfter, DocTLSCertReloadedAt, DocTLSCertReloadFailures,
+		DocProfilingUploadAttempts, DocProfilingUploadFailures, DocProfilingUploadDuration,
+		DocProfilingUploadLastSuccess, DocProfilingUploadConsecutiveFailures,
+		DocMetricsScrapeRequests, DocMetricsScrapeInFlight, DocMetricsScrapeDuration,
+		DocMetricsScrapeGatherErrors, DocMetricsAuthRejected,
 	}
 }
 

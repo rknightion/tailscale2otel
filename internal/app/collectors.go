@@ -238,7 +238,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// Keep a typed reference so the status page can surface discovered nodes.
 			// Discovery uses the provider client's DevicesRich, so it works for both
 			// backends (Headscale nodes also run tailscaled on :5252).
-			rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, rt.cache, withComponent(logger, compNodeMetrics)))
+			rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, rt.cache, withComponent(logger, compNodeMetrics), d.tracer))
 			rt.registry.Register(rt.nodeMetrics, nm.Interval.D())
 		}
 	}
