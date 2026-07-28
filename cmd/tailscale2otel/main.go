@@ -24,11 +24,15 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run parses flags and dispatches to one of four modes: -version (print and
+// run parses flags and dispatches to one of six modes: -version (print and
 // exit), -healthcheck (probe the local admin readiness endpoint and exit),
 // -validate (load+validate the config and exit without starting the server),
-// or the normal server run. Splitting it out of main lets the flag modes be
-// exercised by tests without touching os.Args or process exit.
+// -preflight (build the tailnet runtimes and run one collection cycle of
+// every enabled collector, side-effect-free by default; see preflight.go),
+// -once (the same single cycle, but with the real export/checkpoint
+// behavior), or the normal server run. -preflight and -once are mutually
+// exclusive. Splitting it out of main lets the flag modes be exercised by
+// tests without touching os.Args or process exit.
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("tailscale2otel", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -37,6 +41,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	validateOnly := fs.Bool("validate", false, "load and validate the config, print errors/warnings, and exit")
 	healthcheck := fs.Bool("healthcheck", false, "probe the local admin readiness endpoint and exit (0 ready, 1 unready, 2 unreachable)")
 	healthcheckTimeout := fs.Duration("healthcheck-timeout", 5*time.Second, "overall deadline for -healthcheck")
+	preflight := fs.Bool("preflight", false, "load+validate the config, build the tailnet runtimes, authenticate, and run one collection cycle of every enabled collector, then exit; no listener is started, nothing is exported unless -preflight-export, and no checkpoint is persisted")
+	once := fs.Bool("once", false, "run one real collection cycle (configured export path and checkpoint behavior) and exit; no listener is started")
+	preflightExport := fs.Bool("preflight-export", false, "with -preflight, actually export through the configured OTLP path instead of discarding it (ignored without -preflight)")
+	preflightTimeout := fs.Duration("preflight-timeout", defaultPfDeadline, "overall deadline for -preflight or -once")
+	jsonOut := fs.Bool("json", false, "with -preflight or -once, emit one machine-readable JSON report instead of the human-readable one")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -52,6 +61,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if *validateOnly {
 		return runValidate(*configPath, stdout, stderr)
+	}
+
+	if *preflight && *once {
+		fmt.Fprintln(stderr, "-preflight and -once are mutually exclusive")
+		return 2
+	}
+	if *preflight || *once {
+		return runPreflight(*configPath, *once, *preflightExport, *jsonOut, *preflightTimeout, version, stdout, stderr)
 	}
 
 	return runServer(*configPath, stderr)

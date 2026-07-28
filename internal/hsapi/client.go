@@ -6,7 +6,6 @@ package hsapi
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -80,7 +79,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	defer func() { _, _ = io.CopyN(io.Discard, resp.Body, maxDrainBytes); _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("headscale GET %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
+		return &StatusError{Path: path, Code: resp.StatusCode, Body: string(body)}
 	}
 	budget := c.budget()
 	// Content-Length, when the upstream declares one, lets an over-budget body be

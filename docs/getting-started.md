@@ -60,14 +60,38 @@ convention — see [Configuration](configuration.md) for the full mapping rules.
     Keep tokens and client secrets in environment variables only. They never need to appear in a
     YAML file, and a YAML file committed to version control is an easy way to leak credentials.
 
-## Smoke test: run with stdout output
+## Smoke test: prove it works before any real rollout
 
-Two flags help before any real rollout: `tailscale2otel -version` prints the build version and
-exits, and `tailscale2otel -validate -config <path>` loads and validates a config file (the same
-load/validate path the server uses) without starting the exporter — useful for pre-rollout config
-linting. It prints any advisory warnings, exits 0 if valid, 1 otherwise.
+Four flags, in increasing order of how much they actually exercise:
 
-Before pointing the exporter at a real backend, verify it can connect to the Tailscale API and
+- `tailscale2otel -version` prints the build version and exits.
+- `tailscale2otel -validate -config <path>` loads and validates a config file through the same
+  load/validate path the server uses, without starting the exporter or touching the network at all.
+  It prints any advisory warnings and exits 0 if valid, 1 otherwise.
+- `tailscale2otel -preflight -config <path>` goes further: it builds the tailnet runtimes,
+  authenticates, and runs exactly one collection cycle of every enabled collector, then reports per
+  collector and exits. It is side-effect-free by default — no admin, Prometheus, streaming or
+  webhook listener is started; nothing is exported; no checkpoint is persisted whatever
+  `checkpoint.store` says; profiling stays off; and `collectors.acl.validate` is suppressed because
+  it is the one non-`GET` request this exporter makes. The report says so when it does that, so a
+  green preflight is never mistaken for proof that the ACL policy validates. Add `-preflight-export`
+  to export through the configured OTLP path for real, `-json` for a machine-readable report, and
+  `-preflight-timeout` (default `60s`) to bound the run.
+- `tailscale2otel -once -config <path>` runs the same single cycle for real: the configured export
+  path and checkpoint behaviour both apply, and ACL validation is not suppressed. Still starts no
+  listener. Use it to produce one genuine batch of telemetry without running the long-lived server.
+
+```sh
+tailscale2otel -preflight -json -config config.yaml
+```
+
+Exit codes for `-preflight` and `-once` name the class of problem, because the next action differs
+for each: **0** success, **1** the config is invalid, **2** a usage error, **3** the credentials or
+endpoint are wrong, **4** the credentials work but a specific collector failed (or the run hit
+`-preflight-timeout`), **5** the collectors are fine and the export path is broken. When more than
+one class fails, the lowest wins — it is the most upstream cause.
+
+Before pointing the exporter at a real backend, you can also verify it can connect to the Tailscale API and
 format telemetry by printing to stdout instead:
 
 ```sh

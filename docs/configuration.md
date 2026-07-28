@@ -515,6 +515,12 @@ the hot path never blocks.
 > left out rather than encoded as unconditional ones. **Passing the schema is necessary, not
 > sufficient:** run `tailscale2otel -validate` against your real config file as the authoritative
 > pre-flight check.
+>
+> `-validate` proves the config parses and its cross-field rules hold; it makes no network call.
+> To prove the credentials and every enabled collector actually work, use `tailscale2otel
+> -preflight`, which runs one collection cycle without starting a listener, exporting, or
+> persisting a checkpoint — see
+> [Getting started](getting-started.md#smoke-test-prove-it-works-before-any-real-rollout).
 
 > **Upgrade note — resolved names are now served past their TTL by default.** Previously a positive
 > entry became a miss the instant `cache_ttl` elapsed, so `tailscale.src.node` / `tailscale.dst.node`

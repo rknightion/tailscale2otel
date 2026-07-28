@@ -139,9 +139,36 @@ func withComponent(l *slog.Logger, component string) *slog.Logger {
 	return l.With(semconv.AttrComponent, component)
 }
 
-func New(ctx context.Context, cfg *config.Config, version string, logger *slog.Logger) (*App, error) {
+// Option customizes New's construction beyond what cfg drives. The zero value
+// (no options) is New's historical behavior exactly; today the only option is
+// WithTelemetryOverride, used solely by -preflight (see
+// internal/app/preflight.go, issue #311) to keep its normal-mode callers
+// (runServer, and every existing caller of New before this option existed)
+// completely unaffected.
+type Option func(*newSettings)
+
+type newSettings struct {
+	telemetryOverride func(telemetry.Options) telemetry.Options
+}
+
+// WithTelemetryOverride rewrites the telemetry.Options New() would otherwise
+// build from cfg via telemetryOptions, immediately before constructing the
+// ProviderSet. -preflight (without -preflight-export) uses this to force
+// Protocol="stdout" with a discarding StdoutWriter, so New()'s normal wiring
+// never dials the operator's configured OTLP backend — there is no
+// config-level way to express "build the exporters but discard their output",
+// since Options.StdoutWriter has no cfg field of its own.
+func WithTelemetryOverride(f func(telemetry.Options) telemetry.Options) Option {
+	return func(s *newSettings) { s.telemetryOverride = f }
+}
+
+func New(ctx context.Context, cfg *config.Config, version string, logger *slog.Logger, opts ...Option) (*App, error) {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	settings := &newSettings{}
+	for _, o := range opts {
+		o(settings)
 	}
 	resolved := cfg.ResolvedTailnets()
 	multi := len(resolved) > 1
@@ -164,6 +191,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 
 	base := telemetryOptions(cfg, version)
+	if settings.telemetryOverride != nil {
+		base = settings.telemetryOverride(base)
+	}
 	base.Logger = withComponent(logger, compTelemetry) // surfaces Emitter label-collision diagnostics
 	perTN := make([]telemetry.PerTailnetOptions, len(resolved))
 	for i := range resolved {
@@ -782,6 +812,36 @@ func (a *App) Run(ctx context.Context) error {
 		closeErr = a.ingressWAL.Close()
 	}
 	return errors.Join(schedErr, shutdownErr, closeErr)
+}
+
+// Close flushes and tears down everything New() built, for a caller that
+// drives collection directly via RunOnce and never calls Run() — RunOnce's
+// only other caller, -preflight/-once (issue #311), needs New()'s telemetry
+// pipeline actually flushed (a real -once/-preflight-export export sitting in
+// an unflushed OTEL SDK batch would otherwise be lost when the process exits
+// right after), and the rdns cache/profiler/ingress WAL New() may have opened
+// released, without any of Run()'s schedulers, receivers, or background
+// self-obs reporters ever having started. Mirrors the relevant tail of Run's
+// own teardown. Safe to call at most once; ctx bounds the flush.
+func (a *App) Close(ctx context.Context) error {
+	for _, rt := range a.runtimes {
+		rt.flowProc.FlushRollup(rt.emitter)
+	}
+	var closeErr error
+	if a.ingressWAL != nil {
+		closeErr = a.ingressWAL.Close()
+	}
+	if a.rdnsCache != nil {
+		a.rdnsCache.Close()
+	}
+	if a.profiler != nil {
+		_ = a.profiler.Stop()
+	}
+	if a.restore != nil {
+		a.restore()
+	}
+	shutdownErr := a.shutdown(ctx)
+	return errors.Join(shutdownErr, closeErr)
 }
 
 // autoConfigureStreaming registers this receiver as a Splunk-HEC log-streaming
