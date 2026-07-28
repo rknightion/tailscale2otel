@@ -30,21 +30,21 @@ materializing another profile is a command, not a checked-in directory.
 
 The smallest set worth waking someone up to. Enables only coverage_critical (the exporter itself is down) and core-policy rules (a signal every running exporter always emits, so its absence is always abnormal) — nothing that needs an optional collector or feature turned on, and nothing that needs a site-specific threshold tuned first. Recording rules keep their recommended paused state; they never page on their own.
 
-- Alert rules: **11 enabled**, 86 paused
+- Alert rules: **11 enabled**, 88 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `recommended`
 
 Today's shipped starter set, unchanged. The compatibility profile: its output is byte-identical to what tailscale2otel has always shipped in deploy/alerts/grafana-managed/, and is what `--out` produces with no `--profile` flag.
 
-- Alert rules: **32 enabled**, 65 paused
+- Alert rules: **34 enabled**, 65 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `strict`
 
 Enables every alert and every recording rule EXCEPT the explicit exceptions below, which stay paused because enabling them blind is actively misleading rather than merely noisy — a documented placeholder threshold, a per-plan ingest-cost budget, or a signal that is legitimately absent on a healthy, idle deployment.
 
-- Alert rules: **94 enabled**, 3 paused
+- Alert rules: **96 enabled**, 3 paused
 - Recording rules: **23 enabled**, 0 paused
 
 Explicit exceptions (stay paused, with a reason):

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 )
 
@@ -26,7 +28,7 @@ func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 	mux.Handle("/metrics", a.requireMetricsAuth(promhttp.HandlerFor(g, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.ContinueOnError,
 	})))
-	return &http.Server{
+	srv := &http.Server{
 		Addr:              a.cfg.Prometheus.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -34,6 +36,15 @@ func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	// Same GetCertificate-backed reload as the admin listener (#316); see
+	// buildAdminServer's comment and CertReloader in tlsreload.go.
+	if a.cfg.Prometheus.TLS.CertFile != "" && a.cfg.Prometheus.TLS.KeyFile != "" {
+		reloader := certreload.New(a.cfg.Prometheus.TLS.CertFile, a.cfg.Prometheus.TLS.KeyFile,
+			appcatalog.ComponentMetrics, a.logger, a.procEmitter)
+		srv.TLSConfig = &tls.Config{GetCertificate: reloader.GetCertificate}
+		a.metricsCerts = reloader
+	}
+	return srv
 }
 
 // requireMetricsAuth gates next behind prometheus.auth.token when set, reusing the
@@ -93,12 +104,12 @@ func (a *App) requireMetricsAuth(next http.Handler) http.Handler {
 // readable); otherwise serves plain HTTP, byte-identical to before TLS support
 // existed.
 func (a *App) runMetrics(ctx context.Context) {
-	certFile := a.cfg.Prometheus.TLS.CertFile
-	keyFile := a.cfg.Prometheus.TLS.KeyFile
+	tlsEnabled := a.cfg.Prometheus.TLS.CertFile != "" && a.cfg.Prometheus.TLS.KeyFile != ""
 	errCh := make(chan error, 1)
 	go func() {
-		if certFile != "" && keyFile != "" {
-			errCh <- a.metricsSrv.ListenAndServeTLS(certFile, keyFile)
+		if tlsEnabled {
+			// Empty paths: see runAdmin's identical comment (#316).
+			errCh <- a.metricsSrv.ListenAndServeTLS("", "")
 		} else {
 			errCh <- a.metricsSrv.ListenAndServe()
 		}

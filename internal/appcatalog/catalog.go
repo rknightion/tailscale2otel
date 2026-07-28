@@ -15,11 +15,24 @@
 // share the cross-cutting "Self-observability" doc section with the telemetry
 // build/export/cardinality metrics, the collector scrape.* metrics, and the
 // devices enrich.cache_* metrics.
+//
+// The TLS-certificate-reload emit helpers (EmitTLSCertLoaded,
+// EmitTLSCertReloadFailure, #316) are the one place this package also exports
+// EMISSION, not just declaration: internal/app's admin/Prometheus listeners
+// and internal/stream's streaming receiver all need to record the same three
+// metrics identically, but internal/stream cannot import internal/app (an
+// import cycle — internal/app already imports internal/stream to wire the
+// receiver). This leaf package is reachable from both without creating one,
+// so it is the single place the emission itself — not just its shape — is
+// shared rather than duplicated.
 package appcatalog
 
 import (
+	"time"
+
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
 // GroupSelfObs is the docs section these metrics render under.
@@ -75,6 +88,8 @@ const (
 const MetricComponentErrors = "tailscale2otel.component.errors"
 
 // Component values for MetricComponentErrors (the semconv.AttrComponent attr).
+// Also reused, unchanged, as the component label for the TLS-reload metrics
+// below (admin/metrics/stream are exactly the three TLS-capable listeners).
 const (
 	ComponentStream        = "stream"
 	ComponentWebhook       = "webhook"
@@ -82,6 +97,23 @@ const (
 	ComponentAutoConfigure = "auto_configure"
 	ComponentMetrics       = "metrics"
 	ComponentIngressWAL    = "ingress_wal"
+)
+
+// TLS-certificate-reload metric names (#316). Each TLS-enabled listener
+// (admin, metrics/Prometheus, stream) reports its active certificate's
+// validity window and reload health, keyed by semconv.AttrComponent so the
+// three listeners share one set of series rather than each minting its own
+// metric name.
+const (
+	// MetricTLSCertNotBefore is the active certificate's notBefore gauge name.
+	MetricTLSCertNotBefore = "tailscale2otel.tls.cert.not_before"
+	// MetricTLSCertNotAfter is the active certificate's notAfter (expiry) gauge name.
+	MetricTLSCertNotAfter = "tailscale2otel.tls.cert.not_after"
+	// MetricTLSCertReloadedAt is the most recent successful reload's timestamp gauge name.
+	MetricTLSCertReloadedAt = "tailscale2otel.tls.cert.reload.last_success"
+	// MetricTLSCertReloadFailures counts reload attempts that did not produce a
+	// valid keypair (the listener keeps serving the previous certificate).
+	MetricTLSCertReloadFailures = "tailscale2otel.tls.cert.reload.failures"
 )
 
 // MetricAdminAuthRejected counts admin HTTP requests rejected by the admin auth
@@ -494,6 +526,71 @@ var (
 	}
 )
 
+// TLS-certificate-reload descriptors (#316). NotBefore/NotAfter/ReloadedAt are
+// all emitted as Unix-seconds gauges (matching DocIngestLastEventTimestamp's
+// convention) rather than as a fingerprint or any other identifier, so a
+// certificate rotation churns VALUES on a fixed, tiny set of series (one per
+// TLS-enabled listener) instead of minting a new series per rotation — which a
+// fingerprint-as-label design would do, and which is exactly the kind of label
+// churn this codebase avoids elsewhere (see GaugeSnapshot's doc). The
+// fingerprint itself is surfaced only on the status page (statusdata.
+// TLSListenerStatus), never as a metric attribute.
+var (
+	DocTLSCertNotBefore = metricdoc.Metric{
+		Name:        MetricTLSCertNotBefore,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Unix seconds of the active TLS certificate's notBefore, by listener component (admin|metrics|stream). Emitted only for a listener with TLS configured; updates on every successful certificate reload.",
+		Attributes:  []string{semconv.AttrComponent},
+		Group:       GroupSelfObs,
+	}
+	DocTLSCertNotAfter = metricdoc.Metric{
+		Name:        MetricTLSCertNotAfter,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Unix seconds of the active TLS certificate's notAfter (expiry), by listener component (admin|metrics|stream). Alert on this approaching the current time to catch an expiring certificate before clients start failing handshakes.",
+		Attributes:  []string{semconv.AttrComponent},
+		Group:       GroupSelfObs,
+	}
+	DocTLSCertReloadedAt = metricdoc.Metric{
+		Name:        MetricTLSCertReloadedAt,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Unix seconds of the most recent successful TLS certificate reload, by listener component (admin|metrics|stream). A rotated file on disk is picked up on the next handshake at least this recently.",
+		Attributes:  []string{semconv.AttrComponent},
+		Group:       GroupSelfObs,
+	}
+	DocTLSCertReloadFailures = metricdoc.Metric{
+		Name:        MetricTLSCertReloadFailures,
+		Unit:        "1",
+		Instrument:  metricdoc.Counter,
+		Description: "TLS certificate reload attempts that failed to produce a valid keypair, by listener component (admin|metrics|stream). The listener keeps serving the last known-good certificate; a non-zero rate here is the signal that a rotation went wrong.",
+		Attributes:  []string{semconv.AttrComponent},
+		Group:       GroupSelfObs,
+	}
+)
+
+// EmitTLSCertLoaded records a successful TLS certificate (re)load for one
+// listener component: the certificate's notBefore/notAfter and the reload
+// timestamp itself, all as Unix-seconds gauges. See the package doc for why
+// this lives here rather than in internal/app.
+func EmitTLSCertLoaded(e telemetry.Emitter, component string, notBefore, notAfter, reloadedAt time.Time) {
+	e.Gauge(DocTLSCertNotBefore.Name, DocTLSCertNotBefore.Unit, DocTLSCertNotBefore.Description,
+		float64(notBefore.Unix()), telemetry.Attrs{semconv.AttrComponent: component})
+	e.Gauge(DocTLSCertNotAfter.Name, DocTLSCertNotAfter.Unit, DocTLSCertNotAfter.Description,
+		float64(notAfter.Unix()), telemetry.Attrs{semconv.AttrComponent: component})
+	e.Gauge(DocTLSCertReloadedAt.Name, DocTLSCertReloadedAt.Unit, DocTLSCertReloadedAt.Description,
+		float64(reloadedAt.Unix()), telemetry.Attrs{semconv.AttrComponent: component})
+}
+
+// EmitTLSCertReloadFailure records one failed reload attempt (a broken
+// replacement that left the previous certificate in service) for one listener
+// component.
+func EmitTLSCertReloadFailure(e telemetry.Emitter, component string) {
+	e.Counter(DocTLSCertReloadFailures.Name, DocTLSCertReloadFailures.Unit, DocTLSCertReloadFailures.Description,
+		1, telemetry.Attrs{semconv.AttrComponent: component})
+}
+
 // DocSeriesByGroup is the per-group active-series rollup descriptor. A gauge whose
 // unit "{series}" annotation is dropped under Prometheus normalization — annotation
 // units get no suffix, so the resulting name is the unsuffixed
@@ -540,6 +637,7 @@ func Catalog() []metricdoc.Metric {
 		DocIngestLastEventTimestamp, DocIngestTimestampSkew,
 		DocSeriesByGroup,
 		DocPIIFilterCategory,
+		DocTLSCertNotBefore, DocTLSCertNotAfter, DocTLSCertReloadedAt, DocTLSCertReloadFailures,
 	}
 }
 

@@ -2540,6 +2540,44 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.tls.cert.not_after",
+      "prom_name": "tailscale2otel_tls_cert_not_after_seconds",
+      "surface": "self_obs",
+      "dispositions": [
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.tls.cert.not_before",
+      "prom_name": "tailscale2otel_tls_cert_not_before_seconds",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Read alongside not_after when confirming WHICH certificate a listener actually loaded. Not alerted on: a not-yet-valid certificate fails the handshake immediately, so an alert would only restate a symptom the client errors already show."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.tls.cert.reload.failures",
+      "prom_name": "tailscale2otel_tls_cert_reload_failures_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.tls.cert.reload.last_success",
+      "prom_name": "tailscale2otel_tls_cert_reload_last_success_seconds",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "The companion to reload.failures, read on the status page while investigating one. Not alerted on: a listener whose certificate legitimately never rotates keeps an old timestamp forever, so any threshold would fire on correct behaviour."
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.up",
       "prom_name": "tailscale2otel_up_ratio",
       "surface": "self_obs",

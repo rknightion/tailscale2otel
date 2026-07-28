@@ -1012,3 +1012,41 @@ Note that decommissioning a target does **not** resolve it by clearing the alert
 goes absent, which this rule treats as `Ok` (no alert) rather than as a fault; remove it from the
 target list so it stops being expected. For the name-budget rule: the drop rate returns to zero,
 either because the metric surface shrank or because `max_distinct_metrics` was deliberately raised.
+
+## TLS certificate rotation {#tls-certificate-rotation}
+
+The exporter's inbound listeners (admin, Prometheus, streaming, webhook) reload their certificate
+without a restart: on a handshake, if the cached pair is older than the re-check interval, the cert
+and key files are stat'd and reloaded when either changed. There is no SIGHUP and no reload
+endpoint — config hot reload is a parked decision (#486), and a certificate does not need one.
+
+**A reload FAILURE is not an outage.** A broken or half-written replacement leaves the previous
+certificate in service, which is deliberate: a cert-manager or certbot writing two files
+non-atomically will be observed mid-write, so eager reloading into a partial file would turn a
+routine rotation into a real outage. That is why a failure is a warning rather than a page — the
+listener is still serving.
+
+It becomes urgent when the old certificate is close to expiring, because that is when "still
+serving the previous one" stops being a safe fallback.
+
+**Certificate expiring** (`tailscale2otel_tls_cert_not_after_seconds`)
+
+1. Identify the listener from the `component` label (admin, metrics, stream, webhook).
+2. Check whether rotation is happening at all:
+   `tailscale2otel_tls_cert_reload_failures_total` and the TLS panel on the status page, which shows
+   the last successful reload and the last failure reason per listener.
+3. If reloads are failing, fix the source of the files (the issuer, the mount, the file mode) — the
+   exporter is reading whatever is on disk and telling you it could not use it.
+4. If reloads are succeeding but the expiry is not moving, the issuer is renewing into a different
+   path than the one configured. Compare the configured `*.tls.cert_file` against what the issuer
+   writes; a relative path resolves against the CONFIG FILE's directory (#310), not the working
+   directory.
+
+**Reload failing** (`tailscale2otel_tls_cert_reload_failures_total`)
+
+The status page carries the last failure reason verbatim. The common causes are a partially written
+file (harmless if it resolves on the next attempt), a cert and key that are not a matching pair
+(the issuer wrote one of the two), and a permissions change on rotation. The listener keeps serving
+the old certificate throughout, so treat this as "fix before the current cert expires", not as an
+active outage.
+

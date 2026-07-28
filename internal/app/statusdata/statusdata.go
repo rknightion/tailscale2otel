@@ -34,6 +34,10 @@ type Status struct {
 	// Components is every long-running non-collector subsystem and whether it
 	// has failed, from the same state /readyz reads (#318).
 	Components []ComponentStatus `json:"components"`
+	// TLS is the certificate/reload health of every TLS-enabled listener
+	// (#316): one entry per listener actually configured for TLS (admin,
+	// metrics, stream), never one for a listener running plain HTTP.
+	TLS []TLSListenerStatus `json:"tls_certificates,omitempty"`
 	// Delivery is what the OTLP exporters actually shipped, per signal (#317).
 	// Distinct from Throughput, which counts what was HANDED to them.
 	Delivery []DeliverySignal `json:"delivery"`
@@ -433,6 +437,25 @@ type ComponentStatus struct {
 	// Reason is the underlying failure text, empty unless Failed. It is the same
 	// string /readyz returns.
 	Reason string `json:"reason,omitempty"`
+}
+
+// TLSListenerStatus reports one TLS listener's active certificate and reload
+// health (#316): a listener that loaded its keypair once at startup left a
+// rotated certificate invisible until a restart, and expiry itself was never
+// surfaced anywhere. NotBefore/NotAfter/LastReloadAt are empty until the first
+// successful load; LastReloadFailureAt/Reason are empty unless a reload has
+// actually failed (the previous good certificate stays in service either
+// way). Fingerprint is a SHA-256 hex digest of the DER leaf certificate —
+// never key material, and never any other cert/key byte.
+type TLSListenerStatus struct {
+	// Name is the component this listener serves: "admin" | "metrics" | "stream".
+	Name                    string `json:"name"`
+	NotBefore               string `json:"not_before,omitempty"`
+	NotAfter                string `json:"not_after,omitempty"`
+	Fingerprint             string `json:"fingerprint,omitempty"`
+	LastReloadAt            string `json:"last_reload_at,omitempty"`
+	LastReloadFailureAt     string `json:"last_reload_failure_at,omitempty"`
+	LastReloadFailureReason string `json:"last_reload_failure_reason,omitempty"`
 }
 
 // ProfilingInfo reports the continuous-profiling configuration (no credentials).

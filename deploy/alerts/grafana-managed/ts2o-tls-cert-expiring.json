@@ -1,0 +1,105 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-tls-cert-expiring"
+  },
+  "spec": {
+    "annotations": {
+      "description": "The certificate served by the {{ $labels.component }} listener expires in under 14 days. The exporter reloads a rotated certificate without a restart, so this normally means renewal is not reaching the configured path \u2014 or that reloads are failing, in which case tailscale2otel_tls_cert_reload_failures_total is also non-zero and is the thing to fix first. A relative cert path resolves against the CONFIG FILE's directory, not the working directory, which is a common way for an issuer to renew a file the exporter never reads.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tls-certificate-rotation",
+      "summary": "TLS certificate for {{ $labels.component }} expires within 14 days"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "min by (component) (tailscale2otel_tls_cert_not_after_seconds - time())",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  1209600
+                ],
+                "type": "lt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "1h0m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "TLS certificate expiring",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

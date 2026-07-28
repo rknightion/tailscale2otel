@@ -79,7 +79,7 @@ Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
 `infra` / `observability`); rules not worthy of automatic investigation
 (non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
 so IRM routing / auto-investigation stays focused. The generated set currently
-has **97 alert rules + 23 recording rules** across five groups (`-health`,
+has **99 alert rules + 23 recording rules** across five groups (`-health`,
 `-security`, `-integrations`, `-network`, `-recording`); the tables below are an
 illustrative guide — `gen/build_rules.py` is the source of truth.
 
@@ -130,7 +130,7 @@ as "healthy" across the whole pack. Only the `advisory` class still is, and that
 is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 92 of the 97 carry the
+[`docs/runbooks.md`](../../docs/runbooks.md), and 94 of the 99 carry the
 `__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
 generated flagship dashboard. Both are resolved and validated **at generation
 time**: an unknown runbook slug, an unreferenced runbook section, a missing panel

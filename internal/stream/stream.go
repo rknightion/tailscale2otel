@@ -103,6 +103,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -123,6 +124,7 @@ import (
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
+	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
@@ -444,6 +446,11 @@ type Server struct {
 	tracer     trace.Tracer
 
 	durableAppend DurableAppend
+
+	// tlsReloader backs tls.Config.GetCertificate when tlsCert/tlsKey are both
+	// set (#316); nil for a plain-HTTP server. Built once in New so a single
+	// instance is shared by every httpServer() call and by TLSStatus.
+	tlsReloader *certreload.Reloader
 }
 
 type pendingFlow struct {
@@ -525,7 +532,9 @@ func (r *Router) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
 		if r.base.tlsCert != "" && r.base.tlsKey != "" {
-			errCh <- srv.ListenAndServeTLS(r.base.tlsCert, r.base.tlsKey)
+			// Empty paths: srv.TLSConfig.GetCertificate (set in httpServer) is
+			// what actually loads the keypair, so it can reload on rotation (#316).
+			errCh <- srv.ListenAndServeTLS("", "")
 			return
 		}
 		errCh <- srv.ListenAndServe()
@@ -598,6 +607,11 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 	for _, o := range options {
 		o(s)
 	}
+	// Built once, after options (an Option could in principle rebind logger),
+	// and shared by every httpServer() call and by TLSStatus (#316).
+	if s.tlsCert != "" && s.tlsKey != "" {
+		s.tlsReloader = certreload.New(s.tlsCert, s.tlsKey, "stream", s.logger, s.emitter)
+	}
 	return s
 }
 
@@ -627,7 +641,7 @@ func (s *Server) httpServer() *http.Server {
 	if d <= 0 {
 		d = handlerProcessDeadline
 	}
-	return &http.Server{
+	srv := &http.Server{
 		Addr:              s.listen,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
@@ -636,6 +650,15 @@ func (s *Server) httpServer() *http.Server {
 		WriteTimeout: writeTimeoutFor(d),
 		IdleTimeout:  idleTimeout,
 	}
+	// GetCertificate (not Certificates/certFile+keyFile) so a rotated file is
+	// picked up without restarting the listener (#316) — see certReloader in
+	// tlsreload.go. Both Run methods below then call ListenAndServeTLS("", ""):
+	// passing the paths there too would make the stdlib do its OWN one-shot
+	// load on top of this, defeating the whole point.
+	if s.tlsReloader != nil {
+		srv.TLSConfig = &tls.Config{GetCertificate: s.tlsReloader.GetCertificate}
+	}
+	return srv
 }
 
 // withProcessDeadline derives a processing deadline for one request and runs
@@ -1904,7 +1927,8 @@ func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
 		if s.tlsCert != "" && s.tlsKey != "" {
-			errCh <- srv.ListenAndServeTLS(s.tlsCert, s.tlsKey)
+			// Empty paths: see Router.Run's identical comment (#316).
+			errCh <- srv.ListenAndServeTLS("", "")
 		} else {
 			errCh <- srv.ListenAndServe()
 		}
@@ -1921,4 +1945,24 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		return err
 	}
+}
+
+// TLSStatus reports the receiver's certificate health, or false when it is not
+// serving TLS. It returns the shared certreload.Status directly rather than a
+// stream-local mirror of it: this package no longer owns the reloader (#316),
+// so re-declaring the shape here would just be a second thing to keep in step.
+func (s *Server) TLSStatus() (certreload.Status, bool) {
+	if s == nil || s.tlsReloader == nil {
+		return certreload.Status{}, false
+	}
+	return s.tlsReloader.Status(), true
+}
+
+// TLSStatus delegates to the Router's base Server: every route shares one TLS
+// configuration (see NewRouter's doc comment).
+func (r *Router) TLSStatus() (certreload.Status, bool) {
+	if r == nil || r.base == nil {
+		return certreload.Status{}, false
+	}
+	return r.base.TLSStatus()
 }

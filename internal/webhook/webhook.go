@@ -32,6 +32,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -51,6 +52,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
@@ -232,6 +234,12 @@ type Server struct {
 	onAccepted    ingest.AcceptedObserver
 	tracer        trace.Tracer
 
+	// tlsReloader backs tls.Config.GetCertificate when both TLS files are set,
+	// so a rotated certificate is picked up without restarting the listener
+	// (#316). One instance is shared by Run and by the Router's Run, since
+	// every route serves one TLS configuration.
+	tlsReloader *certreload.Reloader
+
 	// admit is the aggregate admission semaphore (GHSA-9547-8jpc-48h6): a
 	// buffered channel whose capacity is the number of handlers allowed to
 	// buffer a body — and thus be pending HMAC verification — at once. nil
@@ -384,8 +392,9 @@ func (r *Router) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
 		var err error
-		if r.base.opts.TLSCertFile != "" && r.base.opts.TLSKeyFile != "" {
-			err = srv.ListenAndServeTLS(r.base.opts.TLSCertFile, r.base.opts.TLSKeyFile)
+		if r.base.tlsReloader != nil {
+			srv.TLSConfig = &tls.Config{GetCertificate: r.base.tlsReloader.GetCertificate, MinVersion: tls.VersionTLS12}
+			err = srv.ListenAndServeTLS("", "")
 		} else {
 			err = srv.ListenAndServe()
 		}
@@ -530,6 +539,9 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 	if s.delivery == nil {
 		s.delivery = newDeliveryDeduper(defaultDeliveryDedupTTL, defaultDeliveryDedupCapacity, s.now)
 	}
+	if opts.TLSCertFile != "" && opts.TLSKeyFile != "" {
+		s.tlsReloader = certreload.New(opts.TLSCertFile, opts.TLSKeyFile, "webhook", logger, e)
+	}
 	return s
 }
 
@@ -556,8 +568,9 @@ func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
 		var err error
-		if s.opts.TLSCertFile != "" && s.opts.TLSKeyFile != "" {
-			err = srv.ListenAndServeTLS(s.opts.TLSCertFile, s.opts.TLSKeyFile)
+		if s.tlsReloader != nil {
+			srv.TLSConfig = &tls.Config{GetCertificate: s.tlsReloader.GetCertificate, MinVersion: tls.VersionTLS12}
+			err = srv.ListenAndServeTLS("", "")
 		} else {
 			err = srv.ListenAndServe()
 		}
@@ -1127,4 +1140,22 @@ func parseTimestamp(s string) time.Time {
 		return time.Time{}
 	}
 	return t
+}
+
+// TLSStatus reports this receiver's certificate health, or false when it is not
+// serving TLS (#316).
+func (s *Server) TLSStatus() (certreload.Status, bool) {
+	if s == nil || s.tlsReloader == nil {
+		return certreload.Status{}, false
+	}
+	return s.tlsReloader.Status(), true
+}
+
+// TLSStatus delegates to the Router's base Server: every route shares one TLS
+// configuration.
+func (r *Router) TLSStatus() (certreload.Status, bool) {
+	if r == nil || r.base == nil {
+		return certreload.Status{}, false
+	}
+	return r.base.TLSStatus()
 }

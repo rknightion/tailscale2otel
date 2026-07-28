@@ -524,6 +524,35 @@ def groups():
               "on the Exporter Health dashboard (uid ts2otel-exporter-health).",
               domain="observability", paused=False,
               policy="coverage_critical", runbook="exporter-down", panel="Uptime"),
+        # TLS certificate health (#316). Both are `optional`: a listener without
+        # TLS emits nothing, and absence there means "not configured", not a
+        # fault. A datasource error is still an error.
+        alert("ts2o-tls-cert-expiring", "TLS certificate expiring",
+              "min by (component) (tailscale2otel_tls_cert_not_after_seconds - time())",
+              "lt", 1209600, "1h", "warning",
+              "TLS certificate for {{ $labels.component }} expires within 14 days",
+              "The certificate served by the {{ $labels.component }} listener expires in under 14 "
+              "days. The exporter reloads a rotated certificate without a restart, so this normally "
+              "means renewal is not reaching the configured path — or that reloads are failing, in "
+              "which case tailscale2otel_tls_cert_reload_failures_total is also non-zero and is the "
+              "thing to fix first. A relative cert path resolves against the CONFIG FILE's "
+              "directory, not the working directory, which is a common way for an issuer to renew "
+              "a file the exporter never reads.",
+              domain="observability", paused=False,
+              policy="optional", runbook="tls-certificate-rotation"),
+        alert("ts2o-tls-cert-reload-failing", "TLS certificate reload failing",
+              "sum by (component) (increase(tailscale2otel_tls_cert_reload_failures_total[1h]))",
+              "gt", 0, "30m", "warning",
+              "TLS certificate reload failing for {{ $labels.component }}",
+              "A certificate replacement for the {{ $labels.component }} listener could not be "
+              "loaded, so the PREVIOUS certificate is still being served — deliberately, since a "
+              "cert-manager or certbot writing cert and key non-atomically will be observed "
+              "mid-write and reloading eagerly into a partial file would cause the outage this "
+              "avoids. It is therefore not an outage now, but the fallback stops being safe once "
+              "the current certificate nears expiry. The status page carries the last failure "
+              "reason per listener.",
+              domain="observability", paused=False,
+              policy="optional", runbook="tls-certificate-rotation"),
         alert("ts2o-collector-scrape-failing", "Collector scrape failing",
               "min by (tailscale_collector) (tailscale2otel_scrape_success_ratio)",
               "lt", 1, "15m", "warning",

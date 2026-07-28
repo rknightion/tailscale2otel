@@ -12,6 +12,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
@@ -172,6 +173,7 @@ func (a *App) buildStatus() statusdata.Status {
 	// collectors alone and a dead receiver or listener read as "healthy".
 	failures := a.componentFailureReasons()
 	s.Components = a.componentStatuses(failures)
+	s.TLS = a.tlsListenerStatuses()
 	s.Delivery = a.deliverySignals()
 	s.Advisories = configAdvisories(a.cfg)
 	// Sustained export failure explains the verdict but does NOT gate readiness
@@ -274,6 +276,60 @@ func (a *App) componentStatuses(failures []string) []statusdata.ComponentStatus 
 		}
 	}
 	return rows
+}
+
+// tlsListenerStatuses renders the certificate/reload health of every
+// TLS-enabled listener (#316). It reads a.adminSrv/a.metricsSrv/a.streamSrv —
+// all three already-existing App fields — rather than a dedicated field of
+// its own: admin/metrics go through the tlsReloaderRegistry keyed by the
+// *http.Server pointer (see tlsreload.go), and stream goes through a type
+// assertion, because internal/stream cannot import internal/app to share a
+// common status type (an import cycle: internal/app already imports
+// internal/stream to wire the receiver). A listener with no TLS configured
+// contributes no row at all.
+func (a *App) tlsListenerStatuses() []statusdata.TLSListenerStatus {
+	var out []statusdata.TLSListenerStatus
+	if r := a.adminCerts; r != nil {
+		out = append(out, tlsListenerStatus(r.Status()))
+	}
+	if r := a.metricsCerts; r != nil {
+		out = append(out, tlsListenerStatus(r.Status()))
+	}
+	if st, ok := streamTLSStatus(a.streamSrv); ok {
+		out = append(out, st)
+	}
+	return out
+}
+
+// tlsStatusProvider is implemented by stream.Server and stream.Router (see
+// internal/stream/tlsreload.go); the type assertion below is the only coupling
+// point needed since a receiver is already typed as the app-local `receiver`
+// interface (Handler()+Run()), not a concrete stream type.
+type tlsStatusProvider interface {
+	TLSStatus() (certreload.Status, bool)
+}
+
+// streamTLSStatus converts the stream package's own TLSListenerStatus (which
+// cannot reference statusdata.TLSListenerStatus without creating the same
+// import cycle) into the shared statusdata shape.
+func streamTLSStatus(recv receiver) (statusdata.TLSListenerStatus, bool) {
+	p, ok := recv.(tlsStatusProvider)
+	if !ok {
+		return statusdata.TLSListenerStatus{}, false
+	}
+	st, ok := p.TLSStatus()
+	if !ok {
+		return statusdata.TLSListenerStatus{}, false
+	}
+	return statusdata.TLSListenerStatus{
+		Name:                    appcatalog.ComponentStream,
+		NotBefore:               st.NotBefore,
+		NotAfter:                st.NotAfter,
+		Fingerprint:             st.Fingerprint,
+		LastReloadAt:            st.LastReloadAt,
+		LastReloadFailureAt:     st.LastReloadFailureAt,
+		LastReloadFailureReason: st.LastReloadFailureReason,
+	}, true
 }
 
 // collectorStatuses returns the combined collector list across every tailnet

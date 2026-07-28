@@ -96,9 +96,15 @@ type App struct {
 	webhookDedup  *dedup.Set            // shared cross-source set (webhook<->audit); nil unless enabled
 	webhookDedups map[string]*dedup.Set // per-tailnet route sets in multi-tailnet mode
 	adminSrv      *http.Server
-	metricsSrv    *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
-	profiler      *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
-	rdnsCache     *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
+	metricsSrv    *http.Server // prometheus pull endpoint; nil unless prometheus.enabled
+	// Cert reloaders for the two listeners above, nil unless that listener
+	// serves TLS. Held here rather than in a package-level registry keyed by
+	// server pointer: a global would never drop an entry, and the lifetime of
+	// a reloader is exactly the lifetime of its App (#316).
+	adminCerts   *CertReloader
+	metricsCerts *CertReloader
+	profiler     *pyroscope.Profiler // pyroscope push profiler; nil unless enabled
+	rdnsCache    *rdns.Cache         // async reverse-DNS cache; nil unless enrichment.reverse_dns.enabled
 
 	selfRelease *release.Fetcher // nil unless version_checks.self.enabled
 	tsRelease   *release.Fetcher // nil unless version_checks.devices.enabled

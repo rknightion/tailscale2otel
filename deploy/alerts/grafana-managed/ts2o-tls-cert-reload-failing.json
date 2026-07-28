@@ -1,0 +1,105 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-tls-cert-reload-failing"
+  },
+  "spec": {
+    "annotations": {
+      "description": "A certificate replacement for the {{ $labels.component }} listener could not be loaded, so the PREVIOUS certificate is still being served \u2014 deliberately, since a cert-manager or certbot writing cert and key non-atomically will be observed mid-write and reloading eagerly into a partial file would cause the outage this avoids. It is therefore not an outage now, but the fallback stops being safe once the current certificate nears expiry. The status page carries the last failure reason per listener.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tls-certificate-rotation",
+      "summary": "TLS certificate reload failing for {{ $labels.component }}"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (component) (increase(tailscale2otel_tls_cert_reload_failures_total[1h]))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "30m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "warning",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "TLS certificate reload failing",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

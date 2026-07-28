@@ -498,6 +498,20 @@ the hot path never blocks.
 | `enrichment.reverse_dns.max_entries` | `50000` | Cache size bound. |
 | `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
 
+> **Listener certificates reload without a restart.** Every TLS listener — admin, Prometheus, the
+> streaming receiver and the webhook receiver — serves its certificate through a loader that notices
+> an atomic file replacement and picks it up in place. There is no SIGHUP and no reload endpoint;
+> config hot reload is a separate, parked decision, and a certificate does not need one.
+>
+> **A broken replacement keeps the previous certificate in service.** This is deliberate: an issuer
+> writing cert and key non-atomically will be observed mid-write, so reloading eagerly into a partial
+> file would turn a routine rotation into the outage this is meant to prevent. The failure is logged,
+> counted, and shown per listener on the status page with its reason — treat it as "fix before the
+> current certificate expires", not as an active outage. Expiry, last successful reload and a
+> SHA-256 fingerprint of the leaf certificate are on the status page and exported as metrics; the
+> fingerprint is a hash, never key material. See the
+> [TLS certificate rotation runbook](runbooks.md#tls-certificate-rotation).
+>
 > **Relative paths resolve against the config FILE, not the working directory.** Every path-bearing
 > field — each `*_file` secret sibling, every `cert_file`/`key_file`/`ca_file`, `checkpoint.file_path`
 > and `ingress_wal.directory` — resolves a relative value against the directory containing the YAML

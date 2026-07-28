@@ -53,7 +53,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | operational | 204 | 194 | 56 | 11 | 6 | 0 |
-| self_obs | 67 | 65 | 27 | 9 | 0 | 2 |
+| self_obs | 71 | 65 | 29 | 9 | 2 | 2 |
 
 ## Operational signals
 
@@ -333,6 +333,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.subrequest.attempts` | metric | `tailscale2otel_subrequest_attempts_total` | visualized |  |
 | `tailscale2otel.subrequest.coverage` | metric | `tailscale2otel_subrequest_coverage_ratio` | visualized |  |
 | `tailscale2otel.subrequest.failures` | metric | `tailscale2otel_subrequest_failures_total` | visualized |  |
+| `tailscale2otel.tls.cert.not_after` | metric | `tailscale2otel_tls_cert_not_after_seconds` | alertable |  |
+| `tailscale2otel.tls.cert.not_before` | metric | `tailscale2otel_tls_cert_not_before_seconds` | raw_only | Read alongside not_after when confirming WHICH certificate a listener actually loaded. Not alerted on: a not-yet-valid certificate fails the handshake immediately, so an alert would only restate a symptom the client errors already show. |
+| `tailscale2otel.tls.cert.reload.failures` | metric | `tailscale2otel_tls_cert_reload_failures_total` | alertable |  |
+| `tailscale2otel.tls.cert.reload.last_success` | metric | `tailscale2otel_tls_cert_reload_last_success_seconds` | raw_only | The companion to reload.failures, read on the status page while investigating one. Not alerted on: a listener whose certificate legitimately never rotates keeps an old timestamp forever, so any threshold would fire on correct behaviour. |
 | `tailscale2otel.up` | metric | `tailscale2otel_up_ratio` | visualized, alertable, recorded |  |
 | `tailscale2otel.update_available` | metric | `tailscale2otel_update_available_ratio` | visualized, alertable |  |
 

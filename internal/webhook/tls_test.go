@@ -137,3 +137,34 @@ func testTLSFiles(t *testing.T) (string, string) {
 	}
 	return certFile, keyFile
 }
+
+// #316 covered the admin, prometheus and streaming listeners but left this one
+// loading its keypair exactly once, so a rotated webhook certificate stayed
+// invisible until a restart. "Applies consistently to every TLS listener" is
+// the acceptance criterion, and a rule that holds for three listeners out of
+// four is worse than no rule, because nobody can remember which.
+func TestServer_ServesTLSViaReloader(t *testing.T) {
+	certFile, keyFile := testTLSFiles(t)
+	s := New(Options{
+		Listen:      "127.0.0.1:0",
+		Path:        "/webhook",
+		TLSCertFile: certFile,
+		TLSKeyFile:  keyFile,
+	}, telemetrytest.New().Emitter(), discard())
+
+	st, ok := s.TLSStatus()
+	if !ok {
+		t.Fatal("a webhook receiver configured with a cert and key must report TLS status")
+	}
+	if st.NotAfter == "" || st.Fingerprint == "" {
+		t.Errorf("TLS status is empty, so no certificate was loaded through the reloader: %+v", st)
+	}
+}
+
+func TestServer_NoTLSStatusWithoutCertificates(t *testing.T) {
+	s := New(Options{Listen: "127.0.0.1:0", Path: "/webhook"},
+		telemetrytest.New().Emitter(), discard())
+	if _, ok := s.TLSStatus(); ok {
+		t.Error("a plaintext webhook receiver must not claim TLS status")
+	}
+}
