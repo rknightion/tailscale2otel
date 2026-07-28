@@ -118,6 +118,57 @@ extraVolumeMounts: []
 #       valueFrom:
 #         fieldRef:
 #           fieldPath: metadata.name
+# --- Per-listener Services (all default-off) ---
+# The chart ships NO Service unless you enable one here. tailscale2otel's normal
+# traffic is outbound-only, and every inbound listener is itself opt-in, so exposing
+# nothing is the safe default. Each entry renders a DISCRETE Service mapping only its
+# own port — never an aggregate, which would publish surfaces you did not ask for.
+#
+# Rendering FAILS if you enable a Service for a listener that is switched off, or for
+# one with no credential set (value or its _file sibling). Publishing a listener is
+# what turns a local misconfiguration into a cluster-reachable one: `prometheus` serves
+# every series unauthenticated with an empty token, and `webhook` fails OPEN — an empty
+# secret skips HMAC verification entirely.
+service:
+  admin:
+    # -- Render a Service for the admin listener. Requires config.admin.auth.token.
+    # Probes do NOT need this — the kubelet reaches the pod directly.
+    enabled: false
+    # -- Service type. ClusterIP unless you have a specific reason; a LoadBalancer puts
+    # the listener on your cloud provider's public ingress path.
+    type: ClusterIP
+    # -- Service port. Empty ("") uses the listener's own port from config.admin.listen.
+    port: ""
+    # -- Extra annotations on this Service (e.g. cloud LB or ServiceMonitor selectors).
+    annotations: {}
+  prometheus:
+    # -- Render a Service for the Prometheus pull endpoint. Requires config.prometheus.auth.token.
+    enabled: false
+    # -- Service type.
+    type: ClusterIP
+    # -- Service port. Empty ("") uses config.prometheus.listen's port.
+    port: ""
+    # -- Extra annotations on this Service.
+    annotations: {}
+  streaming:
+    # -- Render a Service for the Splunk-HEC receiver. Requires config.streaming.token.
+    enabled: false
+    # -- Service type.
+    type: ClusterIP
+    # -- Service port. Empty ("") uses config.streaming.listen's port.
+    port: ""
+    # -- Extra annotations on this Service.
+    annotations: {}
+  webhook:
+    # -- Render a Service for the webhook receiver. Requires config.webhook.secret.
+    enabled: false
+    # -- Service type.
+    type: ClusterIP
+    # -- Service port. Empty ("") uses config.webhook.listen's port.
+    port: ""
+    # -- Extra annotations on this Service.
+    annotations: {}
+
 extraEnv: [] # @schema item: object ; itemProperties: {"name":{"type":"string","minLength":1},"value":{"type":"string"},"valueFrom":{"type":"object"}}
 
 # -- Extra `envFrom` sources appended to the container's envFrom, as-is (configMapRef /

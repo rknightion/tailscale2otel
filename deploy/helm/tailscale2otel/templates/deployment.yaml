@@ -130,12 +130,37 @@ spec:
           {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- /*
+            Named container ports for every ENABLED listener. Named, because a
+            Service and a PodMonitor both target a port by name, and the number
+            is derived from the listen address rather than restated (#344).
+            Only enabled listeners appear: a declared port for a listener that
+            is not serving is misleading in `kubectl describe`.
+          */}}
+          {{- $ports := list }}
+          {{- if .Values.config.admin.enabled }}
+          {{- $ports = append $ports (dict "name" "admin" "listen" .Values.config.admin.listen) }}
+          {{- end }}
+          {{- if .Values.config.prometheus.enabled }}
+          {{- $ports = append $ports (dict "name" "prometheus" "listen" .Values.config.prometheus.listen) }}
+          {{- end }}
+          {{- if .Values.config.streaming.enabled }}
+          {{- $ports = append $ports (dict "name" "streaming" "listen" .Values.config.streaming.listen) }}
+          {{- end }}
+          {{- if .Values.config.webhook.enabled }}
+          {{- $ports = append $ports (dict "name" "webhook" "listen" .Values.config.webhook.listen) }}
+          {{- end }}
+          {{- with $ports }}
+          ports:
+            {{- range . }}
+            - name: {{ .name }}
+              containerPort: {{ include "tailscale2otel.listenPort" .listen }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
           {{- if .Values.config.admin.enabled }}
           # Probes hit the admin server's /healthz and /readyz (never auth-gated).
           # Only rendered when config.admin.enabled — the server is off by default.
-          ports:
-            - name: admin
-              containerPort: {{ .Values.config.admin.listen | splitList ":" | last | int }}
           {{- /*
             The binary serves the admin endpoints over HTTPS iff BOTH admin.tls
             files are set (internal/app/admin.go picks ListenAndServeTLS on

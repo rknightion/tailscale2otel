@@ -259,3 +259,43 @@ output and CI logs.
   {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The port number from a `host:port` listen address (#344).
+
+`splitList ":" | last` also copes with an IPv6 bind such as "[::1]:9091",
+because the port is always the final colon-separated field.
+*/}}
+{{- define "tailscale2otel.listenPort" -}}
+{{- . | splitList ":" | last | int -}}
+{{- end -}}
+
+{{/*
+Per-listener Service safety gate (#344).
+
+deploy/CLAUDE.md's standing rule for this chart: a Service may "never map a
+receiver port without its credential". Publishing a listener is the one action
+that turns a local-only misconfiguration into a network-reachable one, so the
+two failure modes below are rejected at render time rather than warned about:
+
+  1. A Service for a listener that is switched OFF publishes a port nothing
+     serves, and hides the actual mistake behind a plausible-looking Service.
+  2. A Service for a listener with NO credential publishes it to the whole
+     cluster. The specifics are not hypothetical: `prometheus` serves every
+     series unauthenticated when its token is empty, and `webhook` fails OPEN —
+     an empty secret skips HMAC verification entirely.
+
+A *_file credential counts. Requiring the inline form would push operators back
+toward putting credentials on the command line, which #341 just removed.
+
+Args: (dict "ctx" $ "name" "prometheus" "enabled" <bool> "cred" <string> "credFile" <string>)
+*/}}
+{{- define "tailscale2otel.requireListenerCredential" -}}
+{{- $name := .name -}}
+{{- if not .enabled -}}
+{{- fail (printf "service.%s.enabled requires config.%s.enabled: a Service for a disabled listener publishes a port nothing is serving" $name $name) -}}
+{{- end -}}
+{{- if and (not .cred) (not .credFile) -}}
+{{- fail (printf "service.%s.enabled requires a credential on that listener (%s). Publishing it with no credential exposes it to the whole cluster; set the value or its _file sibling, or leave the Service disabled and reach the pod directly." $name .credKey) -}}
+{{- end -}}
+{{- end -}}

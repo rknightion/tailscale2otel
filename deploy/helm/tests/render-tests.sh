@@ -520,5 +520,107 @@ for bad_val in 'extraEnv=notalist' 'extraEnv[0].name.nested=x' 'extraEnv[0].valu
     || bad "M: schema accepted malformed --set $bad_val"
 done
 
+# --------------------------------------------------------------------------
+case_ "N. default-off, per-listener Services (#344)"
+svc_of() { yq "select(.kind == \"Service\" and .metadata.name == \"$1\")" <<<"$RENDER"; }
+any_service() { docs_of Service | tr -d '[:space:]-'; }
+# NOT `yq '[.] | length'`: that wraps EMPTY input to 1 and cheerfully reports
+# one Service when none rendered, which passed vacuously on first write.
+n_services() { grep -c '^kind: Service$' <<<"$RENDER" || true; }
+
+render
+assert_rc0 "N: default renders"
+[[ -z "$(any_service)" ]] \
+  && ok "N: default chart still renders NO Service" \
+  || bad "N: a Service rendered by default"
+
+# Each listener, enabled with its credential, gets exactly one Service mapping
+# exactly its own port.
+render --set config.prometheus.enabled=true \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set service.prometheus.enabled=true
+assert_rc0 "N: prometheus Service renders"
+[[ "$(n_services)" == "1" ]] \
+  && ok "N: exactly one Service" || bad "N: expected 1 Service, got $(n_services)"
+[[ "$(svc_of "${FULLNAME}-prometheus" | yq '.spec.ports[0].port')" == "2112" ]] \
+  && ok "N: prometheus Service maps 2112" || bad "N: wrong prometheus port"
+[[ "$(svc_of "${FULLNAME}-prometheus" | yq '.spec.ports | length')" == "1" ]] \
+  && ok "N: prometheus Service maps ONLY its own port" || bad "N: prometheus Service maps extra ports"
+[[ "$(svc_of "${FULLNAME}-prometheus" | yq '.spec.type')" == "ClusterIP" ]] \
+  && ok "N: default type is ClusterIP" || bad "N: default type is not ClusterIP"
+# The credential must never be echoed into the Service.
+grep -q -- "$SENTINEL" <<<"$(docs_of Service)" \
+  && bad "N: a credential leaked into the Service" || ok "N: no credential in the Service"
+
+render --set config.webhook.enabled=true \
+       --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true
+assert_rc0 "N: webhook Service renders"
+[[ "$(svc_of "${FULLNAME}-webhook" | yq '.spec.ports[0].port')" == "8089" ]] \
+  && ok "N: webhook Service maps 8089" || bad "N: wrong webhook port"
+
+render --set config.streaming.enabled=true \
+       --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true
+assert_rc0 "N: streaming Service renders"
+[[ "$(svc_of "${FULLNAME}-streaming" | yq '.spec.ports[0].port')" == "8088" ]] \
+  && ok "N: streaming Service maps 8088" || bad "N: wrong streaming port"
+
+render --set-string "config.admin.auth.token=${SENTINEL}" --set service.admin.enabled=true
+assert_rc0 "N: admin Service renders"
+[[ "$(svc_of "${FULLNAME}-admin" | yq '.spec.ports[0].port')" == "9091" ]] \
+  && ok "N: admin Service maps 9091" || bad "N: wrong admin port"
+
+# --- the safety guards ------------------------------------------------------
+# A Service for a listener that is switched OFF would publish a port nothing
+# serves; worse, it hides the real mistake.
+# The credential IS set here on purpose: otherwise the credential guard fires
+# and this passes without the listener-enabled guard existing at all. It did
+# exactly that on first write — removing the enabled check changed nothing.
+render --set-string "config.prometheus.auth.token=${SENTINEL}" --set service.prometheus.enabled=true
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'requires config.prometheus.enabled' <<<"$RENDER"; then
+  ok "N: Service for a disabled listener fails, naming the listener toggle"
+else
+  bad "N: rendered a Service for a disabled listener (rc=$RENDER_RC)"
+fi
+
+# The core contract from deploy/CLAUDE.md: never map a receiver port without its
+# credential. Each of the four, individually.
+render --set config.prometheus.enabled=true --set service.prometheus.enabled=true
+[[ $RENDER_RC -ne 0 ]] && ok "N: prometheus Service without auth.token fails" \
+  || bad "N: exposed prometheus with no token — it serves every series unauthenticated"
+render --set config.webhook.enabled=true --set service.webhook.enabled=true
+[[ $RENDER_RC -ne 0 ]] && ok "N: webhook Service without secret fails" \
+  || bad "N: exposed webhook with no secret — HMAC verification is skipped"
+render --set config.streaming.enabled=true --set service.streaming.enabled=true
+[[ $RENDER_RC -ne 0 ]] && ok "N: streaming Service without token fails" \
+  || bad "N: exposed streaming with no token"
+render --set service.admin.enabled=true
+[[ $RENDER_RC -ne 0 ]] && ok "N: admin Service without auth.token fails" \
+  || bad "N: exposed admin with no token"
+
+# A *_file credential is just as valid as an inline one; requiring the inline
+# form would push operators back to the thing #341 just removed.
+render --set config.prometheus.enabled=true \
+       --set-string config.prometheus.auth.token_file=/run/secrets/promtok \
+       --set service.prometheus.enabled=true
+assert_rc0 "N: token_file satisfies the credential requirement"
+
+# No aggregate Service, and LoadBalancer must never be a default.
+render --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set service.prometheus.enabled=true \
+       --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true
+assert_rc0 "N: two listeners render"
+[[ "$(n_services)" == "2" ]] \
+  && ok "N: one Service per listener, no aggregate" || bad "N: expected 2 discrete Services, got $(n_services)"
+grep -q 'LoadBalancer' <<<"$RENDER" \
+  && bad "N: a LoadBalancer Service rendered without being asked for" \
+  || ok "N: no LoadBalancer anywhere by default"
+
+# The pod must actually expose the ports the Services target.
+[[ "$(dep_field '[.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .ports[] | select(.name == "prometheus")] | length')" == "1" ]] \
+  && ok "N: container declares a named prometheus port" || bad "N: no named prometheus containerPort"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

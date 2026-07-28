@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.15.1](https://img.shields.io/badge/Version-0.15.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.16.0](https://img.shields.io/badge/Version-0.16.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -471,7 +471,7 @@ extraVolumeMounts:
 | config.webhook.tolerance | string | `"5m"` | Allowed clock skew in BOTH directions on the signed timestamp: a request older than now-tolerance or newer than now+tolerance is rejected. The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable. 0 disables the timestamp check entirely. |
 | configStorage.mode | string | `"auto"` | Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`. `auto` (default) renders it into a ConfigMap while it is credential-free, and into Secret `<fullname>-config` as soon as any credential-bearing key is set inline under `config:` (`tailscale.auth.oauth.client_secret`, `tailscale.auth.apikey`, `headscale.api_key`, `otlp.grafana_cloud.token`, `otlp.headers`, the three `collectors.flowlogs.objectstore.*` and three `collectors.auditlogs.objectstore.*` credential keys, `streaming.token`, `webhook.secret`, `prometheus.auth.token`, `admin.auth.token`, `profiling.pyroscope.basic_auth_password`, any `tailnets[]` entry, or a `collectors.node_metrics.targets[]` entry with `bearer_token`/`headers`). A ConfigMap is readable by anyone holding `get configmaps` in the namespace, which is routinely granted far more widely than `get secrets`. `secret` always uses the Secret. `configmap` forces the ConfigMap and makes `helm template` FAIL, naming the offending keys, if a credential is set inline. |
 | existingSecret | string | `""` | Name of a pre-created Secret exposing the TS2OTEL_* env keys. When set, no Secret is rendered. |
-| extraEnv | list | `[]` | Extra environment variables appended to the container's `env`, as-is. Each entry is a standard Kubernetes EnvVar: `{name, value}` or `{name, valueFrom: {...}}` (fieldRef, resourceFieldRef, configMapKeyRef, secretKeyRef). For proxy settings, custom CA paths, downward-API pod metadata, or a variable an external secret operator writes elsewhere. Rendering FAILS rather than silently shadowing: an entry is rejected if it has no `name`, if two entries share a name, or if the name is one the chart itself sets — a `secret:` key, or GOGC/GOMEMLIMIT while goRuntime is setting them. Kubernetes resolves `env` AFTER `envFrom`, so an unchecked entry here would quietly replace a credential injected from the chart's Secret. Clear the chart's own value (e.g. goRuntime.gogc: "") to take a name over. Example:   extraEnv:     - name: HTTPS_PROXY       value: http://proxy.internal:3128     - name: POD_NAME       valueFrom:         fieldRef:           fieldPath: metadata.name |
+| extraEnv | list | `[]` |  |
 | extraEnvFrom | list | `[]` | Extra `envFrom` sources appended to the container's envFrom, as-is (configMapRef / secretRef). The chart's own Secret is always FIRST, so a later source here can deliberately override it — which is the documented way to let an external secret operator own a TS2OTEL_* value — while the chart can never silently override yours. Example:   extraEnvFrom:     - configMapRef:         name: proxy-config     - secretRef:         name: external-tailscale-creds |
 | extraVolumeMounts | list | `[]` | Extra volume mounts appended to the main container's volumeMounts, as-is. Paired with extraVolumes above by name. |
 | extraVolumes | list | `[]` | Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding TLS cert/key material for config.streaming.tls or config.webhook.tls, since readOnlyRootFilesystem leaves no other place to put arbitrary files). Paired with extraVolumeMounts below by volume name. See the chart README for a worked TLS-cert example. |
@@ -514,6 +514,22 @@ extraVolumeMounts:
 | secret.TS2OTEL_TAILSCALE__TAILNET | string | `""` | Tailnet name (e.g. "example.com"), or "-" for the auth principal's default tailnet. |
 | secret.TS2OTEL_WEBHOOK__SECRET | string | `""` | Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. Empty is accepted only on a loopback config.webhook.listen; network-reachable binds refuse every request with HTTP 403 before reading its body. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsGroup":65532,"runAsUser":65532}` | Container-level security context. Drops all capabilities and runs with a read-only root filesystem (the app writes only to the optional checkpoint volume). Runs as the distroless `nonroot` uid/gid 65532 (a high, non-system id > 10000) to satisfy hardened-cluster policy. |
+| service.admin.annotations | object | `{}` | Extra annotations on this Service (e.g. cloud LB or ServiceMonitor selectors). |
+| service.admin.enabled | bool | `false` | Render a Service for the admin listener. Requires config.admin.auth.token. Probes do NOT need this — the kubelet reaches the pod directly. |
+| service.admin.port | string | `""` | Service port. Empty ("") uses the listener's own port from config.admin.listen. |
+| service.admin.type | string | `"ClusterIP"` | Service type. ClusterIP unless you have a specific reason; a LoadBalancer puts the listener on your cloud provider's public ingress path. |
+| service.prometheus.annotations | object | `{}` | Extra annotations on this Service. |
+| service.prometheus.enabled | bool | `false` | Render a Service for the Prometheus pull endpoint. Requires config.prometheus.auth.token. |
+| service.prometheus.port | string | `""` | Service port. Empty ("") uses config.prometheus.listen's port. |
+| service.prometheus.type | string | `"ClusterIP"` | Service type. |
+| service.streaming.annotations | object | `{}` | Extra annotations on this Service. |
+| service.streaming.enabled | bool | `false` | Render a Service for the Splunk-HEC receiver. Requires config.streaming.token. |
+| service.streaming.port | string | `""` | Service port. Empty ("") uses config.streaming.listen's port. |
+| service.streaming.type | string | `"ClusterIP"` | Service type. |
+| service.webhook.annotations | object | `{}` | Extra annotations on this Service. |
+| service.webhook.enabled | bool | `false` | Render a Service for the webhook receiver. Requires config.webhook.secret. |
+| service.webhook.port | string | `""` | Service port. Empty ("") uses config.webhook.listen's port. |
+| service.webhook.type | string | `"ClusterIP"` | Service type. |
 | serviceAccount.annotations | object | `{}` | Annotations to add to the ServiceAccount. |
 | serviceAccount.automountServiceAccountToken | bool | `false` | Automount the ServiceAccount API token into the pod. The exporter makes no Kubernetes API calls, so this defaults to false to drop an unused, attacker-useful credential from the network-facing pod. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
