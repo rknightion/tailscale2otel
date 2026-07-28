@@ -230,7 +230,7 @@
       "method": "get",
       "path": "/tailnet/{tailnet}/logging/{logType}/stream",
       "disposition": "privacy-rejected",
-      "note": "returns the log-stream destination url, username and token fields; we read only the counter-only status endpoint so no destination credential ever enters the process"
+      "note": "returns the log-stream destination url and username in plaintext; token and s3SecretAccessKey are writeOnly (NOT returned) but gcsCredentials is NOT marked writeOnly and is live GCS credential material, and a Splunk/Cribl-style sink url can itself embed a token in its path or query. Verified against the vendored spec 2026-07-28 under #354. We read only the counter-only status endpoint, so no destination identifier or credential ever enters the process"
     },
     {
       "id": "getLogStreamingStatus",
