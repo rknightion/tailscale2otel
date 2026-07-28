@@ -118,6 +118,39 @@ extraVolumeMounts: []
 #       valueFrom:
 #         fieldRef:
 #           fieldPath: metadata.name
+# --- Prometheus Operator integration (default-off) ---
+# Custom resources for kube-prometheus-stack. Nothing here renders unless explicitly
+# enabled, so a cluster without the Prometheus Operator CRDs installed is unaffected:
+# `helm template` never emits the resource, and there is nothing for the API server to
+# reject. The chart cannot detect whether a CRD exists, so this is opt-in by design.
+metrics:
+  podMonitor:
+    # -- Render a PodMonitor. Requires config.prometheus.enabled. A PodMonitor scrapes
+    # pods DIRECTLY, so it needs no Service — prefer it over serviceMonitor unless you
+    # specifically want the Service in the path.
+    enabled: false
+    # -- Scrape interval (e.g. 60s). Empty ("") inherits the Prometheus default.
+    interval: ""
+    # -- Per-scrape timeout. Empty ("") inherits the Prometheus default.
+    scrapeTimeout: ""
+    # -- Metrics path on the Prometheus listener.
+    path: /metrics
+    # -- Extra labels on the PodMonitor object (your Prometheus `podMonitorSelector` usually matches one).
+    labels: {}
+    # -- Bearer token for prometheus.auth.token, read from a Secret you manage. REQUIRED when
+    # that listener has a token: a scrape without it gets 401 and the target silently reports
+    # no data. Only a reference is rendered — never the value.
+    bearerTokenSecret: {}
+    # -- TLS settings passed to the scrape config (ca/cert/keySecret, serverName,
+    # insecureSkipVerify). Only Secret references, never inline material.
+    tlsConfig: {}
+    # -- relabel_configs applied before the scrape.
+    relabelings: []
+    # -- metric_relabel_configs applied to scraped samples.
+    metricRelabelings: []
+    # -- Cap on samples accepted per scrape; 0 leaves it unset.
+    sampleLimit: 0
+
 # --- Per-listener Services (all default-off) ---
 # The chart ships NO Service unless you enable one here. tailscale2otel's normal
 # traffic is outbound-only, and every inbound listener is itself opt-in, so exposing

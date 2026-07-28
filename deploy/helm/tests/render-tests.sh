@@ -622,5 +622,61 @@ grep -q 'LoadBalancer' <<<"$RENDER" \
 [[ "$(dep_field '[.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .ports[] | select(.name == "prometheus")] | length')" == "1" ]] \
   && ok "N: container declares a named prometheus port" || bad "N: no named prometheus containerPort"
 
+# --------------------------------------------------------------------------
+case_ "O. Prometheus Operator PodMonitor (#345)"
+n_kind() { grep -c "^kind: $1\$" <<<"$RENDER" || true; }
+
+render
+assert_rc0 "O: default renders"
+[[ "$(n_kind PodMonitor)" == "0" ]] \
+  && ok "O: no PodMonitor by default (a cluster without the CRDs is unaffected)" \
+  || bad "O: a PodMonitor rendered by default"
+
+render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true
+assert_rc0 "O: PodMonitor renders"
+[[ "$(n_kind PodMonitor)" == "1" ]] && ok "O: exactly one PodMonitor" || bad "O: PodMonitor count is $(n_kind PodMonitor)"
+pm() { yq 'select(.kind == "PodMonitor") | '"$1" <<<"$RENDER"; }
+[[ "$(pm '.spec.podMetricsEndpoints[0].port')" == "prometheus" ]] \
+  && ok "O: targets the named prometheus container port" || bad "O: wrong port name"
+[[ "$(pm '.spec.podMetricsEndpoints[0].scheme')" == "http" ]] \
+  && ok "O: scheme http without listener TLS" || bad "O: wrong default scheme"
+# It must work with NO Service — that is the reason to prefer a PodMonitor.
+[[ "$(n_kind Service)" == "0" ]] \
+  && ok "O: PodMonitor works with no Service rendered" || bad "O: a Service was required"
+
+# Follows the listener's TLS, same rule as the probes (#342).
+render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+       --set-string config.prometheus.tls.cert_file=/tls/tls.crt \
+       --set-string config.prometheus.tls.key_file=/tls/tls.key
+assert_rc0 "O: TLS listener renders"
+[[ "$(pm '.spec.podMetricsEndpoints[0].scheme')" == "https" ]] \
+  && ok "O: scheme follows listener TLS" || bad "O: scheme did not follow listener TLS"
+
+# Auth is REFERENCED, never embedded.
+render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set-string metrics.podMonitor.bearerTokenSecret.name=promtok \
+       --set-string metrics.podMonitor.bearerTokenSecret.key=token
+assert_rc0 "O: authenticated PodMonitor renders"
+[[ "$(pm '.spec.podMetricsEndpoints[0].bearerTokenSecret.name')" == "promtok" ]] \
+  && ok "O: bearerTokenSecret reference rendered" || bad "O: no bearerTokenSecret reference"
+grep -q -- "$SENTINEL" <<<"$(yq 'select(.kind == "PodMonitor")' <<<"$RENDER")" \
+  && bad "O: the token VALUE was embedded in the PodMonitor" \
+  || ok "O: no token value in the PodMonitor (reference only)"
+
+# A scrape that cannot authenticate does not fail loudly — it silently reports
+# no data. That must be a render error.
+render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+       --set-string "config.prometheus.auth.token=${SENTINEL}"
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "O: token set without bearerTokenSecret fails" \
+  || bad "O: rendered a PodMonitor that would 401 and silently report no data"
+grep -q -- "$SENTINEL" <<<"$RENDER" && bad "O: the failure echoed the token value" \
+  || ok "O: failure names the setting without echoing the token"
+
+render --set metrics.podMonitor.enabled=true
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "O: PodMonitor without the prometheus listener fails" || bad "O: PodMonitor rendered with no listener to scrape"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

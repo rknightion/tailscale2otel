@@ -1222,6 +1222,46 @@
         "imagePullSecrets": {
             "type": "array"
         },
+        "metrics": {
+            "type": "object",
+            "properties": {
+                "podMonitor": {
+                    "type": "object",
+                    "properties": {
+                        "bearerTokenSecret": {
+                            "type": "object"
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "interval": {
+                            "type": "string"
+                        },
+                        "labels": {
+                            "type": "object"
+                        },
+                        "metricRelabelings": {
+                            "type": "array"
+                        },
+                        "path": {
+                            "type": "string"
+                        },
+                        "relabelings": {
+                            "type": "array"
+                        },
+                        "sampleLimit": {
+                            "type": "integer"
+                        },
+                        "scrapeTimeout": {
+                            "type": "string"
+                        },
+                        "tlsConfig": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
         "nameOverride": {
             "type": "string"
         },

@@ -1,0 +1,73 @@
+{{- /*
+Prometheus Operator PodMonitor (#345), default-off.
+
+A PodMonitor scrapes pods directly via the pod's named container port, so it
+needs no Service — which is why it is offered ahead of a ServiceMonitor (#458).
+
+CREDENTIALS ARE REFERENCED, NEVER EMBEDDED. bearerTokenSecret and tlsConfig
+carry only Secret references. Rendering a token value into a PodMonitor would
+put it in a namespaced custom resource readable by anyone with `get podmonitors`
+— a strictly wider audience than `get secrets`, which is the same reasoning
+SEC-07 (#470) applies to the config ConfigMap.
+
+The chart cannot tell whether the Prometheus Operator CRDs are installed, so
+this is opt-in rather than auto-detected: with it disabled nothing renders, and
+a cluster without the CRDs is unaffected.
+*/ -}}
+{{- if .Values.metrics.podMonitor.enabled }}
+{{- $pm := .Values.metrics.podMonitor }}
+{{- if not .Values.config.prometheus.enabled }}
+{{- fail "metrics.podMonitor.enabled requires config.prometheus.enabled: there is no /metrics listener to scrape" }}
+{{- end }}
+{{- /*
+  A scrape that cannot authenticate does not fail loudly — the target just goes
+  down/401 and the series silently stop. That is the failure mode this project
+  keeps designing against, so it is a render error instead.
+*/ -}}
+{{- if and (or .Values.config.prometheus.auth.token .Values.config.prometheus.auth.token_file) (not $pm.bearerTokenSecret) }}
+{{- fail "config.prometheus.auth.token is set but metrics.podMonitor.bearerTokenSecret is not: the scrape would be rejected with 401 and the target would silently report no data. Point bearerTokenSecret at a Secret holding the same token." }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "tailscale2otel.fullname" . }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+    {{- with $pm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "tailscale2otel.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: prometheus
+      path: {{ $pm.path }}
+      {{- /* Follow the listener's own TLS setting, exactly as the probes do (#342). */}}
+      scheme: {{ if and .Values.config.prometheus.tls.cert_file .Values.config.prometheus.tls.key_file }}https{{ else }}http{{ end }}
+      {{- with $pm.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with $pm.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with $pm.bearerTokenSecret }}
+      bearerTokenSecret:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pm.tlsConfig }}
+      tlsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pm.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $pm.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if gt (int $pm.sampleLimit) 0 }}
+  sampleLimit: {{ int $pm.sampleLimit }}
+  {{- end }}
+{{- end }}
