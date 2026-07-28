@@ -36,7 +36,11 @@ type Status struct {
 	Components []ComponentStatus `json:"components"`
 	// Delivery is what the OTLP exporters actually shipped, per signal (#317).
 	// Distinct from Throughput, which counts what was HANDED to them.
-	Delivery   []DeliverySignal `json:"delivery"`
+	Delivery []DeliverySignal `json:"delivery"`
+	// Advisories is every active non-fatal configuration warning, the same set
+	// tailscale2otel.config.warnings counts (#319). The metric reports only the
+	// count; this is what an operator alerting on it actually needs.
+	Advisories []ConfigAdvisory `json:"advisories"`
 	Profiling  ProfilingInfo    `json:"profiling"`
 	Runtime    RuntimeInfo      `json:"runtime"`
 	Throughput ThroughputInfo   `json:"throughput"`
@@ -370,6 +374,21 @@ type CardinalityAlert struct {
 type ReceiversInfo struct {
 	Streaming bool `json:"streaming_enabled"`
 	Webhook   bool `json:"webhook_enabled"`
+}
+
+// ConfigAdvisory is one active non-fatal configuration warning.
+//
+// The warnings were logged once at startup and otherwise reduced to a count on a
+// gauge, so an operator alerting on that gauge had to go and find the startup
+// log of a pod that may since have restarted (#319). Key is the config path the
+// advisory concerns, for grouping; Message is the warning verbatim, including
+// its remediation.
+//
+// These are values, never metric labels: the messages are prose and would be
+// unbounded cardinality.
+type ConfigAdvisory struct {
+	Key     string `json:"key,omitempty"`
+	Message string `json:"message"`
 }
 
 // DeliverySignal is one OTLP signal's delivery state: metrics, logs or traces.

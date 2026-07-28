@@ -143,7 +143,10 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 - **Durations** use Go's syntax: `500ms`, `30s`, `5m`, `1h`, `168h` (= 7 days).
 - **Validation** — invalid enum values and inconsistent combinations are rejected at startup by
   `Config.Validate()` (the exporter refuses to start). Softer issues are surfaced as startup
-  **WARN** advisories by `Config.Warnings()` but do not block startup. Both are noted below.
+  **WARN** advisories by `Config.Warnings()` but do not block startup. Both are noted below. Active
+  advisories are also listed on the admin status page's **Config** tab and in `/api/status.json` as
+  `advisories[]`, each with the setting it concerns — the
+  `tailscale2otel_config_warnings_ratio` metric reports only the count.
 
 ## Contents
 

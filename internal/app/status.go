@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v3/internal/redact"
@@ -171,6 +172,7 @@ func (a *App) buildStatus() statusdata.Status {
 	failures := a.componentFailureReasons()
 	s.Components = a.componentStatuses(failures)
 	s.Delivery = a.deliverySignals()
+	s.Advisories = configAdvisories(a.cfg)
 	// Sustained export failure explains the verdict but does NOT gate readiness
 	// (#317). A backend outage is not a reason to pull every pod out of
 	// rotation — that turns one vendor's bad afternoon into a cascading
@@ -206,6 +208,20 @@ func (a *App) deliverySignals() []statusdata.DeliverySignal {
 			row.LastFailureAt = st.LastFailureAt.UTC().Format(rfc3339)
 		}
 		out = append(out, row)
+	}
+	return out
+}
+
+// configAdvisories renders the active configuration warnings for the status
+// snapshot. Recomputed on every poll rather than snapshotted at startup, so an
+// advisory resolved by a config change and a restart disappears from the page
+// without anyone having to remember to clear it.
+func configAdvisories(cfg *config.Config) []statusdata.ConfigAdvisory {
+	advisories := cfg.Advisories()
+	// Always an array, never null: the page iterates it unconditionally.
+	out := make([]statusdata.ConfigAdvisory, 0, len(advisories))
+	for _, a := range advisories {
+		out = append(out, statusdata.ConfigAdvisory{Key: a.Key, Message: a.Message})
 	}
 	return out
 }

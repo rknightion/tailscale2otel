@@ -249,8 +249,9 @@ surfaced as live gauges so you can alert without scraping logs.
 
 **Diagnosis.** Query `tailscale2otel_config_warnings_ratio` (count of advisory warnings) and
 `tailscale2otel_config_valid_ratio` (`0` when `Validate()` failed). Both are emitted each export
-cycle. The admin status page renders the redacted config summary; it does **not** yet list the
-individual advisories, so read the startup log for their text.
+cycle. The admin status page's **Config** tab lists every active advisory with the setting it
+concerns and its remediation, and `/api/status.json` carries the same list as `advisories[]` — so you
+do not have to find the startup log of a pod that may since have restarted.
 
 ---
 

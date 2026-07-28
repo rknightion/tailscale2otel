@@ -372,3 +372,44 @@ func TestRender_DeliveryIsPerSignalAndClassOnly(t *testing.T) {
 		t.Error("an idle signal is not rendered at all")
 	}
 }
+
+// The config warnings were logged once at startup and otherwise reduced to a
+// COUNT on a gauge, so an operator alerting on that gauge had to find the
+// startup log of a pod that may since have restarted (#319).
+func TestRender_ConfigAdvisoriesAreListed(t *testing.T) {
+	s := statusdata.Status{
+		Advisories: []statusdata.ConfigAdvisory{
+			{Key: "tailscale.auth.method", Message: "tailscale.auth.method=apikey: prefer an OAuth client"},
+			{Message: "an advisory with no derivable key"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="advisoriesBody"`,
+		"prefer an OAuth client",             // the remediation, which is the point
+		"<code>tailscale.auth.method</code>", // the key, as its own column
+		"an advisory with no derivable key",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page does not contain %q", want)
+		}
+	}
+}
+
+// An empty list must read as "checked, nothing wrong", not as a missing section.
+func TestRender_NoAdvisoriesSaysSo(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	// The rendered cell, not the bare phrase: the JS updater builds the same
+	// words, so a substring check passes with the table deleted. Third time this
+	// shape has been vacuous in this file.
+	if !strings.Contains(buf.String(), `<td colspan="2" class="muted">No active configuration advisories.</td>`) {
+		t.Error("an empty advisory list renders nothing at all, which reads as a missing section")
+	}
+}

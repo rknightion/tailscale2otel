@@ -536,6 +536,24 @@
       <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
       <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
     </div>
+    <h3 style="margin-top:18px">Configuration advisories</h3>
+    <div class="sub">Non-fatal warnings from <code>Config.Warnings()</code> — the same set
+      <code>tailscale2otel_config_warnings_ratio</code> counts. They never block startup.
+      An empty list is the healthy state.</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>Setting</th><th>Advisory</th></tr></thead>
+      <tbody id="advisoriesBody">
+        {{range .Advisories}}
+        <tr>
+          <td class="mono">{{if .Key}}<code>{{.Key}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{.Message}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="2" class="muted">No active configuration advisories.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+
     <h3 style="margin-top:18px">OTLP delivery</h3>
     <div class="sub">What the exporters actually <em>shipped</em>, per signal — as opposed to what was
       handed to them (see throughput). Sustained failure here drags overall health to
@@ -854,6 +872,24 @@ function rebuildCollectors(rows){
 }
 
 // ── API table ─────────────────────────────────────────────────────────────
+function rebuildAdvisories(rows){
+  var tb=document.getElementById('advisoriesBody'); if(!tb) return;
+  tb.textContent='';
+  if(!rows || !rows.length){
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'2','class':'muted'},'No active configuration advisories.'));
+    tb.appendChild(tr0); return;
+  }
+  rows.forEach(function(adv){
+    var tr=el('tr');
+    var keyTd=el('td',{'class':'mono'});
+    if(adv.key){ keyTd.appendChild(el('code',null,adv.key)); } else { keyTd.textContent='—'; }
+    tr.appendChild(keyTd);
+    // textContent, never innerHTML: an advisory can quote a configured value.
+    tr.appendChild(el('td', null, adv.message||''));
+    tb.appendChild(tr);
+  });
+}
+
 function rebuildDelivery(rows){
   var tb=document.getElementById('deliveryBody'); if(!tb) return;
   tb.textContent='';
@@ -1017,6 +1053,7 @@ function refresh(){
     rebuildAPI(d.api);
     rebuildComponents(d.components);
     rebuildDelivery(d.delivery);
+    rebuildAdvisories(d.advisories);
     updateSparks(d);
     redrawCharts();
   }).catch(function(){ setStale(true); });

@@ -70,12 +70,11 @@ RULES = [
         "/metrics no longer serves anything unauthenticated on a network bind (#315). The reason "
         "to be careful about publishing it is the acknowledgement flag, not an open default.",
     ),
-    (
-        re.compile(r"status page also renders .{0,40}\bwarnings", re.I),
-        "the status page does not render config warnings — ConfigSummary carries no warning field. "
-        "Surfacing them is #319, still open. Point at the config_warnings metric and the startup "
-        "log instead.",
-    ),
+    # The warnings rule that lived here was RETIRED by #319, which made the claim
+    # true: the Config tab lists every advisory and /api/status.json carries
+    # advisories[]. A rule kept past the change it describes is a guard that
+    # fails on the correct text, so it is deleted rather than inverted — there is
+    # no wrong-way-round version of this claim to catch.
 ]
 
 # Files whose security claims are load-bearing: an operator reads them and acts.
