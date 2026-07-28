@@ -539,7 +539,15 @@ type ReverseDNSConfig struct {
 	Timeout     Duration `yaml:"timeout"`      // per-lookup timeout
 	CacheTTL    Duration `yaml:"cache_ttl"`    // positive-result TTL
 	NegativeTTL Duration `yaml:"negative_ttl"` // failed-lookup TTL
-	MaxEntries  int      `yaml:"max_entries"`  // cache size bound
+	// StaleTTL is how long past cache_ttl a resolved name may still be served
+	// while one background refresh runs (#297). Without it, the instant an
+	// entry expires the flow label falls back to "external" until the refresh
+	// lands, so tailscale.src/dst.node flaps hostname -> external -> hostname
+	// on every TTL boundary and splits the metric series. 0 disables stale
+	// serving and restores the immediate-miss behavior. Negative (failed)
+	// lookups are never served stale.
+	StaleTTL   Duration `yaml:"stale_ttl"`
+	MaxEntries int      `yaml:"max_entries"` // cache size bound
 	// AcknowledgeCardinality silences the startup advisory that fires when
 	// reverse_dns.enabled=true AND cardinality.flow.node_dims=true (the only
 	// combination where PTR names inflate flow-METRIC cardinality). Set to true

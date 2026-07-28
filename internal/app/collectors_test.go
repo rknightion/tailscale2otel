@@ -171,3 +171,35 @@ func objectStoreTestConfig(tune func(*config.Config)) *config.Config {
 	}
 	return c
 }
+
+// Every knob under enrichment.reverse_dns has to reach rdns.Options, or the
+// setting is inert: the config validates, the docs describe it, the status page
+// reports it, and it changes nothing. stale_ttl in particular fails silently —
+// a zero StaleTTL is a legal value meaning "disabled", so a missed wiring looks
+// exactly like an operator who turned it off (#297).
+func TestRDNSOptions_CarriesEveryConfiguredValue(t *testing.T) {
+	cfg := config.Default()
+	cfg.Enrichment.ReverseDNS.Server = "10.0.0.53"
+	cfg.Enrichment.ReverseDNS.Timeout = config.Duration(3 * time.Second)
+	cfg.Enrichment.ReverseDNS.CacheTTL = config.Duration(12 * time.Hour)
+	cfg.Enrichment.ReverseDNS.NegativeTTL = config.Duration(7 * time.Minute)
+	cfg.Enrichment.ReverseDNS.StaleTTL = config.Duration(90 * time.Minute)
+	cfg.Enrichment.ReverseDNS.MaxEntries = 1234
+
+	got := rdnsOptions(cfg)
+	for _, c := range []struct {
+		key       string
+		got, want any
+	}{
+		{"Server", got.Server, "10.0.0.53"},
+		{"Timeout", got.Timeout, 3 * time.Second},
+		{"TTL", got.TTL, 12 * time.Hour},
+		{"NegativeTTL", got.NegativeTTL, 7 * time.Minute},
+		{"StaleTTL", got.StaleTTL, 90 * time.Minute},
+		{"MaxEntries", got.MaxEntries, 1234},
+	} {
+		if c.got != c.want {
+			t.Errorf("rdns.Options.%s = %v, want %v", c.key, c.got, c.want)
+		}
+	}
+}

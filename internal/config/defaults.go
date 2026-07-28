@@ -82,7 +82,11 @@ func Default() *Config {
 				Timeout:     dur(2 * time.Second),
 				CacheTTL:    dur(24 * time.Hour),
 				NegativeTTL: dur(5 * time.Minute),
-				MaxEntries:  50000,
+				// One hour of stale serving against a 24h TTL: long enough that a
+				// refresh (or several retries of one) always lands inside it, short
+				// enough that a genuinely changed PTR is picked up the same day.
+				StaleTTL:   dur(time.Hour),
+				MaxEntries: 50000,
 			},
 		},
 		Cardinality: CardinalityConfig{

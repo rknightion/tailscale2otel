@@ -494,8 +494,23 @@ the hot path never blocks.
 | `enrichment.reverse_dns.timeout` | `2s` | Per-lookup timeout. |
 | `enrichment.reverse_dns.cache_ttl` | `24h` | Positive-result cache TTL. |
 | `enrichment.reverse_dns.negative_ttl` | `5m` | Failed-lookup cache TTL. |
+| `enrichment.reverse_dns.stale_ttl` | `1h` | How long past `cache_ttl` a resolved name may still be served while one background refresh runs. `0` disables stale serving. |
 | `enrichment.reverse_dns.max_entries` | `50000` | Cache size bound. |
 | `enrichment.reverse_dns.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the startup advisory that fires when reverse-DNS is enabled together with node-dimension flow labels. |
+
+> **Upgrade note — resolved names are now served past their TTL by default.** Previously a positive
+> entry became a miss the instant `cache_ttl` elapsed, so `tailscale.src.node` / `tailscale.dst.node`
+> fell back to `external` for the whole time the background refresh took, and flapped
+> hostname → external → hostname at every expiry. That split the metric series. With
+> `stale_ttl: 1h` (the new default) the last-known name keeps being served for up to an hour past
+> `cache_ttl` while exactly one refresh runs, and a refresh that FAILS leaves the name in place
+> rather than dropping it to a negative entry — a transient resolver blip no longer costs an hour of
+> `external` labels. Set `stale_ttl: 0` to restore the old immediate-miss behaviour. Two consequences
+> worth knowing: a PTR record that genuinely changed is reflected up to `stale_ttl` later than
+> before, and entries occupy the cache for `cache_ttl + stale_ttl` rather than `cache_ttl`, so a
+> cache sized close to `max_entries` may see slightly more overflow. Stale serving is visible as the
+> `stale` result on `tailscale.rdns.cache.lookups`, the new `tailscale.rdns.refreshes` counter, and
+> the `stale_expired` eviction reason.
 
 > **A cache "miss" does not always schedule a resolution.** The `tailscale.rdns.cache.lookups`
 > metric's `miss` result covers every sighting that isn't a cached hit or cached negative — but a

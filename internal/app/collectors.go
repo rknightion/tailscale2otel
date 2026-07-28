@@ -71,6 +71,7 @@ func rdnsOptions(cfg *config.Config) rdns.Options {
 		Timeout:     rd.Timeout.D(),
 		TTL:         rd.CacheTTL.D(),
 		NegativeTTL: rd.NegativeTTL.D(),
+		StaleTTL:    rd.StaleTTL.D(),
 		MaxEntries:  rd.MaxEntries,
 	}
 }

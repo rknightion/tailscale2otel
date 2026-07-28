@@ -254,16 +254,33 @@ def tab_diagnostics():
                                                   lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
                unit="percentunit", options=stat_opts(),
                desc="rDNS cache entries as a fraction of configured capacity."), 6, 6),
+        # Both hit and stale are served FROM CACHE without the caller waiting on a
+        # resolver, so both belong in the numerator (#297). Counting only "hit"
+        # would make this rate fall every time stale serving did its job, which
+        # reads as the cache getting worse at the moment it saved a lookup. The
+        # stale share rides alongside so the two are still tellable apart.
         (panel("rDNS lookup hit-rate", "timeseries",
-               [prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result="hit"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
-                       legend="hit-rate")],
+               [prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result=~"hit|stale"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
+                       legend="cache-served"),
+                prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result="stale"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
+                       legend="of which stale", refid="B")],
                unit="percentunit", custom=ts_custom(), options=ts_opts(),
-               desc="Share of rDNS lookups served from cache rather than an upstream query."), 9, 6),
+               desc="Share of rDNS lookups served from cache rather than an upstream query. "
+                    "'of which stale' is the part served past its TTL while a refresh ran "
+                    "(enrichment.reverse_dns.stale_ttl) — those names are still correct, just "
+                    "older than cache_ttl."), 9, 6),
         (panel("rDNS upstream queries/s", "timeseries",
                [prom_t("sum by (result) (rate(tailscale_rdns_queries_total[%s]))" % RI, legend="query {{result}}"),
-                prom_t("rate(tailscale_rdns_cache_evictions_total[%s])" % RI, legend="evictions/s", refid="B")],
+                prom_t("rate(tailscale_rdns_cache_evictions_total[%s])" % RI, legend="evictions/s", refid="B"),
+                # Refreshes are a SUBSET of the queries above, not additional load —
+                # they are the ones triggered by serving a stale name. Sustained
+                # refresh failure is the warning that stale names are heading for
+                # expiry rather than renewal.
+                prom_t("sum by (result) (rate(tailscale_rdns_refreshes_total[%s]))" % RI,
+                       legend="refresh {{result}}", refid="C")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Upstream PTR queries issued and cache evictions, per second."), 9, 6),
+               desc="Upstream PTR queries issued and cache evictions, per second. The refresh "
+                    "series are the subset of those queries triggered by a stale-serving hit."), 9, 6),
         # An overflow rate on its own is unreadable — "12/s dropped" needs "out of how
         # many", so the accepted hot-path lookup rate shares the panel (#405).
         (panel("rDNS cache overflows vs lookups/s", "timeseries",

@@ -594,10 +594,11 @@ relative to `lookups`; a non-zero `overflows` rate means `max_entries` is too sm
 |---|---|---|---|---|---|
 | `tailscale.rdns.cache.capacity` | `1` | gauge | `tailscale_rdns_cache_capacity_ratio` | — | Configured maximum number of entries (enrichment.reverse_dns.max_entries). |
 | `tailscale.rdns.cache.entries` | `1` | gauge | `tailscale_rdns_cache_entries_ratio` | — | Current number of entries in the reverse-DNS cache (positive and negative). |
-| `tailscale.rdns.cache.evictions` | `1` | counter | `tailscale_rdns_cache_evictions_total` | `reason` | Cache entries removed, by reason: expired (swept after their TTL) or purge (manual purge via the admin endpoint). |
-| `tailscale.rdns.cache.lookups` | `1` | counter | `tailscale_rdns_cache_lookups_total` | `result` | Reverse-DNS cache hot-path lookups by result: hit (cached PTR name), negative (cached failed lookup), or miss (no cached entry; a background resolution is scheduled). |
+| `tailscale.rdns.cache.evictions` | `1` | counter | `tailscale_rdns_cache_evictions_total` | `reason` | Cache entries removed, by reason: expired (swept after their TTL), stale_expired (a positive entry swept after outliving its TTL plus enrichment.reverse_dns.stale_ttl, #297), or purge (manual purge via the admin endpoint). |
+| `tailscale.rdns.cache.lookups` | `1` | counter | `tailscale_rdns_cache_lookups_total` | `result` | Reverse-DNS cache hot-path lookups by result: hit (cached PTR name), stale (a positive entry past its TTL but still within enrichment.reverse_dns.stale_ttl, served while one background refresh runs, #297), negative (cached failed lookup), or miss (no cached entry; a background resolution is scheduled). |
 | `tailscale.rdns.cache.overflows` | `1` | counter | `tailscale_rdns_cache_overflows_total` | — | Hot-path misses for new addresses that could not be scheduled because the cache was at enrichment.reverse_dns.max_entries. A non-zero rate means the cache is too small. |
 | `tailscale.rdns.queries` | `1` | counter | `tailscale_rdns_queries_total` | `result` | Background PTR resolutions sent to the upstream resolver, by result (success or failure). This is the load the cache places on the resolver — it should stay low relative to lookups. |
+| `tailscale.rdns.refreshes` | `1` | counter | `tailscale_rdns_refreshes_total` | `result` | Background PTR resolutions triggered by serving a stale name (#297), by result (success or failure). These are a subset of the resolver load already counted in tailscale.rdns.queries, broken out separately from first-sighting queries so a stale-refresh storm is visible on its own. |
 <!-- END GENERATED -->
 
 ---

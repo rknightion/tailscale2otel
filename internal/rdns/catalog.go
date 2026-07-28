@@ -21,6 +21,7 @@ const groupRDNS = "Reverse DNS"
 const (
 	MetricLookups   = "tailscale.rdns.cache.lookups"
 	MetricQueries   = "tailscale.rdns.queries"
+	MetricRefreshes = "tailscale.rdns.refreshes"
 	MetricEvictions = "tailscale.rdns.cache.evictions"
 	MetricOverflows = "tailscale.rdns.cache.overflows"
 	MetricEntries   = "tailscale.rdns.cache.entries"
@@ -35,11 +36,13 @@ const (
 	resultHit      = "hit"
 	resultMiss     = "miss"
 	resultNegative = "negative"
+	resultStale    = "stale"
 	resultSuccess  = "success"
 	resultFailure  = "failure"
 
-	reasonExpired = "expired"
-	reasonPurge   = "purge"
+	reasonExpired      = "expired"
+	reasonPurge        = "purge"
+	reasonStaleExpired = "stale_expired"
 )
 
 var (
@@ -47,7 +50,7 @@ var (
 		Name:        MetricLookups,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Counter,
-		Description: "Reverse-DNS cache hot-path lookups by result: hit (cached PTR name), negative (cached failed lookup), or miss (no cached entry; a background resolution is scheduled).",
+		Description: "Reverse-DNS cache hot-path lookups by result: hit (cached PTR name), stale (a positive entry past its TTL but still within enrichment.reverse_dns.stale_ttl, served while one background refresh runs, #297), negative (cached failed lookup), or miss (no cached entry; a background resolution is scheduled).",
 		Attributes:  []string{attrResult},
 		Group:       groupRDNS,
 	}
@@ -59,11 +62,19 @@ var (
 		Attributes:  []string{attrResult},
 		Group:       groupRDNS,
 	}
+	docRefreshes = metricdoc.Metric{
+		Name:        MetricRefreshes,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Counter,
+		Description: "Background PTR resolutions triggered by serving a stale name (#297), by result (success or failure). These are a subset of the resolver load already counted in tailscale.rdns.queries, broken out separately from first-sighting queries so a stale-refresh storm is visible on its own.",
+		Attributes:  []string{attrResult},
+		Group:       groupRDNS,
+	}
 	docEvictions = metricdoc.Metric{
 		Name:        MetricEvictions,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Counter,
-		Description: "Cache entries removed, by reason: expired (swept after their TTL) or purge (manual purge via the admin endpoint).",
+		Description: "Cache entries removed, by reason: expired (swept after their TTL), stale_expired (a positive entry swept after outliving its TTL plus enrichment.reverse_dns.stale_ttl, #297), or purge (manual purge via the admin endpoint).",
 		Attributes:  []string{attrReason},
 		Group:       groupRDNS,
 	}
@@ -93,6 +104,6 @@ var (
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		docLookups, docQueries, docEvictions, docOverflows, docEntries, docCapacity,
+		docLookups, docQueries, docRefreshes, docEvictions, docOverflows, docEntries, docCapacity,
 	}
 }

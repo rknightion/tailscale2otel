@@ -33,6 +33,20 @@ type Options struct {
 	MaxEntries  int           // cache size bound (default 4096)
 	Concurrency int           // max in-flight background lookups (default 8)
 
+	// StaleTTL is how long PAST a positive entry's TTL a resolved name may
+	// still be served — while exactly one background refresh runs — before it
+	// is finally treated as a miss (#297). Serving a bounded stale window
+	// keeps a flow-metric label from flapping hostname -> external -> hostname
+	// across every TTL expiry, which otherwise splits the series. <= 0
+	// disables stale serving, reproducing the pre-#297 immediate-miss
+	// behavior. Negative (failed-lookup) entries are NEVER served stale.
+	//
+	// Unlike the other fields above, New does NOT invent a default when this
+	// is zero: the config layer (enrichment.reverse_dns.stale_ttl, default 1h)
+	// supplies it, so a caller that forgets to set it gets today's behavior
+	// rather than a silently-injected default.
+	StaleTTL time.Duration
+
 	// ReportInterval is how often expired entries are swept and (when Emitter is
 	// set) metrics are flushed. Nil/zero uses the default 30s.
 	ReportInterval time.Duration
@@ -55,11 +69,14 @@ const defaultReportInterval = 30 * time.Second
 // stats holds the cumulative counters surfaced via Stats() and flushed as OTEL
 // counter deltas by report(). All fields are guarded by Cache.mu.
 type stats struct {
-	hits, misses, negatives   int64
-	querySuccess, queryFail   int64
-	evictExpired, evictPurged int64
-	overflows                 int64
-	lastPurge                 time.Time
+	hits, misses, negatives     int64
+	staleHits                   int64
+	querySuccess, queryFail     int64
+	refreshSuccess, refreshFail int64
+	evictExpired, evictPurged   int64
+	evictStaleExpired           int64
+	overflows                   int64
+	lastPurge                   time.Time
 }
 
 // Stats is an absolute snapshot of the cache's counters and occupancy, for the
@@ -67,11 +84,16 @@ type stats struct {
 type Stats struct {
 	Size, Capacity          int
 	Hits, Misses, Negatives int64
+	StaleHits               int64
 	QuerySuccess, QueryFail int64
+	RefreshSuccess          int64
+	RefreshFail             int64
 	EvictedExpired          int64
 	EvictedPurged           int64
+	EvictedStaleExpired     int64
 	Overflows               int64
 	TTL, NegativeTTL        time.Duration
+	StaleTTL                time.Duration
 	LastPurge               time.Time // zero when never purged
 }
 
@@ -82,12 +104,13 @@ type entry struct {
 
 // Cache is an async, bounded reverse-DNS cache implementing Resolver.
 type Cache struct {
-	lookup  func(ctx context.Context, addr netip.Addr) ([]string, error)
-	ttl     time.Duration
-	negTTL  time.Duration
-	timeout time.Duration
-	max     int
-	now     func() time.Time
+	lookup   func(ctx context.Context, addr netip.Addr) ([]string, error)
+	ttl      time.Duration
+	negTTL   time.Duration
+	staleTTL time.Duration
+	timeout  time.Duration
+	max      int
+	now      func() time.Time
 
 	emitter     telemetry.Emitter
 	reportEvery time.Duration
@@ -138,6 +161,7 @@ func New(opts Options) *Cache {
 		lookup:      lookup,
 		ttl:         opts.TTL,
 		negTTL:      opts.NegativeTTL,
+		staleTTL:    opts.StaleTTL, // no invented default — see the Options.StaleTTL comment
 		timeout:     opts.Timeout,
 		max:         opts.MaxEntries,
 		now:         now,
@@ -177,17 +201,33 @@ func (c *Cache) run() {
 // later sighting can be enriched. It never blocks on the network.
 func (c *Cache) LookupName(addr netip.Addr) (string, bool) {
 	c.mu.Lock()
-	if e, ok := c.entries[addr]; ok && c.now().Before(e.expires) {
-		name := e.name
-		if name != "" {
-			c.stats.hits++
-		} else {
-			c.stats.negatives++
+	now := c.now()
+	if e, ok := c.entries[addr]; ok {
+		if now.Before(e.expires) {
+			name := e.name
+			if name != "" {
+				c.stats.hits++
+			} else {
+				c.stats.negatives++
+			}
+			c.mu.Unlock()
+			return name, name != ""
 		}
-		c.mu.Unlock()
-		return name, name != ""
+		if c.servableLocked(e, now) {
+			// Stale-but-servable positive entry (#297): its TTL has elapsed but
+			// it is still within the configured stale window, so keep serving
+			// the last-known name — never a negative entry, see the comment on
+			// StaleTTL — while trying to kick off exactly one background
+			// refresh. Without this, a flow-metric label would flap to
+			// "external" for the whole time a refresh takes.
+			c.stats.staleHits++
+			name := e.name
+			c.scheduleRefreshLocked(addr)
+			c.mu.Unlock()
+			return name, true
+		}
 	}
-	// Any non-(positive/negative)-cached sighting is a miss; it may or may not
+	// Any non-(fresh/stale)-cached sighting is a miss; it may or may not
 	// schedule a background resolution depending on the bounds below.
 	c.stats.misses++
 	if c.closed {
@@ -234,8 +274,40 @@ func (c *Cache) LookupName(addr netip.Addr) (string, bool) {
 	return "", false
 }
 
-// resolve performs one background lookup and stores the (positive or negative)
-// result, then releases the worker slot.
+// scheduleRefreshLocked attempts to start exactly one background refresh of a
+// stale-but-servable address. Callers must hold mu. It reuses the same
+// single-flight (inflight), worker (sem), and closing (closed) guards as the
+// miss path in LookupName so the #118/#121 concurrency/capacity contracts
+// apply uniformly — but it deliberately never checks or counts against the
+// admission/overflow bound: addr is already a committed cache entry, not a
+// new one. It never blocks: if no worker slot is free, resolve() is simply
+// skipped and the stale name keeps being served on the next sighting.
+func (c *Cache) scheduleRefreshLocked(addr netip.Addr) {
+	if c.closed {
+		return
+	}
+	if _, busy := c.inflight[addr]; busy {
+		return
+	}
+	select {
+	case c.sem <- struct{}{}:
+	default:
+		return
+	}
+	c.inflight[addr] = struct{}{}
+	// Same wg.Add-under-mu ordering contract as LookupName's miss path — see
+	// the comment there.
+	c.wg.Add(1)
+
+	go c.resolve(addr)
+}
+
+// resolve performs one background lookup and stores the (positive or
+// negative) result, then releases the worker slot. It is used both for a
+// first-time miss and for a stale-serving refresh; it tells the two apart by
+// inspecting the entry already present under the lock (see isRefresh below)
+// rather than threading a flag through, because the entry can legitimately
+// change out from under an in-flight lookup.
 func (c *Cache) resolve(addr netip.Addr) {
 	defer c.wg.Done()
 	defer func() { <-c.sem }()
@@ -249,12 +321,39 @@ func (c *Cache) resolve(addr netip.Addr) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.inflight, addr)
+
+	// A positive entry present when this resolve lands can only have been
+	// written by an earlier resolve() for the same addr (single-flight
+	// prevents concurrent resolves). It is a refresh only while that name is
+	// still SERVABLE, though — presence alone is not enough. sweep() runs on
+	// the report interval, so an entry past expires+StaleTTL lingers in the
+	// map for up to that long, and a sighting in that gap is a plain miss that
+	// schedules an ordinary lookup. Treating it as a refresh would take the
+	// keep-serving-stale early return below: the dead entry would never be
+	// replaced by a negative one, so every subsequent sighting would query the
+	// resolver again until the next sweep (#297).
+	prev, hadEntry := c.entries[addr]
+	isRefresh := hadEntry && prev.name != "" && c.servableLocked(prev, c.now())
+
 	if err != nil || name == "" {
 		c.stats.queryFail++
+		if isRefresh {
+			c.stats.refreshFail++
+			// Do NOT downgrade a stale-but-servable positive to a negative
+			// entry over one failed refresh (#297) — that would flap the
+			// flow-metric label to "external" for the rest of the negative
+			// TTL over a single transient resolver blip. Leave it exactly as
+			// it was; it keeps serving stale until sweep() reclaims it at
+			// expires+StaleTTL, or a later refresh succeeds.
+			return
+		}
 		c.entries[addr] = entry{expires: c.now().Add(c.negTTL)}
 		return
 	}
 	c.stats.querySuccess++
+	if isRefresh {
+		c.stats.refreshSuccess++
+	}
 	c.entries[addr] = entry{name: name, expires: c.now().Add(c.ttl)}
 }
 
@@ -279,18 +378,38 @@ func pickPTRName(names []string) string {
 	return best
 }
 
-// sweep deletes entries whose TTL has elapsed, reclaiming their slots, and
-// counts them under evictExpired.
+// sweep deletes entries whose TTL (and, for a servable positive entry, its
+// stale window too) has elapsed, reclaiming their slots. A positive entry
+// with StaleTTL configured is retained until expires+StaleTTL and counted
+// under evictStaleExpired rather than evictExpired when it finally goes;
+// negative entries, and positive entries when StaleTTL<=0, are unaffected and
+// keep counting evictExpired at plain expiry.
 func (c *Cache) sweep() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
 	for a, e := range c.entries {
-		if !now.Before(e.expires) {
-			delete(c.entries, a)
+		if now.Before(e.expires) || c.servableLocked(e, now) {
+			continue
+		}
+		delete(c.entries, a)
+		if e.name != "" && c.staleTTL > 0 {
+			c.stats.evictStaleExpired++
+		} else {
 			c.stats.evictExpired++
 		}
 	}
+}
+
+// servableLocked reports whether an entry may still be handed to the hot path
+// past its TTL, under the configured stale window. It is the ONE definition of
+// that window: LookupName's stale band, resolve's is-this-a-refresh test and
+// sweep's eviction deadline have to agree, or an entry gets reclaimed while it
+// is still being served, or served after it was reclaimed. Callers must hold
+// mu. Negative entries are never servable stale, and neither is anything when
+// StaleTTL is disabled.
+func (c *Cache) servableLocked(e entry, now time.Time) bool {
+	return e.name != "" && c.staleTTL > 0 && now.Before(e.expires.Add(c.staleTTL))
 }
 
 // Purge removes every cached entry and returns the number removed. The cleared
@@ -312,19 +431,24 @@ func (c *Cache) Stats() Stats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return Stats{
-		Size:           len(c.entries),
-		Capacity:       c.max,
-		Hits:           c.stats.hits,
-		Misses:         c.stats.misses,
-		Negatives:      c.stats.negatives,
-		QuerySuccess:   c.stats.querySuccess,
-		QueryFail:      c.stats.queryFail,
-		EvictedExpired: c.stats.evictExpired,
-		EvictedPurged:  c.stats.evictPurged,
-		Overflows:      c.stats.overflows,
-		TTL:            c.ttl,
-		NegativeTTL:    c.negTTL,
-		LastPurge:      c.stats.lastPurge,
+		Size:                len(c.entries),
+		Capacity:            c.max,
+		Hits:                c.stats.hits,
+		Misses:              c.stats.misses,
+		Negatives:           c.stats.negatives,
+		StaleHits:           c.stats.staleHits,
+		QuerySuccess:        c.stats.querySuccess,
+		QueryFail:           c.stats.queryFail,
+		RefreshSuccess:      c.stats.refreshSuccess,
+		RefreshFail:         c.stats.refreshFail,
+		EvictedExpired:      c.stats.evictExpired,
+		EvictedPurged:       c.stats.evictPurged,
+		EvictedStaleExpired: c.stats.evictStaleExpired,
+		Overflows:           c.stats.overflows,
+		TTL:                 c.ttl,
+		NegativeTTL:         c.negTTL,
+		StaleTTL:            c.staleTTL,
+		LastPurge:           c.stats.lastPurge,
 	}
 }
 
@@ -352,10 +476,14 @@ func (c *Cache) report() {
 	emitDelta(MetricLookups, docLookups.Unit, docLookups.Description, attrResult, resultHit, cur.hits, prev.hits)
 	emitDelta(MetricLookups, docLookups.Unit, docLookups.Description, attrResult, resultMiss, cur.misses, prev.misses)
 	emitDelta(MetricLookups, docLookups.Unit, docLookups.Description, attrResult, resultNegative, cur.negatives, prev.negatives)
+	emitDelta(MetricLookups, docLookups.Unit, docLookups.Description, attrResult, resultStale, cur.staleHits, prev.staleHits)
 	emitDelta(MetricQueries, docQueries.Unit, docQueries.Description, attrResult, resultSuccess, cur.querySuccess, prev.querySuccess)
 	emitDelta(MetricQueries, docQueries.Unit, docQueries.Description, attrResult, resultFailure, cur.queryFail, prev.queryFail)
+	emitDelta(MetricRefreshes, docRefreshes.Unit, docRefreshes.Description, attrResult, resultSuccess, cur.refreshSuccess, prev.refreshSuccess)
+	emitDelta(MetricRefreshes, docRefreshes.Unit, docRefreshes.Description, attrResult, resultFailure, cur.refreshFail, prev.refreshFail)
 	emitDelta(MetricEvictions, docEvictions.Unit, docEvictions.Description, attrReason, reasonExpired, cur.evictExpired, prev.evictExpired)
 	emitDelta(MetricEvictions, docEvictions.Unit, docEvictions.Description, attrReason, reasonPurge, cur.evictPurged, prev.evictPurged)
+	emitDelta(MetricEvictions, docEvictions.Unit, docEvictions.Description, attrReason, reasonStaleExpired, cur.evictStaleExpired, prev.evictStaleExpired)
 	if d := cur.overflows - prev.overflows; d > 0 {
 		c.emitter.Counter(MetricOverflows, docOverflows.Unit, docOverflows.Description, float64(d), nil)
 	}

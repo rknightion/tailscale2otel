@@ -653,6 +653,9 @@
                                 "server": {
                                     "type": "string"
                                 },
+                                "stale_ttl": {
+                                    "type": "string"
+                                },
                                 "timeout": {
                                     "type": "string"
                                 }

@@ -815,6 +815,25 @@ func TestValidateReverseDNSRejectsZeroMaxEntries(t *testing.T) {
 	}
 }
 
+// A negative stale window is not "disabled" — it would make every positive
+// entry unservable the moment it was written, silently turning PTR enrichment
+// off while the config still says it is on (#297). Zero is the way to disable
+// stale serving.
+func TestValidateReverseDNSRejectsNegativeStaleTTL(t *testing.T) {
+	const y = "enrichment:\n  reverse_dns:\n    enabled: true\n    stale_ttl: -1s\n"
+	err := loadErr(t, y)
+	if err == nil || !strings.Contains(err.Error(), "stale_ttl") {
+		t.Fatalf("err = %v, want a stale_ttl error", err)
+	}
+}
+
+func TestValidateReverseDNSAcceptsZeroStaleTTL(t *testing.T) {
+	const y = "enrichment:\n  reverse_dns:\n    enabled: true\n    stale_ttl: 0s\n"
+	if err := loadErr(t, y); err != nil {
+		t.Errorf("stale_ttl: 0 disables stale serving and must be valid: %v", err)
+	}
+}
+
 func TestValidateReverseDNSDisabledIgnoresBadServer(t *testing.T) {
 	// Validation is gated on enabled: a disabled block with a bad server is fine.
 	const y = "enrichment:\n  reverse_dns:\n    enabled: false\n    server: not-an-ip\n"

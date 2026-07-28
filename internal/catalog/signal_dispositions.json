@@ -1405,6 +1405,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.rdns.refreshes",
+      "prom_name": "tailscale_rdns_refreshes_total",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.service.hosts",
       "prom_name": "tailscale_service_hosts_ratio",
       "surface": "operational",

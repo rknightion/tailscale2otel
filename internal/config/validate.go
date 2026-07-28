@@ -1142,6 +1142,12 @@ func (c *Config) Validate() error {
 		if rd.MaxEntries <= 0 {
 			return fmt.Errorf("enrichment.reverse_dns.max_entries must be > 0 when reverse DNS is enabled")
 		}
+		// A negative window is not a disable switch: it would make every entry
+		// unservable the instant it was written, quietly turning enrichment off
+		// while the config still reads enabled. Zero is the documented disable.
+		if rd.StaleTTL.D() < 0 {
+			return fmt.Errorf("enrichment.reverse_dns.stale_ttl must be >= 0 (0 disables serving stale names)")
+		}
 	}
 
 	// Profiling is opt-in. The pprof handlers are mounted on the admin server, so

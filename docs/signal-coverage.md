@@ -52,7 +52,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| operational | 203 | 193 | 56 | 11 | 6 | 0 |
+| operational | 204 | 194 | 56 | 11 | 6 | 0 |
 | self_obs | 67 | 65 | 27 | 9 | 0 | 2 |
 
 ## Operational signals
@@ -206,6 +206,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.rdns.cache.lookups` | metric | `tailscale_rdns_cache_lookups_total` | visualized |  |
 | `tailscale.rdns.cache.overflows` | metric | `tailscale_rdns_cache_overflows_total` | visualized, alertable |  |
 | `tailscale.rdns.queries` | metric | `tailscale_rdns_queries_total` | visualized |  |
+| `tailscale.rdns.refreshes` | metric | `tailscale_rdns_refreshes_total` | visualized |  |
 | `tailscale.service.hosts` | metric | `tailscale_service_hosts_ratio` | visualized, alertable |  |
 | `tailscale.service.ports` | metric | `tailscale_service_ports` | visualized |  |
 | `tailscale.services.count` | metric | `tailscale_services_count_ratio` | visualized |  |

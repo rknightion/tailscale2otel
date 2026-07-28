@@ -774,6 +774,9 @@ config: # @schema additionalProperties:false
       cache_ttl: 24h
       # -- How long a failed lookup is remembered (suppresses retries).
       negative_ttl: 5m
+      # -- Keep serving a resolved name this long past cache_ttl while one background refresh runs.
+      # Stops the flow label flapping to "external" at every TTL expiry. 0 disables stale serving.
+      stale_ttl: 1h
       # -- Cache size bound; new external IPs beyond this are not resolved (~150 bytes/entry).
       max_entries: 50000
       # -- Acknowledge the flow-metric cardinality cost of enabled+node_dims and silence the startup
