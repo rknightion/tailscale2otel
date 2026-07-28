@@ -492,7 +492,102 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     Release binaries (pre-built, multi-arch) are attached to each
     [GitHub Release](https://github.com/rknightion/tailscale2otel/releases) and
-    are signed with cosign keyless signatures.
+    are signed with cosign keyless signatures. See
+    [Verifying a release](#verifying-a-release) below before installing one.
+
+---
+
+## Verifying a release
+
+Every release is signed and carries SLSA build provenance. Both are worth
+checking, and both have a trap that makes the obvious command fail.
+
+**The signing identity is `rknightion/.github`, not this repository.** Signing
+happens inside shared reusable workflows, so the certificate names the shared
+repo. The identity is also **pinned by commit SHA and moves whenever that pin is
+bumped**, so match it with a regexp anchored on the workflow path rather than
+pinning the whole string — a hardcoded `--certificate-identity` is correct for
+exactly one release and then rots.
+
+### Release binaries
+
+Download the archive for your platform, the checksums file, and its signature:
+
+```sh
+VERSION=3.0.0
+gh release download "v${VERSION}" -R rknightion/tailscale2otel \
+  -p "tailscale2otel_${VERSION}_linux_amd64.tar.gz" \
+  -p "tailscale2otel_${VERSION}_SHA256SUMS" \
+  -p "tailscale2otel_${VERSION}_SHA256SUMS.sigstore.json"
+```
+
+Verify the checksums file is genuine, then verify the archive against it:
+
+```sh
+cosign verify-blob \
+  --bundle "tailscale2otel_${VERSION}_SHA256SUMS.sigstore.json" \
+  --certificate-identity-regexp '^https://github\.com/rknightion/\.github/\.github/workflows/binaries\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "tailscale2otel_${VERSION}_SHA256SUMS"
+
+sha256sum --ignore-missing -c "tailscale2otel_${VERSION}_SHA256SUMS"
+```
+
+`cosign verify-blob` prints `Verified OK`. The order matters: checking an
+archive against an unverified checksums file proves nothing, because whoever
+could replace the archive could replace the checksums too.
+
+### Build provenance
+
+Provenance comes from `actions/attest-build-provenance`, so `gh attestation
+verify` is the tool — `slsa-verifier` is not. Two things trip people up:
+
+- **Verify an archive, not the checksums file.** The attestation's subjects are
+  the artifacts *listed in* `SHA256SUMS`, not `SHA256SUMS` itself. Passing the
+  checksums file returns HTTP 404.
+- **`--signer-repo` is required**, for the same shared-workflow reason as above.
+  Without it the command exits 1 with the unhelpful message
+  `verifying with issuer "sigstore.dev"`.
+
+```sh
+gh attestation verify "tailscale2otel_${VERSION}_linux_amd64.tar.gz" \
+  -R rknightion/tailscale2otel \
+  --signer-repo rknightion/.github
+```
+
+Provenance is available from v2.0.2 onward. `v2.0.1` and `v1.0.0` are missing
+their `SHA256SUMS.intoto.jsonl` asset and `v2.0.0` shipped no archives at all,
+so on those tags treat this step as unavailable rather than as a failure.
+
+### Container image
+
+The image is signed by a *different* workflow than the binaries, so it needs a
+different identity:
+
+```sh
+cosign verify ghcr.io/rknightion/tailscale2otel:3.0.0 \
+  --certificate-identity-regexp '^https://github\.com/rknightion/\.github/\.github/workflows/container-publish\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+gh attestation verify oci://ghcr.io/rknightion/tailscale2otel:3.0.0 \
+  -R rknightion/tailscale2otel --signer-repo rknightion/.github
+```
+
+Once verified, pin by digest rather than tag for anything long-lived —
+`cosign verify` reports the digest it validated.
+
+### What is in a release
+
+| asset | what it is |
+| --- | --- |
+| `tailscale2otel_<version>_<os>_<arch>.tar.gz` | the binary (`.zip` for `windows_amd64`) |
+| `tailscale2otel_<version>_SHA256SUMS` | checksums for every archive |
+| `..._SHA256SUMS.sigstore.json` | cosign signature bundle for the checksums |
+| `..._SHA256SUMS.intoto.jsonl` | SLSA provenance covering every listed artifact |
+| `<archive>.sbom.json` | per-archive SBOM (note `.sbom.json`, not `.sbom`) |
+| `tailscale2otel.spdx.json`, `tailscale2otel.cdx.json` | image SBOMs |
+| `tailscale2otel-<version>.tgz` | the Helm chart |
+| `THIRD_PARTY_NOTICES.md` | licence texts of the linked modules |
 
 ---
 
