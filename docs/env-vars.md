@@ -32,6 +32,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | Environment variable | Default | Description |
 | --- | --- | --- |
 | `TS2OTEL_LOG_LEVEL` | `info` | exporter's own log verbosity: debug \| info \| warn \| error |
+| `TS2OTEL_LOG_FORMAT` | `text` | operational log encoding: text \| json (json = one record per line) |
 | `TS2OTEL_PROVIDER` | `tailscale` | control-plane backend: tailscale (default) \| headscale |
 | `TS2OTEL_HEADSCALE__URL` | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL) |
 | `TS2OTEL_HEADSCALE__API_KEY` | `""` | Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY) |

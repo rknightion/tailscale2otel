@@ -606,6 +606,9 @@ secret: # @schema additionalProperties:false
 config: # @schema additionalProperties:false
   # -- Log verbosity: debug | info | warn | error.
   log_level: info
+  # -- Operational log encoding: `text` or `json`. JSON is one record per line, for a cluster
+  # log pipeline that parses rather than greps.
+  log_format: text
 
   # -- Control-plane backend: tailscale (default) | headscale. Under headscale only the
   # devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable.

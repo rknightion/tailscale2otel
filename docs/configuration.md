@@ -177,6 +177,7 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 | Key | Default | Description |
 |-----|---------|-------------|
 | `log_level` | `info` | Logging verbosity. One of `debug`, `info`, `warn`, `error`. |
+| `log_format` | `text` | Operational log encoding: `text` or `json`. JSON emits one record per line with the same attributes, for container and systemd deployments that route logs through a parser. Rejected at startup if it is neither value. |
 | `provider` | `tailscale` | Control-plane backend. One of `tailscale` (default, fully back-compatible) or `headscale`. |
 
 ---

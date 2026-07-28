@@ -743,6 +743,9 @@
                     },
                     "additionalProperties": false
                 },
+                "log_format": {
+                    "type": "string"
+                },
                 "log_level": {
                     "type": "string"
                 },

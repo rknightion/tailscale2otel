@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.24.1](https://img.shields.io/badge/Version-0.24.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.25.0](https://img.shields.io/badge/Version-0.25.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -370,6 +370,7 @@ extraVolumeMounts:
 | config.ingress_wal.enabled | bool | `false` | Persist accepted receiver bodies before acknowledging them. Off by default. |
 | config.ingress_wal.max_bytes | int | `268435456` | Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
 | config.ingress_wal.max_entries | int | `10000` | Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
+| config.log_format | string | `"text"` | Operational log encoding: `text` or `json`. JSON is one record per line, for a cluster log pipeline that parses rather than greps. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
 | config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
 | config.otlp.grafana_cloud.instance_id | string | `""` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret). |

@@ -717,6 +717,9 @@ func (c *Config) Validate() error {
 	// log_level is documented (configuration.md) and framed as a validated enum,
 	// so reject a value outside the set here rather than silently failing open to
 	// info in cmd/tailscale2otel.parseLevel (the mismatch #106 flagged).
+	if !oneOf(c.LogFormat, "text", "json") {
+		return fmt.Errorf("log_format %q invalid: must be text or json", c.LogFormat)
+	}
 	if !oneOf(c.LogLevel, "debug", "info", "warn", "error") {
 		return fmt.Errorf("log_level %q invalid: must be one of debug, info, warn, error", c.LogLevel)
 	}

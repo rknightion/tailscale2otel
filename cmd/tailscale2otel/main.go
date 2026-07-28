@@ -82,7 +82,7 @@ func runServer(configPath string, stderr io.Writer) int {
 		return 1
 	}
 
-	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: parseLevel(cfg.LogLevel)}))
+	logger := slog.New(newLogHandler(stderr, cfg.LogFormat, parseLevel(cfg.LogLevel)))
 	slog.SetDefault(logger)
 
 	for _, w := range cfg.Warnings() {

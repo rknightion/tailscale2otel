@@ -17,6 +17,7 @@
 # Prose reference: docs/configuration.md.
 
 log_level: info                       # exporter's own log verbosity: debug | info | warn | error
+log_format: text                      # operational log encoding: text | json (json = one record per line)
 
 provider: tailscale                   # control-plane backend: tailscale (default) | headscale
 

@@ -35,8 +35,9 @@ func defaultObjectStore() ObjectStoreConfig {
 // user omits keeps its default.
 func Default() *Config {
 	return &Config{
-		LogLevel: "info",
-		Provider: "tailscale",
+		LogFormat: "text",
+		LogLevel:  "info",
+		Provider:  "tailscale",
 		Headscale: HeadscaleConfig{
 			HTTP:             TailscaleHTTPConfig{Timeout: dur(30 * time.Second)},
 			MaxResponseBytes: 4 << 20, // 4 MiB — snapshot endpoints only; ~5,800 nodes at ~715 B each

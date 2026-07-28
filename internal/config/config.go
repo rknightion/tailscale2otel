@@ -40,7 +40,12 @@ const (
 
 // Config is the root configuration document.
 type Config struct {
-	LogLevel  string          `yaml:"log_level"`
+	LogLevel string `yaml:"log_level"`
+	// LogFormat selects the operational log encoding: "text" (default) or
+	// "json". JSON is one record per line, for container and systemd deployments
+	// that route logs through a parser (#312). It changes the encoding only —
+	// the attributes each call site sets are the same either way.
+	LogFormat string          `yaml:"log_format"`
 	Provider  string          `yaml:"provider"` // "tailscale" (default) | "headscale"
 	Tailscale TailscaleConfig `yaml:"tailscale"`
 	// Tailnets is the optional multi-tailnet list (MSP mode). When non-empty the
