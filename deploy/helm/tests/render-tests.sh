@@ -678,5 +678,43 @@ render --set metrics.podMonitor.enabled=true
 [[ $RENDER_RC -ne 0 ]] \
   && ok "O: PodMonitor without the prometheus listener fails" || bad "O: PodMonitor rendered with no listener to scrape"
 
+# --------------------------------------------------------------------------
+case_ "P. Prometheus Operator ServiceMonitor (#458)"
+sm() { yq 'select(.kind == "ServiceMonitor") | '"$1" <<<"$RENDER"; }
+
+render
+assert_rc0 "P: default renders"
+[[ "$(n_kind ServiceMonitor)" == "0" ]] \
+  && ok "P: no ServiceMonitor by default" || bad "P: a ServiceMonitor rendered by default"
+
+render --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set service.prometheus.enabled=true --set metrics.serviceMonitor.enabled=true \
+       --set-string metrics.serviceMonitor.bearerTokenSecret.name=promtok \
+       --set-string metrics.serviceMonitor.bearerTokenSecret.key=token
+assert_rc0 "P: ServiceMonitor renders"
+[[ "$(n_kind ServiceMonitor)" == "1" ]] && ok "P: exactly one ServiceMonitor" || bad "P: count is $(n_kind ServiceMonitor)"
+[[ "$(sm '.spec.endpoints[0].port')" == "prometheus" ]] \
+  && ok "P: targets the prometheus Service port by name" || bad "P: wrong port name"
+# The selector must actually match the Service #344 renders, or it silently
+# scrapes nothing. Compare against the real Service's labels.
+[[ "$(sm '.spec.selector.matchLabels."app.kubernetes.io/component"')" == "prometheus" ]] \
+  && ok "P: selector scopes to the prometheus Service component" || bad "P: selector does not scope by component"
+[[ "$(yq "select(.kind == \"Service\") | .metadata.labels.\"app.kubernetes.io/component\"" <<<"$RENDER")" == "prometheus" ]] \
+  && ok "P: the rendered Service carries the label the selector matches" \
+  || bad "P: selector/Service label mismatch — the ServiceMonitor would match nothing"
+grep -q -- "$SENTINEL" <<<"$(yq 'select(.kind == "ServiceMonitor")' <<<"$RENDER")" \
+  && bad "P: the token VALUE was embedded in the ServiceMonitor" \
+  || ok "P: no token value in the ServiceMonitor (reference only)"
+
+# A ServiceMonitor with no Service matches nothing and reports no data.
+render --set config.prometheus.enabled=true --set metrics.serviceMonitor.enabled=true
+[[ $RENDER_RC -ne 0 ]] && ok "P: ServiceMonitor without its Service fails" \
+  || bad "P: rendered a ServiceMonitor that would match no Service"
+grep -q 'podMonitor' <<<"$RENDER" \
+  && ok "P: the failure points at the Service-free alternative" || bad "P: failure does not mention podMonitor"
+
+render --set metrics.serviceMonitor.enabled=true --set service.prometheus.enabled=true
+[[ $RENDER_RC -ne 0 ]] && ok "P: ServiceMonitor without the listener fails" || bad "P: rendered with no listener"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

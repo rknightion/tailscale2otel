@@ -150,6 +150,31 @@ metrics:
     metricRelabelings: []
     # -- Cap on samples accepted per scrape; 0 leaves it unset.
     sampleLimit: 0
+  serviceMonitor:
+    # -- Render a ServiceMonitor. Requires config.prometheus.enabled AND
+    # service.prometheus.enabled — a ServiceMonitor selects a Service, so without one it
+    # matches nothing and silently reports no data. Prefer podMonitor unless you
+    # specifically want the Service in the scrape path.
+    enabled: false
+    # -- Scrape interval. Empty ("") inherits the Prometheus default.
+    interval: ""
+    # -- Per-scrape timeout. Empty ("") inherits the Prometheus default.
+    scrapeTimeout: ""
+    # -- Metrics path on the Prometheus listener.
+    path: /metrics
+    # -- Extra labels on the ServiceMonitor object (your Prometheus `serviceMonitorSelector` usually matches one).
+    labels: {}
+    # -- Bearer token for prometheus.auth.token, read from a Secret you manage. REQUIRED
+    # when that listener has a token. Only a reference is rendered — never the value.
+    bearerTokenSecret: {}
+    # -- TLS settings for the scrape (Secret references only, never inline material).
+    tlsConfig: {}
+    # -- relabel_configs applied before the scrape.
+    relabelings: []
+    # -- metric_relabel_configs applied to scraped samples.
+    metricRelabelings: []
+    # -- Cap on samples accepted per scrape; 0 leaves it unset.
+    sampleLimit: 0
 
 # --- Per-listener Services (all default-off) ---
 # The chart ships NO Service unless you enable one here. tailscale2otel's normal

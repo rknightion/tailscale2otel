@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.17.0](https://img.shields.io/badge/Version-0.17.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.18.0](https://img.shields.io/badge/Version-0.18.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -493,6 +493,16 @@ extraVolumeMounts:
 | metrics.podMonitor.sampleLimit | int | `0` | Cap on samples accepted per scrape; 0 leaves it unset. |
 | metrics.podMonitor.scrapeTimeout | string | `""` | Per-scrape timeout. Empty ("") inherits the Prometheus default. |
 | metrics.podMonitor.tlsConfig | object | `{}` | TLS settings passed to the scrape config (ca/cert/keySecret, serverName, insecureSkipVerify). Only Secret references, never inline material. |
+| metrics.serviceMonitor.bearerTokenSecret | object | `{}` | Bearer token for prometheus.auth.token, read from a Secret you manage. REQUIRED when that listener has a token. Only a reference is rendered — never the value. |
+| metrics.serviceMonitor.enabled | bool | `false` | Render a ServiceMonitor. Requires config.prometheus.enabled AND service.prometheus.enabled — a ServiceMonitor selects a Service, so without one it matches nothing and silently reports no data. Prefer podMonitor unless you specifically want the Service in the scrape path. |
+| metrics.serviceMonitor.interval | string | `""` | Scrape interval. Empty ("") inherits the Prometheus default. |
+| metrics.serviceMonitor.labels | object | `{}` | Extra labels on the ServiceMonitor object (your Prometheus `serviceMonitorSelector` usually matches one). |
+| metrics.serviceMonitor.metricRelabelings | list | `[]` | metric_relabel_configs applied to scraped samples. |
+| metrics.serviceMonitor.path | string | `"/metrics"` | Metrics path on the Prometheus listener. |
+| metrics.serviceMonitor.relabelings | list | `[]` | relabel_configs applied before the scrape. |
+| metrics.serviceMonitor.sampleLimit | int | `0` | Cap on samples accepted per scrape; 0 leaves it unset. |
+| metrics.serviceMonitor.scrapeTimeout | string | `""` | Per-scrape timeout. Empty ("") inherits the Prometheus default. |
+| metrics.serviceMonitor.tlsConfig | object | `{}` | TLS settings for the scrape (Secret references only, never inline material). |
 | nameOverride | string | `""` | Override the chart name portion of resource names. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | persistence.accessMode | string | `"ReadWriteOnce"` | PVC access mode. |

@@ -1,0 +1,66 @@
+{{- /*
+Prometheus Operator ServiceMonitor (#458), default-off.
+
+Offered alongside the PodMonitor (#345) for operators whose Prometheus is
+configured with a serviceMonitorSelector, or who want the Service in the scrape
+path. Unlike a PodMonitor it selects a SERVICE, so it requires the per-listener
+prometheus Service from #344 to be enabled — without one it matches nothing and
+reports no data, silently.
+
+Same credential rule as the PodMonitor: references only, never values.
+*/ -}}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- $sm := .Values.metrics.serviceMonitor }}
+{{- if not .Values.config.prometheus.enabled }}
+{{- fail "metrics.serviceMonitor.enabled requires config.prometheus.enabled: there is no /metrics listener to scrape" }}
+{{- end }}
+{{- if not .Values.service.prometheus.enabled }}
+{{- fail "metrics.serviceMonitor.enabled requires service.prometheus.enabled: a ServiceMonitor selects a Service, so with none rendered it matches nothing and silently reports no data. Enable the Service, or use metrics.podMonitor which scrapes pods directly and needs no Service." }}
+{{- end }}
+{{- if and (or .Values.config.prometheus.auth.token .Values.config.prometheus.auth.token_file) (not $sm.bearerTokenSecret) }}
+{{- fail "config.prometheus.auth.token is set but metrics.serviceMonitor.bearerTokenSecret is not: the scrape would be rejected with 401 and the target would silently report no data. Point bearerTokenSecret at a Secret holding the same token." }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "tailscale2otel.fullname" . }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "tailscale2otel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: prometheus
+  endpoints:
+    - port: prometheus
+      path: {{ $sm.path }}
+      scheme: {{ if and .Values.config.prometheus.tls.cert_file .Values.config.prometheus.tls.key_file }}https{{ else }}http{{ end }}
+      {{- with $sm.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with $sm.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with $sm.bearerTokenSecret }}
+      bearerTokenSecret:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $sm.tlsConfig }}
+      tlsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $sm.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $sm.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if gt (int $sm.sampleLimit) 0 }}
+  sampleLimit: {{ int $sm.sampleLimit }}
+  {{- end }}
+{{- end }}
