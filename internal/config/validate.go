@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"fmt"
 	"math"
 	"net"
@@ -628,6 +629,23 @@ func validateTLSFiles(label, certFile, keyFile string) error {
 		}
 		_ = fh.Close()
 	}
+	if certFile == "" {
+		return nil
+	}
+	// Readable is not the same as usable. /dev/null is readable and parses as an
+	// empty PEM; a certificate paired with a different key is readable twice over.
+	// Both used to reach ListenAndServeTLS, which runs on a goroutine AFTER
+	// startup — so the failure was a log line on a listener that never served,
+	// not a refusal to start. Load the pair the way crypto/tls will (#305).
+	//
+	// The error is deliberately not wrapped with %w-into-detail beyond what
+	// LoadX509KeyPair says: its messages describe the FORM of the failure
+	// ("failed to find any PEM data", "private key does not match public key")
+	// and never echo key bytes. Config errors get logged and pasted into issues.
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		return fmt.Errorf("%s.tls cert_file %q + key_file %q do not form a usable keypair: %w",
+			label, certFile, keyFile, err)
+	}
 	return nil
 }
 
@@ -774,13 +792,22 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("flows.max_future_skew must be between 0 and 1h (got %v)", d)
 		}
 	}
-	// Listener TLS blocks: both-or-neither, and any configured file must
-	// exist and be readable now rather than surfacing as an opaque
-	// ListenAndServeTLS failure at startup.
+	// Listener TLS blocks: both-or-neither, every configured file readable, and
+	// the pair must actually LOAD. Readability alone let /dev/null and a
+	// cert-with-the-wrong-key through, and both then failed inside
+	// ListenAndServeTLS — on a goroutine, after startup, as a log line on a
+	// listener that never served rather than a refusal to run (#305).
 	if err := validateTLSFiles("admin", c.Admin.TLS.CertFile, c.Admin.TLS.KeyFile); err != nil {
 		return err
 	}
 	if err := validateTLSFiles("prometheus", c.Prometheus.TLS.CertFile, c.Prometheus.TLS.KeyFile); err != nil {
+		return err
+	}
+	// Streaming was the one listener with NO TLS validation at all — and the one
+	// where a half-configured block is worst: stream.Run serves plain HTTP unless
+	// BOTH fields are set, so a cert with a missing key silently downgraded a log
+	// receiver to plaintext while looking configured for TLS (#305).
+	if err := validateTLSFiles("streaming", c.Streaming.TLS.CertFile, c.Streaming.TLS.KeyFile); err != nil {
 		return err
 	}
 	if err := validateTLSFiles("webhook", c.Webhook.TLS.CertFile, c.Webhook.TLS.KeyFile); err != nil {

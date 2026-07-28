@@ -1448,9 +1448,13 @@ func TestValidate_AdminTLSFilesMustBeReadable(t *testing.T) {
 	}
 }
 
-// TestValidate_AdminTLSValidWithReadableFiles is the positive counterpart of
-// TestValidate_AdminTLSFilesMustBeReadable: real, readable files pass.
-func TestValidate_AdminTLSValidWithReadableFiles(t *testing.T) {
+// TestValidate_AdminTLSReadableButUnusableIsRejected pins the contract change in
+// #305. This test previously asserted the opposite — that two readable files
+// containing "cert" and "key" were VALID — which is what let a /dev/null pair,
+// or a cert paired with the wrong key, pass -validate and then fail inside
+// ListenAndServeTLS on a goroutine after startup. Readability is necessary and
+// nowhere near sufficient; the pair has to load.
+func TestValidate_AdminTLSReadableButUnusableIsRejected(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "tls.crt")
 	keyPath := filepath.Join(dir, "tls.key")
@@ -1463,8 +1467,12 @@ func TestValidate_AdminTLSValidWithReadableFiles(t *testing.T) {
 	c := config.Default()
 	c.Admin.TLS.CertFile = certPath
 	c.Admin.TLS.KeyFile = keyPath
-	if err := c.Validate(); err != nil {
-		t.Errorf("admin.tls with readable cert/key files should be valid: %v", err)
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("readable-but-unparseable TLS files passed validation")
+	}
+	if !strings.Contains(err.Error(), "admin.tls") {
+		t.Errorf("error %q should name admin.tls", err.Error())
 	}
 }
 
