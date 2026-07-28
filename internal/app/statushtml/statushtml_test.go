@@ -302,3 +302,38 @@ func TestRender_CapabilityMatrix(t *testing.T) {
 		}
 	}
 }
+
+// A component failure has to be VISIBLE, not just folded into the overall
+// verdict. "degraded" with no indication of which subsystem went leaves an
+// operator reading logs, which is what the status page exists to avoid (#318).
+func TestRender_ComponentFailureIsVisible(t *testing.T) {
+	s := statusdata.Status{
+		Health: "degraded",
+		Components: []statusdata.ComponentStatus{
+			{Name: "admin", Enabled: true},
+			{Name: "metrics", Enabled: true, Failed: true, Reason: "listen tcp :2112: bind: address already in use"},
+			{Name: "webhook"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	// Each of these must be unique to the components table. A bare "metrics" or
+	// "componentsBody" also matches the JS updater and half the rest of the page,
+	// so it would pass with the table deleted — verified by removing it.
+	for _, want := range []string{
+		`id="componentsBody"`,    // the live-update target, or the table goes stale on poll
+		"address already in use", // the reason, so the failure is actionable without the logs
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page does not contain %q", want)
+		}
+	}
+	// A disabled component is still listed: "off" and "not shown" are different
+	// answers to "why am I not getting webhook events".
+	if !strings.Contains(out, "webhook") {
+		t.Error("a disabled component is missing from the page entirely")
+	}
+}

@@ -53,14 +53,14 @@ func TestDeriveHealth(t *testing.T) {
 	}
 
 	t.Run("all ran ok -> healthy", func(t *testing.T) {
-		state, reasons := deriveHealth([]statusdata.CollectorStatus{ran("a", true, 0), ran("b", true, 0)})
+		state, reasons := deriveHealth([]statusdata.CollectorStatus{ran("a", true, 0), ran("b", true, 0)}, nil)
 		if state != healthHealthy || len(reasons) != 0 {
 			t.Fatalf("got %q %v, want healthy/none", state, reasons)
 		}
 	})
 
 	t.Run("no collectors -> healthy", func(t *testing.T) {
-		if state, _ := deriveHealth(nil); state != healthHealthy {
+		if state, _ := deriveHealth(nil, nil); state != healthHealthy {
 			t.Fatalf("got %q, want healthy", state)
 		}
 	})
@@ -69,7 +69,7 @@ func TestDeriveHealth(t *testing.T) {
 		state, reasons := deriveHealth([]statusdata.CollectorStatus{
 			ran("a", true, 0),
 			{Name: "devices", HasRun: false},
-		})
+		}, nil)
 		if state != healthStarting {
 			t.Fatalf("got %q, want starting", state)
 		}
@@ -79,7 +79,7 @@ func TestDeriveHealth(t *testing.T) {
 	})
 
 	t.Run("3 consecutive failures -> degraded", func(t *testing.T) {
-		state, reasons := deriveHealth([]statusdata.CollectorStatus{ran("flowlogs", false, 3)})
+		state, reasons := deriveHealth([]statusdata.CollectorStatus{ran("flowlogs", false, 3)}, nil)
 		if state != healthDegraded {
 			t.Fatalf("got %q, want degraded", state)
 		}
@@ -89,7 +89,7 @@ func TestDeriveHealth(t *testing.T) {
 	})
 
 	t.Run("single last-run failure -> degraded", func(t *testing.T) {
-		state, reasons := deriveHealth([]statusdata.CollectorStatus{ran("x", false, 1)})
+		state, reasons := deriveHealth([]statusdata.CollectorStatus{ran("x", false, 1)}, nil)
 		if state != healthDegraded || len(reasons) != 1 || !strings.Contains(reasons[0], "last run failed") {
 			t.Fatalf("got %q %v, want degraded/last-run-failed", state, reasons)
 		}
@@ -98,7 +98,7 @@ func TestDeriveHealth(t *testing.T) {
 	t.Run("stuck checkpoint -> degraded", func(t *testing.T) {
 		c := ran("auditlogs", true, 0)
 		c.Checkpoint = &statusdata.CheckpointStatus{Stuck: true, Lag: "26m40s"}
-		state, reasons := deriveHealth([]statusdata.CollectorStatus{c})
+		state, reasons := deriveHealth([]statusdata.CollectorStatus{c}, nil)
 		if state != healthDegraded || len(reasons) != 1 || !strings.Contains(reasons[0], "stuck") {
 			t.Fatalf("got %q %v, want degraded/stuck", state, reasons)
 		}
@@ -107,7 +107,7 @@ func TestDeriveHealth(t *testing.T) {
 	t.Run("overdue -> degraded", func(t *testing.T) {
 		c := ran("users", true, 0)
 		c.Overdue = true
-		state, reasons := deriveHealth([]statusdata.CollectorStatus{c})
+		state, reasons := deriveHealth([]statusdata.CollectorStatus{c}, nil)
 		if state != healthDegraded || len(reasons) != 1 || !strings.Contains(reasons[0], "overdue") {
 			t.Fatalf("got %q %v, want degraded/overdue", state, reasons)
 		}
@@ -117,7 +117,7 @@ func TestDeriveHealth(t *testing.T) {
 		state, _ := deriveHealth([]statusdata.CollectorStatus{
 			ran("a", false, 5),
 			{Name: "b", HasRun: false},
-		})
+		}, nil)
 		if state != healthDegraded {
 			t.Fatalf("got %q, want degraded (a failing outweighs b starting)", state)
 		}

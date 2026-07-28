@@ -31,14 +31,17 @@ type Status struct {
 	Cardinality   CardinalityInfo   `json:"cardinality"`
 	Flows         FlowStoreInfo     `json:"flow_store"`
 	Receivers     ReceiversInfo     `json:"receivers"`
-	Profiling     ProfilingInfo     `json:"profiling"`
-	Runtime       RuntimeInfo       `json:"runtime"`
-	Throughput    ThroughputInfo    `json:"throughput"`
-	Fleet         FleetInfo         `json:"fleet"`
-	API           APIInfo           `json:"api"`
-	Metrics       []MetricRow       `json:"metrics"`
-	LogEvents     []LogRow          `json:"log_events"`
-	Config        ConfigSummary     `json:"config"`
+	// Components is every long-running non-collector subsystem and whether it
+	// has failed, from the same state /readyz reads (#318).
+	Components []ComponentStatus `json:"components"`
+	Profiling  ProfilingInfo     `json:"profiling"`
+	Runtime    RuntimeInfo       `json:"runtime"`
+	Throughput ThroughputInfo    `json:"throughput"`
+	Fleet      FleetInfo         `json:"fleet"`
+	API        APIInfo           `json:"api"`
+	Metrics    []MetricRow       `json:"metrics"`
+	LogEvents  []LogRow          `json:"log_events"`
+	Config     ConfigSummary     `json:"config"`
 	// CapabilityMatrix is the configuration-to-capability matrix (#425/#430): one
 	// row per enabled collector (plus its optional per-entity subrequests) joining
 	// the required API capability/scope, the provider's support for it, the live
@@ -358,9 +361,32 @@ type CardinalityAlert struct {
 }
 
 // ReceiversInfo reports which optional ingestion receivers are enabled.
+//
+// Kept as-is for existing consumers; Status.Components is the richer view and
+// covers the listeners too.
 type ReceiversInfo struct {
 	Streaming bool `json:"streaming_enabled"`
 	Webhook   bool `json:"webhook_enabled"`
+}
+
+// ComponentStatus is one long-running non-collector subsystem: the admin and
+// Prometheus listeners, the stream and webhook receivers, and the ingress WAL.
+//
+// It exists so a failure is VISIBLE rather than merely reflected in the overall
+// verdict (#318). Before it, the page reported receivers as two bare enabled
+// booleans and said nothing at all about the listeners, so "degraded" left an
+// operator to guess which subsystem had gone.
+//
+// Enabled and Failed are independent on purpose: a disabled component is still
+// listed, because "off" and "missing from the page" are very different answers
+// to "why am I not getting webhook events".
+type ComponentStatus struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	Failed  bool   `json:"failed"`
+	// Reason is the underlying failure text, empty unless Failed. It is the same
+	// string /readyz returns.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ProfilingInfo reports the continuous-profiling configuration (no credentials).

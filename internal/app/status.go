@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector/nodemetrics"
@@ -162,8 +164,46 @@ func (a *App) buildStatus() statusdata.Status {
 			s.Cardinality.TotalSeries = a.runtimeHist.cardTotal.Values()
 		}
 	}
-	s.Health, s.HealthReasons = deriveHealth(s.Collectors)
+	// The same component state /readyz reads, so the page and the probe cannot
+	// disagree about identical state (#318). Before this the verdict came from
+	// collectors alone and a dead receiver or listener read as "healthy".
+	failures := a.componentFailureReasons()
+	s.Components = a.componentStatuses(failures)
+	s.Health, s.HealthReasons = deriveHealth(s.Collectors, failures)
 	return s
+}
+
+// componentStatuses lists every long-running non-collector subsystem with
+// whether it is enabled and whether it has failed. failures is the output of
+// componentFailureReasons ("component: reason", sorted), which is what /readyz
+// gates on — taking it as a parameter rather than re-reading the trackers keeps
+// the page's rows and its verdict describing one snapshot.
+//
+// Disabled components are listed too: an operator debugging missing webhook
+// events needs to tell "off" from "not shown".
+func (a *App) componentStatuses(failures []string) []statusdata.ComponentStatus {
+	reasonFor := make(map[string]string, len(failures))
+	for _, f := range failures {
+		name, reason, ok := strings.Cut(f, ": ")
+		if !ok {
+			continue
+		}
+		reasonFor[name] = reason
+	}
+	rows := []statusdata.ComponentStatus{
+		{Name: appcatalog.ComponentAdmin, Enabled: a.cfg.Admin.Enabled},
+		{Name: appcatalog.ComponentMetrics, Enabled: a.cfg.Prometheus.Enabled},
+		{Name: appcatalog.ComponentStream, Enabled: a.cfg.Streaming.Enabled},
+		{Name: appcatalog.ComponentWebhook, Enabled: a.cfg.Webhook.Enabled},
+		{Name: appcatalog.ComponentIngressWAL, Enabled: a.ingressWAL != nil},
+	}
+	for i := range rows {
+		if reason, ok := reasonFor[rows[i].Name]; ok {
+			rows[i].Failed = true
+			rows[i].Reason = reason
+		}
+	}
+	return rows
 }
 
 // collectorStatuses returns the combined collector list across every tailnet

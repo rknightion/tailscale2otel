@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 )
 
 // componentHealth tracks terminal failures of the long-running components so
@@ -77,7 +78,11 @@ func (h *componentHealth) reasons() []string {
 // conditions above do, matching the issue's acceptance criteria. /healthz
 // stays pure liveness and never consults this at all.
 func readinessVerdict(collectors []statusdata.CollectorStatus, componentFailures []string) (ready bool, reason string) {
-	if health, reasons := deriveHealth(collectors); health == healthStarting {
+	// nil, not componentFailures: this call asks deriveHealth ONLY whether the
+	// collectors are still starting. Passing the failures in would make it
+	// return "degraded" (a failure outranks a pending first tick), the
+	// starting branch would never fire, and the precedence below would invert.
+	if health, reasons := deriveHealth(collectors, nil); health == healthStarting {
 		return false, "starting: " + strings.Join(reasons, "; ")
 	}
 	if len(componentFailures) > 0 {
@@ -86,23 +91,56 @@ func readinessVerdict(collectors []statusdata.CollectorStatus, componentFailures
 	return true, ""
 }
 
-// readyz serves /readyz: 200 "ok" once the service is ready, otherwise 503
-// with a short plain-text reason. See readinessVerdict for the gating rules.
+// componentFailureReasons is THE list of failed non-collector components, as
+// sorted "component: reason" strings. Both /readyz and the status page's health
+// verdict read it, which is what stops the probe and the page disagreeing about
+// identical state (#318).
 //
-// Live component-failure state comes from a.readyState, populated by
-// recordComponentStop (internal/app/selfobs.go) when a receiver or a listener
-// terminates with other than a clean-shutdown error (see isCleanShutdownErr).
-func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
-	ready := true
-	reason := ""
-	if a.ingressWAL != nil {
-		state := a.ingressWAL.Health().State
-		if state != ingressWALStateDisabled && state != ingressWALStateReady {
-			ready = false
-			reason = "ingress WAL: " + string(state)
-		}
+// Two sources feed it: a.readyState, populated by recordComponentStop
+// (internal/app/selfobs.go) when a receiver or a listener terminates with other
+// than a clean-shutdown error, and the ingress WAL, which carries its own state
+// machine rather than a terminal error. Any WAL state other than disabled or
+// ready means writes are not making it through, so it counts.
+func (a *App) componentFailureReasons() []string {
+	reasons := a.readyState.reasons()
+	if f := a.ingressWALFailure(); f != "" {
+		reasons = append(reasons, f)
 	}
-	if ready {
+	return reasons
+}
+
+// ingressWALFailure returns the WAL's failure reason in the same
+// "component: reason" shape as componentHealth.reasons, or "" when the WAL is
+// disabled or ready. The WAL reports a state machine rather than a terminal
+// error, so it cannot go through componentHealth; this is where the two shapes
+// meet.
+func (a *App) ingressWALFailure() string {
+	if a.ingressWAL == nil {
+		return ""
+	}
+	state := a.ingressWAL.Health().State
+	if state == ingressWALStateDisabled || state == ingressWALStateReady {
+		return ""
+	}
+	return appcatalog.ComponentIngressWAL + ": " + string(state)
+}
+
+// readyz serves /readyz: 200 "ok" once the service is ready, otherwise 503
+// with a short plain-text reason. See readinessVerdict for the gating rules and
+// componentFailureReasons for the state behind them.
+//
+// The WAL is checked before readinessVerdict, so a WAL failure is the reported
+// reason even while collectors are still starting: buffered ingress that is not
+// draining is the more actionable fact, and "starting" would hide it behind a
+// condition that resolves on its own. Which reason is reported FIRST is the
+// only thing this ordering decides — the status page derives its verdict from
+// the same componentFailureReasons list.
+func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
+	var ready bool
+	var reason string
+	if wal := a.ingressWALFailure(); wal != "" {
+		ready, reason = false, wal
+	} else {
 		ready, reason = readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
 	}
 	w.Header().Set("Content-Type", "text/plain")

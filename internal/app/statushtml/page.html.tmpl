@@ -536,6 +536,21 @@
       <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
       <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
     </div>
+    <h3 style="margin-top:18px">Components</h3>
+    <div class="sub">The long-running subsystems behind <code>/readyz</code>. A failure here is what
+      makes the health badge above say <em>degraded</em> and the readiness probe answer 503.</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>Component</th><th>State</th><th>Reason</th></tr></thead>
+      <tbody id="componentsBody">
+        {{range .Components}}
+        <tr>
+          <td class="mono"><code>{{.Name}}</code></td>
+          <td>{{if .Failed}}<span class="badge err">failed</span>{{else if .Enabled}}<span class="badge ok">ok</span>{{else}}<span class="badge none">off</span>{{end}}</td>
+          <td class="mono">{{if .Reason}}{{.Reason}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
     <table style="margin-top:12px">
       <tbody>
         <tr><td>Enabled collectors</td><td class="mono">{{range .Config.EnabledCollectors}}<code>{{.}}</code> {{end}}</td></tr>
@@ -816,6 +831,24 @@ function rebuildCollectors(rows){
 }
 
 // ── API table ─────────────────────────────────────────────────────────────
+function rebuildComponents(rows){
+  var tb=document.getElementById('componentsBody'); if(!tb) return;
+  tb.textContent='';
+  (rows||[]).forEach(function(c){
+    var tr=el('tr');
+    var nameTd=el('td',{'class':'mono'}); nameTd.appendChild(el('code',null,c.name)); tr.appendChild(nameTd);
+    var stateTd=el('td');
+    if(c.failed){ stateTd.appendChild(el('span',{'class':'badge err'},'failed')); }
+    else if(c.enabled){ stateTd.appendChild(el('span',{'class':'badge ok'},'ok')); }
+    else { stateTd.appendChild(el('span',{'class':'badge none'},'off')); }
+    tr.appendChild(stateTd);
+    // textContent throughout, never innerHTML: the reason is an error string
+    // from a subsystem and is not ours to trust as markup.
+    tr.appendChild(el('td',{'class':'mono'}, c.reason || '—'));
+    tb.appendChild(tr);
+  });
+}
+
 function rebuildAPI(info){
   var tb=document.getElementById('apiBody'); if(!tb) return;
   var eps = (info && info.endpoints) ? info.endpoints : [];
@@ -927,6 +960,7 @@ function refresh(){
     updateRollup(d);
     rebuildCollectors(d.collectors);
     rebuildAPI(d.api);
+    rebuildComponents(d.components);
     updateSparks(d);
     redrawCharts();
   }).catch(function(){ setStale(true); });

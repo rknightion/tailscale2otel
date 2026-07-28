@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
@@ -121,7 +122,9 @@ func TestReadyzHandler_GatesOnIngressWALLifecycle(t *testing.T) {
 			if w.Code != http.StatusServiceUnavailable {
 				t.Fatalf("state %q status = %d, want 503", state, w.Code)
 			}
-			if !strings.Contains(w.Body.String(), "ingress WAL") ||
+			// The component is named the same way everywhere now — appcatalog's
+			// value, not a second human spelling (#318).
+			if !strings.Contains(w.Body.String(), appcatalog.ComponentIngressWAL) ||
 				!strings.Contains(w.Body.String(), string(state)) {
 				t.Fatalf("state %q body = %q, want bounded WAL state", state, w.Body.String())
 			}
@@ -156,7 +159,7 @@ func TestReadyzHandler_IngressWALFailurePrecedesCollectorsStarting(t *testing.T)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", w.Code)
 	}
-	if got := w.Body.String(); got != "ingress WAL: failed" {
+	if got := w.Body.String(); got != appcatalog.ComponentIngressWAL+": failed" {
 		t.Fatalf("body = %q, want WAL failure to precede collector startup", got)
 	}
 }

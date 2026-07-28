@@ -268,6 +268,21 @@ In addition, an admin HTTP server (on by default, `:9091`) serves:
   whether reverse-DNS is configured at all (`enrichment.reverse_dns.enabled`); when it is false,
   `purged` is always `0`.
 - `/healthz` and `/readyz` — liveness and readiness probes.
+
+    `/healthz` is **process-only** and answers 200 as long as the process is running: a component
+    failure means "stop sending me traffic", not "restart me", and conflating the two turns a bad
+    config into a crash loop.
+
+    `/readyz` returns 503 while any collector has not completed its first tick, or once a
+    long-running component has terminally failed — the stream and webhook receivers, the admin and
+    Prometheus listeners, and the ingress WAL. A merely degraded collector (a failed tick, overdue,
+    a stuck checkpoint) deliberately does **not** gate readiness; pulling the pod for a partial
+    fault would take the whole exporter down.
+
+    The status page derives its health verdict from that same component state, so the probe and the
+    page cannot disagree, and `/api/status.json` carries a `components[]` array naming each
+    subsystem with `enabled`, `failed` and the failure `reason`. The overall `health` is `degraded`
+    whenever any of them has failed.
 - `/debug/pprof` — optional, requires `profiling.pprof.enabled: true`, which in turn requires
   **both** `admin.enabled: true` **and** `admin.auth.token` to be set (heap/goroutine dumps can
   expose in-memory secrets) — see [security.md](security.md#secrets-handling).

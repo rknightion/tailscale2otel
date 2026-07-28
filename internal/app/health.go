@@ -46,11 +46,26 @@ func isOverdue(lastFinished time.Time, interval time.Duration, now time.Time) bo
 }
 
 // deriveHealth summarizes overall service health from the per-collector status
-// rows. Precedence: any failing, overdue or stuck collector makes the service
+// rows and the failed non-collector components. Precedence: any failing,
+// overdue or stuck collector — or any failed component — makes the service
 // "degraded"; otherwise a collector that has not yet run makes it "starting";
 // otherwise "healthy". The returned reasons explain a non-healthy verdict.
-func deriveHealth(collectors []statusdata.CollectorStatus) (string, []string) {
+//
+// componentFailures is the same []string readinessVerdict consumes, from the
+// same componentHealth tracker (#318). Before it was threaded through here the
+// page derived health from collectors ALONE, so a receiver that had stopped or
+// a listener that never bound produced 503 from /readyz and a cheerful
+// "healthy" on the page an operator was actually looking at.
+//
+// The one deliberate disagreement that remains: a merely degraded collector
+// shows on the page but does not gate readiness (#57). Pulling a pod out of
+// rotation because one collector's last tick failed would take the whole
+// exporter down for a partial fault.
+func deriveHealth(collectors []statusdata.CollectorStatus, componentFailures []string) (string, []string) {
 	var reasons, pending []string
+	for _, f := range componentFailures {
+		reasons = append(reasons, "component "+f)
+	}
 	for _, c := range collectors {
 		if !c.HasRun {
 			pending = append(pending, c.Name)
