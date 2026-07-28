@@ -125,3 +125,117 @@ func TestFetcherCachesLastGood(t *testing.T) {
 		t.Fatalf("server calls = %d want 2", calls.Load())
 	}
 }
+
+// TestFetcherSnapshot_NeverAttempted asserts a fresh Fetcher's Snapshot reports
+// no value, a zero CheckedAt, and no error class — the admin page's "checking"
+// state (#330), distinct from a fetch that has actually failed.
+func TestFetcherSnapshot_NeverAttempted(t *testing.T) {
+	f := newTestFetcher(t, "http://127.0.0.1:0/never-called")
+	snap := f.Snapshot()
+	if snap.OK || snap.Latest != "" {
+		t.Fatalf("Snapshot before any fetch = %+v, want OK=false Latest=\"\"", snap)
+	}
+	if !snap.CheckedAt.IsZero() {
+		t.Fatalf("CheckedAt before any fetch = %v, want zero", snap.CheckedAt)
+	}
+	if snap.ErrClass != "" {
+		t.Fatalf("ErrClass before any fetch = %q, want empty", snap.ErrClass)
+	}
+}
+
+// TestFetcherSnapshot_SuccessClearsErrClassAndSetsCheckedAt asserts a
+// successful Refresh records CheckedAt and leaves ErrClass empty.
+func TestFetcherSnapshot_SuccessClearsErrClassAndSetsCheckedAt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"Version":"1.98.4"}`)
+	}))
+	defer srv.Close()
+	f := newTestFetcher(t, srv.URL)
+
+	before := time.Now()
+	f.Refresh(context.Background())
+	snap := f.Snapshot()
+	if !snap.OK || snap.Latest != "1.98.4" {
+		t.Fatalf("Snapshot after success = %+v, want OK=true Latest=1.98.4", snap)
+	}
+	if snap.ErrClass != "" {
+		t.Fatalf("ErrClass after success = %q, want empty", snap.ErrClass)
+	}
+	if snap.CheckedAt.Before(before) {
+		t.Fatalf("CheckedAt = %v, want >= %v", snap.CheckedAt, before)
+	}
+}
+
+// TestFetcherSnapshot_ClassifiesNetworkError asserts a transport-level failure
+// (nothing listening) classifies as "network".
+func TestFetcherSnapshot_ClassifiesNetworkError(t *testing.T) {
+	f := newTestFetcher(t, "http://127.0.0.1:1/unreachable") // port 1: connection refused
+	f.Refresh(context.Background())
+	snap := f.Snapshot()
+	if snap.OK {
+		t.Fatalf("Snapshot after network failure: OK=true, want false")
+	}
+	if snap.ErrClass != "network" {
+		t.Fatalf("ErrClass = %q, want %q", snap.ErrClass, "network")
+	}
+	if snap.CheckedAt.IsZero() {
+		t.Fatal("CheckedAt not set after a failed Refresh")
+	}
+}
+
+// TestFetcherSnapshot_ClassifiesHTTPError asserts a non-2xx response
+// classifies as "http_error".
+func TestFetcherSnapshot_ClassifiesHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	f := newTestFetcher(t, srv.URL)
+	f.Refresh(context.Background())
+	if got := f.Snapshot().ErrClass; got != "http_error" {
+		t.Fatalf("ErrClass = %q, want %q", got, "http_error")
+	}
+}
+
+// TestFetcherSnapshot_ClassifiesParseError asserts a 2xx response whose body
+// the Parser rejects (e.g. missing Version field) classifies as "parse_error".
+func TestFetcherSnapshot_ClassifiesParseError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{}`) // valid JSON, but ParseTailscalePkgs rejects empty Version
+	}))
+	defer srv.Close()
+	f := newTestFetcher(t, srv.URL)
+	f.Refresh(context.Background())
+	if got := f.Snapshot().ErrClass; got != "parse_error" {
+		t.Fatalf("ErrClass = %q, want %q", got, "parse_error")
+	}
+}
+
+// TestFetcherSnapshot_FailOpenKeepsGoodDataButRecordsError asserts the
+// fail-open contract at the Snapshot level: a failing Refresh after a
+// successful one must NOT clear OK/Latest, but must still surface the new
+// ErrClass so the admin page can show "using cached data, last check failed".
+func TestFetcherSnapshot_FailOpenKeepsGoodDataButRecordsError(t *testing.T) {
+	var fail atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = io.WriteString(w, `{"Version":"1.98.4"}`)
+	}))
+	defer srv.Close()
+	f := newTestFetcher(t, srv.URL)
+
+	f.Refresh(context.Background())
+	fail.Store(true)
+	f.Refresh(context.Background())
+
+	snap := f.Snapshot()
+	if !snap.OK || snap.Latest != "1.98.4" {
+		t.Fatalf("Snapshot after fail-open = %+v, want OK=true Latest=1.98.4 preserved", snap)
+	}
+	if snap.ErrClass != "http_error" {
+		t.Fatalf("ErrClass after failing refresh = %q, want %q", snap.ErrClass, "http_error")
+	}
+}

@@ -173,6 +173,7 @@
 <header>
   <h1>{{.Service.Name}}</h1>
   <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}</span>
+  <a class="badge warn" id="updateBadge" href="{{.Update.ReleaseURL}}" target="_blank" rel="noopener noreferrer" title="{{if eq .Update.State "available"}}current {{.Update.CurrentVersion}} · latest {{.Update.LatestVersion}}{{end}}"{{if ne .Update.State "available"}} style="display:none"{{end}}>update available{{if .Update.LatestVersion}}: {{.Update.LatestVersion}}{{end}}</a>
   {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
   <span class="spacer"></span>
   {{if .Flows.Enabled}}<a href="/flows" title="Explore this tailnet's traffic">flows &rarr;</a>{{end}}
@@ -217,6 +218,7 @@
       <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="sub">since {{.Service.StartedAt}}</div></div>
       <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s · {{.Telemetry.MetricExportBatchSize}} points/request</div></div>
       <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
+      <div class="card"><div class="k">Update check</div><div class="v" id="updateState">{{if eq .Update.State "available"}}update available{{else if eq .Update.State "current"}}up to date{{else if eq .Update.State "error"}}check failed{{else if eq .Update.State "disabled"}}disabled{{else if eq .Update.State "checking"}}checking&hellip;{{else}}unknown{{end}}</div><div class="sub" id="updateSub">{{if eq .Update.State "available"}}{{.Update.CurrentVersion}} &rarr; {{.Update.LatestVersion}}{{else if eq .Update.State "current"}}{{.Update.CurrentVersion}}{{else if eq .Update.State "error"}}last check failed: {{.Update.LastErrorClass}}{{else}}&nbsp;{{end}}</div></div>
       {{if .Provider}}<div class="card"><div class="k">Control plane</div><div class="v"><code>{{.Provider}}</code></div>{{if .Capabilities}}<div class="sub">{{range $i,$c := .Capabilities}}{{if $i}}, {{end}}{{$c}}{{end}}</div>{{end}}</div>{{end}}
       <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
       <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
@@ -1254,6 +1256,43 @@ function setStale(on){
   if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); } else { b.className=''; }
 }
 
+// setUpdateInfo mirrors the server-rendered header badge + Overview "Update
+// check" card (page.html.tmpl) so a state that only appears after the page
+// has been open a while (e.g. a check that starts as "checking" and later
+// resolves to "available") is reflected without a reload. Every string here
+// matches the Go template's fallthrough exactly.
+function setUpdateInfo(d){
+  var u=(d && d.update) || {};
+  var badge=document.getElementById('updateBadge');
+  if(badge){
+    if(u.state==='available'){
+      badge.style.display='';
+      badge.href=u.release_url||'#';
+      badge.textContent='update available'+(u.latest_version?': '+u.latest_version:'');
+      badge.title='current '+(u.current_version||'?')+' · latest '+(u.latest_version||'?');
+    } else {
+      badge.style.display='none';
+    }
+  }
+  var stateLabel;
+  switch(u.state){
+    case 'available': stateLabel='update available'; break;
+    case 'current': stateLabel='up to date'; break;
+    case 'error': stateLabel='check failed'; break;
+    case 'disabled': stateLabel='disabled'; break;
+    case 'checking': stateLabel='checking…'; break;
+    default: stateLabel='unknown';
+  }
+  setText('updateState', stateLabel);
+  var sub=document.getElementById('updateSub');
+  if(sub){
+    if(u.state==='available') sub.textContent=(u.current_version||'')+' → '+(u.latest_version||'');
+    else if(u.state==='current') sub.textContent=u.current_version||'';
+    else if(u.state==='error') sub.textContent='last check failed: '+(u.last_error_class||'');
+    else sub.textContent='';
+  }
+}
+
 function refresh(){
   fetch('/api/status.json',{cache:'no-store'}).then(function(r){
     if(!r.ok) throw new Error('status '+r.status);
@@ -1269,6 +1308,7 @@ function refresh(){
     updateRDNS(d.reverse_dns);
     setText('generatedAt', d.generated_at);
     setHealth(d);
+    setUpdateInfo(d);
     updateRollup(d); // always the combined figures — the roll-up is a process-wide dashboard, not filtered
     // view is the tailnet-selector-filtered slice: the combined d itself for
     // "All", or one d.tailnets[] entry. Collectors/API/Cardinality/Devices are

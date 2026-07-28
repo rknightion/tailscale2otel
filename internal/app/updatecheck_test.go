@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/release"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
 )
 
@@ -80,5 +81,116 @@ func TestRunUpdateCheckNoValueOrDevBuild(t *testing.T) {
 	emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v9.9.9", true }, "dev") // dev build
 	if pts := rec.MetricPoints(appcatalog.MetricUpdateAvailable); len(pts) != 0 {
 		t.Fatalf("expected no emission, got %+v", pts)
+	}
+}
+
+// TestUpdateInfo_Disabled asserts a disabled check renders as State="disabled"
+// with no other field populated (distinguishable from "current" — #330).
+func TestUpdateInfo_Disabled(t *testing.T) {
+	got := updateInfo(false, release.Snapshot{}, "v1.0.0")
+	if got.Enabled {
+		t.Error("Enabled should be false")
+	}
+	if got.State != "disabled" {
+		t.Errorf("State = %q, want %q", got.State, "disabled")
+	}
+	if got.CurrentVersion != "" || got.LatestVersion != "" || got.LastCheckedAt != "" {
+		t.Errorf("disabled UpdateInfo should carry no other data: %+v", got)
+	}
+}
+
+// TestUpdateInfo_CheckingNeverSucceeded asserts an enabled check that has
+// never completed a successful fetch, and has no recorded failure either
+// (still warming up), renders as "checking" — not "current".
+func TestUpdateInfo_CheckingNeverSucceeded(t *testing.T) {
+	got := updateInfo(true, release.Snapshot{}, "v1.0.0")
+	if got.State != "checking" {
+		t.Errorf("State = %q, want %q", got.State, "checking")
+	}
+}
+
+// TestUpdateInfo_ErrorNeverSucceeded asserts an enabled check whose only
+// attempt failed renders as "error", distinct from "checking" and "current".
+func TestUpdateInfo_ErrorNeverSucceeded(t *testing.T) {
+	checkedAt := time.Now()
+	got := updateInfo(true, release.Snapshot{CheckedAt: checkedAt, ErrClass: "network"}, "v1.0.0")
+	if got.State != "error" {
+		t.Errorf("State = %q, want %q", got.State, "error")
+	}
+	if got.LastErrorClass != "network" {
+		t.Errorf("LastErrorClass = %q, want %q", got.LastErrorClass, "network")
+	}
+	if got.LastCheckedAt == "" {
+		t.Error("LastCheckedAt should be populated")
+	}
+}
+
+// TestUpdateInfo_UnknownDevBuild asserts a "dev" running version never
+// renders as "current" even with a perfectly good upstream value — the
+// comparison is not trustworthy (#330 acceptance criterion).
+func TestUpdateInfo_UnknownDevBuild(t *testing.T) {
+	got := updateInfo(true, release.Snapshot{OK: true, Latest: "v9.9.9"}, "dev")
+	if got.State != "unknown" {
+		t.Errorf("State = %q, want %q", got.State, "unknown")
+	}
+	if got.CurrentVersion != "" || got.LatestVersion != "" {
+		t.Errorf("unknown state should not carry version fields: %+v", got)
+	}
+}
+
+// TestUpdateInfo_UnknownUnparseableUpstream mirrors the dev-build case for a
+// garbage/unparseable value fetched from upstream.
+func TestUpdateInfo_UnknownUnparseableUpstream(t *testing.T) {
+	got := updateInfo(true, release.Snapshot{OK: true, Latest: "not-a-version"}, "v1.0.0")
+	if got.State != "unknown" {
+		t.Errorf("State = %q, want %q", got.State, "unknown")
+	}
+}
+
+// TestUpdateInfo_Current asserts a trustworthy comparison where the running
+// build is already the latest renders "current" with normalized versions.
+func TestUpdateInfo_Current(t *testing.T) {
+	got := updateInfo(true, release.Snapshot{OK: true, Latest: "v1.2.3"}, "v1.2.3")
+	if got.State != "current" {
+		t.Errorf("State = %q, want %q", got.State, "current")
+	}
+	if got.CurrentVersion != "1.2.3" || got.LatestVersion != "1.2.3" {
+		t.Errorf("versions = %q/%q, want 1.2.3/1.2.3", got.CurrentVersion, got.LatestVersion)
+	}
+	if got.MinorsBehind != 0 {
+		t.Errorf("MinorsBehind = %d, want 0", got.MinorsBehind)
+	}
+	if got.ReleaseURL != release.SelfReleaseURL {
+		t.Errorf("ReleaseURL = %q, want %q", got.ReleaseURL, release.SelfReleaseURL)
+	}
+}
+
+// TestUpdateInfo_Available asserts a newer upstream release renders
+// "available" with MinorsBehind computed.
+func TestUpdateInfo_Available(t *testing.T) {
+	got := updateInfo(true, release.Snapshot{OK: true, Latest: "v1.5.0"}, "v1.2.3")
+	if got.State != "available" {
+		t.Errorf("State = %q, want %q", got.State, "available")
+	}
+	if got.LatestVersion != "1.5.0" {
+		t.Errorf("LatestVersion = %q, want 1.5.0", got.LatestVersion)
+	}
+	if got.MinorsBehind != 3 {
+		t.Errorf("MinorsBehind = %d, want 3", got.MinorsBehind)
+	}
+}
+
+// TestUpdateInfo_FailOpenKeepsVerdictButShowsError asserts the fail-open
+// contract survives into the page: a previously successful fetch's verdict
+// (current/available) is preserved even while the most recent check attempt
+// is failing, and that failure is still surfaced via LastErrorClass so an
+// operator isn't shown stale data with no warning.
+func TestUpdateInfo_FailOpenKeepsVerdictButShowsError(t *testing.T) {
+	got := updateInfo(true, release.Snapshot{OK: true, Latest: "v1.5.0", ErrClass: "network"}, "v1.2.3")
+	if got.State != "available" {
+		t.Errorf("State = %q, want %q (fail-open should preserve the last good verdict)", got.State, "available")
+	}
+	if got.LastErrorClass != "network" {
+		t.Errorf("LastErrorClass = %q, want %q", got.LastErrorClass, "network")
 	}
 }

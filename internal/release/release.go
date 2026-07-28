@@ -74,6 +74,10 @@ const (
 	GitHubLatestURL = "https://api.github.com/repos/rknightion/tailscale2otel/releases/latest"
 	// TailscalePkgsURL is Tailscale's canonical latest-stable manifest (B6).
 	TailscalePkgsURL = "https://pkgs.tailscale.com/stable/?mode=json"
+	// SelfReleaseURL is the human-facing release page for this project, used as
+	// the admin status page's update link (#330) — the same release the
+	// GitHubLatestURL API call above resolves, just the page a human clicks.
+	SelfReleaseURL = "https://github.com/rknightion/tailscale2otel/releases/latest"
 )
 
 // Parser extracts a version string from a response body.
@@ -120,9 +124,40 @@ type Fetcher struct {
 	ttl       time.Duration
 	logger    *slog.Logger
 
-	mu     sync.RWMutex
-	latest string
-	ok     bool
+	mu        sync.RWMutex
+	latest    string
+	ok        bool
+	checkedAt time.Time
+	errClass  string
+}
+
+// Snapshot is a point-in-time view of a Fetcher's state, for a consumer (the
+// admin status page, #330) that needs to explain WHY no value is available —
+// "never checked yet" is a different story than "checking is failing" is a
+// different story than "succeeded, but stale since the last failure" (the
+// fail-open case: OK/Latest stay populated from the last success while
+// ErrClass reports the most recent failure).
+type Snapshot struct {
+	// Latest and OK mirror Fetcher.Latest(): the last successfully fetched
+	// version and whether one has ever been fetched.
+	Latest string
+	OK     bool
+	// CheckedAt is the time of the last Refresh ATTEMPT (success or failure);
+	// zero if Refresh has never run.
+	CheckedAt time.Time
+	// ErrClass classifies the most recent failed attempt: "network",
+	// "http_error", "parse_error", or "" if the last attempt succeeded (or none
+	// has run yet). Deliberately a class, not the raw error text — see the
+	// delivery-signal precedent in internal/app/status.go for why raw error
+	// text does not belong on an operator-facing surface.
+	ErrClass string
+}
+
+// Snapshot returns the Fetcher's current state.
+func (f *Fetcher) Snapshot() Snapshot {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return Snapshot{Latest: f.latest, OK: f.ok, CheckedAt: f.checkedAt, ErrClass: f.errClass}
 }
 
 // NewFetcher builds a Fetcher. logger may be nil (falls back to slog.Default).
@@ -143,22 +178,51 @@ func (f *Fetcher) Latest() (string, bool) {
 	return f.latest, f.ok
 }
 
-// Refresh performs one fetch now, updating the cached value on success only.
+// Errors fetch() wraps its failures in, purely so Refresh can classify them
+// without string-matching. Never returned to a caller directly.
+var (
+	errNetwork = errors.New("network")
+	errHTTP    = errors.New("http_error")
+	errParse   = errors.New("parse_error")
+)
+
+// classify maps a fetch() error to its Snapshot.ErrClass string.
+func classify(err error) string {
+	switch {
+	case errors.Is(err, errNetwork):
+		return "network"
+	case errors.Is(err, errHTTP):
+		return "http_error"
+	case errors.Is(err, errParse):
+		return "parse_error"
+	default:
+		return "unknown"
+	}
+}
+
+// Refresh performs one fetch now, updating the cached value on success only
+// (fail-open). CheckedAt and ErrClass are recorded on every attempt, success
+// or failure, so a Snapshot consumer can always tell when the last attempt
+// happened and whether it succeeded.
 func (f *Fetcher) Refresh(ctx context.Context) {
 	v, err := f.fetch(ctx)
+	f.mu.Lock()
+	f.checkedAt = time.Now()
 	if err != nil {
+		f.errClass = classify(err)
+		f.mu.Unlock()
 		f.logger.Debug("release check failed (fail-open)", "source", f.name, "url", f.url, "error", err)
 		return
 	}
-	f.mu.Lock()
 	f.latest, f.ok = v, true
+	f.errClass = ""
 	f.mu.Unlock()
 }
 
 func (f *Fetcher) fetch(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.url, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", errNetwork, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	if f.userAgent != "" {
@@ -166,17 +230,21 @@ func (f *Fetcher) fetch(ctx context.Context) (string, error) {
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", errNetwork, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("%s: status %d", f.url, resp.StatusCode)
+		return "", fmt.Errorf("%w: %s: status %d", errHTTP, f.url, resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", errNetwork, err)
 	}
-	return f.parse(body)
+	v, err := f.parse(body)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", errParse, err)
+	}
+	return v, nil
 }
 
 // Run refreshes immediately, then every ttl until ctx is canceled. Intended to

@@ -634,6 +634,112 @@ func TestRender_ReducedMotionRespected(t *testing.T) {
 	}
 }
 
+// TestRender_UpdateBadgeOnlyVisibleWhenAvailable asserts the header update
+// badge (#330) is always PRESENT in the DOM (so the JS poller can toggle it
+// without re-inserting a node) but only VISIBLE — no inline
+// `style="display:none"` — when State is "available". Every other state must
+// hide it, since a badge visible for "current"/"error"/"unknown" would read
+// as "you have an update" when you don't.
+func TestRender_UpdateBadgeOnlyVisibleWhenAvailable(t *testing.T) {
+	avail := statusdata.Status{Update: statusdata.UpdateInfo{
+		State: "available", CurrentVersion: "1.2.3", LatestVersion: "1.5.0",
+		ReleaseURL: "https://github.com/rknightion/tailscale2otel/releases/latest",
+	}}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, avail); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="updateBadge"`,
+		`href="https://github.com/rknightion/tailscale2otel/releases/latest"`,
+		`target="_blank"`,
+		`rel="noopener noreferrer"`,
+		"update available: 1.5.0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("available-update page missing %q", want)
+		}
+	}
+	if strings.Contains(out, `id="updateBadge" href="https://github.com/rknightion/tailscale2otel/releases/latest" target="_blank" rel="noopener noreferrer" title="current 1.2.3 · latest 1.5.0" style="display:none"`) {
+		t.Error("available state should NOT hide the badge")
+	}
+
+	for _, st := range []string{"current", "error", "disabled", "checking", "unknown", ""} {
+		s := statusdata.Status{Update: statusdata.UpdateInfo{State: st, LatestVersion: "1.5.0"}}
+		buf.Reset()
+		if err := statushtml.Render(&buf, s); err != nil {
+			t.Fatalf("Render error (state=%q): %v", st, err)
+		}
+		hout := buf.String()
+		if !strings.Contains(hout, `id="updateBadge"`) {
+			t.Errorf("state=%q: updateBadge element must still be present (JS toggles it, never inserts it)", st)
+		}
+		if !strings.Contains(hout, `id="updateBadge" href="" target="_blank" rel="noopener noreferrer" title="" style="display:none"`) {
+			t.Errorf("state=%q: badge should be hidden with style=\"display:none\"", st)
+		}
+	}
+}
+
+// TestRender_UpdateCardReflectsState asserts the Overview "Update check" card
+// renders distinct, non-vacuous text for each state — verified against the
+// actual `id="updateState"`/`id="updateSub"` elements, not a bare phrase that
+// could equally come from the JS source embedded later in the same page.
+func TestRender_UpdateCardReflectsState(t *testing.T) {
+	cases := []struct {
+		state        string
+		wantState    string
+		wantSubPiece string
+	}{
+		{"available", "update available", "1.2.3"},
+		{"current", "up to date", "1.2.3"},
+		{"error", "check failed", "network"},
+		{"disabled", "disabled", ""},
+		{"checking", "checking", ""},
+		{"unknown", "unknown", ""},
+	}
+	for _, c := range cases {
+		s := statusdata.Status{Update: statusdata.UpdateInfo{
+			State: c.state, CurrentVersion: "1.2.3", LatestVersion: "1.5.0", LastErrorClass: "network",
+		}}
+		var buf bytes.Buffer
+		if err := statushtml.Render(&buf, s); err != nil {
+			t.Fatalf("Render error (state=%q): %v", c.state, err)
+		}
+		out := buf.String()
+		wantState := `<div class="v" id="updateState">` + c.wantState
+		if !strings.Contains(out, wantState) {
+			t.Errorf("state=%q: missing %q in rendered page", c.state, wantState)
+		}
+		if c.wantSubPiece != "" && !strings.Contains(out, c.wantSubPiece) {
+			t.Errorf("state=%q: missing sub-text piece %q", c.state, c.wantSubPiece)
+		}
+	}
+}
+
+// TestRender_UpdateCardJSMirrorsTemplate asserts the client-side poller JS
+// that rebuilds the update badge/card on every refresh is actually present —
+// this is the dominant vacuity shape in this file (a string that matches the
+// JS source itself rather than server-rendered markup), so this checks the
+// function definition AND that it is wired into refresh().
+func TestRender_UpdateCardJSMirrorsTemplate(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"function setUpdateInfo(d)",
+		"setUpdateInfo(d);",
+		"u.state==='available'",
+		"'update available'", "'up to date'", "'check failed'",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
 func TestRender_EventsLinkFollowsTheStore(t *testing.T) {
 	const link = `<a href="/events" title="Explore recent audit and webhook events">events &rarr;</a>`
 

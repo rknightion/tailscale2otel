@@ -9,6 +9,9 @@ package statusdata
 // Status is the full admin status snapshot.
 type Status struct {
 	Service ServiceInfo `json:"service"`
+	// Update is the update-availability check (#330): whether a newer
+	// tailscale2otel release than Service.Version is available.
+	Update UpdateInfo `json:"update"`
 	// Provider is the control-plane backend: "tailscale" or "headscale".
 	Provider string `json:"provider"`
 	// Capabilities lists the collector/feature names supported by the active provider.
@@ -143,6 +146,44 @@ type ServiceInfo struct {
 	UptimeSec int64  `json:"uptime_seconds"`
 	Uptime    string `json:"uptime"`
 	SelfObs   bool   `json:"self_observability"`
+}
+
+// UpdateInfo is the admin page's "is a newer tailscale2otel release
+// available" view (#330). It exists because emitUpdateCheck's gauge can just
+// stay silent when the comparison isn't trustworthy — a human staring at a
+// page needs "disabled" and "check failed" distinguishable from "you are
+// current", never silently collapsed into it.
+type UpdateInfo struct {
+	// Enabled mirrors version_checks.self.enabled. False means every other
+	// field is zero-valued; State is still "disabled" so the page never has to
+	// special-case Enabled separately from State.
+	Enabled bool `json:"enabled"`
+	// State is one of: "disabled" (feature off), "checking" (enabled, no
+	// successful fetch yet, no failure recorded either — the check just
+	// hasn't landed), "error" (enabled, no successful fetch yet, and the last
+	// attempt failed), "unknown" (a value WAS fetched but the comparison isn't
+	// trustworthy — a "dev" build or an unparseable upstream value),
+	// "current", or "available".
+	State string `json:"state"`
+	// CurrentVersion/LatestVersion are the normalized MAJOR.MINOR.PATCH
+	// strings, set only for "current"/"available" (a trustworthy comparison).
+	CurrentVersion string `json:"current_version,omitempty"`
+	LatestVersion  string `json:"latest_version,omitempty"`
+	// MinorsBehind is set only for "available".
+	MinorsBehind int `json:"minors_behind,omitempty"`
+	// LastCheckedAt is the last fetch ATTEMPT (success or failure), RFC3339;
+	// empty if no attempt has completed yet.
+	LastCheckedAt string `json:"last_checked_at,omitempty"`
+	// LastErrorClass is set whenever the MOST RECENT attempt failed — even if
+	// State is "current"/"available" from an earlier successful fetch
+	// (fail-open: stale-but-usable data with a visible warning that the check
+	// itself is currently failing). A class only, never the raw error text,
+	// matching the DeliverySignal.LastErrorClass precedent elsewhere on this
+	// page.
+	LastErrorClass string `json:"last_error_class,omitempty"`
+	// ReleaseURL is the static, credential-free link to the project's release
+	// page (never a fetch target — the browser never requests it on its own).
+	ReleaseURL string `json:"release_url,omitempty"`
 }
 
 // TelemetryInfo describes the OTLP export target (never any credentials).

@@ -116,6 +116,43 @@ func TestStatusJSON_Shape(t *testing.T) {
 	}
 }
 
+// TestStatusJSON_UpdateInfoIsWired asserts /api/status.json actually carries
+// the update-check state built from the REAL composition root
+// (buildProcessDeps -> a.selfRelease), not a value hand-assigned in the test.
+// version_checks.self.enabled defaults to true (config.Default()), so
+// baseTestApp's newApp -> buildProcessDeps constructs a real *release.Fetcher;
+// it has never run a fetch in this test (no goroutine started), so the
+// trustworthy end-to-end assertion is State=="checking" with Enabled==true —
+// anything else means the field isn't actually connected to a.selfRelease.
+func TestStatusJSON_UpdateInfoIsWired(t *testing.T) {
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	if a.selfRelease == nil {
+		t.Fatal("test premise broken: version_checks.self.enabled should default true")
+	}
+	srv := a.buildAdminServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+	req.Host = adminLoopbackHost
+	w := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(w, req)
+
+	var got statusdata.Status
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status json: %v", err)
+	}
+	if !got.Update.Enabled {
+		t.Errorf("update.enabled = false, want true (version_checks.self.enabled defaults true)")
+	}
+	if got.Update.State != "checking" {
+		t.Errorf("update.state = %q, want %q (never fetched yet in this test)", got.Update.State, "checking")
+	}
+	if got.Update.ReleaseURL == "" {
+		t.Errorf("update.release_url is empty, want the static release link")
+	}
+}
+
 // TestStatusJSON_ThroughputAndFleetFields asserts the throughput and
 // collector-fleet sections are present in the served JSON under their exact
 // field names — the page's chart registrations read these keys, so a rename

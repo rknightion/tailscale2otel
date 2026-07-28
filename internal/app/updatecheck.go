@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/release"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -50,4 +51,63 @@ func runUpdateCheck(ctx context.Context, e telemetry.Emitter, latest func() (str
 			emitUpdateCheck(e, latest, selfVersion)
 		}
 	}
+}
+
+// updateStatusInfo reads a.selfRelease (nil unless version_checks.self.enabled)
+// into the admin status page's update-availability view (#330). It is the
+// admin-page counterpart to emitUpdateCheck: the gauge can just stay silent
+// when the comparison isn't trustworthy, but the page has to say WHY.
+func (a *App) updateStatusInfo() statusdata.UpdateInfo {
+	if a.selfRelease == nil {
+		return updateInfo(false, release.Snapshot{}, a.version)
+	}
+	return updateInfo(true, a.selfRelease.Snapshot(), a.version)
+}
+
+// updateInfo derives the statusdata.UpdateInfo view from a release fetcher
+// snapshot and the running binary's version. Split out from
+// (*App).updateStatusInfo so it can be unit-tested with a synthetic Snapshot
+// rather than a live Fetcher goroutine.
+func updateInfo(enabled bool, snap release.Snapshot, selfVersion string) statusdata.UpdateInfo {
+	info := statusdata.UpdateInfo{Enabled: enabled, ReleaseURL: release.SelfReleaseURL}
+	if !enabled {
+		info.State = "disabled"
+		return info
+	}
+	if !snap.CheckedAt.IsZero() {
+		info.LastCheckedAt = snap.CheckedAt.UTC().Format(rfc3339)
+	}
+	// Surfaced regardless of what State ends up being: even a "current"
+	// verdict from an earlier successful fetch (fail-open) should show that
+	// the MOST RECENT check attempt failed.
+	info.LastErrorClass = snap.ErrClass
+
+	if !snap.OK {
+		if snap.ErrClass != "" {
+			info.State = "error"
+		} else {
+			info.State = "checking"
+		}
+		return info
+	}
+
+	cur, curOK := release.Parse(selfVersion)
+	lat, latOK := release.Parse(snap.Latest)
+	if !curOK || !latOK {
+		// A "dev" build or an unparseable upstream value: we HAVE data, but
+		// comparing it would be misleading, so this must never render as
+		// "current" (issue #330's trustworthy-comparison requirement).
+		info.State = "unknown"
+		return info
+	}
+
+	info.CurrentVersion = release.Normalize(selfVersion)
+	info.LatestVersion = release.Normalize(snap.Latest)
+	if cur.Less(lat) {
+		info.State = "available"
+		info.MinorsBehind = release.MinorsBehind(cur, lat)
+	} else {
+		info.State = "current"
+	}
+	return info
 }

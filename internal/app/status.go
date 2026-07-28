@@ -86,6 +86,7 @@ func (a *App) buildStatus() statusdata.Status {
 	s := statusdata.Status{
 		Provider:     string(a.primary().cp.Kind),
 		Capabilities: a.primary().cp.Capabilities(),
+		Update:       a.updateStatusInfo(),
 		Service: statusdata.ServiceInfo{
 			Name:      serviceName,
 			Version:   a.version,
