@@ -6,9 +6,34 @@
 // and times as RFC3339 strings, so neither consumer needs formatting logic.
 package statusdata
 
+// Schema versions for the admin JSON response types defined in this package
+// (#323). Each is an independent integer, bumped only for a deliberate
+// breaking change to THAT response's published contract — see
+// docs/api/compatibility.md for what counts as additive vs. breaking and how
+// internal/app/apicontract enforces it. A response nested inside another
+// (ConfigSummary/CardinalityInfo also appear as Status.Config/Status.Cardinality)
+// carries its own version regardless of the parent's, because it is also
+// served standalone (/api/config.json, /api/cardinality.json) and can change
+// on its own schedule.
+const (
+	// StatusSchemaVersion is Status's own contract version (/api/status.json).
+	StatusSchemaVersion = 1
+	// ConfigSummarySchemaVersion is ConfigSummary's contract version
+	// (/api/config.json, and Status.Config).
+	ConfigSummarySchemaVersion = 1
+	// CardinalitySchemaVersion is CardinalityInfo's contract version
+	// (/api/cardinality.json, and Status.Cardinality).
+	CardinalitySchemaVersion = 1
+)
+
 // Status is the full admin status snapshot.
 type Status struct {
-	Service ServiceInfo `json:"service"`
+	// SchemaVersion is StatusSchemaVersion at build time: a stable integer an
+	// external consumer can branch on, so it can safely distinguish an
+	// additive change (same version, new/renamed-nothing) from a breaking one
+	// (version bumped) rather than guessing from field presence (#323).
+	SchemaVersion int         `json:"schema_version"`
+	Service       ServiceInfo `json:"service"`
 	// Update is the update-availability check (#330): whether a newer
 	// tailscale2otel release than Service.Version is available.
 	Update UpdateInfo `json:"update"`
@@ -414,9 +439,11 @@ type NodeTarget struct {
 // Available is false when self-observability is off or no interval has been
 // reported yet.
 type CardinalityInfo struct {
-	Available bool        `json:"available"`
-	Total     int         `json:"total"`
-	Series    []SeriesRow `json:"series,omitempty"`
+	// SchemaVersion is CardinalitySchemaVersion at build time (#323).
+	SchemaVersion int         `json:"schema_version"`
+	Available     bool        `json:"available"`
+	Total         int         `json:"total"`
+	Series        []SeriesRow `json:"series,omitempty"`
 	// TotalSeries is the recent trend of the total active-series count (oldest
 	// first), feeding the cardinality sparkline. Populated only when self-obs is on.
 	TotalSeries []int `json:"total_series,omitempty"`
@@ -738,6 +765,8 @@ type CapabilityOperation struct {
 // ConfigSummary is the redacted configuration overview. Secret VALUES never
 // appear here — only "<thing>Set" booleans and header KEY names.
 type ConfigSummary struct {
+	// SchemaVersion is ConfigSummarySchemaVersion at build time (#323).
+	SchemaVersion   int    `json:"schema_version"`
 	LogLevel        string `json:"log_level"`
 	AuthMethod      string `json:"auth_method"`
 	CheckpointStore string `json:"checkpoint_store"`

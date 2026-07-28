@@ -36,6 +36,13 @@ func maxExportRows(s *flowstore.Memory) int { return s.Limits().MaxRecent }
 // feature exists to avoid.
 const exportSource = "recent_ring"
 
+// flowsExportSchemaVersion is flowsExportEnvelope's contract version (#323),
+// mirroring flowsdata.SchemaVersion for the sibling /api/flows.json endpoint.
+// The CSV export carries the same value as a "# schema_version=" comment line
+// (its column set has its own de-facto contract: csvExportHeader), so a
+// consumer reading either format can tell which version produced it.
+const flowsExportSchemaVersion = 1
+
 // flowsExportQuery is the window+filter state /api/flows/export.csv and
 // /api/flows/export.json parse from the SAME query parameters
 // /api/flows.json already accepts (#296's ?window=/?end=/?tailnet= and its
@@ -235,6 +242,7 @@ func (a *App) handleFlowsExportCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+exportFilename(eq.tailnet, "csv")+`"`)
 
 	fmt.Fprintf(w, "# tailscale2otel flow export\n")
+	fmt.Fprintf(w, "# schema_version=%d\n", flowsExportSchemaVersion)
 	fmt.Fprintf(w, "# generated_at=%s\n", time.Now().UTC().Format(time.RFC3339))
 	fmt.Fprintf(w, "# tailnet=%s\n", oneLine(eq.tailnet))
 	fmt.Fprintf(w, "# window_start=%s window_end=%s\n", eq.start.UTC().Format(time.RFC3339), eq.end.UTC().Format(time.RFC3339))
@@ -280,10 +288,12 @@ func oneLine(s string) string {
 // flowsExportEnvelope is /api/flows/export.json's response shape: the same
 // provenance the CSV export carries as comment lines, structured, plus Rows.
 type flowsExportEnvelope struct {
-	GeneratedAt string            `json:"generated_at"`
-	Tailnet     string            `json:"tailnet"`
-	Window      flowstore.Range   `json:"window"`
-	Filters     flowsdata.Filters `json:"filters,omitzero"`
+	// SchemaVersion is flowsExportSchemaVersion at build time (#323).
+	SchemaVersion int               `json:"schema_version"`
+	GeneratedAt   string            `json:"generated_at"`
+	Tailnet       string            `json:"tailnet"`
+	Window        flowstore.Range   `json:"window"`
+	Filters       flowsdata.Filters `json:"filters,omitzero"`
 	// Source is the fixed machine-readable label (exportSource); SourceNote
 	// spells out in words what an integration reading only Source might miss.
 	Source     string `json:"source"`
@@ -325,17 +335,18 @@ func (a *App) handleFlowsExportJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	env := flowsExportEnvelope{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Tailnet:     eq.tailnet,
-		Window:      flowstore.Range{Start: eq.start, End: eq.end},
-		Filters:     eq.filters,
-		Source:      exportSource,
-		SourceNote:  "bounded in-memory recent-connection ring; NOT persistent full history",
-		Matched:     page.Matched,
-		Returned:    len(page.Rows),
-		Retained:    page.Retained,
-		Truncated:   page.Truncated,
-		Rows:        rows,
+		SchemaVersion: flowsExportSchemaVersion,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		Tailnet:       eq.tailnet,
+		Window:        flowstore.Range{Start: eq.start, End: eq.end},
+		Filters:       eq.filters,
+		Source:        exportSource,
+		SourceNote:    "bounded in-memory recent-connection ring; NOT persistent full history",
+		Matched:       page.Matched,
+		Returned:      len(page.Rows),
+		Retained:      page.Retained,
+		Truncated:     page.Truncated,
+		Rows:          rows,
 	}
 
 	w.Header().Set("Content-Disposition", `attachment; filename="`+exportFilename(eq.tailnet, "json")+`"`)

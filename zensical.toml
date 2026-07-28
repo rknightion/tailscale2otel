@@ -24,7 +24,8 @@ nav = [
   { Reference = [
       { Metrics = "metrics.md" },
       { "Signal Coverage" = "signal-coverage.md" },
-      { "Environment Variables" = "env-vars.md" }
+      { "Environment Variables" = "env-vars.md" },
+      { "Admin API Compatibility" = "api/compatibility.md" }
     ] },
   { "How It Works" = [
       { Architecture = "architecture.md" }

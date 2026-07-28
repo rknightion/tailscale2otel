@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "alerts[].count": "integer",
+    "alerts[].level": "string",
+    "alerts[].metric": "string",
+    "available": "boolean",
+    "growth[].current": "integer",
+    "growth[].delta_pct": "number",
+    "growth[].metric": "string",
+    "growth[].prom_name": "string",
+    "growth[].series[]": "integer",
+    "labels[].capped": "boolean",
+    "labels[].label": "string",
+    "labels[].metrics[].capped": "boolean",
+    "labels[].metrics[].distinct": "integer",
+    "labels[].metrics[].examples[]": "string",
+    "labels[].metrics[].metric": "string",
+    "labels[].metrics[].prom_name": "string",
+    "labels[].total_distinct": "integer",
+    "schema_version": "integer",
+    "series[].capped": "boolean",
+    "series[].count": "integer",
+    "series[].level": "string",
+    "series[].metric": "string",
+    "series[].prom_name": "string",
+    "thresholds.critical": "integer",
+    "thresholds.warning": "integer",
+    "total": "integer",
+    "total_metrics": "integer",
+    "total_series[]": "integer"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "The live active-series cardinality snapshot served by GET /api/cardinality.json (also Status.cardinality). See docs/api/compatibility.md.",
+  "properties": {
+    "alerts": {
+      "items": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "level": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "growth": {
+      "items": {
+        "properties": {
+          "current": {
+            "type": "integer"
+          },
+          "delta_pct": {
+            "type": "number"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "prom_name": {
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "labels": {
+      "items": {
+        "properties": {
+          "capped": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "properties": {
+                "capped": {
+                  "type": "boolean"
+                },
+                "distinct": {
+                  "type": "integer"
+                },
+                "examples": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "metric": {
+                  "type": "string"
+                },
+                "prom_name": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total_distinct": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "series": {
+      "items": {
+        "properties": {
+          "capped": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "level": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "prom_name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "thresholds": {
+      "properties": {
+        "critical": {
+          "type": "integer"
+        },
+        "warning": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "total": {
+      "type": "integer"
+    },
+    "total_metrics": {
+      "type": "integer"
+    },
+    "total_series": {
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  "title": "tailscale2otel /api/cardinality.json",
+  "type": "object"
+}

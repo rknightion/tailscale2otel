@@ -158,15 +158,16 @@ func parseEventsWindow(q url.Values) (start, end time.Time) {
 func buildEventsResponse(store *eventstore.Memory, q eventstore.Query, filters eventsdata.Filters, now time.Time) eventsdata.Response {
 	page := store.Page(q)
 	resp := eventsdata.Response{
-		Stats:       store.Stats(),
-		Rows:        page.Rows,
-		Filters:     filters,
-		GeneratedAt: now.Format(time.RFC3339),
-		Matched:     page.Matched,
-		Returned:    len(page.Rows),
-		Retained:    page.Retained,
-		Truncated:   page.Truncated,
-		NextCursor:  encodeEventsCursor(page.NextCursor),
+		SchemaVersion: eventsdata.SchemaVersion,
+		Stats:         store.Stats(),
+		Rows:          page.Rows,
+		Filters:       filters,
+		GeneratedAt:   now.Format(time.RFC3339),
+		Matched:       page.Matched,
+		Returned:      len(page.Rows),
+		Retained:      page.Retained,
+		Truncated:     page.Truncated,
+		NextCursor:    encodeEventsCursor(page.NextCursor),
 	}
 	// The page iterates Rows unconditionally, and a nil slice marshals to null.
 	if resp.Rows == nil {

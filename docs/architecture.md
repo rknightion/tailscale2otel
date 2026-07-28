@@ -255,7 +255,11 @@ In addition, an admin HTTP server (on by default, `:9091`) serves:
 
 - `/` — an HTML status page with live collector health, cardinality table, the metrics/log catalog,
   discovered node-metrics targets, and a redacted config view.
-- `/api/status.json` — the same data as JSON, for programmatic access.
+- `/api/status.json` — the same data as JSON, for programmatic access. This and the other read-only
+  JSON endpoints (`/api/config.json`, `/api/cardinality.json`, `/api/flows.json`,
+  `/api/flows/export.json`, `/api/events.json`) each carry a top-level `schema_version` integer and are
+  published/versioned artifacts — see [`docs/api/compatibility.md`](api/compatibility.md) for the
+  additive-vs-breaking policy and how CI enforces it (#323).
 - `POST /api/rdns/purge` — the admin server's **only mutating** endpoint: clears the reverse-DNS
   cache (`internal/rdns.Cache`). Method-gated (405 + `Allow: POST` on anything but `POST`), gated by
   the same admin-token auth as `/` and `/api/status.json` (`requireAdminAuth`), and additionally

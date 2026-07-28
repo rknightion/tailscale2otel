@@ -6,9 +6,17 @@ package flowsdata
 
 import "github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 
+// SchemaVersion is Response's contract version (#323): a stable integer an
+// external consumer can branch on, bumped only for a deliberate breaking
+// change. See docs/api/compatibility.md for the additive-vs-breaking policy
+// and internal/app/apicontract for how CI enforces it.
+const SchemaVersion = 1
+
 // Response is one answer from /api/flows.json. Everything the page draws comes
 // from here, so the page can be a static shell that polls.
 type Response struct {
+	// SchemaVersion is the package-level SchemaVersion at build time.
+	SchemaVersion int `json:"schema_version"`
 	// Tailnet is the tailnet this answer describes; Tailnets lists every one the
 	// process observes, so the page can offer a selector without a second call.
 	Tailnet  string   `json:"tailnet"`

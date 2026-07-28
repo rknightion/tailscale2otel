@@ -84,9 +84,10 @@ func (a *App) buildStatus() statusdata.Status {
 	metrics := catalog.Metrics()
 
 	s := statusdata.Status{
-		Provider:     string(a.primary().cp.Kind),
-		Capabilities: a.primary().cp.Capabilities(),
-		Update:       a.updateStatusInfo(),
+		SchemaVersion: statusdata.StatusSchemaVersion,
+		Provider:      string(a.primary().cp.Kind),
+		Capabilities:  a.primary().cp.Capabilities(),
+		Update:        a.updateStatusInfo(),
 		Service: statusdata.ServiceInfo{
 			Name:      serviceName,
 			Version:   a.version,
@@ -745,13 +746,14 @@ func (a *App) nodeDiscovery() statusdata.NodeDiscovery {
 // the configured warning/critical thresholds.
 func cardinalityInfo(selfObs bool, series []telemetry.SeriesCount, labels []telemetry.LabelStat, perMetric map[string][]int, th statusdata.CardinalityThresholds, metricByName map[string]metricdoc.Metric) statusdata.CardinalityInfo {
 	if !selfObs || len(series) == 0 {
-		return statusdata.CardinalityInfo{Available: false, Thresholds: th}
+		return statusdata.CardinalityInfo{SchemaVersion: statusdata.CardinalitySchemaVersion, Available: false, Thresholds: th}
 	}
 	info := statusdata.CardinalityInfo{
-		Available:    true,
-		Thresholds:   th,
-		TotalMetrics: len(series),
-		Series:       make([]statusdata.SeriesRow, 0, len(series)),
+		SchemaVersion: statusdata.CardinalitySchemaVersion,
+		Available:     true,
+		Thresholds:    th,
+		TotalMetrics:  len(series),
+		Series:        make([]statusdata.SeriesRow, 0, len(series)),
 	}
 	for _, sc := range series {
 		level := cardSeriesLevel(sc.Count, th)
@@ -872,6 +874,7 @@ func (a *App) redactedConfigSummary() statusdata.ConfigSummary {
 		oauthSecretSet = a.runtimes[0].oauthSecretSet
 	}
 	cs := statusdata.ConfigSummary{
+		SchemaVersion:     statusdata.ConfigSummarySchemaVersion,
 		LogLevel:          c.LogLevel,
 		AuthMethod:        authMethod,
 		CheckpointStore:   a.checkpointEffective, // effective store, not the raw config value (#69)

@@ -319,7 +319,8 @@ here exactly as it does to the metrics, so a window delivered twice is counted o
 ## The JSON API
 
 The page is a shell that polls `/api/flows.json`; that endpoint is a supported read-only API in its own
-right, behind the same auth.
+right, behind the same auth. The response carries a top-level `schema_version` integer and is a
+published, versioned contract — see [`docs/api/compatibility.md`](api/compatibility.md).
 
 | Parameter | Default | Meaning |
 |---|---|---|

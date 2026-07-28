@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "api_key_set": "boolean",
+    "auth_method": "string",
+    "checkpoint_path": "string",
+    "checkpoint_reason": "string",
+    "checkpoint_store": "string",
+    "enabled_collectors[]": "string",
+    "full{}.secret": "boolean",
+    "full{}.set": "boolean",
+    "full{}.source": "string",
+    "full{}.value": "any",
+    "grafana_cloud_token_set": "boolean",
+    "log_level": "string",
+    "oauth_secret_set": "boolean",
+    "otlp_header_keys[]": "string",
+    "pyroscope_auth_set": "boolean",
+    "schema_version": "integer",
+    "stream_token_set": "boolean",
+    "webhook_secret_set": "boolean"
+  }
+}

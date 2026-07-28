@@ -1,0 +1,1555 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "The full admin status snapshot served by GET /api/status.json and rendered by the admin landing page. See docs/api/compatibility.md.",
+  "properties": {
+    "advisories": {
+      "items": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "api": {
+      "properties": {
+        "auth": {
+          "properties": {
+            "key_expires_at": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "total_429": {
+              "type": "integer"
+            },
+            "total_calls": {
+              "type": "integer"
+            },
+            "warning": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "endpoints": {
+          "items": {
+            "properties": {
+              "duration_ms_series": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "endpoint": {
+                "type": "string"
+              },
+              "errors": {
+                "type": "integer"
+              },
+              "last_429_at": {
+                "type": "string"
+              },
+              "last_at": {
+                "type": "string"
+              },
+              "last_error": {
+                "type": "string"
+              },
+              "last_status": {
+                "type": "integer"
+              },
+              "rate_limited": {
+                "type": "integer"
+              },
+              "requests": {
+                "type": "integer"
+              },
+              "retries": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "rate_limit": {
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "last_seen": {
+              "type": "string"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "capability_matrix": {
+      "items": {
+        "properties": {
+          "actionable": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "capability": {
+            "type": "string"
+          },
+          "collector": {
+            "type": "string"
+          },
+          "config_enabled": {
+            "type": "boolean"
+          },
+          "last_probe": {
+            "type": "string"
+          },
+          "missing_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "properties": {
+                "last_probe": {
+                  "type": "string"
+                },
+                "operation": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "provider_supported": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "required_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scope_status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subrequest": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "cardinality": {
+      "properties": {
+        "alerts": {
+          "items": {
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "level": {
+                "type": "string"
+              },
+              "metric": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "growth": {
+          "items": {
+            "properties": {
+              "current": {
+                "type": "integer"
+              },
+              "delta_pct": {
+                "type": "number"
+              },
+              "metric": {
+                "type": "string"
+              },
+              "prom_name": {
+                "type": "string"
+              },
+              "series": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "labels": {
+          "items": {
+            "properties": {
+              "capped": {
+                "type": "boolean"
+              },
+              "label": {
+                "type": "string"
+              },
+              "metrics": {
+                "items": {
+                  "properties": {
+                    "capped": {
+                      "type": "boolean"
+                    },
+                    "distinct": {
+                      "type": "integer"
+                    },
+                    "examples": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "prom_name": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "total_distinct": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "series": {
+          "items": {
+            "properties": {
+              "capped": {
+                "type": "boolean"
+              },
+              "count": {
+                "type": "integer"
+              },
+              "level": {
+                "type": "string"
+              },
+              "metric": {
+                "type": "string"
+              },
+              "prom_name": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "thresholds": {
+          "properties": {
+            "critical": {
+              "type": "integer"
+            },
+            "warning": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "total_metrics": {
+          "type": "integer"
+        },
+        "total_series": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "collectors": {
+      "items": {
+        "properties": {
+          "checkpoint": {
+            "properties": {
+              "high_water_mark": {
+                "type": "string"
+              },
+              "lag": {
+                "type": "string"
+              },
+              "lag_seconds": {
+                "type": "integer"
+              },
+              "stuck": {
+                "type": "boolean"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "consecutive_failures": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration_ms_series": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "failures": {
+            "type": "integer"
+          },
+          "freshness": {
+            "type": "string"
+          },
+          "freshness_seconds": {
+            "type": "integer"
+          },
+          "freshness_state": {
+            "type": "string"
+          },
+          "has_run": {
+            "type": "boolean"
+          },
+          "interval_seconds": {
+            "type": "integer"
+          },
+          "last_duration_ms": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_finished_at": {
+            "type": "string"
+          },
+          "last_started_at": {
+            "type": "string"
+          },
+          "last_success": {
+            "type": "boolean"
+          },
+          "last_success_at": {
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_run_in": {
+            "type": "string"
+          },
+          "next_run_in_seconds": {
+            "type": "integer"
+          },
+          "outcome_series": {
+            "items": {
+              "type": "boolean"
+            },
+            "type": "array"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "success_rate_pct": {
+            "type": "number"
+          },
+          "tailnet": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "components": {
+      "items": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "config": {
+      "properties": {
+        "api_key_set": {
+          "type": "boolean"
+        },
+        "auth_method": {
+          "type": "string"
+        },
+        "checkpoint_path": {
+          "type": "string"
+        },
+        "checkpoint_reason": {
+          "type": "string"
+        },
+        "checkpoint_store": {
+          "type": "string"
+        },
+        "enabled_collectors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "full": {
+          "additionalProperties": {
+            "properties": {
+              "secret": {
+                "type": "boolean"
+              },
+              "set": {
+                "type": "boolean"
+              },
+              "source": {
+                "type": "string"
+              },
+              "value": {
+                "description": "dynamic value: string, boolean, number, or array of strings"
+              }
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "grafana_cloud_token_set": {
+          "type": "boolean"
+        },
+        "log_level": {
+          "type": "string"
+        },
+        "oauth_secret_set": {
+          "type": "boolean"
+        },
+        "otlp_header_keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pyroscope_auth_set": {
+          "type": "boolean"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "stream_token_set": {
+          "type": "boolean"
+        },
+        "webhook_secret_set": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "dedup_sets": {
+      "items": {
+        "properties": {
+          "capacity": {
+            "type": "integer"
+          },
+          "len": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "delivery": {
+      "items": {
+        "properties": {
+          "consecutive_failures": {
+            "type": "integer"
+          },
+          "exports": {
+            "type": "integer"
+          },
+          "failing": {
+            "type": "boolean"
+          },
+          "failures": {
+            "type": "integer"
+          },
+          "last_duration_ms": {
+            "type": "integer"
+          },
+          "last_error_class": {
+            "type": "string"
+          },
+          "last_failure_at": {
+            "type": "string"
+          },
+          "last_success_at": {
+            "type": "string"
+          },
+          "signal": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "device_cache": {
+      "properties": {
+        "age": {
+          "type": "string"
+        },
+        "age_seconds": {
+          "type": "integer"
+        },
+        "devices": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "devices": {
+      "items": {
+        "properties": {
+          "addrs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "os_version": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "event_store": {
+      "properties": {
+        "capacity": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "evicted": {
+          "type": "integer"
+        },
+        "recorded": {
+          "type": "integer"
+        },
+        "retained": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "fleet": {
+      "properties": {
+        "active": {
+          "type": "integer"
+        },
+        "failing": {
+          "type": "integer"
+        },
+        "failing_series": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "mean_duration_ms": {
+          "type": "number"
+        },
+        "mean_duration_ms_series": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "flow_store": {
+      "properties": {
+        "buckets": {
+          "type": "integer"
+        },
+        "capacity": {
+          "type": "integer"
+        },
+        "capacity_profile": {
+          "type": "string"
+        },
+        "covered": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "estimated_bytes": {
+          "type": "integer"
+        },
+        "max_recent": {
+          "type": "integer"
+        },
+        "observations": {
+          "type": "integer"
+        },
+        "retention": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "geoip": {
+      "properties": {
+        "asn_age": {
+          "type": "string"
+        },
+        "asn_build_time": {
+          "type": "string"
+        },
+        "asn_hits": {
+          "type": "integer"
+        },
+        "asn_misses": {
+          "type": "integer"
+        },
+        "asn_path": {
+          "type": "string"
+        },
+        "asn_type": {
+          "type": "string"
+        },
+        "country_age": {
+          "type": "string"
+        },
+        "country_build_time": {
+          "type": "string"
+        },
+        "country_hits": {
+          "type": "integer"
+        },
+        "country_misses": {
+          "type": "integer"
+        },
+        "country_path": {
+          "type": "string"
+        },
+        "country_type": {
+          "type": "string"
+        },
+        "download_enabled": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "geo_dims": {
+          "type": "boolean"
+        },
+        "reload_failures": {
+          "type": "integer"
+        },
+        "reloads": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "health": {
+      "type": "string"
+    },
+    "health_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "log_events": {
+      "items": {
+        "properties": {
+          "attributes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "metrics": {
+      "items": {
+        "properties": {
+          "attributes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "instrument": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prom_name": {
+            "type": "string"
+          },
+          "series": {
+            "type": "integer"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "node_discovery": {
+      "properties": {
+        "active": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "last_discovery": {
+          "type": "string"
+        },
+        "last_ok": {
+          "type": "boolean"
+        },
+        "static": {
+          "type": "integer"
+        },
+        "targets": {
+          "items": {
+            "properties": {
+              "instance": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "profiling": {
+      "properties": {
+        "pprof_enabled": {
+          "type": "boolean"
+        },
+        "pyroscope_enabled": {
+          "type": "boolean"
+        },
+        "pyroscope_server": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "receivers": {
+      "properties": {
+        "streaming_enabled": {
+          "type": "boolean"
+        },
+        "webhook_enabled": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "refresh_ms": {
+      "type": "integer"
+    },
+    "reverse_dns": {
+      "properties": {
+        "capacity": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "evicted_expired": {
+          "type": "integer"
+        },
+        "evicted_purged": {
+          "type": "integer"
+        },
+        "hit_rate_pct": {
+          "type": "number"
+        },
+        "hits": {
+          "type": "integer"
+        },
+        "last_purge": {
+          "type": "string"
+        },
+        "misses": {
+          "type": "integer"
+        },
+        "negative_ttl": {
+          "type": "string"
+        },
+        "negatives": {
+          "type": "integer"
+        },
+        "overflows": {
+          "type": "integer"
+        },
+        "query_fail": {
+          "type": "integer"
+        },
+        "query_success": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "ttl": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "runtime": {
+      "properties": {
+        "gc_rate_series": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "gomaxprocs": {
+          "type": "integer"
+        },
+        "goroutines": {
+          "type": "integer"
+        },
+        "goroutines_series": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "heap_alloc": {
+          "type": "string"
+        },
+        "heap_alloc_bytes": {
+          "type": "integer"
+        },
+        "heap_alloc_series": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "num_gc": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "service": {
+      "properties": {
+        "go_version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "self_observability": {
+          "type": "boolean"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "tailnet": {
+          "type": "string"
+        },
+        "uptime": {
+          "type": "string"
+        },
+        "uptime_seconds": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tailnets": {
+      "items": {
+        "properties": {
+          "api": {
+            "properties": {
+              "auth": {
+                "properties": {
+                  "key_expires_at": {
+                    "type": "string"
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "total_429": {
+                    "type": "integer"
+                  },
+                  "total_calls": {
+                    "type": "integer"
+                  },
+                  "warning": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "endpoints": {
+                "items": {
+                  "properties": {
+                    "duration_ms_series": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "endpoint": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "last_429_at": {
+                      "type": "string"
+                    },
+                    "last_at": {
+                      "type": "string"
+                    },
+                    "last_error": {
+                      "type": "string"
+                    },
+                    "last_status": {
+                      "type": "integer"
+                    },
+                    "rate_limited": {
+                      "type": "integer"
+                    },
+                    "requests": {
+                      "type": "integer"
+                    },
+                    "retries": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "rate_limit": {
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "last_seen": {
+                    "type": "string"
+                  }
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "auth_method": {
+            "type": "string"
+          },
+          "cardinality": {
+            "properties": {
+              "alerts": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "string"
+                    },
+                    "metric": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "available": {
+                "type": "boolean"
+              },
+              "growth": {
+                "items": {
+                  "properties": {
+                    "current": {
+                      "type": "integer"
+                    },
+                    "delta_pct": {
+                      "type": "number"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "prom_name": {
+                      "type": "string"
+                    },
+                    "series": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "labels": {
+                "items": {
+                  "properties": {
+                    "capped": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "metrics": {
+                      "items": {
+                        "properties": {
+                          "capped": {
+                            "type": "boolean"
+                          },
+                          "distinct": {
+                            "type": "integer"
+                          },
+                          "examples": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "metric": {
+                            "type": "string"
+                          },
+                          "prom_name": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "total_distinct": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "schema_version": {
+                "type": "integer"
+              },
+              "series": {
+                "items": {
+                  "properties": {
+                    "capped": {
+                      "type": "boolean"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "string"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "prom_name": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "thresholds": {
+                "properties": {
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "warning": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "total_metrics": {
+                "type": "integer"
+              },
+              "total_series": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "collectors": {
+            "items": {
+              "properties": {
+                "checkpoint": {
+                  "properties": {
+                    "high_water_mark": {
+                      "type": "string"
+                    },
+                    "lag": {
+                      "type": "string"
+                    },
+                    "lag_seconds": {
+                      "type": "integer"
+                    },
+                    "stuck": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "consecutive_failures": {
+                  "type": "integer"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "duration_ms_series": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "failures": {
+                  "type": "integer"
+                },
+                "freshness": {
+                  "type": "string"
+                },
+                "freshness_seconds": {
+                  "type": "integer"
+                },
+                "freshness_state": {
+                  "type": "string"
+                },
+                "has_run": {
+                  "type": "boolean"
+                },
+                "interval_seconds": {
+                  "type": "integer"
+                },
+                "last_duration_ms": {
+                  "type": "integer"
+                },
+                "last_error": {
+                  "type": "string"
+                },
+                "last_finished_at": {
+                  "type": "string"
+                },
+                "last_started_at": {
+                  "type": "string"
+                },
+                "last_success": {
+                  "type": "boolean"
+                },
+                "last_success_at": {
+                  "type": "string"
+                },
+                "metrics": {
+                  "items": {
+                    "properties": {
+                      "description": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "next_run_in": {
+                  "type": "string"
+                },
+                "next_run_in_seconds": {
+                  "type": "integer"
+                },
+                "outcome_series": {
+                  "items": {
+                    "type": "boolean"
+                  },
+                  "type": "array"
+                },
+                "overdue": {
+                  "type": "boolean"
+                },
+                "runs": {
+                  "type": "integer"
+                },
+                "success_rate_pct": {
+                  "type": "number"
+                },
+                "tailnet": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "device_cache": {
+            "properties": {
+              "age": {
+                "type": "string"
+              },
+              "age_seconds": {
+                "type": "integer"
+              },
+              "devices": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "devices": {
+            "items": {
+              "properties": {
+                "addrs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "external": {
+                  "type": "boolean"
+                },
+                "hostname": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "os": {
+                  "type": "string"
+                },
+                "os_version": {
+                  "type": "string"
+                },
+                "tags": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "user": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "failing": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "telemetry": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "metric_export_batch_size": {
+          "type": "integer"
+        },
+        "metric_interval_seconds": {
+          "type": "integer"
+        },
+        "protocol": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "throughput": {
+      "properties": {
+        "log_records": {
+          "type": "integer"
+        },
+        "log_records_per_sec": {
+          "type": "number"
+        },
+        "log_records_per_sec_series": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "metric_points": {
+          "type": "integer"
+        },
+        "metric_points_per_sec": {
+          "type": "number"
+        },
+        "metric_points_per_sec_series": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "tls_certificates": {
+      "items": {
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "last_reload_at": {
+            "type": "string"
+          },
+          "last_reload_failure_at": {
+            "type": "string"
+          },
+          "last_reload_failure_reason": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "not_after": {
+            "type": "string"
+          },
+          "not_before": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "update": {
+      "properties": {
+        "current_version": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "last_checked_at": {
+          "type": "string"
+        },
+        "last_error_class": {
+          "type": "string"
+        },
+        "latest_version": {
+          "type": "string"
+        },
+        "minors_behind": {
+          "type": "integer"
+        },
+        "release_url": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "tailscale2otel /api/status.json",
+  "type": "object"
+}

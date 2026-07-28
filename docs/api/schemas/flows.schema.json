@@ -1,0 +1,943 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "The built-in flow view's data, served by GET /api/flows.json. See docs/api/compatibility.md.",
+  "properties": {
+    "exercised": {
+      "items": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "counts": {
+            "properties": {
+              "flows": {
+                "type": "integer"
+              },
+              "rx_bytes": {
+                "type": "integer"
+              },
+              "rx_packets": {
+                "type": "integer"
+              },
+              "tx_bytes": {
+                "type": "integer"
+              },
+              "tx_packets": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "filters": {
+      "properties": {
+        "addr": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "identity": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "next_cursor": {
+      "type": "string"
+    },
+    "policy": {
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        },
+        "rules": {
+          "items": {
+            "properties": {
+              "index": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "recent": {
+      "items": {
+        "properties": {
+          "counts": {
+            "properties": {
+              "flows": {
+                "type": "integer"
+              },
+              "rx_bytes": {
+                "type": "integer"
+              },
+              "rx_packets": {
+                "type": "integer"
+              },
+              "tx_bytes": {
+                "type": "integer"
+              },
+              "tx_packets": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "derp_region": {
+            "type": "string"
+          },
+          "dst_addr": {
+            "type": "string"
+          },
+          "dst_node": {
+            "type": "string"
+          },
+          "dst_os": {
+            "type": "string"
+          },
+          "dst_service": {
+            "type": "string"
+          },
+          "dst_tags": {
+            "type": "string"
+          },
+          "dst_user": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "reporter_consistency": {
+            "type": "string"
+          },
+          "reporter_node_id": {
+            "type": "string"
+          },
+          "reporter_trust": {
+            "type": "string"
+          },
+          "reversed": {
+            "type": "boolean"
+          },
+          "rule": {
+            "type": "integer"
+          },
+          "src_addr": {
+            "type": "string"
+          },
+          "src_node": {
+            "type": "string"
+          },
+          "src_os": {
+            "type": "string"
+          },
+          "src_tags": {
+            "type": "string"
+          },
+          "src_user": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "traffic_type": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "recent_matched": {
+      "type": "integer"
+    },
+    "recent_retained": {
+      "type": "integer"
+    },
+    "recent_returned": {
+      "type": "integer"
+    },
+    "recent_truncated": {
+      "type": "boolean"
+    },
+    "result": {
+      "properties": {
+        "derp_regions": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "received": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "sent": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "os_matrix": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "dst": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "oses": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "pairs": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "dst": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              },
+              "traffic_type": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "paths": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "peer_paths": {
+          "items": {
+            "properties": {
+              "direct": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "peer": {
+                "type": "string"
+              },
+              "relayed": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "ports": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "port": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "transport": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "policy_version": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "series": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "time": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "step": {
+          "type": "string"
+        },
+        "tag_matrix": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "dst": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "totals": {
+          "properties": {
+            "flows": {
+              "type": "integer"
+            },
+            "rx_bytes": {
+              "type": "integer"
+            },
+            "rx_packets": {
+              "type": "integer"
+            },
+            "tx_bytes": {
+              "type": "integer"
+            },
+            "tx_packets": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "traffic_types": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "transports": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "integer"
+        },
+        "unexplained": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "dst": {
+                "type": "string"
+              },
+              "port": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              },
+              "transport": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "user_matrix": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "dst": {
+                "type": "string"
+              },
+              "src": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "users": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "verdicts": {
+          "items": {
+            "properties": {
+              "counts": {
+                "properties": {
+                  "flows": {
+                    "type": "integer"
+                  },
+                  "rx_bytes": {
+                    "type": "integer"
+                  },
+                  "rx_packets": {
+                    "type": "integer"
+                  },
+                  "tx_bytes": {
+                    "type": "integer"
+                  },
+                  "tx_packets": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "window": {
+          "properties": {
+            "end": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "start": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "retention": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "stats": {
+      "properties": {
+        "buckets": {
+          "type": "integer"
+        },
+        "capacity": {
+          "type": "integer"
+        },
+        "earliest": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "latest": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "observations": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "tailnet": {
+      "type": "string"
+    },
+    "tailnets": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "window": {
+      "type": "string"
+    }
+  },
+  "title": "tailscale2otel /api/flows.json",
+  "type": "object"
+}

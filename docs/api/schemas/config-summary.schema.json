@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "The redacted effective-configuration summary served by GET /api/config.json (also Status.config). Secret VALUES never appear. See docs/api/compatibility.md.",
+  "properties": {
+    "api_key_set": {
+      "type": "boolean"
+    },
+    "auth_method": {
+      "type": "string"
+    },
+    "checkpoint_path": {
+      "type": "string"
+    },
+    "checkpoint_reason": {
+      "type": "string"
+    },
+    "checkpoint_store": {
+      "type": "string"
+    },
+    "enabled_collectors": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "full": {
+      "additionalProperties": {
+        "properties": {
+          "secret": {
+            "type": "boolean"
+          },
+          "set": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "description": "dynamic value: string, boolean, number, or array of strings"
+          }
+        },
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "grafana_cloud_token_set": {
+      "type": "boolean"
+    },
+    "log_level": {
+      "type": "string"
+    },
+    "oauth_secret_set": {
+      "type": "boolean"
+    },
+    "otlp_header_keys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "pyroscope_auth_set": {
+      "type": "boolean"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "stream_token_set": {
+      "type": "boolean"
+    },
+    "webhook_secret_set": {
+      "type": "boolean"
+    }
+  },
+  "title": "tailscale2otel /api/config.json",
+  "type": "object"
+}

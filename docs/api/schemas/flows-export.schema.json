@@ -1,0 +1,172 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "The provenance-carrying JSON export of the filtered recent-connection ring, served by GET /api/flows/export.json. See docs/api/compatibility.md.",
+  "properties": {
+    "filters": {
+      "properties": {
+        "addr": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "identity": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "matched": {
+      "type": "integer"
+    },
+    "retained": {
+      "type": "integer"
+    },
+    "returned": {
+      "type": "integer"
+    },
+    "rows": {
+      "items": {
+        "properties": {
+          "counts": {
+            "properties": {
+              "flows": {
+                "type": "integer"
+              },
+              "rx_bytes": {
+                "type": "integer"
+              },
+              "rx_packets": {
+                "type": "integer"
+              },
+              "tx_bytes": {
+                "type": "integer"
+              },
+              "tx_packets": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "derp_region": {
+            "type": "string"
+          },
+          "dst_addr": {
+            "type": "string"
+          },
+          "dst_node": {
+            "type": "string"
+          },
+          "dst_os": {
+            "type": "string"
+          },
+          "dst_service": {
+            "type": "string"
+          },
+          "dst_tags": {
+            "type": "string"
+          },
+          "dst_user": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "reporter_consistency": {
+            "type": "string"
+          },
+          "reporter_node_id": {
+            "type": "string"
+          },
+          "reporter_trust": {
+            "type": "string"
+          },
+          "reversed": {
+            "type": "boolean"
+          },
+          "rule": {
+            "type": "integer"
+          },
+          "src_addr": {
+            "type": "string"
+          },
+          "src_node": {
+            "type": "string"
+          },
+          "src_os": {
+            "type": "string"
+          },
+          "src_tags": {
+            "type": "string"
+          },
+          "src_user": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "traffic_type": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "integer"
+    },
+    "source": {
+      "type": "string"
+    },
+    "source_note": {
+      "type": "string"
+    },
+    "tailnet": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "window": {
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "tailscale2otel /api/flows/export.json",
+  "type": "object"
+}

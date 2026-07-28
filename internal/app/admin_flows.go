@@ -227,6 +227,7 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 	})
 
 	resp := flowsdata.Response{
+		SchemaVersion:   flowsdata.SchemaVersion,
 		Tailnet:         a.runtimeName(rt),
 		Tailnets:        a.flowTailnets(),
 		Window:          window.String(),
