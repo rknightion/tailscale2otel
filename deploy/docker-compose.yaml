@@ -57,6 +57,24 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    # The binary itself is the health check (#337): the runtime image is
+    # distroless (no shell, no curl), so this has to be the exec form calling
+    # the binary directly, never CMD-SHELL. -healthcheck probes THIS
+    # container's own admin /readyz over loopback and exits 0/1/2 (ready/
+    # unready/unreachable), which Docker maps to healthy/unhealthy.
+    # This block and TS2OTEL_ADMIN__ENABLED below move TOGETHER: admin.enabled
+    # is what serves /readyz at all, so setting that env var to false removes
+    # the readiness surface -healthcheck depends on — the check would then
+    # report unhealthy forever even though the exporter is working fine. If
+    # you disable admin, also disable this healthcheck (add a
+    # `healthcheck: { disable: true }` override), or Compose will keep
+    # restarting/flagging a container that was never unhealthy to begin with.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tailscale2otel", "-healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     environment:
       TS2OTEL_TAILSCALE__TAILNET: ${TS2OTEL_TAILSCALE__TAILNET:-}
       TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID: ${TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID:-}
@@ -75,6 +93,10 @@ services:
       # admin.enabled. Leave empty to keep the status page open; required if you
       # enable profiling.pprof. /healthz and /readyz are never gated.
       TS2OTEL_ADMIN__AUTH__TOKEN: ${TS2OTEL_ADMIN__AUTH__TOKEN:-}
+      # Pinned true so the healthcheck: block above always has a /readyz to
+      # probe (#337) — see the comment on that block for what breaks if you
+      # override this to false without also disabling the healthcheck.
+      TS2OTEL_ADMIN__ENABLED: ${TS2OTEL_ADMIN__ENABLED:-true}
       # Go runtime GC tuning. This is a near-idle poller with a tiny live heap, so the
       # default GOGC=100 fires frequent (individually cheap) collections; GOGC=200
       # halves that frequency. GOMEMLIMIT is a soft backstop ~10% below mem_limit.

@@ -62,5 +62,12 @@ COPY config.example.yaml /etc/tailscale2otel/config.example.yaml
 USER nonroot:nonroot
 # Streaming (HEC) and webhook receivers, if enabled in config.
 EXPOSE 8088 8089
+# Deliberately NO HEALTHCHECK instruction here (#337). admin.enabled is a
+# runtime config choice, and an image-level HEALTHCHECK can't see config — it
+# would either assume admin is always on (wrong when it's disabled) or always
+# off (no probe when it's the default). The probe ships as a binary flag,
+# `tailscale2otel -healthcheck`, so the orchestrator that DOES know the
+# effective config wires it up: see the `healthcheck:` block in
+# deploy/docker-compose.yaml, or `docker run --health-cmd`.
 ENTRYPOINT ["/usr/local/bin/tailscale2otel"]
 CMD []

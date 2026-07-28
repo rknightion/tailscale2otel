@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
@@ -23,16 +24,19 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run parses flags and dispatches to one of three modes: -version (print and
-// exit), -validate (load+validate the config and exit without starting the
-// server), or the normal server run. Splitting it out of main lets the flag
-// modes be exercised by tests without touching os.Args or process exit.
+// run parses flags and dispatches to one of four modes: -version (print and
+// exit), -healthcheck (probe the local admin readiness endpoint and exit),
+// -validate (load+validate the config and exit without starting the server),
+// or the normal server run. Splitting it out of main lets the flag modes be
+// exercised by tests without touching os.Args or process exit.
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("tailscale2otel", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", "", "path to the YAML config file (empty = env-only defaults)")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	validateOnly := fs.Bool("validate", false, "load and validate the config, print errors/warnings, and exit")
+	healthcheck := fs.Bool("healthcheck", false, "probe the local admin readiness endpoint and exit (0 ready, 1 unready, 2 unreachable)")
+	healthcheckTimeout := fs.Duration("healthcheck-timeout", 5*time.Second, "overall deadline for -healthcheck")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -40,6 +44,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *showVersion {
 		fmt.Fprintln(stdout, version)
 		return 0
+	}
+
+	if *healthcheck {
+		return runHealthcheck(*configPath, *healthcheckTimeout, stdout, stderr)
 	}
 
 	if *validateOnly {

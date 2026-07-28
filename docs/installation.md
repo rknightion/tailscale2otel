@@ -103,6 +103,55 @@ See [Configuration](configuration.md) for the full list of options once you are 
     The compose file mounts a named volume at `/var/lib/tailscale2otel` for
     checkpoint persistence, so polling resumes without gaps after a restart.
 
+    ### Health checks
+
+    The image is distroless — no shell, no `curl` — so the binary probes
+    itself: `-healthcheck` GETs its own admin `/readyz` over loopback and
+    exits with one of three codes:
+
+    | Exit code | Meaning |
+    | --- | --- |
+    | `0` | ready — `/readyz` returned 2xx |
+    | `1` | unready — reached the process, but it reported not ready yet (e.g. still waiting for the first poll) |
+    | `2` | unreachable — could not probe at all: bad config, refused connection, TLS failure, or the check hit `-healthcheck-timeout` (default `5s`) |
+
+    `deploy/docker-compose.yaml` wires this up already:
+
+    ```yaml
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tailscale2otel", "-healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    ```
+
+    Use the exec (`["CMD", ...]`) form, never `CMD-SHELL` — there is no shell
+    in the image to run it. `docker run` equivalent:
+
+    ```sh
+    docker run --rm \
+      --health-cmd "/usr/local/bin/tailscale2otel -healthcheck" \
+      --health-interval 30s --health-timeout 10s \
+      --health-start-period 30s --health-retries 3 \
+      ghcr.io/rknightion/tailscale2otel:latest
+    ```
+
+    !!! warning "The healthcheck needs `admin.enabled` (the default)"
+        `-healthcheck` probes `/readyz` on the admin server, so it reports
+        exit code `2` forever if `admin.enabled: false` (or
+        `TS2OTEL_ADMIN__ENABLED=false`) — the readiness surface it depends on
+        no longer exists. If you disable admin, also disable the healthcheck
+        (`healthcheck: { disable: true }` in Compose, or drop `--health-cmd`
+        for `docker run`) so the orchestrator does not flag a working
+        container as unhealthy.
+
+    Not using Compose or plain `docker run`? On Kubernetes the Helm chart's
+    pod probes already hit `/readyz` directly over HTTP (see the chart's
+    `values.yaml`), so `-healthcheck` is not needed there — it exists for the
+    non-chart Docker paths where nothing else can execute an HTTP check
+    without a shell.
+
     ### Running from a config file
 
     The compose file needs no config file — every setting has a `TS2OTEL_*`

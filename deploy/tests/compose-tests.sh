@@ -213,6 +213,17 @@ assert_rc0 "E: dev override resolves"
 assert_checkpoint_mount "E"
 
 # --------------------------------------------------------------------------
+case_ "F. binary healthcheck wired, admin on by default (#337)"
+resolve -f "$BASE"
+assert_rc0 "F: resolves"
+[[ "$(svc '.healthcheck.test | join(" ")')" == "CMD /usr/local/bin/tailscale2otel -healthcheck" ]] \
+  && ok "F: healthcheck.test is the exec form invoking -healthcheck on the absolute binary path" \
+  || bad "F: healthcheck.test is $(svc '.healthcheck.test | join(\" \")'), want the exec form"
+[[ "$(svc '.environment.TS2OTEL_ADMIN__ENABLED // ""')" == "true" ]] \
+  && ok "F: TS2OTEL_ADMIN__ENABLED resolves to true by default" \
+  || bad "F: TS2OTEL_ADMIN__ENABLED is $(svc '.environment.TS2OTEL_ADMIN__ENABLED // ""'), want true"
+
+# --------------------------------------------------------------------------
 # --self-test mutates the inputs to prove each assertion above can actually
 # fail. Three guard tests in this repository have shipped passing while
 # asserting nothing; a checker that is never shown to fail proves nothing.
@@ -241,6 +252,23 @@ if [[ "${1:-}" == "--self-test" ]]; then
     exit 1
   fi
   printf '  ok   SELF-TEST: Compose rejects a duplicate volumes: key (the original #333 defect)\n'
+
+  # 3. A healthcheck.test using CMD-SHELL (which 100% fails on the shell-less
+  #    distroless image) must trip the exec-form assertion.
+  RESOLVED="$(docker compose -f "$BASE" config 2>&1 \
+    | yq '.services.'"$SERVICE"'.healthcheck.test = ["CMD-SHELL", "tailscale2otel -healthcheck"]')"
+  RESOLVED_RC=0
+  [[ "$(svc '.healthcheck.test | join(" ")')" == "CMD /usr/local/bin/tailscale2otel -healthcheck" ]] \
+    && { printf '  FAIL SELF-TEST: exec-form assertion did NOT fire on a CMD-SHELL healthcheck — it asserts nothing\n'; exit 1; } \
+    || printf '  ok   SELF-TEST: exec-form assertion fires when healthcheck.test uses CMD-SHELL\n'
+
+  # 4. TS2OTEL_ADMIN__ENABLED overridden to false must trip the admin-default
+  #    assertion.
+  RESOLVED="$(TS2OTEL_ADMIN__ENABLED=false docker compose -f "$BASE" config 2>&1)"
+  RESOLVED_RC=0
+  [[ "$(svc '.environment.TS2OTEL_ADMIN__ENABLED // ""')" == "true" ]] \
+    && { printf '  FAIL SELF-TEST: admin-enabled assertion did NOT fire when overridden to false — it asserts nothing\n'; exit 1; } \
+    || printf '  ok   SELF-TEST: admin-enabled assertion fires when TS2OTEL_ADMIN__ENABLED=false\n'
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
