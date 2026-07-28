@@ -171,6 +171,19 @@ type PrometheusTLS struct {
 // var: TS2OTEL_PROMETHEUS__AUTH__TOKEN.
 type PrometheusAuth struct {
 	Token Secret `yaml:"token"`
+	// AllowUnauthenticated acknowledges serving /metrics with NO credential on a
+	// network-reachable bind. Without it that combination fails closed with 403,
+	// like the admin surface (#315).
+	//
+	// It exists because, unlike the admin page, remote scraping without a token is
+	// a legitimate deployment: an in-cluster Prometheus reaching a pod behind a
+	// NetworkPolicy has network-level control that this process cannot see. A flat
+	// refusal would break that; a silent default-open is how every series —
+	// device names, flow endpoints, audit identities — ends up on an accidentally
+	// published port. So the operator says so explicitly.
+	//
+	// It only covers the NO-TOKEN case. A configured token is always enforced.
+	AllowUnauthenticated bool `yaml:"allow_unauthenticated"`
 	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
 	// file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.

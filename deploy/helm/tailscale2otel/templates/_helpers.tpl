@@ -524,3 +524,30 @@ another string to keep in sync by hand.
   {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+tailscale2otel.validateMetricsExposure — a monitor must not scrape a /metrics the
+app will refuse.
+
+config.prometheus.listen defaults to ":2112", a wildcard bind. Since #315 the app
+answers /metrics there with 403 whenever no token is set and the exposure is not
+acknowledged, because /metrics carries every series it produces — device names,
+flow endpoints, audit identities. A PodMonitor or ServiceMonitor aimed at that
+listener scrapes a 403 forever and shows up as a target reporting "no data",
+which reads as a broken exporter rather than a chart misconfiguration.
+
+Three ways out, all legitimate, so this names all of them: set a token (with the
+matching bearerTokenSecret, which the monitor templates already require),
+acknowledge the exposure for in-cluster scraping behind a NetworkPolicy, or bind
+the listener to loopback — though a loopback bind is not scrapable from another
+pod, so it is only listed for completeness.
+*/}}
+{{- define "tailscale2otel.validateMetricsExposure" -}}
+{{- $p := .Values.config.prometheus -}}
+{{- $auth := $p.auth | default dict -}}
+{{- $listen := $p.listen | default ":2112" -}}
+{{- $loopback := or (hasPrefix "127." $listen) (or (hasPrefix "localhost:" $listen) (hasPrefix "[::1]:" $listen)) -}}
+{{- if and (not $auth.token) (not $auth.allow_unauthenticated) (not $loopback) -}}
+{{- fail (printf "a metrics monitor is enabled but config.prometheus.listen (%s) is a network-reachable bind with no config.prometheus.auth.token: the app REFUSES /metrics there with HTTP 403, so the scrape target would report no data forever and look like a broken exporter. Set config.prometheus.auth.token (plus the monitor's bearerTokenSecret), or set config.prometheus.auth.allow_unauthenticated=true to acknowledge scraping it unauthenticated behind a NetworkPolicy." $listen) -}}
+{{- end -}}
+{{- end -}}

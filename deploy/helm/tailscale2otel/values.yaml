@@ -1357,11 +1357,17 @@ config: # @schema additionalProperties:false
     listen: ":2112"
     auth: # @schema additionalProperties:false
       # -- Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>").
-      # Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret).
+      # Empty on a network-reachable bind is REFUSED with 403 unless allow_unauthenticated is set.
+      # Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret).
       token: ""
       # -- Read prometheus.auth.token from this path instead of an inline value (mounted-Secret
       # style). Set the value or the file, not both; the file's content is whitespace-trimmed.
       token_file: ""
+      # -- Acknowledge serving /metrics with NO token on a network-reachable bind. In a cluster this
+      # is the normal case — the scrape is controlled by a NetworkPolicy rather than a credential —
+      # but it must be stated, because /metrics carries device names, flow endpoints and audit
+      # identities. A loopback bind never needs this. Ignored when token is set.
+      allow_unauthenticated: false
     tls: # @schema additionalProperties:false
       # -- HTTPS certificate for the Prometheus endpoint. Set together with key_file
       # (both-or-neither); leaving both empty serves plain HTTP.

@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 )
 
 // buildMetricsServer builds the dedicated Prometheus pull-endpoint server. Only
@@ -38,12 +39,44 @@ func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 
 // requireMetricsAuth gates next behind prometheus.auth.token when set, reusing the
 // constant-time Bearer/Basic check shared with the admin surface (adminAuthorized).
-// Empty token returns next unchanged (open; Warnings advises a token on a wildcard
-// bind).
+//
+// With no token it fails CLOSED on a network-reachable bind, matching
+// requireAdminAuth (#315). /metrics carries every series this exporter produces —
+// device names, flow endpoints, audit identities — so a default wildcard listener
+// with no credential disclosed the whole inventory to anything that could reach
+// the port, guarded by nothing but a startup WARN.
+//
+// Two deliberate escape hatches, because a flat refusal would break real
+// deployments:
+//   - a loopback bind stays open, as on the admin surface: only this host can
+//     reach it, which is what makes local development workable.
+//   - prometheus.auth.allow_unauthenticated re-opens a network bind explicitly.
+//     An in-cluster scrape behind a NetworkPolicy is legitimate and has
+//     network-level control this process cannot observe; the point is that the
+//     operator states it rather than inheriting it from a default.
+//
+// The acknowledgement covers only the no-token case. A configured token is
+// enforced on every bind regardless.
+//
+// The refusal is 403, not 401, and carries no WWW-Authenticate: this is
+// misconfiguration rather than a missing credential, and a challenge would make a
+// browser prompt for a password that does not exist.
 func (a *App) requireMetricsAuth(next http.Handler) http.Handler {
 	token := a.cfg.Prometheus.Auth.Token.Reveal()
 	if token == "" {
-		return next
+		if a.cfg.Prometheus.Auth.AllowUnauthenticated || listenaddr.IsLoopback(a.cfg.Prometheus.Listen) {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a.logger.Warn("metrics request rejected: no prometheus.auth.token configured on a network-reachable bind",
+				"path", r.URL.Path, "listen", a.cfg.Prometheus.Listen,
+				"remedy", "set prometheus.auth.token, bind prometheus.listen to loopback, or set prometheus.auth.allow_unauthenticated")
+			http.Error(w,
+				"metrics access refused: /metrics exposes every series (device names, flow endpoints, "+
+					"audit identities). Set prometheus.auth.token, bind prometheus.listen to loopback "+
+					"(127.0.0.1), or acknowledge the exposure with prometheus.auth.allow_unauthenticated=true",
+				http.StatusForbidden)
+		})
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !adminAuthorized(r, token) {

@@ -1310,7 +1310,8 @@ address. It serves only `GET /metrics`; no status page or probes are exposed her
 |-----|---------|-------------|
 | `prometheus.enabled` | `false` | Run the Prometheus pull endpoint on its own dedicated listener. Off by default. |
 | `prometheus.listen` | `:2112` | Listen address for `/metrics`. Must differ from `admin.listen`. For defense-in-depth bind to loopback (`127.0.0.1:2112`) or a tailnet IP rather than a wildcard. |
-| `prometheus.auth.token` | `""` | Optional shared secret gating `/metrics`. Accepted as the HTTP Basic password (any username) **or** `Authorization: Bearer <token>`. Empty = open (unauthenticated). Set via `TS2OTEL_PROMETHEUS__AUTH__TOKEN`. |
+| `prometheus.auth.token` | `""` | Optional shared secret gating `/metrics`. Accepted as the HTTP Basic password (any username) **or** `Authorization: Bearer <token>`. Empty on a **network-reachable** bind is refused with HTTP 403 unless `allow_unauthenticated` is set; empty on a loopback bind stays open. Set via `TS2OTEL_PROMETHEUS__AUTH__TOKEN`. |
+| `prometheus.auth.allow_unauthenticated` | `false` | Acknowledge serving `/metrics` with **no** token on a network-reachable bind. `/metrics` carries every series this exporter produces — device names, flow endpoints, audit identities — so the default refuses that combination rather than inheriting it. In-cluster scraping behind a NetworkPolicy is a legitimate reason to set it. Ignored when `token` is set: a configured token is always enforced. |
 
 > **WARN (advisory):** if `prometheus.enabled` is `true` on a wildcard bind (empty host, e.g.
 > `:2112`) with no `prometheus.auth.token`, a startup warning fires — the endpoint exposes every

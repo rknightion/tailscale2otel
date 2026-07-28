@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.23.0](https://img.shields.io/badge/Version-0.23.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.24.0](https://img.shields.io/badge/Version-0.24.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -408,7 +408,8 @@ extraVolumeMounts:
 | config.profiling.pyroscope.tags | object | `{}` | Extra static labels merged onto every profile, e.g. { env: prod }. |
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
 | config.profiling.pyroscope.upload_rate | string | `"60s"` | How often profiles are flushed to the server. |
-| config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty = open (a WARN fires on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
+| config.prometheus.auth.allow_unauthenticated | bool | `false` | Acknowledge serving /metrics with NO token on a network-reachable bind. In a cluster this is the normal case — the scrape is controlled by a NetworkPolicy rather than a credential — but it must be stated, because /metrics carries device names, flow endpoints and audit identities. A loopback bind never needs this. Ignored when token is set. |
+| config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty on a network-reachable bind is REFUSED with 403 unless allow_unauthenticated is set. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
 | config.prometheus.auth.token_file | string | `""` | Read prometheus.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
 | config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |

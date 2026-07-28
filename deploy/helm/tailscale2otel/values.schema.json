@@ -905,6 +905,9 @@
                         "auth": {
                             "type": "object",
                             "properties": {
+                                "allow_unauthenticated": {
+                                    "type": "boolean"
+                                },
                                 "token": {
                                     "type": "string"
                                 },

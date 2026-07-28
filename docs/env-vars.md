@@ -279,8 +279,9 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_FLOWS__MAX_FUTURE_SKEW` | `5m` | local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |
 | `TS2OTEL_PROMETHEUS__LISTEN` | `:2112` | bind for /metrics (default :2112); keep distinct from admin.listen |
-| `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty = open (WARN on a wildcard bind). Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
+| `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED` | `false` | acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this |
 | `TS2OTEL_PROMETHEUS__TLS__CERT_FILE` | `""` | serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither) |
 | `TS2OTEL_PROMETHEUS__TLS__KEY_FILE` | `""` | HTTPS key for prometheus.tls.cert_file |
 | `TS2OTEL_PROFILING__PPROF__ENABLED` | `false` | mount net/http/pprof on the admin server (REQUIRES admin.enabled + admin.auth.token — heap dumps can expose in-memory secrets) |

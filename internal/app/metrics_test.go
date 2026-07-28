@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -48,7 +49,12 @@ func TestMetricsHandler_DuplicateSeriesReturns200(t *testing.T) {
 				e.Gauge("tailscale.devices.count", "1", "d", 1, nil)
 			}
 
-			a := &App{cfg: &config.Config{}}
+			// allow_unauthenticated: this test is about Gather collisions, not auth.
+			// An empty Listen is a wildcard bind, which since #315 fails closed with
+			// no token — acknowledging keeps the subject of the test in view.
+			cfg := &config.Config{}
+			cfg.Prometheus.Auth.AllowUnauthenticated = true
+			a := &App{cfg: cfg, logger: slog.New(slog.DiscardHandler)}
 			srv := a.buildMetricsServer(ps.PromGatherers())
 			rr := httptest.NewRecorder()
 			srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -62,7 +68,12 @@ func TestMetricsHandler_DuplicateSeriesReturns200(t *testing.T) {
 func metricsTestApp(token string) *App {
 	cfg := &config.Config{}
 	cfg.Prometheus.Auth.Token = config.Secret(token)
-	return &App{cfg: cfg}
+	// A zero Config leaves Listen empty, which is a wildcard bind. Since #315 that
+	// fails closed without a token, so the no-token subtest below acknowledges the
+	// exposure explicitly; the bind/auth matrix itself is covered in
+	// metricsauth_test.go.
+	cfg.Prometheus.Auth.AllowUnauthenticated = true
+	return &App{cfg: cfg, logger: slog.New(slog.DiscardHandler)}
 }
 
 func okHandler() http.Handler {
@@ -70,7 +81,7 @@ func okHandler() http.Handler {
 }
 
 func TestRequireMetricsAuth(t *testing.T) {
-	t.Run("open when no token", func(t *testing.T) {
+	t.Run("open when no token and the exposure is acknowledged", func(t *testing.T) {
 		h := metricsTestApp("").requireMetricsAuth(okHandler())
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))

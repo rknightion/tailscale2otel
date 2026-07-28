@@ -10,6 +10,7 @@ reports no data, silently.
 Same credential rule as the PodMonitor: references only, never values.
 */ -}}
 {{- if .Values.metrics.serviceMonitor.enabled }}
+{{- include "tailscale2otel.validateMetricsExposure" . }}
 {{- $sm := .Values.metrics.serviceMonitor }}
 {{- if not .Values.config.prometheus.enabled }}
 {{- fail "metrics.serviceMonitor.enabled requires config.prometheus.enabled: there is no /metrics listener to scrape" }}

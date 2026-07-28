@@ -15,6 +15,7 @@ this is opt-in rather than auto-detected: with it disabled nothing renders, and
 a cluster without the CRDs is unaffected.
 */ -}}
 {{- if .Values.metrics.podMonitor.enabled }}
+{{- include "tailscale2otel.validateMetricsExposure" . }}
 {{- $pm := .Values.metrics.podMonitor }}
 {{- if not .Values.config.prometheus.enabled }}
 {{- fail "metrics.podMonitor.enabled requires config.prometheus.enabled: there is no /metrics listener to scrape" }}

@@ -3,6 +3,15 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.24.0: BREAKING BEHAVIOUR — a metrics monitor over an unauthenticated, network-reachable
+# /metrics now FAILS to render (#315). The app refuses /metrics with 403 when
+# config.prometheus.listen is a network bind and config.prometheus.auth.token is empty, so a
+# PodMonitor/ServiceMonitor aimed at it would scrape a 403 forever and report "no data" — which
+# reads as a broken exporter, not a chart misconfiguration. Three ways out, all rendered in the
+# error: set config.prometheus.auth.token (plus the monitor's bearerTokenSecret), set the new
+# config.prometheus.auth.allow_unauthenticated=true to acknowledge scraping it unauthenticated
+# behind a NetworkPolicy, or bind the listener to loopback. Existing releases running a monitor
+# with no token must add one of those.
 # 0.23.0: values.schema.json strictness (#304) — every chart-authored object gained
 # additionalProperties:false via `# @schema` annotations in values.yaml (config.*, the
 # per-listener service/ingress/gateway/networkPolicy blocks, probes, image, secret, etc.),
@@ -140,7 +149,7 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
-version: 0.23.0
+version: 0.24.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "3.0.0" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/
