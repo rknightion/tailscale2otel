@@ -1,0 +1,150 @@
+# Gateway-mode deployment: tailscale2otel -> Grafana Alloy -> your OTLP backend.
+#
+# Usage:
+#   docker compose --env-file deploy/.env \
+#                  -f deploy/alloy/docker-compose.yaml up
+#
+# deploy/.env is the repository's ONE canonical Compose credential file (it is
+# git-ignored and gated by scripts/check-secret-hygiene.sh). Passing it with
+# --env-file is deliberate: Compose auto-loads .env from the PROJECT directory,
+# which for this file is deploy/alloy/, so the canonical file is not picked up
+# implicitly. Everything below uses the `${VAR:?message}` form, so a missing
+# variable fails `up` with a named error instead of starting a broken gateway.
+#
+# Required in deploy/.env for this file:
+#   TS2OTEL_TAILSCALE__TAILNET
+#   TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID
+#   TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET
+#   GATEWAY_OTLP_ENDPOINT    e.g. https://otlp-gateway-prod-us-central-0.grafana.net/otlp
+#   GATEWAY_OTLP_USERNAME    Grafana Cloud numeric instance/stack ID
+#   GATEWAY_OTLP_PASSWORD    Grafana Cloud access-policy token with OTLP write scopes
+#
+# This file is a REPLACEMENT for deploy/docker-compose.yaml, not an overlay --
+# do not combine them with a second -f. The direct-export path in that file sets
+# otlp.grafana_cloud.*, which is exactly what gateway mode removes from the
+# exporter. See README.md in this directory for the mode comparison.
+services:
+  alloy:
+    # Pinned to a real release, never `latest`: Alloy's component arguments
+    # change between minor versions, so an unpinned tag can turn a working
+    # config.alloy into a container that refuses to start on the next pull.
+    # config.alloy in this directory is validated against THIS tag.
+    image: grafana/alloy:v1.18.0
+    restart: unless-stopped
+    # The image's default command already passes --storage.path; overriding it
+    # means restating that flag alongside the two additions:
+    #   --server.http.listen-addr  the image default is 127.0.0.1:12345, which
+    #                              is unreachable from outside the container, so
+    #                              neither the healthcheck below nor the smoke
+    #                              test in README.md would work.
+    #   --stability.level          otelcol.storage.file is PUBLIC PREVIEW and
+    #                              Alloy refuses to load the config without
+    #                              this. Drop the flag only if you also drop the
+    #                              otelcol.storage.file block from config.alloy.
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --stability.level=public-preview
+      - /etc/alloy/config.alloy
+    environment:
+      GATEWAY_OTLP_ENDPOINT: ${GATEWAY_OTLP_ENDPOINT:?set GATEWAY_OTLP_ENDPOINT in deploy/.env}
+      GATEWAY_OTLP_USERNAME: ${GATEWAY_OTLP_USERNAME:?set GATEWAY_OTLP_USERNAME in deploy/.env}
+      GATEWAY_OTLP_PASSWORD: ${GATEWAY_OTLP_PASSWORD:?set GATEWAY_OTLP_PASSWORD in deploy/.env}
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      # Holds the persistent sending queue. A named volume is the point of the
+      # otelcol.storage.file block: without durable storage here the queue is
+      # effectively memory-only and a container recreation discards the backlog.
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      # Alloy's own UI and /metrics. Bound to loopback because it is
+      # UNAUTHENTICATED and exposes pipeline internals. The OTLP receiver ports
+      # (4317/4318) are deliberately NOT published -- they are reachable on the
+      # Compose network by service name and nothing outside needs them.
+      - "127.0.0.1:12345:12345"
+    # Alloy's own memory ceiling. memory_limiter's `limit` in config.alloy is
+    # ~80% of this and the two MUST move together: a limiter budget above the
+    # cgroup ceiling means the container is OOM-killed before the limiter ever
+    # engages, which is the failure it exists to prevent.
+    mem_limit: 512m
+    healthcheck:
+      # /-/ready is Alloy's own readiness endpoint (verified: returns 200 once
+      # the config has loaded). The probe is hand-rolled over bash's /dev/tcp
+      # because the grafana/alloy image ships NO HTTP client -- there is no
+      # wget, no curl, no busybox and no python3 in it, so the obvious
+      # `wget --spider` healthcheck fails with "executable file not found"
+      # rather than reporting on Alloy. Verified against v1.18.0.
+      test:
+        - CMD
+        - /usr/bin/bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/12345; printf "GET /-/ready HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; head -1 <&3 | grep -q " 200"'
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  tailscale2otel:
+    # Tracks the current release; release-please rewrites the tag below.
+    image: ghcr.io/rknightion/tailscale2otel:${TS2OTEL_VERSION:-3.0.0} # x-release-please-version
+    restart: unless-stopped
+    # Start order only -- Compose waits for Alloy to report healthy, but that is
+    # a convenience, not a requirement. The exporter retries its own OTLP export
+    # if the gateway is briefly unreachable.
+    depends_on:
+      alloy:
+        condition: service_healthy
+    # Staged shutdown: 30s worst case across receiver drain, ingress-WAL drain
+    # and OTLP flush, plus headroom. Compose's own default of 10s SIGKILLs the
+    # process partway through the first stage. See docs/installation.md
+    # "Shutdown budgets" -- internal/app fails the build if this stops covering
+    # the drain.
+    stop_grace_period: 45s
+    mem_limit: 256m
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # The runtime image is distroless (no shell, no curl), so this must be the
+      # exec form calling the binary itself. Requires TS2OTEL_ADMIN__ENABLED=true
+      # below, which is what serves the /readyz this probes.
+      test: ["CMD", "/usr/local/bin/tailscale2otel", "-healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    environment:
+      TS2OTEL_TAILSCALE__TAILNET: ${TS2OTEL_TAILSCALE__TAILNET:?set TS2OTEL_TAILSCALE__TAILNET in deploy/.env}
+      TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID: ${TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID:?set TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID in deploy/.env}
+      TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET: ${TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET:?set TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET in deploy/.env}
+      # --- Gateway mode: export to Alloy, not to the backend ---------------
+      # gRPC to the sidecar. `alloy` is the Compose service name; 4317 is the
+      # otelcol.receiver.otlp grpc endpoint in config.alloy.
+      TS2OTEL_OTLP__PROTOCOL: grpc
+      TS2OTEL_OTLP__ENDPOINT: http://alloy:4317
+      # Plaintext to the gateway. This is safe ONLY because the hop is a private
+      # Compose network -- and it is safe here specifically because there is no
+      # credential on this hop to expose: the backend token lives in the alloy
+      # service above, not in this one. Never set this on a link that carries an
+      # Authorization header or crosses an untrusted network.
+      TS2OTEL_OTLP__TLS__INSECURE: "true"
+      # NOTE: no TS2OTEL_OTLP__GRAFANA_CLOUD__* here, deliberately. In gateway
+      # mode the backend credential belongs to Alloy alone; setting it here too
+      # would put the same token in two containers for no benefit.
+      TS2OTEL_ADMIN__ENABLED: ${TS2OTEL_ADMIN__ENABLED:-true}
+      TS2OTEL_ADMIN__AUTH__TOKEN: ${TS2OTEL_ADMIN__AUTH__TOKEN:-}
+      GOGC: ${GOGC:-200}
+      GOMEMLIMIT: ${GOMEMLIMIT:-230MiB}
+    volumes:
+      - checkpoints:/var/lib/tailscale2otel
+
+volumes:
+  # Alloy's persistent sending queue (and its other component state).
+  alloy-data: {}
+  # tailscale2otel collector checkpoint cursors. Separate from the queue on
+  # purpose: they are different durability domains with different owners, and
+  # clearing one to recover from corruption must not take the other with it.
+  checkpoints: {}

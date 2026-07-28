@@ -17,6 +17,7 @@ nav = [
       { "Flow View" = "flow-view.md" },
       { "Node Metrics" = "node-metrics.md" },
       { "Streaming & Webhooks" = "streaming-webhooks.md" },
+      { "Collector Gateway" = "gateway.md" },
       { Dashboards = "dashboards.md" },
       { Alerts = "alerts.md" },
       { "Alert Profiles" = "alert-profiles.md" }

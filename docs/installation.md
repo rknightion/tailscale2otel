@@ -15,6 +15,8 @@ Before you start, you will need:
 
 - A Tailscale [OAuth client](https://tailscale.com/kb/1215/oauth-clients) (recommended) or an API key.
 - An OTLP destination — Grafana Cloud, a self-hosted Alloy/Collector, or `stdout` for local debug.
+  Exporting through a Collector gateway rather than straight to the backend has its own validated
+  recipe: see [Collector Gateway](gateway.md).
 
 See [Configuration](configuration.md) for the full list of options once you are up and running.
 
@@ -640,4 +642,6 @@ is a data-durability decision the chart will not make silently.
 ## Next steps
 
 - [Getting Started](getting-started.md) — authenticate, point at an OTLP backend, and verify the first metrics arrive.
+- [Collector Gateway](gateway.md) — export through Alloy or an OpenTelemetry Collector instead of
+  directly, for outage tolerance, enrichment and a single egress point.
 - [Configuration](configuration.md) — every setting, default, and environment variable reference.

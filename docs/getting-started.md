@@ -135,9 +135,26 @@ override the endpoint:
 
 !!! note "Self-hosted Collector or Alloy"
     For a self-hosted OpenTelemetry Collector or Grafana Alloy, set `TS2OTEL_OTLP__PROTOCOL=grpc`
-    (or `http`) and point `TS2OTEL_OTLP__ENDPOINT` at your collector's OTLP receiver address.
+    (or `http`) and point `TS2OTEL_OTLP__ENDPOINT` at your collector's OTLP receiver address — for
+    a gateway reachable as `alloy` on the same Docker network or as a Kubernetes Service:
+
+    ```sh
+    -e TS2OTEL_OTLP__PROTOCOL=grpc \
+    -e TS2OTEL_OTLP__ENDPOINT=http://alloy:4317 \
+    -e TS2OTEL_OTLP__TLS__INSECURE=true
+    ```
+
+    Drop the `grafana_cloud` variables when you do this: the backend credential belongs to the
+    gateway, not to the exporter. `TS2OTEL_OTLP__TLS__INSECURE` disables transport security
+    entirely and is only acceptable on a trusted private hop — which this one is, precisely because
+    it now carries no credential.
+
     `TS2OTEL_OTLP__HEADERS` is a map field and must be set via a config file — see
     [Configuration](configuration.md).
+
+    A complete, validated gateway pipeline — receiver, memory limiter, batch, retry, disk-backed
+    sending queue, plus the outage drill to prove it works — is in
+    [Collector Gateway](gateway.md).
 
 ## Confirm data is flowing
 
@@ -197,6 +214,8 @@ all the tuning knobs.
 
 - [Installation](installation.md) — Docker Compose, Helm chart, and binary installation with
   persistent checkpoint volumes.
+- [Collector Gateway](gateway.md) — put Alloy or an OpenTelemetry Collector between the exporter and
+  your backend so a backend outage does not cost you the telemetry produced during it.
 - [Configuration](configuration.md) — the complete key-by-key reference, including log streaming,
   the webhook receiver, cardinality controls, and node-metrics scraping.
 - [Dashboards](dashboards.md) — import the shipped Grafana dashboards and see the data you just

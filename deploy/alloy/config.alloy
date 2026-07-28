@@ -1,0 +1,183 @@
+// tailscale2otel gateway pipeline for Grafana Alloy.
+//
+//   tailscale2otel --OTLP--> otelcol.receiver.otlp
+//                            -> otelcol.processor.memory_limiter
+//                            -> otelcol.processor.batch
+//                            -> otelcol.exporter.otlphttp  (retry + persistent sending queue)
+//                            --OTLP/HTTP--> your backend
+//
+// Validated against grafana/alloy:v1.18.0 with:
+//   docker run --rm -v "$PWD/deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+//     grafana/alloy:v1.18.0 validate --stability.level=public-preview /etc/alloy/config.alloy
+//
+// NO CREDENTIAL IS STORED IN THIS FILE. Every secret is read from the process
+// environment at startup via sys.env(). See README.md in this directory.
+//
+// This pipeline REDUCES telemetry loss during a backend outage. It does not
+// eliminate it, and it is not exactly-once: retries can duplicate a batch the
+// backend already accepted but failed to acknowledge, and anything still beyond
+// the queue's or the retry deadline's limits is dropped.
+
+// ---------------------------------------------------------------------------
+// Receiver — where tailscale2otel sends its OTLP.
+// ---------------------------------------------------------------------------
+// Binds 0.0.0.0 because the exporter reaches this over the container network.
+// This listener is UNAUTHENTICATED: keep it on a private network (a Compose
+// network, a Kubernetes ClusterIP, or a tailnet address), never on the public
+// internet.
+otelcol.receiver.otlp "ts2otel" {
+	grpc {
+		endpoint = "0.0.0.0:4317"
+	}
+
+	http {
+		endpoint = "0.0.0.0:4318"
+	}
+
+	output {
+		metrics = [otelcol.processor.memory_limiter.gateway.input]
+		logs    = [otelcol.processor.memory_limiter.gateway.input]
+		traces  = [otelcol.processor.memory_limiter.gateway.input]
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Memory limiter — FIRST processor in the chain, on purpose.
+// ---------------------------------------------------------------------------
+// Once the soft limit is crossed it refuses new data with a retryable error, so
+// the exporter that sent it (tailscale2otel) backs off rather than the gateway
+// being OOM-killed with a full queue. Put nothing before it: a processor ahead
+// of the limiter buffers data the limiter can no longer protect.
+//
+// Set `limit` to roughly 80% of the container memory limit. Both are stated in
+// docker-compose.yaml and must move together.
+otelcol.processor.memory_limiter "gateway" {
+	check_interval = "1s"
+	limit          = "400MiB"
+	spike_limit    = "100MiB"
+
+	output {
+		metrics = [otelcol.processor.batch.gateway.input]
+		logs    = [otelcol.processor.batch.gateway.input]
+		traces  = [otelcol.processor.batch.gateway.input]
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Batch — after the memory limiter, per Grafana's ordering guidance.
+// ---------------------------------------------------------------------------
+// tailscale2otel exports on a 60s metric interval by default, so a 5s flush
+// timeout coalesces a poll cycle's worth of datapoints without adding
+// meaningful delay. `send_batch_max_size` is the hard cap that splits an
+// oversized batch; it must be >= send_batch_size.
+otelcol.processor.batch "gateway" {
+	timeout             = "5s"
+	send_batch_size     = 8192
+	send_batch_max_size = 16384
+
+	output {
+		metrics = [otelcol.exporter.otlphttp.backend.input]
+		logs    = [otelcol.exporter.otlphttp.backend.input]
+		traces  = [otelcol.exporter.otlphttp.backend.input]
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Persistent queue storage — OPTIONAL, and PUBLIC PREVIEW.
+// ---------------------------------------------------------------------------
+// `otelcol.storage.file` is at Alloy stability level **public preview**: it is
+// subject to breaking changes, and Alloy REFUSES to start unless you pass
+// `--stability.level=public-preview` (or lower). If you do not want a
+// preview-grade component in the path, delete this block and the `storage =`
+// line in the sending_queue below — the queue then lives in memory only and its
+// contents are lost on restart.
+//
+// The directory must be on a volume that survives container recreation, or the
+// component is doing nothing useful. `fsync = false` (the default) is kept: it
+// trades a small crash-loss window for throughput. Set it to true only if you
+// would rather pay the write cost than lose the last few batches on an unclean
+// kill.
+otelcol.storage.file "queue" {
+	directory        = "/var/lib/alloy/data/otlp-queue"
+	create_directory = true
+}
+
+// ---------------------------------------------------------------------------
+// Exporter — retry, then queue, then out.
+// ---------------------------------------------------------------------------
+// `client.endpoint` is the OTLP base URL; the exporter appends /v1/metrics,
+// /v1/logs and /v1/traces itself. For Grafana Cloud that base URL is
+// https://otlp-gateway-<zone>.grafana.net/otlp — the whole value comes from the
+// environment, so nothing region- or tenant-specific is committed here.
+otelcol.exporter.otlphttp "backend" {
+	client {
+		endpoint    = sys.env("GATEWAY_OTLP_ENDPOINT")
+		auth        = otelcol.auth.basic.backend.handler
+		compression = "gzip"
+		timeout     = "30s"
+	}
+
+	// Retries handle a transient failure (a 5xx, a 429, a reset connection).
+	// max_elapsed_time is a HARD DEADLINE: a batch that has not been accepted
+	// within it is DROPPED, whether or not the queue below is persistent. The
+	// documented default is 5m; 30m here buys tolerance for a short backend
+	// outage or a maintenance window. Raise it if your outage budget is longer,
+	// and size the queue to match — see the README.
+	retry_on_failure {
+		enabled          = true
+		initial_interval = "5s"
+		max_interval     = "30s"
+		max_elapsed_time = "30m"
+	}
+
+	// The queue absorbs the backlog while retries are in flight. With
+	// `storage` set it is written to disk and survives an Alloy restart; with
+	// the storage line removed it is memory-only.
+	//
+	// `sizer = "requests"` means queue_size counts BATCHES, not datapoints, so
+	// the worst-case memory/disk footprint is queue_size x batch size. 10000
+	// batches at the 8192-datapoint send_batch_size above is a very large
+	// reserve for this workload; lower it if the volume is constrained.
+	//
+	// block_on_overflow stays false: on a full queue the gateway returns a
+	// retryable error to tailscale2otel instead of stalling its export
+	// goroutine. wait_for_result stays false so the receiver ACKs on enqueue
+	// rather than on backend acceptance — that is what makes this a buffer, and
+	// it is also precisely why delivery is not exactly-once.
+	sending_queue {
+		enabled           = true
+		num_consumers     = 4
+		sizer             = "requests"
+		queue_size        = 10000
+		block_on_overflow = false
+		wait_for_result   = false
+		storage           = otelcol.storage.file.queue.handler
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Backend credentials — supplied externally, never committed.
+// ---------------------------------------------------------------------------
+// For Grafana Cloud OTLP: username is the numeric instance/stack ID, password
+// is a Cloud Access Policy token with the OTLP write scopes. Generate both from
+// the Grafana Cloud Portal (organization Overview -> Launch stack -> Configure
+// on the OpenTelemetry tile).
+//
+// TRAP, VERIFIED THE HARD WAY AGAINST v1.18.0 — do not "modernise" this block.
+// The current grafana.com/docs/alloy/latest page documents a `client_auth {}`
+// sub-block here and marks the flat `username`/`password` attributes below as
+// deprecated. Those docs are built from Alloy's main branch and are AHEAD of the
+// pinned release. On v1.18.0 the flat form is correct and NOT deprecated, and
+// the `client_auth` form fails at startup with:
+//
+//   Failed to build component: building component: no credential source provided
+//
+// Worse, `alloy validate` ACCEPTS the client_auth form — the block name parses,
+// only the credential wiring is missing — so this is invisible to the offline
+// gate and only appears on a real `run`. Switch to `client_auth` only when the
+// image pin in docker-compose.yaml moves to a release that supports it, and
+// prove it with a real `run`, not with `validate`.
+otelcol.auth.basic "backend" {
+	username = sys.env("GATEWAY_OTLP_USERNAME")
+	password = sys.env("GATEWAY_OTLP_PASSWORD")
+}
