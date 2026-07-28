@@ -89,6 +89,27 @@ A `TS2OTEL_*` env var that does not match any known config key is logged at star
 this almost always means a typo in the variable name. The exporter still starts; the variable is
 ignored.
 
+### Unknown YAML keys are a hard error
+
+Unlike an unknown env var, an unrecognized key in the YAML **config file** fails `Load` outright
+(`log_leevl: debug` or `collectors.devices.intervaal: 30s` refuse to start rather than being
+silently ignored) — the error names the full dotted key path and, when a close match exists,
+suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metrics target's
+`headers`/`labels`) are always accepted.
+
+!!! warning "Upgrading: a key that used to be ignored now stops startup"
+    Before this change every unrecognized file key was silently dropped, so a config carrying a
+    typo — or a key removed by an earlier release — started fine and quietly ran on defaults. Those
+    same files now fail to load. That is the point (a setting that does nothing should not look
+    like it does something), but it means an upgrade can fail at startup on a file that has "always
+    worked". Run `tailscale2otel -config <file> -validate` before rolling out.
+
+    A key this project **removed** is called out as removed rather than offered a spelling
+    suggestion, because the nearest valid key is usually a different setting: for example
+    `cardinality.flow.destination_service` (removed in 0.13.0) sits two edits from
+    `cardinality.flow.destination_port`, and taking that suggestion would silently change your
+    metric cardinality.
+
 ## Conventions
 
 - **Default** is the value used when the key is not set in either the file or an env var.

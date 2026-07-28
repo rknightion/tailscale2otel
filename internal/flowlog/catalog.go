@@ -14,11 +14,12 @@ import (
 //
 // The flow node-dimension attributes (src/dst node) are gated by
 // cardinality.flow.node_dims, the source/destination port attributes by
-// cardinality.flow.source_port / cardinality.flow.destination_port, and tailscale.dst.service
-// by cardinality.flow.destination_service; all are listed here as the full
-// possible attribute set (gating is documented in prose). On flow LOGS the ports
-// and tailscale.dst.service are always present (the latter when the destination
-// port maps to a known service).
+// cardinality.flow.source_port / cardinality.flow.destination_port; all are
+// listed here as the full possible attribute set (gating is documented in
+// prose). tailscale.dst.service is NOT gated — cardinality.flow.destination_service
+// was removed in 0.13.0 and the attribute is now emitted unconditionally on both
+// flow metric families. On flow LOGS the ports and tailscale.dst.service are
+// always present (the latter when the destination port maps to a known service).
 const groupNetwork = "Network / flow"
 
 // Rollup + unique metric names, emitted only when cardinality.flow.metrics_mode

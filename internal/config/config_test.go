@@ -79,7 +79,6 @@ cardinality:
     collapse_external: false
     source_port: true
     destination_port: true
-    destination_service: true
 collectors:
   devices:
     enabled: false

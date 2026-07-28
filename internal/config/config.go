@@ -1150,6 +1150,18 @@ func Load(path string) (*Config, error) {
 		if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
 			return nil, fmt.Errorf("read config %s: %w", path, err)
 		}
+		// 2b. Reject any key in the file that isn't a known config key (or a
+		//     child of a known collection key, e.g. otlp.headers.x_org) — a
+		//     hard error, unlike the advisory-only unknownEnvVars below (#303).
+		//     Loaded into a SEPARATE koanf instance so fk.Keys() reflects only
+		//     the file's own keys, not the defaults layered on top of it.
+		fk := koanf.New(keyDelim)
+		if err := fk.Load(file.Provider(path), yaml.Parser()); err != nil {
+			return nil, fmt.Errorf("read config %s: %w", path, err)
+		}
+		if u := unknownFileKeys(fk.Keys(), validKeys); len(u) > 0 {
+			return nil, unknownKeyError(u, validKeys)
+		}
 		if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o044 != 0 {
 			cfgFileWarning = fmt.Sprintf("config file %s is readable by group/other (mode %04o); "+
 				"it may contain credentials — restrict it to 0600 (or keep secrets in TS2OTEL_* env vars)",
