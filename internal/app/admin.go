@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
 )
 
@@ -234,12 +236,14 @@ func (a *App) buildAdminServer() *http.Server {
 		if a.flowsEnabled() {
 			mux.HandleFunc("/flows", a.requireAdminAuth(a.handleFlowsPage))
 			mux.HandleFunc("/api/flows.json", a.requireAdminAuth(a.handleFlowsJSON))
+			mux.HandleFunc("/api/flows/export.csv", a.requireAdminAuth(a.handleFlowsExportCSV))
+			mux.HandleFunc("/api/flows/export.json", a.requireAdminAuth(a.handleFlowsExportJSON))
 		}
 	}
 	if a.cfg.Profiling.Pprof.Enabled {
 		registerPprof(mux, a.requireAdminAuth)
 	}
-	return &http.Server{
+	srv := &http.Server{
 		Addr: a.cfg.Admin.Listen,
 		// Wrapped at the mux, not per route: a handler registered later cannot
 		// then be born without the defensive headers (#322).
@@ -252,6 +256,18 @@ func (a *App) buildAdminServer() *http.Server {
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
+	// GetCertificate (not Certificates/certFile+keyFile) so a rotated file is
+	// picked up without restarting the listener (#316) — see CertReloader in
+	// tlsreload.go. runAdmin then calls ListenAndServeTLS("", ""): passing the
+	// paths there too would make the stdlib do its OWN one-shot load on top of
+	// this, defeating the whole point.
+	if a.cfg.Admin.TLS.CertFile != "" && a.cfg.Admin.TLS.KeyFile != "" {
+		reloader := certreload.New(a.cfg.Admin.TLS.CertFile, a.cfg.Admin.TLS.KeyFile,
+			appcatalog.ComponentAdmin, a.logger, a.procEmitter)
+		srv.TLSConfig = &tls.Config{GetCertificate: reloader.GetCertificate}
+		a.adminCerts = reloader
+	}
+	return srv
 }
 
 // runAdmin serves the admin endpoints until ctx is canceled, then shuts down
@@ -260,12 +276,14 @@ func (a *App) buildAdminServer() *http.Server {
 // they exist and are readable); otherwise serves plain HTTP, byte-identical to
 // before TLS support existed.
 func (a *App) runAdmin(ctx context.Context) {
-	certFile := a.cfg.Admin.TLS.CertFile
-	keyFile := a.cfg.Admin.TLS.KeyFile
+	tlsEnabled := a.cfg.Admin.TLS.CertFile != "" && a.cfg.Admin.TLS.KeyFile != ""
 	errCh := make(chan error, 1)
 	go func() {
-		if certFile != "" && keyFile != "" {
-			errCh <- a.adminSrv.ListenAndServeTLS(certFile, keyFile)
+		if tlsEnabled {
+			// Empty paths: the certificate comes from TLSConfig.GetCertificate
+			// (a CertReloader, wired in buildAdminServer), not a one-shot file
+			// load by ListenAndServeTLS itself (#316).
+			errCh <- a.adminSrv.ListenAndServeTLS("", "")
 		} else {
 			errCh <- a.adminSrv.ListenAndServe()
 		}

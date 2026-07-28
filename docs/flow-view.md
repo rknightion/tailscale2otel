@@ -439,6 +439,31 @@ value — falls back to the default view rather than erroring or showing an empt
 "no traffic". The admin token never appears in the URL: the page is not given one, so there is
 nothing for it to put there. URLs land in history, logs, referrers and pasted messages.
 
+## Exporting CSV and JSON
+
+`/api/flows/export.csv` and `/api/flows/export.json` export the same filtered window the recent
+connections table shows, behind the same admin auth, taking the same `window` / `end` / `tailnet`
+and seven filter parameters as `/api/flows.json`.
+
+**Both state their own provenance, in the file.** The rows come from the bounded in-memory recent
+ring — never persistent full history — and each export carries the window, the filters applied and
+the matched/returned/retained/truncated counts. CSV puts this in leading `#` comment lines before
+the header row; JSON puts it in an envelope object alongside `rows`. An export that looked like a
+complete record of a time range would eventually be treated as evidence, which is the failure this
+avoids.
+
+A field that a spreadsheet would read as a formula — one starting `=`, `+`, `-`, `@`, a tab or a
+carriage return — is prefixed with a single quote in the CSV output. Device names, users, tags and
+ACL service names come from the tailnet's control plane, not from this code.
+
+```console
+$ curl -sH "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:9091/api/flows/export.csv?window=6h&verdict=no_rule' -o unexplained.csv
+
+$ curl -sH "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:9091/api/flows/export.json?window=6h&device=camden' | jq '.rows | length'
+```
+
 ## What it is not
 
 It is not a replacement for dashboards, alerting, or retention. It holds hours, not weeks; it cannot

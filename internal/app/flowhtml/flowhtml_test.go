@@ -430,6 +430,33 @@ func TestRender_ShareableURLNeverCarriesCredentialsOrPolicyText(t *testing.T) {
 	}
 }
 
+// #299: the export links must exist as real anchor elements whose href is
+// visibly wired to the same query the table above is built from — not just
+// described in prose, and not a dead link nobody ever points anywhere.
+func TestRender_HasExportLinks(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		`id="exportCsv" href="/api/flows/export.csv"`,
+		`id="exportJson" href="/api/flows/export.json"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("export link markup missing: %q", want)
+		}
+	}
+	fn := extractJSFunction(t, out, "updateExportLinks")
+	if !strings.Contains(fn, `el("exportCsv").href = "/api/flows/export.csv"`) ||
+		!strings.Contains(fn, `el("exportJson").href = "/api/flows/export.json"`) {
+		t.Error("updateExportLinks does not keep both export hrefs in sync with the current query")
+	}
+	if !strings.Contains(fn, "baseParams()") {
+		t.Error("updateExportLinks does not reuse baseParams() — the export and the table could silently drift onto different queries")
+	}
+}
+
+// The export section must say what it is honest about: a bounded ring, not
+// persistent full history, and that the exported file carries its own
+// window/filter/coverage provenance rather than relying on an operator to
+// remember it after the file has left the page.
 func TestRender_ExportSectionStatesItsOwnProvenance(t *testing.T) {
 	out := render(t, samplePage())
 	for _, want := range []string{

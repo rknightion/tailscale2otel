@@ -441,3 +441,31 @@ func TestAdminAuth_DefaultConfigServesTheLandingPage(t *testing.T) {
 		}
 	}
 }
+
+// Every route that serves flow data must sit behind the admin gate. The export
+// routes were added last (#299) and are the easiest to register bare, since
+// their handlers are tested directly and would pass either way — an unguarded
+// one hands the whole connection list, with node names, users and tags, to
+// anyone who can reach the port.
+func TestAdminAuth_FlowRoutesRequireToken(t *testing.T) {
+	cfg := config.Default()
+	cfg.Admin.Auth.Token = testAdminToken
+	cfg.Flows.Enabled = true
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	for _, path := range []string{
+		"/flows",
+		"/api/flows.json",
+		"/api/flows/export.csv",
+		"/api/flows/export.json",
+	} {
+		w := do(srv, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code == http.StatusNotFound {
+			t.Fatalf("GET %s = 404: the route is not registered, so this test proves nothing", path)
+		}
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("GET %s without creds = %d, want 401", path, w.Code)
+		}
+	}
+}

@@ -401,6 +401,8 @@
   <p class="coverage" id="flowPageNote"></p>
   <div class="controls" style="justify-content:center">
     <button class="ctl" id="flowLoadMore" style="display:none">load more</button>
+    <a class="ctl" id="exportCsv" href="/api/flows/export.csv">export CSV</a>
+    <a class="ctl" id="exportJson" href="/api/flows/export.json">export JSON</a>
   </div>
   <p class="coverage">
     Export applies the SAME window and filters as the table above (#299), drawn from the same
@@ -580,8 +582,18 @@ function syncURL(push){
   var url = location.pathname + (qs ? "?" + qs : "");
   if (push) history.pushState({flowview: qs}, "", url);
   else history.replaceState({flowview: qs}, "", url);
+  updateExportLinks();
 }
 
+// updateExportLinks keeps the export links' hrefs matching the page's own
+// query params (#299), reusing the exact fetch query baseParams() already
+// builds — a stale export link that silently drifted from what the table on
+// screen shows would be worse than no link at all.
+function updateExportLinks(){
+  var qs = baseParams().toString();
+  el("exportCsv").href = "/api/flows/export.csv" + (qs ? "?" + qs : "");
+  el("exportJson").href = "/api/flows/export.json" + (qs ? "?" + qs : "");
+}
 
 // applyStateFromLocation reads the URL into state and the controls that show
 // it. Called once at load (a fresh open, a paste, a bookmark) and again on
