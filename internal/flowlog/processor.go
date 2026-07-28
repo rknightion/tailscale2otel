@@ -556,7 +556,7 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 	// second lookup per endpoint would be pure repeated work on the emit path.
 	srcRef, dstRef := flow.refByAddr(srcAddr), flow.refByAddr(dstAddr)
 
-	verdict, rule, reversed := p.reconcile(trafficType, transport, srcRef, dstRef, srcAddr, srcPort, dstAddr, dstPort)
+	verdict, rule, reversed, policyVersion := p.reconcile(trafficType, transport, srcRef, dstRef, srcAddr, srcPort, dstAddr, dstPort)
 
 	o := flowstore.Observation{
 		Time:        logTimestamp(flow),
@@ -572,6 +572,7 @@ func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionC
 		DstNode:             dstNode,
 		Verdict:             verdict,
 		Rule:                rule,
+		PolicyVersion:       policyVersion,
 		Reversed:            reversed,
 		ReporterNodeID:      reporter.nodeID,
 		ReporterTrust:       reporter.trust,
@@ -788,19 +789,22 @@ func joinTags(tags []string) string {
 // fields.
 func (p *Processor) reconcile(trafficType, transport string, srcRef, dstRef *NodeRef,
 	srcAddr, srcPort, dstAddr, dstPort string,
-) (verdict string, rule int, reversed bool) {
+) (verdict string, rule int, reversed bool, policyVersion string) {
 	if p.policy == nil {
-		return "", -1, false
+		return "", -1, false, ""
 	}
 	// physicalTraffic is the WireGuard underlay — the encrypted path between two
 	// endpoints, not the tailnet connection a policy describes. Reconciling it
 	// would report every peer-to-peer path as unexplained.
 	if trafficType == semconv.TrafficPhysical {
-		return "", -1, false
+		return "", -1, false, ""
 	}
+	// Read the policy ONCE and evaluate against that pointer. Re-reading the store
+	// to name the version afterwards would race an ACL update and file the verdict
+	// under a rule list that did not produce it (#302).
 	pol := p.policy.Policy()
 	if pol == nil {
-		return "", -1, false
+		return "", -1, false, ""
 	}
 
 	c := aclpolicy.Conn{
@@ -816,7 +820,7 @@ func (p *Processor) reconcile(trafficType, transport string, srcRef, dstRef *Nod
 	c.SrcPort, c.HasSrcPort = parsePort(srcPort)
 
 	res := pol.Evaluate(c)
-	return res.Verdict.String(), res.Rule, res.Reversed
+	return res.Verdict.String(), res.Rule, res.Reversed, pol.Version()
 }
 
 // policyEndpoint builds the evaluator's view of one endpoint. Tags use the

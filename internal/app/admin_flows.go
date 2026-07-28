@@ -138,19 +138,22 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	end := clampTime(q.Get("end"), now, now.Add(-retention), now)
 
+	result := rt.flowStore.Query(flowstore.Query{
+		Start: end.Add(-window),
+		End:   end,
+		TopN:  topN,
+	})
+
 	resp := flowsdata.Response{
-		Tailnet:   a.runtimeName(rt),
-		Tailnets:  a.flowTailnets(),
-		Window:    window.String(),
-		Retention: retention.String(),
-		Stats:     rt.flowStore.Stats(),
-		Result: rt.flowStore.Query(flowstore.Query{
-			Start: end.Add(-window),
-			End:   end,
-			TopN:  topN,
-		}),
+		Tailnet:     a.runtimeName(rt),
+		Tailnets:    a.flowTailnets(),
+		Window:      window.String(),
+		Retention:   retention.String(),
+		Stats:       rt.flowStore.Stats(),
+		Result:      result,
 		Recent:      rt.flowStore.Recent(recent),
 		Policy:      policyInfo(rt.policy),
+		Exercised:   exercisedRules(rt.policy, result.Rules),
 		GeneratedAt: now.Format(time.RFC3339),
 	}
 	// The page iterates Recent unconditionally, and a nil slice marshals to null.
@@ -182,12 +185,46 @@ func policyInfo(s *aclpolicy.Store) flowsdata.PolicyInfo {
 		return info
 	}
 	info.Available = true
+	info.Version = p.Version()
 	rules := p.Rules()
 	info.Rules = make([]flowsdata.PolicyRule, 0, len(rules))
 	for i, r := range rules {
 		info.Rules = append(info.Rules, flowsdata.PolicyRule{Index: i, Kind: r.Kind, Source: r.Source})
 	}
 	return info
+}
+
+// exercisedRules names the rule behind every per-rule count, resolving each row
+// against the snapshot of the policy version that produced it.
+//
+// This is done here, once, rather than left to whoever reads the JSON. A rule
+// index is only meaningful against the exact rule list it came from, so a
+// consumer joining indexes to the CURRENT policy is right until the ACL is
+// edited and quietly wrong afterwards — and an edited ACL is exactly when
+// someone is looking at this page (#302).
+//
+// A version whose snapshot is no longer retained, or an index outside it, yields
+// Available=false with no rule text. That is the honest answer; substituting the
+// current rule would put a name an operator recognizes next to traffic it never
+// carried, which is worse than an admitted gap because it looks like an answer.
+func exercisedRules(s *aclpolicy.Store, stats []flowstore.RuleStat) []flowsdata.ExercisedRule {
+	out := make([]flowsdata.ExercisedRule, 0, len(stats))
+	for _, st := range stats {
+		row := flowsdata.ExercisedRule{
+			PolicyVersion: st.PolicyVersion,
+			Index:         st.Rule,
+			Counts:        st.Counts,
+		}
+		if s != nil {
+			if rules, ok := s.Snapshot(st.PolicyVersion); ok && st.Rule >= 0 && st.Rule < len(rules) {
+				row.Available = true
+				row.Kind = rules[st.Rule].Kind
+				row.Source = rules[st.Rule].Source
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // handleFlowsPage renders the /flows shell. It carries no traffic data — the

@@ -140,6 +140,10 @@ type Rule struct {
 // changes and read from the emit path without locking.
 type Policy struct {
 	rules []Rule
+	// version identifies the rule list, so retained traffic can be joined to the
+	// rules it was actually evaluated against rather than to whatever the policy
+	// says today (#302). Set once by Compile; see version.go.
+	version string
 }
 
 // Rules returns the compiled rules in document order. The index is stable and
@@ -244,6 +248,7 @@ func Compile(doc []byte, dir Directory) (*Policy, error) {
 			ports:  compilePorts(ports),
 		})
 	}
+	p.version = computeVersion(p.rules)
 	return p, nil
 }
 

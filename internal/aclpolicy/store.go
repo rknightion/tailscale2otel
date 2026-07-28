@@ -24,7 +24,26 @@ type Store struct {
 
 	compiled atomic.Pointer[Policy]
 	failure  atomic.Pointer[compileFailure]
+
+	// history is every recently compiled rule list, keyed by policy version, so
+	// traffic retained across a policy edit can be shown against the rules it was
+	// actually evaluated against (#302). Published as an immutable map so readers
+	// stay lock-free like Policy(); order is tracked separately for eviction.
+	history atomic.Pointer[map[string][]Rule]
+	order   []string // oldest first; guarded by mu
 }
+
+// MaxRetainedPolicies bounds the snapshot history.
+//
+// It is a count of DISTINCT rule lists, not of collections: re-reporting an
+// unchanged ACL is already a no-op, so this only advances when an operator
+// actually edits their policy. Sixteen edits is far more than a tailnet produces
+// inside the flow store's retention window, which is what the history has to
+// outlive — and when it is not, the caller reports the version as unavailable
+// rather than guessing, so overflowing here degrades honestly instead of
+// misattributing. An unbounded map keyed by a value an external actor can change
+// would be a leak with no ceiling.
+const MaxRetainedPolicies = 16
 
 // compileFailure boxes an error so it can live in an atomic.Pointer.
 type compileFailure struct{ err error }
@@ -82,9 +101,64 @@ func (s *Store) recompileLocked() error {
 		s.failure.Store(&compileFailure{err: err})
 		return err
 	}
+	s.retainLocked(p)
 	s.compiled.Store(p)
 	s.failure.Store(nil)
 	return nil
+}
+
+// retainLocked files a freshly compiled policy in the snapshot history.
+//
+// A version already held is left alone rather than re-filed: recompiling the
+// same rules — which every directory update does — must not consume a history
+// slot, or a tailnet with a busy user list would evict the policy versions its
+// retained traffic still refers to.
+func (s *Store) retainLocked(p *Policy) {
+	v := p.Version()
+	cur := s.history.Load()
+	if cur != nil {
+		if _, ok := (*cur)[v]; ok {
+			return
+		}
+	}
+
+	next := make(map[string][]Rule, MaxRetainedPolicies)
+	if cur != nil {
+		maps.Copy(next, *cur)
+	}
+	next[v] = p.Rules()
+	s.order = append(s.order, v)
+
+	for len(s.order) > MaxRetainedPolicies {
+		delete(next, s.order[0])
+		s.order = s.order[1:]
+	}
+	s.history.Store(&next)
+}
+
+// Snapshot returns the rule list a given policy version compiled to, and whether
+// it is still retained.
+//
+// A caller that gets false must say so — "policy version unavailable" — and must
+// NOT fall back to the current rules. Naming today's rule for yesterday's traffic
+// is the misattribution this whole mechanism exists to prevent, and it is worse
+// than admitting the gap because it looks like an answer.
+func (s *Store) Snapshot(version string) ([]Rule, bool) {
+	h := s.history.Load()
+	if h == nil {
+		return nil, false
+	}
+	r, ok := (*h)[version]
+	return r, ok
+}
+
+// retained is the number of policy versions currently held, for tests.
+func (s *Store) retained() int {
+	h := s.history.Load()
+	if h == nil {
+		return 0
+	}
+	return len(*h)
 }
 
 // Policy returns the current compiled policy, or nil when none has compiled

@@ -170,7 +170,14 @@ type Observation struct {
 	Reversed bool
 	// Rule indexes the policy's rule list. Read only when Verdict is
 	// VerdictPermitted; -1 whenever nothing matched.
-	Rule int
+	//
+	// The index alone does NOT identify a rule: it is only meaningful against the
+	// exact rule list that produced it, and an operator reordering their ACL moves
+	// every index without changing anything the store can see. PolicyVersion is
+	// the other half of the identity, so a window spanning a policy edit reports
+	// each observation against the rules it was actually evaluated against (#302).
+	Rule          int
+	PolicyVersion string
 	// Path is how the two nodes actually reached each other on the wire:
 	// PathDirectIPv4, PathDirectIPv6 or PathDERP. Only physical traffic — the
 	// WireGuard underlay — has one, so it is empty on every overlay connection.
@@ -301,7 +308,7 @@ type bucket struct {
 	// which rules were never exercised.
 	verdicts    map[string]*Counts
 	unexplained map[UnexplainedKey]*Counts
-	rules       map[int]*Counts
+	rules       map[RuleKey]*Counts
 
 	// Underlay path quality, from physical traffic only. paths is the overall
 	// direct-vs-relayed split; derpRegions is which relays carried the relayed
@@ -340,7 +347,7 @@ func newBucket(start time.Time) *bucket {
 		osMatrix:     map[MatrixKey]*Counts{},
 		verdicts:     map[string]*Counts{},
 		unexplained:  map[UnexplainedKey]*Counts{},
-		rules:        map[int]*Counts{},
+		rules:        map[RuleKey]*Counts{},
 		paths:        map[string]*Counts{},
 		derpRegions:  map[string]*Counts{},
 		peerPaths:    map[peerPathKey]*Counts{},
@@ -548,14 +555,15 @@ func (b *bucket) recordPolicy(o Observation) {
 		// Only a rule that PERMITTED something has been exercised, and only a
 		// permitted verdict carries a meaningful rule index — Rule is otherwise
 		// -1, or the zero value of an observation nothing evaluated.
-		e, ok := b.rules[o.Rule]
+		k := RuleKey{PolicyVersion: o.PolicyVersion, Rule: o.Rule}
+		e, ok := b.rules[k]
 		if !ok {
 			if len(b.rules) >= MaxRulesPerBucket {
 				b.dropped++
 				return
 			}
 			e = &Counts{}
-			b.rules[o.Rule] = e
+			b.rules[k] = e
 		}
 		e.add(o.Counts)
 	case o.Verdict == VerdictNoRule:
@@ -806,6 +814,8 @@ type Recent struct {
 	Verdict  string `json:"verdict,omitempty"`
 	Reversed bool   `json:"reversed,omitempty"`
 	Rule     int    `json:"rule"`
+	// PolicyVersion identifies the rule list Rule indexes into; see Observation.
+	PolicyVersion string `json:"policy_version,omitempty"`
 	// How this one connection was carried, on physical traffic only, so the list
 	// behind a relayed peer shows which of its connections were the relayed ones.
 	Path       string `json:"path,omitempty"`
@@ -908,6 +918,7 @@ func (m *Memory) recordRecentLocked(o Observation) {
 		Verdict:             o.Verdict,
 		Reversed:            o.Reversed,
 		Rule:                o.Rule,
+		PolicyVersion:       o.PolicyVersion,
 		Path:                o.Path,
 		DERPRegion:          o.DERPRegion,
 		Counts:              o.Counts,
@@ -1027,12 +1038,27 @@ type UnexplainedStat struct {
 	Counts Counts `json:"counts"`
 }
 
+// RuleKey identifies one rule of one policy revision.
+//
+// The index alone is not an identity. It is a position in a list an operator
+// edits, so the same index before and after a reorder names two different rules,
+// and a store keyed on the index alone would sum their traffic together and
+// attribute the total to whichever rule happens to sit there now. Pairing it
+// with the policy version makes the key mean what it says (#302).
+type RuleKey struct {
+	PolicyVersion string
+	Rule          int
+}
+
 // RuleStat is how much traffic one policy rule permitted. Rule indexes the
 // compiled policy's rule list; a rule absent from the result permitted nothing
 // in the window, which is the whole point of reporting it.
 type RuleStat struct {
-	Rule   int    `json:"rule"`
-	Counts Counts `json:"counts"`
+	Rule int `json:"rule"`
+	// PolicyVersion identifies the rule list Rule indexes into. Two stats sharing
+	// an index but not a version are DIFFERENT rules, and must never be summed.
+	PolicyVersion string `json:"policy_version,omitempty"`
+	Counts        Counts `json:"counts"`
 }
 
 // PeerPathStat is how one peer was reached over the window: how much of the
@@ -1125,7 +1151,7 @@ func (m *Memory) Query(q Query) Result {
 	tagMatrix, userMatrix, osMatrix := map[MatrixKey]*Counts{}, map[MatrixKey]*Counts{}, map[MatrixKey]*Counts{}
 	verdicts := map[string]*Counts{}
 	unexplained := map[UnexplainedKey]*Counts{}
-	rules := map[int]*Counts{}
+	rules := map[RuleKey]*Counts{}
 	paths, derpRegions := map[string]*Counts{}, map[string]*Counts{}
 	peerPaths := map[peerPathKey]*Counts{}
 	series := map[int64]*Counts{}
@@ -1275,12 +1301,17 @@ func topUnexplained(m map[UnexplainedKey]*Counts, n int) []UnexplainedStat {
 // allRules returns every exercised rule, unranked by volume and unbounded by
 // TopN: the caller subtracts this from the policy's rule list to find what was
 // never exercised, and a truncated list would report live rules as dead.
-func allRules(m map[int]*Counts) []RuleStat {
+func allRules(m map[RuleKey]*Counts) []RuleStat {
 	out := make([]RuleStat, 0, len(m))
 	for k, c := range m {
-		out = append(out, RuleStat{Rule: k, Counts: *c})
+		out = append(out, RuleStat{Rule: k.Rule, PolicyVersion: k.PolicyVersion, Counts: *c})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Rule < out[j].Rule })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PolicyVersion != out[j].PolicyVersion {
+			return out[i].PolicyVersion < out[j].PolicyVersion
+		}
+		return out[i].Rule < out[j].Rule
+	})
 	return out
 }
 
