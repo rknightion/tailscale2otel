@@ -117,6 +117,51 @@ See [Configuration](configuration.md) for the full list of options once you are 
         `deploy/tests/compose-tests.sh` asserts both modes resolve and that the
         checkpoint mount is present in each.
 
+    ### File-based secrets (recommended for shared hosts)
+
+    An environment variable is readable by anything that can inspect the
+    container — `docker inspect`, `docker compose config`, `/proc/<pid>/environ`,
+    and any crash reporter that dumps the environment. Every credential has a
+    `*_file` sibling, so Compose's `secrets:` can supply it as a file instead:
+
+    ```sh
+    mkdir -p deploy/secrets && chmod 700 deploy/secrets
+    printf '%s' '<oauth client secret>' > deploy/secrets/oauth_client_secret
+    printf '%s' '<grafana cloud token>' > deploy/secrets/grafana_cloud_token
+    chmod 600 deploy/secrets/*
+
+    docker compose -f deploy/docker-compose.yaml \
+                   -f deploy/docker-compose.secrets.yaml up
+    ```
+
+    Each secret is mounted at `/run/secrets/<name>` and the override points the
+    matching `TS2OTEL_*_FILE` variable at it. `deploy/secrets/` is git-ignored.
+    Delete any entry you do not use — Compose fails if a declared secret's file
+    is missing.
+
+    !!! warning "Value XOR file — setting both is a startup error"
+        Supplying a credential *both* inline (via `deploy/.env`) and as a file is
+        rejected at startup and names the conflicting key. It is not a precedence
+        rule. If you use this override, remove those credential lines from
+        `deploy/.env`. The override explicitly clears the variables the base file
+        would otherwise pass through, so this only bites when `.env` sets them.
+
+    !!! warning "Rotation requires recreating the container"
+        The files are read **once**, during config load. The host file is
+        bind-mounted, so editing it changes what the container *would* read, but
+        the running process still holds the old value — nothing re-reads it. After
+        rotating:
+
+        ```sh
+        docker compose -f deploy/docker-compose.yaml \
+                       -f deploy/docker-compose.secrets.yaml \
+                       up -d --force-recreate tailscale2otel
+        ```
+
+        This is the same constraint as the Helm chart's `rolloutTrigger`: env and
+        mounted credentials are read at startup, so rotating one means replacing
+        the process.
+
     !!! warning "`.gitignore` is not a Docker build-context boundary"
         `deploy/.env` is covered by two *separate* mechanisms, and you need both:
 

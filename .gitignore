@@ -29,6 +29,8 @@
 config.local.yaml
 config.smoke.yaml
 config.lowlog.yaml
+# Operator-supplied Docker secret files mounted by docker-compose.secrets.yaml (#334).
+deploy/secrets/
 # The operator-supplied file that docker-compose.config.yaml mounts (#333).
 # Credentials belong in deploy/.env, but this is a real config file in a real
 # tree and must not be committable by accident.

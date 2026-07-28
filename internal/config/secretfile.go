@@ -47,6 +47,15 @@ func (c *Config) resolveSecretFiles() error {
 		{"collectors.flowlogs.objectstore.access_key_id", &c.Collectors.Flowlogs.ObjectStore.AccessKeyID, c.Collectors.Flowlogs.ObjectStore.AccessKeyIDFile},
 		{"collectors.flowlogs.objectstore.secret_access_key", &c.Collectors.Flowlogs.ObjectStore.SecretAccessKey, c.Collectors.Flowlogs.ObjectStore.SecretAccessKeyFile},
 		{"collectors.flowlogs.objectstore.session_token", &c.Collectors.Flowlogs.ObjectStore.SessionToken, c.Collectors.Flowlogs.ObjectStore.SessionTokenFile},
+		// Auditlogs shares ObjectStoreConfig with flowlogs, so it has had the same
+		// *_file siblings all along and objectStoreAuditSpec consumes the resolved
+		// values — but only the flow ones were ever resolved here. A *_file path on
+		// an audit object store was silently ignored: no read, no error, and an
+		// empty credential handed to the S3 client, surfacing later as a bucket
+		// auth failure that points at the wrong thing.
+		{"collectors.auditlogs.objectstore.access_key_id", &c.Collectors.Auditlogs.ObjectStore.AccessKeyID, c.Collectors.Auditlogs.ObjectStore.AccessKeyIDFile},
+		{"collectors.auditlogs.objectstore.secret_access_key", &c.Collectors.Auditlogs.ObjectStore.SecretAccessKey, c.Collectors.Auditlogs.ObjectStore.SecretAccessKeyFile},
+		{"collectors.auditlogs.objectstore.session_token", &c.Collectors.Auditlogs.ObjectStore.SessionToken, c.Collectors.Auditlogs.ObjectStore.SessionTokenFile},
 	}
 	// tailnets[] entries embed TailscaleAuth, so their apikey_file /
 	// oauth.client_secret_file siblings get the same resolution for free (per
@@ -59,12 +68,16 @@ func (c *Config) resolveSecretFiles() error {
 	for i := range c.Tailnets {
 		t := &c.Tailnets[i]
 		flow := &t.ObjectStore.Flow
+		audit := &t.ObjectStore.Audit
 		fields = append(fields,
 			secretFileField{fmt.Sprintf("tailnets[%d].auth.apikey", i), &t.Auth.APIKey, t.Auth.APIKeyFile},
 			secretFileField{fmt.Sprintf("tailnets[%d].auth.oauth.client_secret", i), &t.Auth.OAuth.ClientSecret, t.Auth.OAuth.ClientSecretFile},
 			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.flow.access_key_id", i), &flow.AccessKeyID, flow.AccessKeyIDFile},
 			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.flow.secret_access_key", i), &flow.SecretAccessKey, flow.SecretAccessKeyFile},
 			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.flow.session_token", i), &flow.SessionToken, flow.SessionTokenFile},
+			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.audit.access_key_id", i), &audit.AccessKeyID, audit.AccessKeyIDFile},
+			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.audit.secret_access_key", i), &audit.SecretAccessKey, audit.SecretAccessKeyFile},
+			secretFileField{fmt.Sprintf("tailnets[%d].objectstore.audit.session_token", i), &audit.SessionToken, audit.SessionTokenFile},
 		)
 	}
 	for i := range c.Streaming.Routes {

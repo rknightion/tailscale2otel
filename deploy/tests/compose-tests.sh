@@ -127,6 +127,60 @@ else
 fi
 
 # --------------------------------------------------------------------------
+case_ "D. file-based secrets mode keeps values out of the environment (#334)"
+SECRETS_OVERRIDE="${DEPLOY_DIR}/docker-compose.secrets.yaml"
+# Real files, because `docker compose config` resolves secret file paths and
+# fails on a missing one — which is itself part of the contract.
+sdir="$(mktemp -d)"
+trap 'rm -rf "$sdir"' EXIT
+SECRET_SENTINEL="SENTINEL-compose-secret-do-not-leak"
+for f in oauth_client_secret grafana_cloud_token admin_token streaming_token webhook_secret pyroscope_password; do
+  printf '%s' "$SECRET_SENTINEL" > "$sdir/$f"
+done
+
+RESOLVED="$(SECRETS_DIR="$sdir" docker compose -f "$BASE" -f "$SECRETS_OVERRIDE" config 2>&1)"; RESOLVED_RC=$?
+assert_rc0 "D: resolves"
+assert_checkpoint_mount "D"
+
+# The whole point: no secret VALUE may appear anywhere in the resolved config.
+if grep -q -- "$SECRET_SENTINEL" <<<"$RESOLVED"; then
+  bad "D: a secret VALUE appears in the resolved compose config"
+else
+  ok "D: no secret value in the resolved config"
+fi
+
+# Every credential must arrive as a *_FILE path, and the matching non-file
+# variable must NOT carry a value — value-XOR-file is the app's contract, and
+# setting both is a startup error.
+for pair in \
+  "TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET" \
+  "TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN" \
+  "TS2OTEL_ADMIN__AUTH__TOKEN" \
+  "TS2OTEL_STREAMING__TOKEN" \
+  "TS2OTEL_WEBHOOK__SECRET" \
+  "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD"; do
+  fileval="$(svc ".environment.${pair}_FILE // \"\"")"
+  plainval="$(svc ".environment.${pair} // \"\"")"
+  if [[ "$fileval" == /run/secrets/* ]]; then
+    ok "D: ${pair}_FILE points into /run/secrets"
+  else
+    bad "D: ${pair}_FILE is ${fileval:-unset}, want a /run/secrets path"
+  fi
+  [[ -z "$plainval" ]] \
+    && ok "D: $pair carries no inline value (value XOR file)" \
+    || bad "D: $pair is ALSO set inline; the app rejects value+file as a conflict"
+done
+
+# Exactly the six credentials above may be file-backed here. A count check
+# catches a future edit that drops one of the five categories #334 names
+# (OAuth / OTLP / receiver / admin / profiling) — the per-pair loop above would
+# still pass for the five that remain.
+nfile="$(svc '[.environment | to_entries[] | select(.key | test("^TS2OTEL_.*_FILE$"))] | length')"
+[[ "$nfile" == "6" ]] \
+  && ok "D: exactly 6 *_FILE credential variables rendered" \
+  || bad "D: $nfile *_FILE variables rendered, want 6 (a category was added or dropped)"
+
+# --------------------------------------------------------------------------
 # --self-test mutates the inputs to prove each assertion above can actually
 # fail. Three guard tests in this repository have shipped passing while
 # asserting nothing; a checker that is never shown to fail proves nothing.
