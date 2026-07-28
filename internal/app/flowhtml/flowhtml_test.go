@@ -3,6 +3,7 @@ package flowhtml_test
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -284,5 +285,219 @@ func TestRender_ExplainsTheUndecidableVerdict(t *testing.T) {
 	}
 	if !strings.Contains(out, "No policy has been collected yet") {
 		t.Error("the page cannot distinguish an uncollected policy from a clean one")
+	}
+}
+
+// #298: window, end, tailnet, selection, matrix mode/cell and all seven
+// filters must round-trip through query parameters using the SAME names
+// /api/flows.json already accepts, so the page URL and the API URL never
+// grow two vocabularies. This asserts the vocabulary directly against the
+// URL-builder function's own source, rather than a phrase the JS merely
+// mirrors — deleting any one of these `p.set(...)` lines from urlFromState
+// makes this fail.
+func TestRender_ShareableURLCarriesTheFullViewState(t *testing.T) {
+	out := render(t, samplePage())
+	fn := extractJSFunction(t, out, "urlFromState")
+	for _, want := range []string{
+		`p.set("window", state.window)`,
+		`p.set("end", state.end)`,
+		`p.set("tailnet", state.tailnet)`,
+		`p.set("selected", state.selected)`,
+		`p.set("matrix", state.matrixKind)`,
+		`p.set("cell_src", state.cell.src)`,
+		`p.set("cell_dst", state.cell.dst)`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Errorf("urlFromState is missing %q — a piece of view state that would silently stop round-tripping through the URL", want)
+		}
+	}
+	if !strings.Contains(fn, "FILTER_KEYS.forEach") {
+		t.Error("urlFromState does not fold the seven server-side filters into the URL")
+	}
+	// The seven server-side filter names, reused verbatim rather than a
+	// second page-only vocabulary next to /api/flows.json's own — declared
+	// once, in FILTER_KEYS, which urlFromState and applyStateFromLocation
+	// both walk.
+	for _, k := range []string{"device", "addr", "service", "identity", "type", "verdict", "path"} {
+		if !strings.Contains(out, `"`+k+`"`) {
+			t.Errorf("FILTER_KEYS does not mention the filter %q", k)
+		}
+	}
+}
+
+// Back/forward must actually work: a pushState/replaceState pair driven by
+// state, and a popstate listener that re-applies the URL and re-fetches.
+// Without the listener, the browser would change the address bar on back but
+// the page would keep showing whatever it already had — indistinguishable
+// from the listener being deleted entirely, which is why this checks for the
+// wiring rather than just the word "popstate" appearing anywhere on the page.
+func TestRender_BackForwardIsWired(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, `history.pushState(`) {
+		t.Error("no history.pushState call — selecting a device or changing the window would not create a history entry")
+	}
+	if !strings.Contains(out, `history.replaceState(`) {
+		t.Error("no history.replaceState call — the address bar would never reflect state without spamming history")
+	}
+	fn := extractJSFunction(t, out, "init")
+	if !strings.Contains(fn, `window.addEventListener("popstate"`) {
+		t.Error(`init() does not wire a "popstate" listener — back/forward would not change the view`)
+	}
+	if !strings.Contains(fn, "applyStateFromLocation();\n  syncURL(false);") {
+		t.Error("init() does not restore state from the URL before the first poll")
+	}
+}
+
+// A single keystroke in a filter box must NOT grow the history stack — only
+// syncURL(false) (replaceState) may run per keystroke; a real navigation
+// (a select's change, the clear-filters button, picking a window, selecting
+// a device, picking a matrix cell) pushes a new entry instead. Asserting
+// both call shapes catches the two ways this can regress: a debounced
+// keystroke that starts pushing, or a real navigation that stops doing so.
+func TestRender_FilterTypingReplacesButDiscretePicksPush(t *testing.T) {
+	out := render(t, samplePage())
+	fn := extractJSFunction(t, out, "init")
+	// Exact snippets, not a bare "onFilterChanged(false) appears somewhere" —
+	// two calls with the right two arguments in the WRONG two places would
+	// satisfy a looser check just as happily.
+	if !strings.Contains(fn, "if (debounced){ onFilterChanged(true); return; }") {
+		t.Error(`the immediate (select) filter path does not call onFilterChanged(true) (pushState) on its own branch`)
+	}
+	if !strings.Contains(fn, "filterDebounce = setTimeout(function(){ onFilterChanged(false); }, 300);") {
+		t.Error(`the debounced text-filter path does not call onFilterChanged(false) (replaceState) — typing would flood the back button with one entry per keystroke`)
+	}
+	if !strings.Contains(fn, "onFilterChanged(true);\n  });\n  el(\"flowLoadMore\")") {
+		t.Error(`the clear-filters button does not call onFilterChanged(true) (pushState) right before wiring flowLoadMore`)
+	}
+	for _, want := range []string{
+		`state.window = b.getAttribute("data-win");
+      state.end = null;
+      setLive(true);
+      syncURL(true);`,
+		`state.matrixKind = b.getAttribute("data-kind");`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Errorf("a discrete navigation in init() is missing its expected wiring: %q", want)
+		}
+	}
+}
+
+// The whole point of failing safe: an unparseable window, a future/garbage
+// end, an unknown tailnet or matrix kind, and a stale selection/cell must all
+// degrade to the default view rather than an error or a blank screen.
+func TestRender_URLStateFailsSafeOnInvalidValues(t *testing.T) {
+	out := render(t, samplePage())
+	applyFn := extractJSFunction(t, out, "applyStateFromLocation")
+	for _, want := range []string{
+		`state.window = validWindow(win) ? win : "1h"`,
+		`(tn && TAILNETS && TAILNETS.indexOf(tn) !== -1) ? tn : TAILNET`,
+		`state.matrixKind = (mk && MATRIX_KINDS[mk]) ? mk : "tag"`,
+	} {
+		if !strings.Contains(applyFn, want) {
+			t.Errorf("applyStateFromLocation is missing the fail-safe fallback %q", want)
+		}
+	}
+	if !strings.Contains(out, `function dropStaleSelection(d){`) {
+		t.Error("no dropStaleSelection function — a shared URL naming a device that has since left the tailnet would filter the view down to nothing forever")
+	}
+	dropFn := extractJSFunction(t, out, "dropStaleSelection")
+	if !strings.Contains(dropFn, "state.selected = null") {
+		t.Error("dropStaleSelection does not clear a selected device once the data no longer contains it")
+	}
+	if !strings.Contains(dropFn, "state.cell = null") {
+		t.Error("dropStaleSelection does not clear a stale matrix cell")
+	}
+	renderFn := extractJSFunction(t, out, "render")
+	if !strings.HasPrefix(strings.TrimSpace(renderFn[strings.Index(renderFn, "{")+1:]), "dropStaleSelection(d);") {
+		t.Error("render(d) does not call dropStaleSelection before drawing the page from possibly-stale selection state")
+	}
+}
+
+// URLs land in browser history, proxy/server logs and pasted chat messages —
+// none of which the admin token (a Basic/Bearer credential the browser holds,
+// never JS-visible) or the tailnet's compiled policy text belong in. This is
+// a durable guard against ever adding either to the page's own JavaScript:
+// deleting it is not possible without deleting the words themselves.
+func TestRender_ShareableURLNeverCarriesCredentialsOrPolicyText(t *testing.T) {
+	out := strings.ToLower(render(t, samplePage()))
+	// Not "credential": the existing fetch() calls legitimately pass
+	// {credentials:"same-origin"} (a same-origin cookie/Basic-auth opt-in
+	// with nothing to do with the URL), predating this feature.
+	for _, bad := range []string{"token", "authorization", "password", "bearer"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("the flow view's rendered output contains %q; no admin credential belongs anywhere on this page", bad)
+		}
+	}
+}
+
+func TestRender_ExportSectionStatesItsOwnProvenance(t *testing.T) {
+	out := render(t, samplePage())
+	for _, want := range []string{
+		"never persistent full history",
+		"states its own window, filters, and matched/returned/retained counts",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the export section is missing the provenance statement %q", want)
+		}
+	}
+}
+
+// extractJSFunction returns the source of a top-level `function name(...){`
+// declaration in the rendered page, from its opening brace to the matching
+// closing one. Tests use it to assert wiring inside the right function
+// rather than merely somewhere in a 60KB script block, which would pass
+// just as happily with the call in a dead function or a comment.
+func extractJSFunction(t *testing.T, out, name string) string {
+	t.Helper()
+	marker := "function " + name + "("
+	start := strings.Index(out, marker)
+	if start < 0 {
+		t.Fatalf("no %q function found in the rendered page", marker)
+	}
+	open := strings.Index(out[start:], "{")
+	if open < 0 {
+		t.Fatalf("function %s has no opening brace", name)
+	}
+	open += start
+	depth := 0
+	for i := open; i < len(out); i++ {
+		switch out[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return out[open : i+1]
+			}
+		}
+	}
+	t.Fatalf("function %s never closes", name)
+	return ""
+}
+
+// The string check above proves today's template mentions no credential, but
+// it would NOT catch someone adding one to the DTO: rendering {{.AdminToken}}
+// emits the token's VALUE, not the word "token", so the page could start
+// carrying a credential into shareable URLs with every existing test green.
+//
+// The real guarantee is structural — flowsdata.Page has no field a credential
+// could travel in, so the JS that builds the URL has nothing to put there
+// (#298). This pins that, and fails the moment the DTO grows a way to break it.
+func TestPageDTOCannotCarryACredential(t *testing.T) {
+	t.Parallel()
+	rt := reflect.TypeOf(flowsdata.Page{})
+	for i := range rt.NumField() {
+		f := rt.Field(i)
+		name := strings.ToLower(f.Name)
+		for _, bad := range []string{"token", "secret", "password", "auth", "credential", "key"} {
+			if strings.Contains(name, bad) {
+				t.Errorf("flowsdata.Page.%s looks like a credential (%q). The flow page's state "+
+					"round-trips through the URL, and URLs land in history, logs, referrers and "+
+					"pasted messages — nothing credential-shaped may reach this struct.", f.Name, bad)
+			}
+		}
+		if f.Type.String() == "config.Secret" {
+			t.Errorf("flowsdata.Page.%s is a config.Secret; no credential may reach the flow page", f.Name)
+		}
 	}
 }

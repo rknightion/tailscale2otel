@@ -402,6 +402,12 @@
   <div class="controls" style="justify-content:center">
     <button class="ctl" id="flowLoadMore" style="display:none">load more</button>
   </div>
+  <p class="coverage">
+    Export applies the SAME window and filters as the table above (#299), drawn from the same
+    bounded recent-connection ring this whole view is — never persistent full history. Each file
+    states its own window, filters, and matched/returned/retained counts, so it is honest about
+    what it does and doesn&rsquo;t cover even once it has left this page.
+  </p>
 </section>
 
 <p class="foot">
@@ -516,6 +522,160 @@ var state = {
   positions: {}       // topology layout, kept across polls so it does not jump
 };
 
+// ------------------------------------------------------------- shareable URLs
+
+// FILTER_KEYS names the seven server-side RecentFilter dimensions, in the
+// vocabulary /api/flows.json already uses. The page URL reuses the SAME
+// names (#298) rather than growing a second vocabulary next to it.
+var FILTER_KEYS = ["device", "addr", "service", "identity", "type", "verdict", "path"];
+
+// GO_DURATION matches the subset of time.ParseDuration's grammar this page
+// ever produces or accepts back: one or more integer-then-unit pairs (the
+// preset buttons emit "15m"/"1h"/"6h"/"24h"; the timeline brush emits
+// "<n>s"). A window from a hand-edited or stale URL that does not match this
+// is a value the SERVER would only have to guess at too (admin_flows.go's
+// clampDuration falls back the same way on empty/unparseable input) — fail
+// safe by not sending it at all, rather than forwarding something odd.
+var GO_DURATION_RE = /^([0-9]+(ns|us|µs|ms|s|m|h))+$/;
+
+function validWindow(s){ return typeof s === "string" && GO_DURATION_RE.test(s); }
+
+// urlFromState renders the page's current view as URLSearchParams, so a
+// shared link reproduces the window, the pinned end, the tailnet, the
+// selected device, the matrix mode/cell and all seven filters (#298).
+//
+// It carries ONLY that view state. It must never carry admin.auth.token —
+// the browser holds that as a Basic/Bearer credential this JS never sees, so
+// there is nothing here that even could leak it — and never the compiled
+// policy TEXT, which is response data, not view state, and has no business
+// living in an address bar, browser history, or a pasted link. See
+// TestRender_ShareableURLBuilderNeverCarriesCredentialsOrPolicyText, which
+// pins this by asserting the word "token" and the policy rule text never
+// appear anywhere in this section of the page's own source.
+function urlFromState(){
+  var p = new URLSearchParams();
+  p.set("window", state.window);
+  if (state.end) p.set("end", state.end);
+  if (state.tailnet) p.set("tailnet", state.tailnet);
+  if (state.selected) p.set("selected", state.selected);
+  if (state.matrixKind && state.matrixKind !== "tag") p.set("matrix", state.matrixKind);
+  if (state.cell){
+    p.set("cell_src", state.cell.src);
+    p.set("cell_dst", state.cell.dst);
+  }
+  FILTER_KEYS.forEach(function(k){
+    if (state.filters[k]) p.set(k, state.filters[k]);
+  });
+  return p;
+}
+
+// syncURL writes state into the address bar. push=true adds a history entry
+// (selecting a device, changing the window, picking a matrix cell — a real
+// navigation a back button should undo one step at a time); push=false
+// replaces the current entry (typing in a filter box) so the back button is
+// not flooded with one entry per keystroke, which would make it as useless
+// as having no history at all — the same bug in a different form (#298).
+function syncURL(push){
+  var qs = urlFromState().toString();
+  var url = location.pathname + (qs ? "?" + qs : "");
+  if (push) history.pushState({flowview: qs}, "", url);
+  else history.replaceState({flowview: qs}, "", url);
+}
+
+
+// applyStateFromLocation reads the URL into state and the controls that show
+// it. Called once at load (a fresh open, a paste, a bookmark) and again on
+// every popstate (back/forward). Every value fails safe to the default view
+// rather than an error or a blank screen: an unparseable window falls back
+// to 1h, a future or unparseable end un-pins to live (a merely-too-old one is
+// left to the SERVER's own clamp — admin_flows.go's clampTime — so it still
+// degrades gracefully rather than being rejected twice), an unknown tailnet
+// or matrix kind falls back to the default, and a stale selected device or
+// matrix cell is dropped once the next poll's data says it no longer exists
+// (see dropStaleSelection, called from render()).
+function applyStateFromLocation(){
+  var p = new URLSearchParams(location.search);
+
+  var win = p.get("window");
+  state.window = validWindow(win) ? win : "1h";
+
+  var end = p.get("end");
+  if (end){
+    var d = new Date(end);
+    state.end = (!isNaN(d.getTime()) && d.getTime() <= Date.now()) ? d.toISOString() : null;
+  } else {
+    state.end = null;
+  }
+
+  var tn = p.get("tailnet");
+  state.tailnet = (tn && TAILNETS && TAILNETS.indexOf(tn) !== -1) ? tn : TAILNET;
+
+  state.selected = p.get("selected") || null;
+
+  var mk = p.get("matrix");
+  state.matrixKind = (mk && MATRIX_KINDS[mk]) ? mk : "tag";
+
+  var cellSrc = p.get("cell_src"), cellDst = p.get("cell_dst");
+  state.cell = (cellSrc && cellDst) ? {src: cellSrc, dst: cellDst} : null;
+
+  state.filters = {};
+  FILTER_KEYS.forEach(function(k){
+    var v = p.get(k) || "";
+    // maxFlowsFilterLen (admin_flows.go): a longer value would only earn a
+    // 400 from the server and wedge the page behind a permanent error
+    // banner. Truncating here keeps a hand-edited or stale URL usable.
+    state.filters[k] = v.length > 128 ? v.slice(0, 128) : v;
+  });
+
+  reflectControlsFromState();
+}
+
+// reflectControlsFromState pushes state into the controls that display it,
+// so a restored URL (initial load or popstate) shows correctly pressed
+// buttons and filled-in filter inputs instead of the markup's static
+// defaults.
+function reflectControlsFromState(){
+  Array.prototype.forEach.call(document.querySelectorAll("#winSeg button"), function(b){
+    b.setAttribute("aria-pressed", b.getAttribute("data-win") === state.window ? "true" : "false");
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("#matrixSeg button"), function(b){
+    b.setAttribute("aria-pressed", b.getAttribute("data-kind") === state.matrixKind ? "true" : "false");
+  });
+  el("matrixClear").style.display = state.cell ? "" : "none";
+  setLive(!state.end);
+  if (el("tnSel")) el("tnSel").value = state.tailnet;
+  var filterFieldIds = {
+    device: "filterDevice", addr: "filterAddr", service: "filterService",
+    identity: "filterIdentity", type: "filterType", verdict: "filterVerdict", path: "filterPath"
+  };
+  Object.keys(filterFieldIds).forEach(function(k){
+    var input = el(filterFieldIds[k]);
+    if (input) input.value = state.filters[k] || "";
+  });
+}
+
+// dropStaleSelection clears a selected device or matrix cell the just-arrived
+// data no longer contains — a shared URL naming a device that has since left
+// the tailnet, or a cell from a window/kind combination that no longer
+// produces it — so the view degrades to the default (whole-tailnet) picture
+// instead of silently filtering everything down to nothing forever (#298).
+function dropStaleSelection(d){
+  if (state.selected){
+    var known = (d.result.nodes || []).some(function(n){ return n.node === state.selected; });
+    if (!known){ state.selected = null; syncURL(false); }
+  }
+  if (state.cell){
+    var kind = MATRIX_KINDS[state.matrixKind];
+    var all = d.result[kind.field] || [];
+    var known2 = all.some(function(c){ return c.src === state.cell.src && c.dst === state.cell.dst; });
+    if (!known2){
+      state.cell = null;
+      el("matrixClear").style.display = "none";
+      syncURL(false);
+    }
+  }
+}
+
 // ------------------------------------------------------------------ fetching
 
 // baseParams builds the query params every /api/flows.json request shares:
@@ -603,6 +763,7 @@ function schedule(){
 // ------------------------------------------------------------------ rendering
 
 function render(d){
+  dropStaleSelection(d);
   renderCards(d);
   renderTimeline(d);
   renderTopology(d);
@@ -765,6 +926,7 @@ function wireBrush(svg, sel, pts, y0, y1){
     state.end = new Date(hi).toISOString();
     state.window = span + "s";
     setLive(false);
+    syncURL(true);
     poll();
   });
   svg.addEventListener("dblclick", function(){ resetWindow(); });
@@ -774,6 +936,7 @@ function resetWindow(){
   state.end = null;
   state.window = currentPreset();
   setLive(true);
+  syncURL(true);
   poll();
 }
 
@@ -995,6 +1158,7 @@ function rememberPositions(){
 // adjacent to it, and the tables drop rows it is not part of.
 function select(name){
   state.selected = name;
+  syncURL(true);
   applySelection();
   if (state.data) {
     renderNodes(state.data);
@@ -1311,6 +1475,7 @@ function pickCell(src, dst){
   var same = state.cell && state.cell.src === src && state.cell.dst === dst;
   state.cell = same ? null : {src: src, dst: dst};
   el("matrixClear").style.display = state.cell ? "" : "none";
+  syncURL(true);
   if (state.data){ renderMatrix(state.data); renderFlows(state.data); }
 }
 
@@ -1792,6 +1957,7 @@ function init(){
       state.window = b.getAttribute("data-win");
       state.end = null;
       setLive(true);
+      syncURL(true);
       poll();
     });
   });
@@ -1806,12 +1972,14 @@ function init(){
       // filter on values that do not exist there.
       state.cell = null;
       el("matrixClear").style.display = "none";
+      syncURL(true);
       if (state.data){ renderMatrix(state.data); renderFlows(state.data); }
     });
   });
   el("matrixClear").addEventListener("click", function(){
     state.cell = null;
     this.style.display = "none";
+    syncURL(true);
     if (state.data){ renderMatrix(state.data); renderFlows(state.data); }
   });
 
@@ -1833,6 +2001,7 @@ function init(){
       state.tailnet = this.value;
       state.positions = {};
       state.selected = null;
+      syncURL(true);
       poll();
     });
   }
@@ -1842,28 +2011,34 @@ function init(){
   // rows the current page does not hold. Text fields are debounced so a
   // fast typist doesn't fire a request per keystroke; the two closed-
   // enumeration selects (type/verdict/path) refetch immediately.
+  //
+  // push distinguishes a real navigation from continuous typing (#298): a
+  // discrete pick (a select's change, or the clear-filters button) pushes a
+  // history entry, but the debounced text-field path replaces the current
+  // entry so the back button is not flooded with one entry per keystroke.
   var filterFieldIds = {
     device: "filterDevice", addr: "filterAddr", service: "filterService",
     identity: "filterIdentity", type: "filterType", verdict: "filterVerdict", path: "filterPath"
   };
   var filterDebounce = null;
-  function onFilterChanged(){
+  function onFilterChanged(push){
     Object.keys(filterFieldIds).forEach(function(k){ state.filters[k] = el(filterFieldIds[k]).value; });
     state.selected = null; // a server-side search supersedes a topology click
+    syncURL(!!push);
     poll();
   }
   Object.keys(filterFieldIds).forEach(function(key){
     var input = el(filterFieldIds[key]);
     var debounced = input.tagName === "SELECT";
     input.addEventListener(debounced ? "change" : "input", function(){
-      if (debounced){ onFilterChanged(); return; }
+      if (debounced){ onFilterChanged(true); return; }
       if (filterDebounce) clearTimeout(filterDebounce);
-      filterDebounce = setTimeout(onFilterChanged, 300);
+      filterDebounce = setTimeout(function(){ onFilterChanged(false); }, 300);
     });
   });
   el("flowClear").addEventListener("click", function(){
     Object.keys(filterFieldIds).forEach(function(key){ el(filterFieldIds[key]).value = ""; });
-    onFilterChanged();
+    onFilterChanged(true);
   });
   el("flowLoadMore").addEventListener("click", loadMore);
 
@@ -1877,7 +2052,23 @@ function init(){
     }, 200);
   });
 
-  setLive(true);
+  // Restore view state from the URL (#298) — a fresh open, a pasted link, or
+  // a bookmark — now that every control it might set (window buttons, the
+  // matrix segment, the tailnet select, the filter inputs) exists in the
+  // DOM. syncURL(false) then canonicalizes the address bar (a value that
+  // failed safe to a default is reflected as that default, not left showing
+  // whatever was actually typed) without adding a spurious history entry for
+  // page load itself.
+  applyStateFromLocation();
+  syncURL(false);
+
+  // Back/forward must actually navigate the view, not just change the address
+  // bar: re-read the URL and re-fetch on every popstate.
+  window.addEventListener("popstate", function(){
+    applyStateFromLocation();
+    poll();
+  });
+
   poll();
 }
 

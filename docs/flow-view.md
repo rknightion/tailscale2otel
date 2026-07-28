@@ -426,6 +426,19 @@ $ curl -sH "Authorization: Bearer $TOKEN" \
   | jq -r '.result.tag_matrix[] | "\(.src) -> \(.dst)  \(.counts.tx_bytes + .counts.rx_bytes)"'
 ```
 
+### Shareable links
+
+Window, end, tailnet, the selected device, the matrix mode and cell, and all seven filters round-trip
+through the page's own URL (`/flows?window=6h&device=camden`), using the same parameter names as the
+JSON API above rather than a second vocabulary. Back and forward navigate the view; typing in a
+filter box replaces the current history entry instead of pushing one, so the back button still does
+what you expect after a search.
+
+A link naming a device or matrix cell that no longer exists — or carrying any other stale or invalid
+value — falls back to the default view rather than erroring or showing an empty screen that reads as
+"no traffic". The admin token never appears in the URL: the page is not given one, so there is
+nothing for it to put there. URLs land in history, logs, referrers and pasted messages.
+
 ## What it is not
 
 It is not a replacement for dashboards, alerting, or retention. It holds hours, not weeks; it cannot
