@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.20.0](https://img.shields.io/badge/Version-0.20.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.21.0](https://img.shields.io/badge/Version-0.21.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -479,6 +479,16 @@ extraVolumeMounts:
 | extraVolumeMounts | list | `[]` | Extra volume mounts appended to the main container's volumeMounts, as-is. Paired with extraVolumes above by name. |
 | extraVolumes | list | `[]` | Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding TLS cert/key material for config.streaming.tls or config.webhook.tls, since readOnlyRootFilesystem leaves no other place to put arbitrary files). Paired with extraVolumeMounts below by volume name. See the chart README for a worked TLS-cert example. |
 | fullnameOverride | string | `""` | Fully override the generated resource names. |
+| gateway.streaming.annotations | object | `{}` | Extra annotations on the HTTPRoute object. |
+| gateway.streaming.enabled | bool | `false` | Render an HTTPRoute for the Splunk-HEC receiver. Requires service.streaming.enabled and config.streaming.token (or token_file). |
+| gateway.streaming.hostnames | list | `[]` | Hostnames this route matches. Empty matches every hostname the parent Gateway listener accepts. |
+| gateway.streaming.parentRefs | list | `[]` | Required. At least one Gateway API parentRef, e.g.:   parentRefs:     - name: my-gateway       namespace: gateway-system       sectionName: https |
+| gateway.streaming.path | string | `"/"` | Path routed to the streaming receiver (matched as PathPrefix). |
+| gateway.webhook.annotations | object | `{}` | Extra annotations on the HTTPRoute object. |
+| gateway.webhook.enabled | bool | `false` | Render an HTTPRoute for the webhook receiver. Requires service.webhook.enabled and config.webhook.secret (or secret_file). |
+| gateway.webhook.hostnames | list | `[]` | Hostnames this route matches. Tailscale only delivers webhooks to a public URL on 80/443, so this is usually the one hostname Tailscale calls. |
+| gateway.webhook.parentRefs | list | `[]` | Required. At least one Gateway API parentRef — see streaming above for the shape. |
+| gateway.webhook.path | string | `"/"` | Path routed to the webhook receiver (matched as PathPrefix). |
 | goRuntime | object | `{"gogc":"200","memLimit":""}` | Go runtime tuning, injected as container env vars. This is a near-idle poller with a tiny live heap, so the Go default GOGC=100 fires frequent (individually cheap) collections that dominate the CPU profile; raising GOGC cuts that GC share. |
 | goRuntime.gogc | string | `"200"` | GOGC: heap-growth percentage between collections (Go default 100). Empty ("") leaves the Go default. |
 | goRuntime.memLimit | string | `""` | GOMEMLIMIT soft memory cap, e.g. "230MiB". Empty ("") auto-computes ~90% of resources.limits.memory (mirrors the docker-compose backstop; e.g. 256Mi -> 230MiB), falling back to unset if that limit is absent or in a unit outside Mi/Gi. Set explicitly to override the computed value. |
@@ -486,6 +496,22 @@ extraVolumeMounts:
 | image.repository | string | `"ghcr.io/rknightion/tailscale2otel"` | Container image repository. |
 | image.tag | string | `""` | Image tag. Defaults to .Chart.appVersion when empty. |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries. |
+| ingress.streaming.annotations | object | `{}` | Extra annotations (e.g. cert-manager.io/cluster-issuer for automated TLS). |
+| ingress.streaming.className | string | `""` | IngressClassName. Empty ("") uses the cluster's default IngressClass. |
+| ingress.streaming.enabled | bool | `false` | Render an Ingress for the Splunk-HEC receiver. Requires service.streaming.enabled and config.streaming.token (or token_file). |
+| ingress.streaming.host | string | `""` | Required. The host this Ingress rule routes; a host-less rule is a catch-all that would swallow traffic for unrelated apps on the same controller. |
+| ingress.streaming.path | string | `"/"` | Path routed to the streaming receiver. |
+| ingress.streaming.pathType | string | `"Prefix"` | Ingress pathType. |
+| ingress.streaming.tls.enabled | bool | `true` | Terminate TLS at the Ingress (the default). Tailscale streaming/webhook delivery requires HTTPS, so disabling this is only correct when a mesh or sidecar upstream of the controller terminates TLS for you instead. |
+| ingress.streaming.tls.secretName | string | `""` | Secret holding the TLS cert/key. Leave empty when relying solely on a cert-manager (or similar) annotation to provision and name it for you — but at least one of secretName or an annotation must be set. |
+| ingress.webhook.annotations | object | `{}` | Extra annotations (e.g. cert-manager.io/cluster-issuer for automated TLS). |
+| ingress.webhook.className | string | `""` | IngressClassName. Empty ("") uses the cluster's default IngressClass. |
+| ingress.webhook.enabled | bool | `false` | Render an Ingress for the webhook receiver. Requires service.webhook.enabled and config.webhook.secret (or secret_file). |
+| ingress.webhook.host | string | `""` | Required. Tailscale only delivers webhooks to a public URL on 80/443, so this MUST be the hostname Tailscale is configured to call. |
+| ingress.webhook.path | string | `"/"` | Path routed to the webhook receiver. |
+| ingress.webhook.pathType | string | `"Prefix"` | Ingress pathType. |
+| ingress.webhook.tls.enabled | bool | `true` | Terminate TLS at the Ingress (the default). Tailscale webhooks are HTTPS-only, so disabling this only makes sense when a mesh upstream of the controller terminates TLS instead — Tailscale itself will not deliver to a plaintext endpoint. |
+| ingress.webhook.tls.secretName | string | `""` | Secret holding the TLS cert/key. Leave empty when relying solely on a cert-manager (or similar) annotation — but at least one of secretName or an annotation must be set. |
 | metrics.podMonitor.bearerTokenSecret | object | `{}` | Bearer token for prometheus.auth.token, read from a Secret you manage. REQUIRED when that listener has a token: a scrape without it gets 401 and the target silently reports no data. Only a reference is rendered — never the value. |
 | metrics.podMonitor.enabled | bool | `false` | Render a PodMonitor. Requires config.prometheus.enabled. A PodMonitor scrapes pods DIRECTLY, so it needs no Service — prefer it over serviceMonitor unless you specifically want the Service in the path. |
 | metrics.podMonitor.interval | string | `""` | Scrape interval (e.g. 60s). Empty ("") inherits the Prometheus default. |

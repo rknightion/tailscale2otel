@@ -1,0 +1,65 @@
+{{- /*
+Opt-in Ingress for the two RECEIVER listeners, streaming and webhook (#346).
+
+Admin and Prometheus deliberately get NO Ingress at ANY value — see
+values.yaml's `ingress:` block and deploy/CLAUDE.md's "No Kubernetes Service"
+note. They are introspection/scrape surfaces; publishing either to the
+internet is never the right default, so this template does not offer that as
+a one-line mistake. There is no `admin`/`prometheus` entry in the $listeners
+list below on purpose — this is enforced structurally, not by a value guard.
+
+Discrete Ingress objects, one per listener, mirroring the discrete-Service
+design of #344: each maps only its own host/path/backend. Enabling one surface
+never touches another.
+
+Requires a backing Service (service.<listener>.enabled) and the listener's own
+credential before it renders — an Ingress publishes the receiver beyond the
+cluster, so both must already be true. See tailscale2otel.validateIngress in
+_helpers.tpl for the full set of guards.
+*/ -}}
+{{- $listeners := list
+  (dict "name" "streaming" "enabled" .Values.config.streaming.enabled "listen" .Values.config.streaming.listen "cred" .Values.config.streaming.token "credFile" .Values.config.streaming.token_file "credKey" "config.streaming.token")
+  (dict "name" "webhook"   "enabled" .Values.config.webhook.enabled   "listen" .Values.config.webhook.listen   "cred" .Values.config.webhook.secret  "credFile" .Values.config.webhook.secret_file    "credKey" "config.webhook.secret")
+-}}
+{{- range $l := $listeners }}
+{{- $ing := index $.Values.ingress $l.name }}
+{{- if $ing.enabled }}
+{{- $svc := index $.Values.service $l.name }}
+{{- include "tailscale2otel.validateIngress" (dict "name" $l.name "ingress" $ing "serviceEnabled" $svc.enabled "enabled" $l.enabled "cred" $l.cred "credFile" $l.credFile "credKey" $l.credKey) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "tailscale2otel.fullname" $ }}-{{ $l.name }}
+  labels:
+    {{- include "tailscale2otel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $l.name }}
+  {{- with $ing.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ $ing.host }}
+      http:
+        paths:
+          - path: {{ $ing.path }}
+            pathType: {{ $ing.pathType }}
+            backend:
+              service:
+                name: {{ include "tailscale2otel.fullname" $ }}-{{ $l.name }}
+                port:
+                  number: {{ $svc.port | default (include "tailscale2otel.listenPort" $l.listen) }}
+  {{- if $ing.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $ing.host }}
+      {{- with $ing.tls.secretName }}
+      secretName: {{ . }}
+      {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

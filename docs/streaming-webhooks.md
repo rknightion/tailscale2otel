@@ -256,6 +256,89 @@ private tailnet endpoints.
 
 **Data sensitivity.** Flow logs and audit logs carry source/destination IP addresses and ports, device names, and user identities. See [Configuration](configuration.md) for the `cardinality.*` knobs that shape which fields appear on flow metrics, [Security](security.md) for the PII-redaction categories, and [`SECURITY.md` on GitHub](https://github.com/rknightion/tailscale2otel/blob/main/SECURITY.md) for the full data-handling and vulnerability-reporting notes.
 
+## Exposing the receivers on Kubernetes (Ingress / Gateway API)
+
+The Helm chart ships **no inbound resource by default** (see `deploy/CLAUDE.md`'s "No Kubernetes
+Service" note). Since chart 0.21.0 it offers opt-in Ingress and Gateway API `HTTPRoute` objects, but
+**only for the two receiver listeners, `streaming` and `webhook`**. **Admin and Prometheus never get
+one, at any value** — they are introspection and scrape surfaces, and publishing either to the
+internet is never the right default, so the chart does not offer that as a one-line mistake. Reach
+those two the way `deploy/CLAUDE.md` already documents: a `Service` you manage yourself plus your own
+`Ingress`, or a `PodMonitor`/`ServiceMonitor` for Prometheus scraping.
+
+Both paths require a backing `Service` first (`service.streaming.enabled` /
+`service.webhook.enabled` — see [Configuration](configuration.md)), and both refuse to render if the
+listener has no credential configured (`config.streaming.token` / `config.webhook.secret`, or their
+`_file` siblings): publishing an unauthenticated receiver to the internet is the exact failure mode
+this feature exists to prevent, and `helm template` fails with an actionable message naming the
+offending key rather than silently producing a broken or insecure manifest.
+
+### Generic Ingress
+
+```yaml
+service:
+  webhook:
+    enabled: true
+ingress:
+  webhook:
+    enabled: true
+    host: webhook.example.com          # required — a host-less rule is a catch-all
+    path: /
+    pathType: Prefix
+    tls:
+      enabled: true                    # the default; Tailscale webhooks are HTTPS-only
+      secretName: webhook-tls          # a pre-existing Secret, OR use an annotation instead (below)
+```
+
+`ingress.<listener>.tls.enabled` defaults to `true` and requires **either** a `secretName` **or** at
+least one annotation (typically a cert-manager issuer, below) — otherwise the rendered Ingress would
+claim TLS with nothing configured to terminate it, and `helm template` fails and says so. Setting
+`tls.enabled: false` is allowed, but only makes sense when a mesh or sidecar upstream of the Ingress
+controller terminates TLS for you: **Tailscale will not deliver webhooks, and will not accept a
+streaming destination, over plaintext.**
+
+### cert-manager automated TLS
+
+```yaml
+ingress:
+  webhook:
+    enabled: true
+    host: webhook.example.com
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls:
+      enabled: true
+      secretName: webhook-tls          # cert-manager provisions and populates this Secret
+```
+
+The annotation alone satisfies the TLS guard even with `secretName` left empty, but naming a
+`secretName` is how cert-manager's ingress-shim knows where to write the certificate it issues.
+
+### Gateway API (`HTTPRoute`)
+
+Requires the Gateway API CRDs and a `Gateway` object already provisioned in-cluster — this chart does
+not create either, the same way it never creates a `ServiceMonitor`'s Prometheus Operator CRDs.
+
+```yaml
+service:
+  streaming:
+    enabled: true
+gateway:
+  streaming:
+    enabled: true
+    parentRefs:                        # required — at least one, naming the Gateway to attach to
+      - name: my-gateway
+        namespace: gateway-system
+        sectionName: https
+    hostnames:
+      - streaming.example.com
+    path: /
+```
+
+An empty `parentRefs` list renders an `HTTPRoute` that attaches to nothing, so it is rejected at
+render time exactly like the other guards above.
+
 ## Receiver source
 
 Both receivers are small, self-contained packages if you want to check the parsing or verification

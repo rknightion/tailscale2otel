@@ -1,0 +1,53 @@
+{{- /*
+Opt-in Gateway API HTTPRoute for the two RECEIVER listeners, streaming and
+webhook (#346). Same scope as ingress.yaml, and the same reason: admin and
+Prometheus never get one, at any value — see values.yaml's `gateway:` block
+and deploy/CLAUDE.md's "No Kubernetes Service" note.
+
+Not gated on .Capabilities.APIVersions on purpose: these are explicit opt-ins,
+and the chart must render identically under `helm template` with no cluster
+and no Gateway API CRDs installed — exactly like the PodMonitor/ServiceMonitor
+templates already do for the Prometheus Operator CRDs.
+
+kind: HTTPRoute, apiVersion gateway.networking.k8s.io/v1 (the GA release).
+Requires a backing Service (service.<listener>.enabled), the listener's own
+credential, and at least one parentRef — see tailscale2otel.validateGateway.
+*/ -}}
+{{- $listeners := list
+  (dict "name" "streaming" "enabled" .Values.config.streaming.enabled "listen" .Values.config.streaming.listen "cred" .Values.config.streaming.token "credFile" .Values.config.streaming.token_file "credKey" "config.streaming.token")
+  (dict "name" "webhook"   "enabled" .Values.config.webhook.enabled   "listen" .Values.config.webhook.listen   "cred" .Values.config.webhook.secret  "credFile" .Values.config.webhook.secret_file    "credKey" "config.webhook.secret")
+-}}
+{{- range $l := $listeners }}
+{{- $gw := index $.Values.gateway $l.name }}
+{{- if $gw.enabled }}
+{{- $svc := index $.Values.service $l.name }}
+{{- include "tailscale2otel.validateGateway" (dict "name" $l.name "gateway" $gw "serviceEnabled" $svc.enabled "enabled" $l.enabled "cred" $l.cred "credFile" $l.credFile "credKey" $l.credKey) }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "tailscale2otel.fullname" $ }}-{{ $l.name }}
+  labels:
+    {{- include "tailscale2otel.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $l.name }}
+  {{- with $gw.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- toYaml $gw.parentRefs | nindent 4 }}
+  {{- with $gw.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ $gw.path }}
+      backendRefs:
+        - name: {{ include "tailscale2otel.fullname" $ }}-{{ $l.name }}
+          port: {{ $svc.port | default (include "tailscale2otel.listenPort" $l.listen) }}
+{{- end }}
+{{- end }}

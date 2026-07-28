@@ -304,6 +304,80 @@ Args: (dict "ctx" $ "name" "prometheus" "enabled" <bool> "cred" <string> "credFi
 {{- end -}}
 
 {{/*
+Ingress safety gate for the two RECEIVER listeners, streaming and webhook,
+opt-in per #346. Admin and Prometheus never get an Ingress at ANY value — see
+templates/ingress.yaml and deploy/CLAUDE.md's "No Kubernetes Service" note.
+They are introspection/scrape surfaces; publishing either to the internet is
+never the right default, so the chart does not offer that as a one-line
+mistake.
+
+Four failure modes rejected at render time, same "fail don't warn" posture as
+tailscale2otel.requireListenerCredential:
+
+  1. No backing Service: an Ingress rule with nothing behind it is a silently
+     broken route, not a working one with a warning.
+  2. No credential on the listener (delegated to requireListenerCredential):
+     publishing an unauthenticated receiver to the internet is the exact
+     failure mode this feature exists to prevent.
+  3. No host: a host-less Ingress rule is a catch-all that swallows traffic
+     for unrelated apps sharing the same controller.
+  4. tls.enabled (the default) with neither a secretName nor an annotation
+     (e.g. cert-manager.io/cluster-issuer): the rendered Ingress would claim
+     TLS with nothing configured to terminate it.
+
+Args: (dict "name" <listener> "ingress" <.Values.ingress.<listener>>
+       "serviceEnabled" <bool> "enabled" <config.<listener>.enabled>
+       "cred" <string> "credFile" <string> "credKey" <string>)
+*/}}
+{{- define "tailscale2otel.validateIngress" -}}
+{{- $name := .name -}}
+{{- $ing := .ingress -}}
+{{- if not .serviceEnabled -}}
+{{- fail (printf "ingress.%s.enabled requires service.%s.enabled: an Ingress with no backing Service is a silently broken route" $name $name) -}}
+{{- end -}}
+{{/*
+Transitively unreachable TODAY, and kept on purpose. The guard above already
+requires the Service, and service.yaml runs this same check on the same values
+key — so with the current shape the message an operator sees for a missing
+credential comes from service.yaml, not from here. This call is the thing that
+keeps "no credential, no exposure" true if that precondition is ever relaxed.
+Do not delete it as dead code without re-checking who enforces the credential.
+*/}}
+{{- include "tailscale2otel.requireListenerCredential" (dict "name" $name "enabled" .enabled "cred" .cred "credFile" .credFile "credKey" .credKey) -}}
+{{- if not $ing.host -}}
+{{- fail (printf "ingress.%s.host must be set: a host-less Ingress rule is a catch-all that will swallow traffic for unrelated apps on the same controller" $name) -}}
+{{- end -}}
+{{- if $ing.tls.enabled -}}
+{{- if and (not $ing.tls.secretName) (not $ing.annotations) -}}
+{{- fail (printf "ingress.%s.tls.enabled is true but neither ingress.%s.tls.secretName nor ingress.%s.annotations (e.g. cert-manager.io/cluster-issuer) is set: the rendered Ingress would claim TLS with nothing to terminate it. Set one of those, or set ingress.%s.tls.enabled: false only if a mesh terminates TLS for you upstream — Tailscale webhooks will not deliver to a plaintext endpoint." $name $name $name $name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Gateway API HTTPRoute safety gate, same scope and reasoning as
+tailscale2otel.validateIngress above (#346): streaming and webhook only, never
+admin or Prometheus. The extra failure mode here is an HTTPRoute with no
+parentRefs, which Gateway API accepts syntactically but which attaches to
+nothing.
+
+Args: (dict "name" <listener> "gateway" <.Values.gateway.<listener>>
+       "serviceEnabled" <bool> "enabled" <config.<listener>.enabled>
+       "cred" <string> "credFile" <string> "credKey" <string>)
+*/}}
+{{- define "tailscale2otel.validateGateway" -}}
+{{- $name := .name -}}
+{{- $gw := .gateway -}}
+{{- if not .serviceEnabled -}}
+{{- fail (printf "gateway.%s.enabled requires service.%s.enabled: an HTTPRoute with no backing Service is a silently broken route" $name $name) -}}
+{{- end -}}
+{{- include "tailscale2otel.requireListenerCredential" (dict "name" $name "enabled" .enabled "cred" .cred "credFile" .credFile "credKey" .credKey) -}}
+{{- if not $gw.parentRefs -}}
+{{- fail (printf "gateway.%s.enabled requires at least one entry in gateway.%s.parentRefs naming the Gateway to attach to" $name $name) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Whether config.yaml comes from a resource the OPERATOR manages (#347).
 
 GitOps, ExternalSecrets and SOPS users produce the config outside Helm. Before

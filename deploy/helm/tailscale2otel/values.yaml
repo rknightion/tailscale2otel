@@ -249,6 +249,108 @@ service:
     # -- Extra annotations on this Service.
     annotations: {}
 
+# --- Ingress for the two RECEIVER listeners only (all default-off) ---
+# streaming and webhook are the only listeners offered an Ingress. admin and
+# prometheus NEVER get one, at any value: they are introspection/scrape
+# surfaces, and publishing either to the internet is never the right default,
+# so this chart does not offer that as a one-line mistake. There is no
+# `admin`/`prometheus` key here to set — see deploy/CLAUDE.md's "No Kubernetes
+# Service" note and templates/ingress.yaml.
+#
+# Rendering FAILS if you enable an Ingress for a listener with no backing
+# Service (service.<listener>.enabled), no credential set, no host, or with
+# tls.enabled and neither a secretName nor an annotation to terminate it.
+ingress:
+  streaming:
+    # -- Render an Ingress for the Splunk-HEC receiver. Requires
+    # service.streaming.enabled and config.streaming.token (or token_file).
+    enabled: false
+    # -- IngressClassName. Empty ("") uses the cluster's default IngressClass.
+    className: ""
+    # -- Extra annotations (e.g. cert-manager.io/cluster-issuer for automated TLS).
+    annotations: {}
+    # -- Required. The host this Ingress rule routes; a host-less rule is a
+    # catch-all that would swallow traffic for unrelated apps on the same controller.
+    host: ""
+    # -- Path routed to the streaming receiver.
+    path: /
+    # -- Ingress pathType.
+    pathType: Prefix
+    tls:
+      # -- Terminate TLS at the Ingress (the default). Tailscale streaming/webhook
+      # delivery requires HTTPS, so disabling this is only correct when a mesh or
+      # sidecar upstream of the controller terminates TLS for you instead.
+      enabled: true
+      # -- Secret holding the TLS cert/key. Leave empty when relying solely on a
+      # cert-manager (or similar) annotation to provision and name it for you —
+      # but at least one of secretName or an annotation must be set.
+      secretName: ""
+  webhook:
+    # -- Render an Ingress for the webhook receiver. Requires
+    # service.webhook.enabled and config.webhook.secret (or secret_file).
+    enabled: false
+    # -- IngressClassName. Empty ("") uses the cluster's default IngressClass.
+    className: ""
+    # -- Extra annotations (e.g. cert-manager.io/cluster-issuer for automated TLS).
+    annotations: {}
+    # -- Required. Tailscale only delivers webhooks to a public URL on 80/443,
+    # so this MUST be the hostname Tailscale is configured to call.
+    host: ""
+    # -- Path routed to the webhook receiver.
+    path: /
+    # -- Ingress pathType.
+    pathType: Prefix
+    tls:
+      # -- Terminate TLS at the Ingress (the default). Tailscale webhooks are
+      # HTTPS-only, so disabling this only makes sense when a mesh upstream of
+      # the controller terminates TLS instead — Tailscale itself will not
+      # deliver to a plaintext endpoint.
+      enabled: true
+      # -- Secret holding the TLS cert/key. Leave empty when relying solely on a
+      # cert-manager (or similar) annotation — but at least one of secretName or
+      # an annotation must be set.
+      secretName: ""
+
+# --- Gateway API HTTPRoute for the two RECEIVER listeners only (all default-off) ---
+# Same scope as `ingress:` above and the same reason: streaming and webhook
+# only, never admin or prometheus. Requires the Gateway API CRDs installed in
+# the cluster (not detected — this stays opt-in, exactly like metrics.podMonitor).
+#
+# Rendering FAILS if you enable an HTTPRoute for a listener with no backing
+# Service, no credential set, or no parentRefs entry naming the Gateway to
+# attach to.
+gateway:
+  streaming:
+    # -- Render an HTTPRoute for the Splunk-HEC receiver. Requires
+    # service.streaming.enabled and config.streaming.token (or token_file).
+    enabled: false
+    # -- Required. At least one Gateway API parentRef, e.g.:
+    #   parentRefs:
+    #     - name: my-gateway
+    #       namespace: gateway-system
+    #       sectionName: https
+    parentRefs: []
+    # -- Hostnames this route matches. Empty matches every hostname the parent
+    # Gateway listener accepts.
+    hostnames: []
+    # -- Path routed to the streaming receiver (matched as PathPrefix).
+    path: /
+    # -- Extra annotations on the HTTPRoute object.
+    annotations: {}
+  webhook:
+    # -- Render an HTTPRoute for the webhook receiver. Requires
+    # service.webhook.enabled and config.webhook.secret (or secret_file).
+    enabled: false
+    # -- Required. At least one Gateway API parentRef — see streaming above for the shape.
+    parentRefs: []
+    # -- Hostnames this route matches. Tailscale only delivers webhooks to a
+    # public URL on 80/443, so this is usually the one hostname Tailscale calls.
+    hostnames: []
+    # -- Path routed to the webhook receiver (matched as PathPrefix).
+    path: /
+    # -- Extra annotations on the HTTPRoute object.
+    annotations: {}
+
 extraEnv: [] # @schema item: object ; itemProperties: {"name":{"type":"string","minLength":1},"value":{"type":"string"},"valueFrom":{"type":"object"}}
 
 # -- Extra `envFrom` sources appended to the container's envFrom, as-is (configMapRef /

@@ -829,5 +829,210 @@ render $WIF --set-string 'extraEnv[0].name=TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDE
 [[ $RENDER_RC -ne 0 ]] \
   && ok "R: extraEnv cannot silently repoint the token path" || bad "R: extraEnv silently repointed the token path"
 
+# --------------------------------------------------------------------------
+case_ "S. opt-in Ingress for the streaming/webhook receivers ONLY (#346)"
+ing_of() { yq "select(.kind == \"Ingress\" and .metadata.name == \"$1\")" <<<"$RENDER"; }
+n_ingress() { grep -c '^kind: Ingress$' <<<"$RENDER" || true; }
+
+render
+assert_rc0 "S: default renders"
+[[ "$(n_ingress)" == "0" ]] \
+  && ok "S: no Ingress by default" || bad "S: an Ingress rendered by default"
+
+render --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true \
+       --set ingress.streaming.enabled=true --set-string ingress.streaming.host=hec.example.com \
+       --set-string ingress.streaming.tls.secretName=hec-tls
+assert_rc0 "S: streaming Ingress renders"
+[[ "$(n_ingress)" == "1" ]] && ok "S: exactly one Ingress" || bad "S: expected 1 Ingress, got $(n_ingress)"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec.rules[0].host')" == "hec.example.com" ]] \
+  && ok "S: streaming Ingress host rendered" || bad "S: streaming Ingress host wrong"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec.rules[0].http.paths[0].path')" == "/" ]] \
+  && ok "S: streaming Ingress path rendered" || bad "S: streaming Ingress path wrong"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec.rules[0].http.paths[0].pathType')" == "Prefix" ]] \
+  && ok "S: streaming Ingress pathType rendered" || bad "S: streaming Ingress pathType wrong"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec.tls[0].secretName')" == "hec-tls" ]] \
+  && ok "S: streaming Ingress tls.secretName rendered" || bad "S: streaming Ingress tls.secretName wrong"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec.rules[0].http.paths[0].backend.service.name')" == "${FULLNAME}-streaming" ]] \
+  && ok "S: streaming Ingress backend points at the streaming Service" || bad "S: streaming Ingress backend wrong"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec.rules[0].http.paths[0].backend.service.port.number')" == "8088" ]] \
+  && ok "S: streaming Ingress backend port matches config.streaming.listen" || bad "S: streaming Ingress backend port wrong"
+grep -q -- "$SENTINEL" <<<"$(docs_of Ingress)" \
+  && bad "S: a credential leaked into the streaming Ingress" || ok "S: no credential in the streaming Ingress"
+
+render --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true \
+       --set ingress.webhook.enabled=true --set-string ingress.webhook.host=wh.example.com \
+       --set-string 'ingress.webhook.annotations.cert-manager\.io/cluster-issuer'=letsencrypt
+assert_rc0 "S: webhook Ingress renders"
+[[ "$(n_ingress)" == "1" ]] && ok "S: exactly one Ingress (webhook)" || bad "S: expected 1 Ingress, got $(n_ingress)"
+[[ "$(ing_of "${FULLNAME}-webhook" | yq '.spec.rules[0].host')" == "wh.example.com" ]] \
+  && ok "S: webhook Ingress host rendered" || bad "S: webhook Ingress host wrong"
+[[ "$(ing_of "${FULLNAME}-webhook" | yq '.spec.rules[0].http.paths[0].backend.service.name')" == "${FULLNAME}-webhook" ]] \
+  && ok "S: webhook Ingress backend points at the webhook Service" || bad "S: webhook Ingress backend wrong"
+[[ "$(ing_of "${FULLNAME}-webhook" | yq '.spec.rules[0].http.paths[0].backend.service.port.number')" == "8089" ]] \
+  && ok "S: webhook Ingress backend port matches config.webhook.listen" || bad "S: webhook Ingress backend port wrong"
+# tls.enabled default is true; satisfied here by the annotation alone (no secretName).
+[[ "$(ing_of "${FULLNAME}-webhook" | yq '.spec.tls[0].hosts[0]')" == "wh.example.com" ]] \
+  && ok "S: webhook Ingress tls block rendered from the annotation alone" || bad "S: webhook Ingress tls block missing"
+[[ "$(ing_of "${FULLNAME}-webhook" | yq '.metadata.annotations."cert-manager.io/cluster-issuer"')" == "letsencrypt" ]] \
+  && ok "S: webhook Ingress cert-manager annotation rendered" || bad "S: webhook Ingress annotation missing"
+grep -q -- "$SENTINEL" <<<"$(docs_of Ingress)" \
+  && bad "S: a credential leaked into the webhook Ingress" || ok "S: no credential in the webhook Ingress"
+
+# --------------------------------------------------------------------------
+case_ "T. Ingress guards, each isolated from every other precondition (#346)"
+# Every guard test below satisfies every OTHER precondition on purpose, so
+# only the guard under test can possibly fail — this repo has shipped a guard
+# test that silently passed because a DIFFERENT guard fired first (see the
+# credential case's note below, which documents exactly that for this feature).
+
+# Guard 1: no backing Service.
+render --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set ingress.streaming.enabled=true --set-string ingress.streaming.host=hec.example.com \
+       --set-string ingress.streaming.tls.secretName=hec-tls
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'ingress.streaming.enabled requires service.streaming.enabled' <<<"$RENDER"; then
+  ok "T: Ingress without a backing Service fails, naming service.streaming.enabled"
+else
+  bad "T: rendered an Ingress with no backing Service (rc=$RENDER_RC)"
+fi
+
+# Guard 2: no credential. NOTE: with service.streaming.enabled=true, the
+# Service template's OWN guard (#344, tailscale2otel.requireListenerCredential)
+# fires first and aborts the render before ingress.yaml's reuse of the same
+# helper is ever reached — the two guards are the same check on the same
+# values key, so this is expected, not a test bug. It still proves the overall
+# acceptance criterion: enabling exposure with no credential fails, naming the
+# exact key.
+render --set config.streaming.enabled=true \
+       --set service.streaming.enabled=true \
+       --set ingress.streaming.enabled=true --set-string ingress.streaming.host=hec.example.com \
+       --set-string ingress.streaming.tls.secretName=hec-tls
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'config.streaming.token' <<<"$RENDER" && grep -q 'requires a credential' <<<"$RENDER"; then
+  ok "T: exposing streaming with no credential fails, naming config.streaming.token"
+else
+  bad "T: exposed streaming with no credential (rc=$RENDER_RC) — HMAC/token verification would be skipped"
+fi
+
+# Guard 3: no host.
+render --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true \
+       --set ingress.streaming.enabled=true \
+       --set-string ingress.streaming.tls.secretName=hec-tls
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'ingress.streaming.host must be set' <<<"$RENDER"; then
+  ok "T: host-less Ingress fails, naming ingress.streaming.host"
+else
+  bad "T: rendered a host-less (catch-all) Ingress (rc=$RENDER_RC)"
+fi
+
+# Guard 4: tls.enabled with neither secretName nor an annotation.
+render --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true \
+       --set ingress.streaming.enabled=true --set-string ingress.streaming.host=hec.example.com
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'ingress.streaming.tls.enabled is true but neither' <<<"$RENDER"; then
+  ok "T: tls.enabled with nothing to terminate it fails, naming the fix"
+else
+  bad "T: rendered an Ingress claiming TLS with nothing configured to terminate it (rc=$RENDER_RC)"
+fi
+# ... and disabling tls.enabled is the documented, allowed escape hatch.
+render --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true \
+       --set ingress.streaming.enabled=true --set-string ingress.streaming.host=hec.example.com \
+       --set ingress.streaming.tls.enabled=false
+assert_rc0 "T: tls.enabled=false renders with no secretName/annotation"
+[[ "$(ing_of "${FULLNAME}-streaming" | yq '.spec | has("tls")')" == "false" ]] \
+  && ok "T: no tls block when tls.enabled=false" || bad "T: a tls block rendered despite tls.enabled=false"
+
+# --------------------------------------------------------------------------
+case_ "U. opt-in Gateway API HTTPRoute for streaming/webhook ONLY (#346)"
+route_of() { yq "select(.kind == \"HTTPRoute\" and .metadata.name == \"$1\")" <<<"$RENDER"; }
+n_httproute() { grep -c '^kind: HTTPRoute$' <<<"$RENDER" || true; }
+
+render
+assert_rc0 "U: default renders"
+[[ "$(n_httproute)" == "0" ]] \
+  && ok "U: no HTTPRoute by default" || bad "U: an HTTPRoute rendered by default"
+
+render --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true \
+       --set gateway.webhook.enabled=true \
+       --set-json 'gateway.webhook.parentRefs=[{"name":"my-gateway","namespace":"gateway-system","sectionName":"https"}]' \
+       --set-json 'gateway.webhook.hostnames=["wh.example.com"]'
+assert_rc0 "U: webhook HTTPRoute renders"
+[[ "$(n_httproute)" == "1" ]] && ok "U: exactly one HTTPRoute" || bad "U: expected 1 HTTPRoute, got $(n_httproute)"
+[[ "$(route_of "${FULLNAME}-webhook" | yq '.spec.parentRefs[0].name')" == "my-gateway" ]] \
+  && ok "U: HTTPRoute parentRefs rendered" || bad "U: HTTPRoute parentRefs wrong"
+[[ "$(route_of "${FULLNAME}-webhook" | yq '.spec.hostnames[0]')" == "wh.example.com" ]] \
+  && ok "U: HTTPRoute hostnames rendered" || bad "U: HTTPRoute hostnames wrong"
+[[ "$(route_of "${FULLNAME}-webhook" | yq '.spec.rules[0].backendRefs[0].name')" == "${FULLNAME}-webhook" ]] \
+  && ok "U: HTTPRoute backendRefs points at the webhook Service" || bad "U: HTTPRoute backendRefs wrong"
+[[ "$(route_of "${FULLNAME}-webhook" | yq '.spec.rules[0].backendRefs[0].port')" == "8089" ]] \
+  && ok "U: HTTPRoute backendRefs port matches config.webhook.listen" || bad "U: HTTPRoute backendRefs port wrong"
+grep -q -- "$SENTINEL" <<<"$(docs_of HTTPRoute)" \
+  && bad "U: a credential leaked into the HTTPRoute" || ok "U: no credential in the HTTPRoute"
+
+# Guard: no backing Service.
+render --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set gateway.webhook.enabled=true \
+       --set-json 'gateway.webhook.parentRefs=[{"name":"my-gateway"}]'
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'gateway.webhook.enabled requires service.webhook.enabled' <<<"$RENDER"; then
+  ok "U: HTTPRoute without a backing Service fails, naming service.webhook.enabled"
+else
+  bad "U: rendered an HTTPRoute with no backing Service (rc=$RENDER_RC)"
+fi
+
+# Guard: empty parentRefs (every other precondition satisfied).
+render --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true \
+       --set gateway.webhook.enabled=true
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'gateway.webhook.enabled requires at least one entry in gateway.webhook.parentRefs' <<<"$RENDER"; then
+  ok "U: empty parentRefs fails, naming gateway.webhook.parentRefs"
+else
+  bad "U: rendered an HTTPRoute with no parentRefs (attaches to nothing) (rc=$RENDER_RC)"
+fi
+
+# --------------------------------------------------------------------------
+case_ "V. admin and prometheus can NEVER produce an Ingress or HTTPRoute (#346)"
+# Turn up every other value as far as it goes (both listeners enabled+credentialed,
+# both Services on, both PodMonitor/ServiceMonitor on) and confirm zero of each kind.
+# There is deliberately no ingress.admin / ingress.prometheus / gateway.admin /
+# gateway.prometheus key to even attempt setting.
+render --set config.admin.enabled=true --set-string "config.admin.auth.token=${SENTINEL}" \
+       --set service.admin.enabled=true \
+       --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set service.prometheus.enabled=true \
+       --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
+       --set service.streaming.enabled=true \
+       --set ingress.streaming.enabled=true --set-string ingress.streaming.host=hec.example.com \
+       --set-string ingress.streaming.tls.secretName=hec-tls \
+       --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
+       --set service.webhook.enabled=true \
+       --set gateway.webhook.enabled=true \
+       --set-json 'gateway.webhook.parentRefs=[{"name":"my-gateway"}]' \
+       --set ingress.admin.enabled=true --set-string ingress.admin.host=admin.example.com \
+       --set-string ingress.admin.tls.secretName=admin-tls \
+       --set ingress.prometheus.enabled=true --set-string ingress.prometheus.host=prom.example.com \
+       --set-string ingress.prometheus.tls.secretName=prom-tls \
+       --set gateway.admin.enabled=true --set-json 'gateway.admin.parentRefs=[{"name":"my-gateway"}]' \
+       --set gateway.prometheus.enabled=true --set-json 'gateway.prometheus.parentRefs=[{"name":"my-gateway"}]'
+# ingress.admin / ingress.prometheus / gateway.admin / gateway.prometheus are
+# not real keys this chart defines or reads anywhere — templates/ingress.yaml
+# and templates/httproute.yaml only ever range over a hardcoded streaming/webhook
+# list, so setting them is a no-op rather than a rejected value. Set them
+# anyway to prove that structural protection: even an operator who tries this
+# gets nothing, which is the strongest form of "admin/prometheus are never
+# exposable this way".
+assert_rc0 "V: everything-on (including a forced admin/prometheus attempt) renders"
+[[ "$(n_ingress)" == "1" ]] && ok "V: only the streaming Ingress rendered" || bad "V: expected 1 Ingress total, got $(n_ingress)"
+[[ "$(n_httproute)" == "1" ]] && ok "V: only the webhook HTTPRoute rendered" || bad "V: expected 1 HTTPRoute total, got $(n_httproute)"
+[[ -z "$(ing_of "${FULLNAME}-admin" | tr -d '[:space:]-')" ]] \
+  && ok "V: no admin Ingress" || bad "V: an admin Ingress rendered"
+[[ -z "$(ing_of "${FULLNAME}-prometheus" | tr -d '[:space:]-')" ]] \
+  && ok "V: no prometheus Ingress" || bad "V: a prometheus Ingress rendered"
+[[ -z "$(route_of "${FULLNAME}-admin" | tr -d '[:space:]-')" ]] \
+  && ok "V: no admin HTTPRoute" || bad "V: an admin HTTPRoute rendered"
+[[ -z "$(route_of "${FULLNAME}-prometheus" | tr -d '[:space:]-')" ]] \
+  && ok "V: no prometheus HTTPRoute" || bad "V: a prometheus HTTPRoute rendered"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]
