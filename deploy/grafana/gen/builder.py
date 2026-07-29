@@ -322,6 +322,11 @@ _SENTINEL_ORDER = [
     "has_device_flags", "has_multitailnet",
     "pii_host", "pii_node", "pii_perdevice", "pii_emails", "pii_usernames",
     "pii_actor", "pii_int_ips", "pii_ext_ips", "pii_ts_ips", "pii_topology",
+    # #462: Kubernetes-audit tab (tabs/k8saudit.py). Appended at the end per the
+    # append-only rule — never reorder the entries above.
+    "has_k8s_audit", "has_k8s_sensitive_reads", "has_k8s_exec_sessions",
+    "has_k8s_mutations", "has_k8s_rbac_probes", "has_k8s_sessions",
+    "has_k8s_schema_drift", "pii_command_text",
 ]
 
 _sentinels = {}  # name -> QueryVariable dict, keyed by registration order (not emission order)

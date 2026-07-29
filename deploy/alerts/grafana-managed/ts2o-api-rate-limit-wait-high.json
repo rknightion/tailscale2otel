@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel",
-      "__panelId__": "373",
+      "__panelId__": "405",
       "description": "p95 client-side rate-limiter wait is over 5s for 30m \u2014 the exporter is blocking its own Tailscale API requests before they reach the wire. This is NOT upstream latency (that is tailscale2otel_api_duration_seconds) and NOT a server-side 429 (that is ts2o-api-rate-limited): it means the configured collector intervals are asking for more requests than the configured rate limit allows, so collectors run late. THE 5s THRESHOLD IS A PLACEHOLDER \u2014 take a baseline from the \"Rate-limiter wait p50/p95/p99 by endpoint\" panel over a representative week and set it above your own normal, because a healthy busy tailnet legitimately waits. Fix by lengthening the intervals of the endpoints at the top of that panel, or by raising the limit if the tailnet's own quota allows.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health",
       "summary": "API requests are waiting on the client-side rate limiter"

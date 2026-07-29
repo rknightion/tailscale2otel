@@ -38,7 +38,7 @@ builder = dashboard.builder
 # with no rename, drop, or duplicate.
 ORIGINAL_LEAF_TABS = {
     "Overview", "Fleet & Devices", "Network & Flows", "Events & Logs",
-    "Security & Audit", "Policy & Config", "Node Metrics", "Tailnets",
+    "Security & Audit", "Policy & Config", "Kubernetes Audit", "Node Metrics", "Tailnets",
     "Exporter Diagnostics", "Cardinality & Cost",
 }
 
@@ -49,7 +49,11 @@ EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy",
 # feature-gated (present= on the tab() call in build.py's tab_defs) — the case #495
 # calls out: "a tab containing only conditional rows still renders unless the tab
 # itself is conditional."
-EXPECTED_GATED_LEAVES = {"Node Metrics": "has_nodemetrics", "Tailnets": "has_multitailnet"}
+EXPECTED_GATED_LEAVES = {
+    "Node Metrics": ("Fleet & Network", "has_nodemetrics"),
+    "Tailnets": ("Fleet & Network", "has_multitailnet"),
+    "Kubernetes Audit": ("Security & Policy", "has_k8s_audit"),
+}
 
 # Domains that must stay UNGATED because every one carries at least one always-present
 # leaf — gating the domain would hide that core content whenever the domain's optional
@@ -173,9 +177,10 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
             self.assertGreater(len(panel_titles), 0, "leaf %r lost all its panels" % title)
 
     def test_total_panel_count_is_preserved(self):
-        # Measured 2026-07-27, same value test_query_budget.py's docstring records —
-        # regrouping tabs must not add or drop a single panel element.
-        self.assertEqual(len(self.elements), 405)
+        # Measured 2026-07-29 after adding the Kubernetes Audit tab (#462, 32 new panels
+        # on top of the 405 measured 2026-07-27) — regrouping tabs must not add or drop
+        # a single panel element beyond a deliberate content change.
+        self.assertEqual(len(self.elements), 437)
 
     def test_flat_and_nested_builds_carry_the_same_panel_count(self):
         # --flat renders every original row (prefixed with its owning tab's title) with
@@ -212,8 +217,8 @@ class TwoLevelGatingTest(unittest.TestCase):
                      if c["spec"]["title"] == leaf_title)
 
     def test_feature_gated_leaves_keep_their_own_conditional_rendering_when_nested(self):
-        for leaf_title, sentinel in EXPECTED_GATED_LEAVES.items():
-            leaf = self._leaf("Fleet & Network", leaf_title)
+        for leaf_title, (domain_title, sentinel) in EXPECTED_GATED_LEAVES.items():
+            leaf = self._leaf(domain_title, leaf_title)
             gate = _matching_gate(leaf["spec"].get("conditionalRendering"))
             self.assertEqual(gate, sentinel,
                               "%r must stay gated on %r once nested under its domain" %

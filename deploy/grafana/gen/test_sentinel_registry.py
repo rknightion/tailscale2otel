@@ -69,7 +69,10 @@ KNOWN_DEAD_SENTINELS = {
     # The three IP-redaction sentinels stay dead on purpose: no panel anywhere renders
     # a raw address, so there is nothing for them to gate, and wiring them would mean
     # ADDING an address-rendering panel (see the note in tabs/network.py).
-    "pii_host", "pii_emails", "pii_int_ips", "pii_ext_ips", "pii_ts_ips",
+    "pii_host", "pii_int_ips", "pii_ext_ips", "pii_ts_ips",
+    # pii_emails left this list in #462: tabs/k8saudit.py wires it into hide_when= on
+    # every row that surfaces tailscale_k8s_user (a Kubernetes identity, typically an
+    # email/login) — the first panel anywhere to actually render one.
 }
 
 

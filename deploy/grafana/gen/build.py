@@ -30,6 +30,7 @@ from tabs.network import tab_network
 from tabs.events import tab_events
 from tabs.security import tab_security
 from tabs.policy import tab_policy
+from tabs.k8saudit import tab_k8saudit
 from tabs.nodemetrics import tab_nodemetrics
 from tabs.tailnets import tab_tailnets
 from tabs.diagnostics import tab_diagnostics
@@ -51,7 +52,7 @@ from tabs.cardinality import tab_cardinality
 # the rendered sub-tab order for that domain.
 DOMAIN_GROUPS = [
     ("Fleet & Network", ("Fleet & Devices", "Network & Flows", "Node Metrics", "Tailnets")),
-    ("Security & Policy", ("Security & Audit", "Policy & Config")),
+    ("Security & Policy", ("Security & Audit", "Policy & Config", "Kubernetes Audit")),
     ("Exporter", ("Exporter Diagnostics", "Cardinality & Cost")),
 ]
 
@@ -99,6 +100,7 @@ def build(uid, title, flat, only=None, folder=None):
         ("Events & Logs", tab_events, None),
         ("Security & Audit", tab_security, None),
         ("Policy & Config", tab_policy, None),
+        ("Kubernetes Audit", tab_k8saudit, "has_k8s_audit"),
         ("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
         ("Tailnets", tab_tailnets, "has_multitailnet"),
         ("Exporter Diagnostics", tab_diagnostics, None),

@@ -162,9 +162,21 @@ detail. Some starting points:
   | tailscale_k8s_subresource="log" | tailscale_k8s_namespace="tailscale"
 ```
 
-No dashboard or alert rule ships for this feed yet. Useful thresholds for the sensitive-read and
-RBAC-probe counters depend heavily on a cluster's own baseline, and an arbitrary one would page on
-ordinary operator traffic.
+### The dashboard
+
+The bundled dashboard has a **Kubernetes Audit** tab, under the *Security & Policy* group. It hides
+itself entirely when the feed is absent, so it costs nothing on a tailnet with no recorder — as do
+individual rows whose signal has no data.
+
+Rows that surface a Kubernetes identity hide when `pii_filter.emails` is off, and the log panels
+carrying the raw command line hide when `pii_filter.command_text` is off. The `command_class`
+breakdown stays visible either way, since the classification carries no free text.
+
+**No alert rules ship for this feed**, deliberately. The sensitive-read and RBAC-probe counters are
+the obvious candidates, but a useful threshold depends heavily on a cluster's own baseline — a
+`selfsubjectrulesreview` sweep is routine for UI clients such as Freelens — and an arbitrary one
+would page on ordinary operator traffic. Watch the tab for a week, then set thresholds from what you
+actually see.
 
 ## Schema stability
 

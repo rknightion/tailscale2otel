@@ -91,7 +91,7 @@
       "name": "tailscale.k8s.api_request",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "The per-request record carrying the high-cardinality detail kept off the metrics (object name, query-free path, selectors, pod/container, and the raw exec command line under pii_filter.command_text). Read in Loki by event_name; this is the SIEM surface for the feed."
     },
@@ -100,7 +100,7 @@
       "name": "tailscale.k8s.session",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "Per-session record from the .cast header: namespace, pod, container, session type, command and the recorder that holds the recording. Read in Loki by event_name."
     },
@@ -934,7 +934,7 @@
       "prom_name": "tailscale_k8s_api_exec_sessions_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "kubectl exec/attach/port-forward attempts, dimensioned by the bounded command_class. Queried ad hoc in Loki alongside tailscale.k8s.api_request until a dashboard exists."
     },
@@ -944,7 +944,7 @@
       "prom_name": "tailscale_k8s_api_mutations_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "create/update/patch/delete attempts. Counts what was REQUESTED, not what succeeded, so it cannot back a change-success panel and no rule uses it."
     },
@@ -954,9 +954,9 @@
       "prom_name": "tailscale_k8s_api_rbac_probes_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
-      "note": "SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Normal for UI clients such as Freelens, which is exactly why no standing alert ships: the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline."
+      "note": "SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Charted by resource and namespace. Deliberately not alerted: it is normal for UI clients such as Freelens, so the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline."
     },
     {
       "kind": "metric",
@@ -964,9 +964,9 @@
       "prom_name": "tailscale_k8s_api_requests_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
-      "note": "Baseline Kubernetes API request volume by verb/resource/namespace/user. No dashboard or rule ships for this feed yet (#462 delivers the collector only); it counts ATTEMPTS, since the source carries no response status."
+      "note": "Baseline Kubernetes API request volume, broken down by verb, namespace, resource and user agent on the Kubernetes Audit tab. Counts ATTEMPTS: the source carries no response status, so this is request volume, never a success or failure rate."
     },
     {
       "kind": "metric",
@@ -974,9 +974,9 @@
       "prom_name": "tailscale_k8s_api_sensitive_reads_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
-      "note": "Reads of secrets, service accounts and RBAC objects. A strong alerting candidate, but deliberately not wired to a rule here: a useful threshold depends on the cluster's own baseline, and shipping an arbitrary one would page on normal operator traffic."
+      "note": "Reads of secrets, service accounts and RBAC objects, charted by resource, namespace and user agent. A strong alerting candidate, but deliberately NOT wired to a rule: a useful threshold depends on the cluster's own baseline, and an arbitrary one would page on normal operator traffic."
     },
     {
       "kind": "metric",
@@ -984,9 +984,9 @@
       "prom_name": "tailscale_k8s_schema_drift_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
-      "note": "Guards an explicitly BETA upstream schema with no version field. Read on upgrade or when decoding looks wrong; not visualized because a healthy feed reports nothing at all."
+      "note": "Guards an explicitly BETA upstream schema with no version field. Charted as a rate plus a range stat whose thresholds treat any drift as red, since a healthy feed reports nothing at all. Watch it after upgrading the operator or the recorder."
     },
     {
       "kind": "metric",
@@ -994,7 +994,7 @@
       "prom_name": "tailscale_k8s_session_started_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
       "note": "Terminal sessions derived from .cast headers. Fires once at session start; session completeness is not observable from the bucket, so there is no duration metric to visualize alongside it."
     },

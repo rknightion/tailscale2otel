@@ -51,12 +51,13 @@ def tab_policy():
     sentinel("has_dns_resolver", "tailscale_dns_resolver_ratio")
     sentinel("has_svc", "tailscale_service_ports")
     pii_sentinel("pii_usernames", PII + '{category="user_display_names"} == 0')
-    # pii_emails stays dead deliberately. No panel on any tab renders an email
-    # address — contacts report a per-type verification flag and the address is
-    # never emitted, and the OAuth/webhook inventory added for #403 carries app
-    # names and endpoint ids only. Gating a row on it would suppress a row that
-    # exposes nothing, so it waits for a panel that actually shows an address.
-    pii_sentinel("pii_emails", PII + '{category="emails"} == 0')  # dead: nothing renders an email
+    # pii_emails: no panel on THIS tab renders an email address — contacts report a
+    # per-type verification flag and the address is never emitted, and the OAuth/
+    # webhook inventory added for #403 carries app names and endpoint ids only. It
+    # is declared here (not dead any more, #462) because tabs/k8saudit.py wires it
+    # into hide_when= for tailscale_k8s_user (a Kubernetes identity, typically an
+    # email/login) — the first panel anywhere to actually render one.
+    pii_sentinel("pii_emails", PII + '{category="emails"} == 0')
 
     _infra_tbl = ["Time", "__name__", "job", "instance",
                   "service_instance_id", "service_name", "service_namespace"]
