@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -430,4 +432,52 @@ func TestManifestAndInputCannotCarryACredential(t *testing.T) {
 	}
 	check(t, reflect.TypeOf(supportbundle.Manifest{}))
 	check(t, reflect.TypeOf(supportbundle.Input{}))
+}
+
+// A bundle must carry the flow store's backend state (#294). A stuck or
+// unhealthy persistent store is otherwise undiagnosable after the fact: queue
+// drops and a false Healthy live only on a live admin page.
+func TestBundle_CarriesFlowStoreBackendState(t *testing.T) {
+	in := sampleInput()
+	in.FlowStore = statusdata.FlowStoreInfo{
+		Enabled:   true,
+		Retention: "720h0m0s",
+		Backend: statusdata.FlowStoreBackend{
+			Kind:       "sqlite",
+			Persistent: true,
+			Healthy:    false,
+			Errors:     []string{"disk full"},
+			QueueDrops: 42,
+			Rows:       1000,
+			SizeBytes:  4096,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := supportbundle.Write(&buf, in, supportbundle.Options{}, fixedNow()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	files := readZip(t, buf.Bytes())
+
+	raw, ok := files["flow_store.json"]
+	if !ok {
+		t.Fatalf("bundle has no flow_store.json; files = %v", slices.Sorted(maps.Keys(files)))
+	}
+
+	var got statusdata.FlowStoreInfo
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode flow_store.json: %v", err)
+	}
+	if got.Backend.Kind != "sqlite" || got.Backend.Healthy {
+		t.Errorf("backend state lost: %+v", got.Backend)
+	}
+	if got.Backend.QueueDrops != 42 {
+		t.Errorf("QueueDrops = %d, want 42 — the signal the bundle exists to carry", got.Backend.QueueDrops)
+	}
+
+	// The manifest must list it, or a reader cannot tell a missing section from
+	// an empty one.
+	if m := decodeManifest(t, files); !contains(m.Included, "flow_store.json") {
+		t.Errorf("manifest.Included omits flow_store.json: %v", m.Included)
+	}
 }

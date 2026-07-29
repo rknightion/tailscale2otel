@@ -141,7 +141,7 @@ func dbFileName(tailnet string) string {
 func Open(opts Options) (*Store, error) {
 	opts.applyDefaults()
 	if opts.Dir == "" {
-		return nil, errors.New("sqlitestore: flows.store.path is empty")
+		return nil, errors.New("sqlitestore: flows.store.directory is empty")
 	}
 	if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
 		return nil, fmt.Errorf("sqlitestore: create %s: %w", opts.Dir, err)
@@ -201,7 +201,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if current > schemaVersion {
 		return fmt.Errorf(
 			"sqlitestore: database is schema version %d but this build understands %d: "+
-				"it was written by a newer tailscale2otel. Point flows.store.path at a new "+
+				"it was written by a newer tailscale2otel. Point flows.store.directory at a new "+
 				"directory or upgrade, rather than letting an older build read it",
 			current, schemaVersion)
 	}

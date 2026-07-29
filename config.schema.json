@@ -1410,12 +1410,17 @@
           "properties": {
             "batch_size": {
               "default": 512,
-              "description": "rows committed per write transaction (1–100000); must not exceed queue_size. Only takes effect once path is set",
+              "description": "rows committed per write transaction (1–100000); must not exceed queue_size. Only takes effect once directory is set",
               "type": "integer"
+            },
+            "directory": {
+              "default": "",
+              "description": "OPTIONAL, opt-in: a directory for the on-disk /flows backend (internal/flowstore/sqlitestore). Empty (default) is memory-only. Relative paths resolve against this config file, like ingress_wal.directory. Setting this writes flow rows, including user identities, to disk — they then survive restarts and land in backups",
+              "type": "string"
             },
             "flush_interval": {
               "default": "5s",
-              "description": "force a partial batch to disk on this timer (100ms–5m) so a quiet tailnet's last few rows do not sit in memory indefinitely. Only takes effect once path is set",
+              "description": "force a partial batch to disk on this timer (100ms–5m) so a quiet tailnet's last few rows do not sit in memory indefinitely. Only takes effect once directory is set",
               "examples": [
                 "5s"
               ],
@@ -1424,22 +1429,17 @@
             },
             "max_export_rows": {
               "default": 50000,
-              "description": "cap on rows a single CSV/JSON export may read (100–1000000), so a large window cannot be materialized into memory in one request. Only takes effect once path is set",
+              "description": "cap on rows a single CSV/JSON export may read (100–1000000), so a large window cannot be materialized into memory in one request. Only takes effect once directory is set",
               "type": "integer"
             },
             "max_rows": {
               "default": 5000000,
-              "description": "hard cap on retained rows (10000–1000000000), enforced independently of retention so a traffic flood cannot fill the disk before the next sweep. Only takes effect once path is set",
+              "description": "hard cap on retained rows (10000–1000000000), enforced independently of retention so a traffic flood cannot fill the disk before the next sweep. Only takes effect once directory is set",
               "type": "integer"
-            },
-            "path": {
-              "default": "",
-              "description": "OPTIONAL, opt-in: a directory for the on-disk /flows backend (internal/flowstore/sqlitestore). Empty (default) is memory-only. MUST be absolute. Setting this writes flow rows, including user identities, to disk — they then survive restarts and land in backups",
-              "type": "string"
             },
             "query_timeout": {
               "default": "15s",
-              "description": "give up a single read against the store after this long (1s–5m) rather than hang the admin page. Only takes effect once path is set",
+              "description": "give up a single read against the store after this long (1s–5m) rather than hang the admin page. Only takes effect once directory is set",
               "examples": [
                 "15s"
               ],
@@ -1448,12 +1448,12 @@
             },
             "queue_size": {
               "default": 8192,
-              "description": "bound on the write-behind queue between Record and the disk writer (64–1048576); a full queue drops and counts rather than blocking. Only takes effect once path is set",
+              "description": "bound on the write-behind queue between Record and the disk writer (64–1048576); a full queue drops and counts rather than blocking. Only takes effect once directory is set",
               "type": "integer"
             },
             "retention": {
               "default": "720h",
-              "description": "how far back the on-disk store keeps rows (1h–8760h/365d), independent of flows.retention which still only sizes the in-memory ring. Only takes effect once path is set",
+              "description": "how far back the on-disk store keeps rows (1h–8760h/365d), independent of flows.retention which still only sizes the in-memory ring. Only takes effect once directory is set",
               "examples": [
                 "720h"
               ],
@@ -1462,7 +1462,7 @@
             },
             "sweep_interval": {
               "default": "1h",
-              "description": "how often retention and the row cap are enforced (1m–24h). Only takes effect once path is set",
+              "description": "how often retention and the row cap are enforced (1m–24h). Only takes effect once directory is set",
               "examples": [
                 "1h"
               ],

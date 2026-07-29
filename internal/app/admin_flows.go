@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -57,8 +58,15 @@ func encodeFlowsCursor(seq uint64) string {
 // decodeFlowsCursor parses the ?cursor= parameter. An absent, malformed,
 // wrongly-versioned, or unparseable cursor decodes to 0 ("from the newest")
 // rather than an error: a cursor is a value the page merely round-trips, and
-// one gone stale after a process restart (the ring's seq counter resets) must
-// fail safe to the start of the list, never break the view (#296).
+// one gone stale must fail safe to the start of the list, never break the view
+// (#296).
+//
+// Whether a cursor CAN go stale depends on the backend. The in-memory ring's
+// seq counter restarts with the process, so a cursor held across a restart is
+// meaningless and lands back at the newest row. The persistent backend (#294)
+// numbers rows with an AUTOINCREMENT rowid that survives restarts and is never
+// reused, so a cursor stays valid across one — a shared /flows URL keeps its
+// place. Neither case needs handling here; both are already safe.
 func decodeFlowsCursor(s string) uint64 {
 	if s == "" {
 		return 0
@@ -87,7 +95,7 @@ func decodeFlowsCursor(s string) uint64 {
 // the interface, and a (*flowstore.Memory)(nil) in an interface compares
 // non-nil, so every "view disabled" check downstream would pass and then panic.
 //
-// With flows.store.path set it builds the opt-in persistent backend instead
+// With flows.store.directory set it builds the opt-in persistent backend instead
 // (#294). If that fails to open, the flow view is switched OFF rather than
 // quietly falling back to memory: an operator who configured persistence and
 // then sees a working /flows would reasonably conclude they had history, and
@@ -104,7 +112,7 @@ func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) flows
 		return nil
 	}
 
-	if dir := cfg.Flows.Store.Path; dir != "" {
+	if dir := cfg.Flows.Store.Directory; dir != "" {
 		store, err := sqlitestore.Open(sqlitestore.Options{
 			Dir:           dir,
 			Tailnet:       tailnet,
@@ -150,7 +158,7 @@ func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) flows
 // a non-nil store with a configured path is a sqlite one, and Stats() on that
 // backend costs real queries this is called on every request to avoid.
 func (a *App) flowRetention() time.Duration {
-	if a.cfg.Flows.Store.Path != "" {
+	if a.cfg.Flows.Store.Directory != "" {
 		return a.cfg.Flows.Store.Retention.D()
 	}
 	return a.cfg.Flows.Retention.D()
@@ -208,6 +216,7 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 	info.Retention = a.flowRetention().String()
 
 	var earliest, latest time.Time
+	healthy := true
 	for _, rt := range a.runtimes {
 		if rt.flowStore == nil {
 			continue
@@ -228,6 +237,26 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 		info.EstimatedBytes = lim.EstimatedBytes
 		info.Observations += s.Observations
 		info.Truncated += s.Truncated
+
+		// Backend state is summed where summing means something (queue depth,
+		// drops, rows, bytes are per-file quantities) and ANDed where it does
+		// not: one unhealthy tailnet must not be hidden by healthy peers, so
+		// Healthy is false if any store has failed and every distinct reason is
+		// carried. Kind is uniform by construction — there is one global
+		// flows.store.directory, so every runtime builds the same backend.
+		b := s.Backend
+		info.Backend.Kind = b.Kind
+		info.Backend.Persistent = b.Kind == flowstore.BackendSQLite
+		info.Backend.Queued += b.Queued
+		info.Backend.QueueDrops += b.QueueDrops
+		info.Backend.Rows += b.Rows
+		info.Backend.SizeBytes += b.SizeBytes
+		if !b.Healthy {
+			healthy = false
+			if b.Error != "" && !slices.Contains(info.Backend.Errors, b.Error) {
+				info.Backend.Errors = append(info.Backend.Errors, b.Error)
+			}
+		}
 		if !s.Earliest.IsZero() && (earliest.IsZero() || s.Earliest.Before(earliest)) {
 			earliest = s.Earliest
 		}
@@ -238,6 +267,7 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 	if !earliest.IsZero() {
 		info.Covered = latest.Add(flowstore.Resolution).Sub(earliest).Round(time.Minute).String()
 	}
+	info.Backend.Healthy = healthy
 	return info
 }
 

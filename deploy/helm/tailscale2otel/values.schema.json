@@ -763,6 +763,9 @@
                                 "batch_size": {
                                     "type": "integer"
                                 },
+                                "directory": {
+                                    "type": "string"
+                                },
                                 "flush_interval": {
                                     "type": "string"
                                 },
@@ -771,9 +774,6 @@
                                 },
                                 "max_rows": {
                                     "type": "integer"
-                                },
-                                "path": {
-                                    "type": "string"
                                 },
                                 "query_timeout": {
                                     "type": "string"

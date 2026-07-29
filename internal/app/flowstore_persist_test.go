@@ -17,11 +17,11 @@ func persistCfg(t *testing.T, dir string) *config.Config {
 	cfg.Flows.Enabled = true
 	cfg.Admin.Enabled = true
 	cfg.Admin.LandingPage = true
-	cfg.Flows.Store.Path = dir
+	cfg.Flows.Store.Directory = dir
 	return cfg
 }
 
-// An empty flows.store.path must keep the historical in-memory behavior, since
+// An empty flows.store.directory must keep the historical in-memory behavior, since
 // that is the stateless default the whole feature is opt-in relative to.
 func TestNewFlowStoreDefaultsToMemory(t *testing.T) {
 	cfg := config.Default()
@@ -44,7 +44,7 @@ func TestNewFlowStoreBuildsPersistentBackend(t *testing.T) {
 	dir := t.TempDir()
 	store := newFlowStore(persistCfg(t, dir), "acme.example.com", discardLogger())
 	if store == nil {
-		t.Fatal("newFlowStore returned nil with flows.store.path set")
+		t.Fatal("newFlowStore returned nil with flows.store.directory set")
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -197,11 +197,71 @@ func TestFlowRetentionFollowsActiveBackend(t *testing.T) {
 		t.Fatalf("memory flowRetention() = %v, want 6h", got)
 	}
 
-	a.cfg.Flows.Store.Path = "/var/lib/tailscale2otel/flows"
+	a.cfg.Flows.Store.Directory = "/var/lib/tailscale2otel/flows"
 	a.cfg.Flows.Store.Retention = config.Duration(30 * 24 * time.Hour)
 
 	if got := a.flowRetention(); got != 30*24*time.Hour {
 		t.Fatalf("persistent flowRetention() = %v, want 720h — a 24h clamp would "+
 			"make multi-day history unreachable", got)
+	}
+}
+
+// The status page and /api/status.json must say WHICH backend is answering, and
+// must not report the in-memory ring's bucket/capacity numbers for a store that
+// has neither — a healthy persistent store rendering "0 of 0 buckets" and
+// "0 B estimated" reads as broken rather than as not-applicable.
+func TestFlowStoreInfoReportsPersistentBackend(t *testing.T) {
+	cfg := persistCfg(t, t.TempDir())
+	store := newFlowStore(cfg, "acme.example.com", discardLogger())
+	if store == nil {
+		t.Fatal("persistent store was not built")
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	a := &App{cfg: cfg, runtimes: []*tailnetRuntime{{name: "acme.example.com", flowStore: store}}}
+	info := a.flowStoreInfo()
+
+	if !info.Enabled {
+		t.Fatal("Enabled = false, want true")
+	}
+	if info.Backend.Kind != flowstore.BackendSQLite {
+		t.Fatalf("Backend.Kind = %q, want %q", info.Backend.Kind, flowstore.BackendSQLite)
+	}
+	if !info.Backend.Persistent {
+		t.Fatal("Backend.Persistent = false: the template keys its whole layout off this")
+	}
+	if !info.Backend.Healthy {
+		t.Fatalf("Backend.Healthy = false, errors = %v", info.Backend.Errors)
+	}
+	// Retention must be the DISK retention, not the ring's.
+	if want := cfg.Flows.Store.Retention.D().String(); info.Retention != want {
+		t.Fatalf("Retention = %q, want %q", info.Retention, want)
+	}
+}
+
+// The memory path must be unchanged by all of the above.
+func TestFlowStoreInfoReportsMemoryBackend(t *testing.T) {
+	cfg := config.Default()
+	cfg.Flows.Enabled = true
+	cfg.Admin.Enabled = true
+	cfg.Admin.LandingPage = true
+
+	store := newFlowStore(cfg, "acme.example.com", discardLogger())
+	if store == nil {
+		t.Fatal("memory store was not built")
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	a := &App{cfg: cfg, runtimes: []*tailnetRuntime{{name: "acme.example.com", flowStore: store}}}
+	info := a.flowStoreInfo()
+
+	if info.Backend.Kind != flowstore.BackendMemory {
+		t.Fatalf("Backend.Kind = %q, want %q", info.Backend.Kind, flowstore.BackendMemory)
+	}
+	if info.Backend.Persistent {
+		t.Fatal("Backend.Persistent = true for the in-memory ring")
+	}
+	if info.Capacity == 0 {
+		t.Fatal("Capacity = 0: the memory ring must still report its bucket capacity")
 	}
 }

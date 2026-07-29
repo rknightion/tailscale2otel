@@ -94,3 +94,9 @@ tools/*/promqlcheck
 tools/*/metricscatalog
 tools/*/configcheck
 tools/*/apidrift
+
+# Persistent flow-store databases (flows.store.directory), if one is ever pointed
+# at the checkout. SQLite runs in WAL mode, so the sidecar files come too.
+flows-*.db
+flows-*.db-wal
+flows-*.db-shm

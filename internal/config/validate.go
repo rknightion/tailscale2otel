@@ -350,25 +350,25 @@ func (c *Config) Warnings() []string {
 			"use the flow view.")
 	}
 
-	// flows.store.path (#294) opts into the on-disk backend. Same reasoning as
+	// flows.store.directory (#294) opts into the on-disk backend. Same reasoning as
 	// flows.enabled just above: the persistent store is only ever built
 	// alongside the in-memory one, so a path set while /flows itself has no
 	// consumer is dead configuration.
-	if c.Flows.Store.Path != "" && (!c.Flows.Enabled || !c.Admin.Enabled || !c.Admin.LandingPage) {
-		w = append(w, "flows.store.path is set but has no effect: the persistent flow store is only "+
+	if c.Flows.Store.Directory != "" && (!c.Flows.Enabled || !c.Admin.Enabled || !c.Admin.LandingPage) {
+		w = append(w, "flows.store.directory is set but has no effect: the persistent flow store is only "+
 			"built when flows.enabled=true and the admin landing page is on (admin.enabled / "+
 			"admin.landing_page). No history is being written to disk.")
 	}
 
-	// Setting flows.store.path is a genuine new data-at-rest exposure, not
+	// Setting flows.store.directory is a genuine new data-at-rest exposure, not
 	// just an operational footgun: the in-memory ring dies with the process,
 	// but every row persisted to disk here — including the identities
 	// (emails, node/tag names) a flow observation carries — survives a
 	// restart and, unless the operator excludes the path, ends up in whatever
 	// backs up that host.
-	if c.Flows.Store.Path != "" {
-		w = append(w, "flows.store.path is set: flow rows, including user identities such as "+
-			"email addresses, will be written to disk at "+c.Flows.Store.Path+" and will survive "+
+	if c.Flows.Store.Directory != "" {
+		w = append(w, "flows.store.directory is set: flow rows, including user identities such as "+
+			"email addresses, will be written to disk at "+c.Flows.Store.Directory+" and will survive "+
 			"restarts and appear in backups of that path, unlike the in-memory default. Make sure "+
 			"that is intended and that the path is covered by your backup/retention policy.")
 	}
@@ -1086,21 +1086,16 @@ func (c *Config) validationChecks() []configCheck {
 	// flows.store.* (#294) configures the opt-in on-disk backend
 	// (internal/flowstore/sqlitestore). Every check below is a no-op both when
 	// the view is off (mirroring the in-memory checks above — the store is
-	// never built) AND when flows.store.path is empty: an empty path is the
+	// never built) AND when flows.store.directory is empty: an empty path is the
 	// documented "memory only" default, so there is nothing to validate.
-	flowsStoreActive := func() bool { return c.Flows.Enabled && c.Flows.Store.Path != "" }
+	flowsStoreActive := func() bool { return c.Flows.Enabled && c.Flows.Store.Directory != "" }
 
-	add("flows.store.path", "Set flows.store.path to an absolute directory path.", func() error {
-		if !flowsStoreActive() {
-			return nil
-		}
-		if !filepath.IsAbs(c.Flows.Store.Path) {
-			return fmt.Errorf("flows.store.path %q must be an absolute path: a relative path is a "+
-				"foot-gun once this runs in a container, where the working directory is easy to get "+
-				"wrong and hard to notice", c.Flows.Store.Path)
-		}
-		return nil
-	})
+	// No absolute-path check here, deliberately. flows.store.directory is
+	// registered in pathFields(), so a relative value is resolved against the
+	// config file's own directory before this runs (#310) — exactly as
+	// ingress_wal.directory and checkpoint.file_path are. Rejecting a relative
+	// path would contradict that contract and make this the one filesystem
+	// field in the config that behaves differently from every other.
 	add("flows.store.retention",
 		fmt.Sprintf("Set flows.store.retention between %v and %v.", minFlowsStoreRetention, maxFlowsStoreRetention),
 		func() error {

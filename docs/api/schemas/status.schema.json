@@ -680,6 +680,38 @@
     },
     "flow_store": {
       "properties": {
+        "backend": {
+          "properties": {
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "healthy": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "persistent": {
+              "type": "boolean"
+            },
+            "queue_drops": {
+              "type": "integer"
+            },
+            "queued": {
+              "type": "integer"
+            },
+            "rows": {
+              "type": "integer"
+            },
+            "size_bytes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
         "buckets": {
           "type": "integer"
         },

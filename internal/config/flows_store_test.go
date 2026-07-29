@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +18,8 @@ import (
 func TestDefaults_FlowsStore(t *testing.T) {
 	c := config.Default()
 
-	if c.Flows.Store.Path != "" {
-		t.Errorf("flows.store.path default = %q, want empty (memory-only)", c.Flows.Store.Path)
+	if c.Flows.Store.Directory != "" {
+		t.Errorf("flows.store.directory default = %q, want empty (memory-only)", c.Flows.Store.Directory)
 	}
 	if want := 30 * 24 * time.Hour; c.Flows.Store.Retention.D() != want {
 		t.Errorf("flows.store.retention default = %v, want %v", c.Flows.Store.Retention.D(), want)
@@ -59,7 +61,7 @@ func validFlowsStore(t *testing.T) *config.Config {
 	t.Helper()
 	c := config.Default()
 	c.Flows.Enabled = true
-	c.Flows.Store.Path = t.TempDir()
+	c.Flows.Store.Directory = t.TempDir()
 	c.Flows.Store.Retention = config.Duration(30 * 24 * time.Hour)
 	c.Flows.Store.MaxRows = 5_000_000
 	c.Flows.Store.MaxExportRows = 50_000
@@ -77,7 +79,7 @@ func validFlowsStore(t *testing.T) *config.Config {
 func TestValidate_FlowsStoreSkippedWhenPathEmpty(t *testing.T) {
 	c := config.Default()
 	c.Flows.Enabled = true
-	c.Flows.Store.Path = "" // stays the default
+	c.Flows.Store.Directory = "" // stays the default
 	// Every other field pushed absurdly out of range: must not matter.
 	c.Flows.Store.Retention = config.Duration(-time.Hour)
 	c.Flows.Store.MaxRows = -1
@@ -89,7 +91,7 @@ func TestValidate_FlowsStoreSkippedWhenPathEmpty(t *testing.T) {
 	c.Flows.Store.SweepInterval = config.Duration(-time.Hour)
 
 	if err := c.Validate(); err != nil {
-		t.Fatalf("Validate() with flows.store.path empty = %v, want nil (section is inert)", err)
+		t.Fatalf("Validate() with flows.store.directory empty = %v, want nil (section is inert)", err)
 	}
 }
 
@@ -105,29 +107,19 @@ func TestValidate_FlowsStoreSkippedWhenFlowsDisabled(t *testing.T) {
 	}
 }
 
-func TestValidate_FlowsStorePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		path    string
-		wantErr bool
-	}{
-		{name: "absolute", path: "/var/lib/tailscale2otel/flows"},
-		{name: "relative", path: "flows", wantErr: true},
-		{name: "relative dotted", path: "./data/flows", wantErr: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+// flows.store.directory follows #310's path convention rather than rejecting
+// relative values: it is registered in pathFields(), so a relative path resolves
+// against the config file's own directory exactly as ingress_wal.directory does.
+// An earlier revision required an absolute path, which would have made this the
+// one filesystem field in the config that behaved differently from every other.
+func TestValidate_FlowsStoreDirectoryAcceptsRelativeAndAbsolute(t *testing.T) {
+	for _, dir := range []string{"/var/lib/tailscale2otel/flows", "flows", "./data/flows"} {
+		t.Run(dir, func(t *testing.T) {
 			c := validFlowsStore(t)
-			c.Flows.Store.Path = tc.path
+			c.Flows.Store.Directory = dir
 
-			err := c.Validate()
-			switch {
-			case tc.wantErr && err == nil:
-				t.Fatalf("Validate() = nil, want an error for path %q", tc.path)
-			case !tc.wantErr && err != nil:
-				t.Fatalf("Validate() = %v, want nil", err)
-			case tc.wantErr && !strings.Contains(err.Error(), "flows.store.path"):
-				t.Errorf("error %q does not name the offending key", err)
+			if err := c.Validate(); err != nil {
+				t.Fatalf("Validate() = %v, want nil: relative paths are resolved, not rejected", err)
 			}
 		})
 	}
@@ -404,7 +396,7 @@ func TestValidate_FlowsStoreSweepIntervalBounds(t *testing.T) {
 	}
 }
 
-// flows.store.path being set while /flows itself has no consumer is dead
+// flows.store.directory being set while /flows itself has no consumer is dead
 // configuration, mirroring TestWarnings_FlowsUnreachableWithoutAdminPage.
 func TestWarnings_FlowsStoreUnreachableWithoutAdminPage(t *testing.T) {
 	tests := []struct {
@@ -423,18 +415,18 @@ func TestWarnings_FlowsStoreUnreachableWithoutAdminPage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := config.Default()
 			c.Flows.Enabled = tc.flowsOn
-			c.Flows.Store.Path = t.TempDir()
+			c.Flows.Store.Directory = t.TempDir()
 			c.Admin.Enabled = tc.adminOn
 			c.Admin.LandingPage = tc.landingPage
 
 			var found bool
 			for _, w := range c.Warnings() {
-				if strings.Contains(w, "flows.store.path is set but has no effect") {
+				if strings.Contains(w, "flows.store.directory is set but has no effect") {
 					found = true
 				}
 			}
 			if found != tc.wantWarn {
-				t.Errorf("flows.store.path unreachable warning present = %v, want %v", found, tc.wantWarn)
+				t.Errorf("flows.store.directory unreachable warning present = %v, want %v", found, tc.wantWarn)
 			}
 		})
 	}
@@ -449,16 +441,16 @@ func TestWarnings_FlowsStoreDataAtRest(t *testing.T) {
 	c.Flows.Enabled = true
 	c.Admin.Enabled = true
 	c.Admin.LandingPage = true
-	c.Flows.Store.Path = "" // memory-only default
+	c.Flows.Store.Directory = "" // memory-only default
 
 	for _, w := range c.Warnings() {
 		if strings.Contains(w, "will be written to disk") {
-			t.Errorf("unexpected data-at-rest warning with flows.store.path empty: %q", w)
+			t.Errorf("unexpected data-at-rest warning with flows.store.directory empty: %q", w)
 		}
 	}
 
 	dir := t.TempDir()
-	c.Flows.Store.Path = dir
+	c.Flows.Store.Directory = dir
 	var found bool
 	for _, w := range c.Warnings() {
 		if strings.Contains(w, "will be written to disk") {
@@ -472,24 +464,56 @@ func TestWarnings_FlowsStoreDataAtRest(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected a data-at-rest warning once flows.store.path is set, found none")
+		t.Error("expected a data-at-rest warning once flows.store.directory is set, found none")
 	}
 }
 
-// TS2OTEL_FLOWS__STORE__PATH must reach Flows.Store.Path, proving the nested
+// TS2OTEL_FLOWS__STORE__DIRECTORY must reach Flows.Store.Directory, proving the nested
 // struct participates in the standard env-override layer.
-func TestEnv_FlowsStorePath(t *testing.T) {
+func TestEnv_FlowsStoreDirectory(t *testing.T) {
 	t.Setenv("TS2OTEL_TAILSCALE__TAILNET", "example.ts.net")
 	t.Setenv("TS2OTEL_TAILSCALE__AUTH__METHOD", "apikey")
 	t.Setenv("TS2OTEL_TAILSCALE__AUTH__APIKEY", "tskey-api-xxxxx")
 	dir := t.TempDir()
-	t.Setenv("TS2OTEL_FLOWS__STORE__PATH", dir)
+	t.Setenv("TS2OTEL_FLOWS__STORE__DIRECTORY", dir)
 
 	c, err := config.Load("")
 	if err != nil {
 		t.Fatalf("Load() = %v, want nil", err)
 	}
-	if c.Flows.Store.Path != dir {
-		t.Errorf("Flows.Store.Path = %q, want %q", c.Flows.Store.Path, dir)
+	if c.Flows.Store.Directory != dir {
+		t.Errorf("Flows.Store.Directory = %q, want %q", c.Flows.Store.Directory, dir)
+	}
+}
+
+// The point of following the convention: a relative flows.store.directory is
+// resolved against the CONFIG FILE's directory, not the process working
+// directory. This is what registering the field in pathFields() buys, and it is
+// the behavior ingress_wal.directory and checkpoint.file_path already have.
+func TestFlowsStoreDirectoryResolvesRelativeToConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	body := "" +
+		"tailscale:\n" +
+		"  tailnet: example.ts.net\n" +
+		"  auth:\n" +
+		"    method: apikey\n" +
+		"    apikey: tskey-api-xxxxx\n" +
+		"flows:\n" +
+		"  store:\n" +
+		"    directory: flows\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	c, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() = %v, want nil", err)
+	}
+
+	want := filepath.Join(dir, "flows")
+	if c.Flows.Store.Directory != want {
+		t.Fatalf("Flows.Store.Directory = %q, want %q (resolved against the config file, "+
+			"not the working directory)", c.Flows.Store.Directory, want)
 	}
 }

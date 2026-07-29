@@ -164,12 +164,25 @@ loopback (these behaviours are also noted in
   `admin.tls` is configured: on a plaintext listener a browser that saw it once would refuse
   `http://` to that host and port and lock you out of your own page.
 
-!!! warning "The flow view is not covered by `pii_filter`"
+!!! warning "The in-memory flow view is not covered by `pii_filter`"
     [`/flows`](flow-view.md) shows device names, addresses and users **in full**. `pii_filter`
     governs the telemetry this process exports, not what an authenticated administrator may look
-    at locally, and the flow store never leaves the process. The **admin token is the only thing
-    protecting that data** — if the set of people holding it is wider than the set who may see
-    your users' email addresses, narrow the token rather than the filter.
+    at locally, and by default the flow store is in memory and never leaves the process. The
+    **admin token is the only thing protecting that data** — if the set of people holding it is
+    wider than the set who may see your users' email addresses, narrow the token rather than the
+    filter.
+
+!!! danger "Persistent flow storage writes identities to disk"
+    That "never leaves the process" reasoning holds only for the in-memory default. Setting
+    [`flows.store.directory`](configuration.md#flowsstore--opt-in-persistent-backend) writes flow
+    rows to a SQLite database that survives restarts and lands in whatever backs up that volume,
+    so the admin token stops being the only control — filesystem and backup access now read the
+    same data.
+
+    Because that data does leave the process, the persistent path **does** apply `pii_filter`
+    before writing, unlike the in-memory ring. A category you have turned off never reaches the
+    file. What you leave enabled is retained on disk for up to `flows.store.retention` (default
+    30 days). Scope access to that directory and its backups accordingly.
 
 !!! danger "Always set credentials before exposing a receiver"
     Always set these when exposing a receiver, especially on a wildcard/all-interfaces bind

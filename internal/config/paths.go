@@ -103,6 +103,7 @@ func (c *Config) pathFields() []pathField {
 		{"profiling.pyroscope.tls.key_file", &c.Profiling.Pyroscope.TLS.KeyFile},
 		{"checkpoint.file_path", &c.Checkpoint.FilePath},
 		{"ingress_wal.directory", &c.IngressWAL.Directory},
+		{"flows.store.directory", &c.Flows.Store.Directory},
 		{"streaming.tls.cert_file", &c.Streaming.TLS.CertFile},
 		{"streaming.tls.key_file", &c.Streaming.TLS.KeyFile},
 		{"streaming.token_file", &c.Streaming.TokenFile},

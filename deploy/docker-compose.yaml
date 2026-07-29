@@ -89,6 +89,14 @@ services:
       TS2OTEL_INGRESS_WAL__MAX_BYTES: ${TS2OTEL_INGRESS_WAL__MAX_BYTES:-268435456}
       TS2OTEL_INGRESS_WAL__MAX_ENTRIES: ${TS2OTEL_INGRESS_WAL__MAX_ENTRIES:-10000}
       TS2OTEL_INGRESS_WAL__CORRUPTION: ${TS2OTEL_INGRESS_WAL__CORRUPTION:-fail}
+      # Optional persistent flow store. Empty (the default) keeps /flows on the
+      # bounded in-memory ring, which is lost on restart. Point this at the same
+      # named state volume below to keep multi-day history across restarts; size
+      # the volume for it (see docs/flow-view.md) since it holds one row per
+      # connection. Rows carry user identities and land in backups — pii_filter
+      # is applied before writing, unlike the in-memory path.
+      TS2OTEL_FLOWS__STORE__DIRECTORY: ${TS2OTEL_FLOWS__STORE__DIRECTORY:-}
+      TS2OTEL_FLOWS__STORE__RETENTION: ${TS2OTEL_FLOWS__STORE__RETENTION:-720h}
       # Gates the admin status page (/ and /api/status.json) and pprof when
       # admin.enabled. With NO token the page is served only on a loopback
       # admin.listen — any other bind is refused with HTTP 403 — so set this

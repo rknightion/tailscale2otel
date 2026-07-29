@@ -107,7 +107,7 @@ var (
 		Name:        MetricStoreDropped,
 		Unit:        unitRecord,
 		Instrument:  metricdoc.Counter,
-		Description: "Flow observations rejected from the local in-memory flow view because their timestamps are outside its retention or future-skew bounds. OTLP emission is unaffected.",
+		Description: "Flow observations rejected from the local flow view (the in-memory ring, or the persistent store when flows.store.directory is set) because their timestamps are outside its retention or future-skew bounds. OTLP emission is unaffected.",
 		Attributes:  []string{"reason"},
 		Group:       groupNetwork,
 	}

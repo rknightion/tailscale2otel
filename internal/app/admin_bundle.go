@@ -51,6 +51,7 @@ func (a *App) handleSupportBundle(w http.ResponseWriter, r *http.Request) {
 		Advisories:  status.Advisories,
 		Metrics:     status.Metrics,
 		LogEvents:   status.LogEvents,
+		FlowStore:   status.Flows,
 	}
 	// The CALLER decides whether the device inventory travels at all — see
 	// supportbundle.Input.Devices' own doc for why this package does not

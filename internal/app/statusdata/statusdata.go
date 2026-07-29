@@ -385,6 +385,42 @@ type FlowStoreInfo struct {
 	// deliberately not presented as one. Every dimension would have to be
 	// saturated simultaneously to reach it, which a real tailnet does not do.
 	EstimatedBytes int64 `json:"estimated_bytes,omitempty"`
+	// Backend describes which store implementation is answering (#294). The
+	// fields above it describe the in-memory ring and are meaningless for the
+	// persistent backend, which has no buckets and no memory estimate — read
+	// Backend.Kind first and interpret the rest accordingly.
+	Backend FlowStoreBackend `json:"backend"`
+}
+
+// FlowStoreBackend reports which flow-store implementation is serving and
+// whether it is coping, aggregated across every tailnet runtime (#294).
+//
+// It exists because the persistent backend can degrade in ways the in-memory
+// ring cannot: a full write-behind queue silently drops observations, and a
+// failed drain or query leaves the view answering from stale data. Both are
+// invisible in the counters above — QueueDrops is NOT Truncated, which counts
+// per-minute cap folding that this backend does not do — so an operator with no
+// panel for them would find out only by noticing the numbers look wrong.
+type FlowStoreBackend struct {
+	// Kind is "memory" or "sqlite".
+	Kind string `json:"kind"`
+	// Persistent is Kind == "sqlite", precomputed so a template does not have
+	// to compare strings to decide which cards make sense.
+	Persistent bool `json:"persistent"`
+	// Healthy is false when ANY tailnet's store has failed. Errors carries the
+	// distinct reasons, so one broken tailnet is not hidden by healthy peers.
+	Healthy bool `json:"healthy"`
+	// Errors is nil when Healthy.
+	Errors []string `json:"errors,omitempty"`
+	// Queued is observations waiting to be written, summed across tailnets.
+	Queued int `json:"queued,omitempty"`
+	// QueueDrops counts observations lost because the write-behind queue was
+	// full. Non-zero means the view is missing traffic that OTLP still carries,
+	// which is a different failure from Truncated above.
+	QueueDrops int64 `json:"queue_drops,omitempty"`
+	// Rows retained and SizeBytes on disk, summed across every tailnet's file.
+	Rows      int64 `json:"rows,omitempty"`
+	SizeBytes int64 `json:"size_bytes,omitempty"`
 }
 
 // EventStoreInfo summarizes the bounded audit/webhook event explorer's store

@@ -342,7 +342,7 @@ func Default() *Config {
 			// "default" reproduces today's hardcoded per-bucket/ring limits exactly
 			// (#329) — safe defaults stay unchanged unless an operator opts in.
 			CapacityProfile: flowstore.ProfileDefault,
-			// Store.Path defaults to "" (memory-only, the persistent backend is
+			// Store.Directory defaults to "" (memory-only, the persistent backend is
 			// never built). These sub-defaults only take effect once an operator
 			// sets a path, and MUST equal sqlitestore's Default* constants
 			// (internal/flowstore/sqlitestore/store.go) — hand-copied rather than

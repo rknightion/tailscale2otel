@@ -4,7 +4,7 @@
 //
 // It is opt-in and off by default. The stateless single-static-binary default
 // is the product promise; this exists for operators who explicitly ask for
-// history by setting flows.store.path.
+// history by setting flows.store.directory.
 //
 // # Why raw rows and not the memory store's buckets
 //
@@ -70,7 +70,7 @@ const (
 // one vertex of the topology, and would put every tailnet behind a single
 // writer lock.
 type Options struct {
-	// Dir is the configured flows.store.path: a DIRECTORY, not a file. The
+	// Dir is the configured flows.store.directory: a DIRECTORY, not a file. The
 	// filename is derived from Tailnet so multi-tailnet mode needs no extra
 	// configuration and cannot collide.
 	Dir string

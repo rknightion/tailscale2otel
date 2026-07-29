@@ -11,7 +11,7 @@ how much, and when — without a Grafana or Prometheus backend in the loop.
 
 It is a **convenience view, not a second telemetry pipeline**. Everything it shows is derived from the
 same flow records the exporter is already sending over OTLP, which remains the system of record. By
-default the store is in memory, bounded, and lost on restart; setting `flows.store.path` switches to
+default the store is in memory, bounded, and lost on restart; setting `flows.store.directory` switches to
 an opt-in on-disk backend that survives a restart and can answer over days — see
 [Persistent storage](#persistent-storage) below.
 
@@ -86,15 +86,15 @@ for the full key reference.
 
 `flows.retention`'s in-memory ring is the default and stays the default: nothing on disk, nothing
 that survives a restart, no new failure mode for the stateless single-binary story. **Persistence is
-opt-in.** Setting `flows.store.path` to a directory replaces the ring with a SQLite-backed store:
+opt-in.** Setting `flows.store.directory` to a directory replaces the ring with a SQLite-backed store:
 
 ```yaml
 flows:
   enabled: true
-  retention: 6h        # ignored while store.path is set — it only sizes the in-memory ring
+  retention: 6h        # ignored while store.directory is set — it only sizes the in-memory ring
   store:
-    path: /var/lib/tailscale2otel/flows   # a DIRECTORY. Setting this is what turns persistence on.
-    retention: 720h                       # 30 days — the disk retention, independent of the above
+    directory: /var/lib/tailscale2otel/flows   # setting this is what turns persistence on
+    retention: 720h                            # 30 days — the disk retention, independent of the above
 ```
 
 **Two retentions, two different things — this is the easiest setting on this page to get wrong.**
@@ -102,7 +102,7 @@ flows:
 separate knob on the disk-backed store, with its own default (30 days) and no 24h cap.
 
 The two never run together. A store is one or the other, chosen at startup by whether
-`flows.store.path` is set, and there is no tiering between them — with persistence on, every query
+`flows.store.directory` is set, and there is no tiering between them — with persistence on, every query
 including the most recent minute is answered from disk, and `flows.retention` no longer governs what
 `/flows` can see. It still bounds the ring the process would build if you unset the path, and the
 window clamp follows whichever store is active, so a 30-day disk retention really is queryable.
@@ -133,7 +133,7 @@ burst, or disk I/O stalling — the observation is **dropped and counted**, neve
 never allowed to slow OTLP export. Drops surface in the admin API the same way the in-memory ring's
 truncation does.
 
-**PII / data at rest — read this before pointing `path` at anything.** The in-memory ring dies with
+**PII / data at rest — read this before pointing `directory` at anything.** The in-memory ring dies with
 the process; nothing is written anywhere, and Section [Privacy](#privacy) above is what governs it.
 The disk store is a different exposure: flow rows carry user identities (source/destination emails,
 tags), and once written they persist across restarts and land in whatever backs up that volume. The
@@ -161,7 +161,7 @@ Measure your own tailnet's connection rate (the `tailscale.network.flow.count` m
 row count directly) before committing to a volume size, and raise `flows.store.max_rows` deliberately
 if 1.5 GB is too small a ceiling for the retention you want.
 
-**Backups.** Nothing backs this up for you — it's a plain SQLite file under `flows.store.path`. Back
+**Backups.** Nothing backs this up for you — it's a plain SQLite file under `flows.store.directory`. Back
 it up the way you would any other application database if the history matters to you (a filesystem
 snapshot of the directory is fine; SQLite in WAL mode is safe to copy while the process is stopped, or
 via your storage layer's own consistent-snapshot mechanism while running). A lost or corrupted file
@@ -366,7 +366,7 @@ and a flood of unique flow keys must not be able to grow the process without lim
 **By default, retention is memory, not storage.** `flows.retention` sizes a ring of one-minute
 buckets and is bounded to 24h. In multi-tailnet mode each tailnet keeps its own store, so memory
 scales with the number of tailnets too. Nothing survives a restart on this path. Set
-`flows.store.path` to opt into an on-disk backend that does survive a restart and can hold weeks
+`flows.store.directory` to opt into an on-disk backend that does survive a restart and can hold weeks
 instead of hours — see [Persistent storage](#persistent-storage). For long-range history you don't
 want to run a database for, query your OTLP backend instead — that remains the system of record
 either way.

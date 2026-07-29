@@ -103,6 +103,16 @@ type Input struct {
 	// tailnet-derived, so they carry no PII by construction.
 	Metrics   []statusdata.MetricRow
 	LogEvents []statusdata.LogRow
+	// FlowStore is the flow view's own state (#294): which backend is serving,
+	// whether it is healthy, and its bounded counters. It is the one signal that
+	// makes a stuck or unhealthy persistent store diagnosable from a bundle —
+	// queue drops and a false Healthy are otherwise visible only on a live admin
+	// page nobody can reach after the fact.
+	//
+	// It carries no records and no identities: kind, health, counts, row total
+	// and file size only. The flow RECORDS themselves remain unconditionally
+	// excluded, with no opt-in path, exactly as before.
+	FlowStore statusdata.FlowStoreInfo
 	// Devices is the device-enrichment table. The CALLER must pass nil unless
 	// Options.IncludeDeviceInventory is true — Write does not itself gate on
 	// Options for this field, so the caller (internal/app/admin_bundle.go) is
@@ -127,8 +137,9 @@ type Manifest struct {
 	// Included, as "devices.json") only when Options.IncludeDeviceInventory
 	// was set. "flow_records" and "raw_logs" are ALWAYS excluded — this
 	// package has no opt-in path for either; only their bounded, non-PII
-	// aggregate counts travel via Collectors/Components (flow/event store
-	// sizing), never the records themselves.
+	// aggregate counts travel — flow-store sizing and backend health via
+	// FlowStore (flow_store.json), collector run stats via Collectors — never
+	// the records themselves.
 	ExcludedByDefault []string `json:"excluded_by_default"`
 	// Truncated lists, one line per section, any section whose entry count
 	// exceeded its bound and was cut — so a shorter-than-expected section
@@ -149,6 +160,7 @@ var fileOrder = []string{
 	"delivery.json",
 	"collectors.json",
 	"advisories.json",
+	"flow_store.json",
 	"catalog_metrics.json",
 	"catalog_log_events.json",
 }
@@ -237,6 +249,9 @@ func Write(w io.Writer, in Input, opts Options, now time.Time) error {
 		return err
 	}
 	if err := write("advisories.json", advisories); err != nil {
+		return err
+	}
+	if err := write("flow_store.json", in.FlowStore); err != nil {
 		return err
 	}
 	if err := write("catalog_metrics.json", metrics); err != nil {

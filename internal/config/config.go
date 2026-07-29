@@ -177,12 +177,22 @@ type FlowsConfig struct {
 //
 // Unlike the in-memory ring, this writes raw connection rows to a file that
 // persists across restarts and lands in backups, so Warnings() calls out the
-// data-at-rest exposure this introduces once Path is set.
+// data-at-rest exposure this introduces once Directory is set.
 type FlowsStoreConfig struct {
-	// Path is the directory the per-tailnet SQLite database files live in.
-	// Empty (the default) means memory-only: the persistent backend is never
-	// built and every field below is inert.
-	Path string `yaml:"path"`
+	// Directory is where the per-tailnet SQLite database files live. Empty
+	// (the default) means memory-only: the persistent backend is never built
+	// and every field below is inert.
+	//
+	// Named "directory", not "path", to follow #310's convention: a bare
+	// "path" in this config is reserved for HTTP route paths (webhook.path,
+	// streaming.path, the node-metrics scrape path), and only the *_file /
+	// *_database / file_path / directory tags are treated as filesystem paths
+	// and resolved relative to the config file. ingress_wal.directory is the
+	// precedent. #237 sketched this key as "flows.store.path"; that name would
+	// have collided with the route-path meaning and silently opted out of
+	// relative-path resolution, so it was renamed before the first release
+	// that ships it.
+	Directory string `yaml:"directory"`
 	// Retention is how far back the persistent store keeps rows, independent
 	// of flows.retention (which still only sizes the in-memory ring). Rows
 	// older than this are swept. Bounded to [1h, 8760h] (365d): unlike the

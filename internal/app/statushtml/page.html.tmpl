@@ -483,16 +483,26 @@
     <div class="sub-h">Flow view store</div>
     {{if .Flows.Enabled}}
     <div class="cards">
+      {{if .Flows.Backend.Persistent}}
+      <div class="card"><div class="k">Retained</div><div class="v" id="flowRows">{{.Flows.Backend.Rows}}</div><div class="sub">connections on disk, across every tailnet's database</div></div>
+      {{else}}
       <div class="card"><div class="k">Retained</div><div class="v" id="flowBuckets">{{.Flows.Buckets}}</div><div class="sub">of {{.Flows.Capacity}} one-minute buckets per tailnet</div></div>
+      {{end}}
       <div class="card"><div class="k">Coverage</div><div class="v" style="font-size:16px" id="flowCovered">{{if .Flows.Covered}}{{.Flows.Covered}}{{else}}nothing yet{{end}}</div><div class="sub">retention {{.Flows.Retention}}</div></div>
       <div class="card"><div class="k">Observations</div><div class="v" id="flowObservations">{{.Flows.Observations}}</div><div class="sub">connections recorded since start</div></div>
-      <div class="card{{if .Flows.Truncated}} warn2{{end}}"><div class="k">Truncated</div><div class="v" id="flowTruncated">{{.Flows.Truncated}}</div><div class="sub">{{if .Flows.Truncated}}folded into __other__ — ranked lists are partial{{else}}every key fits within the per-minute caps{{end}}</div></div>
+      <div class="card{{if .Flows.Truncated}} warn2{{end}}"><div class="k">Truncated</div><div class="v" id="flowTruncated">{{.Flows.Truncated}}</div><div class="sub">{{if .Flows.Backend.Persistent}}{{if .Flows.Truncated}}observations rejected as outside the retention window{{else}}aggregates are exact — this backend does not fold keys{{end}}{{else}}{{if .Flows.Truncated}}folded into __other__ — ranked lists are partial{{else}}every key fits within the per-minute caps{{end}}{{end}}</div></div>
+      {{if .Flows.Backend.Persistent}}
+      <div class="card{{if not .Flows.Backend.Healthy}} warn2{{end}}"><div class="k">Backend</div><div class="v" style="font-size:16px" id="flowBackend">{{.Flows.Backend.Kind}}</div><div class="sub">{{if .Flows.Backend.Healthy}}on-disk store, survives restarts — flows.store.directory{{else}}UNHEALTHY: {{range .Flows.Backend.Errors}}{{.}} {{end}}{{end}}</div></div>
+      <div class="card{{if .Flows.Backend.QueueDrops}} warn2{{end}}"><div class="k">Queue drops</div><div class="v" id="flowQueueDrops">{{.Flows.Backend.QueueDrops}}</div><div class="sub">{{if .Flows.Backend.QueueDrops}}the write-behind queue filled and these connections never reached disk — OTLP still carried them{{else}}no observation has been lost to a full write queue ({{.Flows.Backend.Queued}} waiting now){{end}}</div></div>
+      <div class="card"><div class="k">On disk</div><div class="v" style="font-size:16px" id="flowSize">{{.Flows.Backend.SizeBytes}} B</div><div class="sub">summed across every tailnet's database file, including indexes</div></div>
+      {{else}}
       <div class="card"><div class="k">Capacity profile</div><div class="v" style="font-size:16px" id="flowProfile">{{.Flows.CapacityProfile}}</div><div class="sub">flows.capacity_profile — scales every per-minute cap and the ring together; holds {{.Flows.MaxRecent}} recent connections</div></div>
       <div class="card"><div class="k">Estimated memory</div><div class="v" style="font-size:16px" id="flowEstimate">{{.Flows.EstimatedBytes}} B</div><div class="sub">per tailnet, worst case — every dimension saturated at once, which a real tailnet does not reach. A planning bound, not a measurement.</div></div>
+      {{end}}
     </div>
     <div class="controls" style="margin-top:12px">
       <a class="ctl" href="/flows" style="display:inline-block">Open the flow view &rarr;</a>
-      <span class="muted">Topology, timeline, top talkers and recent connections — drawn from this store, in memory only.</span>
+      <span class="muted">Topology, timeline, top talkers and recent connections — drawn from this store{{if not .Flows.Backend.Persistent}}, in memory only{{end}}.</span>
     </div>
     {{else}}
     <p class="muted">The built-in flow view is disabled (<code>flows.enabled=false</code>, or the admin landing page is off). No traffic history is retained in memory; flow telemetry still exports over OTLP as usual.</p>

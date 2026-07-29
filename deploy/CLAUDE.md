@@ -70,6 +70,15 @@ mounted via an `emptyDir` by default. Set `persistence.enabled=true` to create a
 storage across pod rescheduling. The app gracefully falls back to in-memory if the path is not
 writable (a WARN is logged), so no crash occurs on misconfiguration.
 
+**The same volume also backs the opt-in persistent flow store (#294).** `config.flows.store.directory`
+is empty by default (memory-only). Pointed at a path under that mount — e.g.
+`/var/lib/tailscale2otel/flows` — it stores one SQLite row per connection so `/flows` survives a
+restart. It needs `persistence.enabled=true` to be durable, and the PVC must be sized for it ON TOP
+of the checkpoint/WAL figure: the 64Mi default suits checkpoints alone. `fsGroup: 65532` already
+makes a fresh PVC writable by the container, so no extra template change is needed. Unlike the
+checkpoint store it does NOT fall back to memory when the path is unwritable — the flow view is
+switched off instead, so an operator who asked for history is never shown one that looks like it.
+
 Two files in the chart are **generated and drift-checked in CI** (the `Helm` workflow) — regenerate
 with `scripts/regen-generated.sh helm`, do not hand-edit:
 
