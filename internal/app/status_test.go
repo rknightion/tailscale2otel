@@ -247,3 +247,26 @@ func TestBuildStatus_DoesNotExposeObjectStoreCredentials(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildStatus_HasMetricsServingSection wires #377's status DTO fields
+// (metrics.go's metricsScrapeHealth tracker) onto the real buildStatus() path,
+// proving Status.MetricsServing is actually populated rather than only
+// reachable via the package-internal a.metricsScrapeInfo() unit tests.
+func TestBuildStatus_HasMetricsServingSection(t *testing.T) {
+	cfg := config.Default()
+	cfg.Prometheus.Enabled = true
+	cfg.Prometheus.MaxRequestsInFlight = 5
+	cfg.Prometheus.CoalesceGather = true
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+
+	ms := a.buildStatus().MetricsServing
+	if !ms.Enabled {
+		t.Error("MetricsServing.Enabled = false, want true (prometheus.enabled)")
+	}
+	if ms.Config.MaxRequestsInFlight != 5 {
+		t.Errorf("MetricsServing.Config.MaxRequestsInFlight = %d, want 5", ms.Config.MaxRequestsInFlight)
+	}
+	if !ms.Config.CoalesceGather {
+		t.Error("MetricsServing.Config.CoalesceGather = false, want true")
+	}
+}

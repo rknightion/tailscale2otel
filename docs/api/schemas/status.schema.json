@@ -845,6 +845,76 @@
       },
       "type": "array"
     },
+    "metrics_serving": {
+      "properties": {
+        "auth_rejected": {
+          "type": "integer"
+        },
+        "config": {
+          "properties": {
+            "allow_unauthenticated": {
+              "type": "boolean"
+            },
+            "auth_token_set": {
+              "type": "boolean"
+            },
+            "client_auth_mode": {
+              "type": "string"
+            },
+            "client_ca_configured": {
+              "type": "boolean"
+            },
+            "coalesce_gather": {
+              "type": "boolean"
+            },
+            "listen": {
+              "type": "string"
+            },
+            "max_requests_in_flight": {
+              "type": "integer"
+            },
+            "timeout_ms": {
+              "type": "integer"
+            },
+            "tls_enabled": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "gather_errors": {
+          "type": "integer"
+        },
+        "in_flight": {
+          "type": "integer"
+        },
+        "last_gather_error": {
+          "type": "string"
+        },
+        "last_gather_error_at": {
+          "type": "string"
+        },
+        "last_scrape_at": {
+          "type": "string"
+        },
+        "last_scrape_duration_ms": {
+          "type": "integer"
+        },
+        "scrapes_failed": {
+          "type": "integer"
+        },
+        "scrapes_shed": {
+          "type": "integer"
+        },
+        "scrapes_total": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "node_discovery": {
       "properties": {
         "active": {

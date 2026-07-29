@@ -27209,8 +27209,8 @@
         "kind": "Panel",
         "spec": {
           "id": 308,
-          "title": "Scrape duration by collector",
-          "description": "",
+          "title": "Scrape duration p50/p95/p99 by collector",
+          "description": "Per-collector scrape wall-clock duration quantiles (exemplars enabled \u2014 link a bucket back to the scrape trace). Supersedes the plain scrape-duration gauge panel (#369).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -27229,11 +27229,58 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_collector) (tailscale2otel_scrape_duration_seconds{tailscale_collector=~\"$collector\"})",
+                        "expr": "histogram_quantile(0.5, sum by (le, tailscale_collector) (rate(tailscale2otel_scrape_duration_histogram_seconds_bucket{tailscale_collector=~\"$collector\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "{{tailscale_collector}}",
-                        "format": "time_series"
+                        "legendFormat": "p50 {{tailscale_collector}}",
+                        "format": "time_series",
+                        "exemplar": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "histogram_quantile(0.95, sum by (le, tailscale_collector) (rate(tailscale2otel_scrape_duration_histogram_seconds_bucket{tailscale_collector=~\"$collector\"}[$__rate_interval])))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "p95 {{tailscale_collector}}",
+                        "format": "time_series",
+                        "exemplar": true
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "histogram_quantile(0.99, sum by (le, tailscale_collector) (rate(tailscale2otel_scrape_duration_histogram_seconds_bucket{tailscale_collector=~\"$collector\"}[$__rate_interval])))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "p99 {{tailscale_collector}}",
+                        "format": "time_series",
+                        "exemplar": true
                       }
                     }
                   }

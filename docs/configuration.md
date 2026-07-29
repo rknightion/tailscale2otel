@@ -174,6 +174,7 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 - [`profiling` — pprof & Pyroscope](#profiling-pprof-pyroscope)
 - [`version_checks` — outbound "is a newer release available?" checks](#version_checks-outbound-is-a-newer-release-available-checks)
 - [`tracing` — OTEL traces pillar](#tracing-otel-traces-pillar)
+- [`resource` — OTEL Resource enrichment](#resource-otel-resource-enrichment)
 
 ---
 
@@ -420,11 +421,12 @@ single-tailnet `tailscale:` block above is used instead.
 > the checkpoint file (logged) while the affected collector cold-starts from `initial_lookback`.
 >
 > **Telemetry identity.** Each tailnet gets its own `service.instance.id` (and thus its own
-> `target_info`/Prometheus `instance`) plus the `tailscale.tailnet` resource attribute, so series from
-> different tailnets never collide on the OTLP push path; query fleet-wide with
-> `sum without(instance)(...)`. On the [`prometheus`](#prometheus-prometheus-pull-endpoint) pull
-> endpoint, `tailscale_tailnet` is the label that keeps per-tailnet series distinct at the shared
-> `/metrics` port — see the note in that section.
+> `target_info`/Prometheus `instance`), and every metric data point, log record, and span additionally
+> carries `tailscale.tailnet` as a **signal-scoped attribute** — not a Resource attribute — so series
+> from different tailnets never collide on the OTLP push path with no `target_info` join required;
+> query fleet-wide with `sum without(instance)(...)`. On the
+> [`prometheus`](#prometheus-prometheus-pull-endpoint) pull endpoint, `tailscale_tailnet` is the label
+> that keeps per-tailnet series distinct at the shared `/metrics` port — see the note in that section.
 
 ---
 
@@ -436,7 +438,7 @@ OTLP.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `otlp.protocol` | `http` | Transport. One of `grpc`, `http`, or `stdout`. `stdout` prints signals to the console for local debugging (no backend, no network). |
-| `otlp.endpoint` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP endpoint (ignored when `protocol: stdout`). For `protocol: http` this is a full base **URL** — for Grafana Cloud use the `…/otlp` base and the per-signal `/v1/metrics` and `/v1/logs` paths are appended for you. For `protocol: grpc` it must instead be a bare **`host:port`** address (no scheme or path, e.g. `otlp-gateway-prod-us-central-0.grafana.net:443`); a URL-shaped value is rejected at startup. |
+| `otlp.endpoint` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP endpoint (ignored when `protocol: stdout`). For `protocol: http` this is a full base **URL** — for Grafana Cloud use the `…/otlp` base and the per-signal `/v1/metrics`, `/v1/logs`, and `/v1/traces` paths are appended for you (traces are a real third signal — see [`tracing`](#tracing-otel-traces-pillar) — and the exporter appends its path the same way as metrics and logs). For `protocol: grpc` it must instead be a bare **`host:port`** address (no scheme or path, e.g. `otlp-gateway-prod-us-central-0.grafana.net:443`); a URL-shaped value is rejected at startup. |
 | `otlp.metric_interval` | `60s` | How often metrics are pushed. `60s` aligns with the default 1 data-point-per-minute scrape cadence and avoids Grafana Cloud DPM churn. |
 | `otlp.metric_export_batch_size` | `10000` | Maximum datapoints per OTLP metric request. The metric SDK splits one cumulative collection into sequential requests at this boundary, preventing a single high-cardinality payload from blocking all metric delivery. This is not an exact byte limit: serialized size varies with metric names, labels, and values. Smaller values reduce request size at the cost of more requests per export interval. |
 | `otlp.limits.log_body_bytes` | `32768` | Cap one log record's body before export. The receivers' request-body limits bound a whole inbound HTTP request, but a perfectly valid request can still contain one enormous record that dominates a batch or breaches the backend's per-record limit. Truncation is UTF-8 safe (a multi-byte rune is never split), runs **after** redaction so a secret can never be truncated into a partially-redacted string, and leaves an explicit marker. Minimum 64 bytes — a smaller bound would leave no room beside the marker. There is deliberately no unlimited setting; set a large value if you want effectively no bound. |
@@ -472,6 +474,101 @@ Transport security for `grpc`/`http`.
 > certificate over TLS, either add its CA to `otlp.tls.ca_file` (preferred) or set
 > `otlp.tls.insecure_skip_verify: true` to keep TLS on while skipping verification (testing only —
 > vulnerable to MITM).
+
+### `otlp` — transport tuning
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp.compression` | `""` | Request compression: `gzip` or `none`. Empty defers to the standard `OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION` variables, then the exporter's own default. Set via `TS2OTEL_OTLP__COMPRESSION`. |
+| `otlp.timeout` | `0s` | Per-request export timeout. `0` defers to `OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT`, then the exporter's 10s default. Set via `TS2OTEL_OTLP__TIMEOUT`. |
+| `otlp.max_request_size` | `0` | Bytes; a client-side **rejection guard**, not a splitter — it fails an oversized request fast instead of shipping it into a backend `413`. It does **not** split a request into smaller ones; `otlp.metric_export_batch_size` is the knob that actually keeps requests under a backend ingest limit. `0` = no cap. Set via `TS2OTEL_OTLP__MAX_REQUEST_SIZE`. |
+| `otlp.grpc_reconnection_period` | `0s` | Force a fresh gRPC connection attempt after this long. gRPC only; ignored for `http`/`stdout`. `0` = the gRPC client default. |
+
+> **gRPC credential-rotation asymmetry.** A rotated client certificate takes effect immediately on
+> both `http` and `grpc`. A rotated **CA bundle**, however, only takes effect on gRPC's **next new
+> connection** — an existing gRPC connection keeps trusting whatever CA it validated against at
+> connect time. `otlp.grpc_reconnection_period` bounds how long a rotated CA can go unapplied by
+> forcing periodic reconnects; `http` has no equivalent gap since it dials fresh per request.
+
+### `otlp.retry`
+
+The exporter's own retry policy. Leave the whole block untouched to keep the exporter's built-in
+default (retry on).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp.retry.enabled` | unset (inherits) | An explicit `false` genuinely disables retry — distinct from omitting this whole block, which leaves the exporter's own default (retry on). |
+| `otlp.retry.initial_interval` | `5s` | First backoff delay. |
+| `otlp.retry.max_interval` | `30s` | Backoff ceiling. |
+| `otlp.retry.max_elapsed_time` | `1m` | Give up after this long. |
+
+### `otlp.batch` — log/span processor queues
+
+Tunes the log and span processor queues. The SDK's queues are bounded and drop **silently** under a
+receiver burst or a stalled backend — this is what the queue/drop self-observability metrics exist to
+surface. Metrics have no equivalent block: a `PeriodicReader` has no queue to saturate, so metrics'
+only cadence knob is `otlp.metric_interval`. `0` / `0s` on any field means "leave the SDK default".
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp.batch.logs.max_queue_size` | `0` | Log records buffered before new ones are dropped (non-blocking by design). |
+| `otlp.batch.logs.export_max_batch_size` | `0` | Log records per export call. Must be `<= max_queue_size` when both are set. |
+| `otlp.batch.logs.export_interval` | `0s` | How often a partial batch is flushed. |
+| `otlp.batch.logs.export_timeout` | `0s` | Bound on one export attempt. |
+| `otlp.batch.traces.max_queue_size` | `0` | Spans buffered before new ones are dropped. |
+| `otlp.batch.traces.export_max_batch_size` | `0` | Spans per export call. Must be `<= max_queue_size` when both are set. |
+| `otlp.batch.traces.export_interval` | `0s` | How often a partial batch is flushed. |
+| `otlp.batch.traces.export_timeout` | `0s` | Bound on one export attempt. |
+
+### `otlp.stdout`
+
+Applies only when `otlp.protocol` is `stdout`, which is a **debugging sink** — no reliability or
+rotation promise.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp.stdout.metric_interval` | `5s` | Metric push cadence for the stdout sink — short so a debug run doesn't wait 60s to see a metric. Logs and spans print synchronously regardless. `0` uses the built-in stdout default. |
+| `otlp.stdout.pretty` | `false` | Indent the emitted JSON. |
+
+### `otlp.credential_reload`
+
+Rotates the token/header/TLS **files** the OTLP exporters read, without restarting the process.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp.credential_reload.enabled` | `false` | Governs **only the background poller**. Last-known-good validation always applies to a configured file regardless of this flag — a malformed replacement is caught and the previous good material retained, poller or not. |
+| `otlp.credential_reload.interval` | `30s` | Poll period. Minimum `5s`. **Ignored when `enabled` is `false`** — a disabled poller never reads this. |
+
+### `otlp.metrics` / `otlp.logs` / `otlp.traces` — per-signal overrides
+
+Send **one signal** somewhere else — a different collector, tenant, credential, or protocol — without
+touching the others. Every field is "unset means inherit" from the matching `otlp.*` value above,
+**except `headers`, which REPLACES `otlp.headers` for that signal rather than merging** — a signal
+that sets its own headers does not also inherit the common block's headers, so a credential never
+crosses a signal boundary. The same applies to `otlp.metrics.retry` / `otlp.logs.retry` /
+`otlp.traces.retry`: an untouched retry block inherits `otlp.retry` as a whole, but setting **any**
+field in a signal's retry block overrides the **entire** policy for that signal (it does not merge
+field-by-field with `otlp.retry`).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp.metrics.enabled` / `otlp.logs.enabled` / `otlp.traces.enabled` | unset (inherits) | `null`/unset inherits (the signal is on); an explicit `false` stops exporting this signal without disturbing the others. |
+| `otlp.metrics.protocol` / `otlp.logs.protocol` / `otlp.traces.protocol` | `""` | Empty inherits `otlp.protocol`. |
+| `otlp.metrics.endpoint` / `otlp.logs.endpoint` / `otlp.traces.endpoint` | `""` | Empty inherits `otlp.endpoint`. |
+| `otlp.metrics.headers` / `otlp.logs.headers` / `otlp.traces.headers` | `{}` | **Replaces** `otlp.headers` for this signal rather than merging. FILE-ONLY (maps aren't settable via env). |
+| `otlp.metrics.tls.insecure` / `otlp.logs.tls.insecure` / `otlp.traces.tls.insecure` | unset (inherits) | `null` inherits `otlp.tls.insecure`; explicit `true`/`false` overrides. |
+| `otlp.metrics.tls.insecure_skip_verify` / `otlp.logs.tls.insecure_skip_verify` / `otlp.traces.tls.insecure_skip_verify` | unset (inherits) | `null` inherits `otlp.tls.insecure_skip_verify`; explicit `true`/`false` overrides. |
+| `otlp.metrics.tls.ca_file` / `otlp.logs.tls.ca_file` / `otlp.traces.tls.ca_file` | `""` | Empty inherits `otlp.tls.ca_file`. |
+| `otlp.metrics.tls.cert_file` / `otlp.logs.tls.cert_file` / `otlp.traces.tls.cert_file` | `""` | Empty inherits `otlp.tls.cert_file`. |
+| `otlp.metrics.tls.key_file` / `otlp.logs.tls.key_file` / `otlp.traces.tls.key_file` | `""` | Empty inherits `otlp.tls.key_file`. |
+| `otlp.metrics.compression` / `otlp.logs.compression` / `otlp.traces.compression` | `""` | Empty inherits `otlp.compression`. |
+| `otlp.metrics.timeout` / `otlp.logs.timeout` / `otlp.traces.timeout` | `0s` | `0` inherits `otlp.timeout`. |
+| `otlp.metrics.max_request_size` / `otlp.logs.max_request_size` / `otlp.traces.max_request_size` | `0` | `0` inherits `otlp.max_request_size`. Same rejection-guard-not-splitter semantics as the common field. |
+| `otlp.metrics.grpc_reconnection_period` / `otlp.logs.grpc_reconnection_period` / `otlp.traces.grpc_reconnection_period` | `0s` | `0` inherits `otlp.grpc_reconnection_period`. |
+| `otlp.metrics.retry.enabled` / `otlp.logs.retry.enabled` / `otlp.traces.retry.enabled` | unset (inherits) | An untouched `retry` block inherits `otlp.retry` as a whole; setting this field overrides the whole policy for this signal. |
+| `otlp.metrics.retry.initial_interval` / `otlp.logs.retry.initial_interval` / `otlp.traces.retry.initial_interval` | `0s` | See above — part of the same all-or-nothing per-signal retry override. |
+| `otlp.metrics.retry.max_interval` / `otlp.logs.retry.max_interval` / `otlp.traces.retry.max_interval` | `0s` | See above. |
+| `otlp.metrics.retry.max_elapsed_time` / `otlp.logs.retry.max_elapsed_time` / `otlp.traces.retry.max_elapsed_time` | `0s` | See above. |
 
 ---
 
@@ -1542,6 +1639,13 @@ default `:2112`). When enabled it attaches an additional `metric.Reader` (a per-
 registry) alongside the OTLP push path, so **both export paths are active at once** — Prometheus
 scraping and OTLP push are independent and complementary; enabling one does not disable the other.
 
+> **Pick one delivery path per backend.** "Complementary" means the two paths can run side by side
+> without one breaking the other — it is not a recommendation to point both at the *same* backend.
+> Scraping `/metrics` into a backend that also receives this exporter's OTLP push duplicates or
+> conflicts the same series (two sources writing the same identity). Use OTLP push for Grafana Cloud
+> (or any OTLP-native backend) and reserve the Prometheus endpoint for infrastructure that can only
+> scrape.
+
 The endpoint is fully separate from the admin server (`admin.listen`) and must bind to a different
 address. It serves only `GET /metrics`; no status page or probes are exposed here.
 
@@ -1602,6 +1706,7 @@ Tailscale data. The pprof handlers mount on the admin server.
 | `profiling.pyroscope.tenant_id` | `""` | `X-Scope-OrgID` for multi-tenant servers (leave empty for Grafana Cloud). |
 | `profiling.pyroscope.upload_rate` | `60s` | How often profiles are flushed to the server. |
 | `profiling.pyroscope.tags` | `{}` | Extra static labels merged onto every profile, e.g. `{ env: prod }`. Must be set via YAML (map field). |
+| `profiling.pyroscope.tailnet_label` | `off` | One of `off`, `hashed`, `name` — whether continuous profiles carry a tailnet dimension. A tailnet name is a **customer** identifier and profiles go to a different destination from metrics/logs, so this is opt-in and NOT covered by `pii_filter`. `hashed` emits a stable 12-hex SHA-256 prefix (answers "which tenant is burning CPU" for an MSP without shipping the name — pseudonymous, not anonymous: a small tailnet-name space is enumerable). `name` emits the raw name. Emitted only for a single configured tailnet; multi-tailnet mode gets no tag, since there is one profiler per process. Set via `TS2OTEL_PROFILING__PYROSCOPE__TAILNET_LABEL`. |
 | `profiling.mutex_profile_fraction` | `5` | `runtime.SetMutexProfileFraction`; on by default (samples 1/5 of contention events). Applied only when `pprof` or `pyroscope` is enabled. `0` disables the mutex profile. |
 | `profiling.block_profile_rate` | `100000` | `runtime.SetBlockProfileRate` (ns); on by default (records blocking events averaging ≥100µs). Applied only when `pprof` or `pyroscope` is enabled. `0` disables the block profile. |
 
@@ -1653,10 +1758,29 @@ corresponding API request span.
 | `tracing.enabled` | `false` | Emit spans. When true, also enables trace-based exemplars on `tailscale2otel.api.duration`. Set via `TS2OTEL_TRACING__ENABLED`. |
 | `tracing.sampler` | `parentbased_always_on` | Head sampler. One of `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_traceidratio`. Mirrors `OTEL_TRACES_SAMPLER` semantics. Set via `TS2OTEL_TRACING__SAMPLER`. |
 | `tracing.sampler_arg` | `1.0` | Sample ratio in `[0,1]` for the `*traceidratio` samplers; ignored by the others. Set via `TS2OTEL_TRACING__SAMPLER_ARG`. |
+| `tracing.remote_parent` | `trust` | How an **inbound** W3C `traceparent`'s sampled bit is treated by the stream/webhook receivers. One of `trust` (today's behavior — the sender's sampled bit is honored), `ignore` (the local sampler alone decides, so an authenticated sender cannot force sampling), or `link` (start a new local root trace and link the remote one instead of continuing it). Set via `TS2OTEL_TRACING__REMOTE_PARENT`. |
 
 > **Advisories:**
 > - `tracing.enabled=true` with `sampler_arg=0` and a `*traceidratio` sampler triggers a **WARN** —
 >   no spans will be recorded at ratio 0.
+
+### `tracing.samplers` — per-workload-class head sampler
+
+Overrides the head sampler per workload class instead of one global sampler for everything. An empty
+`sampler` on any class inherits `tracing.sampler`/`tracing.sampler_arg` above, so an untouched block
+behaves exactly like a single global sampler. The three classes are a closed set: `scrape` (one root
+span per collector scrape cycle), `receiver` (one root span per HEC-stream / webhook request — usually
+the highest-rate class, and the one worth turning down), and `background` (periodic non-scrape work,
+e.g. the release/update check).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `tracing.samplers.scrape.sampler` | `""` | Sampler for collector scrape spans. Empty inherits `tracing.sampler`. Same enum as `tracing.sampler`. Set via `TS2OTEL_TRACING__SAMPLERS__SCRAPE__SAMPLER`. |
+| `tracing.samplers.scrape.arg` | `0.0` | Ratio in `[0,1]` for the `*traceidratio` samplers. Set via `TS2OTEL_TRACING__SAMPLERS__SCRAPE__ARG`. |
+| `tracing.samplers.receiver.sampler` | `""` | Sampler for HEC-stream/webhook receiver request spans. Empty inherits `tracing.sampler`. Set via `TS2OTEL_TRACING__SAMPLERS__RECEIVER__SAMPLER`. |
+| `tracing.samplers.receiver.arg` | `0.0` | Ratio in `[0,1]` for the `*traceidratio` samplers. Set via `TS2OTEL_TRACING__SAMPLERS__RECEIVER__ARG`. |
+| `tracing.samplers.background.sampler` | `""` | Sampler for periodic background-work spans. Empty inherits `tracing.sampler`. Set via `TS2OTEL_TRACING__SAMPLERS__BACKGROUND__SAMPLER`. |
+| `tracing.samplers.background.arg` | `0.0` | Ratio in `[0,1]` for the `*traceidratio` samplers. Set via `TS2OTEL_TRACING__SAMPLERS__BACKGROUND__ARG`. |
 
 ### Span names and key attributes
 
@@ -1674,3 +1798,30 @@ appear on `url.full` by design — they help operators answer "which device's re
 Tier-1 secrets (auth headers/tokens, OAuth/webhook/logstream credentials) and large response/request
 bodies are never attached. Per-record source/destination IPs are not put on receiver spans; they flow to
 the flow/audit log records instead.
+
+---
+
+## `resource` — OTEL Resource enrichment
+
+Optional custom attributes on the OTEL Resource, applied to metrics, logs, **and** traces. Deliberately
+narrow and bounded: Grafana Cloud promotes the whole `service.*` namespace to a per-series label, so
+`resource.service_namespace` multiplies active-series cardinality by its distinct values. The
+application's own identity always wins — `service.name`, `service.version`, and `service.instance.id`
+cannot be overridden here, and `service.version` stays off the metrics Resource regardless (see
+`docs/metrics.md`). `tailscale.tailnet` and `tailscale2otel.provider` are per-signal attributes, not
+Resource attributes (see the [`otlp`](#otlp-the-otlp-exporter) telemetry-identity note above), and are
+refused as custom keys for the same reason.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `resource.service_namespace` | `""` | Sets `service.namespace`. Grafana Cloud promotes it to a per-series label alongside `job`, so keep it low-cardinality and stable across deploys. Max 256 bytes. Set via `TS2OTEL_RESOURCE__SERVICE_NAMESPACE`. |
+| `resource.deployment_environment` | `""` | Sets `deployment.environment.name`. Outside the `service.*` namespace, so it lands in `target_info` rather than on every series, and may safely vary per environment (e.g. `staging` vs `production`). Max 256 bytes. Set via `TS2OTEL_RESOURCE__DEPLOYMENT_ENVIRONMENT`. |
+| `resource.attributes` | `{}` | Custom Resource attributes, e.g. `{ deploy.team: platform }`. Max 32 entries, 256-byte keys and values. Reserved keys — `service.name`, `service.version`, `service.instance.id`, `tailscale.tailnet`, `tailscale2otel.provider` — are refused at startup rather than silently ignored. FILE-ONLY (maps aren't settable via env). |
+| `resource.from_env` | `false` | Also read `OTEL_RESOURCE_ATTRIBUTES` / `OTEL_SERVICE_NAME`, filtered by the same reserved-key and size rules. Off by default: it hands the ambient process environment a channel onto a per-series label surface, which should be a deliberate opt-in rather than something inherited from whatever set those variables. Set via `TS2OTEL_RESOURCE__FROM_ENV`. |
+
+> **Why `tailscale.tailnet` / `tailscale2otel.provider` are refused here.** They are emitted as
+> per-signal (metric/log/span) attributes rather than Resource attributes, so they are real joinless
+> labels on every backend with no `target_info` join needed. Accepting them as custom Resource
+> attributes would either be silently ignored (the per-signal value already wins) or would move a
+> value that is deliberately per-series onto the Resource instead — so `resource.attributes` refuses
+> both keys outright.

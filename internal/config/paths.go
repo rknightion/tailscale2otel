@@ -77,6 +77,19 @@ func (c *Config) pathFields() []pathField {
 		{"otlp.tls.ca_file", &c.OTLP.TLS.CAFile},
 		{"otlp.tls.cert_file", &c.OTLP.TLS.CertFile},
 		{"otlp.tls.key_file", &c.OTLP.TLS.KeyFile},
+		// Per-signal TLS overrides follow the same relative-path resolution rule as
+		// the common block (#310): a signal routed to its own gateway may need its
+		// own CA or client keypair, and a path that resolved differently depending
+		// on which block it sat in would be a trap.
+		{"otlp.metrics.tls.ca_file", &c.OTLP.Metrics.TLS.CAFile},
+		{"otlp.metrics.tls.cert_file", &c.OTLP.Metrics.TLS.CertFile},
+		{"otlp.metrics.tls.key_file", &c.OTLP.Metrics.TLS.KeyFile},
+		{"otlp.logs.tls.ca_file", &c.OTLP.Logs.TLS.CAFile},
+		{"otlp.logs.tls.cert_file", &c.OTLP.Logs.TLS.CertFile},
+		{"otlp.logs.tls.key_file", &c.OTLP.Logs.TLS.KeyFile},
+		{"otlp.traces.tls.ca_file", &c.OTLP.Traces.TLS.CAFile},
+		{"otlp.traces.tls.cert_file", &c.OTLP.Traces.TLS.CertFile},
+		{"otlp.traces.tls.key_file", &c.OTLP.Traces.TLS.KeyFile},
 		{"admin.tls.cert_file", &c.Admin.TLS.CertFile},
 		{"admin.tls.key_file", &c.Admin.TLS.KeyFile},
 		{"admin.auth.token_file", &c.Admin.Auth.TokenFile},

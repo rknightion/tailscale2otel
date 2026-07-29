@@ -14,6 +14,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v3/internal/credreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/redact"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
@@ -205,7 +206,7 @@ type profilingUploadClient struct {
 // It returns an error only for unusable TLS material (an unreadable CA bundle or
 // keypair), which the caller reports rather than starting a profiler that can
 // never upload.
-func newProfilingUploadClient(opts pyroscopeTransportOptions, health *profilingHealth, emitter telemetry.Emitter) (*profilingUploadClient, error) {
+func newProfilingUploadClient(opts pyroscopeTransportOptions, health *profilingHealth, emitter telemetry.Emitter, reload *credreload.Reloader) (*profilingUploadClient, error) {
 	tlsCfg, err := opts.tlsConfig()
 	if err != nil {
 		return nil, err
@@ -227,6 +228,14 @@ func newProfilingUploadClient(opts pyroscopeTransportOptions, health *profilingH
 	// proxy scripting #375 put out of scope.
 	if tlsCfg != nil {
 		tr.TLSClientConfig = tlsCfg
+	}
+	// Credential/TLS rotation (#362): when a reloader is watching this client's
+	// files, dial with the CURRENT material per connection instead of the copy
+	// read above. Client-certificate rotation is immediate (the handshake calls
+	// GetClientCertificate); a rotated CA applies to the next new connection,
+	// which the transport's own idle-connection recycling bounds.
+	if reload != nil {
+		tr.DialTLSContext = reloadingDialTLS(reload)
 	}
 	return &profilingUploadClient{
 		base: &http.Client{

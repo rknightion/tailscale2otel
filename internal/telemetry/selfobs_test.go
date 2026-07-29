@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -67,7 +66,16 @@ func TestInstallExportErrorHandler_CountsHandledErrors(t *testing.T) {
 	}
 }
 
-func TestInstallExportErrorHandler_LogsErrorBody(t *testing.T) {
+// TestInstallExportErrorHandler_NoLongerLogsPerFailure pins the #365 split: the
+// global otel error handler is invoked once per failed export with no rate
+// limiting of its own (a sustained outage across N+1 providers would otherwise
+// flood the log), so it now ONLY counts (still exactly once, still classified —
+// see TestInstallExportErrorHandler_CountsHandledErrors). The backend-body
+// diagnostic this test used to assert on has moved to deliveryTracker's
+// first-failure log (delivery_test.go's TestDeliverySuppressesRepeatedFailureLogs),
+// which — unlike this global, provider-blind handler — is one instance per
+// Provider, so it can also detect and log recovery.
+func TestInstallExportErrorHandler_NoLongerLogsPerFailure(t *testing.T) {
 	rec := telemetrytest.New()
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -75,16 +83,30 @@ func TestInstallExportErrorHandler_LogsErrorBody(t *testing.T) {
 	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), logger)
 	defer restore()
 
-	// The OTLP exporter surfaces Grafana Cloud's HTTP 400 body in the error it
-	// hands to otel.Handle; the handler must log it so the offending metric/label
-	// is visible instead of being collapsed to a coarse counter.
 	otel.Handle(errors.New(`failed to upload metrics: 400 Bad Request: duplicate label "tailscale_node"`))
 
-	// The slog TextHandler escapes the quotes in the wrapped error, so assert on
-	// the (escaping-agnostic) substrings that prove the backend's body was logged.
-	got := buf.String()
-	if !strings.Contains(got, "duplicate label") || !strings.Contains(got, "tailscale_node") {
-		t.Fatalf("export error body was not logged; got: %s", got)
+	if got := buf.String(); got != "" {
+		t.Fatalf("global handler logged a per-failure line, want none (delivery.go owns outage logging now): %s", got)
+	}
+	// The counter must still fire, unconditionally, from this same call.
+	if pts := rec.MetricPoints("tailscale2otel.export.failures"); len(pts) != 1 {
+		t.Fatalf("got %d export.failures points, want 1", len(pts))
+	}
+}
+
+func TestInstallExportErrorHandler_OmitsSignalWhenUntagged(t *testing.T) {
+	rec := telemetrytest.New()
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
+	defer restore()
+
+	otel.Handle(errors.New("boom"))
+
+	points := rec.MetricPoints("tailscale2otel.export.failures")
+	if len(points) != 1 {
+		t.Fatalf("got %d points, want 1", len(points))
+	}
+	if _, ok := points[0].Attrs["signal"]; ok {
+		t.Fatalf("signal attribute present for an untagged error: %+v", points[0].Attrs)
 	}
 }
 

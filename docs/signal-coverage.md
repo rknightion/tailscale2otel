@@ -53,7 +53,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | operational | 209 | 194 | 57 | 11 | 10 | 0 |
-| self_obs | 84 | 65 | 29 | 9 | 15 | 2 |
+| self_obs | 89 | 65 | 29 | 9 | 20 | 2 |
 
 ## Operational signals
 
@@ -297,9 +297,11 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.enrich.cache_age` | metric | `tailscale2otel_enrich_cache_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.enrich.cache_size` | metric | `tailscale2otel_enrich_cache_size_ratio` | visualized |  |
 | `tailscale2otel.export.datapoints` | metric | `tailscale2otel_export_datapoints_total` | visualized, alertable |  |
+| `tailscale2otel.export.diagnostics.suppressed` | metric | `tailscale2otel_export_diagnostics_suppressed_total` | raw_only | Counts SDK error logs suppressed by the #365 keyed rate limiter. raw_only: it is a diagnostic about the diagnostics, useful when reading a log during an outage but not worth a panel — the underlying failure is already covered by export.failures (visualized and alertable), and alerting on suppression rather than on the outage would fire a second time for the same incident. |
 | `tailscale2otel.export.duration` | metric | `tailscale2otel_export_duration_seconds` | visualized, alertable, recorded |  |
 | `tailscale2otel.export.failures` | metric | `tailscale2otel_export_failures_total` | visualized, alertable |  |
 | `tailscale2otel.export.log_records` | metric | `tailscale2otel_export_log_records_total` | visualized |  |
+| `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | raw_only | Span export volume, the trace-side counterpart to export.datapoints and export.log_records (#359 closed the gap delivery_trace.go documented). raw_only for now to match export.log_records' existing treatment: volume alone has no healthy baseline until a deployment has been running with tracing on, and export.failures already carries the signal-attributed failure case. |
 | `tailscale2otel.ingest.capture.delay` | metric | `tailscale2otel_ingest_capture_delay_seconds` | visualized |  |
 | `tailscale2otel.ingest.event.age` | metric | `tailscale2otel_ingest_event_age_seconds` | visualized |  |
 | `tailscale2otel.ingest.last_event_timestamp` | metric | `tailscale2otel_ingest_last_event_timestamp_seconds` | visualized, alertable, recorded |  |
@@ -319,6 +321,9 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.metrics.scrape.in_flight` | metric | `tailscale2otel_metrics_scrape_in_flight` | raw_only | Concurrent /metrics gathers. raw_only: useful to confirm prometheus.max_requests_in_flight is engaging and to size it, but it is a tuning gauge, not a health signal. |
 | `tailscale2otel.metrics.scrape.requests` | metric | `tailscale2otel_metrics_scrape_requests_total` | raw_only | Total /metrics scrapes by outcome. raw_only: the denominator for the shed/error ratios above; on its own it says only that something is scraping. |
 | `tailscale2otel.pii_filter.category` | metric | `tailscale2otel_pii_filter_category_ratio` | visualized |  |
+| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | raw_only | Records or spans discarded because the processor queue was full (#358). This is the strongest ALERT candidate of the three queue metrics — a non-zero rate is silent data loss with no other symptom, since the SDK drops without surfacing anything. Left raw_only only until a deployment has run long enough to know what a normal burst looks like; a threshold guessed now would either cry wolf on startup or miss a slow leak. |
+| `tailscale2otel.processor.queue.capacity` | metric | `tailscale2otel_processor_queue_capacity_ratio` | raw_only | Configured capacity of the log/span processor queue (#358). raw_only by nature: it is a near-constant configuration echo whose only job is to be the denominator for queue.size. Alerting on it would be alerting on the config. |
+| `tailscale2otel.processor.queue.size` | metric | `tailscale2otel_processor_queue_size_ratio` | raw_only | Current depth of the log/span processor queue (#358). raw_only: on its own a depth is meaningless — it is only interpretable against queue.capacity, so the useful artifact is a saturation RATIO panel, which needs a dashboard change rather than being implied by the metric landing. Emitted only under self-observability, since the SDK's real queue depth is a private field on an unexported type and this number comes from this repo's own queueing wrapper. |
 | `tailscale2otel.profiling.upload.attempts` | metric | `tailscale2otel_profiling_upload_attempts_total` | raw_only | Denominator for the Pyroscope upload failure ratio. raw_only on its own — meaningful only alongside upload.failures. |
 | `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | raw_only | The streak, which is what distinguishes one dropped upload from a profiling pipeline that has been broken for hours. raw_only because profiling is opt-in and entirely non-essential: readiness deliberately ignores it, so a sustained streak is worth knowing but must never page. |
 | `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | raw_only | Pyroscope upload latency. raw_only: diagnostic for a slow or throttling profiles endpoint, no standing panel. |
@@ -338,8 +343,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.runtime.memory.stack_inuse` | metric | `tailscale2otel_runtime_memory_stack_inuse_bytes` | visualized |  |
 | `tailscale2otel.runtime.memory.sys` | metric | `tailscale2otel_runtime_memory_sys_bytes` | visualized |  |
 | `tailscale2otel.scrape.budget` | metric | `tailscale2otel_scrape_budget_ratio` | visualized, alertable |  |
-| `tailscale2otel.scrape.duration` | metric | `tailscale2otel_scrape_duration_seconds` | visualized |  |
-| `tailscale2otel.scrape.duration.histogram` | metric | `tailscale2otel_scrape_duration_histogram_seconds` | raw_only | Distribution of collector scrape durations, added alongside the pre-existing last-value gauge (which is retained for compatibility). raw_only pending a dashboard change: the flagship dashboard's scrape panels are still driven by the gauge, and moving them to p50/p95/p99 over this histogram is a deliberate visualization change that belongs with the panel edit rather than being implied by the metric landing. |
+| `tailscale2otel.scrape.duration` | metric | `tailscale2otel_scrape_duration_seconds` | raw_only | Last-value gauge of per-collector scrape wall-clock. It was visualized until #369's quantile panels superseded it: the flagship dashboard's scrape-duration panel now reads p50/p95/p99 off scrape.duration.histogram, which a single last value cannot express. The gauge is RETAINED deliberately — it is the cheap answer to 'how long did the last scrape take', and removing it would break any external dashboard or query already using it. |
+| `tailscale2otel.scrape.duration.histogram` | metric | `tailscale2otel_scrape_duration_histogram_seconds` | visualized | Distribution of collector scrape durations, recorded with the scrape span so an exemplar links a bucket back to the trace. Now visualized: #369's follow-up replaced the flagship dashboard's last-value scrape-duration panel with p50/p95/p99 over this histogram, which is what the issue's acceptance asked for. The pre-existing scrape.duration gauge is retained alongside it. |
 | `tailscale2otel.scrape.errors` | metric | `tailscale2otel_scrape_errors_total` | visualized, alertable |  |
 | `tailscale2otel.scrape.last_timestamp` | metric | `tailscale2otel_scrape_last_timestamp_seconds` | visualized, alertable |  |
 | `tailscale2otel.scrape.staleness` | metric | `tailscale2otel_scrape_staleness_seconds` | visualized, alertable, recorded |  |

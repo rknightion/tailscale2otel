@@ -835,6 +835,63 @@
                 "otlp": {
                     "type": "object",
                     "properties": {
+                        "batch": {
+                            "type": "object",
+                            "properties": {
+                                "logs": {
+                                    "type": "object",
+                                    "properties": {
+                                        "export_interval": {
+                                            "type": "string"
+                                        },
+                                        "export_max_batch_size": {
+                                            "type": "integer"
+                                        },
+                                        "export_timeout": {
+                                            "type": "string"
+                                        },
+                                        "max_queue_size": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "traces": {
+                                    "type": "object",
+                                    "properties": {
+                                        "export_interval": {
+                                            "type": "string"
+                                        },
+                                        "export_max_batch_size": {
+                                            "type": "integer"
+                                        },
+                                        "export_timeout": {
+                                            "type": "string"
+                                        },
+                                        "max_queue_size": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "compression": {
+                            "type": "string"
+                        },
+                        "credential_reload": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
                         "endpoint": {
                             "type": "string"
                         },
@@ -853,6 +910,9 @@
                             },
                             "additionalProperties": false
                         },
+                        "grpc_reconnection_period": {
+                            "type": "string"
+                        },
                         "headers": {
                             "type": "object"
                         },
@@ -868,13 +928,187 @@
                             },
                             "additionalProperties": false
                         },
+                        "logs": {
+                            "type": "object",
+                            "properties": {
+                                "compression": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "null"
+                                },
+                                "endpoint": {
+                                    "type": "string"
+                                },
+                                "grpc_reconnection_period": {
+                                    "type": "string"
+                                },
+                                "headers": {
+                                    "type": "object"
+                                },
+                                "max_request_size": {
+                                    "type": "integer"
+                                },
+                                "protocol": {
+                                    "type": "string"
+                                },
+                                "retry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "null"
+                                        },
+                                        "initial_interval": {
+                                            "type": "string"
+                                        },
+                                        "max_elapsed_time": {
+                                            "type": "string"
+                                        },
+                                        "max_interval": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ca_file": {
+                                            "type": "string"
+                                        },
+                                        "cert_file": {
+                                            "type": "string"
+                                        },
+                                        "insecure": {
+                                            "type": "null"
+                                        },
+                                        "insecure_skip_verify": {
+                                            "type": "null"
+                                        },
+                                        "key_file": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "max_request_size": {
+                            "type": "integer"
+                        },
                         "metric_export_batch_size": {
                             "type": "integer"
                         },
                         "metric_interval": {
                             "type": "string"
                         },
+                        "metrics": {
+                            "type": "object",
+                            "properties": {
+                                "compression": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "null"
+                                },
+                                "endpoint": {
+                                    "type": "string"
+                                },
+                                "grpc_reconnection_period": {
+                                    "type": "string"
+                                },
+                                "headers": {
+                                    "type": "object"
+                                },
+                                "max_request_size": {
+                                    "type": "integer"
+                                },
+                                "protocol": {
+                                    "type": "string"
+                                },
+                                "retry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "null"
+                                        },
+                                        "initial_interval": {
+                                            "type": "string"
+                                        },
+                                        "max_elapsed_time": {
+                                            "type": "string"
+                                        },
+                                        "max_interval": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ca_file": {
+                                            "type": "string"
+                                        },
+                                        "cert_file": {
+                                            "type": "string"
+                                        },
+                                        "insecure": {
+                                            "type": "null"
+                                        },
+                                        "insecure_skip_verify": {
+                                            "type": "null"
+                                        },
+                                        "key_file": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
+                        },
                         "protocol": {
+                            "type": "string"
+                        },
+                        "retry": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "null"
+                                },
+                                "initial_interval": {
+                                    "type": "string"
+                                },
+                                "max_elapsed_time": {
+                                    "type": "string"
+                                },
+                                "max_interval": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "stdout": {
+                            "type": "object",
+                            "properties": {
+                                "metric_interval": {
+                                    "type": "string"
+                                },
+                                "pretty": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "timeout": {
                             "type": "string"
                         },
                         "tls": {
@@ -894,6 +1128,75 @@
                                 },
                                 "key_file": {
                                     "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "traces": {
+                            "type": "object",
+                            "properties": {
+                                "compression": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "null"
+                                },
+                                "endpoint": {
+                                    "type": "string"
+                                },
+                                "grpc_reconnection_period": {
+                                    "type": "string"
+                                },
+                                "headers": {
+                                    "type": "object"
+                                },
+                                "max_request_size": {
+                                    "type": "integer"
+                                },
+                                "protocol": {
+                                    "type": "string"
+                                },
+                                "retry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "null"
+                                        },
+                                        "initial_interval": {
+                                            "type": "string"
+                                        },
+                                        "max_elapsed_time": {
+                                            "type": "string"
+                                        },
+                                        "max_interval": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "timeout": {
+                                    "type": "string"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ca_file": {
+                                            "type": "string"
+                                        },
+                                        "cert_file": {
+                                            "type": "string"
+                                        },
+                                        "insecure": {
+                                            "type": "null"
+                                        },
+                                        "insecure_skip_verify": {
+                                            "type": "null"
+                                        },
+                                        "key_file": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
                                 }
                             },
                             "additionalProperties": false
@@ -976,6 +1279,18 @@
                                 "basic_auth_user": {
                                     "type": "string"
                                 },
+                                "credential_reload": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "interval": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },
@@ -985,8 +1300,25 @@
                                 "server_address": {
                                     "type": "string"
                                 },
+                                "span_profiles": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
                                 "tags": {
                                     "type": "object"
+                                },
+                                "tailnet_label": {
+                                    "type": "string",
+                                    "enum": [
+                                        "off",
+                                        "hashed",
+                                        "name"
+                                    ]
                                 },
                                 "tenant_id": {
                                     "type": "string"
@@ -1074,6 +1406,24 @@
                 },
                 "provider": {
                     "type": "string"
+                },
+                "resource": {
+                    "type": "object",
+                    "properties": {
+                        "attributes": {
+                            "type": "object"
+                        },
+                        "deployment_environment": {
+                            "type": "string"
+                        },
+                        "from_env": {
+                            "type": "boolean"
+                        },
+                        "service_namespace": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
                 },
                 "self_observability": {
                     "type": "object",
@@ -1237,11 +1587,56 @@
                         "enabled": {
                             "type": "boolean"
                         },
+                        "remote_parent": {
+                            "type": "string"
+                        },
                         "sampler": {
                             "type": "string"
                         },
                         "sampler_arg": {
                             "type": "number"
+                        },
+                        "samplers": {
+                            "type": "object",
+                            "properties": {
+                                "background": {
+                                    "type": "object",
+                                    "properties": {
+                                        "arg": {
+                                            "type": "number"
+                                        },
+                                        "sampler": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "receiver": {
+                                    "type": "object",
+                                    "properties": {
+                                        "arg": {
+                                            "type": "number"
+                                        },
+                                        "sampler": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "scrape": {
+                                    "type": "object",
+                                    "properties": {
+                                        "arg": {
+                                            "type": "number"
+                                        },
+                                        "sampler": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
                         }
                     },
                     "additionalProperties": false

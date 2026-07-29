@@ -58,7 +58,131 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		TraceSamplerArg:          cfg.Tracing.SamplerArg,
 		PIIFilter:                piiCategories(cfg.PIIFilter),
 		PrometheusEnabled:        cfg.Prometheus.Enabled,
+
+		Transport: transportOptions(cfg.OTLP.Compression, cfg.OTLP.Timeout, cfg.OTLP.MaxRequestSize,
+			cfg.OTLP.GRPCReconnectionPeriod, cfg.OTLP.Retry),
+		Signals: telemetry.SignalOptions{
+			Metrics: signalOverride(cfg.OTLP.Metrics),
+			Logs:    signalOverride(cfg.OTLP.Logs),
+			Traces:  signalOverride(cfg.OTLP.Traces),
+		},
+		Batch: telemetry.BatchOptions{
+			Logs:   queueOptions(cfg.OTLP.Batch.Logs),
+			Traces: queueOptions(cfg.OTLP.Batch.Traces),
+		},
+		Stdout: telemetry.StdoutOptions{
+			MetricInterval: cfg.OTLP.Stdout.MetricInterval.D(),
+			Pretty:         cfg.OTLP.Stdout.Pretty,
+		},
+		Sampling: telemetry.SamplingOptions{
+			Scrape:       samplerClass(cfg.Tracing.Samplers.Scrape),
+			Receiver:     samplerClass(cfg.Tracing.Samplers.Receiver),
+			Background:   samplerClass(cfg.Tracing.Samplers.Background),
+			RemoteParent: cfg.Tracing.RemoteParent,
+		},
+		Resource: telemetry.ResourceOptions{
+			ServiceNamespace:      cfg.Resource.ServiceNamespace,
+			DeploymentEnvironment: cfg.Resource.DeploymentEnvironment,
+			Attributes:            cfg.Resource.Attributes,
+			FromEnv:               cfg.Resource.FromEnv,
+		},
+		Profiles: telemetry.ProfileOptions{
+			// Correlation needs a span to label and a running profiler to receive
+			// the labels; Validate() already refuses the half-configured shape, so
+			// this conjunction is belt-and-braces rather than the enforcement.
+			Enabled: cfg.Profiling.Pyroscope.SpanProfiles.Enabled &&
+				cfg.Tracing.Enabled && cfg.Profiling.Pyroscope.Enabled,
+		},
 	}
+}
+
+// transportOptions maps the shared OTLP transport knobs (#360). Every zero value
+// is passed through as a zero so the telemetry layer can tell "unset, defer to
+// the standard OTEL_EXPORTER_* variable" from "explicitly configured".
+func transportOptions(compression string, timeout config.Duration, maxRequestSize int,
+	grpcReconnect config.Duration, retry config.OTLPRetryConfig,
+) telemetry.TransportOptions {
+	return telemetry.TransportOptions{
+		Compression:            compression,
+		Timeout:                timeout.D(),
+		MaxRequestSize:         maxRequestSize,
+		GRPCReconnectionPeriod: grpcReconnect.D(),
+		Retry:                  retryPolicy(retry),
+	}
+}
+
+// retryPolicy returns nil for a wholly untouched retry block, which is what
+// tells the exporter to keep its own default policy. A block is "touched" if any
+// field is set — including Enabled: false, which is the explicit way to turn
+// retry off and must not be confused with an omitted key.
+func retryPolicy(r config.OTLPRetryConfig) *telemetry.RetryPolicy {
+	if r.Enabled == nil && r.InitialInterval.D() == 0 && r.MaxInterval.D() == 0 && r.MaxElapsedTime.D() == 0 {
+		return nil
+	}
+	enabled := true
+	if r.Enabled != nil {
+		enabled = *r.Enabled
+	}
+	return &telemetry.RetryPolicy{
+		Enabled:         enabled,
+		InitialInterval: r.InitialInterval.D(),
+		MaxInterval:     r.MaxInterval.D(),
+		MaxElapsedTime:  r.MaxElapsedTime.D(),
+	}
+}
+
+// signalOverride returns nil for an untouched per-signal block so the signal
+// inherits the common settings verbatim (#361). Returning a zero *SignalOverride
+// instead would be indistinguishable in effect but would lose that "no override
+// configured" fact, which the effective-settings echo reports.
+func signalOverride(c config.OTLPSignalConfig) *telemetry.SignalOverride {
+	empty := c.Enabled == nil && c.Protocol == "" && c.Endpoint == "" && len(c.Headers) == 0 &&
+		c.TLS == (config.OTLPSignalTLS{}) && c.Compression == "" && c.Timeout.D() == 0 &&
+		c.MaxRequestSize == 0 && c.GRPCReconnectionPeriod.D() == 0 &&
+		retryPolicy(c.Retry) == nil
+	if empty {
+		return nil
+	}
+	o := &telemetry.SignalOverride{
+		Enabled:            c.Enabled,
+		Protocol:           c.Protocol,
+		Endpoint:           c.Endpoint,
+		Insecure:           c.TLS.Insecure,
+		InsecureSkipVerify: c.TLS.InsecureSkipVerify,
+		CAFile:             c.TLS.CAFile,
+		CertFile:           c.TLS.CertFile,
+		KeyFile:            c.TLS.KeyFile,
+	}
+	if len(c.Headers) > 0 {
+		// Reveal at the point of legitimate use (#73), same as the common block.
+		// This REPLACES rather than merges with the common headers, so one signal's
+		// credential can never reach another's endpoint.
+		o.Headers = make(map[string]string, len(c.Headers))
+		for k, v := range c.Headers {
+			o.Headers[k] = v.Reveal()
+		}
+	}
+	if t := transportOptions(c.Compression, c.Timeout, c.MaxRequestSize,
+		c.GRPCReconnectionPeriod, c.Retry); t != (telemetry.TransportOptions{}) {
+		o.Transport = &t
+	}
+	return o
+}
+
+// queueOptions maps one signal's processor-queue settings (#358).
+func queueOptions(q config.OTLPQueueConfig) telemetry.QueueOptions {
+	return telemetry.QueueOptions{
+		MaxQueueSize:       q.MaxQueueSize,
+		ExportMaxBatchSize: q.ExportMaxBatchSize,
+		ExportInterval:     q.ExportInterval.D(),
+		ExportTimeout:      q.ExportTimeout.D(),
+	}
+}
+
+// samplerClass maps one workload class's head-sampler override (#372). An empty
+// Sampler means the class inherits the global tracing.sampler.
+func samplerClass(c config.TracingSamplerClass) telemetry.SamplerClassOptions {
+	return telemetry.SamplerClassOptions{Sampler: c.Sampler, SamplerArg: c.Arg}
 }
 
 // piiCategories converts config.PIIFilterConfig into the pii.Categories map used

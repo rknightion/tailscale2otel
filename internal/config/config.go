@@ -72,6 +72,7 @@ type Config struct {
 	Prometheus        PrometheusConfig        `yaml:"prometheus"`
 	Profiling         ProfilingConfig         `yaml:"profiling"`
 	Tracing           TracingConfig           `yaml:"tracing"`
+	Resource          ResourceConfig          `yaml:"resource"`
 	VersionChecks     VersionChecksConfig     `yaml:"version_checks"`
 
 	// unknownEnv records TS2OTEL_* environment variables that did not map to any
@@ -302,6 +303,25 @@ type ProfilingPyroscope struct {
 	// https. Distinct from the listener TLS blocks: this is an outbound client,
 	// so it takes a CA to trust plus an optional client keypair for mTLS.
 	TLS PyroscopeTLS `yaml:"tls"`
+
+	// SpanProfiles correlates sampled CPU profiles with trace spans (#370).
+	SpanProfiles SpanProfilesConfig `yaml:"span_profiles"`
+
+	// TailnetLabel controls whether continuous profiles carry a tailnet
+	// dimension, and in what form (#376): off (the default), hashed (a stable
+	// 12-hex-char SHA-256 prefix), or name (the literal tailnet name).
+	//
+	// It is off by default and deliberately NOT covered by the pii_filter
+	// categories, because those govern the metric/log/span pipeline and profiles
+	// are a different destination with a different audience. A tailnet name is a
+	// customer identifier; hashed gives an MSP the "which tenant is burning the
+	// CPU" answer without shipping it, and name is available for a single-tenant
+	// operator profiling their own tailnet.
+	TailnetLabel string `yaml:"tailnet_label"` // off|hashed|name
+
+	// CredentialReload rotates the password/header/TLS files this agent reads
+	// without restarting the process (#362).
+	CredentialReload CredentialReloadConfig `yaml:"credential_reload"`
 }
 
 // PyroscopeTLS configures TLS for the OUTBOUND Pyroscope profile-upload client.
@@ -583,6 +603,110 @@ type OTLPConfig struct {
 	// MetricExportBatchSize bounds the number of datapoints in each OTLP metric
 	// request. This is a count, not a serialized-byte limit.
 	MetricExportBatchSize int `yaml:"metric_export_batch_size"`
+
+	// CredentialReload rotates the token/header/TLS files the OTLP exporters use
+	// without restarting the process (#362).
+	CredentialReload CredentialReloadConfig `yaml:"credential_reload"`
+
+	// Compression is the OTLP request compression: gzip or none. Empty defers to
+	// the standard OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION variables, then the
+	// exporter default (#360).
+	Compression string `yaml:"compression"`
+	// Timeout bounds one export request. Zero defers to
+	// OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT, then the exporter's 10s default.
+	Timeout Duration `yaml:"timeout"`
+	// MaxRequestSize caps one serialized request in bytes. This is a client-side
+	// rejection GUARD, not a splitter: it fails an oversized request fast instead
+	// of shipping it into a backend 413. The knob that actually keeps requests
+	// under an ingest limit is metric_export_batch_size above.
+	MaxRequestSize int `yaml:"max_request_size"`
+	// GRPCReconnectionPeriod forces a fresh gRPC connection attempt after this
+	// long. gRPC only; ignored for http and stdout.
+	GRPCReconnectionPeriod Duration `yaml:"grpc_reconnection_period"`
+	// Retry is the exporter's retry policy. Zero leaves the exporter default.
+	Retry OTLPRetryConfig `yaml:"retry"`
+
+	// Batch tunes the log and span processor queues (#358). The SDK's queues are
+	// bounded and drop silently under a receiver burst or a stalled backend, so
+	// these exist alongside the saturation/drop telemetry.
+	Batch OTLPBatchConfig `yaml:"batch"`
+
+	// Stdout makes the stdout protocol an immediate debugging sink (#384).
+	Stdout OTLPStdoutConfig `yaml:"stdout"`
+
+	// Metrics, Logs and Traces optionally send one signal somewhere else — a
+	// different collector, tenant, credential or protocol (#361). An unset field
+	// inherits the common block above; credentials are never shared across a
+	// signal boundary, so a signal that sets its own headers does not also
+	// inherit these.
+	Metrics OTLPSignalConfig `yaml:"metrics"`
+	Logs    OTLPSignalConfig `yaml:"logs"`
+	Traces  OTLPSignalConfig `yaml:"traces"`
+}
+
+// OTLPRetryConfig is the exporter retry policy (#360). Enabled is a *bool so
+// "unset" is distinguishable from an explicit false: unset leaves the exporter's
+// own default (retry on), while false genuinely disables it.
+type OTLPRetryConfig struct {
+	Enabled         *bool    `yaml:"enabled"`
+	InitialInterval Duration `yaml:"initial_interval"`
+	MaxInterval     Duration `yaml:"max_interval"`
+	MaxElapsedTime  Duration `yaml:"max_elapsed_time"`
+}
+
+// OTLPQueueConfig tunes one signal's processor queue (#358). Zero values mean
+// "leave the SDK default", so an untouched block reproduces today's behavior.
+type OTLPQueueConfig struct {
+	MaxQueueSize       int      `yaml:"max_queue_size"`
+	ExportMaxBatchSize int      `yaml:"export_max_batch_size"`
+	ExportInterval     Duration `yaml:"export_interval"`
+	ExportTimeout      Duration `yaml:"export_timeout"`
+}
+
+// OTLPBatchConfig holds the per-signal queue settings. Metrics are absent by
+// design: a PeriodicReader has no queue to saturate, so there is nothing to tune
+// or drop — its cadence is otlp.metric_interval.
+type OTLPBatchConfig struct {
+	Logs   OTLPQueueConfig `yaml:"logs"`
+	Traces OTLPQueueConfig `yaml:"traces"`
+}
+
+// OTLPStdoutConfig makes the stdout protocol immediate (#384). It applies only
+// when otlp.protocol is stdout; stdout is a debugging sink and carries no
+// reliability or rotation promise.
+type OTLPStdoutConfig struct {
+	// MetricInterval replaces the 60s production cadence so a debugging run does
+	// not wait a minute to see a metric. Zero uses the built-in stdout default.
+	MetricInterval Duration `yaml:"metric_interval"`
+	// Pretty indents the emitted JSON.
+	Pretty bool `yaml:"pretty"`
+}
+
+// OTLPSignalConfig overrides the destination for one signal (#361). Every field
+// is "unset means inherit"; the pointer fields exist so an explicit false is
+// distinguishable from an omitted key.
+type OTLPSignalConfig struct {
+	Enabled  *bool             `yaml:"enabled"`
+	Protocol string            `yaml:"protocol"`
+	Endpoint string            `yaml:"endpoint"`
+	Headers  map[string]Secret `yaml:"headers"`
+	TLS      OTLPSignalTLS     `yaml:"tls"`
+
+	Compression            string          `yaml:"compression"`
+	Timeout                Duration        `yaml:"timeout"`
+	MaxRequestSize         int             `yaml:"max_request_size"`
+	GRPCReconnectionPeriod Duration        `yaml:"grpc_reconnection_period"`
+	Retry                  OTLPRetryConfig `yaml:"retry"`
+}
+
+// OTLPSignalTLS is a per-signal TLS override. The two insecure flags are *bool
+// so a signal can turn plaintext OFF while the common block has it on.
+type OTLPSignalTLS struct {
+	Insecure           *bool  `yaml:"insecure"`
+	InsecureSkipVerify *bool  `yaml:"insecure_skip_verify"`
+	CAFile             string `yaml:"ca_file"`
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
 }
 
 // GrafanaCloudConfig holds Grafana Cloud OTLP credentials.
@@ -1292,6 +1416,83 @@ type TracingConfig struct {
 	Enabled    bool    `yaml:"enabled"`
 	Sampler    string  `yaml:"sampler"`     // always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio
 	SamplerArg float64 `yaml:"sampler_arg"` // ratio in [0,1] for the *traceidratio samplers
+
+	// Samplers optionally overrides the head sampler per workload class (#372).
+	// High-rate receiver traffic can otherwise drown out the low-rate collector
+	// failures that are the more useful traces. An unset class inherits Sampler /
+	// SamplerArg above, so the zero value is exactly today's single global
+	// sampler. Error- and latency-aware policies belong in Alloy's tail-sampling
+	// processor, not here.
+	Samplers TracingSamplers `yaml:"samplers"`
+
+	// RemoteParent is how an inbound W3C traceparent's sampled bit is treated by
+	// the stream and webhook receivers (#373): trust it (the default, and today's
+	// behavior), ignore it so the local sampler alone decides, or convert it to a
+	// link on a fresh local root trace. Without this, an authenticated sender's
+	// sampled bit overrides the local ratio.
+	RemoteParent string `yaml:"remote_parent"` // trust|ignore|link
+}
+
+// TracingSamplers holds the per-class head-sampler overrides. The three classes
+// are a closed set so the sampler's own decision dimensions stay bounded.
+type TracingSamplers struct {
+	Scrape     TracingSamplerClass `yaml:"scrape"`
+	Receiver   TracingSamplerClass `yaml:"receiver"`
+	Background TracingSamplerClass `yaml:"background"`
+}
+
+// TracingSamplerClass is one class's sampler override. An empty Sampler means
+// "inherit the global tracing.sampler".
+type TracingSamplerClass struct {
+	Sampler string  `yaml:"sampler"`
+	Arg     float64 `yaml:"arg"`
+}
+
+// ResourceConfig is opt-in enrichment of the OTEL Resource (#380).
+//
+// This is deliberately narrow and bounded. The metrics Resource is a per-series
+// label surface on Grafana Cloud (it promotes the whole service.* namespace), so
+// anything added here can multiply active-series cardinality — which is why the
+// app's own identity always wins, service.version is still kept off the metrics
+// Resource (#187), tailscale.tailnet / tailscale2otel.provider stay signal-scoped
+// attributes, and reading the ambient environment is off by default.
+type ResourceConfig struct {
+	// ServiceNamespace sets service.namespace. Grafana Cloud promotes it to a
+	// per-series label alongside job, so it must be low-cardinality and stable
+	// across deploys.
+	ServiceNamespace string `yaml:"service_namespace"`
+	// DeploymentEnvironment sets deployment.environment.name. Outside the
+	// service.* namespace, so it lands in target_info rather than on every
+	// series, and may safely vary per environment.
+	DeploymentEnvironment string `yaml:"deployment_environment"`
+	// Attributes are bounded custom Resource attributes (deploy/ownership tags).
+	// Reserved keys are refused, not silently accepted.
+	Attributes map[string]string `yaml:"attributes"`
+	// FromEnv additionally reads OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME,
+	// filtered by the same rules. Default false: it hands the ambient deployment
+	// environment a channel onto a per-series label surface, which should be a
+	// deliberate choice rather than something inherited.
+	FromEnv bool `yaml:"from_env"`
+}
+
+// CredentialReloadConfig turns on rotation of outbound credential and TLS files
+// without a restart (#362). Secret and mTLS rotation in Kubernetes or Docker
+// otherwise costs a process restart and a telemetry gap.
+//
+// Enabled governs only the background POLLER. The reloader is constructed
+// whenever any watched file is configured, so a malformed replacement is always
+// caught and the last known-good material always retained, poller or not.
+type CredentialReloadConfig struct {
+	Enabled  bool     `yaml:"enabled"`
+	Interval Duration `yaml:"interval"`
+}
+
+// SpanProfilesConfig is opt-in Pyroscope span-profile correlation (#370): CPU
+// profiles become reachable from a Grafana trace-to-profile link. CPU only —
+// Go's runtime attaches pprof labels to CPU samples, so heap, mutex, block and
+// goroutine profiles cannot carry span identity.
+type SpanProfilesConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // PIIFilterConfig controls which PII / identifier categories are emitted.

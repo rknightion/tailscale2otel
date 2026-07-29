@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.29.0](https://img.shields.io/badge/Version-0.29.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.30.0](https://img.shields.io/badge/Version-0.30.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -391,21 +391,86 @@ extraVolumeMounts:
 | config.ingress_wal.max_entries | int | `10000` | Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
 | config.log_format | string | `"text"` | Operational log encoding: `text` or `json`. JSON is one record per line, for a cluster log pipeline that parses rather than greps. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
+| config.otlp.batch.logs.export_interval | string | `"0s"` | How often a partial batch is flushed. 0 = SDK default. |
+| config.otlp.batch.logs.export_max_batch_size | int | `0` | Records per export; must be <= max_queue_size when both are set. 0 = SDK default. |
+| config.otlp.batch.logs.export_timeout | string | `"0s"` | Bound on one export attempt. 0 = SDK default. |
+| config.otlp.batch.logs.max_queue_size | int | `0` | Records buffered before new ones are dropped (non-blocking by design). 0 = SDK default. |
+| config.otlp.batch.traces.export_interval | string | `"0s"` | How often a partial batch is flushed. 0 = SDK default. |
+| config.otlp.batch.traces.export_max_batch_size | int | `0` | Spans per export; must be <= max_queue_size when both are set. 0 = SDK default. |
+| config.otlp.batch.traces.export_timeout | string | `"0s"` | Bound on one export attempt. 0 = SDK default. |
+| config.otlp.batch.traces.max_queue_size | int | `0` | Spans buffered before new ones are dropped. 0 = SDK default. |
+| config.otlp.compression | string | `""` | Request compression: gzip | none. Empty defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION, then the exporter default. |
+| config.otlp.credential_reload.enabled | bool | `false` | Governs only the background poller; last-known-good validation is always retained for a configured file regardless of this flag. |
+| config.otlp.credential_reload.interval | string | `"30s"` | Poll period; minimum 5s. Ignored when enabled is false. |
 | config.otlp.endpoint | string | `"https://otlp-gateway-prod-us-central-0.grafana.net/otlp"` | OTLP endpoint base URL. For Grafana Cloud use the otlp-gateway URL for YOUR region (the /v1/metrics and /v1/logs paths are appended automatically on the http protocol). |
 | config.otlp.grafana_cloud.instance_id | string | `""` | Grafana Cloud instance/stack ID. Convenience: expands to an "Authorization: Basic <base64(instance_id:token)>" header. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID (secret). |
 | config.otlp.grafana_cloud.token | string | `""` | Grafana Cloud OTLP token paired with instance_id. Set via TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN (secret). |
 | config.otlp.grafana_cloud.token_file | string | `""` | Read the Grafana Cloud token from this path instead of an inline value. Set the value or the file, not both; the file's content is whitespace-trimmed. |
+| config.otlp.grpc_reconnection_period | string | `"0s"` | Force a fresh gRPC connection attempt after this long. gRPC only; 0 = the gRPC client default. A rotated client certificate takes effect on both transports immediately, but a rotated CA bundle on gRPC only takes effect on the NEXT new connection — this bounds that. |
 | config.otlp.headers | object | `{}` | Extra raw headers (alternative to grafana_cloud, e.g. for a non-Grafana backend). |
 | config.otlp.limits.log_attribute_value_bytes | int | `4096` | Cap each individual string-valued log attribute. Never applied to metric labels, which must stay byte-exact or the series splits. Minimum 64. |
 | config.otlp.limits.log_body_bytes | int | `32768` | Cap one log record's body before export. A receiver's request-body limit bounds a whole inbound request, but a valid request can still carry one enormous record that dominates a batch or breaches the backend's per-record limit. Truncation is UTF-8 safe, runs AFTER redaction so a secret can never be half-redacted, and leaves an explicit marker. Minimum 64; there is deliberately no unlimited setting. |
+| config.otlp.logs | object | `{"compression":"","enabled":null,"endpoint":"","grpc_reconnection_period":"0s","headers":{},"max_request_size":0,"protocol":"","retry":{"enabled":null,"initial_interval":"0s","max_elapsed_time":"0s","max_interval":"0s"},"timeout":"0s","tls":{"ca_file":"","cert_file":"","insecure":null,"insecure_skip_verify":null,"key_file":""}}` | Send ONE signal (logs) somewhere else. Same inheritance rules as otlp.metrics above. |
+| config.otlp.logs.compression | string | `""` | Empty inherits otlp.compression. |
+| config.otlp.logs.enabled | string | `nil` | null inherits (the signal is on); false stops exporting this signal without disturbing the others. |
+| config.otlp.logs.endpoint | string | `""` | Empty inherits otlp.endpoint. |
+| config.otlp.logs.grpc_reconnection_period | string | `"0s"` | 0 inherits otlp.grpc_reconnection_period. |
+| config.otlp.logs.headers | object | `{}` | REPLACES otlp.headers for this signal rather than merging. |
+| config.otlp.logs.max_request_size | int | `0` | 0 inherits otlp.max_request_size. |
+| config.otlp.logs.protocol | string | `""` | Empty inherits otlp.protocol. |
+| config.otlp.logs.retry.enabled | string | `nil` | An untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal. |
+| config.otlp.logs.timeout | string | `"0s"` | 0 inherits otlp.timeout. |
+| config.otlp.logs.tls.ca_file | string | `""` | Empty inherits otlp.tls.ca_file. |
+| config.otlp.logs.tls.cert_file | string | `""` | Empty inherits otlp.tls.cert_file. |
+| config.otlp.logs.tls.insecure | string | `nil` | null inherits; explicit true/false overrides. |
+| config.otlp.logs.tls.insecure_skip_verify | string | `nil` | null inherits; explicit true/false overrides. |
+| config.otlp.logs.tls.key_file | string | `""` | Empty inherits otlp.tls.key_file. |
+| config.otlp.max_request_size | int | `0` | Bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a backend 413. Use metric_export_batch_size to actually stay under an ingest limit. 0 = no cap. |
 | config.otlp.metric_export_batch_size | int | `10000` | Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads. |
 | config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed (the metric export interval). |
+| config.otlp.metrics | object | `{"compression":"","enabled":null,"endpoint":"","grpc_reconnection_period":"0s","headers":{},"max_request_size":0,"protocol":"","retry":{"enabled":null,"initial_interval":"0s","max_elapsed_time":"0s","max_interval":"0s"},"timeout":"0s","tls":{"ca_file":"","cert_file":"","insecure":null,"insecure_skip_verify":null,"key_file":""}}` | Send ONE signal (metrics) somewhere else — a different collector, tenant, credential or protocol. Every field here inherits the matching otlp.* value above when left empty/null, EXCEPT headers, which REPLACES otlp.headers rather than merging — a credential never crosses a signal boundary. |
+| config.otlp.metrics.compression | string | `""` | Empty inherits otlp.compression. |
+| config.otlp.metrics.enabled | string | `nil` | null inherits (the signal is on); false stops exporting this signal without disturbing the others. |
+| config.otlp.metrics.endpoint | string | `""` | Empty inherits otlp.endpoint. |
+| config.otlp.metrics.grpc_reconnection_period | string | `"0s"` | 0 inherits otlp.grpc_reconnection_period. |
+| config.otlp.metrics.headers | object | `{}` | REPLACES otlp.headers for this signal rather than merging. |
+| config.otlp.metrics.max_request_size | int | `0` | 0 inherits otlp.max_request_size. |
+| config.otlp.metrics.protocol | string | `""` | Empty inherits otlp.protocol. |
+| config.otlp.metrics.retry.enabled | string | `nil` | An untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal. |
+| config.otlp.metrics.timeout | string | `"0s"` | 0 inherits otlp.timeout. |
+| config.otlp.metrics.tls.ca_file | string | `""` | Empty inherits otlp.tls.ca_file. |
+| config.otlp.metrics.tls.cert_file | string | `""` | Empty inherits otlp.tls.cert_file. |
+| config.otlp.metrics.tls.insecure | string | `nil` | null inherits; explicit true/false overrides. |
+| config.otlp.metrics.tls.insecure_skip_verify | string | `nil` | null inherits; explicit true/false overrides. |
+| config.otlp.metrics.tls.key_file | string | `""` | Empty inherits otlp.tls.key_file. |
 | config.otlp.protocol | string | `"http"` | Export protocol: http | grpc | stdout (stdout = local debug). |
+| config.otlp.retry.enabled | string | `nil` | An explicit false genuinely disables retry (distinct from omitting this whole block, which keeps the exporter's own default of retry-on). Unset (null) here means "leave the exporter default". |
+| config.otlp.retry.initial_interval | string | `"5s"` | First backoff delay. |
+| config.otlp.retry.max_elapsed_time | string | `"1m"` | Give up after this long. |
+| config.otlp.retry.max_interval | string | `"30s"` | Backoff ceiling. |
+| config.otlp.stdout.metric_interval | string | `"5s"` | Metric push cadence when otlp.protocol is stdout — a short cadence so a debug run doesn't wait 60s for a metric. Logs and spans are emitted synchronously regardless. 0 = the stdout exporter's own default. |
+| config.otlp.stdout.pretty | bool | `false` | Indent the emitted JSON. |
+| config.otlp.timeout | string | `"0s"` | Per-request export timeout. 0 defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT, then the exporter's 10s default. |
 | config.otlp.tls.ca_file | string | `""` | Path to a CA bundle to verify the server certificate. |
 | config.otlp.tls.cert_file | string | `""` | Client certificate for mutual TLS. |
 | config.otlp.tls.insecure | bool | `false` | Disable transport security ENTIRELY (plaintext) — this is NOT a certificate-verification skip, see insecure_skip_verify for that. The Authorization header built from grafana_cloud rides on whatever transport this selects, so `true` puts that credential on the wire unencrypted. Only ever for a trusted in-cluster Collector, never across an untrusted network. |
 | config.otlp.tls.insecure_skip_verify | bool | `false` | Keep TLS on but skip server-certificate verification (self-signed / private-CA gateways, testing only). Distinct from `insecure` above; prefer ca_file in production. |
 | config.otlp.tls.key_file | string | `""` | Client private key for mutual TLS. |
+| config.otlp.traces | object | `{"compression":"","enabled":null,"endpoint":"","grpc_reconnection_period":"0s","headers":{},"max_request_size":0,"protocol":"","retry":{"enabled":null,"initial_interval":"0s","max_elapsed_time":"0s","max_interval":"0s"},"timeout":"0s","tls":{"ca_file":"","cert_file":"","insecure":null,"insecure_skip_verify":null,"key_file":""}}` | Send ONE signal (traces) somewhere else. Same inheritance rules as otlp.metrics above; credentials are never shared across a signal boundary. |
+| config.otlp.traces.compression | string | `""` | Empty inherits otlp.compression. |
+| config.otlp.traces.enabled | string | `nil` | null inherits (the signal is on); false stops exporting this signal without disturbing the others. |
+| config.otlp.traces.endpoint | string | `""` | Empty inherits otlp.endpoint. |
+| config.otlp.traces.grpc_reconnection_period | string | `"0s"` | 0 inherits otlp.grpc_reconnection_period. |
+| config.otlp.traces.headers | object | `{}` | REPLACES otlp.headers for this signal rather than merging. |
+| config.otlp.traces.max_request_size | int | `0` | 0 inherits otlp.max_request_size. |
+| config.otlp.traces.protocol | string | `""` | Empty inherits otlp.protocol. |
+| config.otlp.traces.retry.enabled | string | `nil` | An untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal. |
+| config.otlp.traces.timeout | string | `"0s"` | 0 inherits otlp.timeout. |
+| config.otlp.traces.tls.ca_file | string | `""` | Empty inherits otlp.tls.ca_file. |
+| config.otlp.traces.tls.cert_file | string | `""` | Empty inherits otlp.tls.cert_file. |
+| config.otlp.traces.tls.insecure | string | `nil` | null inherits; explicit true/false overrides. |
+| config.otlp.traces.tls.insecure_skip_verify | string | `nil` | null inherits; explicit true/false overrides. |
+| config.otlp.traces.tls.key_file | string | `""` | Empty inherits otlp.tls.key_file. |
 | config.pii_filter.emails | bool | `true` | Emit user/actor login names (often emails). |
 | config.pii_filter.endpoint_paths | bool | `true` | Emit Tailscale API endpoint paths (self-obs). |
 | config.pii_filter.external_ips | bool | `true` | Emit public/routable addresses. |
@@ -425,10 +490,14 @@ extraVolumeMounts:
 | config.profiling.pyroscope.basic_auth_password | string | `""` | Basic-auth password (Grafana Cloud: an access policy token with profiles:write). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD (secret). |
 | config.profiling.pyroscope.basic_auth_password_file | string | `""` | Read the Pyroscope basic-auth password from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; content is whitespace-trimmed. |
 | config.profiling.pyroscope.basic_auth_user | string | `""` | Basic-auth user (Grafana Cloud: the profiles instance ID). Set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER (secret). |
+| config.profiling.pyroscope.credential_reload.enabled | bool | `false` | Governs only the background poller; last-known-good validation is always retained for a configured file regardless of this flag. |
+| config.profiling.pyroscope.credential_reload.interval | string | `"30s"` | Poll period; minimum 5s. Ignored when enabled is false. |
 | config.profiling.pyroscope.enabled | bool | `false` | Run the Pyroscope continuous-profiling push agent (pyroscope-go SDK). |
 | config.profiling.pyroscope.headers | object | `{}` | Extra HTTP headers sent on every profile upload, e.g. { X-Api-Key: abc }. Values are secrets and redact from the status page and logs. Reserved headers (Authorization when basic auth is set, and the tenant header) win over anything set here. |
 | config.profiling.pyroscope.server_address | string | `""` | Pyroscope/Grafana Cloud Profiles server URL. REQUIRED when enabled. |
+| config.profiling.pyroscope.span_profiles.enabled | bool | `false` | Correlate sampled CPU profiles with trace spans, so a Grafana trace links straight to the profile. REQUIRES both tracing.enabled and profiling.pyroscope.enabled. CPU profiles ONLY — Go's runtime attaches pprof labels to CPU samples, so heap/mutex/block/goroutine profiles cannot carry span identity. |
 | config.profiling.pyroscope.tags | object | `{}` | Extra static labels merged onto every profile, e.g. { env: prod }. |
+| config.profiling.pyroscope.tailnet_label | string | `"off"` | off | hashed | name — whether continuous profiles carry a tailnet dimension. A tailnet name is a CUSTOMER identifier and profiles go to a different destination from metrics/logs, so this is opt-in and NOT covered by pii_filter. hashed = a stable 12-hex SHA-256 prefix (pseudonymous, not anonymous). Emitted only for a single configured tailnet; multi-tailnet gets no tag, since there is one profiler per process. |
 | config.profiling.pyroscope.tenant_id | string | `""` | X-Scope-OrgID for multi-tenant servers (leave empty for Grafana Cloud). |
 | config.profiling.pyroscope.tls.ca_file | string | `""` | PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway). Must contain at least one certificate. |
 | config.profiling.pyroscope.tls.cert_file | string | `""` | Client certificate for mutual TLS to the profiles endpoint. Set together with key_file. |
@@ -448,6 +517,10 @@ extraVolumeMounts:
 | config.prometheus.tls.client_ca_file | string | `""` | Require scrapers to present a client certificate signed by this CA (mutual TLS). Needs cert_file/key_file — a client CA on a plaintext listener never runs. Composes with auth.token: when both are set a request must satisfy both. |
 | config.prometheus.tls.key_file | string | `""` | HTTPS private key paired with cert_file. Both paths must exist and be readable at startup. |
 | config.provider | string | `"tailscale"` | Control-plane backend: tailscale (default) | headscale. Under headscale only the devices/users/keys/acl/nodemetrics collectors run; the Tailscale-only collectors auto-disable. |
+| config.resource.attributes | object | `{}` | Custom Resource attributes, e.g. { deploy.team: platform }. Max 32 entries, 256-byte keys/values; reserved keys (service.name, service.version, service.instance.id, tailscale.tailnet, tailscale2otel.provider) are refused. |
+| config.resource.deployment_environment | string | `""` | deployment.environment.name — outside service.*, so it lands in target_info only and may vary per environment. |
+| config.resource.from_env | bool | `false` | Also read OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME, filtered by the same rules. Off by default: it hands the ambient environment a channel onto a per-series label surface. |
+| config.resource.service_namespace | string | `""` | service.namespace — promoted to a job-adjacent LABEL on every series. Keep it low-cardinality and stable across deploys. |
 | config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |
 | config.self_observability.instance_id | string | `""` | service.instance.id resource attribute; empty falls back to the pod/host name. Override with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API). |
 | config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). Registers BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either. NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
@@ -481,10 +554,18 @@ extraVolumeMounts:
 | config.tailscale.max_log_response_bytes | int | `33554432` | Same ceiling for the bulk log pulls (flow logs, audit logs), which are legitimately multi-MB, in bytes (32 MiB). Decoding costs several times the wire size, so keep both budgets well under resources.limits.memory — above 64 MiB the app raises a startup advisory. |
 | config.tailscale.max_response_bytes | int | `4194304` | Cap on the response body read from a Tailscale snapshot endpoint (devices, keys, dns, services, …) before it is decoded, in bytes (4 MiB). Bounds peak decode memory. Fleet-wide: a tailnets[] entry does NOT override it. |
 | config.tailscale.tailnet | string | `"-"` | Tailnet name, or "-" for the auth principal's default tailnet (the default, which works out of the box for single-tailnet OAuth). Override with the TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
-| config.tracing | object | `{"enabled":false,"sampler":"parentbased_always_on","sampler_arg":1}` | OTEL traces pillar (spans for the exporter's own work). OFF by default; reuses otlp.* for the endpoint/protocol/headers/TLS. |
+| config.tracing | object | `{"enabled":false,"remote_parent":"trust","sampler":"parentbased_always_on","sampler_arg":1,"samplers":{"background":{"arg":0,"sampler":""},"receiver":{"arg":0,"sampler":""},"scrape":{"arg":0,"sampler":""}}}` | OTEL traces pillar (spans for the exporter's own work). OFF by default; reuses otlp.* for the endpoint/protocol/headers/TLS. |
 | config.tracing.enabled | bool | `false` | Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration. |
+| config.tracing.remote_parent | string | `"trust"` | How an INBOUND traceparent's sampled bit is treated by the stream/webhook receivers: trust (today's behavior) | ignore (the local sampler alone decides, so a sender cannot force sampling) | link (start a new local root trace and link the remote one). |
 | config.tracing.sampler | string | `"parentbased_always_on"` | Head sampler (always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio). |
 | config.tracing.sampler_arg | float | `1` | Sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). |
+| config.tracing.samplers | object | `{"background":{"arg":0,"sampler":""},"receiver":{"arg":0,"sampler":""},"scrape":{"arg":0,"sampler":""}}` | Per-workload-class head sampler override. An empty sampler inherits tracing.sampler above, so an untouched block behaves exactly as the single global sampler. |
+| config.tracing.samplers.background.arg | float | `0` | Ratio in [0,1] for the *traceidratio samplers. |
+| config.tracing.samplers.background.sampler | string | `""` | Periodic non-scrape work, e.g. the release/update check. Empty inherits tracing.sampler. |
+| config.tracing.samplers.receiver.arg | float | `0` | Ratio in [0,1] for the *traceidratio samplers. |
+| config.tracing.samplers.receiver.sampler | string | `""` | One root span per HEC-stream / webhook request — usually the highest-rate class, so this is the one you turn down. Empty inherits tracing.sampler. |
+| config.tracing.samplers.scrape.arg | float | `0` | Ratio in [0,1] for the *traceidratio samplers. |
+| config.tracing.samplers.scrape.sampler | string | `""` | One root span per collector scrape cycle. Same enum as tracing.sampler; empty inherits it. |
 | config.version_checks.cache_ttl | string | `"1h"` | How long a fetched "latest version" is cached before re-fetching (minimum 5m). |
 | config.version_checks.devices.enabled | bool | `true` | Emit per-device tailscale.device.version_skew + fleet roll-ups (device client version vs latest Tailscale stable). Makes an outbound HTTPS call; fail-open. Needs the devices collector. |
 | config.version_checks.devices.outdated_minor_threshold | int | `3` | A device this many minor releases behind the latest Tailscale stable counts toward tailscale.devices.outdated. |

@@ -2013,6 +2013,16 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.export.diagnostics.suppressed",
+      "prom_name": "tailscale2otel_export_diagnostics_suppressed_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Counts SDK error logs suppressed by the #365 keyed rate limiter. raw_only: it is a diagnostic about the diagnostics, useful when reading a log during an outage but not worth a panel — the underlying failure is already covered by export.failures (visualized and alertable), and alerting on suppression rather than on the outage would fire a second time for the same incident."
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.export.duration",
       "prom_name": "tailscale2otel_export_duration_seconds",
       "surface": "self_obs",
@@ -2040,6 +2050,16 @@
       "dispositions": [
         "visualized"
       ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.export.spans",
+      "prom_name": "tailscale2otel_export_spans_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Span export volume, the trace-side counterpart to export.datapoints and export.log_records (#359 closed the gap delivery_trace.go documented). raw_only for now to match export.log_records' existing treatment: volume alone has no healthy baseline until a deployment has been running with tracing on, and export.failures already carries the signal-attributed failure case."
     },
     {
       "kind": "metric",
@@ -2412,6 +2432,36 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.processor.dropped",
+      "prom_name": "tailscale2otel_processor_dropped_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Records or spans discarded because the processor queue was full (#358). This is the strongest ALERT candidate of the three queue metrics — a non-zero rate is silent data loss with no other symptom, since the SDK drops without surfacing anything. Left raw_only only until a deployment has run long enough to know what a normal burst looks like; a threshold guessed now would either cry wolf on startup or miss a slow leak."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.processor.queue.capacity",
+      "prom_name": "tailscale2otel_processor_queue_capacity_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Configured capacity of the log/span processor queue (#358). raw_only by nature: it is a near-constant configuration echo whose only job is to be the denominator for queue.size. Alerting on it would be alerting on the config."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.processor.queue.size",
+      "prom_name": "tailscale2otel_processor_queue_size_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Current depth of the log/span processor queue (#358). raw_only: on its own a depth is meaningless — it is only interpretable against queue.capacity, so the useful artifact is a saturation RATIO panel, which needs a dashboard change rather than being implied by the metric landing. Emitted only under self-observability, since the SDK's real queue depth is a private field on an unexported type and this number comes from this repo's own queueing wrapper."
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.profiling.upload.attempts",
       "prom_name": "tailscale2otel_profiling_upload_attempts_total",
       "surface": "self_obs",
@@ -2594,8 +2644,9 @@
       "prom_name": "tailscale2otel_scrape_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
-      ]
+        "raw_only"
+      ],
+      "note": "Last-value gauge of per-collector scrape wall-clock. It was visualized until #369's quantile panels superseded it: the flagship dashboard's scrape-duration panel now reads p50/p95/p99 off scrape.duration.histogram, which a single last value cannot express. The gauge is RETAINED deliberately — it is the cheap answer to 'how long did the last scrape take', and removing it would break any external dashboard or query already using it."
     },
     {
       "kind": "metric",
@@ -2603,9 +2654,9 @@
       "prom_name": "tailscale2otel_scrape_duration_histogram_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "visualized"
       ],
-      "note": "Distribution of collector scrape durations, added alongside the pre-existing last-value gauge (which is retained for compatibility). raw_only pending a dashboard change: the flagship dashboard's scrape panels are still driven by the gauge, and moving them to p50/p95/p99 over this histogram is a deliberate visualization change that belongs with the panel edit rather than being implied by the metric landing."
+      "note": "Distribution of collector scrape durations, recorded with the scrape span so an exemplar links a bucket back to the trace. Now visualized: #369's follow-up replaced the flagship dashboard's last-value scrape-duration panel with p50/p95/p99 over this histogram, which is what the issue's acceptance asked for. The pre-existing scrape.duration gauge is retained alongside it."
     },
     {
       "kind": "metric",

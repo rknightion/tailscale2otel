@@ -314,7 +314,10 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		path, token string,
 		acceptDurably bool,
 	) *stream.Server {
-		options := []stream.Option{stream.WithTracer(a.tracer)}
+		options := []stream.Option{
+			stream.WithTracer(a.tracer),
+			stream.WithRemoteParentPolicy(a.cfg.Tracing.RemoteParent),
+		}
 		if acceptDurably {
 			options = append(options, stream.WithDurableAppend(durableAppend(
 				routeRT,
@@ -357,7 +360,10 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		secret string,
 		acceptDurably bool,
 	) *webhook.Server {
-		options := []webhook.Option{webhook.WithTracer(a.tracer)}
+		options := []webhook.Option{
+			webhook.WithTracer(a.tracer),
+			webhook.WithRemoteParentPolicy(a.cfg.Tracing.RemoteParent),
+		}
 		if set := a.webhookDedupFor(routeRT); set != nil {
 			options = append(options, webhook.WithDedup(set))
 		}

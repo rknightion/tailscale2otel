@@ -18,14 +18,22 @@ import (
 var exportDurationBucketsSeconds = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 
 // InstallExportErrorHandler sets the global OpenTelemetry error handler so that
-// every otel.Handle(err) increments the "tailscale2otel.export.failures"
-// counter, attributed by a coarse error class, AND logs the full error via
-// logger (when non-nil). The OTLP exporter surfaces the backend's HTTP response
-// body in that error, so logging it makes a Grafana Cloud parse rejection (the
-// exact metric/label Mimir refused) visible instead of being collapsed to an
-// anonymous counter. It returns a restore func that reinstalls the previously-set
-// handler, allowing callers (and tests) to undo the change and recover the prior
-// global state.
+// every otel.Handle(err) increments the "tailscale2otel.export.failures" counter,
+// attributed by a coarse error class and (when the error passed through one of
+// the three wrapped exporters — export_counting.go, delivery_trace.go) by signal
+// (#359). It returns a restore func that reinstalls the previously-set handler,
+// allowing callers (and tests) to undo the change and recover the prior global
+// state.
+//
+// This handler deliberately does NOT log a per-failure warning any more (#365):
+// the SDK invokes otel.Handle(err) once per failed export with no rate limiting
+// of its own, so a sustained outage across N+1 providers previously produced a
+// warning line per failed export per provider. The single, still-diagnosable
+// (backend body included) first-failure/summary/recovery log lines now live in
+// delivery.go's deliveryTracker, which — unlike this global, provider-blind
+// handler — is one instance per Provider and observes both success and failure
+// directly from each exporter wrapper, so it can also detect recovery (something
+// otel.Handle(err) alone never can: it is never invoked on success).
 func InstallExportErrorHandler(e Emitter, logger *slog.Logger) (restore func()) {
 	prev := otel.GetErrorHandler()
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
@@ -40,12 +48,11 @@ func InstallExportErrorHandler(e Emitter, logger *slog.Logger) (restore func()) 
 			}
 			return
 		}
-		if logger != nil {
-			logger.Warn("OTLP export failed", semconv.AttrErrorType, errorType(err), "error", err)
+		attrs := Attrs{semconv.AttrErrorType: errorType(err)}
+		if signal, ok := exportSignalOf(err); ok {
+			attrs[semconv.AttrExportSignal] = signal
 		}
-		e.Counter(docExportFailures.Name, docExportFailures.Unit, docExportFailures.Description, 1, Attrs{
-			semconv.AttrErrorType: errorType(err),
-		})
+		e.Counter(docExportFailures.Name, docExportFailures.Unit, docExportFailures.Description, 1, attrs)
 	}))
 	return func() { otel.SetErrorHandler(prev) }
 }
@@ -112,4 +119,29 @@ func EmitExportStats(e Emitter, datapointsDelta, logRecordsDelta float64) {
 		e.Counter(docExportLogRecords.Name, docExportLogRecords.Unit, docExportLogRecords.Description,
 			logRecordsDelta, nil)
 	}
+}
+
+// EmitExportSpanDelta records the per-interval delta for
+// tailscale2otel.export.spans — the trace-side sibling of EmitExportStats'
+// datapoint/log-record counters (#359). Kept as a SEPARATE function rather than a
+// third parameter on EmitExportStats so every existing EmitExportStats call site
+// keeps compiling unchanged until the span tally is threaded end-to-end from
+// Provider.ExportStats() (see this issue's WIRING REQUEST); once it is, the two
+// can be called side by side exactly like the datapoint/log-record counters are
+// today. A zero or negative delta emits nothing, matching EmitExportStats.
+func EmitExportSpanDelta(e Emitter, spansDelta float64) {
+	if spansDelta > 0 {
+		e.Counter(docExportSpans.Name, docExportSpans.Unit, docExportSpans.Description, spansDelta, nil)
+	}
+}
+
+// EmitExportDiagnosticsSuppressed records one suppressed outage-diagnostic log
+// line (#365). Called only from deliveryTracker.recordFailureLocked, which is
+// exactly once per suppressed export failure — so, unlike the logging it
+// accompanies, this counter is never itself rate-limited.
+func EmitExportDiagnosticsSuppressed(e Emitter, signal, errClass string) {
+	e.Counter(docExportDiagnosticsSuppressed.Name, docExportDiagnosticsSuppressed.Unit, docExportDiagnosticsSuppressed.Description, 1, Attrs{
+		semconv.AttrExportSignal: signal,
+		semconv.AttrErrorType:    errClass,
+	})
 }

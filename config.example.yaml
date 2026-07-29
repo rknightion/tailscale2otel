@@ -143,7 +143,7 @@ tailnets: []
 # ── OTLP export destination ─────────────────────────────────────────────────────
 otlp:
   protocol: http                      # http | grpc | stdout (stdout = print signals to the console for local debug, no backend)
-  endpoint: https://otlp-gateway-prod-us-central-0.grafana.net/otlp   # OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself)
+  endpoint: https://otlp-gateway-prod-us-central-0.grafana.net/otlp   # OTLP base URL (the exporter appends /v1/metrics, /v1/logs and /v1/traces itself)
   grafana_cloud:                      # convenience: instance_id + token become an "Authorization: Basic" header for Grafana Cloud
     instance_id: ""                   # Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID)
     token: ""                         # Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN)
@@ -160,6 +160,92 @@ otlp:
   limits:                             # bound ONE log record before export (a valid request can still carry one enormous record)
     log_body_bytes: 32768             # cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting
     log_attribute_value_bytes: 4096   # cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split)
+  compression: ""                     # gzip | none. Empty defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION, then the exporter default. TS2OTEL_OTLP__COMPRESSION
+  timeout: 0s                         # per-request export timeout; 0 defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT, then the exporter's 10s. TS2OTEL_OTLP__TIMEOUT
+  max_request_size: 0                 # bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a 413. Use metric_export_batch_size to actually stay under an ingest limit
+  grpc_reconnection_period: 0s        # force a fresh gRPC connection attempt after this long; gRPC only, 0 = the gRPC client default
+  retry:                              # exporter retry policy; leave the whole block untouched to keep the exporter's own default
+    enabled: true                     # an explicit false genuinely disables retry (distinct from omitting this block)
+    initial_interval: 5s              # first backoff delay
+    max_interval: 30s                 # backoff ceiling
+    max_elapsed_time: 1m              # give up after this long
+  batch:                              # log/span processor queues. The SDK's queues are bounded and drop SILENTLY, which is why the queue/drop self-obs metrics exist
+    logs:                             # 0 / 0s on any field means "leave the SDK default"
+      max_queue_size: 0               # records buffered before new ones are dropped (non-blocking by design)
+      export_max_batch_size: 0        # records per export; must be <= max_queue_size when both are set
+      export_interval: 0s             # how often a partial batch is flushed
+      export_timeout: 0s              # bound on one export attempt
+    traces:
+      max_queue_size: 0               # spans buffered before new ones are dropped
+      export_max_batch_size: 0        # spans per export; must be <= max_queue_size when both are set
+      export_interval: 0s             # how often a partial batch is flushed
+      export_timeout: 0s              # bound on one export attempt
+  stdout:                             # only applies when protocol is stdout, which is a DEBUGGING sink (no reliability or rotation promise)
+    metric_interval: 5s               # short cadence so a debug run doesn't wait 60s for a metric; logs and spans are emitted synchronously
+    pretty: false                     # indent the emitted JSON
+  credential_reload:                  # rotate the token/header/TLS FILES the exporters read, without restarting
+    enabled: false                    # governs the background poller only; last-known-good is always retained for a configured file
+    interval: 30s                     # poll period; minimum 5s. Ignored when enabled is false
+  metrics:                          # send ONE signal somewhere else — a different collector, tenant, credential or protocol
+    enabled:                          # null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others
+    protocol: ""                      # empty inherits otlp.protocol
+    endpoint: ""                      # empty inherits otlp.endpoint
+    headers: {}                       # REPLACES otlp.headers for this signal rather than merging, so one signal's credential never reaches another's endpoint
+    tls:                              # every empty/null field inherits the matching otlp.tls value
+      insecure:                       # null inherits; explicit true/false overrides
+      insecure_skip_verify:           # null inherits; explicit true/false overrides
+      ca_file: ""
+      cert_file: ""
+      key_file: ""
+    compression: ""                   # empty inherits otlp.compression
+    timeout: 0s                       # 0 inherits otlp.timeout
+    max_request_size: 0               # 0 inherits otlp.max_request_size
+    grpc_reconnection_period: 0s      # 0 inherits otlp.grpc_reconnection_period
+    retry:                            # an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal
+      enabled:
+      initial_interval: 0s
+      max_interval: 0s
+      max_elapsed_time: 0s
+  logs:                             # an untouched block inherits every otlp.* setting above
+    enabled:                          # null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others
+    protocol: ""                      # empty inherits otlp.protocol
+    endpoint: ""                      # empty inherits otlp.endpoint
+    headers: {}                       # REPLACES otlp.headers for this signal rather than merging, so one signal's credential never reaches another's endpoint
+    tls:                              # every empty/null field inherits the matching otlp.tls value
+      insecure:                       # null inherits; explicit true/false overrides
+      insecure_skip_verify:           # null inherits; explicit true/false overrides
+      ca_file: ""
+      cert_file: ""
+      key_file: ""
+    compression: ""                   # empty inherits otlp.compression
+    timeout: 0s                       # 0 inherits otlp.timeout
+    max_request_size: 0               # 0 inherits otlp.max_request_size
+    grpc_reconnection_period: 0s      # 0 inherits otlp.grpc_reconnection_period
+    retry:                            # an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal
+      enabled:
+      initial_interval: 0s
+      max_interval: 0s
+      max_elapsed_time: 0s
+  traces:                           # credentials are never shared across a signal boundary
+    enabled:                          # null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others
+    protocol: ""                      # empty inherits otlp.protocol
+    endpoint: ""                      # empty inherits otlp.endpoint
+    headers: {}                       # REPLACES otlp.headers for this signal rather than merging, so one signal's credential never reaches another's endpoint
+    tls:                              # every empty/null field inherits the matching otlp.tls value
+      insecure:                       # null inherits; explicit true/false overrides
+      insecure_skip_verify:           # null inherits; explicit true/false overrides
+      ca_file: ""
+      cert_file: ""
+      key_file: ""
+    compression: ""                   # empty inherits otlp.compression
+    timeout: 0s                       # 0 inherits otlp.timeout
+    max_request_size: 0               # 0 inherits otlp.max_request_size
+    grpc_reconnection_period: 0s      # 0 inherits otlp.grpc_reconnection_period
+    retry:                            # an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal
+      enabled:
+      initial_interval: 0s
+      max_interval: 0s
+      max_elapsed_time: 0s
 
 # ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
 enrichment:
@@ -520,6 +606,12 @@ profiling:
       ca_file: ""                     # PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway)
       cert_file: ""                   # client certificate for mTLS to the profiles endpoint; set together with key_file (both-or-neither)
       key_file: ""                    # client key for profiling.pyroscope.tls.cert_file
+    tailnet_label: "off"              # off | hashed | name — whether continuous profiles carry a tailnet dimension. A tailnet name is a CUSTOMER identifier and profiles go to a different destination from metrics/logs, so this is opt-in and NOT covered by pii_filter. hashed = a stable 12-hex SHA-256 prefix (answers "which tenant is burning CPU" for an MSP without shipping the name; pseudonymous, not anonymous — a small name space is enumerable). Emitted only for a single configured tailnet; multi-tailnet gets no tag, since there is one profiler per process. TS2OTEL_PROFILING__PYROSCOPE__TAILNET_LABEL
+    span_profiles:                    # correlate sampled CPU profiles with trace spans, so a Grafana trace links straight to the profile
+      enabled: false                  # REQUIRES tracing.enabled AND profiling.pyroscope.enabled. CPU profiles ONLY — Go attaches pprof labels to CPU samples, so heap/mutex/block/goroutine profiles cannot carry span identity
+    credential_reload:                # rotate the password/header/TLS files this agent reads, without restarting
+      enabled: false                  # governs the background poller only
+      interval: 30s                   # poll period; minimum 5s. Ignored when enabled is false
   mutex_profile_fraction: 5           # runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled
   block_profile_rate: 100000          # runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled
 
@@ -533,6 +625,30 @@ tracing:
   enabled: false                       # emit spans. TS2OTEL_TRACING__ENABLED
   sampler: parentbased_always_on       # head sampler: always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER
   sampler_arg: 1.0                     # sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). TS2OTEL_TRACING__SAMPLER_ARG
+  remote_parent: trust                 # how an INBOUND traceparent's sampled bit is treated by the stream/webhook receivers: trust (today's behavior) | ignore (the local sampler alone decides, so a sender cannot force sampling) | link (start a new local root trace and link the remote one). TS2OTEL_TRACING__REMOTE_PARENT
+  samplers:                            # per-workload-class head sampler; an empty sampler inherits the global one above, so an untouched block behaves exactly as before
+    scrape:                            # one root span per collector scrape cycle
+      sampler: ""                      # same enum as tracing.sampler. TS2OTEL_TRACING__SAMPLERS__SCRAPE__SAMPLER
+      arg: 0.0                         # ratio in [0,1] for the *traceidratio samplers. TS2OTEL_TRACING__SAMPLERS__SCRAPE__ARG
+    receiver:                          # one root span per HEC-stream / webhook request — usually the highest-rate class, so this is the one you turn down
+      sampler: ""                      # TS2OTEL_TRACING__SAMPLERS__RECEIVER__SAMPLER
+      arg: 0.0                         # TS2OTEL_TRACING__SAMPLERS__RECEIVER__ARG
+    background:                        # periodic non-scrape work, e.g. the release/update check
+      sampler: ""                      # TS2OTEL_TRACING__SAMPLERS__BACKGROUND__SAMPLER
+      arg: 0.0                         # TS2OTEL_TRACING__SAMPLERS__BACKGROUND__ARG
+
+# ── OTEL Resource enrichment (OPTIONAL) ─────────────────────────────────────────
+# Adds standard/custom attributes to the OTEL Resource on metrics, logs AND traces.
+# Bounded on purpose: Grafana Cloud promotes the whole service.* namespace to a
+# per-series label, so service_namespace multiplies active-series cardinality by its
+# distinct values. The app's own identity always wins, service.version stays off the
+# METRICS Resource (see docs/metrics.md), and tailscale.tailnet /
+# tailscale2otel.provider remain per-signal attributes and are refused here.
+resource:
+  service_namespace: ""                # service.namespace — promoted to a job-adjacent LABEL on every series. Keep it low-cardinality and stable across deploys. TS2OTEL_RESOURCE__SERVICE_NAMESPACE
+  deployment_environment: ""           # deployment.environment.name — outside service.*, so it lands in target_info only and may vary per environment. TS2OTEL_RESOURCE__DEPLOYMENT_ENVIRONMENT
+  attributes: {}                       # custom Resource attributes, e.g. { deploy.team: platform }. Max 32 entries, 256-byte keys/values; reserved keys are refused. FILE-ONLY (maps aren't settable via env)
+  from_env: false                      # also read OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME, filtered by the same rules. Off by default: it hands the ambient environment a channel onto a per-series label surface. TS2OTEL_RESOURCE__FROM_ENV
 
 # ── Version checks (OPTIONAL: outbound "is a newer release available?" checks) ──
 # Both sub-checks make external HTTPS calls and are fail-open (a failed/blocked fetch

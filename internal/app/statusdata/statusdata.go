@@ -83,6 +83,10 @@ type Status struct {
 	Metrics    []MetricRow      `json:"metrics"`
 	LogEvents  []LogRow         `json:"log_events"`
 	Config     ConfigSummary    `json:"config"`
+	// MetricsServing is the /metrics (Prometheus pull endpoint) serving health
+	// and effective load-shedding/auth configuration (#377). Nested here rather
+	// than served standalone, so it carries no SchemaVersion of its own.
+	MetricsServing MetricsServingInfo `json:"metrics_serving"`
 	// CapabilityMatrix is the configuration-to-capability matrix (#425/#430): one
 	// row per enabled collector (plus its optional per-entity subrequests) joining
 	// the required API capability/scope, the provider's support for it, the live
@@ -837,4 +841,90 @@ type ConfigSummary struct {
 	// (kept for backward compatibility with existing consumers) — it is the
 	// field to read for "the whole config". See ConfigFieldValue.
 	Full map[string]ConfigFieldValue `json:"full"`
+}
+
+// MetricsServingInfo reports the /metrics (Prometheus pull) endpoint's own
+// serving health (#377): request outcomes, current in-flight depth,
+// gather-error health, auth-gate rejections and the effective
+// load-shedding/auth/TLS configuration actually in force.
+//
+// It is sourced from the SAME counters internal/app/metrics.go's
+// metricsScrapeHealth tracker increments alongside the emitted
+// tailscale2otel.metrics.* self-obs metrics — one source of truth, so this
+// view and the metrics can never disagree — and is populated regardless of
+// whether self-observability is enabled, matching ProfilingUploadHealth and
+// telemetry.DeliveryState: the admin page is an operator's LOCAL view and has
+// to work on a deployment that exports no self-telemetry at all.
+//
+// Enabled mirrors prometheus.enabled; every other field is still populated
+// even when false (there is nothing sensitive in a zeroed counter), matching
+// the rest of this file's convention of never special-casing "off".
+type MetricsServingInfo struct {
+	Enabled bool `json:"enabled"`
+	// ScrapesTotal/ScrapesShed/ScrapesFailed classify every request that
+	// passed the auth gate, from the same CLOSED outcome set
+	// instrumentScrape uses (scrapeOutcomeSuccess/Unavailable/Error).
+	// Successful scrapes are always (ScrapesTotal - ScrapesShed -
+	// ScrapesFailed) rather than a field of their own, so the three numbers
+	// can never drift out of agreement with each other.
+	ScrapesTotal  int64 `json:"scrapes_total"`
+	ScrapesShed   int64 `json:"scrapes_shed"`
+	ScrapesFailed int64 `json:"scrapes_failed"`
+	// InFlight is the CURRENT number of requests being served — a live gauge,
+	// not a cumulative count. It settles back to 0 once every scrape in
+	// flight has completed.
+	InFlight int64 `json:"in_flight"`
+	// LastScrapeAt is the completion time of the most recent request that
+	// passed the auth gate, of ANY outcome (RFC3339, empty before the first
+	// one). LastScrapeDurationMs is that request's serving latency.
+	LastScrapeAt         string `json:"last_scrape_at,omitempty"`
+	LastScrapeDurationMs int64  `json:"last_scrape_duration_ms"`
+	// GatherErrors counts every Gather() call that returned at least one
+	// error; ContinueOnError (#103) still serves the survivors as HTTP 200, so
+	// this is the only place a permanent series collision becomes visible.
+	//
+	// LastGatherError is a value from a CLOSED, bounded classification set —
+	// NEVER the raw Gather error text. A Gather error can embed a collector's
+	// internal detail (prometheus/client_golang wraps a Collect() failure
+	// verbatim), and this repo's status-surface contract (#317) is that
+	// backend/collector error text never reaches this page. LastGatherErrorAt
+	// is RFC3339, empty before the first gather error.
+	GatherErrors      int64  `json:"gather_errors"`
+	LastGatherError   string `json:"last_gather_error,omitempty"`
+	LastGatherErrorAt string `json:"last_gather_error_at,omitempty"`
+	// AuthRejected is the cumulative count of requests refused by the auth
+	// gate, any reason. tailscale2otel.metrics.auth.rejected carries the
+	// per-reason breakdown; this is the at-a-glance total.
+	AuthRejected int64 `json:"auth_rejected"`
+	// Config is the effective, non-secret subset of prometheus.* actually in
+	// force — never the bearer token value, never TLS key material, never a
+	// client CA bundle's path or contents.
+	Config MetricsServingConfig `json:"config"`
+}
+
+// MetricsServingConfig is the non-secret effective-configuration echo for the
+// /metrics endpoint (#377). Every secret-shaped or file-content-shaped
+// setting is reduced to a presence/mode boolean or string, matching
+// ProfilingInfo's PyroscopeTLS* fields: the useful operational question is
+// "is a client CA configured", never "where is it" or "what is it".
+type MetricsServingConfig struct {
+	// Listen is the configured bind address — an operator-chosen string, not a
+	// secret, same as TelemetryInfo.Endpoint elsewhere on this page.
+	Listen              string `json:"listen,omitempty"`
+	MaxRequestsInFlight int    `json:"max_requests_in_flight"`
+	TimeoutMs           int64  `json:"timeout_ms"`
+	CoalesceGather      bool   `json:"coalesce_gather"`
+	// AuthTokenSet reports only whether prometheus.auth.token is configured —
+	// never its value.
+	AuthTokenSet         bool `json:"auth_token_set"`
+	AllowUnauthenticated bool `json:"allow_unauthenticated"`
+	// TLSEnabled reports whether the listener serves HTTPS (both cert/key
+	// files configured) — never the file paths.
+	TLSEnabled bool `json:"tls_enabled"`
+	// ClientCAConfigured reports only whether prometheus.tls.client_ca_file is
+	// set — never the path or the bundle's contents. ClientAuthMode is the
+	// configured verification mode string (e.g. "require_and_verify"), which
+	// is a closed enum, not file content.
+	ClientCAConfigured bool   `json:"client_ca_configured"`
+	ClientAuthMode     string `json:"client_auth_mode,omitempty"`
 }

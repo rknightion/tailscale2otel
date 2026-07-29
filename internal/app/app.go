@@ -63,9 +63,17 @@ type App struct {
 	// Process-level self-observability: the process provider carries process/
 	// global signals (no tailnet dimension). Per-tailnet self-obs lives on each
 	// runtime's emitter/card/exportStats.
-	procEmitter     telemetry.Emitter
-	procCard        *telemetry.CardinalityTracker // process provider's tracker; nil when self-obs off
-	procExportStats func() telemetry.ExportStats  // process provider's export volume; nil when self-obs off
+	procEmitter telemetry.Emitter
+	procCard    *telemetry.CardinalityTracker // process provider's tracker; nil when self-obs off
+	// batchQueues are the log/span processor queue trackers, one per provider,
+	// paired with the emitter that must report them so each tailnet's queue
+	// saturation is attributed to that tailnet. Empty when self-obs is off.
+	batchQueues []batchQueueReport
+	// credReload owns the outbound credential/TLS file watchers (#362). Nil-safe:
+	// every method tolerates a nil receiver, and it stays nil when no watched file
+	// is configured.
+	credReload      *credReloaders
+	procExportStats func() telemetry.ExportStats // process provider's export volume; nil when self-obs off
 	// delivery reports what the OTLP exporters actually shipped, per signal,
 	// across every provider. Populated regardless of self-obs (#317).
 	delivery     func() []telemetry.DeliveryState
@@ -212,6 +220,15 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 
 	base := telemetryOptions(cfg, version)
+	// Outbound credential/TLS rotation (#362). Built before the providers exist so
+	// the very first export already reads through the reloader rather than a
+	// snapshot taken at construction, and before the override hook so a test can
+	// still replace the dynamic funcs.
+	reloaders, err := newCredReloaders(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	applyDynamicOTLPCredentials(&base, reloaders.otlp, base.Headers, cfg.OTLP.GrafanaCloud.InstanceID)
 	if settings.telemetryOverride != nil {
 		base = settings.telemetryOverride(base)
 	}
@@ -234,10 +251,14 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 
 	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, store)
+	a.credReload = reloaders
 	a.checkpointEffective = checkpointOut.Kind
 	a.checkpointPath = checkpointOut.Path
 	a.checkpointReason = checkpointOut.Reason
 	a.procCard = ps.Process().Cardinality()
+	if q := ps.Process().BatchQueues(); q != nil {
+		a.batchQueues = append(a.batchQueues, batchQueueReport{emitter: a.procEmitter, tracker: q})
+	}
 	a.procExportStats = ps.Process().ExportStats
 	a.delivery = ps.Delivery
 	a.metricGroups = metricGroupMap()
@@ -326,6 +347,11 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			label := labels[i]
 			tp := ps.Tailnet(label)
 			emitter := tp.Emitter()
+			// Each tailnet provider reports its own queue tracker through its own
+			// emitter, so tailscale.tailnet rides the saturation series.
+			if q := tp.BatchQueues(); q != nil {
+				a.batchQueues = append(a.batchQueues, batchQueueReport{emitter: emitter, tracker: q})
+			}
 			apiStats := NewAPIStats()
 			cp, err := buildTailscaleProvider(rt, version, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
 			if err != nil {
@@ -386,7 +412,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// deployment that exports no self-telemetry at all — so this only controls
 	// whether that state also leaves the process as metrics.
 	profLogger := withComponent(logger, compProfiling)
-	prof, err := startProfiling(cfg, version, profLogger, withProfilingEmitter(a.procEmitter))
+	prof, err := startProfiling(cfg, version, profLogger, withProfilingEmitter(a.procEmitter), withProfilingCredReload(a.credReload.pyroscopeReloader()))
 	if err != nil {
 		profLogger.Error("pyroscope profiler failed to start", "error", err)
 	}
@@ -654,6 +680,10 @@ func (a *App) Run(ctx context.Context) error {
 	// up at runtime as apistate.StateScopeDenied. It must never block startup —
 	// a modeling bug in our scope map would otherwise take down collection.
 	LogScopeWarnings(a.logger, a.capabilityMatrix(a.primaryAPIState()))
+	// Rotation pollers run for the life of the process. Stopping them here rather
+	// than on ctx cancellation lets Stop wait for the goroutine to exit.
+	a.credReload.Start()
+	defer a.credReload.Stop()
 	if a.profiler != nil {
 		defer func() { _ = a.profiler.Stop() }()
 	}
@@ -740,6 +770,9 @@ func (a *App) Run(ctx context.Context) error {
 			})
 		}
 		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)
+		for _, q := range a.batchQueues {
+			go runBatchQueueReporter(ctx, q.emitter, q.tracker, interval)
+		}
 		go runExportReporter(ctx, a.procEmitter, a.procExportStats, interval)
 		// Emit enrich.cache_age at export time (grows while stale) so the staleness
 		// alert can fire (#108). Only when the devices collector — the sole cache

@@ -239,7 +239,10 @@ type Server struct {
 	onIngest      func(source, signal string, records, bytes int)
 	onAccepted    ingest.AcceptedObserver
 	tracer        trace.Tracer
-	eventStore    *eventstore.Memory
+	// remoteParent is the inbound-traceparent trust policy (#373); empty means
+	// trust, which is the pre-#373 behavior.
+	remoteParent string
+	eventStore   *eventstore.Memory
 
 	// tlsReloader backs tls.Config.GetCertificate when both TLS files are set,
 	// so a rotated certificate is picked up without restarting the listener
@@ -474,6 +477,11 @@ func WithDedup(set *dedup.Set) Option {
 // tracer disables span emission (the server falls back to the noop tracer).
 func WithTracer(tr trace.Tracer) Option { return func(s *Server) { s.tracer = tr } }
 
+// WithRemoteParentPolicy sets how an inbound W3C traceparent's sampled bit is
+// treated: telemetry.RemoteParentTrust (default), RemoteParentIgnore, or
+// RemoteParentLink. An empty value keeps the trusting default.
+func WithRemoteParentPolicy(p string) Option { return func(s *Server) { s.remoteParent = p } }
+
 // WithClock overrides the receiver clock. It is used by deterministic replay
 // and signature-tolerance tests; production callers should use the default.
 func WithClock(now func() time.Time) Option {
@@ -615,7 +623,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		tr = noopWebhookTracer
 	}
 	ctx := receiverPropagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	ctx, span := tr.Start(ctx, "webhook.receive", trace.WithSpanKind(trace.SpanKindServer))
+	// See internal/stream for why the policy and the class must both be applied
+	// at Start rather than after (#372, #373).
+	ctx, parentOpts := telemetry.RemoteParentContext(ctx, s.remoteParent)
+	startOpts := append([]trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(telemetry.SpanClassKey.String(telemetry.SpanClassReceiver)),
+	}, parentOpts...)
+	ctx, span := tr.Start(ctx, "webhook.receive", startOpts...)
 	defer span.End()
 	r = r.WithContext(ctx)
 

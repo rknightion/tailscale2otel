@@ -148,6 +148,11 @@ type Option func(*Server)
 // disables span emission (the server falls back to the noop tracer).
 func WithTracer(tr trace.Tracer) Option { return func(s *Server) { s.tracer = tr } }
 
+// WithRemoteParentPolicy sets how an inbound W3C traceparent's sampled bit is
+// treated: telemetry.RemoteParentTrust (default), RemoteParentIgnore, or
+// RemoteParentLink. An empty value keeps the trusting default.
+func WithRemoteParentPolicy(p string) Option { return func(s *Server) { s.remoteParent = p } }
+
 // DurableAppend persists one fully validated, decompressed request body before
 // the receiver acknowledges it. The app supplies a route-bound implementation;
 // request data never selects the durable route.
@@ -444,6 +449,9 @@ type Server struct {
 	onIngest   func(source, signal string, records, bytes int)
 	onAccepted ingest.AcceptedObserver
 	tracer     trace.Tracer
+	// remoteParent is the inbound-traceparent trust policy (#373); empty means
+	// trust, which is the pre-#373 behavior.
+	remoteParent string
 
 	durableAppend DurableAppend
 
@@ -723,7 +731,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		tr = noopStreamTracer
 	}
 	ctx := receiverPropagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	ctx, span := tr.Start(ctx, "stream.receive", trace.WithSpanKind(trace.SpanKindServer))
+	// An inbound traceparent's sampled bit would otherwise let an authenticated
+	// sender override the local sampling ratio, so the trust policy is applied
+	// before the span starts (#373); "link" needs a Start option, which is why it
+	// cannot live in the Sampler. The class attribute must also be set at Start —
+	// the sampler reads it from SamplingParameters (#372).
+	ctx, parentOpts := telemetry.RemoteParentContext(ctx, s.remoteParent)
+	startOpts := append([]trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(telemetry.SpanClassKey.String(telemetry.SpanClassReceiver)),
+	}, parentOpts...)
+	ctx, span := tr.Start(ctx, "stream.receive", startOpts...)
 	defer span.End()
 	r = r.WithContext(ctx)
 

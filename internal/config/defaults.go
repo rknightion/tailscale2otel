@@ -86,6 +86,24 @@ func Default() *Config {
 				LogBodyBytes:           32 * 1024,
 				LogAttributeValueBytes: 4 * 1024,
 			},
+			// The reloader is built whenever a watched file is configured, so
+			// last-known-good is always enforced; this only decides whether a
+			// background poller looks for rotations. 30s is well inside a
+			// Kubernetes secret-projection refresh and costs a few stats.
+			CredentialReload: CredentialReloadConfig{Interval: dur(30 * time.Second)},
+			// Stated explicitly rather than left zero, which is what #360 means by
+			// deterministic: these ARE the pinned exporters' own defaults
+			// (retry on, 5s/30s/1m), so declaring them changes no behavior while
+			// making the effective policy visible in config.example.yaml, in the
+			// generated schema, and in the status page's effective-settings echo.
+			Retry: OTLPRetryConfig{
+				Enabled:         boolPtr(true),
+				InitialInterval: dur(5 * time.Second),
+				MaxInterval:     dur(30 * time.Second),
+				MaxElapsedTime:  dur(time.Minute),
+			},
+			// Matches the built-in stdout cadence; stated for the same reason.
+			Stdout: OTLPStdoutConfig{MetricInterval: dur(5 * time.Second)},
 		},
 		Enrichment: EnrichmentConfig{
 			CacheTTL: dur(5 * time.Minute),
@@ -291,6 +309,11 @@ func Default() *Config {
 			Enabled:    false,
 			Sampler:    "parentbased_always_on",
 			SamplerArg: 1.0,
+			// Per-class overrides are unset by default, so every class inherits
+			// Sampler/SamplerArg — the single global sampler this repo has always
+			// had. "trust" is likewise today's behavior: an inbound traceparent's
+			// sampled bit is honored.
+			RemoteParent: "trust",
 		},
 		Admin: AdminConfig{
 			Enabled: true,
@@ -336,6 +359,13 @@ func Default() *Config {
 		Profiling: ProfilingConfig{
 			Pyroscope: ProfilingPyroscope{
 				UploadRate: dur(60 * time.Second),
+				// Off by default: correlation is useful but it wraps the
+				// TracerProvider and puts pprof labels on every span.
+				SpanProfiles: SpanProfilesConfig{Enabled: false},
+				// Off: a tailnet name is a customer identifier and profiles are a
+				// separate destination from the metric/log pipeline.
+				TailnetLabel:     "off",
+				CredentialReload: CredentialReloadConfig{Interval: dur(30 * time.Second)},
 			},
 			// Contention profiling on by default (applied only when pprof or
 			// Pyroscope is enabled — see startProfiling). Fraction 5 samples 1/5 of
@@ -352,3 +382,7 @@ func Default() *Config {
 		},
 	}
 }
+
+// boolPtr returns a pointer to b, for the *bool config fields where an
+// explicitly-set false must be distinguishable from an omitted key.
+func boolPtr(b bool) *bool { return &b }

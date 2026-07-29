@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
@@ -243,29 +244,44 @@ func scrapeOutcome(status int) string {
 // MaxRequestsInFlight and Timeout produce come from promhttp itself, so only a
 // wrapper on that side of it can see them.
 //
-// With self-observability disabled it returns next untouched — no wrapper, no
-// allocation, no behavior change.
+// metricsScrapeHealthState is updated on EVERY request, self-observability on
+// or off — like profilingHealth and telemetry's deliveryTracker, the admin
+// status page is an operator's local view and must work on a deployment that
+// exports no self-telemetry at all. The OTEL emission itself stays gated
+// behind self-obs, so a disabled process pays no exporter cost; it is the same
+// single recording site that drives both, which is what keeps the status page
+// and the emitted metrics from ever disagreeing.
 func (a *App) instrumentScrape(next http.Handler) http.Handler {
-	if !a.cfg.SelfObservability.Enabled || a.procEmitter == nil {
-		return next
+	selfObs := a.cfg.SelfObservability.Enabled && a.procEmitter != nil
+	var e telemetry.Emitter
+	if selfObs {
+		e = a.procEmitter
 	}
-	e := a.procEmitter
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		e.UpDownCounter(appcatalog.DocMetricsScrapeInFlight.Name, appcatalog.DocMetricsScrapeInFlight.Unit,
-			appcatalog.DocMetricsScrapeInFlight.Description, 1, nil)
+		metricsScrapeHealthState.inFlightDelta(1)
+		if selfObs {
+			e.UpDownCounter(appcatalog.DocMetricsScrapeInFlight.Name, appcatalog.DocMetricsScrapeInFlight.Unit,
+				appcatalog.DocMetricsScrapeInFlight.Description, 1, nil)
+		}
 		start := time.Now()
 		rec := &scrapeStatusRecorder{ResponseWriter: w, status: http.StatusOK}
 		// Deferred so a panicking collector still decrements the gauge; leaving it
 		// stuck high would make the in-flight metric permanently wrong.
 		defer func() {
-			e.UpDownCounter(appcatalog.DocMetricsScrapeInFlight.Name, appcatalog.DocMetricsScrapeInFlight.Unit,
-				appcatalog.DocMetricsScrapeInFlight.Description, -1, nil)
-			attrs := telemetry.Attrs{attrOutcome: scrapeOutcome(rec.status)}
-			e.Counter(appcatalog.DocMetricsScrapeRequests.Name, appcatalog.DocMetricsScrapeRequests.Unit,
-				appcatalog.DocMetricsScrapeRequests.Description, 1, attrs)
-			e.Histogram(appcatalog.DocMetricsScrapeDuration.Name, appcatalog.DocMetricsScrapeDuration.Unit,
-				appcatalog.DocMetricsScrapeDuration.Description, time.Since(start).Seconds(),
-				metricsScrapeBucketsSeconds, attrs)
+			metricsScrapeHealthState.inFlightDelta(-1)
+			dur := time.Since(start)
+			outcome := scrapeOutcome(rec.status)
+			metricsScrapeHealthState.recordScrape(outcome, dur)
+			if selfObs {
+				e.UpDownCounter(appcatalog.DocMetricsScrapeInFlight.Name, appcatalog.DocMetricsScrapeInFlight.Unit,
+					appcatalog.DocMetricsScrapeInFlight.Description, -1, nil)
+				attrs := telemetry.Attrs{attrOutcome: outcome}
+				e.Counter(appcatalog.DocMetricsScrapeRequests.Name, appcatalog.DocMetricsScrapeRequests.Unit,
+					appcatalog.DocMetricsScrapeRequests.Description, 1, attrs)
+				e.Histogram(appcatalog.DocMetricsScrapeDuration.Name, appcatalog.DocMetricsScrapeDuration.Unit,
+					appcatalog.DocMetricsScrapeDuration.Description, dur.Seconds(),
+					metricsScrapeBucketsSeconds, attrs)
+			}
 		}()
 		next.ServeHTTP(rec, r)
 	})
@@ -319,6 +335,12 @@ func (l *gatherErrorLogger) Println(v ...any) {
 		"error", msg,
 		"effect", "the affected series are omitted from this scrape; the response is still HTTP 200 (ContinueOnError)")
 
+	// metricsScrapeHealthState is updated unconditionally (see instrumentScrape):
+	// the status page must show a gather error even with self-obs off. The
+	// classification, never msg itself, is what reaches the DTO (#377) — see
+	// classifyGatherError.
+	metricsScrapeHealthState.recordGatherError(classifyGatherError(msg))
+
 	if l.app.cfg.SelfObservability.Enabled && l.app.procEmitter != nil {
 		l.app.procEmitter.Counter(appcatalog.DocMetricsScrapeGatherErrors.Name,
 			appcatalog.DocMetricsScrapeGatherErrors.Unit,
@@ -326,9 +348,79 @@ func (l *gatherErrorLogger) Println(v ...any) {
 	}
 }
 
+// Gather-error classification (#377). A CLOSED set: whatever gatherErrorLogger
+// observes is reduced to one of these five fixed strings and NEVER the raw
+// message, because prometheus/client_golang's registry.go wraps a Collect()
+// failure verbatim ("error collecting metric %v: %w") — the %w can carry
+// arbitrary text from a custom collector, which is exactly where a backend
+// error, a credential, or other internal detail could appear. Every branch of
+// classifyGatherError below returns one of these fixed constants alone, so the
+// safety property holds regardless of how accurately a given message is
+// matched — a message that matches nothing still lands on gatherErrClassOther,
+// never on its own text.
+const (
+	// gatherErrClassDuplicateSeries covers the two "was collected before" /
+	// "collides with previously collected" shapes registry.go produces for a
+	// duplicate-series collision (the #103 scenario this file already handles
+	// by keeping the scrape at 200).
+	gatherErrClassDuplicateSeries = "duplicate_series"
+	// gatherErrClassLabelInconsistent covers a metric's own label set being
+	// malformed: repeated label names, an invalid label name, a non-UTF8
+	// value, or an explicit reserved label.
+	gatherErrClassLabelInconsistent = "label_inconsistent"
+	// gatherErrClassTypeMismatch covers a collected metric disagreeing with
+	// its registered Desc: wrong type, unregistered descriptor, or
+	// inconsistent help/label metadata across calls.
+	gatherErrClassTypeMismatch = "type_mismatch"
+	// gatherErrClassCollectorError is registry.go's "error collecting metric"
+	// wrapper — the one shape that can carry ARBITRARY collector-supplied
+	// text, which is exactly why every class here is a fixed string rather
+	// than anything derived from msg.
+	gatherErrClassCollectorError = "collector_error"
+	// gatherErrClassOther is every message that matches none of the above —
+	// including one crafted or coincidental enough to look like it should,
+	// since matching is substring-based and best-effort, not exhaustive.
+	gatherErrClassOther = "other"
+)
+
+// classifyGatherError reduces a promhttp gather-error message to one of the
+// gatherErrClass* constants above, matching the fixed message shapes
+// prometheus/client_golang's registry.go Gather() produces. It never returns
+// or derives anything from msg's actual content.
+func classifyGatherError(msg string) string {
+	switch {
+	case strings.Contains(msg, "was collected before with the same name and label values"),
+		strings.Contains(msg, "collides with previously collected"):
+		return gatherErrClassDuplicateSeries
+	case strings.Contains(msg, "has two or more labels with the same name"),
+		strings.Contains(msg, "has a label with an invalid name"),
+		strings.Contains(msg, "is not utf8"),
+		strings.Contains(msg, "must not have an explicit"):
+		return gatherErrClassLabelInconsistent
+	case strings.Contains(msg, "should be a Counter"),
+		strings.Contains(msg, "should be a Gauge"),
+		strings.Contains(msg, "should be a Summary"),
+		strings.Contains(msg, "should be Untyped"),
+		strings.Contains(msg, "should be a Histogram"),
+		strings.Contains(msg, "with unregistered descriptor"),
+		strings.Contains(msg, "inconsistent label names or help strings"),
+		strings.Contains(msg, "are inconsistent with descriptor"),
+		strings.Contains(msg, "has help"):
+		return gatherErrClassTypeMismatch
+	case strings.Contains(msg, "error collecting metric"):
+		return gatherErrClassCollectorError
+	default:
+		return gatherErrClassOther
+	}
+}
+
 // metricsAuthRejected records one /metrics auth-gate rejection, classified by a
 // value from the CLOSED reason set shared with the admin gate.
+//
+// metricsScrapeHealthState.recordAuthRejected is unconditional (#377): the
+// status page's total must reflect rejections even with self-obs off.
 func (a *App) metricsAuthRejected(reason string) {
+	metricsScrapeHealthState.recordAuthRejected()
 	if a.cfg.SelfObservability.Enabled && a.procEmitter != nil {
 		a.procEmitter.Counter(appcatalog.DocMetricsAuthRejected.Name, appcatalog.DocMetricsAuthRejected.Unit,
 			appcatalog.DocMetricsAuthRejected.Description, 1, telemetry.Attrs{attrReason: reason})
@@ -431,4 +523,148 @@ func (a *App) runMetrics(ctx context.Context) {
 		// reporting itself ready.
 		a.recordComponentStop(appcatalog.ComponentMetrics, err)
 	}
+}
+
+// metricsScrapeHealth records the outcome of every /metrics request that
+// passed the auth gate, plus gather-error and auth-rejection health, for the
+// admin status page (#377).
+//
+// Like profilingHealth (profilinghealth.go) and internal/telemetry's
+// deliveryTracker, it is populated regardless of self-observability — the
+// admin page is an operator's LOCAL view and has to work on a deployment that
+// exports no self-telemetry at all. Written from the HTTP handler goroutines
+// (instrumentScrape, gatherErrorLogger, requireMetricsAuth) and read from the
+// admin handler, so every access is mutex-guarded.
+type metricsScrapeHealth struct {
+	mu sync.Mutex
+
+	scrapesTotal  int64
+	scrapesShed   int64
+	scrapesFailed int64
+	inFlight      int64
+
+	lastScrapeAt         time.Time
+	lastScrapeDurationMs int64
+
+	gatherErrors      int64
+	lastGatherError   string
+	lastGatherErrorAt time.Time
+
+	authRejected int64
+}
+
+func newMetricsScrapeHealth() *metricsScrapeHealth { return &metricsScrapeHealth{} }
+
+// metricsScrapeHealthState is the process-wide /metrics-serving health
+// tracker. Package-level rather than an *App field for the same reason as
+// profilingHealthState: there is exactly one Prometheus pull-endpoint listener
+// per process (buildMetricsServer is called once from app.New), so a
+// package-level singleton avoids adding a field to the composition root just
+// to thread a pointer through. Tests swap it out and restore it (see
+// resetMetricsScrapeHealth in metrics_status_test.go).
+var metricsScrapeHealthState = newMetricsScrapeHealth()
+
+// inFlightDelta adjusts the current in-flight request count. A nil receiver is
+// a no-op so a zero-value App in an older test stays valid.
+func (h *metricsScrapeHealth) inFlightDelta(delta int64) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	h.inFlight += delta
+	h.mu.Unlock()
+}
+
+// recordScrape records one completed request that passed the auth gate.
+// outcome is one of the scrapeOutcome* constants.
+func (h *metricsScrapeHealth) recordScrape(outcome string, dur time.Duration) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.scrapesTotal++
+	switch outcome {
+	case scrapeOutcomeUnavailable:
+		h.scrapesShed++
+	case scrapeOutcomeError:
+		h.scrapesFailed++
+	}
+	h.lastScrapeAt = time.Now()
+	h.lastScrapeDurationMs = dur.Milliseconds()
+}
+
+// recordGatherError records one Gather() call that returned at least one
+// error. class must already be one of the gatherErrClass* constants —
+// classifyGatherError's whole job is to guarantee that before this is ever
+// called with anything derived from the actual error text.
+func (h *metricsScrapeHealth) recordGatherError(class string) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.gatherErrors++
+	h.lastGatherError = class
+	h.lastGatherErrorAt = time.Now()
+}
+
+// recordAuthRejected records one auth-gate rejection, any reason.
+func (h *metricsScrapeHealth) recordAuthRejected() {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	h.authRejected++
+	h.mu.Unlock()
+}
+
+// snapshot returns the tracker's state as the status-page DTO, leaving
+// Enabled and Config zero-valued — metricsScrapeInfo fills those in from the
+// live config, which the tracker itself does not have access to. Timestamps
+// render as RFC3339 and are omitted while zero, matching
+// profilingHealth.snapshot and every other *At field on this page.
+func (h *metricsScrapeHealth) snapshot() statusdata.MetricsServingInfo {
+	if h == nil {
+		return statusdata.MetricsServingInfo{}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := statusdata.MetricsServingInfo{
+		ScrapesTotal:         h.scrapesTotal,
+		ScrapesShed:          h.scrapesShed,
+		ScrapesFailed:        h.scrapesFailed,
+		InFlight:             h.inFlight,
+		LastScrapeDurationMs: h.lastScrapeDurationMs,
+		GatherErrors:         h.gatherErrors,
+		LastGatherError:      h.lastGatherError,
+		AuthRejected:         h.authRejected,
+	}
+	if !h.lastScrapeAt.IsZero() {
+		out.LastScrapeAt = h.lastScrapeAt.UTC().Format(time.RFC3339)
+	}
+	if !h.lastGatherErrorAt.IsZero() {
+		out.LastGatherErrorAt = h.lastGatherErrorAt.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
+// metricsScrapeInfo assembles the full status-page DTO: the live tracker
+// snapshot plus the effective, non-secret prometheus.* configuration actually
+// in force (#377). Called from buildStatus (status.go).
+func (a *App) metricsScrapeInfo() statusdata.MetricsServingInfo {
+	info := metricsScrapeHealthState.snapshot()
+	info.Enabled = a.cfg.Prometheus.Enabled
+	info.Config = statusdata.MetricsServingConfig{
+		Listen:               a.cfg.Prometheus.Listen,
+		MaxRequestsInFlight:  a.cfg.Prometheus.MaxRequestsInFlight,
+		TimeoutMs:            a.cfg.Prometheus.Timeout.D().Milliseconds(),
+		CoalesceGather:       a.cfg.Prometheus.CoalesceGather,
+		AuthTokenSet:         a.cfg.Prometheus.Auth.Token.Reveal() != "",
+		AllowUnauthenticated: a.cfg.Prometheus.Auth.AllowUnauthenticated,
+		TLSEnabled:           a.cfg.Prometheus.TLS.CertFile != "" && a.cfg.Prometheus.TLS.KeyFile != "",
+		ClientCAConfigured:   a.cfg.Prometheus.TLS.ClientCAFile != "",
+		ClientAuthMode:       a.cfg.Prometheus.TLS.ClientAuth,
+	}
+	return info
 }

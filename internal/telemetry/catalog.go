@@ -53,7 +53,37 @@ var (
 		Unit:        "1",
 		Instrument:  metricdoc.Counter,
 		Description: "OTLP export failures, by error class.",
-		Attributes:  []string{semconv.AttrErrorType},
+		Attributes:  []string{semconv.AttrErrorType, semconv.AttrExportSignal},
+		Group:       groupSelfObs,
+	}
+	// docExportSpans is the trace-side sibling of docExportDatapoints /
+	// docExportLogRecords (#359): before this, delivery_trace.go's exporter
+	// observed trace DELIVERY (success/failure) but counted nothing, so there was
+	// no cost-proxy tally for spans handed to the OTLP trace exporter at all.
+	docExportSpans = metricdoc.Metric{
+		Name: "tailscale2otel.export.spans",
+		// No dedicated UCUM/annotation unit constant exists for "spans" in
+		// internal/semconv yet (out of this issue's owned files — see its
+		// WIRING REQUEST to add semconv.UnitSpans = "{span}"); using the literal
+		// directly keeps this metric's own unit internally consistent in the
+		// meantime (the Metric.Unit here and the Counter call in
+		// EmitExportSpanDelta both reference this same field).
+		Unit:        "{span}",
+		Instrument:  metricdoc.Counter,
+		Description: "Spans handed to the OTLP trace exporter (the trace cost proxy). Counts every span per export batch.",
+		Group:       groupSelfObs,
+	}
+	// docExportDiagnosticsSuppressed is the #365 companion to the outage-diagnostic
+	// logging in delivery.go: while a signal's OTLP export failures are being
+	// rate-limited to a first-occurrence log plus periodic summaries, this counter
+	// increments EXACTLY once per suppressed log line, so "how many failures did we
+	// not individually log" is always answerable even though the log itself is not.
+	docExportDiagnosticsSuppressed = metricdoc.Metric{
+		Name:        "tailscale2otel.export.diagnostics.suppressed",
+		Unit:        "1",
+		Instrument:  metricdoc.Counter,
+		Description: "Export-failure diagnostic log lines suppressed during a sustained OTLP outage, by signal and error class. Exact — never itself rate-limited.",
+		Attributes:  []string{semconv.AttrExportSignal, semconv.AttrErrorType},
 		Group:       groupSelfObs,
 	}
 	docExportDatapoints = metricdoc.Metric{
@@ -107,9 +137,14 @@ var (
 // generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docExportDuration,
+		docBuildInfo, docExportFailures, docExportDatapoints, docExportLogRecords, docExportSpans,
+		docExportDuration, docExportDiagnosticsSuppressed,
 		docSeriesActive, docSeriesLimit, docSeriesOverflowing,
 		docLogRecordTruncated, docLogTruncatedBytes,
+		// Declared in processors.go, registered here: the registry is the one
+		// place every emitting file's descriptors converge, so a descriptor
+		// declared but never registered emits fine and is silently undocumented.
+		docQueueSize, docQueueCapacity, docQueueDropped,
 	}
 }
 

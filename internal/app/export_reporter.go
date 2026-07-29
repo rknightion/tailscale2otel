@@ -13,6 +13,10 @@ func emitExportDelta(e telemetry.Emitter, cur telemetry.ExportStats, last *telem
 	dp := float64(cur.Datapoints - last.Datapoints)
 	lr := float64(cur.LogRecords - last.LogRecords)
 	telemetry.EmitExportStats(e, dp, lr)
+	// Spans are a separate call rather than a third EmitExportStats parameter so
+	// the existing signature stayed stable while #359 landed; the effect is the
+	// same per-interval delta as the other two. Zero when tracing is off.
+	telemetry.EmitExportSpanDelta(e, float64(cur.Spans-last.Spans))
 	*last = cur
 }
 

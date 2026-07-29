@@ -61,7 +61,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_TAILSCALE__MAX_RESPONSE_BYTES` | `4194304` | cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated |
 | `TS2OTEL_TAILSCALE__MAX_LOG_RESPONSE_BYTES` | `33554432` | cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it |
 | `TS2OTEL_OTLP__PROTOCOL` | `http` | http \| grpc \| stdout (stdout = print signals to the console for local debug, no backend) |
-| `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself) |
+| `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP base URL (the exporter appends /v1/metrics, /v1/logs and /v1/traces itself) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID` | `""` | Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN` | `""` | Grafana Cloud OTLP token — keep in env (..._GRAFANA_CLOUD__TOKEN) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
@@ -74,6 +74,74 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__METRIC_EXPORT_BATCH_SIZE` | `10000` | maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels) |
 | `TS2OTEL_OTLP__LIMITS__LOG_BODY_BYTES` | `32768` | cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting |
 | `TS2OTEL_OTLP__LIMITS__LOG_ATTRIBUTE_VALUE_BYTES` | `4096` | cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split) |
+| `TS2OTEL_OTLP__COMPRESSION` | `""` | gzip \| none. Empty defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION, then the exporter default. TS2OTEL_OTLP__COMPRESSION |
+| `TS2OTEL_OTLP__TIMEOUT` | `0s` | per-request export timeout; 0 defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT, then the exporter's 10s. TS2OTEL_OTLP__TIMEOUT |
+| `TS2OTEL_OTLP__MAX_REQUEST_SIZE` | `0` | bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a 413. Use metric_export_batch_size to actually stay under an ingest limit |
+| `TS2OTEL_OTLP__GRPC_RECONNECTION_PERIOD` | `0s` | force a fresh gRPC connection attempt after this long; gRPC only, 0 = the gRPC client default |
+| `TS2OTEL_OTLP__RETRY__ENABLED` | `true` | an explicit false genuinely disables retry (distinct from omitting this block) |
+| `TS2OTEL_OTLP__RETRY__INITIAL_INTERVAL` | `5s` | first backoff delay |
+| `TS2OTEL_OTLP__RETRY__MAX_INTERVAL` | `30s` | backoff ceiling |
+| `TS2OTEL_OTLP__RETRY__MAX_ELAPSED_TIME` | `1m` | give up after this long |
+| `TS2OTEL_OTLP__BATCH__LOGS__MAX_QUEUE_SIZE` | `0` | records buffered before new ones are dropped (non-blocking by design) |
+| `TS2OTEL_OTLP__BATCH__LOGS__EXPORT_MAX_BATCH_SIZE` | `0` | records per export; must be <= max_queue_size when both are set |
+| `TS2OTEL_OTLP__BATCH__LOGS__EXPORT_INTERVAL` | `0s` | how often a partial batch is flushed |
+| `TS2OTEL_OTLP__BATCH__LOGS__EXPORT_TIMEOUT` | `0s` | bound on one export attempt |
+| `TS2OTEL_OTLP__BATCH__TRACES__MAX_QUEUE_SIZE` | `0` | spans buffered before new ones are dropped |
+| `TS2OTEL_OTLP__BATCH__TRACES__EXPORT_MAX_BATCH_SIZE` | `0` | spans per export; must be <= max_queue_size when both are set |
+| `TS2OTEL_OTLP__BATCH__TRACES__EXPORT_INTERVAL` | `0s` | how often a partial batch is flushed |
+| `TS2OTEL_OTLP__BATCH__TRACES__EXPORT_TIMEOUT` | `0s` | bound on one export attempt |
+| `TS2OTEL_OTLP__STDOUT__METRIC_INTERVAL` | `5s` | short cadence so a debug run doesn't wait 60s for a metric; logs and spans are emitted synchronously |
+| `TS2OTEL_OTLP__STDOUT__PRETTY` | `false` | indent the emitted JSON |
+| `TS2OTEL_OTLP__CREDENTIAL_RELOAD__ENABLED` | `false` | governs the background poller only; last-known-good is always retained for a configured file |
+| `TS2OTEL_OTLP__CREDENTIAL_RELOAD__INTERVAL` | `30s` | poll period; minimum 5s. Ignored when enabled is false |
+| `TS2OTEL_OTLP__METRICS__ENABLED` | `""` | null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others |
+| `TS2OTEL_OTLP__METRICS__PROTOCOL` | `""` | empty inherits otlp.protocol |
+| `TS2OTEL_OTLP__METRICS__ENDPOINT` | `""` | empty inherits otlp.endpoint |
+| `TS2OTEL_OTLP__METRICS__TLS__INSECURE` | `""` | null inherits; explicit true/false overrides |
+| `TS2OTEL_OTLP__METRICS__TLS__INSECURE_SKIP_VERIFY` | `""` | null inherits; explicit true/false overrides |
+| `TS2OTEL_OTLP__METRICS__TLS__CA_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__METRICS__TLS__CERT_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__METRICS__TLS__KEY_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__METRICS__COMPRESSION` | `""` | empty inherits otlp.compression |
+| `TS2OTEL_OTLP__METRICS__TIMEOUT` | `0s` | 0 inherits otlp.timeout |
+| `TS2OTEL_OTLP__METRICS__MAX_REQUEST_SIZE` | `0` | 0 inherits otlp.max_request_size |
+| `TS2OTEL_OTLP__METRICS__GRPC_RECONNECTION_PERIOD` | `0s` | 0 inherits otlp.grpc_reconnection_period |
+| `TS2OTEL_OTLP__METRICS__RETRY__ENABLED` | `""` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__METRICS__RETRY__INITIAL_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__METRICS__RETRY__MAX_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__METRICS__RETRY__MAX_ELAPSED_TIME` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__LOGS__ENABLED` | `""` | null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others |
+| `TS2OTEL_OTLP__LOGS__PROTOCOL` | `""` | empty inherits otlp.protocol |
+| `TS2OTEL_OTLP__LOGS__ENDPOINT` | `""` | empty inherits otlp.endpoint |
+| `TS2OTEL_OTLP__LOGS__TLS__INSECURE` | `""` | null inherits; explicit true/false overrides |
+| `TS2OTEL_OTLP__LOGS__TLS__INSECURE_SKIP_VERIFY` | `""` | null inherits; explicit true/false overrides |
+| `TS2OTEL_OTLP__LOGS__TLS__CA_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__LOGS__TLS__CERT_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__LOGS__TLS__KEY_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__LOGS__COMPRESSION` | `""` | empty inherits otlp.compression |
+| `TS2OTEL_OTLP__LOGS__TIMEOUT` | `0s` | 0 inherits otlp.timeout |
+| `TS2OTEL_OTLP__LOGS__MAX_REQUEST_SIZE` | `0` | 0 inherits otlp.max_request_size |
+| `TS2OTEL_OTLP__LOGS__GRPC_RECONNECTION_PERIOD` | `0s` | 0 inherits otlp.grpc_reconnection_period |
+| `TS2OTEL_OTLP__LOGS__RETRY__ENABLED` | `""` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__LOGS__RETRY__INITIAL_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__LOGS__RETRY__MAX_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__LOGS__RETRY__MAX_ELAPSED_TIME` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__TRACES__ENABLED` | `""` | null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others |
+| `TS2OTEL_OTLP__TRACES__PROTOCOL` | `""` | empty inherits otlp.protocol |
+| `TS2OTEL_OTLP__TRACES__ENDPOINT` | `""` | empty inherits otlp.endpoint |
+| `TS2OTEL_OTLP__TRACES__TLS__INSECURE` | `""` | null inherits; explicit true/false overrides |
+| `TS2OTEL_OTLP__TRACES__TLS__INSECURE_SKIP_VERIFY` | `""` | null inherits; explicit true/false overrides |
+| `TS2OTEL_OTLP__TRACES__TLS__CA_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__TRACES__TLS__CERT_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__TRACES__TLS__KEY_FILE` | `""` | every empty/null field inherits the matching otlp.tls value |
+| `TS2OTEL_OTLP__TRACES__COMPRESSION` | `""` | empty inherits otlp.compression |
+| `TS2OTEL_OTLP__TRACES__TIMEOUT` | `0s` | 0 inherits otlp.timeout |
+| `TS2OTEL_OTLP__TRACES__MAX_REQUEST_SIZE` | `0` | 0 inherits otlp.max_request_size |
+| `TS2OTEL_OTLP__TRACES__GRPC_RECONNECTION_PERIOD` | `0s` | 0 inherits otlp.grpc_reconnection_period |
+| `TS2OTEL_OTLP__TRACES__RETRY__ENABLED` | `""` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__TRACES__RETRY__INITIAL_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__TRACES__RETRY__MAX_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_OTLP__TRACES__RETRY__MAX_ELAPSED_TIME` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
 | `TS2OTEL_ENRICHMENT__CACHE_TTL` | `5m` | staleness alarm threshold for the IP/nodeID -> name device cache |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ENABLED` | `false` | off by default (can add ~one flow-metric series per external IP when on) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__SERVER` | `""` | resolver "ip" or "ip:port" (default :53); empty = system/container resolver |
@@ -323,17 +391,31 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROFILING__PYROSCOPE__TLS__CA_FILE` | `""` | PEM bundle of the CA to trust for the profiles endpoint (private CA / self-signed gateway) |
 | `TS2OTEL_PROFILING__PYROSCOPE__TLS__CERT_FILE` | `""` | client certificate for mTLS to the profiles endpoint; set together with key_file (both-or-neither) |
 | `TS2OTEL_PROFILING__PYROSCOPE__TLS__KEY_FILE` | `""` | client key for profiling.pyroscope.tls.cert_file |
+| `TS2OTEL_PROFILING__PYROSCOPE__TAILNET_LABEL` | `off` | off \| hashed \| name — whether continuous profiles carry a tailnet dimension. A tailnet name is a CUSTOMER identifier and profiles go to a different destination from metrics/logs, so this is opt-in and NOT covered by pii_filter. hashed = a stable 12-hex SHA-256 prefix (answers "which tenant is burning CPU" for an MSP without shipping the name; pseudonymous, not anonymous — a small name space is enumerable). Emitted only for a single configured tailnet; multi-tailnet gets no tag, since there is one profiler per process. TS2OTEL_PROFILING__PYROSCOPE__TAILNET_LABEL |
+| `TS2OTEL_PROFILING__PYROSCOPE__SPAN_PROFILES__ENABLED` | `false` | REQUIRES tracing.enabled AND profiling.pyroscope.enabled. CPU profiles ONLY — Go attaches pprof labels to CPU samples, so heap/mutex/block/goroutine profiles cannot carry span identity |
+| `TS2OTEL_PROFILING__PYROSCOPE__CREDENTIAL_RELOAD__ENABLED` | `false` | governs the background poller only |
+| `TS2OTEL_PROFILING__PYROSCOPE__CREDENTIAL_RELOAD__INTERVAL` | `30s` | poll period; minimum 5s. Ignored when enabled is false |
 | `TS2OTEL_PROFILING__MUTEX_PROFILE_FRACTION` | `5` | runtime.SetMutexProfileFraction; on by default (applied only when pprof or pyroscope is enabled), 0 = disabled |
 | `TS2OTEL_PROFILING__BLOCK_PROFILE_RATE` | `100000` | runtime.SetBlockProfileRate (ns); on by default (100µs), 0 = disabled |
 | `TS2OTEL_TRACING__ENABLED` | `false` | emit spans. TS2OTEL_TRACING__ENABLED |
 | `TS2OTEL_TRACING__SAMPLER` | `parentbased_always_on` | head sampler: always_on\|always_off\|traceidratio\|parentbased_always_on\|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER |
 | `TS2OTEL_TRACING__SAMPLER_ARG` | `1.0` | sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise). TS2OTEL_TRACING__SAMPLER_ARG |
+| `TS2OTEL_TRACING__REMOTE_PARENT` | `trust` | how an INBOUND traceparent's sampled bit is treated by the stream/webhook receivers: trust (today's behavior) \| ignore (the local sampler alone decides, so a sender cannot force sampling) \| link (start a new local root trace and link the remote one). TS2OTEL_TRACING__REMOTE_PARENT |
+| `TS2OTEL_TRACING__SAMPLERS__SCRAPE__SAMPLER` | `""` | same enum as tracing.sampler. TS2OTEL_TRACING__SAMPLERS__SCRAPE__SAMPLER |
+| `TS2OTEL_TRACING__SAMPLERS__SCRAPE__ARG` | `0.0` | ratio in [0,1] for the *traceidratio samplers. TS2OTEL_TRACING__SAMPLERS__SCRAPE__ARG |
+| `TS2OTEL_TRACING__SAMPLERS__RECEIVER__SAMPLER` | `""` | TS2OTEL_TRACING__SAMPLERS__RECEIVER__SAMPLER |
+| `TS2OTEL_TRACING__SAMPLERS__RECEIVER__ARG` | `0.0` | TS2OTEL_TRACING__SAMPLERS__RECEIVER__ARG |
+| `TS2OTEL_TRACING__SAMPLERS__BACKGROUND__SAMPLER` | `""` | TS2OTEL_TRACING__SAMPLERS__BACKGROUND__SAMPLER |
+| `TS2OTEL_TRACING__SAMPLERS__BACKGROUND__ARG` | `0.0` | TS2OTEL_TRACING__SAMPLERS__BACKGROUND__ARG |
+| `TS2OTEL_RESOURCE__SERVICE_NAMESPACE` | `""` | service.namespace — promoted to a job-adjacent LABEL on every series. Keep it low-cardinality and stable across deploys. TS2OTEL_RESOURCE__SERVICE_NAMESPACE |
+| `TS2OTEL_RESOURCE__DEPLOYMENT_ENVIRONMENT` | `""` | deployment.environment.name — outside service.*, so it lands in target_info only and may vary per environment. TS2OTEL_RESOURCE__DEPLOYMENT_ENVIRONMENT |
+| `TS2OTEL_RESOURCE__FROM_ENV` | `false` | also read OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME, filtered by the same rules. Off by default: it hands the ambient environment a channel onto a per-series label surface. TS2OTEL_RESOURCE__FROM_ENV |
 | `TS2OTEL_VERSION_CHECKS__SELF__ENABLED` | `true` | emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release) |
 | `TS2OTEL_VERSION_CHECKS__DEVICES__ENABLED` | `true` | emit per-device tailscale.device.version_skew + fleet rollups (device client version vs latest Tailscale stable). Needs the devices collector. |
 | `TS2OTEL_VERSION_CHECKS__DEVICES__OUTDATED_MINOR_THRESHOLD` | `3` | a device this many minor releases behind counts toward tailscale.devices.outdated |
 | `TS2OTEL_VERSION_CHECKS__CACHE_TTL` | `1h` | how long a fetched "latest version" is cached before re-fetching (minimum 5m) |
 | `TS2OTEL_VERSION_CHECKS__TIMEOUT` | `10s` | per-request timeout for the external version fetch |
 
-**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `collectors.node_metrics.targets`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`, `profiling.pyroscope.headers`.
+**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `otlp.metrics.headers`, `otlp.logs.headers`, `otlp.traces.headers`, `collectors.node_metrics.targets`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`, `profiling.pyroscope.headers`, `resource.attributes`.
 
 <!-- END GENERATED: env-vars -->

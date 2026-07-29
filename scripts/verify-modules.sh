@@ -28,7 +28,15 @@ ROOT="$PWD"
 # — the same property internal/ci's TestEveryGoModuleIsCoveredByCIVerification
 # enforces for the CI matrices.
 discover_modules() {
+  # .claude is excluded because it holds agent git worktrees, each a full
+  # checkout of THIS repository. Without the exclusion the script rediscovers
+  # every module under a second path and then runs the whole gate — build, vet,
+  # race tests, tidy diff, lint, govulncheck — once per worktree. It does not
+  # merely waste time: a tidy diff or lint finding from another checkout's
+  # in-flight edits is reported as a failure of this one. Local-only; CI has no
+  # worktrees, and internal/ci's own tree walks skip it for the same reason.
   find . -name go.mod -not -path './.git/*' -not -path './.capture/*' \
+    -not -path './.claude/*' \
     | sed -e 's|/go.mod$||' -e 's|^\./||' -e 's|^\.$|.|' \
     | sed -e 's|^$|.|' \
     | sort

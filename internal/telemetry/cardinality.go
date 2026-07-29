@@ -199,14 +199,28 @@ func (t *CardinalityTracker) observeLabels(s *seriesSet, attrs Attrs) {
 // NOTE (#55): the "resets so a metric that stops emitting drops out" behavior is
 // about THIS tracker's own measurement (series.active/series.overflowing, which
 // are keyed by a fixed low-cardinality metric.name set), NOT about the exported
-// per-entity gauges themselves. Under the project's forced cumulative temporality
-// the SDK's cumulativeLastValue aggregation keeps every attribute set it has ever
-// seen and re-exports its last value forever (upstream otel-go #3006) — switching
-// to observable gauges does not change this. So per-entity gauges like
-// tailscale.device.online / tailscale.node.up / tailscale.dns.* become "ghost"
-// series after an entity disappears (renamed/removed), and under sustained churn
-// can exhaust the per-instrument cardinality limit. This is documented for
-// operators in docs/metrics.md; there is no per-entity eviction in v1.
+// per-entity gauges themselves. Those are a separate mechanism, and this comment
+// used to describe it wrongly — corrected by #383:
+//
+// A SYNCHRONOUS gauge (Emitter.Gauge) really does ghost. Under the project's
+// forced cumulative temporality the SDK's cumulativeLastValue aggregation keeps
+// every attribute set it has ever seen and re-exports its last value forever
+// (upstream otel-go #3006).
+//
+// An OBSERVABLE gauge does NOT, and the previous claim that "switching to
+// observable gauges does not change this" was WRONG. In pinned otel-go v1.44 an
+// ObservableGauge routes to PrecomputedLastValue, whose cumulative collect
+// CLEARS stale sets each cycle, so it reports only what was observed in the
+// current collection. That is exactly why Emitter.GaugeSnapshot exists and why
+// every churning per-entity gauge in the devices, nodemetrics and dns collectors
+// now uses it (via GaugeSnapshotBuilder) — a series absent from a later snapshot
+// drops out instead of ghosting. So the ghost-series problem this comment
+// described as unfixable is fixed, and the fix shipped.
+//
+// The one deliberate exception is nodemetrics' forwarded passthrough samples
+// (dynamic names + monotonic counters, where snapshot semantics do not fit),
+// documented for operators in docs/metrics.md.
+//
 // It is a no-op on a nil tracker.
 func (t *CardinalityTracker) Report(e Emitter) {
 	if t == nil {

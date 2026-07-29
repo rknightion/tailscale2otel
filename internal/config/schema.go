@@ -90,31 +90,47 @@ func f64(v float64) *float64 { return &v }
 // disclaimer — encoding it as a plain minimum would reject a value that is
 // perfectly valid whenever that gating field is false/unset.
 var rulesBySuffix = map[string]schemaRule{
-	"provider":                 {enum: []string{"tailscale", "headscale"}},
-	"log_format":               {enum: []string{"text", "json"}},
-	"log_level":                {enum: []string{"debug", "info", "warn", "error"}},
-	"otlp.protocol":            {enum: []string{"grpc", "http", "stdout"}},
-	"checkpoint.store":         {enum: []string{"memory", "file"}},
-	"source":                   {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
-	"log_mode":                 {enum: []string{"per_connection", "per_record", "off"}},
-	"metrics_mode":             {enum: []string{"all", "rollup", "both"}},
-	"posture_log_mode":         {enum: []string{"changes", "always", "off"}},
-	"decompress":               {enum: []string{"auto", "gzip", "zstd", "none"}},
-	"auth.method":              {enum: []string{"oauth", "apikey", "workload_identity"}},
-	"sampler":                  {enum: []string{"always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
-	"scheme":                   {enum: []string{"http", "https"}}, // collectors.node_metrics.discovery.scheme
-	"address_order":            {enum: []string{"ipv4", "ipv6"}},
-	"instance_source":          {enum: []string{"address", "name", "hostname"}},
-	"corruption":               {enum: []string{"fail"}},
-	"layout":                   {enum: []string{"", "partitioned", "flat"}},        // *.objectstore.layout (empty = partitioned)
-	"capacity_profile":         {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
-	"metric_export_batch_size": {min: f64(1)},
-	"rollup_top_n":             {min: f64(0)},
-	"label_value_sample_cap":   {min: f64(0)},
-	"warning_threshold":        {min: f64(0)},
-	"critical_threshold":       {min: f64(0)},
-	"sampler_arg":              {min: f64(0), max: f64(1)},
-	"port":                     {min: f64(1), max: f64(65535)}, // collectors.node_metrics.discovery.port
+	"provider":         {enum: []string{"tailscale", "headscale"}},
+	"log_format":       {enum: []string{"text", "json"}},
+	"log_level":        {enum: []string{"debug", "info", "warn", "error"}},
+	"otlp.protocol":    {enum: []string{"grpc", "http", "stdout"}},
+	"checkpoint.store": {enum: []string{"memory", "file"}},
+	"source":           {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
+	"log_mode":         {enum: []string{"per_connection", "per_record", "off"}},
+	"metrics_mode":     {enum: []string{"all", "rollup", "both"}},
+	"posture_log_mode": {enum: []string{"changes", "always", "off"}},
+	"decompress":       {enum: []string{"auto", "gzip", "zstd", "none"}},
+	"auth.method":      {enum: []string{"oauth", "apikey", "workload_identity"}},
+	"sampler":          {enum: []string{"always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
+	// The per-class overrides (#372) accept the same five strategies PLUS the
+	// empty string, which is the documented way to inherit tracing.sampler. The
+	// generic "sampler" suffix above would otherwise match them and reject the
+	// inherit value — matching is longest-suffix-first, so these win.
+	"samplers.scrape.sampler":     {enum: []string{"", "always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
+	"samplers.receiver.sampler":   {enum: []string{"", "always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
+	"samplers.background.sampler": {enum: []string{"", "always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
+	// validate.go bounds every per-class arg to [0,1] exactly as it does
+	// tracing.sampler_arg, so the schema says so too.
+	"samplers.scrape.arg":        {min: f64(0), max: f64(1)},
+	"samplers.receiver.arg":      {min: f64(0), max: f64(1)},
+	"samplers.background.arg":    {min: f64(0), max: f64(1)},
+	"tracing.remote_parent":      {enum: []string{"", "trust", "ignore", "link"}},
+	"pyroscope.tailnet_label":    {enum: []string{"", "off", "hashed", "name"}},
+	"otlp.compression":           {enum: []string{"", "gzip", "none"}},
+	"credential_reload.interval": {min: f64(0)},
+	"scheme":                     {enum: []string{"http", "https"}}, // collectors.node_metrics.discovery.scheme
+	"address_order":              {enum: []string{"ipv4", "ipv6"}},
+	"instance_source":            {enum: []string{"address", "name", "hostname"}},
+	"corruption":                 {enum: []string{"fail"}},
+	"layout":                     {enum: []string{"", "partitioned", "flat"}},        // *.objectstore.layout (empty = partitioned)
+	"capacity_profile":           {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
+	"metric_export_batch_size":   {min: f64(1)},
+	"rollup_top_n":               {min: f64(0)},
+	"label_value_sample_cap":     {min: f64(0)},
+	"warning_threshold":          {min: f64(0)},
+	"critical_threshold":         {min: f64(0)},
+	"sampler_arg":                {min: f64(0), max: f64(1)},
+	"port":                       {min: f64(1), max: f64(65535)}, // collectors.node_metrics.discovery.port
 }
 
 // applyRule looks up path (and, failing that, each of its dotted suffixes,

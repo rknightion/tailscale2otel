@@ -65,10 +65,28 @@ def tab_diagnostics():
                                          rename={"version": "Version", "go_version": "Go version"})],
                desc="Version / Go version (labels)."), 8, 5),
     ]
+    # #369: p50/p95/p99 from tailscale2otel.scrape.duration.histogram, with exemplars enabled so a
+    # bucket links back to the scrape trace. This SUPERSEDES the old "Scrape duration by collector"
+    # gauge panel (last-scrape-duration-only, no distribution) rather than running both side by side
+    # showing near-identical per-collector duration-over-time information.
+    _scrapedur_p = panel(
+        "Scrape duration p50/p95/p99 by collector", "timeseries",
+        [prom_t('histogram_quantile(0.5, sum by (le, tailscale_collector) '
+                '(rate(tailscale2otel_scrape_duration_histogram_seconds_bucket%s[%s])))' % (cf, RI),
+                legend="p50 {{tailscale_collector}}"),
+         prom_t('histogram_quantile(0.95, sum by (le, tailscale_collector) '
+                '(rate(tailscale2otel_scrape_duration_histogram_seconds_bucket%s[%s])))' % (cf, RI),
+                legend="p95 {{tailscale_collector}}", refid="B"),
+         prom_t('histogram_quantile(0.99, sum by (le, tailscale_collector) '
+                '(rate(tailscale2otel_scrape_duration_histogram_seconds_bucket%s[%s])))' % (cf, RI),
+                legend="p99 {{tailscale_collector}}", refid="C")],
+        unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
+        desc="Per-collector scrape wall-clock duration quantiles (exemplars enabled — link a bucket "
+             "back to the scrape trace). Supersedes the plain scrape-duration gauge panel (#369).")
+    for _q in builder.ELEMENTS[_scrapedur_p]["spec"]["data"]["spec"]["queries"]:
+        _q["spec"]["query"]["spec"]["exemplar"] = True  # Prometheus query-level exemplar fetch
     collectors = [
-        (panel("Scrape duration by collector", "timeseries",
-               [prom_t("max by (tailscale_collector) (tailscale2otel_scrape_duration_seconds%s)" % cf, legend="{{tailscale_collector}}")],
-               unit="s", custom=ts_custom(), options=ts_opts(placement="right")), 12, 7),
+        (_scrapedur_p, 12, 7),
         (panel("Scrape success by collector", "timeseries",
                [prom_t("max by (tailscale_collector) (tailscale2otel_scrape_success_ratio%s)" % cf, legend="{{tailscale_collector}}")],
                unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=10), options=ts_opts(placement="right")), 12, 7),

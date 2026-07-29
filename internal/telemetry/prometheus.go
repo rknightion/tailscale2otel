@@ -45,7 +45,7 @@ import (
 //     attributes here precisely so both paths label them identically.
 //   - the pull path adds no `_created` series and applies no staleness marker;
 //     the push path carries no staleness signal at all.
-//   - Mimir may additionally apply per-tenant relabelling/name validation that
+//   - Mimir may additionally apply per-tenant relabeling/name validation that
 //     this exporter never sees.
 var PromTranslationStrategy = otlptranslator.UnderscoreEscapingWithSuffixes
 

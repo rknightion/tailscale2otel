@@ -52,7 +52,7 @@ func TestProfilingUploadHealth_SuccessFailureThenRecovery(t *testing.T) {
 
 	rec := telemetrytest.New()
 	health := newProfilingHealth()
-	client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, health, rec.Emitter())
+	client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, health, rec.Emitter(), nil)
 	if err != nil {
 		t.Fatalf("newProfilingUploadClient: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestProfilingUploadHealth_NoBodyOrCredentialLeak(t *testing.T) {
 	health := newProfilingHealth()
 	client, err := newProfilingUploadClient(pyroscopeTransportOptions{
 		Headers: map[string]string{"X-Team": uploadSecretCanary},
-	}, health, rec.Emitter())
+	}, health, rec.Emitter(), nil)
 	if err != nil {
 		t.Fatalf("newProfilingUploadClient: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestProfilingUploadHealth_NoBodyOrCredentialLeak(t *testing.T) {
 func TestProfilingUploadHealth_TransportErrorClassOnly(t *testing.T) {
 	rec := telemetrytest.New()
 	health := newProfilingHealth()
-	client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, health, rec.Emitter())
+	client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, health, rec.Emitter(), nil)
 	if err != nil {
 		t.Fatalf("newProfilingUploadClient: %v", err)
 	}

@@ -287,9 +287,15 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 	if tr == nil {
 		tr = noopSchedulerTracer
 	}
+	// The span class is declared at Start so the head sampler can see it: the SDK
+	// passes Start-time attributes into ShouldSample, which is what lets scrape
+	// spans carry a different ratio from high-rate receiver traffic (#372).
 	ctx, span := tr.Start(ctx, "scrape "+e.Collector.Name(),
 		trace.WithSpanKind(trace.SpanKindInternal),
-		trace.WithAttributes(attribute.String(semconv.AttrCollector, e.Collector.Name())))
+		trace.WithAttributes(
+			attribute.String(semconv.AttrCollector, e.Collector.Name()),
+			telemetry.SpanClassKey.String(telemetry.SpanClassScrape),
+		))
 
 	var runErr error
 	panicked := false

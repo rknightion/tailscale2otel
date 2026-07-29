@@ -766,6 +766,172 @@ config: # @schema additionalProperties:false
       # -- Cap each individual string-valued log attribute. Never applied to metric labels, which
       # must stay byte-exact or the series splits. Minimum 64.
       log_attribute_value_bytes: 4096
+    # -- Request compression: gzip | none. Empty defers to
+    # OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION, then the exporter default.
+    compression: ""
+    # -- Per-request export timeout. 0 defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT, then the
+    # exporter's 10s default.
+    timeout: 0s
+    # -- Bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request
+    # instead of shipping it into a backend 413. Use metric_export_batch_size to actually stay
+    # under an ingest limit. 0 = no cap.
+    max_request_size: 0
+    # -- Force a fresh gRPC connection attempt after this long. gRPC only; 0 = the gRPC client
+    # default. A rotated client certificate takes effect on both transports immediately, but a
+    # rotated CA bundle on gRPC only takes effect on the NEXT new connection — this bounds that.
+    grpc_reconnection_period: 0s
+    retry: # @schema additionalProperties:false
+      # -- An explicit false genuinely disables retry (distinct from omitting this whole block,
+      # which keeps the exporter's own default of retry-on). Unset (null) here means "leave the
+      # exporter default".
+      enabled: null
+      # -- First backoff delay.
+      initial_interval: 5s
+      # -- Backoff ceiling.
+      max_interval: 30s
+      # -- Give up after this long.
+      max_elapsed_time: 1m
+    batch: # @schema additionalProperties:false
+      logs: # @schema additionalProperties:false
+        # -- Records buffered before new ones are dropped (non-blocking by design). 0 = SDK default.
+        max_queue_size: 0
+        # -- Records per export; must be <= max_queue_size when both are set. 0 = SDK default.
+        export_max_batch_size: 0
+        # -- How often a partial batch is flushed. 0 = SDK default.
+        export_interval: 0s
+        # -- Bound on one export attempt. 0 = SDK default.
+        export_timeout: 0s
+      traces: # @schema additionalProperties:false
+        # -- Spans buffered before new ones are dropped. 0 = SDK default.
+        max_queue_size: 0
+        # -- Spans per export; must be <= max_queue_size when both are set. 0 = SDK default.
+        export_max_batch_size: 0
+        # -- How often a partial batch is flushed. 0 = SDK default.
+        export_interval: 0s
+        # -- Bound on one export attempt. 0 = SDK default.
+        export_timeout: 0s
+    stdout: # @schema additionalProperties:false
+      # -- Metric push cadence when otlp.protocol is stdout — a short cadence so a debug run
+      # doesn't wait 60s for a metric. Logs and spans are emitted synchronously regardless. 0 =
+      # the stdout exporter's own default.
+      metric_interval: 5s
+      # -- Indent the emitted JSON.
+      pretty: false
+    credential_reload: # @schema additionalProperties:false
+      # -- Governs only the background poller; last-known-good validation is always retained for
+      # a configured file regardless of this flag.
+      enabled: false
+      # -- Poll period; minimum 5s. Ignored when enabled is false.
+      interval: 30s
+    # -- Send ONE signal (metrics) somewhere else — a different collector, tenant, credential or
+    # protocol. Every field here inherits the matching otlp.* value above when left empty/null,
+    # EXCEPT headers, which REPLACES otlp.headers rather than merging — a credential never
+    # crosses a signal boundary.
+    metrics: # @schema additionalProperties:false
+      # -- null inherits (the signal is on); false stops exporting this signal without disturbing the others.
+      enabled: null
+      # -- Empty inherits otlp.protocol.
+      protocol: ""
+      # -- Empty inherits otlp.endpoint.
+      endpoint: ""
+      # -- REPLACES otlp.headers for this signal rather than merging.
+      headers: {}
+      tls: # @schema additionalProperties:false
+        # -- null inherits; explicit true/false overrides.
+        insecure: null
+        # -- null inherits; explicit true/false overrides.
+        insecure_skip_verify: null
+        # -- Empty inherits otlp.tls.ca_file.
+        ca_file: ""
+        # -- Empty inherits otlp.tls.cert_file.
+        cert_file: ""
+        # -- Empty inherits otlp.tls.key_file.
+        key_file: ""
+      # -- Empty inherits otlp.compression.
+      compression: ""
+      # -- 0 inherits otlp.timeout.
+      timeout: 0s
+      # -- 0 inherits otlp.max_request_size.
+      max_request_size: 0
+      # -- 0 inherits otlp.grpc_reconnection_period.
+      grpc_reconnection_period: 0s
+      retry: # @schema additionalProperties:false
+        # -- An untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal.
+        enabled: null
+        initial_interval: 0s
+        max_interval: 0s
+        max_elapsed_time: 0s
+    # -- Send ONE signal (logs) somewhere else. Same inheritance rules as otlp.metrics above.
+    logs: # @schema additionalProperties:false
+      # -- null inherits (the signal is on); false stops exporting this signal without disturbing the others.
+      enabled: null
+      # -- Empty inherits otlp.protocol.
+      protocol: ""
+      # -- Empty inherits otlp.endpoint.
+      endpoint: ""
+      # -- REPLACES otlp.headers for this signal rather than merging.
+      headers: {}
+      tls: # @schema additionalProperties:false
+        # -- null inherits; explicit true/false overrides.
+        insecure: null
+        # -- null inherits; explicit true/false overrides.
+        insecure_skip_verify: null
+        # -- Empty inherits otlp.tls.ca_file.
+        ca_file: ""
+        # -- Empty inherits otlp.tls.cert_file.
+        cert_file: ""
+        # -- Empty inherits otlp.tls.key_file.
+        key_file: ""
+      # -- Empty inherits otlp.compression.
+      compression: ""
+      # -- 0 inherits otlp.timeout.
+      timeout: 0s
+      # -- 0 inherits otlp.max_request_size.
+      max_request_size: 0
+      # -- 0 inherits otlp.grpc_reconnection_period.
+      grpc_reconnection_period: 0s
+      retry: # @schema additionalProperties:false
+        # -- An untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal.
+        enabled: null
+        initial_interval: 0s
+        max_interval: 0s
+        max_elapsed_time: 0s
+    # -- Send ONE signal (traces) somewhere else. Same inheritance rules as otlp.metrics above;
+    # credentials are never shared across a signal boundary.
+    traces: # @schema additionalProperties:false
+      # -- null inherits (the signal is on); false stops exporting this signal without disturbing the others.
+      enabled: null
+      # -- Empty inherits otlp.protocol.
+      protocol: ""
+      # -- Empty inherits otlp.endpoint.
+      endpoint: ""
+      # -- REPLACES otlp.headers for this signal rather than merging.
+      headers: {}
+      tls: # @schema additionalProperties:false
+        # -- null inherits; explicit true/false overrides.
+        insecure: null
+        # -- null inherits; explicit true/false overrides.
+        insecure_skip_verify: null
+        # -- Empty inherits otlp.tls.ca_file.
+        ca_file: ""
+        # -- Empty inherits otlp.tls.cert_file.
+        cert_file: ""
+        # -- Empty inherits otlp.tls.key_file.
+        key_file: ""
+      # -- Empty inherits otlp.compression.
+      compression: ""
+      # -- 0 inherits otlp.timeout.
+      timeout: 0s
+      # -- 0 inherits otlp.max_request_size.
+      max_request_size: 0
+      # -- 0 inherits otlp.grpc_reconnection_period.
+      grpc_reconnection_period: 0s
+      retry: # @schema additionalProperties:false
+        # -- An untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal.
+        enabled: null
+        initial_interval: 0s
+        max_interval: 0s
+        max_elapsed_time: 0s
 
   enrichment: # @schema additionalProperties:false
     # -- Staleness alarm threshold for the device-enrichment cache (drives the
@@ -1543,6 +1709,12 @@ config: # @schema additionalProperties:false
       # secrets and redact from the status page and logs. Reserved headers (Authorization when
       # basic auth is set, and the tenant header) win over anything set here.
       headers: {}
+      # -- off | hashed | name — whether continuous profiles carry a tailnet dimension. A tailnet
+      # name is a CUSTOMER identifier and profiles go to a different destination from metrics/logs,
+      # so this is opt-in and NOT covered by pii_filter. hashed = a stable 12-hex SHA-256 prefix
+      # (pseudonymous, not anonymous). Emitted only for a single configured tailnet; multi-tailnet
+      # gets no tag, since there is one profiler per process.
+      tailnet_label: "off" # @schema enum:["off","hashed","name"]
       tls: # @schema additionalProperties:false
         # -- Keep TLS on but skip server-certificate verification on profile uploads. A footgun —
         # prefer ca_file with the gateway's CA.
@@ -1554,6 +1726,18 @@ config: # @schema additionalProperties:false
         cert_file: ""
         # -- Client key paired with profiling.pyroscope.tls.cert_file.
         key_file: ""
+      span_profiles: # @schema additionalProperties:false
+        # -- Correlate sampled CPU profiles with trace spans, so a Grafana trace links straight to
+        # the profile. REQUIRES both tracing.enabled and profiling.pyroscope.enabled. CPU profiles
+        # ONLY — Go's runtime attaches pprof labels to CPU samples, so heap/mutex/block/goroutine
+        # profiles cannot carry span identity.
+        enabled: false
+      credential_reload: # @schema additionalProperties:false
+        # -- Governs only the background poller; last-known-good validation is always retained for
+        # a configured file regardless of this flag.
+        enabled: false
+        # -- Poll period; minimum 5s. Ignored when enabled is false.
+        interval: 30s
     # -- runtime.SetMutexProfileFraction; samples 1/N mutex-contention events for both push and
     # pull. On by default, but APPLIED ONLY when pprof or pyroscope is enabled, so it costs a
     # non-profiling pod nothing. 0 drops the mutex profile.
@@ -1572,6 +1756,48 @@ config: # @schema additionalProperties:false
     sampler: parentbased_always_on
     # -- Sample ratio in [0,1] for the *traceidratio samplers (ignored otherwise).
     sampler_arg: 1.0
+    # -- How an INBOUND traceparent's sampled bit is treated by the stream/webhook receivers:
+    # trust (today's behavior) | ignore (the local sampler alone decides, so a sender cannot force
+    # sampling) | link (start a new local root trace and link the remote one).
+    remote_parent: trust
+    # -- Per-workload-class head sampler override. An empty sampler inherits tracing.sampler above,
+    # so an untouched block behaves exactly as the single global sampler.
+    samplers: # @schema additionalProperties:false
+      scrape: # @schema additionalProperties:false
+        # -- One root span per collector scrape cycle. Same enum as tracing.sampler; empty inherits it.
+        sampler: ""
+        # -- Ratio in [0,1] for the *traceidratio samplers.
+        arg: 0.0
+      receiver: # @schema additionalProperties:false
+        # -- One root span per HEC-stream / webhook request — usually the highest-rate class, so
+        # this is the one you turn down. Empty inherits tracing.sampler.
+        sampler: ""
+        # -- Ratio in [0,1] for the *traceidratio samplers.
+        arg: 0.0
+      background: # @schema additionalProperties:false
+        # -- Periodic non-scrape work, e.g. the release/update check. Empty inherits tracing.sampler.
+        sampler: ""
+        # -- Ratio in [0,1] for the *traceidratio samplers.
+        arg: 0.0
+
+  # OTEL Resource enrichment (OPTIONAL). Bounded on purpose: Grafana Cloud promotes the whole
+  # service.* namespace to a per-series label, so service_namespace multiplies active-series
+  # cardinality. The app's own identity always wins; tailscale.tailnet / tailscale2otel.provider
+  # remain per-signal attributes (not Resource attributes) and are refused here.
+  resource: # @schema additionalProperties:false
+    # -- service.namespace — promoted to a job-adjacent LABEL on every series. Keep it
+    # low-cardinality and stable across deploys.
+    service_namespace: ""
+    # -- deployment.environment.name — outside service.*, so it lands in target_info only and may
+    # vary per environment.
+    deployment_environment: ""
+    # -- Custom Resource attributes, e.g. { deploy.team: platform }. Max 32 entries, 256-byte
+    # keys/values; reserved keys (service.name, service.version, service.instance.id,
+    # tailscale.tailnet, tailscale2otel.provider) are refused.
+    attributes: {}
+    # -- Also read OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME, filtered by the same rules. Off by
+    # default: it hands the ambient environment a channel onto a per-series label surface.
+    from_env: false
 
   version_checks: # @schema additionalProperties:false
     self: # @schema additionalProperties:false

@@ -83,12 +83,22 @@ func TestMetricsScrapeIsInstrumented(t *testing.T) {
 }
 
 // erroringCollector makes Gather fail the way a duplicate-series collision does,
-// without needing two whole provider registries.
-type erroringCollector struct{ desc *prometheus.Desc }
+// without needing two whole provider registries. err is optional — nil (the
+// zero value every existing caller uses) defaults to a two-line synthetic
+// error, so this stays backward compatible; metrics_status_test.go sets it
+// explicitly to prove an arbitrary raw error never reaches the status DTO.
+type erroringCollector struct {
+	desc *prometheus.Desc
+	err  error
+}
 
 func (c erroringCollector) Describe(ch chan<- *prometheus.Desc) { ch <- c.desc }
 func (c erroringCollector) Collect(ch chan<- prometheus.Metric) {
-	ch <- prometheus.NewInvalidMetric(c.desc, errors.New("collector exploded\nsecond line of the same error"))
+	err := c.err
+	if err == nil {
+		err = errors.New("collector exploded\nsecond line of the same error")
+	}
+	ch <- prometheus.NewInvalidMetric(c.desc, err)
 }
 
 func TestMetricsGatherErrorIsCountedAndLoggedOnOneLine(t *testing.T) {

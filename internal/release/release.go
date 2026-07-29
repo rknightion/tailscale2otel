@@ -19,6 +19,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
@@ -264,7 +266,11 @@ func (f *Fetcher) Refresh(ctx context.Context) {
 // (e.g. "self", "tailscale"), so — like hsapi's endpointLabel — the label
 // space is bounded by construction, needing no further elision.
 func (f *Fetcher) fetch(ctx context.Context) (string, error) {
-	spanCtx, span := f.tracer.Start(ctx, "release.check "+f.name, trace.WithSpanKind(trace.SpanKindClient))
+	// Classified as background so a periodic update check can be sampled
+	// independently of scrape and receiver traffic (#372).
+	spanCtx, span := f.tracer.Start(ctx, "release.check "+f.name,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(telemetry.SpanClassKey.String(telemetry.SpanClassBackground)))
 	v, status, err := f.doFetch(spanCtx)
 	if span.IsRecording() {
 		span.SetAttributes(

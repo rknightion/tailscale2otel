@@ -68,11 +68,20 @@ tailscale:
 
 ### Bare gateway URL returns 404 silently
 
-**Cause.** When `otlp.protocol: http`, `tailscale2otel` calls `<endpoint>/v1/metrics` and
-`<endpoint>/v1/logs` — it appends the per-signal paths for you. If you set `otlp.endpoint` to a
-bare gateway URL that does not end with `/otlp` (e.g. `https://otlp-gateway-prod-us-central-0.grafana.net`
-instead of `…/otlp`), those paths land at the wrong base and the gateway returns 404. Because the
-exporter sees the 404 as a successful HTTP exchange it may not raise an obvious error.
+**Cause.** When `otlp.protocol: http`, `tailscale2otel` calls `<endpoint>/v1/metrics`,
+`<endpoint>/v1/logs` and — when tracing is enabled — `<endpoint>/v1/traces`. It appends the
+per-signal paths for you. If you set `otlp.endpoint` to a bare gateway URL that does not end with
+`/otlp` (e.g. `https://otlp-gateway-prod-us-central-0.grafana.net` instead of `…/otlp`), those paths
+land at the wrong base and the gateway returns 404.
+
+**What a 404 actually does.** A 404 is a delivery FAILURE, not a silently-accepted exchange — an
+earlier version of this page claimed otherwise and was wrong (corrected 2026-07-29 under #383, and
+now pinned by the wire-contract suite in `internal/telemetry`, which drives a real 404 and asserts
+the failure is recorded). It increments `tailscale2otel_export_failures_total` and shows on the admin
+status page's delivery panel with error class `invalid`. What makes it feel silent is that the
+failure is only visible in the exporter's OWN telemetry: nothing arrives at the backend, so a
+dashboard built on the exported data looks blank rather than broken. Check the admin status page or
+the process logs, not the absence of data.
 
 **Fix.** Set `otlp.endpoint` to the base URL ending in `/otlp`:
 
@@ -81,7 +90,7 @@ otlp:
   endpoint: https://otlp-gateway-prod-us-central-0.grafana.net/otlp
 ```
 
-The per-signal suffixes (`/v1/metrics`, `/v1/logs`) are appended automatically. See
+The per-signal suffixes (`/v1/metrics`, `/v1/logs`, `/v1/traces`) are appended automatically. See
 [Configuration](configuration.md#otlp-the-otlp-exporter) for the Grafana Cloud default.
 
 ### Wrong `otlp.protocol`

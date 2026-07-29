@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1832,6 +1833,81 @@ func (c *Config) validationChecks() []configCheck {
 		return nil
 	})
 
+	// Per-class sampler overrides (#372). An EMPTY sampler is the documented way
+	// to inherit tracing.sampler, so it must not be run through the enum — only a
+	// non-empty value is checked. The arg is checked unconditionally: a
+	// nonsensical ratio left behind on a class that later switches to a ratio
+	// sampler is a trap, and the range is free to enforce either way.
+	for _, cl := range []struct {
+		key string
+		val TracingSamplerClass
+	}{
+		{"scrape", c.Tracing.Samplers.Scrape},
+		{"receiver", c.Tracing.Samplers.Receiver},
+		{"background", c.Tracing.Samplers.Background},
+	} {
+		samplerKey := "tracing.samplers." + cl.key + ".sampler"
+		argKey := "tracing.samplers." + cl.key + ".arg"
+		sampler, arg := cl.val.Sampler, cl.val.Arg
+		add(samplerKey, oneOfRemediation(samplerKey, "always_on", "always_off", "traceidratio",
+			"parentbased_always_on", "parentbased_traceidratio"), func() error {
+			if sampler == "" {
+				return nil
+			}
+			if !oneOf(sampler, "always_on", "always_off", "traceidratio",
+				"parentbased_always_on", "parentbased_traceidratio") {
+				return fmt.Errorf("%s %q invalid: must be empty (inherit tracing.sampler) or one of "+
+					"always_on, always_off, traceidratio, parentbased_always_on, parentbased_traceidratio",
+					samplerKey, sampler)
+			}
+			return nil
+		})
+		add(argKey, "Set "+argKey+" within [0,1].", func() error {
+			if arg < 0 || arg > 1 {
+				return fmt.Errorf("%s %v invalid: must be in [0,1]", argKey, arg)
+			}
+			return nil
+		})
+	}
+
+	add("tracing.remote_parent", oneOfRemediation("tracing.remote_parent", "trust", "ignore", "link"), func() error {
+		// Empty is the compatibility default (trust), so it is accepted.
+		if c.Tracing.RemoteParent != "" && !oneOf(c.Tracing.RemoteParent, "trust", "ignore", "link") {
+			return fmt.Errorf("tracing.remote_parent %q invalid: must be one of trust, ignore, link",
+				c.Tracing.RemoteParent)
+		}
+		return nil
+	})
+
+	c.validateResourceEnrichment(add)
+	c.validateCredentialReload(add)
+
+	add("profiling.pyroscope.tailnet_label",
+		oneOfRemediation("profiling.pyroscope.tailnet_label", "off", "hashed", "name"), func() error {
+			// Empty is the compatibility default (off).
+			if c.Profiling.Pyroscope.TailnetLabel != "" &&
+				!oneOf(c.Profiling.Pyroscope.TailnetLabel, "off", "hashed", "name") {
+				return fmt.Errorf("profiling.pyroscope.tailnet_label %q invalid: must be one of off, hashed, name",
+					c.Profiling.Pyroscope.TailnetLabel)
+			}
+			return nil
+		})
+
+	add("profiling.pyroscope.span_profiles.enabled",
+		"Enable both tracing.enabled and profiling.pyroscope.enabled, or turn span_profiles off.", func() error {
+			if !c.Profiling.Pyroscope.SpanProfiles.Enabled {
+				return nil
+			}
+			// Correlation needs a span to label and a profiler to receive the
+			// labels. With either half off there is nothing to correlate and the
+			// setting is silently inert — the shape #305 stopped tolerating.
+			if !c.Tracing.Enabled || !c.Profiling.Pyroscope.Enabled {
+				return fmt.Errorf("profiling.pyroscope.span_profiles.enabled requires both " +
+					"tracing.enabled and profiling.pyroscope.enabled")
+			}
+			return nil
+		})
+
 	add("version_checks.cache_ttl", "Set version_checks.cache_ttl to >= 5m.", func() error {
 		if (c.VersionChecks.Self.Enabled || c.VersionChecks.Devices.Enabled) && c.VersionChecks.CacheTTL.D() < 5*time.Minute {
 			return fmt.Errorf("version_checks.cache_ttl must be >= 5m to avoid hammering the upstream release endpoints")
@@ -2073,4 +2149,140 @@ func DefaultGeoIPDir() string {
 		return filepath.Join(filepath.Dir(LegacyCheckpointPath), "geoip")
 	}
 	return filepath.Join(dir, stateDirName, "geoip")
+}
+
+// addCheck is the signature of validationChecks' local registrar, so the
+// EPIC-04 rule groups below can be split into their own functions instead of
+// growing validationChecks by another hundred lines.
+type addCheck func(path, remediation string, fn func() error)
+
+// maxResourceStringBytes bounds resource.service_namespace,
+// resource.deployment_environment, and every resource.attributes key and value.
+// The telemetry layer already drops an over-long attribute with a warning, but a
+// single scalar in a config file is something the operator can trivially fix
+// before startup, so it is refused rather than silently truncated.
+const maxResourceStringBytes = 256
+
+// maxResourceAttributes bounds how many custom Resource attributes may be
+// declared. Custom attributes land in target_info rather than on every series,
+// so this is not a direct cardinality cap — it keeps the Resource small enough
+// to log, diff and reason about, and bounds what a config typo can inject.
+const maxResourceAttributes = 32
+
+// reservedResourceAttrKeys may never be supplied as a custom Resource
+// attribute. The service.* trio is the application's own identity, which always
+// wins — accepting an override here would either be silently ignored (inert
+// config) or, for service.version, would put a per-build label on every metric
+// series and re-break #187. tailscale.tailnet and tailscale2otel.provider are
+// deliberately signal-scoped attributes rather than Resource attributes
+// (roadmap item L) so they are real joinless labels on every backend; moving
+// either onto the Resource would undo that.
+var reservedResourceAttrKeys = []string{
+	"service.name",
+	"service.version",
+	"service.instance.id",
+	"tailscale.tailnet",
+	"tailscale2otel.provider",
+}
+
+// validateResourceEnrichment registers the #380 resource: block rules.
+func (c *Config) validateResourceEnrichment(add addCheck) {
+	add("resource.service_namespace",
+		fmt.Sprintf("Keep resource.service_namespace under %d bytes.", maxResourceStringBytes), func() error {
+			if len(c.Resource.ServiceNamespace) > maxResourceStringBytes {
+				return fmt.Errorf("resource.service_namespace is %d bytes: must be at most %d",
+					len(c.Resource.ServiceNamespace), maxResourceStringBytes)
+			}
+			return nil
+		})
+	add("resource.deployment_environment",
+		fmt.Sprintf("Keep resource.deployment_environment under %d bytes.", maxResourceStringBytes), func() error {
+			if len(c.Resource.DeploymentEnvironment) > maxResourceStringBytes {
+				return fmt.Errorf("resource.deployment_environment is %d bytes: must be at most %d",
+					len(c.Resource.DeploymentEnvironment), maxResourceStringBytes)
+			}
+			return nil
+		})
+	add("resource.attributes",
+		"Remove reserved keys, empty keys, and over-long entries from resource.attributes.", func() error {
+			if len(c.Resource.Attributes) > maxResourceAttributes {
+				return fmt.Errorf("resource.attributes has %d entries: must be at most %d",
+					len(c.Resource.Attributes), maxResourceAttributes)
+			}
+			// Sorted so the reported key is deterministic across runs rather than
+			// whichever one map iteration happened to reach first.
+			keys := make([]string, 0, len(c.Resource.Attributes))
+			for k := range c.Resource.Attributes {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				if strings.TrimSpace(k) == "" {
+					return fmt.Errorf("resource.attributes contains an empty key")
+				}
+				if slices.Contains(reservedResourceAttrKeys, k) {
+					return fmt.Errorf("resource.attributes key %q is reserved: %s", k, reservedResourceAttrReason(k))
+				}
+				if len(k) > maxResourceStringBytes {
+					return fmt.Errorf("resource.attributes key %q is %d bytes: must be at most %d",
+						k, len(k), maxResourceStringBytes)
+				}
+				if v := c.Resource.Attributes[k]; len(v) > maxResourceStringBytes {
+					return fmt.Errorf("resource.attributes[%q] value is %d bytes: must be at most %d",
+						k, len(v), maxResourceStringBytes)
+				}
+			}
+			return nil
+		})
+}
+
+// reservedResourceAttrReason explains why a key is refused, so the error is
+// actionable rather than just a rejection.
+func reservedResourceAttrReason(key string) string {
+	switch key {
+	case "tailscale.tailnet", "tailscale2otel.provider":
+		return "it is emitted as a per-signal attribute, not a Resource attribute, so it is a real label on every backend"
+	case "service.version":
+		return "the metrics Resource deliberately omits it (it would become a service_version label on every series); " +
+			"query the version via the tailscale2otel.build_info gauge instead"
+	default:
+		return "it carries the application's own identity, which always wins"
+	}
+}
+
+// minCredentialReloadInterval floors the rotation poller. Below this the
+// "support rotation" feature is really a stat() loop; secret projection in
+// Kubernetes and Docker operates on a far longer timescale than this.
+const minCredentialReloadInterval = 5 * time.Second
+
+// validateCredentialReload registers the #362 poller rules for both the OTLP
+// exporters and the Pyroscope agent.
+func (c *Config) validateCredentialReload(add addCheck) {
+	for _, r := range []struct {
+		key string
+		cfg CredentialReloadConfig
+	}{
+		{"otlp.credential_reload", c.OTLP.CredentialReload},
+		{"profiling.pyroscope.credential_reload", c.Profiling.Pyroscope.CredentialReload},
+	} {
+		key, rc := r.key, r.cfg
+		add(key+".interval",
+			fmt.Sprintf("Set %s.interval to at least %s, or disable the poller.", key, minCredentialReloadInterval),
+			func() error {
+				// Disabled means "no poller", not "misconfigured": Reload() can still
+				// be driven explicitly, so an unset interval there is legitimate.
+				if !rc.Enabled {
+					return nil
+				}
+				if rc.Interval.D() <= 0 {
+					return fmt.Errorf("%s.enabled is true but %s.interval is not set: "+
+						"an enabled poller with no interval never polls", key, key)
+				}
+				if rc.Interval.D() < minCredentialReloadInterval {
+					return fmt.Errorf("%s.interval %s is below the %s floor",
+						key, rc.Interval.D(), minCredentialReloadInterval)
+				}
+				return nil
+			})
+	}
 }

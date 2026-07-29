@@ -31,6 +31,11 @@ func exportOutcome(err error) string {
 type ExportStats struct {
 	Datapoints int64
 	LogRecords int64
+	// Spans is the trace-side sibling (#359). Populated by Provider.ExportStats()
+	// once a spanCounter field/wiring exists there — see this issue's WIRING
+	// REQUEST; zero until then, exactly like Datapoints/LogRecords are zero when
+	// self-observability is off.
+	Spans int64
 }
 
 // countingMetricExporter decorates an sdkmetric.Exporter, tallying the data
@@ -61,7 +66,10 @@ func (c *countingMetricExporter) Export(ctx context.Context, rm *metricdata.Reso
 	if o := c.obs.Load(); o != nil {
 		(*o)(SignalMetrics, exportOutcome(err), seconds)
 	}
-	return err
+	// Tag the returned error with its signal (#359) so the global otel error
+	// handler (selfobs.go) — invoked generically by the SDK's periodic reader with
+	// no signal argument — can still attribute tailscale2otel.export.failures.
+	return withExportSignal(SignalMetrics, err)
 }
 
 func (c *countingMetricExporter) count() int64 { return c.datapoints.Load() }
@@ -92,7 +100,7 @@ func (c *countingLogExporter) Export(ctx context.Context, recs []sdklog.Record) 
 	if o := c.obs.Load(); o != nil {
 		(*o)(SignalLogs, exportOutcome(err), seconds)
 	}
-	return err
+	return withExportSignal(SignalLogs, err)
 }
 
 func (c *countingLogExporter) count() int64 { return c.records.Load() }

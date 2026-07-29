@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -11,6 +13,7 @@ import (
 	"github.com/grafana/pyroscope-go"
 
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v3/internal/credreload"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
 
@@ -60,7 +63,7 @@ func pyroscopeProfileTypes(p config.ProfilingConfig) []pyroscope.ProfileType {
 // Both are reserved rather than merely defaulted: a user tag that silently
 // overwrote them would break the join to every other signal, which carries the
 // same two values as service.version / service.instance.id.
-var reservedPyroscopeTags = []string{"service_version", "service_instance_id"}
+var reservedPyroscopeTags = []string{"service_version", "service_instance_id", pyroscopeTailnetTag}
 
 // pyroscopeConfig maps the profiling config into a pyroscope.Config. The tag
 // mapping and the transport wiring are both here so the whole SDK-facing surface
@@ -87,6 +90,13 @@ func pyroscopeConfig(cfg *config.Config, version string, opts ...profilingOption
 		}
 		tags[k] = v
 	}
+	// Optional tailnet dimension (#376). Added AFTER the operator tag map so it
+	// cannot be shadowed by a user tag of the same name, and named in
+	// reservedPyroscopeTags for the same reason. Off by default; see
+	// tailnetProfileLabel for why "hashed" is the interesting mode.
+	if label := tailnetProfileLabel(cfg); label != "" {
+		tags[pyroscopeTailnetTag] = label
+	}
 	topts := pyroscopeTransportOptionsFromConfig(p)
 	pc := pyroscope.Config{
 		ApplicationName:   serviceName,
@@ -106,7 +116,7 @@ func pyroscopeConfig(cfg *config.Config, version string, opts ...profilingOption
 	}
 	// A TLS material failure is reported by startProfiling rather than here: the
 	// mapping has no logger, and a profiler that cannot upload is non-fatal.
-	if client, err := newProfilingUploadClient(topts, profilingHealthState, po.emitter); err == nil {
+	if client, err := newProfilingUploadClient(topts, profilingHealthState, po.emitter, po.credReload); err == nil {
 		pc.HTTPClient = client
 	}
 	if d := p.UploadRate.D(); d > 0 {
@@ -118,6 +128,9 @@ func pyroscopeConfig(cfg *config.Config, version string, opts ...profilingOption
 // profilingOptions are the live dependencies startProfiling threads into the
 // otherwise config-only mapping.
 type profilingOptions struct {
+	// credReload, when non-nil, makes the upload client read its TLS material at
+	// dial time so a rotated CA or client keypair needs no restart (#362).
+	credReload *credreload.Reloader
 	// emitter records the upload-health metrics. Nil withholds ONLY the five
 	// tailscale2otel.profiling.upload.* metrics: the tracker still records
 	// everything, so the admin status page is fully populated either way.
@@ -135,6 +148,13 @@ type profilingOption func(*profilingOptions)
 // the upload-health METRICS on; the status page needs nothing.
 func withProfilingEmitter(e telemetry.Emitter) profilingOption {
 	return func(o *profilingOptions) { o.emitter = e }
+}
+
+// withProfilingCredReload attaches the outbound credential/TLS reloader (#362).
+// A nil reloader leaves the upload client on the static material it reads once
+// at construction.
+func withProfilingCredReload(r *credreload.Reloader) profilingOption {
+	return func(o *profilingOptions) { o.credReload = r }
 }
 
 // startProfiling applies the runtime mutex/block profiling rates (needed by both
@@ -205,3 +225,68 @@ func (p pyroscopeLogger) msg(format string, args ...any) string {
 func (p pyroscopeLogger) Infof(format string, args ...any)  { p.l.Info(p.msg(format, args...)) }
 func (p pyroscopeLogger) Debugf(format string, args ...any) { p.l.Debug(p.msg(format, args...)) }
 func (p pyroscopeLogger) Errorf(format string, args ...any) { p.l.Error(p.msg(format, args...)) }
+
+// pyroscopeTailnetTag is the profile label carrying the tailnet dimension when
+// profiling.pyroscope.tailnet_label is enabled (#376).
+const pyroscopeTailnetTag = "tailscale_tailnet"
+
+// tailnetProfileLabel resolves the tailnet dimension for continuous profiles, or
+// "" when the feature is off (the default).
+//
+// Why this is opt-in and separate from the pii_filter categories: those govern
+// the metric/log/span pipeline, and profiles go to a different destination with a
+// different audience. A tailnet name is a customer identifier, so shipping it to
+// a profiles backend has to be a deliberate, separately-stated choice rather
+// than something inherited from an unrelated toggle.
+//
+// The three modes:
+//
+//   - off: no tag at all. Profiles stay free of Tailscale identifiers.
+//   - hashed: a stable 12-hex-char SHA-256 prefix. This is the interesting mode
+//     for an MSP — it answers "which tenant is burning the CPU" and groups
+//     consistently across restarts, without the name leaving the process. It is
+//     NOT anonymization against someone who already knows the tailnet names
+//     (the input space is small enough to enumerate), which is why the docs call
+//     it pseudonymous rather than anonymous.
+//   - name: the literal name, for a single-tenant operator profiling their own
+//     tailnet where there is no third party to protect.
+//
+// In multi-tailnet mode there is exactly ONE profiler per process (profiling is
+// process-scoped, not per-tailnet), so a per-tailnet value would be a lie. The
+// label is therefore only emitted for a single resolved tailnet; a multi-tailnet
+// deployment gets no tag regardless of mode, and service_instance_id remains the
+// dimension that distinguishes replicas.
+func tailnetProfileLabel(cfg *config.Config) string {
+	mode := cfg.Profiling.Pyroscope.TailnetLabel
+	if mode == "" || mode == "off" {
+		return ""
+	}
+	names := configuredTailnetNames(cfg)
+	if len(names) != 1 || names[0] == "" || names[0] == "-" {
+		// Zero names (Headscale, or nothing resolved yet), several names, or the
+		// "use my default tailnet" sentinel: none of those has a single truthful
+		// value to report.
+		return ""
+	}
+	if mode == "name" {
+		return names[0]
+	}
+	sum := sha256.Sum256([]byte(names[0]))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+// configuredTailnetNames returns the tailnet names the config names, without
+// contacting the API — this runs during profiler setup, before any resolution.
+func configuredTailnetNames(cfg *config.Config) []string {
+	if len(cfg.Tailnets) > 0 {
+		out := make([]string, 0, len(cfg.Tailnets))
+		for _, t := range cfg.Tailnets {
+			out = append(out, t.Name)
+		}
+		return out
+	}
+	if cfg.Tailscale.Tailnet != "" {
+		return []string{cfg.Tailscale.Tailnet}
+	}
+	return nil
+}

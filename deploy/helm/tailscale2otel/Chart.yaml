@@ -149,8 +149,16 @@ type: application
 # (pprof + Pyroscope push, opt-in) plus PYROSCOPE_* secret keys.
 # 0.2.0: BREAKING — the full app config now lives under values.yaml `config:`
 # (single source of truth, no chart<->config drift). See CHANGELOG.md.
+# 0.30.0: re-sync `config:` with the app's config surface for the OTLP-hardening /
+# tracing-samplers / Resource-enrichment features (#360-#362, #366, #370, #372, #373, #380, #384) —
+# it had drifted 85 keys behind config.Default(). Adds otlp.compression/timeout/max_request_size/
+# grpc_reconnection_period, otlp.retry.*, otlp.batch.{logs,traces}.*, otlp.stdout.*,
+# otlp.credential_reload.*, the three per-signal blocks otlp.{metrics,logs,traces}.*,
+# profiling.pyroscope.span_profiles.enabled, profiling.pyroscope.credential_reload.*,
+# profiling.pyroscope.tailnet_label, tracing.remote_parent, tracing.samplers.*, and the new
+# top-level resource: block (service_namespace/deployment_environment/attributes/from_env).
 # 0.28.0: add config.flows.capacity_profile (#329).
-version: 0.29.0
+version: 0.30.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "3.0.0" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/

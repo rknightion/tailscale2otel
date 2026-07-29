@@ -1539,9 +1539,114 @@
     "otlp": {
       "additionalProperties": false,
       "properties": {
+        "batch": {
+          "additionalProperties": false,
+          "properties": {
+            "logs": {
+              "additionalProperties": false,
+              "properties": {
+                "export_interval": {
+                  "default": "0s",
+                  "description": "how often a partial batch is flushed",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "export_max_batch_size": {
+                  "default": 0,
+                  "description": "records per export; must be \u003c= max_queue_size when both are set",
+                  "type": "integer"
+                },
+                "export_timeout": {
+                  "default": "0s",
+                  "description": "bound on one export attempt",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_queue_size": {
+                  "default": 0,
+                  "description": "records buffered before new ones are dropped (non-blocking by design)",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "traces": {
+              "additionalProperties": false,
+              "properties": {
+                "export_interval": {
+                  "default": "0s",
+                  "description": "how often a partial batch is flushed",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "export_max_batch_size": {
+                  "default": 0,
+                  "description": "spans per export; must be \u003c= max_queue_size when both are set",
+                  "type": "integer"
+                },
+                "export_timeout": {
+                  "default": "0s",
+                  "description": "bound on one export attempt",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_queue_size": {
+                  "default": 0,
+                  "description": "spans buffered before new ones are dropped",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "compression": {
+          "default": "",
+          "description": "gzip | none. Empty defers to OTEL_EXPORTER_OTLP[_\u003cSIGNAL\u003e]_COMPRESSION, then the exporter default. TS2OTEL_OTLP__COMPRESSION",
+          "enum": [
+            "",
+            "gzip",
+            "none"
+          ],
+          "type": "string"
+        },
+        "credential_reload": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "governs the background poller only; last-known-good is always retained for a configured file",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "30s",
+              "description": "poll period; minimum 5s. Ignored when enabled is false",
+              "examples": [
+                "30s"
+              ],
+              "minimum": 0,
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "endpoint": {
           "default": "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
-          "description": "OTLP base URL (the exporter appends /v1/metrics and /v1/logs itself)",
+          "description": "OTLP base URL (the exporter appends /v1/metrics, /v1/logs and /v1/traces itself)",
           "type": "string"
         },
         "grafana_cloud": {
@@ -1563,6 +1668,15 @@
             }
           },
           "type": "object"
+        },
+        "grpc_reconnection_period": {
+          "default": "0s",
+          "description": "force a fresh gRPC connection attempt after this long; gRPC only, 0 = the gRPC client default",
+          "examples": [
+            "0s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
         },
         "headers": {
           "additionalProperties": {
@@ -1587,6 +1701,144 @@
           },
           "type": "object"
         },
+        "logs": {
+          "additionalProperties": false,
+          "properties": {
+            "compression": {
+              "default": "",
+              "description": "empty inherits otlp.compression",
+              "type": "string"
+            },
+            "enabled": {
+              "description": "null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "endpoint": {
+              "default": "",
+              "description": "empty inherits otlp.endpoint",
+              "type": "string"
+            },
+            "grpc_reconnection_period": {
+              "default": "0s",
+              "description": "0 inherits otlp.grpc_reconnection_period",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "REPLACES otlp.headers for this signal rather than merging, so one signal's credential never reaches another's endpoint",
+              "type": "object"
+            },
+            "max_request_size": {
+              "default": 0,
+              "description": "0 inherits otlp.max_request_size",
+              "type": "integer"
+            },
+            "protocol": {
+              "default": "",
+              "description": "empty inherits otlp.protocol",
+              "type": "string"
+            },
+            "retry": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "initial_interval": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_elapsed_time": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_interval": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "timeout": {
+              "default": "0s",
+              "description": "0 inherits otlp.timeout",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "tls": {
+              "additionalProperties": false,
+              "properties": {
+                "ca_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                },
+                "cert_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                },
+                "insecure": {
+                  "description": "null inherits; explicit true/false overrides",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "insecure_skip_verify": {
+                  "description": "null inherits; explicit true/false overrides",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "key_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "max_request_size": {
+          "default": 0,
+          "description": "bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a 413. Use metric_export_batch_size to actually stay under an ingest limit",
+          "type": "integer"
+        },
         "metric_export_batch_size": {
           "default": 10000,
           "description": "maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels)",
@@ -1602,6 +1854,139 @@
           "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
         },
+        "metrics": {
+          "additionalProperties": false,
+          "properties": {
+            "compression": {
+              "default": "",
+              "description": "empty inherits otlp.compression",
+              "type": "string"
+            },
+            "enabled": {
+              "description": "null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "endpoint": {
+              "default": "",
+              "description": "empty inherits otlp.endpoint",
+              "type": "string"
+            },
+            "grpc_reconnection_period": {
+              "default": "0s",
+              "description": "0 inherits otlp.grpc_reconnection_period",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "REPLACES otlp.headers for this signal rather than merging, so one signal's credential never reaches another's endpoint",
+              "type": "object"
+            },
+            "max_request_size": {
+              "default": 0,
+              "description": "0 inherits otlp.max_request_size",
+              "type": "integer"
+            },
+            "protocol": {
+              "default": "",
+              "description": "empty inherits otlp.protocol",
+              "type": "string"
+            },
+            "retry": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "initial_interval": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_elapsed_time": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_interval": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "timeout": {
+              "default": "0s",
+              "description": "0 inherits otlp.timeout",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "tls": {
+              "additionalProperties": false,
+              "properties": {
+                "ca_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                },
+                "cert_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                },
+                "insecure": {
+                  "description": "null inherits; explicit true/false overrides",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "insecure_skip_verify": {
+                  "description": "null inherits; explicit true/false overrides",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "key_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
         "protocol": {
           "default": "http",
           "description": "http | grpc | stdout (stdout = print signals to the console for local debug, no backend)",
@@ -1610,6 +1995,76 @@
             "http",
             "stdout"
           ],
+          "type": "string"
+        },
+        "retry": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "an explicit false genuinely disables retry (distinct from omitting this block)",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "initial_interval": {
+              "default": "5s",
+              "description": "first backoff delay",
+              "examples": [
+                "5s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "max_elapsed_time": {
+              "default": "1m",
+              "description": "give up after this long",
+              "examples": [
+                "1m"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "max_interval": {
+              "default": "30s",
+              "description": "backoff ceiling",
+              "examples": [
+                "30s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "stdout": {
+          "additionalProperties": false,
+          "properties": {
+            "metric_interval": {
+              "default": "5s",
+              "description": "short cadence so a debug run doesn't wait 60s for a metric; logs and spans are emitted synchronously",
+              "examples": [
+                "5s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "pretty": {
+              "default": false,
+              "description": "indent the emitted JSON",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "timeout": {
+          "default": "0s",
+          "description": "per-request export timeout; 0 defers to OTEL_EXPORTER_OTLP[_\u003cSIGNAL\u003e]_TIMEOUT, then the exporter's 10s. TS2OTEL_OTLP__TIMEOUT",
+          "examples": [
+            "0s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
         },
         "tls": {
@@ -1639,6 +2094,139 @@
               "default": "",
               "description": "client private key path (for mutual TLS)",
               "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "traces": {
+          "additionalProperties": false,
+          "properties": {
+            "compression": {
+              "default": "",
+              "description": "empty inherits otlp.compression",
+              "type": "string"
+            },
+            "enabled": {
+              "description": "null inherits (the signal is on); false stops exporting this signal WITHOUT disturbing the others",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "endpoint": {
+              "default": "",
+              "description": "empty inherits otlp.endpoint",
+              "type": "string"
+            },
+            "grpc_reconnection_period": {
+              "default": "0s",
+              "description": "0 inherits otlp.grpc_reconnection_period",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "REPLACES otlp.headers for this signal rather than merging, so one signal's credential never reaches another's endpoint",
+              "type": "object"
+            },
+            "max_request_size": {
+              "default": 0,
+              "description": "0 inherits otlp.max_request_size",
+              "type": "integer"
+            },
+            "protocol": {
+              "default": "",
+              "description": "empty inherits otlp.protocol",
+              "type": "string"
+            },
+            "retry": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "initial_interval": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_elapsed_time": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_interval": {
+                  "default": "0s",
+                  "description": "an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal",
+                  "examples": [
+                    "0s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "timeout": {
+              "default": "0s",
+              "description": "0 inherits otlp.timeout",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "tls": {
+              "additionalProperties": false,
+              "properties": {
+                "ca_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                },
+                "cert_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                },
+                "insecure": {
+                  "description": "null inherits; explicit true/false overrides",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "insecure_skip_verify": {
+                  "description": "null inherits; explicit true/false overrides",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "key_file": {
+                  "default": "",
+                  "description": "every empty/null field inherits the matching otlp.tls value",
+                  "type": "string"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -1758,6 +2346,27 @@
               "description": "Grafana Cloud: the profiles instance ID (set via TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER)",
               "type": "string"
             },
+            "credential_reload": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "governs the background poller only",
+                  "type": "boolean"
+                },
+                "interval": {
+                  "default": "30s",
+                  "description": "poll period; minimum 5s. Ignored when enabled is false",
+                  "examples": [
+                    "30s"
+                  ],
+                  "minimum": 0,
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "enabled": {
               "default": false,
               "description": "run the Pyroscope continuous-profiling push agent",
@@ -1775,12 +2384,34 @@
               "description": "REQUIRED when enabled, e.g. http://pyroscope:4040 or https://profiles-prod-NNN.grafana.net",
               "type": "string"
             },
+            "span_profiles": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "REQUIRES tracing.enabled AND profiling.pyroscope.enabled. CPU profiles ONLY — Go attaches pprof labels to CPU samples, so heap/mutex/block/goroutine profiles cannot carry span identity",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
             "tags": {
               "additionalProperties": {
                 "type": "string"
               },
               "description": "extra static labels merged onto every profile, e.g. { env: prod }",
               "type": "object"
+            },
+            "tailnet_label": {
+              "default": "off",
+              "description": "off | hashed | name — whether continuous profiles carry a tailnet dimension. A tailnet name is a CUSTOMER identifier and profiles go to a different destination from metrics/logs, so this is opt-in and NOT covered by pii_filter. hashed = a stable 12-hex SHA-256 prefix (answers \"which tenant is burning CPU\" for an MSP without shipping the name; pseudonymous, not anonymous — a small name space is enumerable). Emitted only for a single configured tailnet; multi-tailnet gets no tag, since there is one profiler per process. TS2OTEL_PROFILING__PYROSCOPE__TAILNET_LABEL",
+              "enum": [
+                "",
+                "off",
+                "hashed",
+                "name"
+              ],
+              "type": "string"
             },
             "tenant_id": {
               "default": "",
@@ -1917,6 +2548,34 @@
         "headscale"
       ],
       "type": "string"
+    },
+    "resource": {
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "custom Resource attributes, e.g. { deploy.team: platform }. Max 32 entries, 256-byte keys/values; reserved keys are refused. FILE-ONLY (maps aren't settable via env)",
+          "type": "object"
+        },
+        "deployment_environment": {
+          "default": "",
+          "description": "deployment.environment.name — outside service.*, so it lands in target_info only and may vary per environment. TS2OTEL_RESOURCE__DEPLOYMENT_ENVIRONMENT",
+          "type": "string"
+        },
+        "from_env": {
+          "default": false,
+          "description": "also read OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME, filtered by the same rules. Off by default: it hands the ambient environment a channel onto a per-series label surface. TS2OTEL_RESOURCE__FROM_ENV",
+          "type": "boolean"
+        },
+        "service_namespace": {
+          "default": "",
+          "description": "service.namespace — promoted to a job-adjacent LABEL on every series. Keep it low-cardinality and stable across deploys. TS2OTEL_RESOURCE__SERVICE_NAMESPACE",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "self_observability": {
       "additionalProperties": false,
@@ -2487,6 +3146,17 @@
           "description": "emit spans. TS2OTEL_TRACING__ENABLED",
           "type": "boolean"
         },
+        "remote_parent": {
+          "default": "trust",
+          "description": "how an INBOUND traceparent's sampled bit is treated by the stream/webhook receivers: trust (today's behavior) | ignore (the local sampler alone decides, so a sender cannot force sampling) | link (start a new local root trace and link the remote one). TS2OTEL_TRACING__REMOTE_PARENT",
+          "enum": [
+            "",
+            "trust",
+            "ignore",
+            "link"
+          ],
+          "type": "string"
+        },
         "sampler": {
           "default": "parentbased_always_on",
           "description": "head sampler: always_on|always_off|traceidratio|parentbased_always_on|parentbased_traceidratio. TS2OTEL_TRACING__SAMPLER",
@@ -2505,6 +3175,90 @@
           "maximum": 1,
           "minimum": 0,
           "type": "number"
+        },
+        "samplers": {
+          "additionalProperties": false,
+          "properties": {
+            "background": {
+              "additionalProperties": false,
+              "properties": {
+                "arg": {
+                  "default": 0,
+                  "description": "TS2OTEL_TRACING__SAMPLERS__BACKGROUND__ARG",
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "sampler": {
+                  "default": "",
+                  "description": "TS2OTEL_TRACING__SAMPLERS__BACKGROUND__SAMPLER",
+                  "enum": [
+                    "",
+                    "always_on",
+                    "always_off",
+                    "traceidratio",
+                    "parentbased_always_on",
+                    "parentbased_traceidratio"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "receiver": {
+              "additionalProperties": false,
+              "properties": {
+                "arg": {
+                  "default": 0,
+                  "description": "TS2OTEL_TRACING__SAMPLERS__RECEIVER__ARG",
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "sampler": {
+                  "default": "",
+                  "description": "TS2OTEL_TRACING__SAMPLERS__RECEIVER__SAMPLER",
+                  "enum": [
+                    "",
+                    "always_on",
+                    "always_off",
+                    "traceidratio",
+                    "parentbased_always_on",
+                    "parentbased_traceidratio"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "scrape": {
+              "additionalProperties": false,
+              "properties": {
+                "arg": {
+                  "default": 0,
+                  "description": "ratio in [0,1] for the *traceidratio samplers. TS2OTEL_TRACING__SAMPLERS__SCRAPE__ARG",
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "sampler": {
+                  "default": "",
+                  "description": "same enum as tracing.sampler. TS2OTEL_TRACING__SAMPLERS__SCRAPE__SAMPLER",
+                  "enum": [
+                    "",
+                    "always_on",
+                    "always_off",
+                    "traceidratio",
+                    "parentbased_always_on",
+                    "parentbased_traceidratio"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
         }
       },
       "type": "object"

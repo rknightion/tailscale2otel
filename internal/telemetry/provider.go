@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -94,14 +95,28 @@ type Options struct {
 	PrometheusEnabled bool
 
 	// Provider is the control-plane backend (tailscale|headscale); emitted as the
-	// tailscale2otel.provider resource attribute when non-empty.
+	// tailscale2otel.provider attribute on every metric data point, log record and
+	// span when non-empty.
+	//
+	// NOT a Resource attribute, despite what this comment said until #383 fixed
+	// it: roadmap item L moved both this and TailnetName off the Resource
+	// deliberately (see constLabelAttrs in resource.go). On the Resource they
+	// would live only in target_info on Grafana Cloud's OTLP→Prometheus mapping,
+	// forcing a join on every query; as signal-scoped attributes they are real
+	// labels on every backend, including the Prometheus pull endpoint.
 	Provider string
 
-	// TailnetName, when non-empty, is emitted as the tailscale.tailnet resource
-	// attribute. The process-level provider leaves it empty; each per-tailnet
-	// provider sets it so all of that tailnet's signals carry the dimension in the
-	// Resource. Pair it with a distinct InstanceID per tailnet (see ProviderSet)
-	// so each tailnet is its own OTLP target and series don't collide.
+	// TailnetName, when non-empty, is emitted as the tailscale.tailnet attribute on
+	// every metric data point, log record and span — a signal-scoped attribute,
+	// NOT a Resource attribute (see the Provider field above and constLabelAttrs).
+	// The process-level provider leaves it empty; each per-tailnet provider sets
+	// it so all of that tailnet's signals carry the dimension. Pair it with a
+	// distinct InstanceID per tailnet (see ProviderSet) so each tailnet is its own
+	// OTLP target and series don't collide.
+	//
+	// Subject to the PII policy: an explicitly disabled pii.CatTailnetName omits
+	// the attribute, and per-tailnet series then stay distinct via InstanceID
+	// alone.
 	TailnetName string
 
 	// PIIFilter controls which PII / identifier categories are emitted. A nil map
@@ -149,6 +164,23 @@ type Options struct {
 	// (#370). Defined in spanprofile.go.
 	Profiles ProfileOptions
 
+	// DynamicHeaders and DynamicTLSConfig, when non-nil, are consulted per
+	// REQUEST (headers) and per HANDSHAKE (TLS) instead of the static Headers /
+	// CA/Cert/Key fields, so a rotated token or certificate takes effect without
+	// restarting the process (#362).
+	//
+	// They have to be funcs rather than values: the OTLP exporters bake headers
+	// and *tls.Config in at construction, so the only way to make either dynamic
+	// is to intercept later — a custom http.RoundTripper for HTTP, per-RPC
+	// credentials plus tls.Config.GetClientCertificate for gRPC. Both must be
+	// cheap and non-blocking; internal/credreload returns a cached immutable
+	// snapshot and never touches the filesystem on this path.
+	//
+	// Nil (the default) keeps the exact static construction, so a deployment that
+	// configures no watched file pays nothing and behaves identically.
+	DynamicHeaders   func() map[string]string
+	DynamicTLSConfig func() *tls.Config
+
 	// Logger receives diagnostics from the telemetry pipeline (currently
 	// label-collision resolutions in the Emitter). Nil disables that logging.
 	Logger *slog.Logger
@@ -167,8 +199,15 @@ type Provider struct {
 	metricCounter *countingMetricExporter // always installed; tallies only under self-obs
 	delivery      *deliveryTracker        // per-signal OTLP delivery outcomes (#317)
 	logCounter    *countingLogExporter    // nil unless self-obs enabled
+	spanCounter   *observingSpanExporter  // nil unless tracing is enabled
 
 	promReg *prometheus.Registry // nil unless Options.PrometheusEnabled
+
+	// batchQueues is the log/span processor queue tracker (#358). Non-nil only
+	// under self-observability: the queueing wrappers it needs replace the plain
+	// SDK processors, so a deployment that exports no self-telemetry keeps the
+	// untouched SDK code path rather than paying for instrumentation nobody reads.
+	batchQueues *BatchQueueTracker
 }
 
 // NewProvider builds the telemetry pipeline for the given options.
@@ -216,6 +255,14 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	logCounter := newCountingLogExporter(logExp, opts.SelfObsEnabled, delivery)
 	logExp = logCounter
 
+	// Built before the processors so newLogProcessor/newSpanProcessor can install
+	// their queueing wrappers against it. Gated on self-obs because the wrappers
+	// are the only way the SDK's otherwise-unreachable queue depth and drop count
+	// become observable at all (see #382: the real counters are private fields on
+	// unexported SDK types), and they are not free.
+	if opts.SelfObsEnabled && opts.Batch.Tracker == nil {
+		opts.Batch.Tracker = NewBatchQueueTracker()
+	}
 	metricReader, err := newMetricReader(metricExp, opts)
 	if err != nil {
 		return nil, err
@@ -240,6 +287,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	)
 
 	var tp *sdktrace.TracerProvider
+	var spanCounter *observingSpanExporter
 	if opts.TracingEnabled {
 		traceExp, err := newTraceExporter(ctx, opts)
 		if err != nil {
@@ -253,7 +301,9 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		traceExp = newPIISpanExporter(traceExp, opts.PIIFilter)
 		// Outermost, so it times and observes the whole export including the PII
 		// filter's work — that is what the backend's latency actually is.
-		traceExp = newObservingSpanExporter(traceExp, delivery)
+		spanObserver := newObservingSpanExporter(traceExp, delivery)
+		spanCounter = spanObserver
+		traceExp = spanObserver
 		tpOpts := []sdktrace.TracerProviderOption{
 			sdktrace.WithResource(logRes),
 			sdktrace.WithSpanProcessor(newSpanProcessor(traceExp, opts)),
@@ -266,7 +316,12 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	}
 	tracer := tracenoop.NewTracerProvider().Tracer(scopeName)
 	if tp != nil {
-		tracer = tp.Tracer(scopeName)
+		// The Pyroscope span-profile bridge wraps the TracerProvider so each span
+		// stamps pprof labels on its goroutine (#370). Only the TRACER is taken
+		// from the wrapper: p.tp stays the real *sdktrace.TracerProvider so
+		// ForceFlush and Shutdown keep operating on the SDK directly. A zero
+		// ProfileOptions returns tp unchanged, so this is a no-op by default.
+		tracer = wrapTracerProviderForProfiles(tp, opts.Profiles).Tracer(scopeName)
 	}
 
 	var card *CardinalityTracker
@@ -307,9 +362,11 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 
 		metricCounter: metricCounter,
 		logCounter:    logCounter,
+		spanCounter:   spanCounter,
 		delivery:      delivery,
 
-		promReg: promReg,
+		promReg:     promReg,
+		batchQueues: opts.Batch.Tracker,
 	}, nil
 }
 
@@ -323,6 +380,12 @@ func (p *Provider) ExportStats() ExportStats {
 	}
 	if p.logCounter != nil {
 		s.LogRecords = p.logCounter.count()
+	}
+	// Unlike the metric and log tallies, the span count is NOT gated on self-obs:
+	// observingSpanExporter is installed whenever tracing is on (it also feeds the
+	// delivery tracker behind the admin page), so the number is already there.
+	if p.spanCounter != nil {
+		s.Spans = p.spanCounter.count()
 	}
 	return s
 }
@@ -349,6 +412,11 @@ func (p *Provider) PromGatherer() prometheus.Gatherer {
 // self-observability is disabled. The caller drives Report on the export
 // interval and may call Report safely even when this is nil.
 func (p *Provider) Cardinality() *CardinalityTracker { return p.card }
+
+// BatchQueues returns the log/span processor queue tracker, or nil when
+// self-observability is disabled (no queueing wrappers were installed). The
+// caller drives Report on the export interval, mirroring Cardinality.
+func (p *Provider) BatchQueues() *BatchQueueTracker { return p.batchQueues }
 
 // Tracer returns the tracer collectors-adjacent infrastructure (scheduler,
 // tsapi transport, receivers) records spans with. When tracing is disabled it is

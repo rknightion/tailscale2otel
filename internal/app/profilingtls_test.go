@@ -53,7 +53,7 @@ func TestPyroscopeTLS_CustomCA(t *testing.T) {
 
 	t.Run("without the CA the handshake fails and classifies as tls", func(t *testing.T) {
 		health := newProfilingHealth()
-		client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, health, nil)
+		client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, health, nil, nil)
 		if err != nil {
 			t.Fatalf("newProfilingUploadClient: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestPyroscopeTLS_CustomCA(t *testing.T) {
 
 	t.Run("with the CA the upload succeeds", func(t *testing.T) {
 		health := newProfilingHealth()
-		client, err := newProfilingUploadClient(pyroscopeTransportOptions{CAFile: caPath}, health, nil)
+		client, err := newProfilingUploadClient(pyroscopeTransportOptions{CAFile: caPath}, health, nil, nil)
 		if err != nil {
 			t.Fatalf("newProfilingUploadClient: %v", err)
 		}
@@ -91,7 +91,7 @@ func TestPyroscopeTLS_CustomCA(t *testing.T) {
 	})
 
 	t.Run("insecure_skip_verify also reaches it, without the CA", func(t *testing.T) {
-		client, err := newProfilingUploadClient(pyroscopeTransportOptions{InsecureSkipVerify: true}, newProfilingHealth(), nil)
+		client, err := newProfilingUploadClient(pyroscopeTransportOptions{InsecureSkipVerify: true}, newProfilingHealth(), nil, nil)
 		if err != nil {
 			t.Fatalf("newProfilingUploadClient: %v", err)
 		}
@@ -220,7 +220,7 @@ func TestPyroscopeTLS_MutualTLS(t *testing.T) {
 
 	t.Run("without a client certificate the server rejects the connection", func(t *testing.T) {
 		health := newProfilingHealth()
-		client, err := newProfilingUploadClient(pyroscopeTransportOptions{CAFile: pki.caPath}, health, nil)
+		client, err := newProfilingUploadClient(pyroscopeTransportOptions{CAFile: pki.caPath}, health, nil, nil)
 		if err != nil {
 			t.Fatalf("newProfilingUploadClient: %v", err)
 		}
@@ -242,7 +242,7 @@ func TestPyroscopeTLS_MutualTLS(t *testing.T) {
 			CAFile:   pki.caPath,
 			CertFile: pki.certPath,
 			KeyFile:  pki.keyPath,
-		}, health, nil)
+		}, health, nil, nil)
 		if err != nil {
 			t.Fatalf("newProfilingUploadClient: %v", err)
 		}
@@ -265,7 +265,7 @@ func TestPyroscopeTLS_MutualTLS(t *testing.T) {
 		client, err := newProfilingUploadClient(pyroscopeTransportOptions{
 			CertFile: pki.certPath,
 			KeyFile:  pki.keyPath,
-		}, newProfilingHealth(), nil)
+		}, newProfilingHealth(), nil, nil)
 		if err != nil {
 			t.Fatalf("newProfilingUploadClient: %v", err)
 		}
@@ -304,7 +304,7 @@ func TestPyroscopeTLS_UnusableMaterial(t *testing.T) {
 			if _, err := c.opts.tlsConfig(); err == nil {
 				t.Fatal("tlsConfig() returned no error for unusable material")
 			}
-			if _, err := newProfilingUploadClient(c.opts, newProfilingHealth(), nil); err == nil {
+			if _, err := newProfilingUploadClient(c.opts, newProfilingHealth(), nil, nil); err == nil {
 				t.Error("newProfilingUploadClient returned no error for unusable material")
 			}
 		})
@@ -495,7 +495,7 @@ func TestRedactSecretsFuncIgnoresTrivialValues(t *testing.T) {
 // timeout, and never following redirects (net/http strips Authorization across a
 // redirect, which the upstream SDK comments on at length).
 func TestProfilingUploadClientKeepsSDKClientPolicy(t *testing.T) {
-	client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, newProfilingHealth(), nil)
+	client, err := newProfilingUploadClient(pyroscopeTransportOptions{}, newProfilingHealth(), nil, nil)
 	if err != nil {
 		t.Fatalf("newProfilingUploadClient: %v", err)
 	}
