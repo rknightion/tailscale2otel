@@ -122,15 +122,25 @@ var rulesBySuffix = map[string]schemaRule{
 	"address_order":              {enum: []string{"ipv4", "ipv6"}},
 	"instance_source":            {enum: []string{"address", "name", "hostname"}},
 	"corruption":                 {enum: []string{"fail"}},
-	"layout":                     {enum: []string{"", "partitioned", "flat"}},        // *.objectstore.layout (empty = partitioned)
-	"capacity_profile":           {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
-	"metric_export_batch_size":   {min: f64(1)},
-	"rollup_top_n":               {min: f64(0)},
-	"label_value_sample_cap":     {min: f64(0)},
-	"warning_threshold":          {min: f64(0)},
-	"critical_threshold":         {min: f64(0)},
-	"sampler_arg":                {min: f64(0), max: f64(1)},
-	"port":                       {min: f64(1), max: f64(65535)}, // collectors.node_metrics.discovery.port
+	"layout":                     {enum: []string{"", "partitioned", "flat"}}, // *.objectstore.layout (empty = partitioned)
+	// The Kubernetes-audit destination reads tsrecorder's own bucket, not a
+	// Tailscale export, so it takes the OPPOSITE enum: "recorder" only, with
+	// partitioned and flat refused by validateK8sAuditLayout. Without these two
+	// exact keys the generic "layout" suffix above would admit exactly the two
+	// values that are rejected and reject the only one that works — a schema
+	// that fails config.example.yaml. Matching is longest-suffix-first, so these
+	// win; both spellings are needed because the collectors block nests
+	// k8s_audit.objectstore while the tailnets block nests objectstore.k8s_audit.
+	"k8s_audit.objectstore.layout": {enum: []string{"", "recorder"}},
+	"objectstore.k8s_audit.layout": {enum: []string{"", "recorder"}},
+	"capacity_profile":             {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
+	"metric_export_batch_size":     {min: f64(1)},
+	"rollup_top_n":                 {min: f64(0)},
+	"label_value_sample_cap":       {min: f64(0)},
+	"warning_threshold":            {min: f64(0)},
+	"critical_threshold":           {min: f64(0)},
+	"sampler_arg":                  {min: f64(0), max: f64(1)},
+	"port":                         {min: f64(1), max: f64(65535)}, // collectors.node_metrics.discovery.port
 }
 
 // applyRule looks up path (and, failing that, each of its dotted suffixes,

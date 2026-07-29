@@ -28,7 +28,21 @@ const (
 	// nothing and refusing it would silently skip real data if the publisher ever
 	// switches to it.
 	timeOnlyKeyLayout = "2006/01/02/15:04:05"
+	// recorderKeyLayout is the basename format tsrecorder writes. time.RFC3339Nano
+	// parses all trailing-zero-trimmed widths, so one layout covers 1-9 digits.
+	recorderKeyLayout = time.RFC3339Nano
 )
+
+// recorderSuffixes are the object kinds the recorder layout accepts. tsrecorder
+// writes no compressed objects, so there is no codec grid here; a compressed
+// copy would need its own entries and a matching decode path.
+var recorderSuffixes = []struct {
+	ext  string
+	comp compression
+}{
+	{".event", compNone},
+	{".cast", compNone},
+}
 
 // maxClockSkew is how far ahead of this process's clock an object's basename
 // timestamp may be and still be treated as real data. It is a fixed constant
@@ -112,7 +126,15 @@ var suffixes = []struct {
 // carry one is reported as unparseable rather than defaulted to a time — an
 // object assumed to be "now" would be ingested and then never re-examined, and
 // one assumed to be zero would be skipped forever.
-func parseKey(key string) (at time.Time, comp compression, ok bool) {
+//
+// layout selects which basename grammar and suffix set applies. There is no
+// implicit default: every caller has a Layout in hand (c.opts.Layout), and an
+// implicit fallback here is exactly how the wrong suffix set would get applied
+// silently to a layout it was never verified against.
+func parseKey(key string, layout Layout) (at time.Time, comp compression, ok bool) {
+	if layout == LayoutRecorder {
+		return parseRecorderKey(key)
+	}
 	base := key
 	if i := strings.LastIndexByte(base, '/'); i >= 0 {
 		base = base[i+1:]
@@ -137,6 +159,35 @@ func parseKey(key string) (at time.Time, comp compression, ok bool) {
 		}
 		stamp := strings.Join(parts[len(parts)-4:len(parts)-1], "/") + "/" + stem
 		t, err := time.Parse(timeOnlyKeyLayout, stamp)
+		if err != nil {
+			return time.Time{}, compNone, false
+		}
+		return t.UTC(), s.comp, true
+	}
+	return time.Time{}, compNone, false
+}
+
+// parseRecorderKey reads a tsrecorder object's timestamp out of its basename.
+//
+// Verified against a live bucket on 2026-07-29, the layout is:
+//
+//	<stableID>/events/<RFC3339Nano>.event   -- one Kubernetes API request
+//	<stableID>/<RFC3339Nano>.cast           -- one terminal session
+//
+// There is no date partition to fall back on and no alternate basename shape,
+// unlike the export layouts above: a key that fails to parse is unrecognized,
+// not defaulted.
+func parseRecorderKey(key string) (at time.Time, comp compression, ok bool) {
+	base := key
+	if i := strings.LastIndexByte(base, '/'); i >= 0 {
+		base = base[i+1:]
+	}
+	for _, s := range recorderSuffixes {
+		stem, found := strings.CutSuffix(base, s.ext)
+		if !found {
+			continue
+		}
+		t, err := time.Parse(recorderKeyLayout, stem)
 		if err != nil {
 			return time.Time{}, compNone, false
 		}

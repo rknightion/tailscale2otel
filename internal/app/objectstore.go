@@ -7,6 +7,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v3/internal/s3"
+	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 )
 
 // objectStoreSource reports whether flow logs are ingested from Tailscale's
@@ -91,6 +92,18 @@ var objectStoreAuditFeed = objectStoreFeed{
 	},
 	processor: func(rt *tailnetRuntime) objectstore.SignalProcessor {
 		return objectstore.NewAuditSignal(rt.auditProc)
+	},
+}
+
+var objectStoreK8sAuditFeed = objectStoreFeed{
+	signal:    semconv.IngestSignalK8sAudit,
+	entryKey:  "objectstore.k8s_audit",
+	globalKey: "collectors.k8s_audit.objectstore",
+	resolve: func(c *config.Config, tailnet string) (config.ObjectStoreConfig, bool) {
+		return c.K8sAuditObjectStore(tailnet)
+	},
+	processor: func(rt *tailnetRuntime) objectstore.SignalProcessor {
+		return objectstore.NewK8sAuditSignal(rt.k8sAuditProc)
 	},
 }
 

@@ -277,6 +277,15 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		// endpoint can still be pointed at an S3 export.
 		registerObjectStoreCollector(objectStoreAuditFeed, rt, d, onIngest, onAccepted)
 	}
+	if c.K8sAudit.Enabled {
+		// Gated purely on Enabled, for two reasons. There is no Source field:
+		// object storage is the only surface tsrecorder exposes, so there is no
+		// poll/stream alternative to select between. And like the audit feed
+		// above this is deliberately NOT gated on any cp.Supports() capability —
+		// reading a recorder bucket makes no control-plane API call at all, so a
+		// Headscale runtime can be pointed at one just as well.
+		registerObjectStoreCollector(objectStoreK8sAuditFeed, rt, d, onIngest, onAccepted)
+	}
 }
 
 // replayStoreForRuntime mirrors the scheduler's checkpoint key shape: legacy

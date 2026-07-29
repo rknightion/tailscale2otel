@@ -775,6 +775,151 @@
           },
           "type": "object"
         },
+        "k8s_audit": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Kubernetes API-audit events from Tailscale's tsrecorder -\u003e request logs + bounded counters. Requires enableEvents in the tailscale.com/cap/kubernetes ACL grant (BETA upstream). NOTE: the source carries no response status, latency or byte count, so allowed-vs-denied and error rates are NOT derivable",
+              "type": "boolean"
+            },
+            "objectstore": {
+              "additionalProperties": false,
+              "properties": {
+                "access_key_id": {
+                  "description": "SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile",
+                  "type": "string"
+                },
+                "access_key_id_file": {
+                  "default": "",
+                  "description": "read the access key ID from this path instead; value XOR file",
+                  "type": "string"
+                },
+                "allow_insecure_http": {
+                  "default": false,
+                  "description": "remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development",
+                  "type": "boolean"
+                },
+                "bucket": {
+                  "default": "",
+                  "description": "required — the bucket tsrecorder writes recordings into. Never inherited from the flowlogs/auditlogs destinations: this is a separate bucket with its own key layout",
+                  "type": "string"
+                },
+                "endpoint": {
+                  "default": "",
+                  "description": "required — service URL, e.g. https://s3.eu-west-1.amazonaws.com, or a MinIO/Ceph address",
+                  "type": "string"
+                },
+                "initial_lookback": {
+                  "default": "6h",
+                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it",
+                  "examples": [
+                    "6h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "interval": {
+                  "default": "60s",
+                  "description": "how often the bucket is listed",
+                  "examples": [
+                    "60s"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "layout": {
+                  "default": "recorder",
+                  "description": "recorder is the only accepted value here; partitioned and flat are REFUSED because tsrecorder writes no YYYY/MM/DD partitions and its RFC3339Nano basenames sort differently",
+                  "enum": [
+                    "",
+                    "recorder"
+                  ],
+                  "type": "string"
+                },
+                "lookback": {
+                  "default": "1h",
+                  "description": "how far back past the cursor each listing reaches, so a late-arriving object is still found",
+                  "examples": [
+                    "1h"
+                  ],
+                  "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "type": "string"
+                },
+                "max_cycle_decompressed_bytes": {
+                  "default": 268435456,
+                  "description": "defer untouched objects after 256 MiB of decoded data in one cycle",
+                  "type": "integer"
+                },
+                "max_cycle_records": {
+                  "default": 500000,
+                  "description": "defer untouched objects after this many decoded records in one cycle",
+                  "type": "integer"
+                },
+                "max_cycle_wire_bytes": {
+                  "default": 536870912,
+                  "description": "defer untouched objects after 512 MiB of GET response data in one cycle",
+                  "type": "integer"
+                },
+                "max_object_decompressed_bytes": {
+                  "default": 33554432,
+                  "description": "reject and quarantine one object that expands beyond 32 MiB. RAISE THIS if you record long terminal sessions: only the .cast header line is read for meaning, but the whole object is still streamed, and an oversized one is quarantined rather than partially read",
+                  "type": "integer"
+                },
+                "max_object_records": {
+                  "default": 100000,
+                  "description": "reject and quarantine one object containing more than this many records",
+                  "type": "integer"
+                },
+                "max_object_wire_bytes": {
+                  "default": 67108864,
+                  "description": "reject and quarantine one object requiring more than 64 MiB of GET response bytes",
+                  "type": "integer"
+                },
+                "max_objects": {
+                  "default": 200,
+                  "description": "objects ingested per cycle; the remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow/audit export does",
+                  "type": "integer"
+                },
+                "path_style": {
+                  "default": false,
+                  "description": "address as \u003cendpoint\u003e/\u003cbucket\u003e/\u003ckey\u003e; required by most non-AWS implementations",
+                  "type": "boolean"
+                },
+                "prefix": {
+                  "default": "",
+                  "description": "usually EMPTY: tsrecorder keys are \u003cstableID\u003e/events/\u003cts\u003e.event and \u003cstableID\u003e/\u003cts\u003e.cast, and \u003cstableID\u003e differs per recorder replica so it cannot be pinned in a prefix. NO leading slash",
+                  "type": "string"
+                },
+                "region": {
+                  "default": "",
+                  "description": "required — part of the request signature; a wrong value fails every request with HTTP 403",
+                  "type": "string"
+                },
+                "secret_access_key": {
+                  "description": "SET VIA ENV ONLY",
+                  "type": "string"
+                },
+                "secret_access_key_file": {
+                  "default": "",
+                  "description": "read the secret access key from this path instead; value XOR file",
+                  "type": "string"
+                },
+                "session_token": {
+                  "description": "SET VIA ENV ONLY — temporary credentials only",
+                  "type": "string"
+                },
+                "session_token_file": {
+                  "default": "",
+                  "description": "read the temporary session token from this path instead; value XOR file",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
         "keys": {
           "additionalProperties": false,
           "properties": {
@@ -2304,6 +2449,11 @@
     "pii_filter": {
       "additionalProperties": false,
       "properties": {
+        "command_text": {
+          "default": true,
+          "description": "verbatim `kubectl exec` command line on Kubernetes-audit logs; the only attribute a human types at a shell, so it can carry a pasted secret. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on",
+          "type": "boolean"
+        },
         "emails": {
           "default": true,
           "description": "user/actor login names (often email addresses)",
@@ -3003,6 +3153,100 @@
                       "",
                       "partitioned",
                       "flat"
+                    ],
+                    "type": "string"
+                  },
+                  "lookback": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "max_cycle_decompressed_bytes": {
+                    "type": "integer"
+                  },
+                  "max_cycle_records": {
+                    "type": "integer"
+                  },
+                  "max_cycle_wire_bytes": {
+                    "type": "integer"
+                  },
+                  "max_object_decompressed_bytes": {
+                    "type": "integer"
+                  },
+                  "max_object_records": {
+                    "type": "integer"
+                  },
+                  "max_object_wire_bytes": {
+                    "type": "integer"
+                  },
+                  "max_objects": {
+                    "type": "integer"
+                  },
+                  "path_style": {
+                    "type": "boolean"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "secret_access_key": {
+                    "type": "string"
+                  },
+                  "secret_access_key_file": {
+                    "type": "string"
+                  },
+                  "session_token": {
+                    "type": "string"
+                  },
+                  "session_token_file": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "k8s_audit": {
+                "additionalProperties": false,
+                "properties": {
+                  "access_key_id": {
+                    "type": "string"
+                  },
+                  "access_key_id_file": {
+                    "type": "string"
+                  },
+                  "allow_insecure_http": {
+                    "type": "boolean"
+                  },
+                  "bucket": {
+                    "type": "string"
+                  },
+                  "endpoint": {
+                    "type": "string"
+                  },
+                  "initial_lookback": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "interval": {
+                    "default": "30s",
+                    "examples": [
+                      "30s"
+                    ],
+                    "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                    "type": "string"
+                  },
+                  "layout": {
+                    "enum": [
+                      "",
+                      "recorder"
                     ],
                     "type": "string"
                   },

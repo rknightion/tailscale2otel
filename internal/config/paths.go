@@ -116,6 +116,9 @@ func (c *Config) pathFields() []pathField {
 		{"collectors.auditlogs.objectstore.access_key_id_file", &c.Collectors.Auditlogs.ObjectStore.AccessKeyIDFile},
 		{"collectors.auditlogs.objectstore.secret_access_key_file", &c.Collectors.Auditlogs.ObjectStore.SecretAccessKeyFile},
 		{"collectors.auditlogs.objectstore.session_token_file", &c.Collectors.Auditlogs.ObjectStore.SessionTokenFile},
+		{"collectors.k8s_audit.objectstore.access_key_id_file", &c.Collectors.K8sAudit.ObjectStore.AccessKeyIDFile},
+		{"collectors.k8s_audit.objectstore.secret_access_key_file", &c.Collectors.K8sAudit.ObjectStore.SecretAccessKeyFile},
+		{"collectors.k8s_audit.objectstore.session_token_file", &c.Collectors.K8sAudit.ObjectStore.SessionTokenFile},
 		{"enrichment.geoip.country_database", &c.Enrichment.GeoIP.CountryDatabase},
 		{"enrichment.geoip.asn_database", &c.Enrichment.GeoIP.ASNDatabase},
 		{"enrichment.geoip.download.license_key_file", &c.Enrichment.GeoIP.Download.LicenseKeyFile},
@@ -135,6 +138,7 @@ func (c *Config) pathFields() []pathField {
 		t := &c.Tailnets[i]
 		flow := &t.ObjectStore.Flow
 		audit := &t.ObjectStore.Audit
+		k8sAudit := &t.ObjectStore.K8sAudit
 		fields = append(fields,
 			pathField{fmt.Sprintf("tailnets[%d].auth.apikey_file", i), &t.Auth.APIKeyFile},
 			pathField{fmt.Sprintf("tailnets[%d].auth.oauth.client_secret_file", i), &t.Auth.OAuth.ClientSecretFile},
@@ -145,6 +149,9 @@ func (c *Config) pathFields() []pathField {
 			pathField{fmt.Sprintf("tailnets[%d].objectstore.audit.access_key_id_file", i), &audit.AccessKeyIDFile},
 			pathField{fmt.Sprintf("tailnets[%d].objectstore.audit.secret_access_key_file", i), &audit.SecretAccessKeyFile},
 			pathField{fmt.Sprintf("tailnets[%d].objectstore.audit.session_token_file", i), &audit.SessionTokenFile},
+			pathField{fmt.Sprintf("tailnets[%d].objectstore.k8s_audit.access_key_id_file", i), &k8sAudit.AccessKeyIDFile},
+			pathField{fmt.Sprintf("tailnets[%d].objectstore.k8s_audit.secret_access_key_file", i), &k8sAudit.SecretAccessKeyFile},
+			pathField{fmt.Sprintf("tailnets[%d].objectstore.k8s_audit.session_token_file", i), &k8sAudit.SessionTokenFile},
 		)
 	}
 	for i := range c.Streaming.Routes {

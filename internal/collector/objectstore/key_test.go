@@ -68,7 +68,7 @@ func TestParseKey(t *testing.T) {
 		{name: "directory marker", key: "flow/2026/07/24/", wantOK: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			at, comp, ok := parseKey(tc.key)
+			at, comp, ok := parseKey(tc.key, LayoutPartitioned)
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
 			}
@@ -122,7 +122,7 @@ func TestParseKey_StemCodecCrossProduct(t *testing.T) {
 				ext := stem + c.suffix
 				t.Run(shape.name+ext, func(t *testing.T) {
 					key := "flow/2026/07/24/" + shape.base + ext
-					at, comp, ok := parseKey(key)
+					at, comp, ok := parseKey(key, LayoutPartitioned)
 					if !ok {
 						t.Fatalf("parseKey(%q) ok = false, want true", key)
 					}
@@ -141,7 +141,7 @@ func TestParseKey_StemCodecCrossProduct(t *testing.T) {
 // The stem is parsed as UTC. Reading it as local time would shift every object
 // by the operator's offset and put half of them outside the cursor window.
 func TestParseKey_IsUTC(t *testing.T) {
-	at, _, ok := parseKey("2026-07-24-09-05-00.ndjson")
+	at, _, ok := parseKey("2026-07-24-09-05-00.ndjson", LayoutPartitioned)
 	if !ok {
 		t.Fatal("not parsed")
 	}
@@ -199,5 +199,60 @@ func TestDayPrefixes_EdgeCases(t *testing.T) {
 		time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC), 14)
 	if !slices.Equal(got, []string{"f/2025/12/31/", "f/2026/01/01/"}) {
 		t.Errorf("year rollover = %v", got)
+	}
+}
+
+func TestParseKey_RecorderLayout(t *testing.T) {
+	tests := []struct {
+		name   string
+		key    string
+		wantOK bool
+		wantNS int // fractional digits, to prove precision is preserved
+	}{
+		{"9-digit event", "nREC01CNTRL/events/2026-07-29T11:45:08.133861649Z.event", true, 9},
+		{"8-digit event", "nREC01CNTRL/events/2026-07-29T11:50:58.72274357Z.event", true, 8},
+		{"7-digit event", "nREC01CNTRL/events/2026-07-29T11:51:11.9115044Z.event", true, 7},
+		{"cast", "nREC01CNTRL/2026-07-29T11:50:50.033425744Z.cast", true, 9},
+		{"marker file", "check-write-access", false, 0},
+		{"events-exist marker", ".events-exist", false, 0},
+		{"tailscale export key is NOT accepted here", "flow/2026/07/29/2026-07-29-11-00-00.ndjson", false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			at, _, ok := parseKey(tc.key, LayoutRecorder)
+			if ok != tc.wantOK {
+				t.Fatalf("parseKey(%q) ok = %v, want %v", tc.key, ok, tc.wantOK)
+			}
+			if ok && at.IsZero() {
+				t.Fatal("parsed but zero time")
+			}
+		})
+	}
+}
+
+// The reason a recorder layout cannot reuse a lexicographic checkpoint.
+func TestParseKey_RecorderPrecisionVariesSoLexOrderIsWrong(t *testing.T) {
+	earlier := "n/events/2026-07-29T11:51:11.9115044Z.event" // 7 digits
+	later := "n/events/2026-07-29T11:51:11.91150441Z.event"  // 8 digits, +10ns
+	ea, _, ok1 := parseKey(earlier, LayoutRecorder)
+	la, _, ok2 := parseKey(later, LayoutRecorder)
+	if !ok1 || !ok2 {
+		t.Fatal("both keys must parse")
+	}
+	if !ea.Before(la) {
+		t.Fatal("parsed order must be chronological")
+	}
+	if earlier < later {
+		t.Fatal("precondition failed: these keys were chosen because lexicographic order DISAGREES with time order")
+	}
+}
+
+// The existing layouts must be unaffected.
+func TestParseKey_ExistingLayoutsUnchanged(t *testing.T) {
+	if _, _, ok := parseKey("flow/2026/07/29/2026-07-29-11-00-00.ndjson", LayoutPartitioned); !ok {
+		t.Fatal("partitioned layout regressed")
+	}
+	if _, _, ok := parseKey("n/events/2026-07-29T11:45:08.133861649Z.event", LayoutPartitioned); ok {
+		t.Fatal(".event must NOT be accepted outside the recorder layout")
 	}
 }

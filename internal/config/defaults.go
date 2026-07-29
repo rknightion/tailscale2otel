@@ -35,6 +35,16 @@ func defaultObjectStore() ObjectStoreConfig {
 	}
 }
 
+// defaultK8sAuditObjectStore mirrors defaultObjectStore's tuning baseline
+// exactly, differing only in Layout: tsrecorder's key shape has no date
+// partitions and no self-contained flat basenames, so ObjectStoreLayoutRecorder
+// is the only correct default for this signal (see validateK8sAuditLayout).
+func defaultK8sAuditObjectStore() ObjectStoreConfig {
+	os := defaultObjectStore()
+	os.Layout = ObjectStoreLayoutRecorder
+	return os
+}
+
 // Default returns a Config populated with the documented default values. Load
 // starts from Default and unmarshals the user's YAML on top, so any key the
 // user omits keeps its default.
@@ -202,6 +212,13 @@ func Default() *Config {
 				MaxWindow:       dur(6 * time.Hour),
 				ObjectStore:     defaultObjectStore(),
 			},
+			// Off by default: it requires enableEvents in the tailscale.com/cap/kubernetes
+			// ACL grant plus a tsrecorder-fronted operator deployment, neither of
+			// which every tailnet has.
+			K8sAudit: K8sAuditCollector{
+				Enabled:     false,
+				ObjectStore: defaultK8sAuditObjectStore(),
+			},
 			Users: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(300 * time.Second),
@@ -304,6 +321,9 @@ func Default() *Config {
 			Emails: true, UserDisplayNames: true, UserIDs: true, Hostnames: true, NodeIDs: true,
 			TailscaleIPs: true, InternalIPs: true, ExternalIPs: true, ServiceAddrs: true,
 			EndpointPaths: true, NetworkTopology: true, TailnetName: true, FreeTextDetails: true,
+			// On by default, matching every other category: this filter is
+			// opt-OUT redaction, not opt-in export.
+			CommandText: true,
 		},
 		Tracing: TracingConfig{
 			Enabled:    false,

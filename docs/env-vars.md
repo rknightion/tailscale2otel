@@ -259,6 +259,30 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_CYCLE_WIRE_BYTES` | `536870912` | defer untouched objects after 512 MiB of GET response data in one cycle |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_CYCLE_DECOMPRESSED_BYTES` | `268435456` | defer untouched objects after 256 MiB of decoded data in one cycle |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_CYCLE_RECORDS` | `500000` | defer untouched objects after this many decoded records in one cycle |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__ENABLED` | `false` | Kubernetes API-audit events from Tailscale's tsrecorder -> request logs + bounded counters. Requires enableEvents in the tailscale.com/cap/kubernetes ACL grant (BETA upstream). NOTE: the source carries no response status, latency or byte count, so allowed-vs-denied and error rates are NOT derivable |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-1.amazonaws.com, or a MinIO/Ceph address |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__BUCKET` | `""` | required — the bucket tsrecorder writes recordings into. Never inherited from the flowlogs/auditlogs destinations: this is a separate bucket with its own key layout |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__PREFIX` | `""` | usually EMPTY: tsrecorder keys are <stableID>/events/<ts>.event and <stableID>/<ts>.cast, and <stableID> differs per recorder replica so it cannot be pinned in a prefix. NO leading slash |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__LAYOUT` | `recorder` | recorder is the only accepted value here; partitioned and flat are REFUSED because tsrecorder writes no YYYY/MM/DD partitions and its RFC3339Nano basenames sort differently |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__PATH_STYLE` | `false` | address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__ALLOW_INSECURE_HTTP` | `false` | remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__ACCESS_KEY_ID` | `""` | SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__ACCESS_KEY_ID_FILE` | `""` | read the access key ID from this path instead; value XOR file |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__SECRET_ACCESS_KEY` | `""` | SET VIA ENV ONLY |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__SECRET_ACCESS_KEY_FILE` | `""` | read the secret access key from this path instead; value XOR file |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__SESSION_TOKEN` | `""` | SET VIA ENV ONLY — temporary credentials only |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__SESSION_TOKEN_FILE` | `""` | read the temporary session token from this path instead; value XOR file |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__INTERVAL` | `60s` | how often the bucket is listed |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow/audit export does |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECT_DECOMPRESSED_BYTES` | `33554432` | reject and quarantine one object that expands beyond 32 MiB. RAISE THIS if you record long terminal sessions: only the .cast header line is read for meaning, but the whole object is still streamed, and an oversized one is quarantined rather than partially read |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECT_RECORDS` | `100000` | reject and quarantine one object containing more than this many records |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_CYCLE_WIRE_BYTES` | `536870912` | defer untouched objects after 512 MiB of GET response data in one cycle |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_CYCLE_DECOMPRESSED_BYTES` | `268435456` | defer untouched objects after 256 MiB of decoded data in one cycle |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_CYCLE_RECORDS` | `500000` | defer untouched objects after this many decoded records in one cycle |
 | `TS2OTEL_COLLECTORS__USERS__ENABLED` | `true` | user inventory (devices/connected/last_seen per user) |
 | `TS2OTEL_COLLECTORS__USERS__INTERVAL` | `300s` | user inventory (devices/connected/last_seen per user) |
 | `TS2OTEL_COLLECTORS__KEYS__ENABLED` | `true` | auth-key inventory + expiry warnings |
@@ -351,6 +375,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PII_FILTER__NETWORK_TOPOLOGY` | `true` | route CIDRs + split-DNS domains + search paths |
 | `TS2OTEL_PII_FILTER__TAILNET_NAME` | `true` | tailnet identifier |
 | `TS2OTEL_PII_FILTER__FREE_TEXT_DETAILS` | `true` | audit old/new/details, target names, key descriptions, posture values |
+| `TS2OTEL_PII_FILTER__COMMAND_TEXT` | `true` | verbatim `kubectl exec` command line on Kubernetes-audit logs; the only attribute a human types at a shell, so it can carry a pasted secret. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on |
 | `TS2OTEL_SELF_OBSERVABILITY__ENABLED` | `true` | emit tailscale2otel.up, api.requests, runtime metrics, etc. |
 | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` | `""` | service.instance.id resource attr; empty => host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME |
 | `TS2OTEL_ADMIN__ENABLED` | `true` | run the admin HTTP server (probes + status page + optional pprof mount) |

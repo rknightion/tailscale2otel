@@ -144,6 +144,23 @@ const (
 	// request and resumable through the durable scan position, so no single cycle
 	// scans an unbounded bucket).
 	LayoutFlat Layout = "flat"
+	// LayoutRecorder is what Tailscale's tsrecorder writes, verified against a live
+	// bucket on 2026-07-29:
+	//
+	//	<stableID>/events/<RFC3339Nano>.event   -- one Kubernetes API request
+	//	<stableID>/<RFC3339Nano>.cast           -- one terminal session
+	//
+	// It is NOT date-partitioned, so it enumerates like LayoutFlat: one undelimited
+	// listing of the configured prefix, which is normally the bucket root because
+	// <stableID> varies per recorder replica and is not known ahead of time.
+	//
+	// Its basenames are RFC3339Nano, and Go's RFC3339Nano TRIMS TRAILING ZEROS, so
+	// key length varies (a live capture held 7-, 8- and 9-digit fractional seconds).
+	// Lexicographic key order is therefore NOT chronological here, unlike every
+	// other layout, whose fixed-width basenames make the two agree. That is why the
+	// scan position for this layout is truncated to a second boundary before being
+	// used as a listing lower bound -- see truncatedStartAfter.
+	LayoutRecorder Layout = "recorder"
 )
 
 // Options configures a Collector. Zero values select the defaults above.
@@ -243,10 +260,10 @@ func New(
 	switch opts.Layout {
 	case "":
 		opts.Layout = LayoutPartitioned
-	case LayoutPartitioned, LayoutFlat:
+	case LayoutPartitioned, LayoutFlat, LayoutRecorder:
 	default:
-		return nil, fmt.Errorf("objectstore: layout %q is not supported: use %q or %q",
-			opts.Layout, LayoutPartitioned, LayoutFlat)
+		return nil, fmt.Errorf("objectstore: layout %q is not supported: use %q, %q or %q",
+			opts.Layout, LayoutPartitioned, LayoutFlat, LayoutRecorder)
 	}
 	if opts.Interval <= 0 {
 		opts.Interval = defaultInterval
@@ -484,7 +501,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			gapDeferred++
 			continue
 		}
-		at, comp, parsed := parseKey(gap.Key)
+		at, comp, parsed := parseKey(gap.Key, c.opts.Layout)
 		if !parsed {
 			gap.Attempts++
 			gap.Quarantined = true
@@ -650,11 +667,12 @@ type enumeration struct {
 // scanPrefixes is the prefix set this cycle would list from scratch, before any
 // durable scan position is folded in by listingPrefixes.
 //
-// LayoutFlat returns exactly ONE prefix — the configured base — so the
-// maxDayPrefixes span cap is irrelevant there and cannot misfire: one prefix can
-// never exceed it, and the listing window plays no part in choosing it.
+// LayoutFlat and LayoutRecorder both return exactly ONE prefix — the configured
+// base — so the maxDayPrefixes span cap is irrelevant there and cannot misfire:
+// one prefix can never exceed it, and the listing window plays no part in
+// choosing it.
 func (c *Collector) scanPrefixes(from, now time.Time) []string {
-	if c.opts.Layout == LayoutFlat {
+	if c.opts.Layout == LayoutFlat || c.opts.Layout == LayoutRecorder {
 		return []string{flatPrefix(c.opts.Prefix)}
 	}
 	return dayPrefixes(c.opts.Prefix, from, now, maxDayPrefixes)
@@ -681,18 +699,18 @@ func flatPrefix(base string) string {
 // it, and re-listing it is how a failed object at the start of a partition is
 // retried immediately (see TestCollect_FailureAtPrefixStartKeepsScanGroundActive).
 //
-// A FLAT prefix spans the whole export, so the same exemption would admit every
-// object in the bucket for as long as any scan position exists. That is not merely
-// expensive: the seen set is pruned 2*Lookback behind the cursor, so an object too
-// old to be inside the window is also too old to be remembered, and each wrap of
-// the walk would re-fetch and re-emit the same history — permanent duplicate
-// records. The bound is absolute in flat mode; a failed object there is still
-// retried durably through its gap row, which needs no listing.
+// A FLAT (or RECORDER) prefix spans the whole export, so the same exemption would
+// admit every object in the bucket for as long as any scan position exists. That
+// is not merely expensive: the seen set is pruned 2*Lookback behind the cursor, so
+// an object too old to be inside the window is also too old to be remembered, and
+// each wrap of the walk would re-fetch and re-emit the same history — permanent
+// duplicate records. The bound is absolute in flat/recorder mode; a failed object
+// there is still retried durably through its gap row, which needs no listing.
 func (c *Collector) beforeLowerBound(at, from time.Time, active bool) bool {
 	if !at.Before(from) {
 		return false
 	}
-	return !active || c.opts.Layout == LayoutFlat
+	return !active || c.opts.Layout == LayoutFlat || c.opts.Layout == LayoutRecorder
 }
 
 // enumerate lists the configured prefixes for this layout — the day partitions
@@ -716,7 +734,7 @@ func (c *Collector) enumerate(
 		// Listing is bounded per cycle even before the ingest budget: a day's
 		// partition on a large tailnet is hundreds of objects, and there is no
 		// value in walking further than one cycle could ever consume.
-		startAfter := positions[prefix]
+		startAfter := truncatedStartAfter(positions[prefix], c.opts.Layout)
 		listStarted := time.Now()
 		page, err := c.api.List(ctx, prefix, startAfter, c.opts.MaxObjects*4)
 		observeRequest(ctx, e, operationList, listStarted, err)
@@ -724,13 +742,16 @@ func (c *Collector) enumerate(
 			return enumeration{}, fmt.Errorf("objectstore: list %s: %w", prefix, err)
 		}
 		progress := prefixProgress{
-			prefix:     prefix,
-			startAfter: startAfter,
+			prefix: prefix,
+			// The untruncated value, not the listing lower bound above: this is what
+			// persisted progress bookkeeping means, and truncating it here would
+			// change what a recorder-layout scan position means on disk.
+			startAfter: positions[prefix],
 			active:     hasPosition(positions, prefix),
 			truncated:  page.Truncated,
 		}
 		for _, o := range page.Objects {
-			at, comp, ok := parseKey(o.Key)
+			at, comp, ok := parseKey(o.Key, c.opts.Layout)
 			item := listedObject{key: o.Key, identity: o.Identity}
 			switch {
 			case o.Identity == "":
@@ -1194,6 +1215,36 @@ func (c *Collector) stagePruneSeen(batch *checkpointBatch, cursor time.Time) {
 			batch.delete(ent.key)
 		}
 	}
+}
+
+// truncatedStartAfter lowers a persisted scan position to the start of its
+// second before it is used as a listing lower bound.
+//
+// S3's StartAfter is a LEXICOGRAPHIC comparison, and the recorder layout's
+// RFC3339Nano basenames have variable width because Go trims trailing zeros.
+// So "...11.9115044Z" sorts AFTER "...11.91150441Z" while being 10ns earlier,
+// and a position set from the latter would silently skip the former -- a
+// permanent, invisible data loss, since a skipped key is never re-listed.
+//
+// Truncating to the second boundary costs at most one second of re-listing per
+// cycle; the durable seen set already discards the re-read objects, so the only
+// cost is a few extra keys walked. Every other layout has fixed-width basenames
+// where lexicographic and chronological order agree, so this is a no-op there.
+func truncatedStartAfter(pos string, layout Layout) string {
+	if pos == "" || layout != LayoutRecorder {
+		return pos
+	}
+	dir, base := "", pos
+	if i := strings.LastIndexByte(pos, '/'); i >= 0 {
+		dir, base = pos[:i+1], pos[i+1:]
+	}
+	dot := strings.IndexByte(base, '.')
+	if dot < 0 {
+		return pos
+	}
+	// "2026-07-29T11:51:11" + "" -- everything at or after this second is
+	// re-listed and deduped against the seen set.
+	return dir + base[:dot]
 }
 
 func listingPrefixes(positions map[string]string, current []string) ([]string, error) {

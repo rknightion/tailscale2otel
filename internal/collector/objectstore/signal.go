@@ -9,6 +9,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v3/internal/k8saudit"
 	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
 )
@@ -147,5 +148,82 @@ type invalidFlowRecord struct {
 
 func (r invalidFlowRecord) Commit(e telemetry.Emitter) RecordTimestamps {
 	flowlog.ObserveDataQuality(e, semconv.IngestSourceObjectStore, r.violations)
+	return RecordTimestamps{}
+}
+
+type k8sAuditSignal struct {
+	proc *k8saudit.Processor
+}
+
+// NewK8sAuditSignal adapts the shared Kubernetes-audit processor to the
+// object-store engine.
+//
+// Unlike the flow and audit signals, this one is handed two DIFFERENT record
+// shapes on the same feed. tsrecorder writes .event objects (one API request
+// each) and .cast objects (one terminal session each) into the same bucket, and
+// <stableID> varies per recorder replica so no prefix separates them. Crucially,
+// PrepareRecord receives only the record BYTES — never the object key — so the
+// two cannot be told apart by filename and are discriminated by content instead.
+func NewK8sAuditSignal(proc *k8saudit.Processor) SignalProcessor {
+	return &k8sAuditSignal{proc: proc}
+}
+
+func (*k8sAuditSignal) Signal() string { return semconv.IngestSignalK8sAudit }
+
+func (s *k8sAuditSignal) PrepareRecord(
+	_ context.Context,
+	line []byte,
+	_ time.Time,
+) (PreparedRecord, error) {
+	// An asciinema frame is accepted and does nothing. Returning ErrRecordDecode
+	// here instead would turn every line of terminal output in a long session
+	// into a decode-failure observation, burying real corruption under thousands
+	// of expected ones — and the object-level guard would fail an otherwise
+	// healthy recording whose header is its only non-frame line.
+	if k8saudit.IsCastFrame(line) {
+		return castFrameRecord{}, nil
+	}
+	if obj, err := k8saudit.DecodeObject(line); err == nil {
+		return acceptedK8sAuditRecord{proc: s.proc, obj: obj}, nil
+	}
+	if hdr, err := k8saudit.DecodeCastHeader(line); err == nil {
+		return acceptedK8sSessionRecord{proc: s.proc, hdr: hdr}, nil
+	}
+	return nil, fmt.Errorf("%w: neither an audit event nor a cast header", ErrRecordDecode)
+}
+
+type acceptedK8sAuditRecord struct {
+	proc *k8saudit.Processor
+	obj  k8saudit.Object
+}
+
+func (r acceptedK8sAuditRecord) Commit(e telemetry.Emitter) RecordTimestamps {
+	r.proc.Process(r.obj, e)
+	return RecordTimestamps{
+		EventTime:   k8saudit.EventTimestamp(r.obj),
+		CaptureTime: k8saudit.CaptureTimestamp(r.obj),
+	}
+}
+
+type acceptedK8sSessionRecord struct {
+	proc *k8saudit.Processor
+	hdr  k8saudit.CastHeader
+}
+
+func (r acceptedK8sSessionRecord) Commit(e telemetry.Emitter) RecordTimestamps {
+	r.proc.ProcessSession(r.hdr, e)
+	if r.hdr.Timestamp == 0 {
+		return RecordTimestamps{}
+	}
+	at := time.Unix(r.hdr.Timestamp, 0).UTC()
+	return RecordTimestamps{EventTime: at, CaptureTime: at}
+}
+
+// castFrameRecord is one line of terminal output: recognized, deliberately
+// ignored, never inspected for meaning and never emitted. It contributes no
+// timestamps, so it cannot drag the freshness observers backwards either.
+type castFrameRecord struct{}
+
+func (castFrameRecord) Commit(telemetry.Emitter) RecordTimestamps {
 	return RecordTimestamps{}
 }

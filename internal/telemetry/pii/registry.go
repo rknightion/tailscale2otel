@@ -36,6 +36,22 @@ var keyCategory = map[string]Category{
 	"tailscale.webhook.url":              CatEndpointPaths,
 	"tailscale.webhook.user":             CatEmails,
 
+	// Kubernetes-audit keys (#462), from tsrecorder's API-server-proxy events.
+	// Note tailscale.k8s.path is the QUERY-FREE kubernetes.Path — the raw
+	// request.Path is never emitted at all, because it carries the exec command
+	// line inside its query string.
+	"tailscale.k8s.user":           CatEmails,
+	"tailscale.k8s.src_node":       CatHostnames,
+	"tailscale.k8s.recorder":       CatHostnames,
+	"tailscale.k8s.src_node_id":    CatNodeIDs,
+	"tailscale.k8s.path":           CatEndpointPaths,
+	"tailscale.k8s.object_name":    CatFreeTextDetails, // arbitrary Kubernetes object names
+	"tailscale.k8s.label_selector": CatFreeTextDetails,
+	"tailscale.k8s.field_selector": CatFreeTextDetails,
+	"tailscale.k8s.pod":            CatFreeTextDetails,
+	"tailscale.k8s.container":      CatFreeTextDetails,
+	"tailscale.k8s.command":        CatCommandText, // human-typed; may contain a pasted secret
+
 	// Span-only keys (#212). Spans go through the same policy as metrics and logs
 	// via telemetry.piiSpanExporter, so these must be classified here too.
 	"url.full":             CatEndpointPaths,   // full request URL: carries the tailnet name + device id
@@ -125,6 +141,17 @@ var geoNonIdentifier = map[string]bool{
 
 // nonIdentifier is the explicit allowlist of keys that are never PII/identifiers.
 var nonIdentifier = map[string]bool{
+	// Kubernetes-audit (#462): every one of these is normalized to a closed
+	// admit-set before emission (unknown -> "other"), so none can carry a
+	// client-controlled value. tailscale.k8s.command_class in particular is the
+	// bounded classification of the exec command line, and is listed here rather
+	// than under CatCommandText on purpose: it holds no free text, and it must
+	// keep working when an operator redacts the raw command it was derived from.
+	"tailscale.k8s.verb": true, "tailscale.k8s.resource": true,
+	"tailscale.k8s.subresource": true, "tailscale.k8s.api_group": true,
+	"tailscale.k8s.namespace": true, "tailscale.k8s.user_agent": true,
+	"tailscale.k8s.command_class": true, "tailscale.k8s.session_type": true,
+
 	"network.io.direction": true, "network.transport": true, "network.type": true,
 	"network.protocol.name": true, "source.port": true, "destination.port": true,
 	"os.type": true, "os.version": true, "tailscale.traffic_type": true,

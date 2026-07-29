@@ -34,6 +34,14 @@ import (
 const (
 	ObjectStoreLayoutPartitioned = "partitioned"
 	ObjectStoreLayoutFlat        = "flat"
+	// ObjectStoreLayoutRecorder is tsrecorder's own key shape:
+	// <stableID>/events/<RFC3339Nano>.event and <stableID>/<RFC3339Nano>.cast,
+	// with no date partitions and no self-contained flat basenames. It is
+	// admitted here so the shared destination check (validateObjectStoreDestination)
+	// recognizes it as a structurally valid value; it is collectors.k8s_audit's
+	// validateK8sAuditLayout that actually restricts that signal to ONLY this
+	// value — see there for why partitioned/flat are wrong for tsrecorder.
+	ObjectStoreLayoutRecorder = "recorder"
 )
 
 // objectStoreMaxBackfill is the furthest back the PARTITIONED layout can ever
@@ -82,6 +90,24 @@ var objectStoreAuditSpec = objectStoreSignalSpec{
 	entry:     func(t TailnetConfig) ObjectStoreConfig { return t.ObjectStore.Audit },
 }
 
+// objectStoreK8sAuditSpec is the tsrecorder Kubernetes-audit destination spec.
+//
+// It is deliberately NOT threaded through resolveObjectStore/validateObjectStore
+// like the flow and audit specs above: those default an unset layout to
+// ObjectStoreLayoutPartitioned and gate on a source toggle, and neither is
+// right here — K8sAuditCollector has no Source field (object storage is the
+// only consumption surface tsrecorder exposes) and its default/only valid
+// layout is ObjectStoreLayoutRecorder. K8sAuditObjectStore and
+// validateK8sAuditObjectStore below are k8s_audit's own small mirror of those
+// two functions instead.
+var objectStoreK8sAuditSpec = objectStoreSignalSpec{
+	signal:    "k8s_audit",
+	globalKey: "collectors.k8s_audit.objectstore",
+	entryKey:  "objectstore.k8s_audit",
+	global:    func(c *Config) ObjectStoreConfig { return c.Collectors.K8sAudit.ObjectStore },
+	entry:     func(t TailnetConfig) ObjectStoreConfig { return t.ObjectStore.K8sAudit },
+}
+
 // resolveObjectStore is the shared body of FlowObjectStore and AuditObjectStore.
 func (c *Config) resolveObjectStore(spec objectStoreSignalSpec, tailnet string) (ObjectStoreConfig, bool) {
 	if len(c.Tailnets) == 0 {
@@ -124,6 +150,40 @@ func (c *Config) FlowObjectStore(tailnet string) (ObjectStoreConfig, bool) {
 	return c.resolveObjectStore(objectStoreFlowSpec, tailnet)
 }
 
+// K8sAuditObjectStore returns the effective tsrecorder Kubernetes-audit
+// object-store destination for the runtime whose CONFIGURED tailnet name is
+// tailnet, under the same never-inherited rule FlowObjectStore documents: in
+// legacy/single mode the global collectors.k8s_audit.objectstore block is
+// returned verbatim for any tailnet; with a tailnets: list the matching
+// entry's objectstore.k8s_audit block is returned and nothing is merged in
+// from the global block or from the flow/audit destinations — ok is false
+// when no entry has that name.
+//
+// It does not call resolveObjectStore: that shared helper defaults an unset
+// layout to ObjectStoreLayoutPartitioned, which is wrong for tsrecorder's key
+// shape (see ObjectStoreLayoutRecorder).
+//
+// Unlike FlowObjectStore/AuditObjectStore, the GLOBAL branch also runs
+// objectStoreWithBudgetDefaults, not just the per-tailnet branch. Those two
+// functions leave the global block's budget fields exactly as configured on
+// the premise that it already passed through Default(), so an explicit zero
+// there is an operator error rather than "unset". k8s_audit is a new,
+// still-optional collector an operator is expected to configure by replacing
+// collectors.k8s_audit.objectstore wholesale (bucket/region/endpoint only,
+// same as a tailnets[] entry), so its zero budget fields mean "unset" on
+// EITHER branch and are filled in here rather than rejected.
+func (c *Config) K8sAuditObjectStore(tailnet string) (ObjectStoreConfig, bool) {
+	if len(c.Tailnets) == 0 {
+		return objectStoreWithRecorderLayoutDefault(objectStoreWithBudgetDefaults(objectStoreK8sAuditSpec.global(c))), true
+	}
+	for _, t := range c.Tailnets {
+		if t.Name == tailnet {
+			return objectStoreWithRecorderLayoutDefault(objectStoreWithBudgetDefaults(objectStoreK8sAuditSpec.entry(t))), true
+		}
+	}
+	return ObjectStoreConfig{}, false
+}
+
 // objectStoreWithLayoutDefault resolves an unset layout to
 // ObjectStoreLayoutPartitioned. This is the ONE place that normalization happens,
 // on both branches of FlowObjectStore, so every reader of a destination sees a
@@ -136,6 +196,19 @@ func (c *Config) FlowObjectStore(tailnet string) (ObjectStoreConfig, bool) {
 func objectStoreWithLayoutDefault(os ObjectStoreConfig) ObjectStoreConfig {
 	if os.Layout == "" {
 		os.Layout = ObjectStoreLayoutPartitioned
+	}
+	return os
+}
+
+// objectStoreWithRecorderLayoutDefault resolves an unset layout to
+// ObjectStoreLayoutRecorder — the k8s_audit equivalent of
+// objectStoreWithLayoutDefault's partitioned default. tsrecorder's key shape
+// has no date partitions and no self-contained flat basenames, so defaulting
+// it to ObjectStoreLayoutPartitioned (what every other signal defaults to)
+// would silently enumerate the wrong prefixes.
+func objectStoreWithRecorderLayoutDefault(os ObjectStoreConfig) ObjectStoreConfig {
+	if os.Layout == "" {
+		os.Layout = ObjectStoreLayoutRecorder
 	}
 	return os
 }
@@ -255,6 +328,68 @@ func (c *Config) validateAuditObjectStore(collectorName string) error {
 	return c.validateObjectStore(objectStoreAuditSpec, collectorName)
 }
 
+// validateK8sAuditObjectStore checks every tsrecorder Kubernetes-audit
+// destination the configured runtimes will actually read.
+//
+// It is a hand-mirror of validateObjectStore rather than a call into it: that
+// shared body is written for a collector with a Source toggle
+// (collectors.<name>.source=objectstore) and gated by objectStoreSource;
+// K8sAuditCollector has no Source field, so this is instead gated purely on
+// Enabled by its caller, and it additionally enforces validateK8sAuditLayout
+// on every destination, which validateObjectStore does not.
+func (c *Config) validateK8sAuditObjectStore() error {
+	if len(c.Tailnets) == 0 {
+		if !objectStoreDestinationDeclared(objectStoreK8sAuditSpec.global(c)) {
+			return fmt.Errorf("collectors.k8s_audit.enabled requires %s "+
+				"(endpoint + region + bucket): the tsrecorder audit destination is never inherited from "+
+				"collectors.flowlogs.objectstore or collectors.auditlogs.objectstore — it is a separate "+
+				"bucket with its own key layout", objectStoreK8sAuditSpec.globalKey)
+		}
+		// Unlike the flow/audit global branch (validateObjectStore), zero budget
+		// fields here are defaulted rather than rejected — see the comment on
+		// K8sAuditObjectStore for why the two signals differ.
+		dest := objectStoreWithRecorderLayoutDefault(objectStoreWithBudgetDefaults(objectStoreK8sAuditSpec.global(c)))
+		if err := validateObjectStoreDestination("k8s_audit", objectStoreK8sAuditSpec.globalKey, dest); err != nil {
+			return err
+		}
+		return validateK8sAuditLayout(objectStoreK8sAuditSpec.globalKey, dest.Layout)
+	}
+	for i, t := range c.Tailnets {
+		key := fmt.Sprintf("tailnets[%d].%s", i, objectStoreK8sAuditSpec.entryKey)
+		if !objectStoreDestinationDeclared(objectStoreK8sAuditSpec.entry(t)) {
+			return fmt.Errorf("tailnets[%d] %q: collectors.k8s_audit.enabled requires %s "+
+				"(endpoint + region + bucket): an object-store destination is never inherited from "+
+				"%s in multi-tailnet mode, because two runtimes reading one "+
+				"feed would each ingest every record and attribute a copy to their own tailnet",
+				i, t.Name, key, objectStoreK8sAuditSpec.globalKey)
+		}
+		dest := objectStoreWithRecorderLayoutDefault(objectStoreWithBudgetDefaults(objectStoreK8sAuditSpec.entry(t)))
+		if err := validateObjectStoreDestination("k8s_audit", key, dest); err != nil {
+			return fmt.Errorf("tailnets[%d] %q: %w", i, t.Name, err)
+		}
+		if err := validateK8sAuditLayout(key, dest.Layout); err != nil {
+			return fmt.Errorf("tailnets[%d] %q: %w", i, t.Name, err)
+		}
+	}
+	return nil
+}
+
+// validateK8sAuditLayout enforces the one layout tsrecorder's key shape
+// supports. dest has already been through objectStoreWithRecorderLayoutDefault
+// by every caller above, so an empty value never reaches here.
+func validateK8sAuditLayout(key, layout string) error {
+	if layout != ObjectStoreLayoutRecorder {
+		return fmt.Errorf("%s.layout %q invalid for collectors.k8s_audit: tsrecorder writes no date "+
+			"partitions (%q) and no self-contained flat basenames (%q) under its own key shape "+
+			"(<stableID>/events/<ts>.event and <stableID>/<ts>.cast) — only %q is ever correct here, "+
+			"and accepting %q or %q would silently enumerate the wrong prefixes and ingest nothing; "+
+			"unset means %q",
+			key, layout, ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat, ObjectStoreLayoutRecorder,
+			ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat, ObjectStoreLayoutRecorder)
+	}
+	return nil
+}
+
 // validateObjectStore checks every destination for ONE signal, dispatching on the
 // config shape: the global block in legacy mode, one complete block per entry
 // with a tailnets: list. collectorName is the log collector whose source selected
@@ -359,14 +494,15 @@ func validateObjectStoreDestination(collectorName, key string, os ObjectStoreCon
 		return fmt.Errorf("%s.endpoint uses plaintext HTTP for a remote "+
 			"host: set allow_insecure_http only when accepting that credentials and session tokens "+
 			"will cross the network without TLS", key)
-	case !oneOf(os.Layout, "", ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat):
-		// No autodetection and no third value: the layout decides which prefixes are
+	case !oneOf(os.Layout, "", ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat, ObjectStoreLayoutRecorder):
+		// No autodetection and no fourth value: the layout decides which prefixes are
 		// enumerated, so an unrecognized one would either leave every flat object
 		// undiscovered or re-interpret the durable scan positions.
 		return fmt.Errorf("%s.layout %q invalid: must be %q (the default, and what "+
-			"Tailscale's own export writes) or %q (a copied/mirrored export whose "+
-			"self-contained basenames sit directly under the prefix); unset means %q",
-			key, os.Layout, ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat,
+			"Tailscale's own export writes), %q (a copied/mirrored export whose "+
+			"self-contained basenames sit directly under the prefix), or %q (tsrecorder's own key "+
+			"shape); unset means %q",
+			key, os.Layout, ObjectStoreLayoutPartitioned, ObjectStoreLayoutFlat, ObjectStoreLayoutRecorder,
 			ObjectStoreLayoutPartitioned)
 	case os.MaxObjects < 0:
 		return fmt.Errorf("%s.max_objects must be >= 0 (got %d)", key, os.MaxObjects)

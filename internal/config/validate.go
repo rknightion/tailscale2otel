@@ -1543,6 +1543,18 @@ func (c *Config) validationChecks() []configCheck {
 			return nil
 		})
 	}
+	// The Kubernetes-audit collector is deliberately OUTSIDE the window-collector
+	// loop above. That loop keys every check off spec.source(), and this collector
+	// has no Source field at all: object storage is the only surface tsrecorder
+	// exposes — there is no polling API, no stream and no webhook — so a source
+	// toggle would offer a choice that could not be honored. It is therefore gated
+	// purely on Enabled.
+	add("collectors.k8s_audit", "See the error text: the object-store destination has several independent field constraints.", func() error {
+		if !c.Collectors.K8sAudit.Enabled {
+			return nil
+		}
+		return c.validateK8sAuditObjectStore()
+	})
 	add("collectors.flowlogs.replay_overlap", "Set collectors.flowlogs.replay_overlap between 0 and 1h.", func() error {
 		if !c.Collectors.Flowlogs.Enabled || !pollsSource(c.Collectors.Flowlogs.Source) {
 			return nil

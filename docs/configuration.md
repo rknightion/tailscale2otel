@@ -1463,6 +1463,7 @@ Tailscale IPs, for example.
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
 | `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical — they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |
 | `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. Also governs **span status descriptions** — see the note below. |
+| `pii_filter.command_text` | `true` | The verbatim `kubectl exec` command line on Kubernetes-audit logs (`tailscale.k8s.command`). Separate from `free_text_details` because it is the only attribute a human types at a shell, so it can carry a pasted secret. Setting it to `false` **keeps** the bounded `tailscale.k8s.command_class` classification that the exec metrics are built on. |
 
 > **Note:** these toggles gate emission only — they do not encrypt or hash values. Setting a
 > category to `false` simply omits that class of identifier from emitted telemetry entirely.

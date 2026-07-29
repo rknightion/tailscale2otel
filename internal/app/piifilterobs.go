@@ -40,6 +40,8 @@ func piiCategoryEnabled(f config.PIIFilterConfig, c pii.Category) bool {
 		return f.TailnetName
 	case pii.CatFreeTextDetails:
 		return f.FreeTextDetails
+	case pii.CatCommandText:
+		return f.CommandText
 	default:
 		// Unknown future category: default to emitted (safe for self-obs).
 		return true

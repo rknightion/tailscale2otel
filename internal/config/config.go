@@ -491,6 +491,11 @@ type TailnetConfig struct {
 type TailnetObjectStore struct {
 	Flow  ObjectStoreConfig `yaml:"flow"`
 	Audit ObjectStoreConfig `yaml:"audit"`
+	// K8sAudit is the tsrecorder Kubernetes API-audit destination. It is a
+	// separate bucket with its own key layout from Flow and Audit, and is
+	// never inherited from collectors.k8s_audit.objectstore in multi-tailnet
+	// mode, exactly like the other two signals.
+	K8sAudit ObjectStoreConfig `yaml:"k8s_audit"`
 }
 
 // ResolvedTailnet is the normalized, per-tailnet connection config the app layer
@@ -1023,6 +1028,7 @@ type Collectors struct {
 	Devices             DevicesCollector   `yaml:"devices"`
 	Flowlogs            FlowlogsCollector  `yaml:"flowlogs"`
 	Auditlogs           AuditlogsCollector `yaml:"auditlogs"`
+	K8sAudit            K8sAuditCollector  `yaml:"k8s_audit"`
 	Users               SimpleCollector    `yaml:"users"`
 	Keys                KeysCollector      `yaml:"keys"`
 	Settings            SimpleCollector    `yaml:"settings"`
@@ -1236,6 +1242,25 @@ type AuditlogsCollector struct {
 	// it is a destination of its own: the configuration and network exports are
 	// separate, so nothing here is shared with or inherited from
 	// collectors.flowlogs.objectstore.
+	ObjectStore ObjectStoreConfig `yaml:"objectstore"`
+}
+
+// K8sAuditCollector configures the tsrecorder Kubernetes API-audit collector:
+// Kubernetes-API-proxy audit events (.event) and terminal-session headers
+// (.cast) tsrecorder writes to its own S3-compatible bucket.
+//
+// Unlike FlowlogsCollector/AuditlogsCollector there is deliberately NO Source
+// field. Object storage is the ONLY consumption surface tsrecorder exposes —
+// there is no control-plane API and no push — so a poll/stream toggle would
+// offer a choice that can never be honored.
+type K8sAuditCollector struct {
+	Enabled bool `yaml:"enabled"`
+	// ObjectStore configures the objectstore ingestion path. It is a
+	// destination of its own: tsrecorder writes to a different bucket, with a
+	// different key layout, from both the network (flowlogs) and
+	// configuration (auditlogs) exports, so nothing here is shared with or
+	// inherited from collectors.flowlogs.objectstore or
+	// collectors.auditlogs.objectstore.
 	ObjectStore ObjectStoreConfig `yaml:"objectstore"`
 }
 
@@ -1576,6 +1601,12 @@ type PIIFilterConfig struct {
 	NetworkTopology  bool `yaml:"network_topology"`
 	TailnetName      bool `yaml:"tailnet_name"`
 	FreeTextDetails  bool `yaml:"free_text_details"`
+	// CommandText controls the verbatim `kubectl exec` command line on
+	// Kubernetes-audit logs. It is separate from FreeTextDetails because it is
+	// the only attribute typed by a human at a shell, so it can carry a pasted
+	// secret. Turning it off keeps the bounded command_class classification,
+	// which is what the exec metrics are built on.
+	CommandText bool `yaml:"command_text"`
 }
 
 // SelfObservabilityConfig toggles emitting the collector's own telemetry.

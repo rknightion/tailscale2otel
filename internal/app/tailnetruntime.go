@@ -18,6 +18,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v3/internal/k8saudit"
 	"github.com/rknightion/tailscale2otel/v3/internal/provider"
 	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v3/internal/release"
@@ -67,11 +68,12 @@ type tailnetRuntime struct {
 	// policy holds this tailnet's compiled ACL, fed by the acl and users
 	// collectors and read by the flow processor. Nil when the flow view is off:
 	// its only consumer is the reconciliation the view renders.
-	policy      *aclpolicy.Store
-	auditProc   *audit.Processor
-	flowDedup   *dedup.Set
-	auditDedup  *dedup.Set
-	nodeMetrics *nodemetrics.Collector // nil unless the node-metrics collector is enabled
+	policy       *aclpolicy.Store
+	auditProc    *audit.Processor
+	k8sAuditProc *k8saudit.Processor
+	flowDedup    *dedup.Set
+	auditDedup   *dedup.Set
+	nodeMetrics  *nodemetrics.Collector // nil unless the node-metrics collector is enabled
 	// Resolved per-tailnet identity for the status page (#116): in multi-tailnet
 	// mode these come from the tailnets[] entry, NOT the unused top-level
 	// tailscale: block. Empty authMethod ⇒ not a Tailscale runtime (headscale).
@@ -196,6 +198,16 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 		auditOpts = append(auditOpts, audit.WithStore(d.eventStore))
 	}
 	rt.auditProc = audit.NewProcessor(auditOpts...)
+
+	// The Kubernetes-audit processor needs no dedup sets: tsrecorder writes one
+	// object per record with no overlapping window, and the object-store engine's
+	// own durable seen set already suppresses a re-listed object.
+	rt.k8sAuditProc = k8saudit.NewProcessor(
+		k8saudit.WithLogger(d.logger),
+		// Exec command text follows the same opt-OUT rule as every other PII
+		// category: exported unless the operator turns it off.
+		k8saudit.WithEmitCommandText(d.cfg.PIIFilter.CommandText),
+	)
 
 	registerCollectors(rt, d)
 	return rt

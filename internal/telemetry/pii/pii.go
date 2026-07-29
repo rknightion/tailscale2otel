@@ -25,6 +25,19 @@ const (
 	CatNetworkTopology  Category = "network_topology"
 	CatTailnetName      Category = "tailnet_name"
 	CatFreeTextDetails  Category = "free_text_details"
+	// CatCommandText is the verbatim command line of a recorded `kubectl exec`
+	// session. It is its own category rather than folded into
+	// CatFreeTextDetails because it is the one attribute in the catalog whose
+	// value is typed by a human at a shell, so it can contain a pasted secret
+	// that appears nowhere else in the telemetry. An operator who is happy to
+	// export audit diffs and error text may still want this one off, and that
+	// choice is not expressible if the two share a toggle.
+	//
+	// Redacting it does NOT blind the exec signals: tailscale.k8s.command_class
+	// is a bounded classification (recon, credential_read, package_mgmt, ...)
+	// derived from the same text, carries no free text, and is deliberately
+	// classified as a non-identifier so it survives this category being off.
+	CatCommandText Category = "command_text"
 )
 
 // AllCategories is the canonical ordered list (used by config, self-obs, tests).
@@ -32,6 +45,7 @@ var AllCategories = []Category{
 	CatEmails, CatUserDisplayNames, CatUserIDs, CatHostnames, CatNodeIDs,
 	CatTailscaleIPs, CatInternalIPs, CatExternalIPs, CatServiceAddrs,
 	CatEndpointPaths, CatNetworkTopology, CatTailnetName, CatFreeTextDetails,
+	CatCommandText,
 }
 
 // Categories is the enabled/disabled state per category (true = emitted).

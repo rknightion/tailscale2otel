@@ -52,7 +52,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| operational | 209 | 194 | 57 | 11 | 10 | 0 |
+| operational | 218 | 194 | 57 | 11 | 19 | 0 |
 | self_obs | 89 | 65 | 29 | 9 | 20 | 2 |
 
 ## Operational signals
@@ -67,6 +67,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.posture` | log_event | `event_name="tailscale.device.posture"` | visualized |  |
 | `tailscale.device.tailnet_lock_error` | log_event | `event_name="tailscale.device.tailnet_lock_error"` | visualized |  |
 | `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | raw_only | Per-invite INFO log, gated off by default (collectors.users.collect_device_invites); queried by event_name when it is enabled. |
+| `tailscale.k8s.api_request` | log_event | `event_name="tailscale.k8s.api_request"` | raw_only | The per-request record carrying the high-cardinality detail kept off the metrics (object name, query-free path, selectors, pod/container, and the raw exec command line under pii_filter.command_text). Read in Loki by event_name; this is the SIEM surface for the feed. |
+| `tailscale.k8s.session` | log_event | `event_name="tailscale.k8s.session"` | raw_only | Per-session record from the .cast header: namespace, pod, container, session type, command and the recorder that holds the recording. Read in Loki by event_name. |
 | `tailscale.key.expiring` | log_event | `event_name="tailscale.key.expiring"` | visualized |  |
 | `tailscale.key.scopes` | log_event | `event_name="tailscale.key.scopes"` | visualized |  |
 | `tailscale.logstream.error` | log_event | `event_name="tailscale.logstream.error"` | visualized |  |
@@ -153,6 +155,13 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.geoip.downloads` | metric | `tailscale_geoip_downloads_total` | raw_only | Per-edition download outcomes for the opt-in MaxMind updater. Not alerted on directly: a run of failures is only a problem once it makes the database stale, which ts2o-geoip-database-stale catches on the build date. This is the metric that then tells you WHY — failure vs unmodified. |
 | `tailscale.geoip.lookups` | metric | `tailscale_geoip_lookups_total` | raw_only | Enrichment hit/miss/skipped accounting for an opt-in feature that is off by default. Useful when answering 'why is this address not enriched' — a high country miss rate means the database does not cover the traffic, a high skipped count means the addresses were not globally routable — but it is a debugging query, not a standing panel. |
 | `tailscale.geoip.reloads` | metric | `tailscale_geoip_reloads_total` | raw_only | Counts database hot-swaps for an opt-in feature. A reload failure already logs a WARN naming the file, and staleness is covered by the ts2o-geoip-database-stale alert on build_time, which is the signal that actually matters. Query this when diagnosing a specific swap. |
+| `tailscale.k8s.api.exec_sessions` | metric | `tailscale_k8s_api_exec_sessions_total` | raw_only | kubectl exec/attach/port-forward attempts, dimensioned by the bounded command_class. Queried ad hoc in Loki alongside tailscale.k8s.api_request until a dashboard exists. |
+| `tailscale.k8s.api.mutations` | metric | `tailscale_k8s_api_mutations_total` | raw_only | create/update/patch/delete attempts. Counts what was REQUESTED, not what succeeded, so it cannot back a change-success panel and no rule uses it. |
+| `tailscale.k8s.api.rbac_probes` | metric | `tailscale_k8s_api_rbac_probes_total` | raw_only | SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Normal for UI clients such as Freelens, which is exactly why no standing alert ships: the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline. |
+| `tailscale.k8s.api.requests` | metric | `tailscale_k8s_api_requests_total` | raw_only | Baseline Kubernetes API request volume by verb/resource/namespace/user. No dashboard or rule ships for this feed yet (#462 delivers the collector only); it counts ATTEMPTS, since the source carries no response status. |
+| `tailscale.k8s.api.sensitive_reads` | metric | `tailscale_k8s_api_sensitive_reads_total` | raw_only | Reads of secrets, service accounts and RBAC objects. A strong alerting candidate, but deliberately not wired to a rule here: a useful threshold depends on the cluster's own baseline, and shipping an arbitrary one would page on normal operator traffic. |
+| `tailscale.k8s.schema_drift` | metric | `tailscale_k8s_schema_drift_total` | raw_only | Guards an explicitly BETA upstream schema with no version field. Read on upgrade or when decoding looks wrong; not visualized because a healthy feed reports nothing at all. |
+| `tailscale.k8s.session.started` | metric | `tailscale_k8s_session_started_total` | raw_only | Terminal sessions derived from .cast headers. Fires once at session start; session completeness is not observable from the bucket, so there is no duration metric to visualize alongside it. |
 | `tailscale.key.allowed_tags` | metric | `tailscale_key_allowed_tags_ratio` | visualized |  |
 | `tailscale.key.expiry` | metric | `tailscale_key_expiry_seconds` | visualized, alertable |  |
 | `tailscale.key.preauthorized` | metric | `tailscale_key_preauthorized_ratio` | visualized |  |

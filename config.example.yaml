@@ -392,6 +392,32 @@ collectors:
       max_cycle_wire_bytes: 536870912 # defer untouched objects after 512 MiB of GET response data in one cycle
       max_cycle_decompressed_bytes: 268435456  # defer untouched objects after 256 MiB of decoded data in one cycle
       max_cycle_records: 500000       # defer untouched objects after this many decoded records in one cycle
+  k8s_audit:                          # Kubernetes API-audit events from Tailscale's tsrecorder -> request logs + bounded counters. Requires enableEvents in the tailscale.com/cap/kubernetes ACL grant (BETA upstream). NOTE: the source carries no response status, latency or byte count, so allowed-vs-denied and error rates are NOT derivable
+    enabled: false
+    objectstore:                      # the ONLY ingestion path — tsrecorder exposes no read API, no stream and no push, so there is deliberately no `source:` key here
+      endpoint: ""                    # required — service URL, e.g. https://s3.eu-west-1.amazonaws.com, or a MinIO/Ceph address
+      region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
+      bucket: ""                      # required — the bucket tsrecorder writes recordings into. Never inherited from the flowlogs/auditlogs destinations: this is a separate bucket with its own key layout
+      prefix: ""                      # usually EMPTY: tsrecorder keys are <stableID>/events/<ts>.event and <stableID>/<ts>.cast, and <stableID> differs per recorder replica so it cannot be pinned in a prefix. NO leading slash
+      layout: recorder                # recorder is the only accepted value here; partitioned and flat are REFUSED because tsrecorder writes no YYYY/MM/DD partitions and its RFC3339Nano basenames sort differently
+      path_style: false               # address as <endpoint>/<bucket>/<key>; required by most non-AWS implementations
+      allow_insecure_http: false      # remote plaintext endpoints are rejected by default; loopback HTTP remains available for local MinIO development
+      access_key_id: ""               # SET VIA ENV ONLY. Leave empty to use the ambient chain: environment, then IRSA/web identity, then the ECS/EKS container credential endpoint, then EC2 instance profile
+      access_key_id_file: ""          # read the access key ID from this path instead; value XOR file
+      secret_access_key: ""           # SET VIA ENV ONLY
+      secret_access_key_file: ""      # read the secret access key from this path instead; value XOR file
+      session_token: ""               # SET VIA ENV ONLY — temporary credentials only
+      session_token_file: ""          # read the temporary session token from this path instead; value XOR file
+      interval: 60s                   # how often the bucket is listed
+      lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it
+      max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow/audit export does
+      max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
+      max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB. RAISE THIS if you record long terminal sessions: only the .cast header line is read for meaning, but the whole object is still streamed, and an oversized one is quarantined rather than partially read
+      max_object_records: 100000      # reject and quarantine one object containing more than this many records
+      max_cycle_wire_bytes: 536870912 # defer untouched objects after 512 MiB of GET response data in one cycle
+      max_cycle_decompressed_bytes: 268435456  # defer untouched objects after 256 MiB of decoded data in one cycle
+      max_cycle_records: 500000       # defer untouched objects after this many decoded records in one cycle
   users:                              # user inventory (devices/connected/last_seen per user)
     enabled: true
     interval: 300s
@@ -537,6 +563,7 @@ pii_filter:
   network_topology: true    # route CIDRs + split-DNS domains + search paths
   tailnet_name: true        # tailnet identifier
   free_text_details: true   # audit old/new/details, target names, key descriptions, posture values
+  command_text: true              # verbatim `kubectl exec` command line on Kubernetes-audit logs; the only attribute a human types at a shell, so it can carry a pasted secret. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on
 
 # ── Self-observability (the exporter's own health telemetry) ────────────────────
 self_observability:

@@ -31,6 +31,7 @@ var canonicalGroups = map[string]bool{
 	"Reverse DNS":            true,
 	"GeoIP":                  true,
 	"Object-store ingestion": true,
+	"Kubernetes audit":       true,
 }
 
 func TestMetrics_NoDuplicateNames(t *testing.T) {

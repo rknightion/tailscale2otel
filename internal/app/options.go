@@ -187,7 +187,7 @@ func samplerClass(c config.TracingSamplerClass) telemetry.SamplerClassOptions {
 
 // piiCategories converts config.PIIFilterConfig into the pii.Categories map used
 // by the redactor. Every category is explicitly mapped; the redactor treats an
-// absent key as enabled, but we emit all 13 so the config layer's defaults (all
+// absent key as enabled, but we emit all 14 so the config layer's defaults (all
 // true) are faithfully reflected and future categories can't silently escape.
 func piiCategories(f config.PIIFilterConfig) pii.Categories {
 	return pii.Categories{
@@ -204,6 +204,7 @@ func piiCategories(f config.PIIFilterConfig) pii.Categories {
 		pii.CatNetworkTopology:  f.NetworkTopology,
 		pii.CatTailnetName:      f.TailnetName,
 		pii.CatFreeTextDetails:  f.FreeTextDetails,
+		pii.CatCommandText:      f.CommandText,
 	}
 }
 

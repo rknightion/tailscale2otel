@@ -653,6 +653,42 @@ time() - tailscale_geoip_database_build_time_seconds > 14 * 86400
 
 ---
 
+## Kubernetes audit
+
+Kubernetes API requests proxied through the Tailscale operator's API-server proxy, as recorded by
+**tsrecorder** and read from its S3 bucket (`collectors.k8s_audit`). Enable it with `enableEvents` in
+the `tailscale.com/cap/kubernetes` ACL grant — a **beta** upstream feature with no schema version and
+no stability guarantee, which is why `tailscale.k8s.schema_drift` exists.
+
+> **These counters count ATTEMPTS, not outcomes.** The source records carry no response status, no
+> latency and no byte count — tsrecorder logs the request as the proxy forwards it, and nothing on the
+> way back. Allowed-vs-denied, error rates and latency are therefore **not derivable from this feed at
+> all**, and no metric here should be read as implying success. If you need outcomes, you need the
+> Kubernetes API server's own audit log, which is a different source entirely.
+
+Cardinality is bounded by construction: every metric attribute is normalized to a closed admit-set
+with unknown values folded to `other`, because the user agent, resource names and verbs are all
+attacker-controllable. Object names, request paths, label/field selectors, pod and container names and
+the raw exec command line are **log attributes only** and never appear on a metric.
+
+`tailscale.k8s.api.exec_sessions` carries `tailscale.k8s.command_class`, a bounded classification of
+the exec command line (`interactive_shell`, `recon`, `credential_read`, `package_mgmt`, `net_tool`,
+`file_transfer`, `none`, `other`). The verbatim command text is on the log record instead, under
+`tailscale.k8s.command`, and is redactable on its own via `pii_filter.command_text` — the class
+survives that redaction, so the exec metrics keep working with the raw text switched off.
+
+<!-- BEGIN GENERATED: metrics groups="Kubernetes audit" -->
+| OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
+|---|---|---|---|---|---|
+| `tailscale.k8s.api.exec_sessions` | `1` | counter | `tailscale_k8s_api_exec_sessions_total` | `tailscale_k8s_namespace`, `tailscale_k8s_command_class`, `tailscale_k8s_session_type`, `tailscale_k8s_user` | Interactive exec/attach/portforward requests against a pod, by namespace, bounded command class, session type, and user. command_class summarizes what the command does (interactive_shell, recon, package_mgmt, ...); the raw command text is a log attribute only. |
+| `tailscale.k8s.api.mutations` | `1` | counter | `tailscale_k8s_api_mutations_total` | `tailscale_k8s_verb`, `tailscale_k8s_resource`, `tailscale_k8s_namespace`, `tailscale_k8s_user` | Mutating Kubernetes API requests (create/update/patch/delete/deletecollection) proxied through Tailscale, by verb, resource, namespace, and user. Counts the request being made, not that the mutation was admitted or persisted. |
+| `tailscale.k8s.api.rbac_probes` | `1` | counter | `tailscale_k8s_api_rbac_probes_total` | `tailscale_k8s_resource`, `tailscale_k8s_namespace`, `tailscale_k8s_user` | SelfSubjectAccessReview/SelfSubjectRulesReview/SubjectAccessReview/TokenReview requests — a client asking what it or another identity is allowed to do — by resource, namespace, and user. A probe being made, not its answer. |
+| `tailscale.k8s.api.requests` | `1` | counter | `tailscale_k8s_api_requests_total` | `tailscale_k8s_verb`, `tailscale_k8s_resource`, `tailscale_k8s_subresource`, `tailscale_k8s_api_group`, `tailscale_k8s_namespace`, `tailscale_k8s_user_agent`, `tailscale_k8s_user`, `tailscale_k8s_recorder` | Kubernetes API requests proxied through the Tailscale API-server proxy, by verb, resource, subresource, API group, namespace, user agent, user, and recorder node. Counts attempts only — the source schema carries no response status. |
+| `tailscale.k8s.api.sensitive_reads` | `1` | counter | `tailscale_k8s_api_sensitive_reads_total` | `tailscale_k8s_resource`, `tailscale_k8s_namespace`, `tailscale_k8s_user`, `tailscale_k8s_user_agent` | Read (get/list/watch) requests against sensitive resources — secrets, service accounts, RBAC objects, token/CSR reviews — by resource, namespace, user, and user agent. A read being attempted, not that it succeeded or returned data. |
+| `tailscale.k8s.schema_drift` | `1` | counter | `tailscale_k8s_schema_drift_total` | `field`, `status` | Kubernetes-audit schema vocabulary observations, by field and whether its value is known to this collector version. The feature is explicitly beta and unversioned upstream, so an unexpected event type or enum value increments this rather than being silently dropped or guessed at. |
+| `tailscale.k8s.session.started` | `1` | counter | `tailscale_k8s_session_started_total` | `tailscale_k8s_session_type`, `tailscale_k8s_namespace`, `tailscale_k8s_command_class`, `tailscale_k8s_user` | Recorded terminal sessions started against a Kubernetes pod (from the tsrecorder .cast header), by session type, namespace, bounded command class, and user. Session completeness cannot be observed — there is no documented end-of-recording signal — so this counts starts only. |
+<!-- END GENERATED -->
+
 ## Log events
 
 Structured OTEL log records. They are exported via OTLP and land in **Loki** under datasource uid
@@ -676,6 +712,8 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 | `tailscale.device.posture` | INFO | `host_name`, `host_id`, `tailscale_device_posture_details` | Per-device posture/identity snapshot, carrying the device identity plus the posture attributes reported by the API (JSON-encoded under `tailscale.device.posture.details`, gated by `pii_filter.free_text_details`). **Gated** by `collect_posture`; by default emitted only when a device's posture changes (see `posture_log_mode`). |
 | `tailscale.device.tailnet_lock_error` | ERROR | `host_name`, `host_id` | Emitted per device when its tailnet-lock error is non-empty (e.g. an unsigned node); the error text is the log body. |
 | `tailscale.device_invite` | INFO | `host_name`, `host_id`, `tailscale_user`, `user_name`, `tailscale_device_invite_delivery` | Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), the bounded delivery state (`tailscale.device_invite.delivery`), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's device id, consistent with every other device signal (not its nodeId). The invite's `inviteUrl` is a bearer token and is never decoded, let alone emitted. |
+| `tailscale.k8s.api_request` | INFO | `tailscale_k8s_verb`, `tailscale_k8s_resource`, `tailscale_k8s_subresource`, `tailscale_k8s_api_group`, `tailscale_k8s_namespace`, `tailscale_k8s_object_name`, `tailscale_k8s_path`, `tailscale_k8s_label_selector`, `tailscale_k8s_field_selector`, `tailscale_k8s_user_agent`, `tailscale_k8s_user`, `tailscale_k8s_src_node`, `tailscale_k8s_src_node_id`, `tailscale_k8s_recorder`, `tailscale_k8s_command`, `tailscale_k8s_command_class`, `tailscale_k8s_pod`, `tailscale_k8s_container` | Per proxied Kubernetes API request: verb, target resource/object, namespace, requesting user and node, user agent, and (when the request is an exec/attach/portforward) the classified and, unless redacted, raw command. tailscale.k8s.path is the query-free Kubernetes request path — the raw request path/query string is never emitted. |
+| `tailscale.k8s.session` | INFO | `tailscale_k8s_session_type`, `tailscale_k8s_namespace`, `tailscale_k8s_pod`, `tailscale_k8s_container`, `tailscale_k8s_command`, `tailscale_k8s_command_class`, `tailscale_k8s_user`, `tailscale_k8s_src_node`, `tailscale_k8s_recorder` | Per recorded terminal session start against a Kubernetes pod: session type, target pod/container/namespace, the classified and, unless redacted, raw launch command, requesting user and node, and the recorder node. Session completeness is not observable, so this fires once at session start only. |
 | `tailscale.key.expiring` | WARN | `tailscale_key_id`, `tailscale_key_type`, `tailscale_key_auth_kind`, `tailscale_key_description`, `tailscale_key_expires_in_seconds`, `tailscale_key_owner`, `tailscale_key_tags` | Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp). |
 | `tailscale.key.scopes` | INFO | `tailscale_key_id`, `tailscale_key_scope_values`, `tailscale_key_description` | Emitted for each OAuth-client/API credential that carries scopes (scope-sprawl audit log). `tailscale.key.scope_values` is a comma-separated list of the granted capability strings. Gated by `cardinality.per_entity.key`. |
 | `tailscale.logstream.error` | ERROR | `tailscale_logstream_type` | Emitted when a log stream's last delivery reported an error; the error text is the log body. |

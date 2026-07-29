@@ -304,6 +304,10 @@ const (
 	IngestSignalFlow    = "flow"
 	IngestSignalAudit   = "audit"
 	IngestSignalWebhook = "webhook"
+	// IngestSignalK8sAudit names tsrecorder's Kubernetes API-audit records. It is
+	// baked into the object-store checkpoint namespace, so renaming it orphans
+	// every deployment's durable cursor and seen set and cold-starts ingestion.
+	IngestSignalK8sAudit = "k8s_audit"
 )
 
 // network.io.direction values (stable).
