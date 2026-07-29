@@ -470,6 +470,32 @@ func TestRecorderAppliesPIIFilterToText(t *testing.T) {
 	}
 }
 
+// TestRecorderPublishesIdentityWhenPIIFilteringIsOff is the DEFAULT-BEHAVIOR
+// contract, and it is the more important half of the pair above.
+//
+// pii_filter is opt-OUT redaction: every category defaults to true (emitted), so
+// pii.New sees nothing disabled and takes its no-op fast path. An annotation on
+// a default deployment must therefore carry the identifying detail that makes it
+// worth clicking — who made the change, and to what. A well-meaning "redact
+// annotations harder than OTLP" change would pass every other test in this file
+// while quietly reducing every marker to "something changed".
+func TestRecorderPublishesIdentityWhenPIIFilteringIsOff(t *testing.T) {
+	sink := &capturingSink{}
+	// nil categories is exactly what config.Default() resolves to: all-on.
+	rec := newTestRecorder(t, sink, nil)
+	rec.ObserveEvent("tn", auditRecord("ACL", "TAILNET", "UPDATE"))
+
+	if len(sink.published) != 1 {
+		t.Fatalf("published = %d, want 1", len(sink.published))
+	}
+	text := sink.published[0].Text
+	for _, want := range []string{"admin@example.com", "target one", "UPDATE"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("annotation text is missing %q with PII filtering off: %q", want, text)
+		}
+	}
+}
+
 // TestRecorderTextHonoursTheDetailAllowList: an attribute the rule does not
 // name must never reach Grafana, so a field added to a source record later
 // cannot silently ride out.

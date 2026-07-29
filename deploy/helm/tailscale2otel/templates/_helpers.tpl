@@ -169,6 +169,14 @@ Deliberately NOT listed:
     stays credential-free.
 otlp.headers IS listed (as a whole map): raw OTLP headers are where an Authorization
 header goes, so any non-empty value there is treated as a credential.
+
+This list is GUARDED: internal/config's TestChartCredentialPathsCoversEverySecretField
+derives every Secret-typed field from the Config struct and fails when one is missing
+here (or when an entry here names a field that no longer exists). It has to be, because
+the list was hand-maintained and had silently fallen four entries behind — the GeoIP
+download license key and all three k8s_audit object-store credentials were being
+rendered into a plainly readable ConfigMap. Adding a Secret field to Config now fails
+that test until this list is updated.
 Structural carriers that are lists — config.tailnets[] and
 config.collectors.node_metrics.targets[] — are handled separately below.
 */}}
@@ -184,12 +192,16 @@ collectors.flowlogs.objectstore.session_token
 collectors.auditlogs.objectstore.access_key_id
 collectors.auditlogs.objectstore.secret_access_key
 collectors.auditlogs.objectstore.session_token
+collectors.k8s_audit.objectstore.access_key_id
+collectors.k8s_audit.objectstore.secret_access_key
+collectors.k8s_audit.objectstore.session_token
 streaming.token
 webhook.secret
 prometheus.auth.token
 admin.auth.token
 profiling.pyroscope.basic_auth_password
 grafana_annotations.token
+enrichment.geoip.download.license_key
 {{- end -}}
 
 {{/*
