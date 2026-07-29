@@ -40,8 +40,8 @@
 # install. Run `scripts/regen-generated.sh tools` to install exactly those.
 #
 #   helm-docs            v1.14.2  <- losisin/helm-docs-github-action@v2
-#   helm-values-schema-json v2.5.0 <- losisin/helm-values-schema-json-action@v3.0.1
-#                                     (action v3.0.1 pins TOOL v2.5.0 — the action
+#   helm-values-schema-json v2.5.0 <- losisin/helm-values-schema-json-action@v3.1.0
+#                                     (action v3.1.0 pins TOOL v2.5.0 — the action
 #                                      and tool versions deliberately differ; the
 #                                      tool version is baked into the action's
 #                                      dist/index.js as `version$1`.)
