@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel",
+      "__dashboardUid__": "tailscale2otel-overview",
       "__panelId__": "180",
       "description": "An ACL autoApprovers stanza auto-approves exit nodes \u2014 new exit nodes go live without manual review. Confirm this is intended.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#acl-policy-hygiene",

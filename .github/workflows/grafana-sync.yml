@@ -1,0 +1,127 @@
+name: grafana-sync
+
+# Keep the m7kni Grafana stack in step with this repository's generated Grafana
+# artifacts. Two deliberately different delivery paths:
+#
+#   dashboard -> a commit into rknightion/gc-gitsync-m7kni, because that repo is a
+#                Grafana GitSync source and Grafana writes UI saves back into it. A
+#                direct API push would create out-of-band edits and make the repo and
+#                the stack diverge with no way to tell which is right.
+#   rules     -> `gcx resources push`, because GitSync does not manage alert or
+#                recording rules at all.
+#
+# Prune runs before push: `gcx resources push` is create-or-update only, so a rule
+# deleted from the generator would otherwise keep evaluating forever.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/grafana/**'
+      - 'deploy/alerts/**'
+      - 'scripts/grafana-prune-rules.py'
+      - '.github/workflows/grafana-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let two syncs write the stack at once; never cancel one mid-write.
+concurrency:
+  group: grafana-sync
+  cancel-in-progress: false
+
+env:
+  GCX_VERSION: '1.0.0'
+  GCX_SHA256: 'c88c65958d19d83dc3a192a2a5037e08307a9c776019f24249b89f369c9c4d41'
+  RULES_FOLDER: tailscale2otel
+
+jobs:
+  dashboards:
+    name: publish dashboard to GitSync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The default GITHUB_TOKEN cannot write to another repository, hence the PAT.
+      - name: check out the GitSync repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rknightion/gc-gitsync-m7kni
+          token: ${{ secrets.GITSYNC_PAT }}
+          path: gitsync
+
+      # The destination filename encodes the dashboard UID (tailscale2otel-overview),
+      # which is also this generator's --uid default. Renaming either breaks the
+      # GitSync identity and orphans the live dashboard.
+      - name: copy the generated dashboard into place
+        run: cp deploy/grafana/tailscale2otel.json gitsync/networking/tailscale2otel-overview.json
+
+      - name: commit and push
+        working-directory: gitsync
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "dashboard already matches the stack source"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "Sync tailscale2otel dashboard from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          # Grafana commits UI saves into this repo on its own, so a push can lose a
+          # race with the stack. Rebase and retry rather than failing the sync.
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "push rejected (attempt ${attempt}) — rebasing onto origin/main"
+            git pull --rebase origin main
+          done
+          echo "::error::could not push the dashboard to gc-gitsync-m7kni after 3 attempts"
+          exit 1
+
+  rules:
+    name: publish alert and recording rules
+    runs-on: ubuntu-latest
+    env:
+      GRAFANA_SERVER: ${{ vars.GRAFANA_SERVER }}
+      GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
+      GRAFANA_STACK_ID: ${{ vars.GRAFANA_STACK_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: install gcx
+        run: |
+          set -euo pipefail
+          curl -fsSL -o gcx.tgz \
+            "https://github.com/grafana/gcx/releases/download/v${GCX_VERSION}/gcx_${GCX_VERSION}_linux_amd64.tar.gz"
+          echo "${GCX_SHA256}  gcx.tgz" | sha256sum -c -
+          tar -xzf gcx.tgz gcx
+          sudo install -m 0755 gcx /usr/local/bin/gcx
+          rm -f gcx gcx.tgz
+          gcx version
+
+      # The committed manifests are the shipped "recommended" profile — pushed as-is,
+      # not regenerated, so what deploys is exactly what CI's drift gate checked.
+      - name: list the rules this repository defines
+        run: |
+          set -euo pipefail
+          python3 - > expected-rules.txt <<'PY'
+          import glob, json
+          for path in sorted(glob.glob("deploy/alerts/grafana-managed/*.json")):
+              with open(path, encoding="utf-8") as fh:
+                  doc = json.load(fh)
+              if doc.get("kind") in ("AlertRule", "RecordingRule"):
+                  print(doc["metadata"]["name"])
+          PY
+          echo "this repository defines $(wc -l < expected-rules.txt) rules"
+
+      - name: prune rules the repository no longer defines
+        run: |
+          python3 scripts/grafana-prune-rules.py \
+            --folder "${RULES_FOLDER}" \
+            --keep-file expected-rules.txt
+
+      # No --omit-manager-fields. The live rules already carry managedBy=kubectl /
+      # managerId=gcx from how they were first pushed; stripping the manager fields
+      # sends provenance '' against a stack that holds 'api' and 409s every rule.
+      - name: push rules
+        run: gcx resources push -p deploy/alerts/grafana-managed --on-error abort

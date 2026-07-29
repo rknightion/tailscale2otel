@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel",
+      "__dashboardUid__": "tailscale2otel-overview",
       "__panelId__": "344",
       "description": "Sustained HTTP 5xx from the Tailscale API (>0.05/s) \u2014 Tailscale-side instability; the exporter retries but data may be delayed.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health",

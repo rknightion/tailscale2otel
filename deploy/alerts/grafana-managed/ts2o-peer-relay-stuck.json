@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel",
+      "__dashboardUid__": "tailscale2otel-overview",
       "__panelId__": "330",
       "description": "`connecting` is a transient state: an endpoint that has not reached `open` after an hour is not going to, so traffic that expected to use that relay is falling back to DERP or not flowing at all. The one-hour `for` is what makes this a sustained fault rather than normal churn. Check the relay node's reachability on UDP and its own tailscaled health. The third bounded state, `other`, is a FOLD bucket for a state this exporter does not recognise \u2014 that is version drift rather than a fault, so it is visible on \"Peer-relay endpoints by state\" but deliberately not alerted here.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#node-client-health",

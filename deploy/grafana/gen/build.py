@@ -158,7 +158,11 @@ def build(uid, title, flat, only=None, folder=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    ap.add_argument("--uid", default="tailscale2otel")
+    # NOT bare "tailscale2otel": that UID already belongs to the alerts FOLDER
+    # (deploy/alerts/grafana-managed/_folder.json), and the deployed dashboard has
+    # always lived at "-overview". Emitting the colliding UID meant this committed
+    # artifact could never be the thing that actually ships.
+    ap.add_argument("--uid", default="tailscale2otel-overview")
     ap.add_argument("--title", default="Tailscale2OTel — Overview")
     ap.add_argument("--flat", action="store_true", help="emit a rows-only variant (no tabs) for full-page snapshots")
     ap.add_argument("--tab", help="emit a rows-only dashboard for just this tab (for focused snapshots)")

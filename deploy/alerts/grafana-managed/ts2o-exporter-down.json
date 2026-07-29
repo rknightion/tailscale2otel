@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel",
+      "__dashboardUid__": "tailscale2otel-overview",
       "__panelId__": "367",
       "description": "tailscale2otel_up_ratio is 0 for 5m \u2014 the exporter is not running or not emitting telemetry, so no Tailscale metrics or logs are flowing. This is the pack's only coverage_critical rule: BOTH noDataState and execErrState are Alerting, so the series going fully absent \u2014 e.g. an OOM-killed pod \u2014 also fires it, matching the datasource-managed ExporterDown semantics (absent(tailscale2otel_up_ratio) or == 0). Check the \"Up state\" / build-info panels on the Exporter Health dashboard (uid ts2otel-exporter-health).",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-down",

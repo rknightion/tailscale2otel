@@ -2,7 +2,7 @@
   "apiVersion": "dashboard.grafana.app/v2",
   "kind": "Dashboard",
   "metadata": {
-    "name": "tailscale2otel"
+    "name": "tailscale2otel-overview"
   },
   "spec": {
     "title": "Tailscale2OTel \u2014 Overview",

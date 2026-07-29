@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel",
+      "__dashboardUid__": "tailscale2otel-overview",
       "__panelId__": "146",
       "description": "An audit event changed a LOGSTREAM_ENDPOINT setting \u2014 a tailnet log-streaming (SIEM) sink was added, reconfigured, or removed. Removing/disabling it is a forensics/compliance gap. Audit-driven, so it fires on the change itself (catching a disable even if quickly reverted); pair with ts2o-logstream-delivery-failing (delivery health). Ships PAUSED \u2014 enable where log-export changes must be reviewed.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift",

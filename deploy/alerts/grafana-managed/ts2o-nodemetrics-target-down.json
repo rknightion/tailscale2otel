@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel",
+      "__dashboardUid__": "tailscale2otel-overview",
       "__panelId__": "301",
       "description": "tailscale_node_up_ratio == 0 for target {{ $labels.tailscale_node }} for 10m \u2014 the node-metrics scraper could not reach tailscaled's metrics endpoint on that node, so every forwarded tailscaled_* series from it is frozen at its last value. Ships PAUSED: a sleeping laptop in the target list would fire this every night, so enable it once your targets are hosts expected to be up continuously. Gated on the node-metrics scraper (off by default) => the gauge is absent and the rule cannot fire without it.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets",
