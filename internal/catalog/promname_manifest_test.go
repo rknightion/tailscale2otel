@@ -84,7 +84,7 @@ func livePromFamilies(t *testing.T, metrics []metricdoc.Metric) map[string]strin
 		emitted[m.Name] = true
 	}
 
-	families, err := ps.PromGatherers().Gather()
+	families, err := ps.PromGatherer().Gather()
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}

@@ -70,11 +70,15 @@ func (s *ProviderSet) Tailnet(name string) *Provider { return s.tailnet[name] }
 // TailnetNames returns the tailnet names in construction order.
 func (s *ProviderSet) TailnetNames() []string { return s.order }
 
-// PromGatherers returns the per-provider Prometheus registries (process first,
-// then each tailnet in construction order) merged as prometheus.Gatherers — the
-// safe way to expose multiple registries with differing target_info label sets at
-// one /metrics endpoint. Empty when the Prometheus reader is disabled.
-func (s *ProviderSet) PromGatherers() prometheus.Gatherers {
+// PromGatherer merges the per-provider Prometheus registries (process first,
+// then each tailnet in construction order) into the single Gatherer behind the
+// /metrics pull endpoint. Nil when the Prometheus reader is disabled, which is
+// how app.New decides whether to stand that endpoint up at all.
+//
+// The merge is mergedGatherer, not a bare prometheus.Gatherers: providers built
+// from an identical Resource emit an identical target_info, which the plain
+// merge reports as a duplicate on every scrape (#519). See promgatherer.go.
+func (s *ProviderSet) PromGatherer() prometheus.Gatherer {
 	var gs prometheus.Gatherers
 	if g := s.process.PromGatherer(); g != nil {
 		gs = append(gs, g)
@@ -86,7 +90,10 @@ func (s *ProviderSet) PromGatherers() prometheus.Gatherers {
 			}
 		}
 	}
-	return gs
+	if len(gs) == 0 {
+		return nil
+	}
+	return mergedGatherer{gs: gs}
 }
 
 // Shutdown flushes and stops every provider (process + all tailnets). The

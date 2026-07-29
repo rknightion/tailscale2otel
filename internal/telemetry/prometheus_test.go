@@ -14,7 +14,7 @@ import (
 
 func scrape(t *testing.T, ps *ProviderSet) string {
 	t.Helper()
-	srv := httptest.NewServer(promhttp.HandlerFor(ps.PromGatherers(), promhttp.HandlerOpts{}))
+	srv := httptest.NewServer(promhttp.HandlerFor(ps.PromGatherer(), promhttp.HandlerOpts{}))
 	defer srv.Close()
 	resp, err := http.Get(srv.URL)
 	if err != nil {

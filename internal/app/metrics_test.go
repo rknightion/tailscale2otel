@@ -55,7 +55,7 @@ func TestMetricsHandler_DuplicateSeriesReturns200(t *testing.T) {
 			cfg := &config.Config{}
 			cfg.Prometheus.Auth.AllowUnauthenticated = true
 			a := &App{cfg: cfg, logger: slog.New(slog.DiscardHandler)}
-			srv := a.buildMetricsServer(ps.PromGatherers())
+			srv := a.buildMetricsServer(ps.PromGatherer())
 			rr := httptest.NewRecorder()
 			srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 			if rr.Code != http.StatusOK {

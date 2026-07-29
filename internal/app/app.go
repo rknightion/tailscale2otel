@@ -430,7 +430,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		a.adminSrv = a.buildAdminServer()
 	}
 	if cfg.Prometheus.Enabled {
-		if g := ps.PromGatherers(); len(g) > 0 {
+		if g := ps.PromGatherer(); g != nil {
 			a.metricsSrv = a.buildMetricsServer(g)
 		}
 	}
