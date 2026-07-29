@@ -756,6 +756,39 @@
                         },
                         "retention": {
                             "type": "string"
+                        },
+                        "store": {
+                            "type": "object",
+                            "properties": {
+                                "batch_size": {
+                                    "type": "integer"
+                                },
+                                "flush_interval": {
+                                    "type": "string"
+                                },
+                                "max_export_rows": {
+                                    "type": "integer"
+                                },
+                                "max_rows": {
+                                    "type": "integer"
+                                },
+                                "path": {
+                                    "type": "string"
+                                },
+                                "query_timeout": {
+                                    "type": "string"
+                                },
+                                "queue_size": {
+                                    "type": "integer"
+                                },
+                                "retention": {
+                                    "type": "string"
+                                },
+                                "sweep_interval": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
                         }
                     },
                     "additionalProperties": false

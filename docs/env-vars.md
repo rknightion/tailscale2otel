@@ -365,6 +365,15 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_FLOWS__RETENTION` | `6h` | how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_FLOWS__MAX_FUTURE_SKEW` | `5m` | local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged |
 | `TS2OTEL_FLOWS__CAPACITY_PROFILE` | `default` | trade memory for fidelity on every per-bucket dimension + the raw-connection ring: compact (~half), default (unchanged), or expanded (~double). Fixed, hard-coded presets only — never a raw number |
+| `TS2OTEL_FLOWS__STORE__PATH` | `""` | OPTIONAL, opt-in: a directory for the on-disk /flows backend (internal/flowstore/sqlitestore). Empty (default) is memory-only. MUST be absolute. Setting this writes flow rows, including user identities, to disk — they then survive restarts and land in backups |
+| `TS2OTEL_FLOWS__STORE__RETENTION` | `720h` | how far back the on-disk store keeps rows (1h–8760h/365d), independent of flows.retention which still only sizes the in-memory ring. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__MAX_ROWS` | `5000000` | hard cap on retained rows (10000–1000000000), enforced independently of retention so a traffic flood cannot fill the disk before the next sweep. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__MAX_EXPORT_ROWS` | `50000` | cap on rows a single CSV/JSON export may read (100–1000000), so a large window cannot be materialized into memory in one request. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__QUEUE_SIZE` | `8192` | bound on the write-behind queue between Record and the disk writer (64–1048576); a full queue drops and counts rather than blocking. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__BATCH_SIZE` | `512` | rows committed per write transaction (1–100000); must not exceed queue_size. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__FLUSH_INTERVAL` | `5s` | force a partial batch to disk on this timer (100ms–5m) so a quiet tailnet's last few rows do not sit in memory indefinitely. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__QUERY_TIMEOUT` | `15s` | give up a single read against the store after this long (1s–5m) rather than hang the admin page. Only takes effect once path is set |
+| `TS2OTEL_FLOWS__STORE__SWEEP_INTERVAL` | `1h` | how often retention and the row cap are enforced (1m–24h). Only takes effect once path is set |
 | `TS2OTEL_EVENTS__ENABLED` | `true` | keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_EVENTS__MAX_EVENTS` | `5000` | how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |

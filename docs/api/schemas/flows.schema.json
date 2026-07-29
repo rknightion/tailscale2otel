@@ -902,6 +902,35 @@
     },
     "stats": {
       "properties": {
+        "backend": {
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "healthy": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "queue_drops": {
+              "type": "integer"
+            },
+            "queued": {
+              "type": "integer"
+            },
+            "rows": {
+              "type": "integer"
+            },
+            "size_bytes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
         "buckets": {
           "type": "integer"
         },

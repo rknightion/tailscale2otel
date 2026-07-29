@@ -13,12 +13,19 @@ import (
 )
 
 // maxExportRows bounds one export response at THIS store's recent-connection
-// ring cap. A single RecentPage call with this Limit is therefore guaranteed
+// cap. A single RecentPage call with this Limit is therefore guaranteed
 // to return every row the ring currently holds that matches Start/End/Filter:
 // Matched can never exceed Retained, and Retained can never exceed the ring
 // cap, so this Limit is never actually the constraint that trims a real
 // response. It exists so the constraint is explicit and load-bearing rather
 // than "whatever RecentPage happens to do when Limit is unset" (#299).
+//
+// That "never actually the constraint" reasoning is a property of the MEMORY
+// ring, where the cap and the retained set are the same number. The persistent
+// backend (#294) retains far more than one export may return, so there this
+// Limit IS the binding constraint and a large window genuinely truncates —
+// which is why it reports flows.store.max_export_rows rather than its row cap,
+// and why the provenance line's truncated flag carries real information there.
 //
 // It reads the STORE's cap rather than the package constant because
 // flows.capacity_profile (#329) scales the ring per store. Pinned to the
@@ -26,7 +33,7 @@ import (
 // profile's 2000 while their ring held 4000 — and the provenance line would
 // still say truncated=true, which reads as "the ring dropped them" rather
 // than "the export refused to read them".
-func maxExportRows(s *flowstore.Memory) int { return s.Limits().MaxRecent }
+func maxExportRows(s flowstore.Store) int { return s.Limits().MaxRecent }
 
 // exportSource is the honesty label every export carries, in both formats:
 // the rows come from the bounded in-memory recent-connection ring
@@ -35,6 +42,27 @@ func maxExportRows(s *flowstore.Memory) int { return s.Limits().MaxRecent }
 // then — until it does, an export implying more is the one failure mode this
 // feature exists to avoid.
 const exportSource = "recent_ring"
+
+// exportSourceSQLite is the label the opt-in persistent backend carries (#294),
+// now that the "if it lands, this is what has to change" above has landed.
+const exportSourceSQLite = "sqlite"
+
+// exportProvenance resolves the source label and its plain-words note for the
+// store actually serving this export.
+//
+// The distinction is the whole point of the label. A ring export is a window
+// onto the last few thousand connections this process happens to still hold; a
+// sqlite export is a window onto a retention-bounded database. Both are bounded
+// and both can truncate, but an integration that treats the first as full
+// history is wrong in a way the second is not, so neither may borrow the
+// other's wording.
+func exportProvenance(s flowstore.Store) (source, note string) {
+	if s != nil && s.Stats().Backend.Kind == flowstore.BackendSQLite {
+		return exportSourceSQLite,
+			"persistent on-disk flow store, bounded by flows.store.retention and flows.store.max_rows"
+	}
+	return exportSource, "bounded in-memory recent-connection ring; NOT persistent full history"
+}
 
 // flowsExportSchemaVersion is flowsExportEnvelope's contract version (#323),
 // mirroring flowsdata.SchemaVersion for the sibling /api/flows.json endpoint.
@@ -68,7 +96,7 @@ func (a *App) parseFlowsExportQuery(w http.ResponseWriter, r *http.Request) (flo
 	}
 
 	q := r.URL.Query()
-	retention := a.cfg.Flows.Retention.D()
+	retention := a.flowRetention()
 	window := clampDuration(q.Get("window"), defaultFlowsWindow, flowstore.Resolution, retention)
 	now := time.Now().UTC()
 	end := clampTime(q.Get("end"), now, now.Add(-retention), now)
@@ -88,8 +116,9 @@ func (a *App) parseFlowsExportQuery(w http.ResponseWriter, r *http.Request) (flo
 	}, true
 }
 
-// fetch runs the bounded query against the ring. See maxExportRows for why a
-// single call is always enough to drain every currently-matching row.
+// fetch runs the bounded query against the store. See maxExportRows for why a
+// single call always drains every currently-matching row on the memory ring,
+// and why it can legitimately truncate on the persistent backend.
 func (eq flowsExportQuery) fetch() flowstore.RecentPage {
 	return eq.rt.flowStore.RecentPage(flowstore.RecentQuery{
 		Start: eq.start, End: eq.end, Limit: maxExportRows(eq.rt.flowStore), Filter: eq.filter,
@@ -247,7 +276,8 @@ func (a *App) handleFlowsExportCSV(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# tailnet=%s\n", oneLine(eq.tailnet))
 	fmt.Fprintf(w, "# window_start=%s window_end=%s\n", eq.start.UTC().Format(time.RFC3339), eq.end.UTC().Format(time.RFC3339))
 	fmt.Fprintf(w, "# filters=%s\n", oneLine(describeFilters(eq.filters)))
-	fmt.Fprintf(w, "# source=%s (bounded in-memory ring, NOT persistent full history)\n", exportSource)
+	source, note := exportProvenance(eq.rt.flowStore)
+	fmt.Fprintf(w, "# source=%s (%s)\n", source, note)
 	fmt.Fprintf(w, "# matched=%d returned=%d retained=%d truncated=%t\n", page.Matched, len(page.Rows), page.Retained, page.Truncated)
 
 	cw := csv.NewWriter(w)
@@ -334,14 +364,15 @@ func (a *App) handleFlowsExportJSON(w http.ResponseWriter, r *http.Request) {
 		rows = []flowstore.Recent{}
 	}
 
+	exportSourceLabel, exportSourceNote := exportProvenance(eq.rt.flowStore)
 	env := flowsExportEnvelope{
 		SchemaVersion: flowsExportSchemaVersion,
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
 		Tailnet:       eq.tailnet,
 		Window:        flowstore.Range{Start: eq.start, End: eq.end},
 		Filters:       eq.filters,
-		Source:        exportSource,
-		SourceNote:    "bounded in-memory recent-connection ring; NOT persistent full history",
+		Source:        exportSourceLabel,
+		SourceNote:    exportSourceNote,
 		Matched:       page.Matched,
 		Returned:      len(page.Rows),
 		Retained:      page.Retained,

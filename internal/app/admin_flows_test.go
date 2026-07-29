@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -291,7 +292,7 @@ func TestFlowStore_NotBuiltWithoutTheAdminPage(t *testing.T) {
 func TestNewFlowStoreWiresConfiguredFutureSkew(t *testing.T) {
 	cfg := config.Default()
 	cfg.Flows.MaxFutureSkew = config.Duration(time.Minute)
-	store := newFlowStore(cfg)
+	store := newFlowStore(cfg, "test.example.com", slog.New(slog.DiscardHandler))
 	if store == nil {
 		t.Fatal("newFlowStore returned nil")
 	}

@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.30.0](https://img.shields.io/badge/Version-0.30.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
+![Version: 0.31.0](https://img.shields.io/badge/Version-0.31.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 3.0.0](https://img.shields.io/badge/AppVersion-3.0.0-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -375,6 +375,15 @@ extraVolumeMounts:
 | config.flows.enabled | bool | `true` | Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page. |
 | config.flows.max_future_skew | string | `"5m"` | Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged. |
 | config.flows.retention | string | `"6h"` | How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store. |
+| config.flows.store.batch_size | int | `512` | Rows written per transaction by the background writer. |
+| config.flows.store.flush_interval | string | `"5s"` | How often a partial batch is forced to disk, so a quiet tailnet's last few connections do not sit in memory indefinitely between flushes. |
+| config.flows.store.max_export_rows | int | `50000` | Cap on how many rows a single CSV/JSON export may read, so an export cannot try to materialise the whole retained window in one request. |
+| config.flows.store.max_rows | int | `5000000` | Hard cap on retained rows, enforced independently of retention so a traffic flood cannot fill the disk before the next sweep runs. |
+| config.flows.store.path | string | `""` | Directory to hold this tailnet's flows-<tailnet>.db (a DIRECTORY, not a file path). Empty (default) = disabled. Point it at the persistence PVC's mount, e.g. /var/lib/tailscale2otel/flows, and set persistence.enabled=true — see the sizing note on that block below. Requires an absolute, writable path; if it cannot be opened the flow view is switched OFF (and /flows 404s) rather than silently falling back to memory, so an operator who asked for history is never shown a view that looks like it. OTLP export is unaffected. Rows carry user identities (emails) and land on disk and in backups — the configured pii_filter is applied before a row is written, same as the OTLP export path. |
+| config.flows.store.query_timeout | string | `"15s"` | Timeout on a single read from the store. A window scan that exceeds it fails honestly rather than hanging the admin page. |
+| config.flows.store.queue_size | int | `8192` | Bound on the write-behind queue between the emit path and the disk writer. A full queue drops the observation and counts it rather than blocking OTLP export — visible in the admin API. |
+| config.flows.store.retention | string | `"720h"` | How far back the on-disk store keeps rows before the retention sweep deletes them. Separate from flows.retention above, which only sizes the in-memory ring and is capped at 24h — this bound is unrelated and can be much longer. |
+| config.flows.store.sweep_interval | string | `"1h"` | How often the retention window and the row cap are enforced. |
 | config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
 | config.headscale.api_key_file | string | `""` | Read headscale.api_key from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.headscale.http.rate_limit | int | `0` |  |
@@ -657,7 +666,7 @@ extraVolumeMounts:
 | persistence.accessMode | string | `"ReadWriteOnce"` | PVC access mode. |
 | persistence.enabled | bool | `false` | Persist process state across pod replacement/rescheduling. When false, an emptyDir is used: it survives container restarts within the same pod, but is lost with pod replacement, rescheduling, or node loss. When true, a PVC is created or existingClaim is mounted. |
 | persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one (empty = create one). Only used when enabled; persistence.enabled=true is required, and existingClaim may supply the durable volume instead of this chart creating it. |
-| persistence.size | string | `"64Mi"` | PVC size. The existing 64Mi default suits checkpoints only. With the default 256Mi encoded WAL limit, request at least 512Mi for WAL entries plus staging files and metadata. |
+| persistence.size | string | `"64Mi"` | PVC size. The existing 64Mi default suits checkpoints only. With the default 256Mi encoded WAL limit, request at least 512Mi for WAL entries plus staging files and metadata. If config.flows.store.path also points into this volume (e.g. /var/lib/tailscale2otel/flows), size for that store separately — see the disk-sizing estimate in docs/flow-view.md — and add its estimate on top of the WAL/checkpoint figure above. |
 | persistence.storageClass | string | `""` | StorageClass for the PVC (empty = cluster default). Only used when enabled. |
 | podAnnotations | object | `{}` | Extra annotations for the pod. |
 | podLabels | object | `{}` | Extra labels for the pod. |

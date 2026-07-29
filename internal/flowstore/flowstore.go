@@ -1906,6 +1906,12 @@ func truncate[T any](s []T, n int) []T {
 }
 
 // Stats describes the store's own state, for the admin status surface.
+//
+// Backend names which implementation answered, so the page can say "this is a
+// bounded in-memory ring that dies with the process" or "this is on disk and
+// survives a restart" rather than leaving the operator to infer it. It is
+// additive to the versioned /api contract (#323): every field is optional
+// except Kind, which memory fills in as BackendMemory.
 type Stats struct {
 	Buckets      int       `json:"buckets"`
 	Capacity     int       `json:"capacity"`
@@ -1913,6 +1919,7 @@ type Stats struct {
 	Truncated    int64     `json:"truncated"`
 	Earliest     time.Time `json:"earliest"`
 	Latest       time.Time `json:"latest"`
+	Backend      Backend   `json:"backend"`
 }
 
 // Stats returns the store's current state.
@@ -1920,7 +1927,13 @@ func (m *Memory) Stats() Stats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	s := Stats{Buckets: len(m.buckets), Capacity: m.capacity, Observations: m.recorded, Truncated: m.dropped}
+	s := Stats{
+		Buckets:      len(m.buckets),
+		Capacity:     m.capacity,
+		Observations: m.recorded,
+		Truncated:    m.dropped,
+		Backend:      Backend{Kind: BackendMemory, Healthy: true},
+	}
 	for _, b := range m.buckets {
 		if s.Earliest.IsZero() || b.start.Before(s.Earliest) {
 			s.Earliest = b.start

@@ -703,6 +703,22 @@ func (a *App) Run(ctx context.Context) error {
 		// issued once it begins (the rdns cache is also shutdown-safe on its own — #121).
 		defer a.rdnsCache.Close()
 	}
+	// Close every tailnet's flow store on the way out. The in-memory ring has
+	// nothing to release and returns nil; the persistent backend (#294) uses this
+	// to stop its writer and flush what is still queued, so a clean shutdown does
+	// not discard connections the emit path already accepted. Deferred here, with
+	// the other resource closers, so it runs after the schedulers stop and the
+	// receiver goroutines are joined — nothing is still recording by then.
+	defer func() {
+		for _, rt := range a.runtimes {
+			if rt.flowStore == nil {
+				continue
+			}
+			if err := rt.flowStore.Close(); err != nil {
+				a.logger.Error("close flow store", "error", err, "tailnet", a.runtimeName(rt))
+			}
+		}
+	}()
 	if a.adminSrv != nil {
 		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
 	}

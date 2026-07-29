@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
 	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v3/internal/flowstore/sqlitestore"
 )
 
 // Bounds on what /api/flows.json will do for one request. The window, page size
@@ -81,15 +83,77 @@ func decodeFlowsCursor(s string) uint64 {
 // /flows on the admin landing page, so with that surface disabled it would
 // accumulate memory nobody could ever look at — config.Warnings() tells the
 // operator the setting is doing nothing.
-func newFlowStore(cfg *config.Config) *flowstore.Memory {
+// The nil return is a LITERAL nil, never a typed nil pointer: the return type is
+// the interface, and a (*flowstore.Memory)(nil) in an interface compares
+// non-nil, so every "view disabled" check downstream would pass and then panic.
+//
+// With flows.store.path set it builds the opt-in persistent backend instead
+// (#294). If that fails to open, the flow view is switched OFF rather than
+// quietly falling back to memory: an operator who configured persistence and
+// then sees a working /flows would reasonably conclude they had history, and
+// would find out otherwise only after the restart they were retaining across.
+// A disabled view 404s, which is the honest answer.
+//
+// The failure is not fatal to the process. This exporter's job is OTLP export;
+// the flow view is an admin convenience on top of it. Taking the telemetry
+// pipeline down because an auxiliary view's directory is unwritable would be a
+// worse outcome than serving telemetry without the view, so this logs at ERROR
+// and continues.
+func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) flowstore.Store {
 	if !cfg.Flows.Enabled || !cfg.Admin.Enabled || !cfg.Admin.LandingPage {
 		return nil
 	}
+
+	if dir := cfg.Flows.Store.Path; dir != "" {
+		store, err := sqlitestore.Open(sqlitestore.Options{
+			Dir:           dir,
+			Tailnet:       tailnet,
+			Retention:     cfg.Flows.Store.Retention.D(),
+			MaxRows:       cfg.Flows.Store.MaxRows,
+			MaxExportRows: cfg.Flows.Store.MaxExportRows,
+			MaxFutureSkew: cfg.Flows.MaxFutureSkew.D(),
+			QueueSize:     cfg.Flows.Store.QueueSize,
+			BatchSize:     cfg.Flows.Store.BatchSize,
+			FlushInterval: cfg.Flows.Store.FlushInterval.D(),
+			QueryTimeout:  cfg.Flows.Store.QueryTimeout.D(),
+			SweepInterval: cfg.Flows.Store.SweepInterval.D(),
+			// Unlike the memory ring, rows here outlive the process and land in
+			// backups, so pii_filter applies (see flowRedactor).
+			Redact: flowRedactor(piiCategories(cfg.PIIFilter)),
+		})
+		if err != nil {
+			logger.Error("flow view disabled: persistent flow store failed to open",
+				"error", err, "path", dir, "tailnet", tailnet)
+			return nil
+		}
+		return store
+	}
+
 	return flowstore.NewMemory(
 		int(cfg.Flows.Retention.D()/flowstore.Resolution),
 		flowstore.WithMaxFutureSkew(cfg.Flows.MaxFutureSkew.D()),
 		flowstore.WithCapacityProfile(cfg.Flows.CapacityProfile),
 	)
+}
+
+// flowRetention is how far back a runtime's store can actually answer, and is
+// what the window and end-time clamps must use.
+//
+// It is NOT always flows.retention. That setting sizes the in-memory ring and is
+// capped at 24h, so clamping against it with the persistent backend enabled
+// would hold every query and export to a day against a database retaining
+// thirty — the multi-day history #294 exists to provide would be unreachable
+// through the only UI that reads it.
+//
+// Presence of the path is the test rather than the store's reported Kind: a
+// persistent store that failed to open leaves flowStore nil and the view off, so
+// a non-nil store with a configured path is a sqlite one, and Stats() on that
+// backend costs real queries this is called on every request to avoid.
+func (a *App) flowRetention() time.Duration {
+	if a.cfg.Flows.Store.Path != "" {
+		return a.cfg.Flows.Store.Retention.D()
+	}
+	return a.cfg.Flows.Retention.D()
 }
 
 // flowsEnabled reports whether any runtime is feeding a flow store, which is
@@ -141,7 +205,7 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 	if !info.Enabled {
 		return info
 	}
-	info.Retention = a.cfg.Flows.Retention.D().String()
+	info.Retention = a.flowRetention().String()
 
 	var earliest, latest time.Time
 	for _, rt := range a.runtimes {
@@ -190,7 +254,7 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	retention := a.cfg.Flows.Retention.D()
+	retention := a.flowRetention()
 	window := clampDuration(q.Get("window"), defaultFlowsWindow, flowstore.Resolution, retention)
 	topN := clampInt(q.Get("top"), defaultFlowsTopN, 1, maxFlowsTopN)
 	recent := clampInt(q.Get("recent"), defaultFlowsRecent, 0, maxFlowsRecent)
@@ -371,7 +435,7 @@ func (a *App) handleFlowsPage(w http.ResponseWriter, r *http.Request) {
 		Version:     a.version,
 		Tailnets:    a.flowTailnets(),
 		Tailnet:     a.runtimeName(rt),
-		Retention:   a.cfg.Flows.Retention.D().String(),
+		Retention:   a.flowRetention().String(),
 		RefreshMs:   int(a.cfg.Admin.StatusRefreshInterval.D().Milliseconds()),
 	}
 	if err := flowhtml.Render(w, page); err != nil {

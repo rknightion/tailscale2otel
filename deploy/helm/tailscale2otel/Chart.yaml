@@ -158,7 +158,7 @@ type: application
 # profiling.pyroscope.tailnet_label, tracing.remote_parent, tracing.samplers.*, and the new
 # top-level resource: block (service_namespace/deployment_environment/attributes/from_env).
 # 0.28.0: add config.flows.capacity_profile (#329).
-version: 0.30.0
+version: 0.31.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "3.0.0" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/

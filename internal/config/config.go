@@ -163,6 +163,60 @@ type FlowsConfig struct {
 	// enforced by internal/flowstore.CapsForProfile, so a bad value fails
 	// Validate() by name rather than accepting an unbounded raw number.
 	CapacityProfile string `yaml:"capacity_profile"`
+	// Store optionally persists /flows to disk (#294) instead of, or in
+	// addition to, the in-memory ring above. Off by default (Path == "").
+	Store FlowsStoreConfig `yaml:"store"`
+}
+
+// FlowsStoreConfig configures the OPT-IN, on-disk SQLite backend for /flows
+// (#294): internal/flowstore/sqlitestore. It exists for operators who want
+// history beyond flows.retention's in-memory hours, or who want the view to
+// survive a restart. Every field maps one-for-one onto
+// sqlitestore.Options, and every default below MUST equal that package's
+// Default* constant — the two are meant to be read together.
+//
+// Unlike the in-memory ring, this writes raw connection rows to a file that
+// persists across restarts and lands in backups, so Warnings() calls out the
+// data-at-rest exposure this introduces once Path is set.
+type FlowsStoreConfig struct {
+	// Path is the directory the per-tailnet SQLite database files live in.
+	// Empty (the default) means memory-only: the persistent backend is never
+	// built and every field below is inert.
+	Path string `yaml:"path"`
+	// Retention is how far back the persistent store keeps rows, independent
+	// of flows.retention (which still only sizes the in-memory ring). Rows
+	// older than this are swept. Bounded to [1h, 8760h] (365d): unlike the
+	// ring, this sizes disk, but an unbounded value would let a forgotten
+	// setting grow the database forever.
+	Retention Duration `yaml:"retention"`
+	// MaxRows is a hard cap on retained rows, enforced independently of
+	// Retention so a traffic flood cannot fill the disk before the next sweep
+	// runs. Bounded to [10000, 1000000000].
+	MaxRows int64 `yaml:"max_rows"`
+	// MaxExportRows bounds how many rows a single CSV/JSON export may read, so
+	// a large retained window cannot be materialized into memory in one
+	// request. Bounded to [100, 1000000].
+	MaxExportRows int `yaml:"max_export_rows"`
+	// QueueSize bounds the write-behind channel between the hot Record path
+	// and the background writer goroutine. A full queue drops the record and
+	// counts it rather than blocking the emit path (flowstore's Record
+	// contract: never blocks, never fails). Bounded to [64, 1048576].
+	QueueSize int `yaml:"queue_size"`
+	// BatchSize is how many queued rows one write transaction commits.
+	// Bounded to [1, 100000], and MUST NOT exceed QueueSize — a batch larger
+	// than the queue it drains from can never fill.
+	BatchSize int `yaml:"batch_size"`
+	// FlushInterval forces a partial batch to disk on a timer, so a quiet
+	// tailnet's last few connections do not sit in memory indefinitely
+	// waiting for BatchSize to fill. Bounded to [100ms, 5m].
+	FlushInterval Duration `yaml:"flush_interval"`
+	// QueryTimeout bounds a single read against the store. A window scan that
+	// exceeds it fails honestly rather than hanging the admin page. Bounded to
+	// [1s, 5m].
+	QueryTimeout Duration `yaml:"query_timeout"`
+	// SweepInterval is how often retention and the row cap are enforced.
+	// Bounded to [1m, 24h].
+	SweepInterval Duration `yaml:"sweep_interval"`
 }
 
 // EventsConfig configures the built-in bounded audit/webhook event explorer

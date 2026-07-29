@@ -10,8 +10,10 @@ server. It answers the questions you actually open a flow tool for — who talke
 how much, and when — without a Grafana or Prometheus backend in the loop.
 
 It is a **convenience view, not a second telemetry pipeline**. Everything it shows is derived from the
-same flow records the exporter is already sending over OTLP, which remains the system of record. The
-store is in memory, bounded, and lost on restart.
+same flow records the exporter is already sending over OTLP, which remains the system of record. By
+default the store is in memory, bounded, and lost on restart; setting `flows.store.path` switches to
+an opt-in on-disk backend that survives a restart and can answer over days — see
+[Persistent storage](#persistent-storage) below.
 
 ## What it shows
 
@@ -79,6 +81,96 @@ flows:
 With `admin.enabled` or `admin.landing_page` off, the store is **not built at all** and a startup
 advisory says the setting is doing nothing. See [`flows`](configuration.md#flows-built-in-flow-view)
 for the full key reference.
+
+## Persistent storage
+
+`flows.retention`'s in-memory ring is the default and stays the default: nothing on disk, nothing
+that survives a restart, no new failure mode for the stateless single-binary story. **Persistence is
+opt-in.** Setting `flows.store.path` to a directory replaces the ring with a SQLite-backed store:
+
+```yaml
+flows:
+  enabled: true
+  retention: 6h        # ignored while store.path is set — it only sizes the in-memory ring
+  store:
+    path: /var/lib/tailscale2otel/flows   # a DIRECTORY. Setting this is what turns persistence on.
+    retention: 720h                       # 30 days — the disk retention, independent of the above
+```
+
+**Two retentions, two different things — this is the easiest setting on this page to get wrong.**
+`flows.retention` sizes the in-memory ring and is capped at 24h. `flows.store.retention` is a
+separate knob on the disk-backed store, with its own default (30 days) and no 24h cap.
+
+The two never run together. A store is one or the other, chosen at startup by whether
+`flows.store.path` is set, and there is no tiering between them — with persistence on, every query
+including the most recent minute is answered from disk, and `flows.retention` no longer governs what
+`/flows` can see. It still bounds the ring the process would build if you unset the path, and the
+window clamp follows whichever store is active, so a 30-day disk retention really is queryable.
+
+**One file per tailnet:** `flows-<tailnet>.db` inside the configured directory. A device name is only
+unique within its own tailnet, so multi-tailnet mode gets one database per tailnet automatically —
+nothing to configure per entry.
+
+**What changes versus the in-memory ring:**
+
+- **Aggregates are exact, not capped.** The in-memory store folds per-bucket overflow into
+  `__other__` and marks coverage partial (see [Limits worth knowing](#limits-worth-knowing)). The
+  disk store keeps one row per connection and computes every aggregate with `GROUP BY` at query time,
+  so there is no per-key cap to overflow — `Truncated` on a query result is zero unless the
+  write-behind queue below actually dropped something.
+- **Recent connections pages the whole retained window**, not a fixed 2,000-row ring. `recent`/
+  `cursor` paging (see [the JSON API](#filtering-and-pagination)) walks however much is on disk,
+  bounded only by `flows.store.max_export_rows` and the retention/row-cap sweep.
+- **Bounded by retention sweep and a hard row cap, not by key caps.** `flows.store.max_rows`
+  (default 5,000,000) is enforced independently of `flows.store.retention`, so a traffic flood can't
+  fill the disk before the next sweep (`flows.store.sweep_interval`, default hourly) runs.
+
+**Writes never block ingestion.** Recording a connection enqueues it onto a bounded in-process queue
+(`flows.store.queue_size`) and returns immediately; a background goroutine batches queued rows to
+disk (`flows.store.batch_size` per transaction, forced out at least every `flows.store.flush_interval`
+so a quiet tailnet doesn't sit on a partial batch). If the queue is full — the writer falling behind a
+burst, or disk I/O stalling — the observation is **dropped and counted**, never queued indefinitely and
+never allowed to slow OTLP export. Drops surface in the admin API the same way the in-memory ring's
+truncation does.
+
+**PII / data at rest — read this before pointing `path` at anything.** The in-memory ring dies with
+the process; nothing is written anywhere, and Section [Privacy](#privacy) above is what governs it.
+The disk store is a different exposure: flow rows carry user identities (source/destination emails,
+tags), and once written they persist across restarts and land in whatever backs up that volume. The
+configured `pii_filter` policy is applied to a row **before** it is written — the same redaction the
+OTLP export path applies — so a category you've turned off does not reach the database either. What
+`pii_filter` leaves enabled, the database keeps indefinitely (up to `flows.store.retention`) and your
+backup process will too. Size access to that directory and its backups accordingly; the admin token
+gates the view, but a filesystem-level or backup-level read bypasses it entirely.
+
+**Disk sizing — an estimate, not a measurement.** This backend stores one row per connection across
+29 mostly-short `TEXT`/`INTEGER` columns (endpoints, tags, verdict, path, byte/packet counters — see
+`internal/flowstore/sqlitestore/schema.go`) plus two indexes. Assume roughly **250–350 bytes per row**
+including index overhead — nobody has benchmarked the real figure on this project's fixtures yet, so
+treat it as an order-of-magnitude planning number, not a measured one. Two ways to reason about it:
+
+- **The row cap is the hard ceiling regardless of rate.** `flows.store.max_rows` defaults to
+  5,000,000; at 300 bytes/row that's roughly **1.5 GB** at capacity, whatever `flows.store.retention`
+  says.
+- **The retention window is the usual limit at moderate traffic, until the cap overtakes it.** A
+  tailnet sustaining around 2 connections/second (~170,000/day) reaches roughly 5.1M rows over the
+  default 30-day retention — already past the row cap above. Below that rate, retention days × your
+  connections/day × 300 bytes is the estimate; above it, the row cap is what actually bounds disk use.
+
+Measure your own tailnet's connection rate (the `tailscale.network.flow.count` metric, or watch the
+row count directly) before committing to a volume size, and raise `flows.store.max_rows` deliberately
+if 1.5 GB is too small a ceiling for the retention you want.
+
+**Backups.** Nothing backs this up for you — it's a plain SQLite file under `flows.store.path`. Back
+it up the way you would any other application database if the history matters to you (a filesystem
+snapshot of the directory is fine; SQLite in WAL mode is safe to copy while the process is stopped, or
+via your storage layer's own consistent-snapshot mechanism while running). A lost or corrupted file
+loses history — nothing else. `/flows` on the in-memory path continues to work either way; loss here
+is not an outage.
+
+**Binary footprint.** The engine is `modernc.org/sqlite`, a pure-Go, cgo-free implementation — chosen
+specifically because the release matrix builds `CGO_ENABLED=0` and ships a distroless image. Adds
+about 4.6 MB to the binary; nothing else about the build changes.
 
 ## Access control
 
@@ -271,9 +363,13 @@ resolution on the way in, and every dimension has a per-minute cap. Beyond a cap
 exact either way. This matters because the streaming receiver is a potentially unauthenticated ingress,
 and a flood of unique flow keys must not be able to grow the process without limit.
 
-**Retention is memory, not storage.** `flows.retention` sizes a ring of one-minute buckets and is
-bounded to 24h. In multi-tailnet mode each tailnet keeps its own store, so memory scales with the
-number of tailnets too. Nothing survives a restart. For long-range history, query your OTLP backend.
+**By default, retention is memory, not storage.** `flows.retention` sizes a ring of one-minute
+buckets and is bounded to 24h. In multi-tailnet mode each tailnet keeps its own store, so memory
+scales with the number of tailnets too. Nothing survives a restart on this path. Set
+`flows.store.path` to opt into an on-disk backend that does survive a restart and can hold weeks
+instead of hours — see [Persistent storage](#persistent-storage). For long-range history you don't
+want to run a database for, query your OTLP backend instead — that remains the system of record
+either way.
 
 **Some flows carry no destination.** Exit traffic never does — that is how the Tailscale API reports
 it, not a gap in decoding. Those connections count toward totals and show a dash where a destination
@@ -467,6 +563,8 @@ $ curl -sH "Authorization: Bearer $TOKEN" \
 
 ## What it is not
 
-It is not a replacement for dashboards, alerting, or retention. It holds hours, not weeks; it cannot
-join across time ranges; and it has no alerting. For any of that, use the OTLP export and the
-[dashboards](dashboards.md) and [alert rules](alerts.md) that ship with the project.
+It is not a replacement for dashboards, alerting, or retention. By default it holds hours, not weeks
+(persistence, opt-in, extends that to whatever `flows.store.retention` allows — still not a
+replacement for the points below); it cannot join across time ranges; and it has no alerting. For any
+of that, use the OTLP export and the [dashboards](dashboards.md) and [alert rules](alerts.md) that
+ship with the project.

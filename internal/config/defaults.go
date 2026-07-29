@@ -342,6 +342,22 @@ func Default() *Config {
 			// "default" reproduces today's hardcoded per-bucket/ring limits exactly
 			// (#329) — safe defaults stay unchanged unless an operator opts in.
 			CapacityProfile: flowstore.ProfileDefault,
+			// Store.Path defaults to "" (memory-only, the persistent backend is
+			// never built). These sub-defaults only take effect once an operator
+			// sets a path, and MUST equal sqlitestore's Default* constants
+			// (internal/flowstore/sqlitestore/store.go) — hand-copied rather than
+			// imported so internal/config does not pull in the sqlite driver just
+			// to read seven numbers.
+			Store: FlowsStoreConfig{
+				Retention:     dur(30 * 24 * time.Hour), // sqlitestore.DefaultRetention
+				MaxRows:       5_000_000,                // sqlitestore.DefaultMaxRows
+				MaxExportRows: 50_000,                   // sqlitestore.DefaultMaxExportRows
+				QueueSize:     8192,                     // sqlitestore.DefaultQueueSize
+				BatchSize:     512,                      // sqlitestore.DefaultBatchSize
+				FlushInterval: dur(5 * time.Second),     // sqlitestore.DefaultFlushInterval
+				QueryTimeout:  dur(15 * time.Second),    // sqlitestore.DefaultQueryTimeout
+				SweepInterval: dur(time.Hour),           // sqlitestore.DefaultSweepInterval
+			},
 		},
 		Events: EventsConfig{
 			Enabled: true,

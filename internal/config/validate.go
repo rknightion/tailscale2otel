@@ -41,6 +41,29 @@ const (
 	maxEventsMaxEvents   = 100000
 )
 
+// Bounds on flows.store.* (#294), the opt-in on-disk backend. Unlike
+// flows.retention above this DOES size durable storage, so the ceilings are
+// wider (up to a year of retention, a billion rows) — but still bounded, so a
+// forgotten setting cannot grow the database without limit.
+const (
+	minFlowsStoreRetention     = time.Hour
+	maxFlowsStoreRetention     = 365 * 24 * time.Hour
+	minFlowsStoreMaxRows       = int64(10_000)
+	maxFlowsStoreMaxRows       = int64(1_000_000_000)
+	minFlowsStoreMaxExportRows = 100
+	maxFlowsStoreMaxExportRows = 1_000_000
+	minFlowsStoreQueueSize     = 64
+	maxFlowsStoreQueueSize     = 1_048_576
+	minFlowsStoreBatchSize     = 1
+	maxFlowsStoreBatchSize     = 100_000
+	minFlowsStoreFlushInterval = 100 * time.Millisecond
+	maxFlowsStoreFlushInterval = 5 * time.Minute
+	minFlowsStoreQueryTimeout  = time.Second
+	maxFlowsStoreQueryTimeout  = 5 * time.Minute
+	minFlowsStoreSweepInterval = time.Minute
+	maxFlowsStoreSweepInterval = 24 * time.Hour
+)
+
 // oneOf reports whether v equals one of the allowed values.
 func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
@@ -325,6 +348,29 @@ func (c *Config) Warnings() []string {
 			"landing page, which is disabled (admin.enabled / admin.landing_page). The flow "+
 			"store is not built, so no traffic history is retained. Enable the admin page to "+
 			"use the flow view.")
+	}
+
+	// flows.store.path (#294) opts into the on-disk backend. Same reasoning as
+	// flows.enabled just above: the persistent store is only ever built
+	// alongside the in-memory one, so a path set while /flows itself has no
+	// consumer is dead configuration.
+	if c.Flows.Store.Path != "" && (!c.Flows.Enabled || !c.Admin.Enabled || !c.Admin.LandingPage) {
+		w = append(w, "flows.store.path is set but has no effect: the persistent flow store is only "+
+			"built when flows.enabled=true and the admin landing page is on (admin.enabled / "+
+			"admin.landing_page). No history is being written to disk.")
+	}
+
+	// Setting flows.store.path is a genuine new data-at-rest exposure, not
+	// just an operational footgun: the in-memory ring dies with the process,
+	// but every row persisted to disk here — including the identities
+	// (emails, node/tag names) a flow observation carries — survives a
+	// restart and, unless the operator excludes the path, ends up in whatever
+	// backs up that host.
+	if c.Flows.Store.Path != "" {
+		w = append(w, "flows.store.path is set: flow rows, including user identities such as "+
+			"email addresses, will be written to disk at "+c.Flows.Store.Path+" and will survive "+
+			"restarts and appear in backups of that path, unlike the in-memory default. Make sure "+
+			"that is intended and that the path is covered by your backup/retention policy.")
 	}
 
 	// The event store's only consumer is the /events page on the admin server,
@@ -1036,6 +1082,132 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+
+	// flows.store.* (#294) configures the opt-in on-disk backend
+	// (internal/flowstore/sqlitestore). Every check below is a no-op both when
+	// the view is off (mirroring the in-memory checks above — the store is
+	// never built) AND when flows.store.path is empty: an empty path is the
+	// documented "memory only" default, so there is nothing to validate.
+	flowsStoreActive := func() bool { return c.Flows.Enabled && c.Flows.Store.Path != "" }
+
+	add("flows.store.path", "Set flows.store.path to an absolute directory path.", func() error {
+		if !flowsStoreActive() {
+			return nil
+		}
+		if !filepath.IsAbs(c.Flows.Store.Path) {
+			return fmt.Errorf("flows.store.path %q must be an absolute path: a relative path is a "+
+				"foot-gun once this runs in a container, where the working directory is easy to get "+
+				"wrong and hard to notice", c.Flows.Store.Path)
+		}
+		return nil
+	})
+	add("flows.store.retention",
+		fmt.Sprintf("Set flows.store.retention between %v and %v.", minFlowsStoreRetention, maxFlowsStoreRetention),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if d := c.Flows.Store.Retention.D(); d < minFlowsStoreRetention || d > maxFlowsStoreRetention {
+				return fmt.Errorf("flows.store.retention must be between %v and %v (got %v)",
+					minFlowsStoreRetention, maxFlowsStoreRetention, d)
+			}
+			return nil
+		})
+	add("flows.store.max_rows",
+		fmt.Sprintf("Set flows.store.max_rows between %d and %d.", minFlowsStoreMaxRows, maxFlowsStoreMaxRows),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if n := c.Flows.Store.MaxRows; n < minFlowsStoreMaxRows || n > maxFlowsStoreMaxRows {
+				return fmt.Errorf("flows.store.max_rows must be between %d and %d (got %d)",
+					minFlowsStoreMaxRows, maxFlowsStoreMaxRows, n)
+			}
+			return nil
+		})
+	add("flows.store.max_export_rows",
+		fmt.Sprintf("Set flows.store.max_export_rows between %d and %d.", minFlowsStoreMaxExportRows, maxFlowsStoreMaxExportRows),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if n := c.Flows.Store.MaxExportRows; n < minFlowsStoreMaxExportRows || n > maxFlowsStoreMaxExportRows {
+				return fmt.Errorf("flows.store.max_export_rows must be between %d and %d (got %d)",
+					minFlowsStoreMaxExportRows, maxFlowsStoreMaxExportRows, n)
+			}
+			return nil
+		})
+	add("flows.store.queue_size",
+		fmt.Sprintf("Set flows.store.queue_size between %d and %d.", minFlowsStoreQueueSize, maxFlowsStoreQueueSize),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if n := c.Flows.Store.QueueSize; n < minFlowsStoreQueueSize || n > maxFlowsStoreQueueSize {
+				return fmt.Errorf("flows.store.queue_size must be between %d and %d (got %d)",
+					minFlowsStoreQueueSize, maxFlowsStoreQueueSize, n)
+			}
+			return nil
+		})
+	// flows.store.batch_size is bounded on its own AND cannot exceed
+	// queue_size: a transaction batch larger than the channel it drains from
+	// can never fill, so it is a silent way to configure a batch that is
+	// always partial.
+	add("flows.store.batch_size",
+		fmt.Sprintf("Set flows.store.batch_size between %d and %d, and no larger than flows.store.queue_size.",
+			minFlowsStoreBatchSize, maxFlowsStoreBatchSize),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			n := c.Flows.Store.BatchSize
+			if n < minFlowsStoreBatchSize || n > maxFlowsStoreBatchSize {
+				return fmt.Errorf("flows.store.batch_size must be between %d and %d (got %d)",
+					minFlowsStoreBatchSize, maxFlowsStoreBatchSize, n)
+			}
+			if n > c.Flows.Store.QueueSize {
+				return fmt.Errorf("flows.store.batch_size (%d) must not exceed flows.store.queue_size (%d): "+
+					"a batch larger than the queue it drains from can never fill",
+					n, c.Flows.Store.QueueSize)
+			}
+			return nil
+		})
+	add("flows.store.flush_interval",
+		fmt.Sprintf("Set flows.store.flush_interval between %v and %v.", minFlowsStoreFlushInterval, maxFlowsStoreFlushInterval),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if d := c.Flows.Store.FlushInterval.D(); d < minFlowsStoreFlushInterval || d > maxFlowsStoreFlushInterval {
+				return fmt.Errorf("flows.store.flush_interval must be between %v and %v (got %v)",
+					minFlowsStoreFlushInterval, maxFlowsStoreFlushInterval, d)
+			}
+			return nil
+		})
+	add("flows.store.query_timeout",
+		fmt.Sprintf("Set flows.store.query_timeout between %v and %v.", minFlowsStoreQueryTimeout, maxFlowsStoreQueryTimeout),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if d := c.Flows.Store.QueryTimeout.D(); d < minFlowsStoreQueryTimeout || d > maxFlowsStoreQueryTimeout {
+				return fmt.Errorf("flows.store.query_timeout must be between %v and %v (got %v)",
+					minFlowsStoreQueryTimeout, maxFlowsStoreQueryTimeout, d)
+			}
+			return nil
+		})
+	add("flows.store.sweep_interval",
+		fmt.Sprintf("Set flows.store.sweep_interval between %v and %v.", minFlowsStoreSweepInterval, maxFlowsStoreSweepInterval),
+		func() error {
+			if !flowsStoreActive() {
+				return nil
+			}
+			if d := c.Flows.Store.SweepInterval.D(); d < minFlowsStoreSweepInterval || d > maxFlowsStoreSweepInterval {
+				return fmt.Errorf("flows.store.sweep_interval must be between %v and %v (got %v)",
+					minFlowsStoreSweepInterval, maxFlowsStoreSweepInterval, d)
+			}
+			return nil
+		})
 
 	// events.max_events sizes an in-memory ring of individual audit/webhook
 	// events (#300), so a bad value is a memory fault, mirroring flows.retention

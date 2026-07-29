@@ -56,7 +56,14 @@ type tailnetRuntime struct {
 	// process-wide: a device name is unique only within its tailnet, so a shared
 	// store would merge two different machines into one vertex of the topology.
 	// Nil when the view is disabled or unreachable (see newFlowStore).
-	flowStore *flowstore.Memory
+	//
+	// Typed as the interface, not *flowstore.Memory, so the opt-in persistent
+	// backend (#294) is a construction-time choice the handlers never see. Every
+	// nil check below still holds: newFlowStore returns a literal nil on the
+	// disabled path rather than a typed nil pointer, which would be a non-nil
+	// interface and would turn "view disabled" into a nil-dereference at the
+	// first request.
+	flowStore flowstore.Store
 	// policy holds this tailnet's compiled ACL, fed by the acl and users
 	// collectors and read by the flow processor. Nil when the flow view is off:
 	// its only consumer is the reconciliation the view renders.
@@ -153,11 +160,17 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	}
 	// The store is fed from the processor, so both ingestion paths (poll and the
 	// stream receiver, which share this processor) populate the flow view.
-	if rt.flowStore = newFlowStore(cfg); rt.flowStore != nil {
+	if rt.flowStore = newFlowStore(cfg, rt.name, d.logger); rt.flowStore != nil {
 		fopts.Store = rt.flowStore
 		// No PII filtering on the way in: pii_filter governs the telemetry this
 		// process exports, and the store is local, in-memory and readable only
 		// through the admin-authenticated /flows surface (#241).
+		//
+		// That reasoning is about MEMORY, so it stops holding once rows are
+		// written to a file. The persistent backend therefore applies pii_filter
+		// itself, at its own write path (see newFlowStore's Redact option) rather
+		// than here — filtering here would strip the in-memory view too and undo
+		// #241 for everyone.
 		//
 		// Policy reconciliation rides along with the flow view; the acl and users
 		// collectors fill this in as they run (see registerCollectors), and the

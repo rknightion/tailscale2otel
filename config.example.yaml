@@ -564,6 +564,16 @@ flows:
   retention: 6h                       # how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record
   max_future_skew: 5m                 # local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged
   capacity_profile: default           # trade memory for fidelity on every per-bucket dimension + the raw-connection ring: compact (~half), default (unchanged), or expanded (~double). Fixed, hard-coded presets only — never a raw number
+  store:
+    path: ""                          # OPTIONAL, opt-in: a directory for the on-disk /flows backend (internal/flowstore/sqlitestore). Empty (default) is memory-only. MUST be absolute. Setting this writes flow rows, including user identities, to disk — they then survive restarts and land in backups
+    retention: 720h                   # how far back the on-disk store keeps rows (1h–8760h/365d), independent of flows.retention which still only sizes the in-memory ring. Only takes effect once path is set
+    max_rows: 5000000                 # hard cap on retained rows (10000–1000000000), enforced independently of retention so a traffic flood cannot fill the disk before the next sweep. Only takes effect once path is set
+    max_export_rows: 50000            # cap on rows a single CSV/JSON export may read (100–1000000), so a large window cannot be materialized into memory in one request. Only takes effect once path is set
+    queue_size: 8192                  # bound on the write-behind queue between Record and the disk writer (64–1048576); a full queue drops and counts rather than blocking. Only takes effect once path is set
+    batch_size: 512                   # rows committed per write transaction (1–100000); must not exceed queue_size. Only takes effect once path is set
+    flush_interval: 5s                # force a partial batch to disk on this timer (100ms–5m) so a quiet tailnet's last few rows do not sit in memory indefinitely. Only takes effect once path is set
+    query_timeout: 15s                # give up a single read against the store after this long (1s–5m) rather than hang the admin page. Only takes effect once path is set
+    sweep_interval: 1h                # how often retention and the row cap are enforced (1m–24h). Only takes effect once path is set
 
 # ── Built-in audit/webhook event explorer (served at /events on the admin server) ──
 events:

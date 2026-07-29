@@ -1433,11 +1433,15 @@ Tailscale IPs, for example.
 > nothing and exported spans are byte-identical.
 >
 > **This filter does not apply to the built-in flow view.** It governs what this process
-> **exports**; `/flows` reads an in-memory store that is never written or sent anywhere and is
-> reachable only through the admin-authenticated surface. So `emails: false` still leaves the users
-> breakdown populated there, and `hostnames: false` still leaves the topology graph drawn — see
-> [Privacy](flow-view.md#privacy) in the flow-view guide for the full reasoning (#241). "At
-> collection time" above describes the export path only.
+> **exports**; `/flows` reads its own store — in memory by default, or the opt-in persistent
+> backend when `flows.store.path` is set (see [`flows`](#flows-built-in-flow-view) below) — which is
+> never sent anywhere except to the admin-authenticated surface itself. So `emails: false` still
+> leaves the users breakdown populated there, and `hostnames: false` still leaves the topology graph
+> drawn — see [Privacy](flow-view.md#privacy) in the flow-view guide for the full reasoning (#241).
+> "At collection time" above describes the export path only. Note that the persistent backend
+> writes rows to disk, which is a data-at-rest exposure the in-memory store never had — the filter
+> is still applied before a row is written, but see [Persistent
+> storage](flow-view.md#persistent-storage) for what that does and does not cover.
 >
 > Two things traces do **not** filter: **span names** are safe by construction rather than by policy
 > (`endpointLabel` already strips the tailnet segment and elides variable ID segments before the name
@@ -1465,8 +1469,9 @@ Tailscale IPs, for example.
 
 > **Scope: exported telemetry only.** These toggles do not apply to the admin server's own
 > surfaces. In particular the [flow view](flow-view.md) shows device names, addresses and users in
-> full regardless of what is set here — it is local, in-memory introspection behind the admin
-> token, not something the process sends anywhere.
+> full regardless of what is set here — it is local introspection behind the admin token, not
+> something the process sends anywhere, whether it is reading the default in-memory store or the
+> opt-in on-disk one (`flows.store.path`).
 
 > **`host:port` values are classified by their address, not their string shape.** Some IP-valued
 > attributes — notably the node-metrics identity default `tailscale.node` — can appear as `host:port`
@@ -1573,30 +1578,59 @@ internet.
 
 ## `flows` — built-in flow view
 
-Keeps a bounded, pre-aggregated picture of recent tailnet traffic **in memory** and serves it at
-`/flows` on the admin server: a topology graph, a timeline, top talkers/pairs/ports, identity
-breakdowns and a recent-connection list. It is a convenience view, not a second telemetry pipeline —
-OTLP remains the system of record, and the store is lost on restart.
+Keeps a bounded, pre-aggregated picture of recent tailnet traffic and serves it at `/flows` on the
+admin server: a topology graph, a timeline, top talkers/pairs/ports, identity breakdowns and a
+recent-connection list. It is a convenience view, not a second telemetry pipeline — OTLP remains the
+system of record. **By default the store is in memory and lost on restart**; setting
+`flows.store.path` (below) opts into a persistent on-disk backend instead — see
+[Persistent storage](flow-view.md#persistent-storage) in the flow-view guide for the full picture
+before turning it on.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `flows.enabled` | `true` | Build the store and serve `/flows`. Requires `admin.enabled` **and** `admin.landing_page`; with either off the store is not built at all and a startup advisory says so. |
-| `flows.retention` | `6h` | How far back `/flows` can see, as a ring of one-minute buckets. Must be between `1m` and `24h` — this sizes process memory, not a database. |
-| `flows.max_future_skew` | `5m` | Largest amount a record may lead the process clock and still enter the local view (`0`–`1h`). Rejection is counted by `tailscale.network.store.dropped`; OTLP emission is unchanged. |
-| `flows.capacity_profile` | `default` | Trades memory for fidelity on every per-bucket dimension (pairs, nodes, ports, labels, identity matrices, unexplained relationships, rules, peer paths) AND the raw-connection ring, together: `compact` (roughly half the default footprint, folds into "everything else" sooner on a busy tailnet), `default` (today's hardcoded limits, unchanged), or `expanded` (roughly double). One of three fixed, hard-coded presets — never an arbitrary/unbounded number — so an invalid value fails validation by name. The status page reports the effective per-dimension limits and an estimated worst-case footprint for whichever profile is active. |
+| `flows.retention` | `6h` | How far back the **in-memory ring** can see, as a ring of one-minute buckets. Must be between `1m` and `24h` — this sizes process memory, not a database, and is **unchanged and unrelated to `flows.store.retention`** below: setting the store's own retention does not widen this one, and vice versa. |
+| `flows.max_future_skew` | `5m` | Largest amount a record may lead the process clock and still enter the local view (`0`–`1h`). Rejection is counted by `tailscale.network.store.dropped`; OTLP emission is unchanged. Applies to both the in-memory ring and the persistent store. |
+| `flows.capacity_profile` | `default` | Trades memory for fidelity on every per-bucket dimension (pairs, nodes, ports, labels, identity matrices, unexplained relationships, rules, peer paths) AND the raw-connection ring, together: `compact` (roughly half the default footprint, folds into "everything else" sooner on a busy tailnet), `default` (today's hardcoded limits, unchanged), or `expanded` (roughly double). One of three fixed, hard-coded presets — never an arbitrary/unbounded number — so an invalid value fails validation by name. The status page reports the effective per-dimension limits and an estimated worst-case footprint for whichever profile is active. **Applies to the in-memory ring only** — the persistent store has no per-key caps to trade away; see below. |
 
 Notes:
 
 - **Both ingestion paths feed it.** The poll collector and the streaming receiver share one flow
   processor, so the view is complete regardless of `collectors.flowlogs.source`.
 - **It obeys `pii_filter`.** The store sits behind the OTLP redactor, so it applies the same policy
-  itself: disabling `pii_filter.emails` removes users from the view, `pii_filter.hostnames` removes
-  device names, `pii_filter.tailscale_ips` removes the raw endpoints from the connection list.
-- **It is bounded in every dimension.** Per-minute caps fold overflow into `__other__` and the page
-  reports the truncation rather than implying complete coverage. Memory scales with `retention`, and
-  in multi-tailnet mode each tailnet keeps its own store.
-- **It never slows ingestion.** Recording is a short lock and a handful of map writes; there is no
-  I/O and no backpressure onto the export path.
+  itself, on every row before it is recorded — in memory or on disk: disabling `pii_filter.emails`
+  removes users from the view, `pii_filter.hostnames` removes device names, `pii_filter.tailscale_ips`
+  removes the raw endpoints from the connection list.
+- **The in-memory ring is bounded in every dimension.** Per-minute caps fold overflow into
+  `__other__` and the page reports the truncation rather than implying complete coverage. Memory
+  scales with `retention`, and in multi-tailnet mode each tailnet keeps its own ring.
+- **It never slows ingestion.** Recording is a short lock and a handful of map writes on the
+  in-memory path; the persistent store below is architected the same way — see the write-behind note
+  in its table.
+
+### `flows.store` — opt-in persistent backend
+
+Off by default (empty `path`). Setting `flows.store.path` to a directory stores one row per
+connection in a per-tailnet SQLite database (`flows-<tailnet>.db` inside that directory) **instead
+of** the bounded in-memory ring, so `/flows` can answer over the configured retention (default 30
+days) rather than `flows.retention`'s capped 24h, and survives a restart. The two are alternatives,
+not tiers: a store is one or the other, and with a path set every query is served from disk. Engine is `modernc.org/sqlite`, pure Go / cgo-free, so it doesn't
+touch the single-static-binary or distroless-image story (adds ~4.6 MB to the binary). See
+[Persistent storage](flow-view.md#persistent-storage) for the two-retention distinction, what's exact
+versus bounded, the drop-and-count write-behind behaviour, and the PII/data-at-rest note — read that
+before enabling this in a deployment with a shared backup destination.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `flows.store.path` | `""` | Directory for this tailnet's `flows-<tailnet>.db`. Empty (default) disables persistence entirely — the in-memory ring keeps working unchanged. Must be an absolute, writable directory. If it cannot be opened the flow view is switched **off** (and `/flows` 404s) rather than silently falling back to memory, since an operator who asked for history must not be shown a view that looks like it. The process keeps exporting OTLP regardless — an auxiliary view's disk problem does not stop telemetry. |
+| `flows.store.retention` | `720h` (30d) | How far back the on-disk store keeps rows before the retention sweep deletes them. **Separate from and unrelated to `flows.retention`** above, which still sizes the in-memory ring and stays capped at 24h — this bound has no such cap. |
+| `flows.store.max_rows` | `5000000` | Hard cap on retained rows, enforced independently of `retention` so a traffic flood can't fill the disk before the next sweep runs. |
+| `flows.store.max_export_rows` | `50000` | Bound on how many rows one CSV/JSON export (`/api/flows/export.*`) may read in a single request, so an export can't try to materialise the whole retained window at once. |
+| `flows.store.queue_size` | `8192` | Bound on the write-behind queue between the emit path and the disk-writer goroutine. A full queue **drops the observation and counts it** rather than blocking — the hot path never waits on disk I/O. |
+| `flows.store.batch_size` | `512` | Rows written per transaction by the background writer. |
+| `flows.store.flush_interval` | `5s` | How often a partial batch is forced to disk, so a quiet tailnet's last few connections don't sit in memory indefinitely between flushes. |
+| `flows.store.query_timeout` | `15s` | Timeout on a single read from the store. A window scan that exceeds it fails honestly rather than hanging the admin page. |
+| `flows.store.sweep_interval` | `1h` | How often the retention window and the row cap are enforced. |
 
 ---
 
