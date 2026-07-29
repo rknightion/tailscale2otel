@@ -1899,6 +1899,36 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.annotation.degraded",
+      "prom_name": "tailscale2otel_annotation_degraded_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Only exists in a deployment that opted into grafana_annotations, so a standing panel on the shared dashboard would read 'No data' for everyone else. Queried ad hoc, and it is the series to alert on locally if you depend on the markers: 1 means the last write to Grafana failed and nothing has succeeded since — most often an expired or under-scoped service-account token."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.annotation.dropped",
+      "prom_name": "tailscale2otel_annotation_dropped_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Opt-in-only series (see the degraded gauge). Note the steady state is NOT zero: `reason=duplicate` increments on every re-observation of a still-current condition and is correct behaviour, so a panel would need the reason filtered before it meant anything."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.annotation.published",
+      "prom_name": "tailscale2otel_annotation_published_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "raw_only"
+      ],
+      "note": "Opt-in-only series (see the degraded gauge). A flat line here is normal on a quiet tailnet — nothing is written until something happens — so it is only meaningful read together with the degraded gauge, which is what distinguishes 'correctly quiet' from 'broken since the token expired'."
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.api.availability",
       "prom_name": "tailscale2otel_api_availability_ratio",
       "surface": "self_obs",

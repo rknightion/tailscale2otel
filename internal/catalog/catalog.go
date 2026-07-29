@@ -9,6 +9,7 @@
 package catalog
 
 import (
+	"github.com/rknightion/tailscale2otel/v3/internal/annotations"
 	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/audit"
@@ -44,6 +45,7 @@ var metricSources = []func() []metricdoc.Metric{
 	telemetry.Catalog,
 	appcatalog.Catalog,
 	appcatalog.CapabilityCatalog,
+	annotations.Catalog,
 	apistate.Catalog,
 	collector.Catalog,
 	devices.Catalog,

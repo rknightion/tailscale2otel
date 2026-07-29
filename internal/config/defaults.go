@@ -416,6 +416,30 @@ func Default() *Config {
 			CacheTTL: dur(time.Hour),
 			Timeout:  dur(10 * time.Second),
 		},
+		// The whole block is inert until url is set, so these defaults describe
+		// what happens ONCE an operator opts in — they are not costs a default
+		// deployment pays.
+		GrafanaAnnotations: GrafanaAnnotationsConfig{
+			Timeout:      dur(10 * time.Second),
+			MaxPerMinute: 60,
+			QueueSize:    512,
+			// Wide enough that a busy audit window becomes one readable marker,
+			// narrow enough to still locate a change to the right few minutes.
+			RollupInterval: dur(5 * time.Minute),
+			// Comfortably longer than any source overlap window, so a restart
+			// inside one cannot republish what it already wrote.
+			DedupeRetention: dur(48 * time.Hour),
+			Categories: AnnotationCategories{
+				// Rolled up by default: the audit log is the highest-volume of
+				// the curated sources, and a per-event marker on a busy tailnet
+				// draws a picket fence rather than a timeline.
+				ConfigChange: AnnotationCategoryConfig{Enabled: true, Rollup: true},
+				// Also rolled up: a fresh deployment finds every currently
+				// expiring key at once, and one summary beats fifty markers at
+				// the same instant.
+				Expiry: AnnotationCategoryConfig{Enabled: true, Rollup: true},
+			},
+		},
 	}
 }
 

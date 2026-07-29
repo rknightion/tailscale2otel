@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/pyroscope-go"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/rknightion/tailscale2otel/v3/internal/annotations"
 	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v3/internal/collector"
 	"github.com/rknightion/tailscale2otel/v3/internal/config"
@@ -65,6 +66,10 @@ type App struct {
 	// runtime's emitter/card/exportStats.
 	procEmitter telemetry.Emitter
 	procCard    *telemetry.CardinalityTracker // process provider's tracker; nil when self-obs off
+	// annotator publishes curated events to Grafana as annotations (#518). Nil
+	// unless grafana_annotations.url is set, and a nil *Annotator is a working
+	// no-op at every call site, so nothing branches on the feature being off.
+	annotator *annotations.Annotator
 	// batchQueues are the log/span processor queue trackers, one per provider,
 	// paired with the emitter that must report them so each tailnet's queue
 	// saturation is attributed to that tailnet. Empty when self-obs is off.
@@ -161,6 +166,7 @@ const (
 	compNodeMetrics = "nodemetrics"
 	compRelease     = "release"
 	compGeoIP       = "geoip"
+	compAnnotations = "annotations"
 )
 
 // withComponent returns a logger that tags every record with its subsystem name.
@@ -263,6 +269,22 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	a.delivery = ps.Delivery
 	a.metricGroups = metricGroupMap()
 	a.buildProcessDeps()
+
+	// The annotation writer is built HERE, and the ordering is not arbitrary:
+	//
+	//   - AFTER the checkpoint store, because the persisted dedupe set lives
+	//     beside it and shares its volume. Without one, every restart could
+	//     republish what is still inside the collectors' overlap windows.
+	//   - BEFORE any runtime, because a token that cannot write must be reported
+	//     at startup rather than at the first real event, and because a collector
+	//     that starts before the recorder exists emits records no rule ever sees.
+	//
+	// A configured-but-unwritable token is FATAL. See annotations.Start.
+	if err := a.startAnnotator(ctx, cfg, version); err != nil {
+		_ = ps.Shutdown(ctx)
+		return nil, err
+	}
+
 	constructionComplete := false
 	defer func() {
 		if constructionComplete {
@@ -284,6 +306,12 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 				if a.restore != nil {
 					a.restore()
 				}
+			},
+			func() {
+				// Already published the startup marker by this point, so the
+				// worker goroutine and its state file need closing even though
+				// construction is being abandoned.
+				_ = a.annotator.Close(ctx)
 			},
 			ps.Shutdown,
 		)
@@ -330,7 +358,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		hsRuntime := a.addRuntimeConfigured(
 			"headscale",
 			"",
-			a.procEmitter,
+			a.annotator.Decorate("headscale", a.procEmitter),
 			nil,
 			nil,
 			ps.Process().ForceFlush,
@@ -346,7 +374,10 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		for i, rt := range resolved {
 			label := labels[i]
 			tp := ps.Tailnet(label)
-			emitter := tp.Emitter()
+			// Teed so every record this tailnet's collectors emit is offered to
+			// the annotation rule set. The tee forwards everything unchanged and
+			// is a pass-through when the writer is off.
+			emitter := a.annotator.Decorate(rt.Name, tp.Emitter())
 			// Each tailnet provider reports its own queue tracker through its own
 			// emitter, so tailscale.tailnet rides the saturation series.
 			if q := tp.BatchQueues(); q != nil {
@@ -426,6 +457,7 @@ func cleanupFailedConstruction(
 	closeWAL func(),
 	closeRDNS func(),
 	restoreTelemetry func(),
+	closeAnnotator func(),
 	shutdownTelemetry func(context.Context) error,
 ) {
 	if closeWAL != nil {
@@ -436,6 +468,9 @@ func cleanupFailedConstruction(
 	}
 	if restoreTelemetry != nil {
 		restoreTelemetry()
+	}
+	if closeAnnotator != nil {
+		closeAnnotator()
 	}
 	if shutdownTelemetry != nil {
 		_ = shutdownTelemetry(ctx)
@@ -709,6 +744,16 @@ func (a *App) Run(ctx context.Context) error {
 	// not discard connections the emit path already accepted. Deferred here, with
 	// the other resource closers, so it runs after the schedulers stop and the
 	// receiver goroutines are joined — nothing is still recording by then.
+	// Stop the annotation writer on the way out: it flushes the open rollup
+	// buckets (so a shutdown does not silently discard events already recorded
+	// into a bucket that has not closed yet), drains what is queued under ONE
+	// write's budget, and persists the dedupe set. Deferred alongside the other
+	// resource closers so nothing is still emitting by the time it runs.
+	defer func() {
+		if err := a.annotator.Close(context.Background()); err != nil {
+			a.logger.Error("close grafana annotation writer", "error", err)
+		}
+	}()
 	defer func() {
 		for _, rt := range a.runtimes {
 			if rt.flowStore == nil {

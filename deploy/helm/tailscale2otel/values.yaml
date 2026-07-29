@@ -1941,6 +1941,58 @@ config: # @schema additionalProperties:false
     cache_ttl: 1h
     # -- Per-request timeout for the external version fetch.
     timeout: 10s
+  grafana_annotations: # @schema additionalProperties:false
+    # -- Grafana base URL, e.g. https://mystack.grafana.net. Setting it IS the opt-in for the
+    # annotation writer — the only thing this process writes anywhere. Empty disables the feature
+    # entirely (no client, no goroutine, no log line). Once set, the pod FAILS TO START unless the
+    # token can write an annotation, because a writer discovered broken at the first real event
+    # produced nothing when an operator went looking.
+    url: ""
+    # -- Grafana service-account token. It needs exactly one action, `annotations:create` on scope
+    # `annotations:type:organization`, and nothing else. Prefer existingSecret or token_file over
+    # putting it here: a non-empty value moves the whole rendered config into a Secret.
+    token: ""
+    # -- Path to a file holding the token (a mounted Secret). Value XOR file.
+    token_file: ""
+    # -- Confine annotations to ONE dashboard. Empty (default) writes organization annotations,
+    # visible on every board and in Explore.
+    dashboard_uid: ""
+    # -- Per-request timeout for POST /api/annotations.
+    timeout: 10s
+    # -- Token-bucket ceiling on annotations written per process. Overage is dropped and counted,
+    # never delayed.
+    max_per_minute: 60
+    # -- Hand-off buffer between the collector goroutines and the single publisher. A full queue
+    # drops and counts rather than blocking collection.
+    queue_size: 512
+    # -- Bucket width for rolled-up categories: one region annotation per interval per category
+    # per tailnet, instead of one marker per event.
+    rollup_interval: 5m
+    # -- How long a published annotation's dedupe key is remembered, so a restart cannot republish
+    # it. Must comfortably exceed the longest source overlap window.
+    dedupe_retention: 48h
+    # -- Where the dedupe set persists. Empty puts annotations.json beside checkpoint.file_path,
+    # so it lands on the same persistence volume. Without a persistent volume a restart may
+    # republish recent annotations once.
+    state_file: ""
+    # -- Extra tags added to every annotation, e.g. [env:prod]. Every annotation already carries
+    # tailscale2otel, category:<c> and rule:<id>.
+    extra_tags: [] # @schema item: string
+    categories: # @schema additionalProperties:false
+      config_change: # @schema additionalProperties:false
+        # -- ACL edits, device approval and churn, key lifecycle, user role changes, DNS and
+        # tailnet settings — the curated audit-log subset. Needs collectors.auditlogs.
+        enabled: true
+        # -- Roll the category up into one region annotation per rollup_interval. On by default:
+        # it is the highest-volume source, and per-event markers draw a picket fence.
+        rollup: true
+      expiry: # @schema additionalProperties:false
+        # -- A node key or auth key entering its expiry warning window. Needs collectors.keys or
+        # collectors.devices.
+        enabled: true
+        # -- Roll the category up. On by default: a fresh deployment finds every currently
+        # expiring key at once.
+        rollup: true
 
 # --- Process-state persistence (checkpoints plus an enabled receiver WAL) ---
 persistence: # @schema additionalProperties:false

@@ -102,6 +102,8 @@ func (c *Config) pathFields() []pathField {
 		{"profiling.pyroscope.tls.cert_file", &c.Profiling.Pyroscope.TLS.CertFile},
 		{"profiling.pyroscope.tls.key_file", &c.Profiling.Pyroscope.TLS.KeyFile},
 		{"checkpoint.file_path", &c.Checkpoint.FilePath},
+		{"grafana_annotations.state_file", &c.GrafanaAnnotations.StateFile},
+		{"grafana_annotations.token_file", &c.GrafanaAnnotations.TokenFile},
 		{"ingress_wal.directory", &c.IngressWAL.Directory},
 		{"flows.store.directory", &c.Flows.Store.Directory},
 		{"streaming.tls.cert_file", &c.Streaming.TLS.CertFile},

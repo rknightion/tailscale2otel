@@ -189,6 +189,7 @@ webhook.secret
 prometheus.auth.token
 admin.auth.token
 profiling.pyroscope.basic_auth_password
+grafana_annotations.token
 {{- end -}}
 
 {{/*

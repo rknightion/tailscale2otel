@@ -88,6 +88,57 @@ def organize_tabs(leaf_tabs):
 # assembly
 # ---------------------------------------------------------------------------
 
+
+# ---- annotation layers ---------------------------------------------------
+#
+# These read Grafana's own annotation STORE, not a datasource. tailscale2otel
+# pushes the markers itself when `grafana_annotations.url` is configured
+# (internal/annotations, #518), so there is no PromQL or LogQL here and nothing
+# to keep in step with a metric name — the contract is the TAG SET, which
+# internal/annotations.Annotation.Tags() owns:
+#
+#   tailscale2otel        on every annotation — the root selector
+#   category:<c>          config_change | expiry | lifecycle
+#   rule:<id>             the curated rule that produced it
+#
+# Degradation needs no conditionalRendering: a deployment that never enabled the
+# writer has no annotations carrying the root tag, and a tag query with no
+# matches renders nothing. Absent, not noisy.
+#
+# `matchAny: False` is load-bearing on the category layers — it ANDs the tags. With
+# matchAny true they would each match every tailscale2otel annotation and the three
+# layers would be identical.
+def tag_annotation(name, tags, color, enable, hide):
+    """One annotation layer over the Grafana annotation store, selected by tags."""
+    return {"kind": "AnnotationQuery", "spec": {
+        "builtIn": False, "enable": enable, "hide": hide, "iconColor": color, "name": name,
+        "query": {"kind": "DataQuery", "version": "v0", "group": "grafana",
+                  "datasource": {"name": "-- Grafana --"},
+                  "spec": {"queryType": "tags", "matchAny": False, "tags": tags, "limit": 100}}}}
+
+
+def annotation_layers():
+    return [
+        {"kind": "AnnotationQuery", "spec": {
+            "builtIn": True, "enable": True, "hide": True, "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "query": {"kind": "DataQuery", "version": "v0", "group": "grafana",
+                      "datasource": {"name": "-- Grafana --"}, "spec": {}}}},
+        # On by default and the only one that is: it is the whole timeline, and an
+        # operator reading a step in a rate panel wants "something happened here"
+        # before they want to know which category it was.
+        tag_annotation("Tailnet events", ["tailscale2otel"],
+                       "light-blue", enable=True, hide=False),
+        # The two below are SUBSETS of the layer above, so they are off by default —
+        # enabling one alongside it double-draws every marker it matches. They exist
+        # for the case where a busy tailnet's config churn is burying everything else.
+        tag_annotation("— config changes only", ["tailscale2otel", "category:config_change"],
+                       "light-orange", enable=False, hide=False),
+        tag_annotation("— key expiry only", ["tailscale2otel", "category:expiry"],
+                       "light-yellow", enable=False, hide=False),
+    ]
+
+
 def build(uid, title, flat, only=None, folder=None):
     builder.ELEMENTS = {}
     builder._id = 0
@@ -141,11 +192,7 @@ def build(uid, title, flat, only=None, folder=None):
         "timeSettings": {"from": "now-6h", "to": "now", "autoRefresh": "1m",
                          "autoRefreshIntervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h"],
                          "timezone": "browser", "hideTimepicker": False, "fiscalYearStartMonth": 0},
-        "annotations": [{"kind": "AnnotationQuery", "spec": {
-            "builtIn": True, "enable": True, "hide": True, "iconColor": "rgba(0, 211, 255, 1)",
-            "name": "Annotations & Alerts",
-            "query": {"kind": "DataQuery", "version": "v0", "group": "grafana",
-                      "datasource": {"name": "-- Grafana --"}, "spec": {}}}}],
+        "annotations": annotation_layers(),
         "links": [], "variables": variables, "elements": builder.ELEMENTS, "layout": layout,
     }
     meta = {"name": uid}

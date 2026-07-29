@@ -162,13 +162,14 @@ func TestCleanupFailedConstructionClosesResourcesBeforeTelemetry(t *testing.T) {
 		func() { calls = append(calls, "wal") },
 		func() { calls = append(calls, "rdns") },
 		func() { calls = append(calls, "restore") },
+		func() { calls = append(calls, "annotator") },
 		func(context.Context) error {
 			calls = append(calls, "telemetry")
 			return errors.New("ignored shutdown error")
 		},
 	)
 
-	if want := []string{"wal", "rdns", "restore", "telemetry"}; !slices.Equal(calls, want) {
+	if want := []string{"wal", "rdns", "restore", "annotator", "telemetry"}; !slices.Equal(calls, want) {
 		t.Fatalf("cleanup calls = %v, want %v", calls, want)
 	}
 }

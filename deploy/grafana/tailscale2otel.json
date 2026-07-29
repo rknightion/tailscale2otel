@@ -51,6 +51,86 @@
             "spec": {}
           }
         }
+      },
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": false,
+          "enable": true,
+          "hide": false,
+          "iconColor": "light-blue",
+          "name": "Tailnet events",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "grafana",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {
+              "queryType": "tags",
+              "matchAny": false,
+              "tags": [
+                "tailscale2otel"
+              ],
+              "limit": 100
+            }
+          }
+        }
+      },
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": false,
+          "enable": false,
+          "hide": false,
+          "iconColor": "light-orange",
+          "name": "\u2014 config changes only",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "grafana",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {
+              "queryType": "tags",
+              "matchAny": false,
+              "tags": [
+                "tailscale2otel",
+                "category:config_change"
+              ],
+              "limit": 100
+            }
+          }
+        }
+      },
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": false,
+          "enable": false,
+          "hide": false,
+          "iconColor": "light-yellow",
+          "name": "\u2014 key expiry only",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "grafana",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {
+              "queryType": "tags",
+              "matchAny": false,
+              "tags": [
+                "tailscale2otel",
+                "category:expiry"
+              ],
+              "limit": 100
+            }
+          }
+        }
       }
     ],
     "links": [],

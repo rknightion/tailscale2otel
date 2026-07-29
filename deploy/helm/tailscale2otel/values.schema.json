@@ -877,6 +877,78 @@
                     },
                     "additionalProperties": false
                 },
+                "grafana_annotations": {
+                    "type": "object",
+                    "properties": {
+                        "categories": {
+                            "type": "object",
+                            "properties": {
+                                "config_change": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "rollup": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "expiry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "rollup": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "dashboard_uid": {
+                            "type": "string"
+                        },
+                        "dedupe_retention": {
+                            "type": "string"
+                        },
+                        "extra_tags": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "max_per_minute": {
+                            "type": "integer"
+                        },
+                        "queue_size": {
+                            "type": "integer"
+                        },
+                        "rollup_interval": {
+                            "type": "string"
+                        },
+                        "state_file": {
+                            "type": "string"
+                        },
+                        "timeout": {
+                            "type": "string"
+                        },
+                        "token": {
+                            "type": "string"
+                        },
+                        "token_file": {
+                            "type": "string"
+                        },
+                        "url": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
+                },
                 "headscale": {
                     "type": "object",
                     "properties": {

@@ -1620,6 +1620,118 @@
       },
       "type": "object"
     },
+    "grafana_annotations": {
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "additionalProperties": false,
+          "properties": {
+            "config_change": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "ACL edits, device approval and churn, key lifecycle, user role changes, DNS and tailnet settings — the curated audit-log subset. Needs collectors.auditlogs. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__CONFIG_CHANGE__ENABLED",
+                  "type": "boolean"
+                },
+                "rollup": {
+                  "default": true,
+                  "description": "highest-volume category: rolled up by default so a busy tailnet draws a timeline rather than a picket fence. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__CONFIG_CHANGE__ROLLUP",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "expiry": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "a node key or auth key entering its expiry warning window — the marker that explains a device count stepping down. Needs collectors.keys / collectors.devices. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED",
+                  "type": "boolean"
+                },
+                "rollup": {
+                  "default": true,
+                  "description": "a fresh deployment finds every currently-expiring key at once, and one summary beats fifty markers at the same instant. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "dashboard_uid": {
+          "default": "",
+          "description": "confine annotations to ONE dashboard. Empty (default) writes organization annotations, visible on every board and in Explore — which is the point of pushing them. TS2OTEL_GRAFANA_ANNOTATIONS__DASHBOARD_UID",
+          "type": "string"
+        },
+        "dedupe_retention": {
+          "default": "48h",
+          "description": "how long a published annotation's dedupe key is remembered, so a restart cannot republish it. Must comfortably exceed the longest source overlap window. TS2OTEL_GRAFANA_ANNOTATIONS__DEDUPE_RETENTION",
+          "examples": [
+            "48h"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "extra_tags": {
+          "description": "extra tags added to every annotation, e.g. [env:prod]. Every annotation already carries tailscale2otel, category:\u003cc\u003e and rule:\u003cid\u003e. TS2OTEL_GRAFANA_ANNOTATIONS__EXTRA_TAGS",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_per_minute": {
+          "default": 60,
+          "description": "token-bucket CEILING on annotations written per process. Overage is dropped and counted, never delayed — a marker arriving after the moment it explains is worse than absent. TS2OTEL_GRAFANA_ANNOTATIONS__MAX_PER_MINUTE",
+          "type": "integer"
+        },
+        "queue_size": {
+          "default": 512,
+          "description": "hand-off buffer between the collector goroutines and the single publisher. A full queue drops and counts rather than blocking collection. TS2OTEL_GRAFANA_ANNOTATIONS__QUEUE_SIZE",
+          "type": "integer"
+        },
+        "rollup_interval": {
+          "default": "5m",
+          "description": "bucket width for rolled-up categories: one region annotation per interval per category per tailnet, instead of one marker per event. TS2OTEL_GRAFANA_ANNOTATIONS__ROLLUP_INTERVAL",
+          "examples": [
+            "5m"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "state_file": {
+          "default": "",
+          "description": "where the dedupe set persists. Empty = annotations.json beside checkpoint.file_path. Deliberately NOT inside the checkpoint file, which the window pollers rewrite every tick. TS2OTEL_GRAFANA_ANNOTATIONS__STATE_FILE",
+          "type": "string"
+        },
+        "timeout": {
+          "default": "10s",
+          "description": "per-request timeout for POST /api/annotations. TS2OTEL_GRAFANA_ANNOTATIONS__TIMEOUT",
+          "examples": [
+            "10s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "token": {
+          "description": "Grafana service-account token (needs annotations:create and nothing else). Keep it in env/file, never in YAML. TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN",
+          "type": "string"
+        },
+        "token_file": {
+          "default": "",
+          "description": "path to a file holding the token (Docker/k8s secret mount). Value XOR file — setting both is a config error. TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN_FILE",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "description": "Grafana base URL, e.g. https://mystack.grafana.net. Setting it IS the opt-in; empty = feature off entirely. TS2OTEL_GRAFANA_ANNOTATIONS__URL",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "headscale": {
       "additionalProperties": false,
       "properties": {

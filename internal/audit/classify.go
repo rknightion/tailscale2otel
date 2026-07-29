@@ -171,16 +171,32 @@ func normalizeActorType(actorType string) string {
 // apply. So a NODE event whose property is KEY_EXPIRY is "key_expiry", never
 // "device".
 func classifyChange(ev Event) (string, bool) {
-	if cat, ok := propertyCategories[ev.Target.Property]; ok {
+	return ChangeCategory(ev.Target.Property, ev.Target.Type, ev.Action)
+}
+
+// ChangeCategory is classifyChange over the three wire fields it actually
+// reads, exported so a consumer holding an emitted log record — rather than an
+// Event — can reach the same verdict.
+//
+// It exists for internal/annotations, which decides whether an emitted
+// tailscale.config.audit record is worth a Grafana annotation. That decision
+// must use THIS vocabulary and not a second copy of it: propertyCategories is
+// already the curated security/lifecycle allow-list, already documents every
+// deliberate exclusion in propertyExclusions, and is already guarded against
+// upstream enum drift by taxonomy_test.go. A parallel list in another package
+// would inherit none of that and would diverge the first time Tailscale adds a
+// property.
+func ChangeCategory(targetProperty, targetType, action string) (string, bool) {
+	if cat, ok := propertyCategories[targetProperty]; ok {
 		return cat, true
 	}
-	switch ev.Target.Type {
+	switch targetType {
 	case "NODE":
-		if deviceChurnActions[ev.Action] {
+		if deviceChurnActions[action] {
 			return "device", true
 		}
 	case "API_KEY":
-		if apiKeyActions[ev.Action] {
+		if apiKeyActions[action] {
 			return "api_key", true
 		}
 	}

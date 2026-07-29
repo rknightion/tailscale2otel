@@ -53,7 +53,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | raw_only | omitted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | operational | 218 | 203 | 57 | 11 | 10 | 0 |
-| self_obs | 89 | 65 | 29 | 9 | 20 | 2 |
+| self_obs | 92 | 65 | 29 | 9 | 23 | 2 |
 
 ## Operational signals
 
@@ -285,6 +285,9 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `process.cpu.time` | metric | `process_cpu_time_seconds_total` | omitted | Standard OTEL process-level metric, deliberately left to a generic runtime dashboard rather than duplicated on this exporter's own surfaces. |
 | `process.uptime` | metric | `process_uptime_seconds` | omitted | Standard OTEL process-level metric, deliberately left to a generic runtime dashboard rather than duplicated on this exporter's own surfaces. |
 | `tailscale2otel.admin.auth.rejected` | metric | `tailscale2otel_admin_auth_rejected_total` | visualized, alertable |  |
+| `tailscale2otel.annotation.degraded` | metric | `tailscale2otel_annotation_degraded_ratio` | raw_only | Only exists in a deployment that opted into grafana_annotations, so a standing panel on the shared dashboard would read 'No data' for everyone else. Queried ad hoc, and it is the series to alert on locally if you depend on the markers: 1 means the last write to Grafana failed and nothing has succeeded since — most often an expired or under-scoped service-account token. |
+| `tailscale2otel.annotation.dropped` | metric | `tailscale2otel_annotation_dropped_total` | raw_only | Opt-in-only series (see the degraded gauge). Note the steady state is NOT zero: `reason=duplicate` increments on every re-observation of a still-current condition and is correct behaviour, so a panel would need the reason filtered before it meant anything. |
+| `tailscale2otel.annotation.published` | metric | `tailscale2otel_annotation_published_total` | raw_only | Opt-in-only series (see the degraded gauge). A flat line here is normal on a quiet tailnet — nothing is written until something happens — so it is only meaningful read together with the degraded gauge, which is what distinguishes 'correctly quiet' from 'broken since the token expired'. |
 | `tailscale2otel.api.availability` | metric | `tailscale2otel_api_availability_ratio` | visualized, alertable |  |
 | `tailscale2otel.api.duration` | metric | `tailscale2otel_api_duration_seconds` | visualized |  |
 | `tailscale2otel.api.last_probe` | metric | `tailscale2otel_api_last_probe_seconds` | visualized |  |

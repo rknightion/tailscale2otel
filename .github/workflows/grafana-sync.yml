@@ -40,6 +40,7 @@ jobs:
   dashboards:
     name: publish dashboard to GitSync
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -81,6 +82,7 @@ jobs:
   rules:
     name: publish alert and recording rules
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       GRAFANA_SERVER: ${{ vars.GRAFANA_SERVER }}
       GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}

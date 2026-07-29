@@ -57,6 +57,7 @@ func (c *Config) resolveSecretFiles() error {
 		{"collectors.auditlogs.objectstore.secret_access_key", &c.Collectors.Auditlogs.ObjectStore.SecretAccessKey, c.Collectors.Auditlogs.ObjectStore.SecretAccessKeyFile},
 		{"collectors.auditlogs.objectstore.session_token", &c.Collectors.Auditlogs.ObjectStore.SessionToken, c.Collectors.Auditlogs.ObjectStore.SessionTokenFile},
 		{"enrichment.geoip.download.license_key", &c.Enrichment.GeoIP.Download.LicenseKey, c.Enrichment.GeoIP.Download.LicenseKeyFile},
+		{"grafana_annotations.token", &c.GrafanaAnnotations.Token, c.GrafanaAnnotations.TokenFile},
 	}
 	// tailnets[] entries embed TailscaleAuth, so their apikey_file /
 	// oauth.client_secret_file siblings get the same resolution for free (per

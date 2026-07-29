@@ -698,3 +698,41 @@ version_checks:
     outdated_minor_threshold: 3       # a device this many minor releases behind counts toward tailscale.devices.outdated
   cache_ttl: 1h                       # how long a fetched "latest version" is cached before re-fetching (minimum 5m)
   timeout: 10s                        # per-request timeout for the external version fetch
+
+# ── Grafana annotations (OPTIONAL: the ONE outbound write) ──────────────────────
+# Publishes a curated, closed set of tailnet events into a Grafana organization as
+# annotations, so a dashboard can answer "what changed at 14:00" without any external
+# automation. Everything else this process does is read-only polling plus OTLP push;
+# this is the only thing it WRITES anywhere.
+#
+# Setting `url` is the whole opt-in: unset (the default) registers no writer, opens no
+# client, starts no goroutine and logs nothing. Once url IS set the process FAILS TO
+# START unless the token can actually write an annotation — discovering that at the
+# first real event means the context an operator came looking for was never there, and
+# nothing said so. The startup marker IS that write probe, so a healthy start leaves a
+# real annotation rather than junk needing a delete permission to clean up.
+#
+# The token needs exactly one Grafana action: `annotations:create` on scope
+# `annotations:type:organization` (the fixed role `fixed:annotations:writer` also works,
+# but additionally grants annotations:write and annotations:delete, which are never
+# used). Supply it via TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN or token_file, never in
+# committed YAML.
+grafana_annotations:
+  url: ""                              # Grafana base URL, e.g. https://mystack.grafana.net. Setting it IS the opt-in; empty = feature off entirely. TS2OTEL_GRAFANA_ANNOTATIONS__URL
+  token: ""                            # Grafana service-account token (needs annotations:create and nothing else). Keep it in env/file, never in YAML. TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN
+  token_file: ""                       # path to a file holding the token (Docker/k8s secret mount). Value XOR file — setting both is a config error. TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN_FILE
+  dashboard_uid: ""                    # confine annotations to ONE dashboard. Empty (default) writes organization annotations, visible on every board and in Explore — which is the point of pushing them. TS2OTEL_GRAFANA_ANNOTATIONS__DASHBOARD_UID
+  timeout: 10s                         # per-request timeout for POST /api/annotations. TS2OTEL_GRAFANA_ANNOTATIONS__TIMEOUT
+  max_per_minute: 60                   # token-bucket CEILING on annotations written per process. Overage is dropped and counted, never delayed — a marker arriving after the moment it explains is worse than absent. TS2OTEL_GRAFANA_ANNOTATIONS__MAX_PER_MINUTE
+  queue_size: 512                      # hand-off buffer between the collector goroutines and the single publisher. A full queue drops and counts rather than blocking collection. TS2OTEL_GRAFANA_ANNOTATIONS__QUEUE_SIZE
+  rollup_interval: 5m                  # bucket width for rolled-up categories: one region annotation per interval per category per tailnet, instead of one marker per event. TS2OTEL_GRAFANA_ANNOTATIONS__ROLLUP_INTERVAL
+  dedupe_retention: 48h                # how long a published annotation's dedupe key is remembered, so a restart cannot republish it. Must comfortably exceed the longest source overlap window. TS2OTEL_GRAFANA_ANNOTATIONS__DEDUPE_RETENTION
+  state_file: ""                       # where the dedupe set persists. Empty = annotations.json beside checkpoint.file_path. Deliberately NOT inside the checkpoint file, which the window pollers rewrite every tick. TS2OTEL_GRAFANA_ANNOTATIONS__STATE_FILE
+  extra_tags: []                       # extra tags added to every annotation, e.g. [env:prod]. Every annotation already carries tailscale2otel, category:<c> and rule:<id>. TS2OTEL_GRAFANA_ANNOTATIONS__EXTRA_TAGS
+  categories:                          # the lifecycle/startup marker has no toggle on purpose: it is the write probe, and disabling it would only make a deployment go silently unverified
+    config_change:
+      enabled: true                    # ACL edits, device approval and churn, key lifecycle, user role changes, DNS and tailnet settings — the curated audit-log subset. Needs collectors.auditlogs. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__CONFIG_CHANGE__ENABLED
+      rollup: true                     # highest-volume category: rolled up by default so a busy tailnet draws a timeline rather than a picket fence. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__CONFIG_CHANGE__ROLLUP
+    expiry:
+      enabled: true                    # a node key or auth key entering its expiry warning window — the marker that explains a device count stepping down. Needs collectors.keys / collectors.devices. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED
+      rollup: true                     # a fresh deployment finds every currently-expiring key at once, and one summary beats fifty markers at the same instant. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP

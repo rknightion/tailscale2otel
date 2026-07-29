@@ -230,6 +230,10 @@ func (c *Config) validateReceiverRoutes() error {
 	} else if len(c.Tailnets) > 1 && c.Webhook.Enabled {
 		return fmt.Errorf("webhook.enabled in multi-tailnet mode requires webhook.routes")
 	}
+
+	if err := c.GrafanaAnnotations.validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -540,6 +544,22 @@ func (c *Config) Warnings() []string {
 
 	if c.VersionChecks.Devices.Enabled && !c.Collectors.Devices.Enabled {
 		w = append(w, "version_checks.devices.enabled=true but collectors.devices is disabled: per-device version-skew metrics need the devices collector and will not be emitted")
+	}
+
+	w = append(w, c.GrafanaAnnotations.warnings()...)
+	// A rule whose source collector is off is silently dead: the writer starts,
+	// the token works, and that category simply never produces a marker.
+	if c.GrafanaAnnotations.Enabled() {
+		if c.GrafanaAnnotations.Categories.ConfigChange.Enabled && !c.Collectors.Auditlogs.Enabled {
+			w = append(w, "grafana_annotations.categories.config_change is enabled but collectors.auditlogs is disabled: "+
+				"config-change annotations are derived from the audit log and none will ever be written")
+		}
+		if c.GrafanaAnnotations.Categories.Expiry.Enabled &&
+			!c.Collectors.Keys.Enabled && !c.Collectors.Devices.Enabled {
+			w = append(w, "grafana_annotations.categories.expiry is enabled but both collectors.keys and "+
+				"collectors.devices are disabled: expiry annotations are derived from those collectors and "+
+				"none will ever be written")
+		}
 	}
 
 	if c.Tracing.Enabled && c.Tracing.SamplerArg == 0 &&

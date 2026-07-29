@@ -408,6 +408,21 @@ extraVolumeMounts:
 | config.flows.store.queue_size | int | `8192` | Bound on the write-behind queue between the emit path and the disk writer. A full queue drops the observation and counts it rather than blocking OTLP export — visible in the admin API. |
 | config.flows.store.retention | string | `"720h"` | How far back the on-disk store keeps rows before the retention sweep deletes them. Separate from flows.retention above, which only sizes the in-memory ring and is capped at 24h — this bound is unrelated and can be much longer. |
 | config.flows.store.sweep_interval | string | `"1h"` | How often the retention window and the row cap are enforced. |
+| config.grafana_annotations.categories.config_change.enabled | bool | `true` | ACL edits, device approval and churn, key lifecycle, user role changes, DNS and tailnet settings — the curated audit-log subset. Needs collectors.auditlogs. |
+| config.grafana_annotations.categories.config_change.rollup | bool | `true` | Roll the category up into one region annotation per rollup_interval. On by default: it is the highest-volume source, and per-event markers draw a picket fence. |
+| config.grafana_annotations.categories.expiry.enabled | bool | `true` | A node key or auth key entering its expiry warning window. Needs collectors.keys or collectors.devices. |
+| config.grafana_annotations.categories.expiry.rollup | bool | `true` | Roll the category up. On by default: a fresh deployment finds every currently expiring key at once. |
+| config.grafana_annotations.dashboard_uid | string | `""` | Confine annotations to ONE dashboard. Empty (default) writes organization annotations, visible on every board and in Explore. |
+| config.grafana_annotations.dedupe_retention | string | `"48h"` | How long a published annotation's dedupe key is remembered, so a restart cannot republish it. Must comfortably exceed the longest source overlap window. |
+| config.grafana_annotations.extra_tags | list | `[]` | Extra tags added to every annotation, e.g. [env:prod]. Every annotation already carries tailscale2otel, category:<c> and rule:<id>. |
+| config.grafana_annotations.max_per_minute | int | `60` | Token-bucket ceiling on annotations written per process. Overage is dropped and counted, never delayed. |
+| config.grafana_annotations.queue_size | int | `512` | Hand-off buffer between the collector goroutines and the single publisher. A full queue drops and counts rather than blocking collection. |
+| config.grafana_annotations.rollup_interval | string | `"5m"` | Bucket width for rolled-up categories: one region annotation per interval per category per tailnet, instead of one marker per event. |
+| config.grafana_annotations.state_file | string | `""` | Where the dedupe set persists. Empty puts annotations.json beside checkpoint.file_path, so it lands on the same persistence volume. Without a persistent volume a restart may republish recent annotations once. |
+| config.grafana_annotations.timeout | string | `"10s"` | Per-request timeout for POST /api/annotations. |
+| config.grafana_annotations.token | string | `""` | Grafana service-account token. It needs exactly one action, `annotations:create` on scope `annotations:type:organization`, and nothing else. Prefer existingSecret or token_file over putting it here: a non-empty value moves the whole rendered config into a Secret. |
+| config.grafana_annotations.token_file | string | `""` | Path to a file holding the token (a mounted Secret). Value XOR file. |
+| config.grafana_annotations.url | string | `""` | Grafana base URL, e.g. https://mystack.grafana.net. Setting it IS the opt-in for the annotation writer — the only thing this process writes anywhere. Empty disables the feature entirely (no client, no goroutine, no log line). Once set, the pod FAILS TO START unless the token can write an annotation, because a writer discovered broken at the first real event produced nothing when an operator went looking. |
 | config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
 | config.headscale.api_key_file | string | `""` | Read headscale.api_key from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.headscale.http.rate_limit | int | `0` |  |

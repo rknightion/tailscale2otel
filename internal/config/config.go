@@ -74,6 +74,9 @@ type Config struct {
 	Tracing           TracingConfig           `yaml:"tracing"`
 	Resource          ResourceConfig          `yaml:"resource"`
 	VersionChecks     VersionChecksConfig     `yaml:"version_checks"`
+	// GrafanaAnnotations configures the opt-in Grafana annotation writer — the
+	// process's only outbound WRITE. Off unless url is set.
+	GrafanaAnnotations GrafanaAnnotationsConfig `yaml:"grafana_annotations"`
 
 	// unknownEnv records TS2OTEL_* environment variables that did not map to any
 	// known config key (a likely typo — they were ignored). Unexported, populated

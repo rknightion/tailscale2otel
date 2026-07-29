@@ -1860,3 +1860,107 @@ refused as custom keys for the same reason.
 > attributes would either be silently ignored (the per-signal value already wins) or would move a
 > value that is deliberately per-series onto the Resource instead — so `resource.attributes` refuses
 > both keys outright.
+
+## `grafana_annotations` — publish tailnet events as Grafana annotations
+
+A graph shows a discontinuity; it does not say why. This block answers that by publishing a curated,
+closed set of tailnet events into a Grafana organization as annotations, so any dashboard can show
+"what changed at 14:00" without an external automation shipping them.
+
+It is **the one thing tailscale2otel writes anywhere.** Everything else is read-only polling plus
+OTLP push. The narrowness is structural rather than promised: the package speaks exactly one HTTP
+call (`POST /api/annotations`) to exactly one destination, the path is a compile-time constant rather
+than a parameter, and there is no Tailscale API client inside it — annotations are derived from
+records the collectors already emit, so the feature adds no API load at all.
+
+**Setting `url` is the whole opt-in.** Unset (the default) registers no writer, opens no client,
+starts no goroutine and logs nothing.
+
+### The token
+
+One Grafana action: **`annotations:create`** on scope **`annotations:type:organization`**. A custom
+role granting exactly that pair is the documented minimum. The fixed role
+`fixed:annotations:writer` ("Annotations writer" in the UI) also works, but additionally grants
+`annotations:write` and `annotations:delete`, which tailscale2otel never uses. Nothing here reads
+dashboards, datasources or existing annotations.
+
+Supply it via `TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN` or `token_file` — never in committed YAML. In the
+Helm chart a non-empty inline `config.grafana_annotations.token` moves the whole rendered config out
+of the ConfigMap and into a Secret, for the same reason every other credential there does.
+
+### Startup is fail-fast, on purpose
+
+Once `url` is set, the process **refuses to start** unless the token can actually write. The startup
+marker *is* the write probe — one real annotation rather than a synthetic one needing
+`annotations:delete` to clean up. The alternative, discovering a dead token at the first real event,
+means the context an operator went looking for during an incident was never there and nothing said
+so. Every other failure mode is isolated: a Grafana outage, a 429 or an expired token later on is
+counted on `tailscale2otel.annotation.dropped`, surfaced on `tailscale2otel.annotation.degraded`, and
+can never block or fail a poll.
+
+### What gets annotated
+
+The rule set is closed. Each rule reads a log record the collectors already emit, and renders its
+text from a per-rule **allow-list** of attribute keys — so a field added to a source record later
+cannot silently ride out to Grafana — over the **`pii_filter`-redacted** view of that record, so a
+category an operator suppressed from OTLP is suppressed here too.
+
+| Category | Source | What it marks |
+|---|---|---|
+| `config_change` | `tailscale.config.audit` | The curated security/lifecycle subset of the configuration audit log: ACL edits, device approval and churn, key lifecycle, user role changes, DNS and tailnet settings. Uses the same vocabulary as `tailscale.config.audit.changes`, so routine node-tag churn and machine renames never appear. |
+| `expiry` | `tailscale.key.expiring`, `tailscale.device.key_expiring` | An auth key or node key entering its expiry warning window — the marker that explains a device count stepping down. |
+| lifecycle | this process | The startup marker (version), which doubles as the write probe. It has no toggle: disabling it would only make a deployment go silently unverified. |
+
+Deliberately **not** annotated: `tailscale.acl.risky_rule`, `tailscale.acl.validation_issue` and
+`tailscale.device.tailnet_lock_error` describe a standing posture rather than a moment, so they are
+re-emitted for as long as the condition holds and would draw a picket fence across the dashboard —
+they are alert material, and the repo ships alerts for them. `tailscale.network.flow` is
+per-connection and would bury every real marker.
+
+### Every annotation carries these tags
+
+This is the contract a dashboard annotation query selects on:
+
+```
+tailscale2otel            the root selector — on every annotation
+tailnet:<label>           omitted in single-tailnet mode
+category:<category>       config_change | expiry | lifecycle
+rule:<rule id>            the curated rule that produced it
+severity:<value>          only when the source record carries one
+rollup                    only on an interval rollup (a region annotation)
+```
+
+Everything identifying — device names, key descriptions, who made the change — goes in the annotation
+**text**, never a tag: Grafana indexes tags, so a tag carrying an identifier grows the tag store
+forever without ever being queried.
+
+### Duplicates, restarts and volume
+
+Each occurrence gets a dedupe key hashed from (tailnet, rule, source identity) and nothing else — no
+clock, no counter — so a record re-delivered by an overlapping poll window, re-observed on the next
+snapshot tick, or seen again after a restart derives the same key and is dropped. The set persists to
+`state_file` and is evicted after `dedupe_retention`; **without a persistent volume a restart may
+republish recent annotations once**, which is why the default puts it beside `checkpoint.file_path`.
+
+A rolled-up category buffers its events into `rollup_interval` buckets and publishes one **region**
+annotation summarizing each, rather than a marker per event. Both curated categories roll up by
+default: the audit log is high-volume on a busy tailnet, and a fresh deployment finds every
+currently-expiring key at once.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `grafana_annotations.url` | `""` | Grafana base URL, e.g. `https://mystack.grafana.net`. **Setting it is the opt-in**; empty disables the feature entirely. Must be a full `http(s)` URL — a schemeless `host:3000` is refused at startup rather than failing on every write forever. Set via `TS2OTEL_GRAFANA_ANNOTATIONS__URL`. |
+| `grafana_annotations.token` | `""` | Grafana service-account token, needing `annotations:create` and nothing else. Set via `TS2OTEL_GRAFANA_ANNOTATIONS__TOKEN`. |
+| `grafana_annotations.token_file` | `""` | Path to a file holding the token (Docker/k8s secret mount), read once at load. Value XOR file — setting both is a config error. |
+| `grafana_annotations.dashboard_uid` | `""` | Confine annotations to one dashboard. Empty writes **organization** annotations, visible on every board and in Explore — which is the point of pushing them rather than deriving them on one board. Setting it is warned about at startup for that reason. |
+| `grafana_annotations.timeout` | `10s` | Per-request timeout for `POST /api/annotations`. Also the total budget for the shutdown drain. |
+| `grafana_annotations.max_per_minute` | `60` | Token-bucket ceiling on annotations written per process. Overage is **dropped and counted**, never delayed: a marker arriving after the moment it explains is worse than absent. Distinct from Grafana's own 429, which additionally arms a Retry-After-aware backoff. |
+| `grafana_annotations.queue_size` | `512` | Hand-off buffer between the collector goroutines and the single publisher. A full queue drops and counts rather than blocking collection — the caller is a collector mid-poll. |
+| `grafana_annotations.rollup_interval` | `5m` | Bucket width for rolled-up categories: one region annotation per interval per category per tailnet. |
+| `grafana_annotations.dedupe_retention` | `48h` | How long a published annotation's dedupe key is remembered. Must comfortably exceed the longest source overlap window; too short republishes a still-current condition, too long grows the state file. |
+| `grafana_annotations.state_file` | `""` | Where the dedupe set persists. Empty resolves to `annotations.json` beside `checkpoint.file_path`. Deliberately its own file: the window pollers rewrite the checkpoint file every tick and the startup key migration walks its keys. An unopenable path degrades to memory-only (may republish once per restart) rather than failing startup. |
+| `grafana_annotations.extra_tags` | `[]` | Extra tags added to every annotation, e.g. `[env:prod]`, for overlaying these on an existing tag scheme. Comma-separated via env. |
+| `grafana_annotations.categories.config_change.enabled` | `true` | Publish curated configuration-audit changes. Needs `collectors.auditlogs`; a startup warning fires if it is off. |
+| `grafana_annotations.categories.config_change.rollup` | `true` | Summarize the category into one region annotation per `rollup_interval` instead of a marker per event. |
+| `grafana_annotations.categories.expiry.enabled` | `true` | Publish key/device-key expiry-window entries. Needs `collectors.keys` or `collectors.devices`. |
+| `grafana_annotations.categories.expiry.rollup` | `true` | Summarize the category per `rollup_interval`. |
