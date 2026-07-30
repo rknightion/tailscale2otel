@@ -1047,10 +1047,20 @@ fi
 case_ "W. immutable image digest (#349)"
 image_ref() { dep_field '.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .image'; }
 
+# appVersion is bumped by release-please on every release, so read it rather than
+# hardcoding it — a literal here fails on the release PR itself, which is the one
+# PR that must not be blocked by an unrelated red check.
+APP_VERSION="$(yq -r '.appVersion' "${CHART_DIR}/Chart.yaml")"
+
 render
 assert_rc0 "W: default renders"
-[[ "$(image_ref)" == "ghcr.io/rknightion/tailscale2otel:3.0.0" ]] \
-  && ok "W: default image is repository:appVersion" || bad "W: default image is $(image_ref)"
+if [[ -z "$APP_VERSION" || "$APP_VERSION" == "null" || "$APP_VERSION" == "latest" ]]; then
+  bad "W: Chart.yaml appVersion is not a pinned version (got '${APP_VERSION}')"
+elif [[ "$(image_ref)" == "ghcr.io/rknightion/tailscale2otel:${APP_VERSION}" ]]; then
+  ok "W: default image is repository:appVersion (${APP_VERSION})"
+else
+  bad "W: default image is $(image_ref), want ghcr.io/rknightion/tailscale2otel:${APP_VERSION}"
+fi
 
 render --set-string image.tag=v9.9.9
 assert_rc0 "W: tag override renders"

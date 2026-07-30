@@ -373,13 +373,18 @@ func (c blockingCollector) Collect(context.Context, telemetry.Emitter) error {
 // the correct tool for this specific case.
 func TestRunOnceEntry_HonorsDeadline(t *testing.T) {
 	const budget = 100 * time.Millisecond
-	ctx, cancel := context.WithTimeout(context.Background(), budget)
-	defer cancel()
 
 	entry := collector.Entry{Collector: blockingCollector{started: make(chan struct{})}}
 	rec := telemetrytest.New()
 
+	// The deadline clock starts at WithTimeout, so `start` must be taken no
+	// later than that. Building entry/rec in between costs real time that is
+	// then subtracted from the measured budget: on a loaded CI runner that
+	// read 99.75ms against a 100ms budget and failed a correct implementation.
 	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+
 	res := runOnceEntry(ctx, "acme", entry, rec.Emitter())
 	elapsed := time.Since(start)
 
