@@ -2,7 +2,23 @@
 
 {{ template "chart.deprecationWarning" . }}
 
-{{ template "chart.badgesSection" . }}
+{{/*
+  Deliberately NOT chart.badgesSection: that emits an AppVersion badge, which
+  bakes the release-managed app version into a GENERATED file. release-please
+  bumps Chart.yaml appVersion on every release but cannot regenerate this
+  README, so the helm-docs fail-on-diff gate went red on the release PR itself
+  — the one PR that must not be blocked by an unrelated check.
+
+  Annotating the badge line for release-please does not work either: the badge
+  carries the version twice (label and shield URL) and generic.ts's
+  VERSION_REGEX has no `g` flag, so only the first is replaced, leaving a
+  half-updated badge that still fails the diff. Chart version and type are safe
+  — both are bumped by hand, by whoever also regenerates this file.
+
+  The app version is still published in Chart.yaml, which is what ArtifactHub
+  and `helm show chart` read, so nothing is actually lost.
+*/}}
+{{ template "chart.versionBadge" . }}{{ template "chart.typeBadge" . }}
 
 {{ template "chart.description" . }}
 
