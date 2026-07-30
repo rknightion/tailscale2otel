@@ -86,6 +86,17 @@ with `scripts/regen-generated.sh helm`, do not hand-edit:
   `values.yaml` by `losisin/helm-values-schema-json-action` (which installs tool **v2.5.0**).
 - `README.md` — generated from `README.md.gotmpl` + value annotations by `helm-docs` (**v1.14.2**).
 
+> **The chart README deliberately has NO AppVersion badge — do not "restore" it.** It uses
+> `chart.versionBadge` + `chart.typeBadge`, not `chart.badgesSection`. An AppVersion badge bakes the
+> release-managed app version into a GENERATED file: release-please bumps `Chart.yaml` `appVersion`
+> but cannot run `helm-docs`, so the `fail-on-diff` gate went red **on the release PR itself** — the
+> one PR that must not be blocked by an unrelated check, and it recurred every release, not just at a
+> major. Annotating the badge for release-please does NOT fix it: the badge carries the version twice
+> (label and shield URL) and `generic.ts`'s `VERSION_REGEX` has no `g` flag, so only the first is
+> replaced and the half-updated line still fails the diff. The app version is still in `Chart.yaml`,
+> which is what ArtifactHub and `helm show chart` read, so nothing is lost. Same class of bug as the
+> render suite's contract W once hardcoding `:3.0.0`. Rationale is also in `README.md.gotmpl`.
+
 **Both tools are version-pinned** — a different local version silently generates different output.
 Install the pinned pair once per machine with `scripts/regen-generated.sh tools`; the script verifies
 the version before regenerating and SKIPs loudly rather than writing a wrong file. See the root
