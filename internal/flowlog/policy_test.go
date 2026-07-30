@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // testPolicy is written against the live record fixture: camden is tag-owned

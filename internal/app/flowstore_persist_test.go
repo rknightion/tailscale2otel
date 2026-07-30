@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // persistCfg is a config with the flow view on and persistence pointed at dir.

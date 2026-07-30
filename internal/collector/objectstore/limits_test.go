@@ -12,8 +12,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 func TestCollect_ZstdSubKiBLimitAcceptsValidTinyFrame(t *testing.T) {

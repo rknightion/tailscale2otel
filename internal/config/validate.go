@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
-	"github.com/rknightion/tailscale2otel/v3/internal/listenaddr"
-	"github.com/rknightion/tailscale2otel/v3/internal/redact"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v4/internal/redact"
 )
 
 // Bounds on flows.retention. The floor is one bucket; the ceiling reflects that

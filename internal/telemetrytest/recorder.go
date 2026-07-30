@@ -19,8 +19,8 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
 )
 
 // MetricPoint is a single recorded metric data point, flattened for assertions.

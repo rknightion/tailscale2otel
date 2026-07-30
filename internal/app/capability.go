@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v3/internal/tsscope"
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsscope"
 )
 
 // This file owns the configuration-to-capability matrix (#430) and the OAuth

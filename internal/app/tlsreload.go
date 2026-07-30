@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/certreload"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
 )
 
 // CertReloader is the shared TLS cert reloader (#316). It lives in

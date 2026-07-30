@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/oas"
+	"github.com/rknightion/tailscale2otel/v4/internal/oas"
 )
 
 // The scheduled lane's report is the only thing a maintainer sees: it becomes the

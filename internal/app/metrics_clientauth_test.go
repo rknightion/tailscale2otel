@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // testCA is a throwaway certificate authority. internal/config's tlskeypair_test

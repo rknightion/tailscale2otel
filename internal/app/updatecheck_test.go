@@ -6,9 +6,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/release"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/release"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // TestRunUpdateCheck_ZeroIntervalClamped verifies that passing interval=0 to

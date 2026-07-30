@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // This file answers flowstore.Query with SQL GROUP BY over the raw `flows`

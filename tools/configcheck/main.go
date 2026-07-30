@@ -18,7 +18,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 func main() {

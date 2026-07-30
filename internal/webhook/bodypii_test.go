@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 func webhookCatsOff(off ...pii.Category) pii.Categories {

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 func TestHealthcheckURL(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
 )
 
 // updateManifest rewrites the committed signal-disposition manifest (and the

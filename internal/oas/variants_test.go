@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/oas"
+	"github.com/rknightion/tailscale2otel/v4/internal/oas"
 )
 
 // Boundary variants (#433). SynthesizeBody produced exactly one representative

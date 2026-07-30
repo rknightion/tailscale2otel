@@ -18,8 +18,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 // Metric readers and log/span processors — everything between an SDK provider

@@ -3,7 +3,7 @@ package tsapi
 import (
 	"io"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/jsonbudget"
+	"github.com/rknightion/tailscale2otel/v4/internal/jsonbudget"
 )
 
 // The decode-budget machinery itself lives in internal/jsonbudget so

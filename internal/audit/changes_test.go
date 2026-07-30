@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // evWith builds a minimal audit Event with the given target type/property,

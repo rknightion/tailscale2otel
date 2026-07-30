@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // TestProvenance_DefaultFileEnv is the core layering test for issue #309: a

@@ -4,10 +4,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 var ingestAgeBucketsSeconds = []float64{0, 1, 5, 10, 30, 60, 300, 900, 3600, 21600, 86400}

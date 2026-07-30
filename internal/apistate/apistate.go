@@ -31,7 +31,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 // State is the bounded availability state of one API operation. The values are

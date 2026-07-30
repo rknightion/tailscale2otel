@@ -15,7 +15,7 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
 )
 
 //go:embed page.html.tmpl

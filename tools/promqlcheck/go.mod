@@ -1,4 +1,4 @@
-module github.com/rknightion/tailscale2otel/v3/tools/promqlcheck
+module github.com/rknightion/tailscale2otel/v4/tools/promqlcheck
 
 go 1.26.5
 

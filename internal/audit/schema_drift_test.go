@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 func TestProcessEmitsBoundedSchemaDriftObservations(t *testing.T) {

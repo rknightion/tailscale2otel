@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // TestDefaultProfileMatchesHardcodedBehavior proves #329's "safe defaults

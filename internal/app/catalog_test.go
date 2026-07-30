@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // TestCatalogMatchesEmitted is the declaration<->emission drift guard for the

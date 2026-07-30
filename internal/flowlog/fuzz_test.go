@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // Flow records reach the processor from two directions — the poller and the

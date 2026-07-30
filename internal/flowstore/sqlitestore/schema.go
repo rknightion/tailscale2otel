@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // schemaVersion is the current shape of the flows table. Migrations are

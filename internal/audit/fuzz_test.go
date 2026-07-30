@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // Audit `old`/`new` are polymorphic on the wire — the API renders them as a

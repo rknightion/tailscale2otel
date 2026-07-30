@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // fmtAddr mints a distinct peer address, for the bounding test.

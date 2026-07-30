@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
+	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
 )
 
 func TestBucketsSecondsAreSortedAndPositive(t *testing.T) {

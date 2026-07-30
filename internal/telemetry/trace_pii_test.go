@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
 )
 
 // apiSpanAttrs mirrors the attribute set internal/tsapi's retryTransport.observe

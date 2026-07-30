@@ -15,7 +15,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 // LiveResource names a real tailnet resource that the live-contract lane must

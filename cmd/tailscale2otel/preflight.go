@@ -9,9 +9,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app"
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/app"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // Exit codes for -preflight/-once (issue #311). Distinct on purpose: the

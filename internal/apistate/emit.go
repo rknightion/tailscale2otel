@@ -3,8 +3,8 @@ package apistate
 import (
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // EmitAvailability writes the availability of one (collector, operation): `1`

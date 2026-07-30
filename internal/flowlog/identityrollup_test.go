@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // identityFlow is one virtual connection whose record carries the endpoint

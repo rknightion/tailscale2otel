@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/objectstore"
 )
 
 func staticCreds() Provider {

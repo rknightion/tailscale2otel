@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app"
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/app"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".

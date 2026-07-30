@@ -18,16 +18,16 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
-	storeapi "github.com/rknightion/tailscale2otel/v3/internal/objectstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/s3"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
+	storeapi "github.com/rknightion/tailscale2otel/v4/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/s3"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // now is the fixed instant every test runs at, so cursor arithmetic never

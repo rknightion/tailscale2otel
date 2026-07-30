@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/oas"
+	"github.com/rknightion/tailscale2otel/v4/internal/oas"
 )
 
 // Classification of the request surface (#432). Each case mutates ONE thing in

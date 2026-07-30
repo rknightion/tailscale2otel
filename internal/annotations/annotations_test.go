@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/annotations"
-	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/annotations"
+	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // ---- tag contract --------------------------------------------------------

@@ -8,9 +8,9 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/collector/acl"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector/acl"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // fakeAPI implements the narrow acl api interface for tests. It is the single

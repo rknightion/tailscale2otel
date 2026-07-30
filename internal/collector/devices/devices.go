@@ -21,16 +21,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
-	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
-	"github.com/rknightion/tailscale2otel/v3/internal/release"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
+	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v4/internal/release"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 // Compile-time assertions: *Collector is a SnapshotCollector and *tsapi.Client

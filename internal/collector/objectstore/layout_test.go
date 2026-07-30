@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 // flatKeyAt builds a FLAT copied-export key: the self-contained legacy basename

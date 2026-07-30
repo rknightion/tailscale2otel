@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
 )
 
 // allCategoriesOff is a PIIFilterConfig with EVERY field false. It is built by

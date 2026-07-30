@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // Allocation budget for the cardinality tracker's emit-path hook (#441).

@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/prometheus/otlptranslator"
-	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // This file is the pull-path NAME CONTRACT for the whole catalog (#379).

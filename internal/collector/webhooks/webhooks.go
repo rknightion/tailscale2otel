@@ -21,10 +21,10 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/entityage"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // Compile-time assertion: *Collector is a SnapshotCollector.

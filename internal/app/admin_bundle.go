@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/supportbundle"
+	"github.com/rknightion/tailscale2otel/v4/internal/supportbundle"
 )
 
 // bundleIncludeDevicesParam is the query parameter that opts into the

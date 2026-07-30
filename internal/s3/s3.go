@@ -38,7 +38,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/objectstore"
 )
 
 // Object is retained as a source-compatible alias for objectstore.Object.

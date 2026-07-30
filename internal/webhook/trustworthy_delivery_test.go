@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 func newTrustworthyTestServer(t *testing.T, opts Options, options ...Option) (*Server, *telemetrytest.Recorder) {

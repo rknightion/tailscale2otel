@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // counterTotal sums the value across all data points of the audit events

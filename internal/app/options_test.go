@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // TestInstanceID_PIIFilter covers the three cases for the hostname-redaction

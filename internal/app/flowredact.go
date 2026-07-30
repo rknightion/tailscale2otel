@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
 )
 
 // flowRedactor builds the PII gate the persistent flow store applies before a

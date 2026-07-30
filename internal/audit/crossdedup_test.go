@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // TestNormalizedCrossKey pins the shared cross-source key FORMAT. This is the

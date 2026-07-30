@@ -4,7 +4,7 @@
 // package can share the shapes without either importing the other.
 package flowsdata
 
-import "github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+import "github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 
 // SchemaVersion is Response's contract version (#323): a stable integer an
 // external consumer can branch on, bumped only for a deliberate breaking

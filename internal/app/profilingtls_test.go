@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // writePEM writes a certificate/key pair from an httptest TLS server's own

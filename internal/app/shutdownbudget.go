@@ -3,8 +3,8 @@ package app
 import (
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/stream"
-	"github.com/rknightion/tailscale2otel/v3/internal/webhook"
+	"github.com/rknightion/tailscale2otel/v4/internal/stream"
+	"github.com/rknightion/tailscale2otel/v4/internal/webhook"
 )
 
 // Shutdown is staged, and every stage is separately bounded. These names exist

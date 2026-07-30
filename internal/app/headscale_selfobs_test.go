@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // TestStatusPage_PerTailnetIdentityInListMode pins #116: in multi-tailnet mode the

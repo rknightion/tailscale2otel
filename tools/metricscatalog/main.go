@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
 )
 
 func main() {

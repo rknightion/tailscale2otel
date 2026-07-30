@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // testOpts returns a fresh Options pointed at a scratch directory, with the

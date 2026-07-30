@@ -3,9 +3,9 @@ package acl
 import (
 	"context"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 // opValidate is the upstream OpenAPI operationId for the validate endpoint,

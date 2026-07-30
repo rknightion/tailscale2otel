@@ -17,7 +17,7 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app/eventsdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/eventsdata"
 )
 
 //go:embed page.html.tmpl

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector/devices"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector/devices"
 )
 
 // runEnrichCacheAgeReporter emits tailscale2otel.enrich.cache_age for each runtime

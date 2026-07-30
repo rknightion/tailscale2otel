@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/oas"
+	"github.com/rknightion/tailscale2otel/v4/internal/oas"
 )
 
 const refSpec = `{

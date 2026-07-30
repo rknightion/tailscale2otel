@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v3/internal/app/flowhtml"
-	"github.com/rknightion/tailscale2otel/v3/internal/app/flowsdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore/sqlitestore"
+	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/flowhtml"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore/sqlitestore"
 )
 
 // Bounds on what /api/flows.json will do for one request. The window, page size

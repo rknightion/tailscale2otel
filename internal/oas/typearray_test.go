@@ -3,7 +3,7 @@ package oas_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/oas"
+	"github.com/rknightion/tailscale2otel/v4/internal/oas"
 )
 
 // Tailscale's spec is OpenAPI **3.1.0**, where a nullable field is spelled as a

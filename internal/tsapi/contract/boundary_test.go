@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/oas"
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v4/internal/oas"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi/contract"
 )
 
 // The boundary matrix (#433): every consumed operation × every boundary shape,

@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 // TestObjectStoreFeedSignalsMatchTheirAdapters guards a silent, expensive bug.

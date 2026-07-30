@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
 )
 
 func TestNewMemory_NonPositiveCapacitySelectsDefault(t *testing.T) {

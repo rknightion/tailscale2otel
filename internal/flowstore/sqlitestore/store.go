@@ -40,7 +40,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 
 	// Registers the pure-Go "sqlite" driver. modernc.org/sqlite is a transpiled
 	// SQLite, not a cgo binding, which is why it is the only engine this project

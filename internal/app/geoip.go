@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
 )
 
 // buildGeoIP loads the configured MaxMind databases and, when the built-in

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/rdns"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/rdns"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 // rdnsTestApp builds an App with reverse-DNS enabled and replaces the real

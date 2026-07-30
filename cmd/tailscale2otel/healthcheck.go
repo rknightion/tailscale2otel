@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // Exit codes. Distinct on purpose: an orchestrator can tell "the process is

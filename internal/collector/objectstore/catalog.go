@@ -1,8 +1,8 @@
 package objectstore
 
 import (
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 // Metric names emitted by this collector. Everything the flow records themselves

@@ -3,7 +3,7 @@ package pii
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 func TestRegistryCoversKnownKeys(t *testing.T) {

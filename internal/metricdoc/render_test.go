@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 )
 
 func TestRenderMetricTable(t *testing.T) {

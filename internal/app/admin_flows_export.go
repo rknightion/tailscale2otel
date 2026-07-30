@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app/flowsdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // maxExportRows bounds one export response at THIS store's recent-connection

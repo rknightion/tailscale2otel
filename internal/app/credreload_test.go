@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/credreload"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/credreload"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // #362's most common rotation is a Grafana Cloud token file. It cannot be passed

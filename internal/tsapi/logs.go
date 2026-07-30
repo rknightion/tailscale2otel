@@ -8,8 +8,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
 )
 
 // NetworkFlowLogs fetches network flow logs for the window [start, end].

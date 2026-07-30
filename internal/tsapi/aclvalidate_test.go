@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 // TestValidatePolicyFile_SendsNoBodyToValidateEndpoint asserts the request

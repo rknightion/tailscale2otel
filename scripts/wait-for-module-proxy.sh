@@ -11,7 +11,7 @@
 # release-please creates the tag and the `binaries` job starts in the same second of the
 # same workflow run, so every release races sumdb ingestion. v3.0.0 lost that race:
 #
-#   go: github.com/rknightion/tailscale2otel/v3@v3.0.0: verifying module:
+#   go: github.com/rknightion/tailscale2otel/v4@v3.0.0: verifying module:
 #       reading https://sum.golang.org/lookup/...@v3.0.0: 500 Internal Server Error
 #
 # A plain re-run minutes later went green, unchanged. A fixed `sleep` would be the wrong

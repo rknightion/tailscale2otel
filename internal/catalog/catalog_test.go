@@ -3,8 +3,8 @@ package catalog_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/catalog"
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 )
 
 // canonicalGroups are the docs/metrics.md sections every declared metric/log

@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v3/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 )
 
 // The API resolves every exercised-rule row against the policy version that

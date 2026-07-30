@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi/contract"
 )
 
 // updateBaselines rewrites the committed disposition baselines instead of

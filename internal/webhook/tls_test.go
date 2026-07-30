@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
 func TestServerRun_ServesTLSAndShutsDown(t *testing.T) {

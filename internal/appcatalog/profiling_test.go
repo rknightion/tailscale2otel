@@ -3,7 +3,7 @@ package appcatalog
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 )
 
 // TestProfilingCatalogShape pins the Pyroscope upload-health descriptors (#374).

@@ -50,11 +50,11 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/ingest"
-	storeapi "github.com/rknightion/tailscale2otel/v3/internal/objectstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
+	storeapi "github.com/rknightion/tailscale2otel/v4/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 const (

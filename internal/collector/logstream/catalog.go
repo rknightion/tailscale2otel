@@ -1,8 +1,8 @@
 package logstream
 
 import (
-	"github.com/rknightion/tailscale2otel/v3/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 // Catalog declarations are the SINGLE SOURCE OF TRUTH for this package's metric

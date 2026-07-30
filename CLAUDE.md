@@ -160,7 +160,7 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 
 ## Module / package layout
 
-Five modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v3`) plus four
+Five modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v4`) plus four
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
 are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
 `tools/apidrift`, `tools/promqlcheck`).

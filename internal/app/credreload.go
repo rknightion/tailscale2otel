@@ -9,9 +9,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/credreload"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/credreload"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // Outbound credential/TLS rotation (#362). Kubernetes and Docker rotate a

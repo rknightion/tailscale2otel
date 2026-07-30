@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	"github.com/rknightion/tailscale2otel/v3/internal/ringbuf"
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/ringbuf"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // samplerInterval is how often the in-process runtime/cardinality history is

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app/eventsdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/app/eventshtml"
-	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/eventsdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/eventshtml"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
 )
 
 // Bounds on what /api/events.json will do for one request, mirroring

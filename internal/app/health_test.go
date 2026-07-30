@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
 )
 
 func TestSuccessRatePct(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // Attribute keys for the ACL risk metrics. Collector-local keys follow the

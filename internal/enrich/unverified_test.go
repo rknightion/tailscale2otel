@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
 )
 
 // GHSA-pjfv-prc8-4fc9. The srcNode/dstNodes identity embedded in a network flow

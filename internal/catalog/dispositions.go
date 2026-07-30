@@ -33,7 +33,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
 )
 
 // SignalDispositionsFile is the manifest path, relative to this package

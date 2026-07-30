@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi/contract"
 )
 
 // newFakeAPI stands up a server that routes on the request path, so the

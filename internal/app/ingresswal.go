@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/ingresswal"
+	"github.com/rknightion/tailscale2otel/v4/internal/ingresswal"
 )
 
 const (

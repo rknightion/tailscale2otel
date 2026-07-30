@@ -1,8 +1,8 @@
 package configexport
 
 import (
-	"github.com/rknightion/tailscale2otel/v3/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 )
 
 // FieldWithProvenance is one leaf of BuildWithProvenance's output: everything

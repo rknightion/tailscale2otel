@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/audit"
-	"github.com/rknightion/tailscale2otel/v3/internal/collector"
-	storeapi "github.com/rknightion/tailscale2otel/v3/internal/objectstore"
-	"github.com/rknightion/tailscale2otel/v3/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	storeapi "github.com/rknightion/tailscale2otel/v4/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 func TestMigrateLegacyStatePreservesEveryDurableRowAndCanonicalWins(t *testing.T) {

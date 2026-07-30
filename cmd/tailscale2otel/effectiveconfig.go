@@ -6,8 +6,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/config"
-	"github.com/rknightion/tailscale2otel/v3/internal/configexport"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/configexport"
 	"gopkg.in/yaml.v3"
 )
 

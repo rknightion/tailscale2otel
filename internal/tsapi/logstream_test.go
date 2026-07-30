@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v3/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 func TestConfigureLogStream_PutsConfigAndSucceeds(t *testing.T) {
