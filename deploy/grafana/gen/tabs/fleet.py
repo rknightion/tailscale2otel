@@ -94,7 +94,8 @@ def tab_fleet(scope):
     sentinel("has_subnet", "tailscale_subnet_routes_advertised", DASHBOARD)
     sentinel("has_version_skew", "tailscale_device_version_skew_ratio", DASHBOARD)
     sentinel("has_key_expiry_hist", "tailscale_devices_key_expiry_days_count", DASHBOARD)
-    pii_sentinel("pii_host", PII + '{category="hostnames"} == 0', DASHBOARD)  # dead: no row gates on it
+    # DELETED in #526: pii_host. Declared but gating nothing — see the note in
+    # tabs/network.py. Re-add it only alongside a panel that renders a raw hostname.
     pii_sentinel("pii_perdevice",
                  '(%s{category="hostnames"} == 0) and ignoring(category) (%s{category="node_ids"} == 0)'
                  % (PII, PII), DASHBOARD)  # also consumed by security.py

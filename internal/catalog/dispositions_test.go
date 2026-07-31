@@ -428,37 +428,35 @@ func TestValidateSignalDispositions_RejectsContradictions(t *testing.T) {
 			wants: "claims visualized",
 		},
 		{
-			desc: "raw_only despite appearing in a panel",
+			desc: "pending_panel despite appearing in a panel",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispRawOnly}, Note: "n/a"}},
+				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a"}},
 			refs:  shown,
 			wants: "is visualized",
 		},
+		// The "two intent values at once" case is gone with raw_only/omitted (#526):
+		// there is exactly one intent disposition now, so the contradiction is no
+		// longer expressible. The mutual exclusion that still matters — intent
+		// alongside a PROVEN surface — is the "despite appearing in a panel" case
+		// above.
 		{
-			desc: "raw_only and omitted together",
+			desc: "pending_panel with no note",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispOmitted, catalog.DispRawOnly}, Note: "n/a"}},
-			refs:  unseen,
-			wants: "mutually exclusive",
-		},
-		{
-			desc: "raw_only with no note",
-			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispRawOnly}}},
+				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}}},
 			refs:  unseen,
 			wants: "needs a note",
 		},
 		{
 			desc: "wrong prom name",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: "tailscale_example", Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispRawOnly}, Note: "n/a"}},
+				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a"}},
 			refs:  unseen,
 			wants: "prom_name",
 		},
 		{
 			desc: "wrong surface",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: catalog.SurfaceSelfObs,
-				Dispositions: []catalog.Disposition{catalog.DispRawOnly}, Note: "n/a"}},
+				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a"}},
 			refs:  unseen,
 			wants: "surface",
 		},
@@ -494,7 +492,7 @@ func TestValidateSignalDispositions_RejectsContradictions(t *testing.T) {
 func TestValidateSignalDispositions_ReportsStaleRows(t *testing.T) {
 	base := &catalog.SignalDispositionBaseline{Signals: []catalog.SignalDisposition{{
 		Kind: catalog.KindMetric, Name: "tailscale.gone", PromName: "tailscale_gone",
-		Surface: catalog.SurfaceOperational, Dispositions: []catalog.Disposition{catalog.DispRawOnly}, Note: "n/a",
+		Surface: catalog.SurfaceOperational, Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a",
 	}}}
 	problems := catalog.ValidateSignalDispositions(base, nil, catalog.ArtifactRefs{})
 	if !strings.Contains(problems.String(), "STALE") {
@@ -549,19 +547,19 @@ func TestMergeSignalDispositions_NeverInventsAHumanChoice(t *testing.T) {
 			merged.Signals[1].Dispositions)
 	}
 
-	// A human's raw_only choice survives regeneration ...
-	merged.Signals[1].Dispositions = []catalog.Disposition{catalog.DispRawOnly}
-	merged.Signals[1].Note = "ad-hoc PromQL only"
+	// A human's pending_panel choice survives regeneration ...
+	merged.Signals[1].Dispositions = []catalog.Disposition{catalog.DispPendingPanel}
+	merged.Signals[1].Note = "#526 wave 3: panel scheduled on tailnet/Devices"
 	again, _, _ := catalog.MergeSignalDispositions(merged, []catalog.Signal{unseen, seen}, refs)
-	if got := sortedDispositionValues(again.Signals[1].Dispositions); got != "raw_only" {
-		t.Errorf("hand-assigned raw_only was lost on regeneration, got %q", got)
+	if got := sortedDispositionValues(again.Signals[1].Dispositions); got != "pending_panel" {
+		t.Errorf("hand-assigned pending_panel was lost on regeneration, got %q", got)
 	}
 	// ... but is REPLACED once the signal actually gains a surface, because the
 	// two are mutually exclusive and the artifacts are the authority.
 	refs.Dashboard["tailscale_unseen"] = true
 	third, _, _ := catalog.MergeSignalDispositions(again, []catalog.Signal{unseen, seen}, refs)
 	if got := sortedDispositionValues(third.Signals[1].Dispositions); got != "visualized" {
-		t.Errorf("a now-visualized signal kept its stale raw_only, got %q", got)
+		t.Errorf("a now-visualized signal kept its stale pending_panel, got %q", got)
 	}
 
 	// Dropping a signal from the catalog prunes its row.
@@ -575,7 +573,7 @@ func TestMergeSignalDispositions_NeverInventsAHumanChoice(t *testing.T) {
 // point of the manifest, so it must actually break the numbers out per surface.
 func TestSignalCoverageReport_SeparatesSurfaces(t *testing.T) {
 	rep := catalog.SignalCoverageReport(loadManifest(t))
-	for _, want := range []string{"Operational", "Self-observability", "visualized", "raw_only", "omitted"} {
+	for _, want := range []string{"Operational", "Self-observability", "visualized", "pending_panel"} {
 		if !strings.Contains(rep, want) {
 			t.Errorf("coverage report never mentions %q", want)
 		}

@@ -91,8 +91,13 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > is updated by hand-running `go test ./internal/catalog -run TestSignalDispositionsInSync -update`,
 > which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded` from the actual
 > dashboard and rule artifacts and prunes dead rows, but leaves a new signal's disposition EMPTY — and an
-> empty disposition always fails the gate. Choosing `raw_only` vs `omitted`, with an honest note, is a
-> human decision. Regenerating after changing the dashboards or rules is expected and correct.
+> empty disposition always fails the gate. Since #526 the only value a human may assign is
+> **`pending_panel`** — TRANSITIONAL, meaning "reaches no panel yet, one is scheduled", with a note
+> naming the dashboard and tab; the ledger is shrink-only and disappears when it empties.
+> `raw_only` and `omitted` were **deleted**: they let an awkward signal be re-labelled instead of
+> panelled, and 33 had accrued under `raw_only`. The bar is now that every signal is on a panel,
+> and the only exemptions are the three **structural** classes in
+> `catalog.StructuralExemptions()`, each an individually justified entry. Regenerating after changing the dashboards or rules is expected and correct.
 
 > **Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained any more.** The four legacy
 > classic-schema dashboards and the Prometheus-ruler `tailscale2otel.rules.yaml` were **deleted**

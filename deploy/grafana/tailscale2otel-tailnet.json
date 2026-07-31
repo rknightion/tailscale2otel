@@ -1801,38 +1801,6 @@
       {
         "kind": "QueryVariable",
         "spec": {
-          "name": "has_posture_int",
-          "label": "has_posture_int",
-          "hide": "hideVariable",
-          "query": {
-            "kind": "DataQuery",
-            "version": "v0",
-            "group": "",
-            "datasource": {
-              "name": "${ds_prometheus}"
-            },
-            "spec": {
-              "query": "label_values(tailscale_posture_integration_matched_ratio, __name__)",
-              "refId": "has_posture_int"
-            }
-          },
-          "current": {
-            "text": "",
-            "value": ""
-          },
-          "options": [],
-          "multi": false,
-          "includeAll": false,
-          "allowCustomValue": false,
-          "refresh": "onDashboardLoad",
-          "regex": "",
-          "skipUrlSync": true,
-          "sort": "disabled"
-        }
-      },
-      {
-        "kind": "QueryVariable",
-        "spec": {
           "name": "has_dropped",
           "label": "has_dropped",
           "hide": "hideVariable",
@@ -1942,38 +1910,6 @@
             "spec": {
               "query": "query_result(count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
               "refId": "has_multitailnet"
-            }
-          },
-          "current": {
-            "text": "",
-            "value": ""
-          },
-          "options": [],
-          "multi": false,
-          "includeAll": false,
-          "allowCustomValue": false,
-          "refresh": "onDashboardLoad",
-          "regex": "",
-          "skipUrlSync": true,
-          "sort": "disabled"
-        }
-      },
-      {
-        "kind": "QueryVariable",
-        "spec": {
-          "name": "pii_host",
-          "label": "pii_host",
-          "hide": "hideVariable",
-          "query": {
-            "kind": "DataQuery",
-            "version": "v0",
-            "group": "",
-            "datasource": {
-              "name": "${ds_prometheus}"
-            },
-            "spec": {
-              "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0)",
-              "refId": "pii_host"
             }
           },
           "current": {
@@ -2134,102 +2070,6 @@
             "spec": {
               "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"emails\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\"} == 0))",
               "refId": "pii_actor"
-            }
-          },
-          "current": {
-            "text": "",
-            "value": ""
-          },
-          "options": [],
-          "multi": false,
-          "includeAll": false,
-          "allowCustomValue": false,
-          "refresh": "onDashboardLoad",
-          "regex": "",
-          "skipUrlSync": true,
-          "sort": "disabled"
-        }
-      },
-      {
-        "kind": "QueryVariable",
-        "spec": {
-          "name": "pii_int_ips",
-          "label": "pii_int_ips",
-          "hide": "hideVariable",
-          "query": {
-            "kind": "DataQuery",
-            "version": "v0",
-            "group": "",
-            "datasource": {
-              "name": "${ds_prometheus}"
-            },
-            "spec": {
-              "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"internal_ips\"} == 0)",
-              "refId": "pii_int_ips"
-            }
-          },
-          "current": {
-            "text": "",
-            "value": ""
-          },
-          "options": [],
-          "multi": false,
-          "includeAll": false,
-          "allowCustomValue": false,
-          "refresh": "onDashboardLoad",
-          "regex": "",
-          "skipUrlSync": true,
-          "sort": "disabled"
-        }
-      },
-      {
-        "kind": "QueryVariable",
-        "spec": {
-          "name": "pii_ext_ips",
-          "label": "pii_ext_ips",
-          "hide": "hideVariable",
-          "query": {
-            "kind": "DataQuery",
-            "version": "v0",
-            "group": "",
-            "datasource": {
-              "name": "${ds_prometheus}"
-            },
-            "spec": {
-              "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"external_ips\"} == 0)",
-              "refId": "pii_ext_ips"
-            }
-          },
-          "current": {
-            "text": "",
-            "value": ""
-          },
-          "options": [],
-          "multi": false,
-          "includeAll": false,
-          "allowCustomValue": false,
-          "refresh": "onDashboardLoad",
-          "regex": "",
-          "skipUrlSync": true,
-          "sort": "disabled"
-        }
-      },
-      {
-        "kind": "QueryVariable",
-        "spec": {
-          "name": "pii_ts_ips",
-          "label": "pii_ts_ips",
-          "hide": "hideVariable",
-          "query": {
-            "kind": "DataQuery",
-            "version": "v0",
-            "group": "",
-            "datasource": {
-              "name": "${ds_prometheus}"
-            },
-            "spec": {
-              "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"tailscale_ips\"} == 0)",
-              "refId": "pii_ts_ips"
             }
           },
           "current": {

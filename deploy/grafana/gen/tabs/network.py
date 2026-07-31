@@ -83,15 +83,15 @@ def tab_network(scope):
     sentinel("has_exit_io", "tailscale_exit_node_io_bytes_total", DASHBOARD)
     pii_sentinel("pii_node", PII + '{category="node_ids"} == 0', DASHBOARD)
     pii_sentinel("pii_topology", PII + '{category="network_topology"} == 0', DASHBOARD)  # also consumed by fleet.py
-    # Still dead: no panel on this tab renders a raw address. The three IP categories
-    # redact source.address/destination.address, which only ever appear on the
-    # tailscale.network.flow LOG record — the flow-log panels here are Loki *metric*
-    # queries over node labels, so there is nothing for these to gate. Wiring them to a
-    # row would mean ADDING an address-rendering panel, i.e. widening PII exposure,
-    # which neither #391 nor #402 asks for.
-    pii_sentinel("pii_int_ips", PII + '{category="internal_ips"} == 0', DASHBOARD)  # dead: no row gates on it
-    pii_sentinel("pii_ext_ips", PII + '{category="external_ips"} == 0', DASHBOARD)  # dead: no row gates on it
-    pii_sentinel("pii_ts_ips", PII + '{category="tailscale_ips"} == 0', DASHBOARD)  # dead: no row gates on it
+    # DELETED in #526: pii_int_ips / pii_ext_ips / pii_ts_ips. They were declared and
+    # shipped in the artifact while gating nothing, costing a Prometheus query on every
+    # dashboard load and reading, to anyone scanning the variable list, like a working
+    # feature gate. The reason they gated nothing still holds — the three IP categories
+    # redact source.address/destination.address, which appear only on the
+    # tailscale.network.flow LOG record, and the flow-log panels here are Loki *metric*
+    # queries over node labels — so re-adding one is only correct alongside a panel that
+    # actually renders an address. Declare it in the same commit as that panel, never
+    # ahead of it.
 
     # Scope selectors (#391). tailnet/provider are real per-series metric labels stamped
     # on every signal (telemetry.constLabelAttrs), so they filter with a plain matcher and

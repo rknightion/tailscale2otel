@@ -5,17 +5,20 @@
     "Regeneration records only what the deploy/grafana dashboard FAMILY (tailnet +",
     "health) and the deploy/alerts rule manifests PROVE, and prunes signals the code",
     "no longer emits. It",
-    "never assigns raw_only or omitted — fill those in by hand, with a note that says",
+    "never assigns pending_panel — fill that in by hand, with a note that says",
     "something true. An empty disposition list fails TestSignalDispositionsInSync.",
     "surface: operational (telemetry about the tailnet) | self_obs (about the exporter)",
     "dispositions (a set; derived ones are checked against the artifacts both ways):",
     "  visualized - queried by \u003e=1 panel or template variable in the generated dashboard",
     "  alertable  - queried by \u003e=1 alert rule expression",
     "  recorded   - consumed by \u003e=1 recording rule expression",
-    "  raw_only   - deliberately query-only; no curated surface. Note must say why.",
-    "  omitted    - deliberately not surfaced at all. Note must say why.",
-    "raw_only and omitted are mutually exclusive with each other and with all three",
-    "derived values: a signal on a curated surface is not deliberately absent from one."
+    "  pending_panel - TRANSITIONAL (#526): reaches no panel yet, one is scheduled.",
+    "                  The note must name the dashboard and tab. This ledger is",
+    "                  shrink-only and is deleted when it empties.",
+    "pending_panel is mutually exclusive with VISUALIZED only. It coexists with",
+    "alertable/recorded on purpose: a signal an alert fires on but nothing charts is the",
+    "worst case here, not a contradiction. raw_only and omitted were DELETED in #526 -",
+    "they let an awkward signal be re-labeled instead of paneled, and 33 had accrued."
   ],
   "signals": [
     {
@@ -23,9 +26,9 @@
       "name": "tailscale.acl.risky_rule",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "WARN log emitted once per unrestricted ACL/grant rule; read in Loki by event_name during a policy review rather than from a standing panel."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Risk \u0026 ACL."
     },
     {
       "kind": "log_event",
@@ -49,18 +52,18 @@
       "name": "tailscale.device.attribute.expiring",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Per-device WARN detail behind the alertable tailscale.device.attribute.expiry metric: the metric carries the alert, this log names which device and attribute."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Posture \u0026 Compliance."
     },
     {
       "kind": "log_event",
       "name": "tailscale.device.key_expiring",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Per-device WARN detail behind the visualized+alertable tailscale.device.key.expiry metric: the metric carries the surface, this log names the device."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Identity \u0026 Keys."
     },
     {
       "kind": "log_event",
@@ -83,9 +86,9 @@
       "name": "tailscale.device_invite",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Per-invite INFO log, gated off by default (collectors.users.collect_device_invites); queried by event_name when it is enabled."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Devices \u003e Inventory \u0026 Hygiene."
     },
     {
       "kind": "log_event",
@@ -149,9 +152,7 @@
       "kind": "log_event",
       "name": "tailscale.webhook.\u003ctype\u003e",
       "surface": "operational",
-      "dispositions": [
-        "raw_only"
-      ],
+      "dispositions": [],
       "note": "The event name is templated per webhook category, so no literal selector can name it. The dashboard's log-event picker does reach it, with the glob tailscale.webhook.*, which a literal-name gate cannot see."
     },
     {
@@ -168,9 +169,9 @@
       "prom_name": "process_cpu_time_seconds_total",
       "surface": "self_obs",
       "dispositions": [
-        "omitted"
+        "pending_panel"
       ],
-      "note": "Standard OTEL process-level metric, deliberately left to a generic runtime dashboard rather than duplicated on this exporter's own surfaces."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (Go runtime)."
     },
     {
       "kind": "metric",
@@ -178,9 +179,9 @@
       "prom_name": "process_uptime_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "omitted"
+        "pending_panel"
       ],
-      "note": "Standard OTEL process-level metric, deliberately left to a generic runtime dashboard rather than duplicated on this exporter's own surfaces."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (Go runtime)."
     },
     {
       "kind": "metric",
@@ -392,8 +393,10 @@
       "prom_name": "tailscale_device_attribute_expiry_seconds",
       "surface": "operational",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Posture \u0026 Compliance - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -478,9 +481,9 @@
       "prom_name": "tailscale_device_distro_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Devices \u003e Inventory \u0026 Hygiene."
     },
     {
       "kind": "metric",
@@ -645,9 +648,9 @@
       "prom_name": "tailscale_devices_by_country_ratio",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Fleet geography, emitted only when the opt-in enrichment.geoip is configured. Deliberately not on the shipped dashboard: the feature is off by default, so a panel would render empty for almost every deployment, and a geographic breakdown is a question operators ask ad hoc rather than watch. Query it directly when you want it."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Devices \u003e Inventory \u0026 Hygiene."
     },
     {
       "kind": "metric",
@@ -896,8 +899,10 @@
       "prom_name": "tailscale_geoip_database_build_time_seconds",
       "surface": "operational",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -905,9 +910,9 @@
       "prom_name": "tailscale_geoip_downloads_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Per-edition download outcomes for the opt-in MaxMind updater. Not alerted on directly: a run of failures is only a problem once it makes the database stale, which ts2o-geoip-database-stale catches on the build date. This is the metric that then tells you WHY — failure vs unmodified."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations."
     },
     {
       "kind": "metric",
@@ -915,9 +920,9 @@
       "prom_name": "tailscale_geoip_lookups_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Enrichment hit/miss/skipped accounting for an opt-in feature that is off by default. Useful when answering 'why is this address not enriched' — a high country miss rate means the database does not cover the traffic, a high skipped count means the addresses were not globally routable — but it is a debugging query, not a standing panel."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations."
     },
     {
       "kind": "metric",
@@ -925,9 +930,9 @@
       "prom_name": "tailscale_geoip_reloads_total",
       "surface": "operational",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Counts database hot-swaps for an opt-in feature. A reload failure already logs a WARN naming the file, and staleness is covered by the ts2o-geoip-database-stale alert on build_time, which is the signal that actually matters. Query this when diagnosing a specific swap."
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations."
     },
     {
       "kind": "metric",
@@ -1033,8 +1038,10 @@
       "prom_name": "tailscale_key_scope_class_ratio",
       "surface": "operational",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Identity \u0026 Keys - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -1051,8 +1058,10 @@
       "prom_name": "tailscale_key_tag_scope_ratio",
       "surface": "operational",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Identity \u0026 Keys - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -1435,8 +1444,10 @@
       "prom_name": "tailscale_posture_integration_error_ratio",
       "surface": "operational",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -1904,9 +1915,9 @@
       "prom_name": "tailscale2otel_annotation_degraded_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Only exists in a deployment that opted into grafana_annotations, so a standing panel on the shared dashboard would read 'No data' for everyone else. Queried ad hoc, and it is the series to alert on locally if you depend on the markers: 1 means the last write to Grafana failed and nothing has succeeded since — most often an expired or under-scoped service-account token."
+      "note": "#526 wave 2/3: panel scheduled on health/Delivery (annotations)."
     },
     {
       "kind": "metric",
@@ -1914,9 +1925,9 @@
       "prom_name": "tailscale2otel_annotation_dropped_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Opt-in-only series (see the degraded gauge). Note the steady state is NOT zero: `reason=duplicate` increments on every re-observation of a still-current condition and is correct behaviour, so a panel would need the reason filtered before it meant anything."
+      "note": "#526 wave 2/3: panel scheduled on health/Delivery (annotations)."
     },
     {
       "kind": "metric",
@@ -1924,9 +1935,9 @@
       "prom_name": "tailscale2otel_annotation_published_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Opt-in-only series (see the degraded gauge). A flat line here is normal on a quiet tailnet — nothing is written until something happens — so it is only meaningful read together with the degraded gauge, which is what distinguishes 'correctly quiet' from 'broken since the token expired'."
+      "note": "#526 wave 2/3: panel scheduled on health/Delivery (annotations)."
     },
     {
       "kind": "metric",
@@ -2136,9 +2147,9 @@
       "prom_name": "tailscale2otel_export_diagnostics_suppressed_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Counts SDK error logs suppressed by the #365 keyed rate limiter. raw_only: it is a diagnostic about the diagnostics, useful when reading a log during an outage but not worth a panel — the underlying failure is already covered by export.failures (visualized and alertable), and alerting on suppression rather than on the outage would fire a second time for the same incident."
+      "note": "#526 wave 2/3: panel scheduled on health/Delivery (OTLP export)."
     },
     {
       "kind": "metric",
@@ -2176,9 +2187,9 @@
       "prom_name": "tailscale2otel_export_spans_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Span export volume, the trace-side counterpart to export.datapoints and export.log_records (#359 closed the gap delivery_trace.go documented). raw_only for now to match export.log_records' existing treatment: volume alone has no healthy baseline until a deployment has been running with tracing on, and export.failures already carries the signal-attributed failure case."
+      "note": "#526 wave 2/3: panel scheduled on health/Delivery (OTLP export)."
     },
     {
       "kind": "metric",
@@ -2288,9 +2299,9 @@
       "prom_name": "tailscale2otel_log_record_truncated_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Truncation is silent on the wire apart from the marker, so this counter is the only way to notice a log body or attribute is being clipped. Left raw_only for now: any non-zero value is worth investigating, but it is a per-deployment tuning signal (raise otlp.limits.*) rather than a standing panel, and no threshold is defensible without field data on what a normal rate looks like."
+      "note": "#526 wave 2/3: panel scheduled on health/Ingestion (log truncation)."
     },
     {
       "kind": "metric",
@@ -2298,9 +2309,9 @@
       "prom_name": "tailscale2otel_log_truncated_bytes_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Companion to tailscale2otel.log.record.truncated — how MUCH was dropped, which distinguishes clipping a few bytes off one record from discarding most of a payload. Same reasoning: query it when the record counter moves, not from a standing panel."
+      "note": "#526 wave 2/3: panel scheduled on health/Ingestion (log truncation)."
     },
     {
       "kind": "metric",
@@ -2308,9 +2319,9 @@
       "prom_name": "tailscale2otel_metrics_auth_rejected_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Rejected /metrics scrapes, by closed reason. raw_only pending a rule: a sustained non-zero rate means either a scraper is misconfigured or something unauthorized is probing the endpoint, and those want different responses, so alerting on the bare rate would be noisy without knowing which reason dominates in practice."
+      "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
     {
       "kind": "metric",
@@ -2318,9 +2329,9 @@
       "prom_name": "tailscale2otel_metrics_scrape_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Latency of serving /metrics. raw_only: the pull endpoint is not on the primary delivery path for this exporter (OTLP push is), so its latency is a diagnostic to reach for when a scrape times out rather than something to watch continuously."
+      "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
     {
       "kind": "metric",
@@ -2328,9 +2339,9 @@
       "prom_name": "tailscale2otel_metrics_scrape_gather_errors_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "A Gather error means /metrics served a PARTIAL response with 200 (the deliberate ContinueOnError behaviour from #103), so a scraper cannot tell anything went wrong — this counter is the only signal. raw_only only because it is new; it is the strongest candidate of this batch for an alert once a baseline exists."
+      "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
     {
       "kind": "metric",
@@ -2338,9 +2349,9 @@
       "prom_name": "tailscale2otel_metrics_scrape_in_flight",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Concurrent /metrics gathers. raw_only: useful to confirm prometheus.max_requests_in_flight is engaging and to size it, but it is a tuning gauge, not a health signal."
+      "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
     {
       "kind": "metric",
@@ -2348,9 +2359,9 @@
       "prom_name": "tailscale2otel_metrics_scrape_requests_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Total /metrics scrapes by outcome. raw_only: the denominator for the shed/error ratios above; on its own it says only that something is scraping."
+      "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
     {
       "kind": "metric",
@@ -2555,9 +2566,9 @@
       "prom_name": "tailscale2otel_processor_dropped_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Records or spans discarded because the processor queue was full (#358). This is the strongest ALERT candidate of the three queue metrics — a non-zero rate is silent data loss with no other symptom, since the SDK drops without surfacing anything. Left raw_only only until a deployment has run long enough to know what a normal burst looks like; a threshold guessed now would either cry wolf on startup or miss a slow leak."
+      "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
     {
       "kind": "metric",
@@ -2565,9 +2576,9 @@
       "prom_name": "tailscale2otel_processor_queue_capacity_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Configured capacity of the log/span processor queue (#358). raw_only by nature: it is a near-constant configuration echo whose only job is to be the denominator for queue.size. Alerting on it would be alerting on the config."
+      "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
     {
       "kind": "metric",
@@ -2575,9 +2586,9 @@
       "prom_name": "tailscale2otel_processor_queue_size_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Current depth of the log/span processor queue (#358). raw_only: on its own a depth is meaningless — it is only interpretable against queue.capacity, so the useful artifact is a saturation RATIO panel, which needs a dashboard change rather than being implied by the metric landing. Emitted only under self-observability, since the SDK's real queue depth is a private field on an unexported type and this number comes from this repo's own queueing wrapper."
+      "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
     {
       "kind": "metric",
@@ -2585,9 +2596,9 @@
       "prom_name": "tailscale2otel_profiling_upload_attempts_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Denominator for the Pyroscope upload failure ratio. raw_only on its own — meaningful only alongside upload.failures."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
     {
       "kind": "metric",
@@ -2595,9 +2606,9 @@
       "prom_name": "tailscale2otel_profiling_upload_consecutive_failures_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "The streak, which is what distinguishes one dropped upload from a profiling pipeline that has been broken for hours. raw_only because profiling is opt-in and entirely non-essential: readiness deliberately ignores it, so a sustained streak is worth knowing but must never page."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
     {
       "kind": "metric",
@@ -2605,9 +2616,9 @@
       "prom_name": "tailscale2otel_profiling_upload_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Pyroscope upload latency. raw_only: diagnostic for a slow or throttling profiles endpoint, no standing panel."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
     {
       "kind": "metric",
@@ -2615,9 +2626,9 @@
       "prom_name": "tailscale2otel_profiling_upload_failures_total",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Failed profile uploads by closed error class. raw_only for now; the error class is what makes it actionable (tls points at custom-CA/mTLS misconfiguration, unauthenticated at a bad access-policy token, unavailable at a genuine outage), which is why the class set was kept closed and separate rather than folded together."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
     {
       "kind": "metric",
@@ -2625,9 +2636,9 @@
       "prom_name": "tailscale2otel_profiling_upload_last_success_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Absolute epoch seconds of the last successful upload; subtract time() for staleness. raw_only, same non-essential reasoning as consecutive_failures."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
     {
       "kind": "metric",
@@ -2763,9 +2774,9 @@
       "prom_name": "tailscale2otel_scrape_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Last-value gauge of per-collector scrape wall-clock. It was visualized until #369's quantile panels superseded it: the flagship dashboard's scrape-duration panel now reads p50/p95/p99 off scrape.duration.histogram, which a single last value cannot express. The gauge is RETAINED deliberately — it is the cheap answer to 'how long did the last scrape take', and removing it would break any external dashboard or query already using it."
+      "note": "#526 wave 2/3: panel scheduled on health/Collection (scrape/poll)."
     },
     {
       "kind": "metric",
@@ -2893,8 +2904,10 @@
       "prom_name": "tailscale2otel_tls_cert_not_after_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -2902,9 +2915,9 @@
       "prom_name": "tailscale2otel_tls_cert_not_before_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "Read alongside not_after when confirming WHICH certificate a listener actually loaded. Not alerted on: a not-yet-valid certificate fails the handshake immediately, so an alert would only restate a symptom the client errors already show."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload)."
     },
     {
       "kind": "metric",
@@ -2912,8 +2925,10 @@
       "prom_name": "tailscale2otel_tls_cert_reload_failures_total",
       "surface": "self_obs",
       "dispositions": [
-        "alertable"
-      ]
+        "alertable",
+        "pending_panel"
+      ],
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today."
     },
     {
       "kind": "metric",
@@ -2921,9 +2936,9 @@
       "prom_name": "tailscale2otel_tls_cert_reload_last_success_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "raw_only"
+        "pending_panel"
       ],
-      "note": "The companion to reload.failures, read on the status page while investigating one. Not alerted on: a listener whose certificate legitimately never rotates keeps an old timestamp forever, so any threshold would fire on correct behaviour."
+      "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload)."
     },
     {
       "kind": "metric",

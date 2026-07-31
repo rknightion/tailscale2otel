@@ -15,7 +15,7 @@ guard against:
    hides a row forever with no visible symptom.
 2. A sentinel is registered but no row/tab ever references it — a dead
    presence variable that queries Prometheus on every dashboard load for
-   nothing.
+   nothing. There is no allowlist for this any more (#526); see below.
 3. Two call sites declare the same sentinel name — must raise, not silently
    dedupe (see builder._claim_sentinel's docstring for why).
 """
@@ -55,25 +55,18 @@ def referenced_sentinel_names(doc):
     return found
 
 
-# Pre-existing dead sentinels (#495 found these; they predate the registry and are a
-# pure-move refactor away from being fixed here, not introduced by it). Do NOT add a
-# name here for a NEWLY-added sentinel — an addition failing this test means the row
-# gating it is either missing or misspelled.
-KNOWN_DEAD_SENTINELS = {
-    # has_unique and has_dropped left this list in #391/#402 — each now gates the row
-    # whose panels query exactly the metric it names.
-    # has_keys and has_svc left it in #393/#403 — each now gates the per-entity
-    # detail row (policy.py "Key expiry detail" / "VIP service detail") whose
-    # gauges the sentinel's metric is the presence check for.
-    "has_posture_int",
-    # The three IP-redaction sentinels stay dead on purpose: no panel anywhere renders
-    # a raw address, so there is nothing for them to gate, and wiring them would mean
-    # ADDING an address-rendering panel (see the note in tabs/network.py).
-    "pii_host", "pii_int_ips", "pii_ext_ips", "pii_ts_ips",
-    # pii_emails left this list in #462: tabs/k8saudit.py wires it into hide_when= on
-    # every row that surfaces tailscale_k8s_user (a Kubernetes identity, typically an
-    # email/login) — the first panel anywhere to actually render one.
-}
+# There is NO dead-sentinel allowlist any more (#526).
+#
+# It used to hold five names — has_posture_int and the four pii_* IP/hostname
+# redaction sentinels — each with a reason for staying dead. Every one of them
+# still shipped in the artifact, costing a Prometheus query on every dashboard
+# load and reading like a working feature gate to anyone scanning the variable
+# list. They are deleted, and the absence of the allowlist is what stops the
+# next one accruing: a sentinel that gates nothing now fails the build, with no
+# door to add a name to.
+#
+# So if this test fails on a sentinel you just added, the row gating on it is
+# missing or its name is misspelled. Do not reintroduce an allowlist.
 
 
 def _per_dashboard():
@@ -111,22 +104,14 @@ class SentinelRegistryTest(unittest.TestCase):
                               "declaring module now lives on the other dashboard"
                               % (uid, sorted(undefined)))
 
-    def test_every_registered_sentinel_is_referenced_or_known_dead(self):
+    def test_every_registered_sentinel_is_referenced(self):
         for uid, registered, referenced in self.per_dashboard:
             dead = registered - referenced
-            unexpected_dead = dead - KNOWN_DEAD_SENTINELS
-            self.assertEqual(unexpected_dead, set(),
+            self.assertEqual(dead, set(),
                               "%s: sentinel(s) %s are registered but no row/tab references "
-                              "them — either wire them into a present=/hide_when=, or add "
-                              "them to KNOWN_DEAD_SENTINELS with a reason"
-                              % (uid, sorted(unexpected_dead)))
-            # If a KNOWN_DEAD entry starts being referenced, drop it from the allowlist
-            # so this test keeps covering it going forward.
-            newly_alive = KNOWN_DEAD_SENTINELS & referenced
-            self.assertEqual(newly_alive, set(),
-                              "%s: sentinel(s) %s are in KNOWN_DEAD_SENTINELS but ARE "
-                              "referenced now — remove them from the allowlist"
-                              % (uid, sorted(newly_alive)))
+                              "them. Wire them into a present=/hide_when=, or delete the "
+                              "declaration — there is deliberately no allowlist (#526)."
+                              % (uid, sorted(dead)))
 
 
 class ScopedSentinelTest(unittest.TestCase):

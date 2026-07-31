@@ -27,15 +27,29 @@ go test ./internal/catalog -run TestSignalCoverageDocInSync -update
 
 | disposition | meaning |
 | --- | --- |
-| `visualized` | queried by at least one panel or template variable in the generated dashboard |
+| `visualized` | queried by at least one panel or template variable on either generated dashboard |
 | `alertable` | queried by at least one alert rule expression |
 | `recorded` | consumed by at least one recording rule expression |
-| `raw_only` | deliberately query-only: real and supported, but meant for ad-hoc PromQL/LogQL rather than a curated panel — usually high-detail per-entity series whose cardinality makes a default panel a bad idea |
-| `omitted` | deliberately not surfaced at all |
+| `pending_panel` | **transitional (#526):** reaches no panel yet, and one is scheduled. The note names the dashboard and tab. This ledger is shrink-only and is deleted once it empties |
 
 A signal can carry several at once (most alerted metrics are also charted).
-`raw_only` and `omitted` are mutually exclusive with each other and with the three
-derived values — a signal on a curated surface is not deliberately absent from one.
+`pending_panel` is mutually exclusive with `visualized` alone; it deliberately
+coexists with `alertable` and `recorded`, because a signal an alert fires on but
+nothing charts — an operator paged by something they then cannot see — is the
+worst case this ledger exists to drain, not a contradiction.
+
+**Every emitted signal must appear on a panel.** The former `raw_only` and
+`omitted` dispositions were deleted: "deliberately query-only" is indistinguishable
+from "nobody got round to it", and 33 signals had accumulated under `raw_only`. The
+only exemptions now are three **structural** classes, each an individually justified
+entry in `catalog.StructuralExemptions()` and none of them a judgement about whether
+a signal is worth charting:
+
+| class | why it cannot be required |
+| --- | --- |
+| `histogram_base` | the base name of a histogram is never queried directly — panels query `_bucket`/`_sum`/`_count` |
+| `templated_event` | the event name is built at emit time (`tailscale.webhook.<type>`), so no literal selector can equal it |
+| `recorded_only` | consumed only by a recording rule whose *output* metric is itself panelled |
 
 **Operational and self-observability coverage are reported separately.**
 They answer different questions ("can I see my tailnet?" versus "can I see the
@@ -50,23 +64,23 @@ The units, descriptions and attribute keys for every signal below are in
 
 A signal can carry more than one disposition, so the columns do not sum to the total.
 
-| surface | signals | visualized | alertable | recorded | raw_only | omitted |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| operational | 218 | 203 | 57 | 11 | 10 | 0 |
-| self_obs | 92 | 65 | 29 | 9 | 23 | 2 |
+| surface | signals | visualized | alertable | recorded | pending_panel |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| operational | 218 | 203 | 57 | 11 | 14 |
+| self_obs | 92 | 65 | 29 | 9 | 27 |
 
 ## Operational signals
 
 | signal | kind | queried as | disposition | note |
 | --- | --- | --- | --- | --- |
-| `tailscale.acl.risky_rule` | log_event | `event_name="tailscale.acl.risky_rule"` | raw_only | WARN log emitted once per unrestricted ACL/grant rule; read in Loki by event_name during a policy review rather than from a standing panel. |
+| `tailscale.acl.risky_rule` | log_event | `event_name="tailscale.acl.risky_rule"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Risk & ACL. |
 | `tailscale.acl.validation_issue` | log_event | `event_name="tailscale.acl.validation_issue"` | visualized |  |
 | `tailscale.config.audit` | log_event | `event_name="tailscale.config.audit"` | visualized, alertable |  |
-| `tailscale.device.attribute.expiring` | log_event | `event_name="tailscale.device.attribute.expiring"` | raw_only | Per-device WARN detail behind the alertable tailscale.device.attribute.expiry metric: the metric carries the alert, this log names which device and attribute. |
-| `tailscale.device.key_expiring` | log_event | `event_name="tailscale.device.key_expiring"` | raw_only | Per-device WARN detail behind the visualized+alertable tailscale.device.key.expiry metric: the metric carries the surface, this log names the device. |
+| `tailscale.device.attribute.expiring` | log_event | `event_name="tailscale.device.attribute.expiring"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance. |
+| `tailscale.device.key_expiring` | log_event | `event_name="tailscale.device.key_expiring"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys. |
 | `tailscale.device.posture` | log_event | `event_name="tailscale.device.posture"` | visualized |  |
 | `tailscale.device.tailnet_lock_error` | log_event | `event_name="tailscale.device.tailnet_lock_error"` | visualized |  |
-| `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | raw_only | Per-invite INFO log, gated off by default (collectors.users.collect_device_invites); queried by event_name when it is enabled. |
+| `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.k8s.api_request` | log_event | `event_name="tailscale.k8s.api_request"` | visualized | The per-request record carrying the high-cardinality detail kept off the metrics (object name, query-free path, selectors, pod/container, and the raw exec command line under pii_filter.command_text). Read in Loki by event_name; this is the SIEM surface for the feed. |
 | `tailscale.k8s.session` | log_event | `event_name="tailscale.k8s.session"` | visualized | Per-session record from the .cast header: namespace, pod, container, session type, command and the recorder that holds the recording. Read in Loki by event_name. |
 | `tailscale.key.expiring` | log_event | `event_name="tailscale.key.expiring"` | visualized |  |
@@ -74,7 +88,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.logstream.error` | log_event | `event_name="tailscale.logstream.error"` | visualized |  |
 | `tailscale.network.flow` | log_event | `event_name="tailscale.network.flow"` | visualized |  |
 | `tailscale.oauth_app.info` | log_event | `event_name="tailscale.oauth_app.info"` | visualized |  |
-| `tailscale.webhook.<type>` | log_event | `event_name="tailscale.webhook.<type>"` | raw_only | The event name is templated per webhook category, so no literal selector can name it. The dashboard's log-event picker does reach it, with the glob tailscale.webhook.*, which a literal-name gate cannot see. |
+| `tailscale.webhook.<type>` | log_event | `event_name="tailscale.webhook.<type>"` | **UNASSIGNED** | The event name is templated per webhook category, so no literal selector can name it. The dashboard's log-event picker does reach it, with the glob tailscale.webhook.*, which a literal-name gate cannot see. |
 | `tailscale.webhook_endpoints.event_mismatch` | log_event | `event_name="tailscale.webhook_endpoints.event_mismatch"` | visualized |  |
 | `tailscale.acl.autoapprovers` | metric | `tailscale_acl_autoapprovers_ratio` | visualized, alertable |  |
 | `tailscale.acl.last_changed` | metric | `tailscale_acl_last_changed_seconds` | visualized |  |
@@ -98,7 +112,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.derp.region.latency_min` | metric | `tailscale_derp_region_latency_min_seconds` | visualized, alertable |  |
 | `tailscale.derp.region.preferred` | metric | `tailscale_derp_region_preferred_ratio` | visualized |  |
 | `tailscale.device.attribute` | metric | `tailscale_device_attribute_ratio` | visualized |  |
-| `tailscale.device.attribute.expiry` | metric | `tailscale_device_attribute_expiry_seconds` | alertable |  |
+| `tailscale.device.attribute.expiry` | metric | `tailscale_device_attribute_expiry_seconds` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance - ALERTABLE-ONLY today. |
 | `tailscale.device.attribute.info` | metric | `tailscale_device_attribute_info_ratio` | visualized |  |
 | `tailscale.device.blocks_incoming_connections` | metric | `tailscale_device_blocks_incoming_connections_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.connectivity.direct_capable` | metric | `tailscale_device_connectivity_direct_capable_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
@@ -107,7 +121,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.connectivity.ipv6` | metric | `tailscale_device_connectivity_ipv6_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
 | `tailscale.device.connectivity.udp` | metric | `tailscale_device_connectivity_udp_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
 | `tailscale.device.derp.latency` | metric | `tailscale_device_derp_latency_seconds` | visualized |  |
-| `tailscale.device.distro` | metric | `tailscale_device_distro_ratio` | raw_only | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
+| `tailscale.device.distro` | metric | `tailscale_device_distro_ratio` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.device.exit_node` | metric | `tailscale_device_exit_node_ratio` | visualized |  |
 | `tailscale.device.key.expiry` | metric | `tailscale_device_key_expiry_seconds` | visualized, alertable, recorded |  |
 | `tailscale.device.key_expiry_disabled` | metric | `tailscale_device_key_expiry_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
@@ -124,7 +138,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device_invites.count` | metric | `tailscale_device_invites_count_ratio` | visualized, alertable |  |
 | `tailscale.device_invites.pending_age` | metric | `tailscale_device_invites_pending_age_seconds` | visualized |  |
 | `tailscale.devices.age` | metric | `tailscale_devices_age_seconds` | visualized |  |
-| `tailscale.devices.by_country` | metric | `tailscale_devices_by_country_ratio` | raw_only | Fleet geography, emitted only when the opt-in enrichment.geoip is configured. Deliberately not on the shipped dashboard: the feature is off by default, so a panel would render empty for almost every deployment, and a geographic breakdown is a question operators ask ad hoc rather than watch. Query it directly when you want it. |
+| `tailscale.devices.by_country` | metric | `tailscale_devices_by_country_ratio` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.devices.by_distro` | metric | `tailscale_devices_by_distro_ratio` | visualized |  |
 | `tailscale.devices.by_tag` | metric | `tailscale_devices_by_tag_ratio` | visualized |  |
 | `tailscale.devices.by_version` | metric | `tailscale_devices_by_version_ratio` | visualized |  |
@@ -151,10 +165,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.exit_nodes.count` | metric | `tailscale_exit_nodes_count_ratio` | visualized |  |
 | `tailscale.feature.enabled` | metric | `tailscale_feature_enabled_ratio` | visualized, alertable |  |
 | `tailscale.fleet.latest_version` | metric | `tailscale_fleet_latest_version_ratio` | visualized |  |
-| `tailscale.geoip.database.build_time` | metric | `tailscale_geoip_database_build_time_seconds` | alertable |  |
-| `tailscale.geoip.downloads` | metric | `tailscale_geoip_downloads_total` | raw_only | Per-edition download outcomes for the opt-in MaxMind updater. Not alerted on directly: a run of failures is only a problem once it makes the database stale, which ts2o-geoip-database-stale catches on the build date. This is the metric that then tells you WHY — failure vs unmodified. |
-| `tailscale.geoip.lookups` | metric | `tailscale_geoip_lookups_total` | raw_only | Enrichment hit/miss/skipped accounting for an opt-in feature that is off by default. Useful when answering 'why is this address not enriched' — a high country miss rate means the database does not cover the traffic, a high skipped count means the addresses were not globally routable — but it is a debugging query, not a standing panel. |
-| `tailscale.geoip.reloads` | metric | `tailscale_geoip_reloads_total` | raw_only | Counts database hot-swaps for an opt-in feature. A reload failure already logs a WARN naming the file, and staleness is covered by the ts2o-geoip-database-stale alert on build_time, which is the signal that actually matters. Query this when diagnosing a specific swap. |
+| `tailscale.geoip.database.build_time` | metric | `tailscale_geoip_database_build_time_seconds` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
+| `tailscale.geoip.downloads` | metric | `tailscale_geoip_downloads_total` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
+| `tailscale.geoip.lookups` | metric | `tailscale_geoip_lookups_total` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
+| `tailscale.geoip.reloads` | metric | `tailscale_geoip_reloads_total` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
 | `tailscale.k8s.api.exec_sessions` | metric | `tailscale_k8s_api_exec_sessions_total` | visualized | kubectl exec/attach/port-forward attempts, dimensioned by the bounded command_class. Queried ad hoc in Loki alongside tailscale.k8s.api_request until a dashboard exists. |
 | `tailscale.k8s.api.mutations` | metric | `tailscale_k8s_api_mutations_total` | visualized | create/update/patch/delete attempts. Counts what was REQUESTED, not what succeeded, so it cannot back a change-success panel and no rule uses it. |
 | `tailscale.k8s.api.rbac_probes` | metric | `tailscale_k8s_api_rbac_probes_total` | visualized | SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Charted by resource and namespace. Deliberately not alerted: it is normal for UI clients such as Freelens, so the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline. |
@@ -165,9 +179,9 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.key.allowed_tags` | metric | `tailscale_key_allowed_tags_ratio` | visualized |  |
 | `tailscale.key.expiry` | metric | `tailscale_key_expiry_seconds` | visualized, alertable |  |
 | `tailscale.key.preauthorized` | metric | `tailscale_key_preauthorized_ratio` | visualized |  |
-| `tailscale.key.scope_class` | metric | `tailscale_key_scope_class_ratio` | alertable |  |
+| `tailscale.key.scope_class` | metric | `tailscale_key_scope_class_ratio` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys - ALERTABLE-ONLY today. |
 | `tailscale.key.scopes` | metric | `tailscale_key_scopes_ratio` | visualized |  |
-| `tailscale.key.tag_scope` | metric | `tailscale_key_tag_scope_ratio` | alertable |  |
+| `tailscale.key.tag_scope` | metric | `tailscale_key_tag_scope_ratio` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys - ALERTABLE-ONLY today. |
 | `tailscale.keys.age` | metric | `tailscale_keys_age_seconds` | visualized |  |
 | `tailscale.keys.by_owner` | metric | `tailscale_keys_by_owner_ratio` | visualized |  |
 | `tailscale.keys.count` | metric | `tailscale_keys_count_ratio` | visualized |  |
@@ -208,7 +222,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.oauth_app.scopes` | metric | `tailscale_oauth_app_scopes_ratio` | visualized |  |
 | `tailscale.oauth_apps.age` | metric | `tailscale_oauth_apps_age_seconds` | visualized |  |
 | `tailscale.oauth_apps.count` | metric | `tailscale_oauth_apps_count_ratio` | visualized |  |
-| `tailscale.posture_integration.error` | metric | `tailscale_posture_integration_error_ratio` | alertable |  |
+| `tailscale.posture_integration.error` | metric | `tailscale_posture_integration_error_ratio` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
 | `tailscale.posture_integration.last_sync` | metric | `tailscale_posture_integration_last_sync_seconds` | visualized, alertable |  |
 | `tailscale.posture_integration.matched` | metric | `tailscale_posture_integration_matched_ratio` | visualized, alertable |  |
 | `tailscale.posture_integration.possible_matched` | metric | `tailscale_posture_integration_possible_matched_ratio` | visualized, alertable |  |
@@ -282,12 +296,12 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | signal | kind | queried as | disposition | note |
 | --- | --- | --- | --- | --- |
-| `process.cpu.time` | metric | `process_cpu_time_seconds_total` | omitted | Standard OTEL process-level metric, deliberately left to a generic runtime dashboard rather than duplicated on this exporter's own surfaces. |
-| `process.uptime` | metric | `process_uptime_seconds` | omitted | Standard OTEL process-level metric, deliberately left to a generic runtime dashboard rather than duplicated on this exporter's own surfaces. |
+| `process.cpu.time` | metric | `process_cpu_time_seconds_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
+| `process.uptime` | metric | `process_uptime_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
 | `tailscale2otel.admin.auth.rejected` | metric | `tailscale2otel_admin_auth_rejected_total` | visualized, alertable |  |
-| `tailscale2otel.annotation.degraded` | metric | `tailscale2otel_annotation_degraded_ratio` | raw_only | Only exists in a deployment that opted into grafana_annotations, so a standing panel on the shared dashboard would read 'No data' for everyone else. Queried ad hoc, and it is the series to alert on locally if you depend on the markers: 1 means the last write to Grafana failed and nothing has succeeded since — most often an expired or under-scoped service-account token. |
-| `tailscale2otel.annotation.dropped` | metric | `tailscale2otel_annotation_dropped_total` | raw_only | Opt-in-only series (see the degraded gauge). Note the steady state is NOT zero: `reason=duplicate` increments on every re-observation of a still-current condition and is correct behaviour, so a panel would need the reason filtered before it meant anything. |
-| `tailscale2otel.annotation.published` | metric | `tailscale2otel_annotation_published_total` | raw_only | Opt-in-only series (see the degraded gauge). A flat line here is normal on a quiet tailnet — nothing is written until something happens — so it is only meaningful read together with the degraded gauge, which is what distinguishes 'correctly quiet' from 'broken since the token expired'. |
+| `tailscale2otel.annotation.degraded` | metric | `tailscale2otel_annotation_degraded_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
+| `tailscale2otel.annotation.dropped` | metric | `tailscale2otel_annotation_dropped_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
+| `tailscale2otel.annotation.published` | metric | `tailscale2otel_annotation_published_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
 | `tailscale2otel.api.availability` | metric | `tailscale2otel_api_availability_ratio` | visualized, alertable |  |
 | `tailscale2otel.api.duration` | metric | `tailscale2otel_api_duration_seconds` | visualized |  |
 | `tailscale2otel.api.last_probe` | metric | `tailscale2otel_api_last_probe_seconds` | visualized |  |
@@ -309,11 +323,11 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.enrich.cache_age` | metric | `tailscale2otel_enrich_cache_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.enrich.cache_size` | metric | `tailscale2otel_enrich_cache_size_ratio` | visualized |  |
 | `tailscale2otel.export.datapoints` | metric | `tailscale2otel_export_datapoints_total` | visualized, alertable |  |
-| `tailscale2otel.export.diagnostics.suppressed` | metric | `tailscale2otel_export_diagnostics_suppressed_total` | raw_only | Counts SDK error logs suppressed by the #365 keyed rate limiter. raw_only: it is a diagnostic about the diagnostics, useful when reading a log during an outage but not worth a panel — the underlying failure is already covered by export.failures (visualized and alertable), and alerting on suppression rather than on the outage would fire a second time for the same incident. |
+| `tailscale2otel.export.diagnostics.suppressed` | metric | `tailscale2otel_export_diagnostics_suppressed_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
 | `tailscale2otel.export.duration` | metric | `tailscale2otel_export_duration_seconds` | visualized, alertable, recorded |  |
 | `tailscale2otel.export.failures` | metric | `tailscale2otel_export_failures_total` | visualized, alertable |  |
 | `tailscale2otel.export.log_records` | metric | `tailscale2otel_export_log_records_total` | visualized |  |
-| `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | raw_only | Span export volume, the trace-side counterpart to export.datapoints and export.log_records (#359 closed the gap delivery_trace.go documented). raw_only for now to match export.log_records' existing treatment: volume alone has no healthy baseline until a deployment has been running with tracing on, and export.failures already carries the signal-attributed failure case. |
+| `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
 | `tailscale2otel.ingest.capture.delay` | metric | `tailscale2otel_ingest_capture_delay_seconds` | visualized |  |
 | `tailscale2otel.ingest.event.age` | metric | `tailscale2otel_ingest_event_age_seconds` | visualized |  |
 | `tailscale2otel.ingest.last_event_timestamp` | metric | `tailscale2otel_ingest_last_event_timestamp_seconds` | visualized, alertable, recorded |  |
@@ -325,22 +339,22 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.ingress_wal.orphan.stages` | metric | `tailscale2otel_ingress_wal_orphan_stages_ratio` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.entries` | metric | `tailscale2otel_ingress_wal_pending_entries_ratio` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.size` | metric | `tailscale2otel_ingress_wal_pending_size_bytes` | visualized |  |
-| `tailscale2otel.log.record.truncated` | metric | `tailscale2otel_log_record_truncated_total` | raw_only | Truncation is silent on the wire apart from the marker, so this counter is the only way to notice a log body or attribute is being clipped. Left raw_only for now: any non-zero value is worth investigating, but it is a per-deployment tuning signal (raise otlp.limits.*) rather than a standing panel, and no threshold is defensible without field data on what a normal rate looks like. |
-| `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | raw_only | Companion to tailscale2otel.log.record.truncated — how MUCH was dropped, which distinguishes clipping a few bytes off one record from discarding most of a payload. Same reasoning: query it when the record counter moves, not from a standing panel. |
-| `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | raw_only | Rejected /metrics scrapes, by closed reason. raw_only pending a rule: a sustained non-zero rate means either a scraper is misconfigured or something unauthorized is probing the endpoint, and those want different responses, so alerting on the bare rate would be noisy without knowing which reason dominates in practice. |
-| `tailscale2otel.metrics.scrape.duration` | metric | `tailscale2otel_metrics_scrape_duration_seconds` | raw_only | Latency of serving /metrics. raw_only: the pull endpoint is not on the primary delivery path for this exporter (OTLP push is), so its latency is a diagnostic to reach for when a scrape times out rather than something to watch continuously. |
-| `tailscale2otel.metrics.scrape.gather_errors` | metric | `tailscale2otel_metrics_scrape_gather_errors_total` | raw_only | A Gather error means /metrics served a PARTIAL response with 200 (the deliberate ContinueOnError behaviour from #103), so a scraper cannot tell anything went wrong — this counter is the only signal. raw_only only because it is new; it is the strongest candidate of this batch for an alert once a baseline exists. |
-| `tailscale2otel.metrics.scrape.in_flight` | metric | `tailscale2otel_metrics_scrape_in_flight` | raw_only | Concurrent /metrics gathers. raw_only: useful to confirm prometheus.max_requests_in_flight is engaging and to size it, but it is a tuning gauge, not a health signal. |
-| `tailscale2otel.metrics.scrape.requests` | metric | `tailscale2otel_metrics_scrape_requests_total` | raw_only | Total /metrics scrapes by outcome. raw_only: the denominator for the shed/error ratios above; on its own it says only that something is scraping. |
+| `tailscale2otel.log.record.truncated` | metric | `tailscale2otel_log_record_truncated_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
+| `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
+| `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.duration` | metric | `tailscale2otel_metrics_scrape_duration_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.gather_errors` | metric | `tailscale2otel_metrics_scrape_gather_errors_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.in_flight` | metric | `tailscale2otel_metrics_scrape_in_flight` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.requests` | metric | `tailscale2otel_metrics_scrape_requests_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
 | `tailscale2otel.pii_filter.category` | metric | `tailscale2otel_pii_filter_category_ratio` | visualized |  |
-| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | raw_only | Records or spans discarded because the processor queue was full (#358). This is the strongest ALERT candidate of the three queue metrics — a non-zero rate is silent data loss with no other symptom, since the SDK drops without surfacing anything. Left raw_only only until a deployment has run long enough to know what a normal burst looks like; a threshold guessed now would either cry wolf on startup or miss a slow leak. |
-| `tailscale2otel.processor.queue.capacity` | metric | `tailscale2otel_processor_queue_capacity_ratio` | raw_only | Configured capacity of the log/span processor queue (#358). raw_only by nature: it is a near-constant configuration echo whose only job is to be the denominator for queue.size. Alerting on it would be alerting on the config. |
-| `tailscale2otel.processor.queue.size` | metric | `tailscale2otel_processor_queue_size_ratio` | raw_only | Current depth of the log/span processor queue (#358). raw_only: on its own a depth is meaningless — it is only interpretable against queue.capacity, so the useful artifact is a saturation RATIO panel, which needs a dashboard change rather than being implied by the metric landing. Emitted only under self-observability, since the SDK's real queue depth is a private field on an unexported type and this number comes from this repo's own queueing wrapper. |
-| `tailscale2otel.profiling.upload.attempts` | metric | `tailscale2otel_profiling_upload_attempts_total` | raw_only | Denominator for the Pyroscope upload failure ratio. raw_only on its own — meaningful only alongside upload.failures. |
-| `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | raw_only | The streak, which is what distinguishes one dropped upload from a profiling pipeline that has been broken for hours. raw_only because profiling is opt-in and entirely non-essential: readiness deliberately ignores it, so a sustained streak is worth knowing but must never page. |
-| `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | raw_only | Pyroscope upload latency. raw_only: diagnostic for a slow or throttling profiles endpoint, no standing panel. |
-| `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | raw_only | Failed profile uploads by closed error class. raw_only for now; the error class is what makes it actionable (tls points at custom-CA/mTLS misconfiguration, unauthenticated at a bad access-policy token, unavailable at a genuine outage), which is why the class set was kept closed and separate rather than folded together. |
-| `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | raw_only | Absolute epoch seconds of the last successful upload; subtract time() for staleness. raw_only, same non-essential reasoning as consecutive_failures. |
+| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.processor.queue.capacity` | metric | `tailscale2otel_processor_queue_capacity_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.processor.queue.size` | metric | `tailscale2otel_processor_queue_size_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.profiling.upload.attempts` | metric | `tailscale2otel_profiling_upload_attempts_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.runtime.gc.count` | metric | `tailscale2otel_runtime_gc_count_total` | visualized |  |
 | `tailscale2otel.runtime.gc.cpu_fraction` | metric | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.next_target` | metric | `tailscale2otel_runtime_gc_next_target_bytes` | visualized |  |
@@ -355,7 +369,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.runtime.memory.stack_inuse` | metric | `tailscale2otel_runtime_memory_stack_inuse_bytes` | visualized |  |
 | `tailscale2otel.runtime.memory.sys` | metric | `tailscale2otel_runtime_memory_sys_bytes` | visualized |  |
 | `tailscale2otel.scrape.budget` | metric | `tailscale2otel_scrape_budget_ratio` | visualized, alertable |  |
-| `tailscale2otel.scrape.duration` | metric | `tailscale2otel_scrape_duration_seconds` | raw_only | Last-value gauge of per-collector scrape wall-clock. It was visualized until #369's quantile panels superseded it: the flagship dashboard's scrape-duration panel now reads p50/p95/p99 off scrape.duration.histogram, which a single last value cannot express. The gauge is RETAINED deliberately — it is the cheap answer to 'how long did the last scrape take', and removing it would break any external dashboard or query already using it. |
+| `tailscale2otel.scrape.duration` | metric | `tailscale2otel_scrape_duration_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (scrape/poll). |
 | `tailscale2otel.scrape.duration.histogram` | metric | `tailscale2otel_scrape_duration_histogram_seconds` | visualized | Distribution of collector scrape durations, recorded with the scrape span so an exemplar links a bucket back to the trace. Now visualized: #369's follow-up replaced the flagship dashboard's last-value scrape-duration panel with p50/p95/p99 over this histogram, which is what the issue's acceptance asked for. The pre-existing scrape.duration gauge is retained alongside it. |
 | `tailscale2otel.scrape.errors` | metric | `tailscale2otel_scrape_errors_total` | visualized, alertable |  |
 | `tailscale2otel.scrape.last_timestamp` | metric | `tailscale2otel_scrape_last_timestamp_seconds` | visualized, alertable |  |
@@ -368,10 +382,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.subrequest.attempts` | metric | `tailscale2otel_subrequest_attempts_total` | visualized |  |
 | `tailscale2otel.subrequest.coverage` | metric | `tailscale2otel_subrequest_coverage_ratio` | visualized |  |
 | `tailscale2otel.subrequest.failures` | metric | `tailscale2otel_subrequest_failures_total` | visualized |  |
-| `tailscale2otel.tls.cert.not_after` | metric | `tailscale2otel_tls_cert_not_after_seconds` | alertable |  |
-| `tailscale2otel.tls.cert.not_before` | metric | `tailscale2otel_tls_cert_not_before_seconds` | raw_only | Read alongside not_after when confirming WHICH certificate a listener actually loaded. Not alerted on: a not-yet-valid certificate fails the handshake immediately, so an alert would only restate a symptom the client errors already show. |
-| `tailscale2otel.tls.cert.reload.failures` | metric | `tailscale2otel_tls_cert_reload_failures_total` | alertable |  |
-| `tailscale2otel.tls.cert.reload.last_success` | metric | `tailscale2otel_tls_cert_reload_last_success_seconds` | raw_only | The companion to reload.failures, read on the status page while investigating one. Not alerted on: a listener whose certificate legitimately never rotates keeps an old timestamp forever, so any threshold would fire on correct behaviour. |
+| `tailscale2otel.tls.cert.not_after` | metric | `tailscale2otel_tls_cert_not_after_seconds` | alertable, pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
+| `tailscale2otel.tls.cert.not_before` | metric | `tailscale2otel_tls_cert_not_before_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |
+| `tailscale2otel.tls.cert.reload.failures` | metric | `tailscale2otel_tls_cert_reload_failures_total` | alertable, pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
+| `tailscale2otel.tls.cert.reload.last_success` | metric | `tailscale2otel_tls_cert_reload_last_success_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |
 | `tailscale2otel.up` | metric | `tailscale2otel_up_ratio` | visualized, alertable, recorded |  |
 | `tailscale2otel.update_available` | metric | `tailscale2otel_update_available_ratio` | visualized, alertable |  |
 

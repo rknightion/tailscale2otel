@@ -20,7 +20,9 @@ def tab_security(scope):
     sentinel("has_audit_changes", "tailscale_config_audit_changes_total", DASHBOARD)
     sentinel("has_invites_dev", "tailscale_device_invites_count_ratio", DASHBOARD)
     sentinel("has_device_attr", "tailscale_device_attribute_ratio", DASHBOARD)
-    sentinel("has_posture_int", "tailscale_posture_integration_matched_ratio", DASHBOARD)  # dead: no row gates on it
+    # DELETED in #526: has_posture_int, a near-duplicate of the live
+    # has_posture_integration that gated nothing. Two sentinels one underscore-segment
+    # apart, one live and one dead, is a trap for the next person adding a gated row.
     pii_sentinel("pii_actor",
                  '(%s{category="emails"} == 0) and ignoring(category) (%s{category="user_display_names"} == 0)'
                  % (PII, PII), DASHBOARD)

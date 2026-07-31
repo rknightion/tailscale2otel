@@ -318,10 +318,10 @@ _SENTINEL_ORDER = [
     "has_invites_dev", "has_key_scopes", "has_dns_resolver", "has_version_skew",
     "has_selfobs", "has_api_hist", "has_export_hist", "has_recv_dur", "has_ingest",
     "has_staleness", "has_pii", "has_key_expiry_hist", "has_rdns", "has_device_attr",
-    "has_svc", "has_posture_int", "has_dropped", "has_node_curated",
+    "has_svc", "has_dropped", "has_node_curated",
     "has_device_flags", "has_multitailnet",
-    "pii_host", "pii_node", "pii_perdevice", "pii_emails", "pii_usernames",
-    "pii_actor", "pii_int_ips", "pii_ext_ips", "pii_ts_ips", "pii_topology",
+    "pii_node", "pii_perdevice", "pii_emails", "pii_usernames",
+    "pii_actor", "pii_topology",
     # #462: Kubernetes-audit tab (tabs/k8saudit.py). Appended at the end per the
     # append-only rule — never reorder the entries above.
     "has_k8s_audit", "has_k8s_sensitive_reads", "has_k8s_exec_sessions",
