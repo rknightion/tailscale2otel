@@ -156,7 +156,30 @@ var CollectorCapability = map[string]string{
 	// flowlogs capability.
 	"flowlogs-feature": "flowlogs",
 	"objectstore":      "objectstore",
-	"auditlogs":        "auditlogs",
+	// Configuration logs read from a bucket register their own collector under a
+	// distinct name (#288) so their scrape series do not merge with flow's. It
+	// shares the objectstore capability: same backend, same credentials, same
+	// (absent) Tailscale scope requirement.
+	"objectstore-audit": "objectstore",
+	"auditlogs":         "auditlogs",
+}
+
+// standInCollectors maps a collector that has no decision row of its own onto
+// the collector whose row should carry its availability state.
+//
+// The flow-log feature probe is the case this exists for (#524). In a
+// stream-only or object-store deployment the poller is deliberately not
+// registered and the probe is the ONLY thing reading the flow-log feature
+// state — but the matrix joins tracker entries by collector NAME, so the probe's
+// state landed nowhere and the flowlogs row read `unknown` while the probe
+// succeeded every 300s on the reference deployment.
+//
+// Folding it into the flowlogs row rather than giving it a row of its own is
+// deliberate: a "flowlogs-feature" row would be permanently inactive in every
+// deployment that DOES poll, and #524 explicitly asks us to stop emitting rows
+// nothing can ever populate.
+var standInCollectors = map[string]string{
+	"flowlogs-feature": "flowlogs",
 }
 
 // SubrequestDecision is one optional per-entity subrequest and whether the
@@ -375,11 +398,16 @@ func rfc3339OrEmpty(t time.Time) string {
 	return t.UTC().Format(rfc3339)
 }
 
-// trackerByCollector groups the tracker snapshot by collector. Nil-safe.
+// trackerByCollector groups the tracker snapshot by collector, folding a
+// stand-in collector's entries onto the collector it stands in for. Nil-safe.
 func trackerByCollector(t *apistate.Tracker) map[string][]apistate.Entry {
 	out := map[string][]apistate.Entry{}
 	for _, e := range t.Snapshot() {
-		out[e.Collector] = append(out[e.Collector], e)
+		name := e.Collector
+		if to, ok := standInCollectors[name]; ok {
+			name = to
+		}
+		out[name] = append(out[name], e)
 	}
 	return out
 }
@@ -571,7 +599,7 @@ func (a *App) capabilityDecisions() []CollectorDecision {
 		}
 	}
 
-	return []CollectorDecision{
+	decisions := []CollectorDecision{
 		decide("acl", c.Acl.Enabled, ""),
 		decide("auditlogs", c.Auditlogs.Enabled, c.Auditlogs.Source),
 		decide("contacts", c.Contacts.Enabled, ""),
@@ -591,6 +619,21 @@ func (a *App) capabilityDecisions() []CollectorDecision {
 			SubrequestDecision{Name: SubrequestUserInvites, Enabled: c.Users.Enabled}),
 		decide("webhooks", c.Webhooks.Enabled, ""),
 	}
+
+	// The object-store readers get a row only when a source actually selects
+	// them, because `decide` always produces a row and these two would otherwise
+	// sit permanently inactive on every polling deployment — the "row nothing can
+	// ever populate" #524 asks us to stop emitting. Omitting them unconditionally
+	// was the opposite bug and the one that was live: a RUNNING collector with no
+	// row at all, which is the same blindness with even less to notice than a
+	// stuck `unknown`.
+	if c.Flowlogs.Enabled && objectStoreSource(c.Flowlogs.Source) {
+		decisions = append(decisions, decide("objectstore", true, c.Flowlogs.Source))
+	}
+	if c.Auditlogs.Enabled && objectStoreSource(c.Auditlogs.Source) {
+		decisions = append(decisions, decide("objectstore-audit", true, c.Auditlogs.Source))
+	}
+	return decisions
 }
 
 // primaryAPIState returns the primary runtime's availability tracker, or nil

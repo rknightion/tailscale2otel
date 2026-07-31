@@ -1,6 +1,8 @@
 package app
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
@@ -8,6 +10,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/provider"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
@@ -462,6 +465,99 @@ func TestActionableStatesOutrankHealthyOnes(t *testing.T) {
 			if rank <= hr {
 				t.Errorf("actionable state %q ranks %d, not above healthy state %q at %d", s, rank, h, hr)
 			}
+		}
+	}
+}
+
+// TestCapabilityMatrixAttributesStandInCollectors is the second half of #524's
+// "a running collector must never read unknown".
+//
+// Wiring apistate into every collector is not enough on its own: the matrix
+// joins a tracker entry to a row by COLLECTOR NAME, and three registered
+// collectors have no decision row of their own. The flowlogs feature probe
+// (collector "flowlogs-feature") is the sharpest case — in a stream-only
+// deployment it is the ONLY thing reading the flow-log feature state, the
+// poller is deliberately not registered, and the reference deployment showed
+// flowlogs at `unknown` while the probe succeeded every 300s.
+//
+// A stand-in collector is attributed to the row for the capability it shares,
+// rather than being given a row of its own: a "flowlogs-feature" row would be
+// permanently inactive whenever the poller IS registered, which is exactly the
+// "row nothing can ever populate" the issue asks us to stop emitting.
+func TestCapabilityMatrixAttributesStandInCollectors(t *testing.T) {
+	rows := BuildCapabilityMatrix(CapabilityInputs{
+		Decisions: []CollectorDecision{
+			{Collector: "flowlogs", Capability: "flowlogs", ConfigEnabled: true,
+				ProviderSupported: true, Registered: false, Source: "stream"},
+		},
+		Tracker: func() *apistate.Tracker {
+			tr := apistate.NewTracker()
+			tr.Record("flowlogs-feature", "getTailnetSettings", apistate.StateSupported, time.Now())
+			return tr
+		}(),
+	})
+
+	row := rowFor(t, rows, "flowlogs", "")
+	if row.State != string(apistate.StateSupported) {
+		t.Errorf("flowlogs row State = %q, want supported: the feature probe stands in for the "+
+			"poller in a stream-only deployment, and its state is the only live signal there", row.State)
+	}
+	if len(rows) != 1 {
+		t.Errorf("got %d rows, want 1: a stand-in collector must not get a row of its own", len(rows))
+	}
+}
+
+// TestCapabilityMatrixCoversObjectStoreCollectors pins that a registered
+// object-store reader gets a row at all. A running collector with NO row is the
+// same bug class as one stuck at `unknown` — worse, in fact, since there is
+// nothing on the page to notice.
+func TestCapabilityMatrixCoversObjectStoreCollectors(t *testing.T) {
+	for _, name := range []string{"objectstore", "objectstore-audit"} {
+		capability, ok := CollectorCapability[name]
+		if !ok {
+			t.Errorf("collector %q has no entry in CollectorCapability, so it can never get a row", name)
+			continue
+		}
+		if _, ok := CapabilityScopes[capability]; !ok {
+			t.Errorf("collector %q maps to capability %q, which is not in CapabilityScopes", name, capability)
+		}
+	}
+}
+
+// TestCapabilityDecisionsObjectStoreRowsFollowTheSource pins both halves of the
+// gating: a row when the source selects the reader, and NO row otherwise. The
+// second half matters as much as the first — an always-present row would sit
+// permanently inactive on every polling deployment, which is the failure mode
+// #524 names explicitly.
+func TestCapabilityDecisionsObjectStoreRowsFollowTheSource(t *testing.T) {
+	has := func(ds []CollectorDecision, name string) bool {
+		for _, d := range ds {
+			if d.Collector == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "fixture", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	poll := apiStateFixtureApp(t, srv, nil).capabilityDecisions()
+	for _, name := range []string{"objectstore", "objectstore-audit"} {
+		if has(poll, name) {
+			t.Errorf("polling deployment has a %q row; it can never activate there", name)
+		}
+	}
+
+	store := apiStateFixtureApp(t, srv, func(c *config.Config) {
+		c.Collectors.Flowlogs.Source = "objectstore"
+		c.Collectors.Auditlogs.Source = "objectstore"
+	}).capabilityDecisions()
+	for _, name := range []string{"objectstore", "objectstore-audit"} {
+		if !has(store, name) {
+			t.Errorf("object-store deployment has no %q row, so a running collector is invisible", name)
 		}
 	}
 }
