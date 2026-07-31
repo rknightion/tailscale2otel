@@ -27,7 +27,8 @@ import (
 // had accrued 35 signals that an operator could not see anywhere, because relabelling
 // an awkward signal is always easier than paneling it. The only escapes now are the
 // three structural classes in StructuralExemptions(), each an individually justified
-// entry, and the transitional pending_panel ledger, which is shrink-only.
+// entry. The transitional pending_panel ledger that #526 used to drain the backlog
+// was deleted with the last row it held.
 var updateManifest = flag.Bool("update", false, "rewrite the committed signal-disposition manifest and coverage doc")
 
 const coverageDocPath = "../../docs/signal-coverage.md"
@@ -434,37 +435,29 @@ func TestValidateSignalDispositions_RejectsContradictions(t *testing.T) {
 			refs:  unseen,
 			wants: "claims visualized",
 		},
+		// #526 deleted the last hand-assignable disposition, so "the manifest claims
+		// something the artifacts do not show" is now the ONLY class of contradiction
+		// left — which is why the cases below all pin an identity field wrong while
+		// the disposition itself is honest.
 		{
-			desc: "pending_panel despite appearing in a panel",
+			desc: "an unseen signal claiming nothing still fails",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a"}},
-			refs:  shown,
-			wants: "is visualized",
-		},
-		// The "two intent values at once" case is gone with raw_only/omitted (#526):
-		// there is exactly one intent disposition now, so the contradiction is no
-		// longer expressible. The mutual exclusion that still matters — intent
-		// alongside a PROVEN surface — is the "despite appearing in a panel" case
-		// above.
-		{
-			desc: "pending_panel with no note",
-			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}}},
+				Dispositions: nil}},
 			refs:  unseen,
-			wants: "needs a note",
+			wants: "empty disposition",
 		},
 		{
 			desc: "wrong prom name",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: "tailscale_example", Surface: metric.Surface,
-				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a"}},
-			refs:  unseen,
+				Dispositions: []catalog.Disposition{catalog.DispVisualized}}},
+			refs:  shown,
 			wants: "prom_name",
 		},
 		{
 			desc: "wrong surface",
 			rows: []catalog.SignalDisposition{{Kind: metric.Kind, Name: metric.Name, PromName: metric.PromName, Surface: catalog.SurfaceSelfObs,
-				Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a"}},
-			refs:  unseen,
+				Dispositions: []catalog.Disposition{catalog.DispVisualized}}},
+			refs:  shown,
 			wants: "surface",
 		},
 	}
@@ -499,7 +492,7 @@ func TestValidateSignalDispositions_RejectsContradictions(t *testing.T) {
 func TestValidateSignalDispositions_ReportsStaleRows(t *testing.T) {
 	base := &catalog.SignalDispositionBaseline{Signals: []catalog.SignalDisposition{{
 		Kind: catalog.KindMetric, Name: "tailscale.gone", PromName: "tailscale_gone",
-		Surface: catalog.SurfaceOperational, Dispositions: []catalog.Disposition{catalog.DispPendingPanel}, Note: "n/a",
+		Surface: catalog.SurfaceOperational, Dispositions: []catalog.Disposition{catalog.DispVisualized},
 	}}}
 	problems := catalog.ValidateSignalDispositions(base, nil, catalog.ArtifactRefs{})
 	if !strings.Contains(problems.String(), "STALE") {
@@ -554,19 +547,24 @@ func TestMergeSignalDispositions_NeverInventsAHumanChoice(t *testing.T) {
 			merged.Signals[1].Dispositions)
 	}
 
-	// A human's pending_panel choice survives regeneration ...
-	merged.Signals[1].Dispositions = []catalog.Disposition{catalog.DispPendingPanel}
-	merged.Signals[1].Note = "#526 wave 3: panel scheduled on tailnet/Devices"
+	// An unproven row stays empty no matter how many times regeneration runs — it
+	// cannot be settled by re-running the tool, only by giving the signal a panel.
+	// This is what #526 bought by deleting the last hand-assignable disposition:
+	// there is no longer any value a human can write here to make the gate go green.
+	merged.Signals[1].Note = "a note is not evidence"
 	again, _, _ := catalog.MergeSignalDispositions(merged, []catalog.Signal{unseen, seen}, refs)
-	if got := sortedDispositionValues(again.Signals[1].Dispositions); got != "pending_panel" {
-		t.Errorf("hand-assigned pending_panel was lost on regeneration, got %q", got)
+	if len(again.Signals[1].Dispositions) != 0 {
+		t.Errorf("an unproven signal gained a disposition from regeneration: %v",
+			again.Signals[1].Dispositions)
 	}
-	// ... but is REPLACED once the signal actually gains a surface, because the
-	// two are mutually exclusive and the artifacts are the authority.
+	if again.Signals[1].Note != "a note is not evidence" {
+		t.Errorf("the hand-written note was lost on regeneration, got %q", again.Signals[1].Note)
+	}
+	// It settles the moment the artifact actually references it.
 	refs.Dashboard["tailscale_unseen"] = true
 	third, _, _ := catalog.MergeSignalDispositions(again, []catalog.Signal{unseen, seen}, refs)
 	if got := sortedDispositionValues(third.Signals[1].Dispositions); got != "visualized" {
-		t.Errorf("a now-visualized signal kept its stale pending_panel, got %q", got)
+		t.Errorf("a now-referenced signal was not recorded as visualized, got %q", got)
 	}
 
 	// Dropping a signal from the catalog prunes its row.
@@ -580,7 +578,7 @@ func TestMergeSignalDispositions_NeverInventsAHumanChoice(t *testing.T) {
 // point of the manifest, so it must actually break the numbers out per surface.
 func TestSignalCoverageReport_SeparatesSurfaces(t *testing.T) {
 	rep := catalog.SignalCoverageReport(loadManifest(t))
-	for _, want := range []string{"Operational", "Self-observability", "visualized", "pending_panel"} {
+	for _, want := range []string{"Operational", "Self-observability", "visualized", "recorded"} {
 		if !strings.Contains(rep, want) {
 			t.Errorf("coverage report never mentions %q", want)
 		}

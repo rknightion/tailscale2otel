@@ -5,20 +5,19 @@
     "Regeneration records only what the deploy/grafana dashboard FAMILY (tailnet +",
     "health) and the deploy/alerts rule manifests PROVE, and prunes signals the code",
     "no longer emits. It",
-    "never assigns pending_panel — fill that in by hand, with a note that says",
-    "something true. An empty disposition list fails TestSignalDispositionsInSync.",
+    "assigns nothing by hand: every disposition is DERIVED from those artifacts, so an",
+    "empty disposition list means the signal is on no surface at all, and that fails",
+    "TestSignalDispositionsInSync.",
     "surface: operational (telemetry about the tailnet) | self_obs (about the exporter)",
     "dispositions (a set; derived ones are checked against the artifacts both ways):",
     "  visualized - queried by \u003e=1 panel or template variable in the generated dashboard",
     "  alertable  - queried by \u003e=1 alert rule expression",
     "  recorded   - consumed by \u003e=1 recording rule expression",
-    "  pending_panel - TRANSITIONAL (#526): reaches no panel yet, one is scheduled.",
-    "                  The note must name the dashboard and tab. This ledger is",
-    "                  shrink-only and is deleted when it empties.",
-    "pending_panel is mutually exclusive with VISUALIZED only. It coexists with",
-    "alertable/recorded on purpose: a signal an alert fires on but nothing charts is the",
-    "worst case here, not a contradiction. raw_only and omitted were DELETED in #526 -",
-    "they let an awkward signal be re-labeled instead of paneled, and 33 had accrued."
+    "There is NO disposition meaning \"this signal does not need a panel\". raw_only and",
+    "omitted were exactly that and #526 deleted both after 35 signals had accrued under",
+    "them, unreachable by any operator; the transitional pending_panel ledger that",
+    "replaced them was deleted in turn once it emptied. The only escapes are the three",
+    "structural exemption classes in StructuralExemptions()."
   ],
   "signals": [
     {

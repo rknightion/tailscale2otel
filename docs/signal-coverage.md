@@ -30,20 +30,23 @@ go test ./internal/catalog -run TestSignalCoverageDocInSync -update
 | `visualized` | queried by at least one panel or template variable on either generated dashboard |
 | `alertable` | queried by at least one alert rule expression |
 | `recorded` | consumed by at least one recording rule expression |
-| `pending_panel` | **transitional (#526):** reaches no panel yet, and one is scheduled. The note names the dashboard and tab. This ledger is shrink-only and is deleted once it empties |
 
-A signal can carry several at once (most alerted metrics are also charted).
-`pending_panel` is mutually exclusive with `visualized` alone; it deliberately
-coexists with `alertable` and `recorded`, because a signal an alert fires on but
-nothing charts — an operator paged by something they then cannot see — is the
-worst case this ledger exists to drain, not a contradiction.
+A signal can carry several at once (most alerted metrics are also charted). All
+three are **derived** — read off the shipped artifacts by the regenerator — so
+there is nothing here for anyone to assign by hand, and no value that can be
+written to settle a signal that is not actually on a surface.
 
-**Every emitted signal must appear on a panel.** The former `raw_only` and
-`omitted` dispositions were deleted: "deliberately query-only" is indistinguishable
-from "nobody got round to it", and 33 signals had accumulated under `raw_only`. The
-only exemptions now are three **structural** classes, each an individually justified
-entry in `catalog.StructuralExemptions()` and none of them a judgement about whether
-a signal is worth charting:
+**Every emitted signal must appear on a panel**, and #526 removed the last three
+ways round that. `raw_only` and `omitted` were deleted first: "deliberately
+query-only" is indistinguishable, from the outside, from "nobody got round to it",
+and 35 signals had accrued under the two of them. `pending_panel` replaced them as
+an explicitly transitional, shrink-only ledger — a signal could only ever leave it
+by gaining a panel — and was itself deleted the moment it emptied, which is the
+only reason it was safe to introduce.
+
+The only exemptions now are three **structural** classes, each an individually
+justified entry in `catalog.StructuralExemptions()` and none of them a judgement
+about whether a signal is worth charting:
 
 | class | why it cannot be required |
 | --- | --- |
@@ -64,10 +67,10 @@ The units, descriptions and attribute keys for every signal below are in
 
 A signal can carry more than one disposition, so the columns do not sum to the total.
 
-| surface | signals | visualized | alertable | recorded | pending_panel |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 218 | 217 | 57 | 11 | 0 |
-| self_obs | 92 | 92 | 29 | 9 | 0 |
+| surface | signals | visualized | alertable | recorded |
+| --- | ---: | ---: | ---: | ---: |
+| operational | 218 | 217 | 57 | 11 |
+| self_obs | 92 | 92 | 29 | 9 |
 
 ## Operational signals
 

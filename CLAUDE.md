@@ -91,13 +91,16 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > is updated by hand-running `go test ./internal/catalog -run TestSignalDispositionsInSync -update`,
 > which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded` from the actual
 > dashboard and rule artifacts and prunes dead rows, but leaves a new signal's disposition EMPTY — and an
-> empty disposition always fails the gate. Since #526 the only value a human may assign is
-> **`pending_panel`** — TRANSITIONAL, meaning "reaches no panel yet, one is scheduled", with a note
-> naming the dashboard and tab; the ledger is shrink-only and disappears when it empties.
-> `raw_only` and `omitted` were **deleted**: they let an awkward signal be re-labelled instead of
-> panelled, and 33 had accrued under `raw_only`. The bar is now that every signal is on a panel,
-> and the only exemptions are the three **structural** classes in
-> `catalog.StructuralExemptions()`, each an individually justified entry. Regenerating after changing the dashboards or rules is expected and correct.
+> empty disposition always fails the gate. **There is no value a human may assign** — all three
+> dispositions are derived — so a signal on no surface cannot be settled by editing the manifest,
+> only by giving it a panel. Regenerating after changing the dashboards or rules is expected and
+> correct; regenerating to make a red gate green is not, and will not work.
+>
+> #526 removed the three escapes that used to exist. `raw_only` and `omitted` let an awkward signal
+> be re-labelled instead of panelled, and 35 had accrued between them; `pending_panel` replaced
+> them as an explicitly transitional shrink-only ledger and was deleted with its last row. Do not
+> reintroduce any of them. The only exemptions are the three **structural** classes in
+> `catalog.StructuralExemptions()`, each an individually justified entry.
 
 > **Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained any more.** The four legacy
 > classic-schema dashboards and the Prometheus-ruler `tailscale2otel.rules.yaml` were **deleted**

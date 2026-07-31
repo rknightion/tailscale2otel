@@ -31,24 +31,11 @@ import (
 
 func TestEverySignalReachesAPanel(t *testing.T) {
 	refs := artifactRefs(t)
-	base := loadManifest(t)
-	if base == nil {
-		t.Fatal("no disposition manifest; this test would pass vacuously")
-	}
 
 	exempt := map[string]catalog.StructuralExemption{}
 	for _, e := range catalog.StructuralExemptions() {
 		exempt[e.Kind+"\x00"+e.Name] = e
 	}
-	pending := map[string]bool{}
-	for _, row := range base.Signals {
-		for _, d := range row.Dispositions {
-			if d == catalog.DispPendingPanel {
-				pending[row.Kind+"\x00"+row.Name] = true
-			}
-		}
-	}
-
 	var missing []string
 	for _, s := range catalog.Signals() {
 		key := s.Kind + "\x00" + s.Name
@@ -58,20 +45,19 @@ func TestEverySignalReachesAPanel(t *testing.T) {
 		if _, ok := exempt[key]; ok {
 			continue
 		}
-		if pending[key] {
-			continue
-		}
 		missing = append(missing, s.Kind+" "+s.Name)
 	}
 	sort.Strings(missing)
 
 	if len(missing) > 0 {
-		t.Errorf("%d catalog signal(s) reach no panel on either dashboard, and are neither "+
-			"structurally exempt nor on the #526 pending ledger:\n  %s\n\n"+
+		t.Errorf("%d catalog signal(s) reach no panel on either dashboard and are not "+
+			"structurally exempt:\n  %s\n\n"+
 			"Every emitted signal must be visible somewhere: a signal nothing charts is one "+
 			"an operator can only find by knowing it exists. Add a panel. The only alternative "+
 			"is a StructuralExemption, and only for one of the three structural classes — "+
-			"never as a way to make this failure go away.",
+			"never as a way to make this failure go away. #526 deleted the last three "+
+			"dispositions that could excuse a signal from appearing (raw_only, omitted, and "+
+			"the transitional pending_panel ledger); do not reintroduce one.",
 			len(missing), strings.Join(missing, "\n  "))
 	}
 }
@@ -83,41 +69,6 @@ func hasVisualized(refs catalog.ArtifactRefs, s catalog.Signal) bool {
 		}
 	}
 	return false
-}
-
-// The pending ledger is TRANSITIONAL and shrink-only. Without this, a lane could
-// "fix" a coverage failure by adding a row to the ledger, which is the exact
-// behavior the ledger exists to prevent — and the reason raw_only and omitted
-// were deleted rather than kept.
-//
-// #526 drives this to zero, at which point the ledger, DispPendingPanel and this
-// test are deleted together.
-func TestPendingPanelLedgerOnlyShrinks(t *testing.T) {
-	const ceiling = 42 // measured at 681fe1e, before any panel work
-
-	base := loadManifest(t)
-	if base == nil {
-		t.Fatal("no disposition manifest; this test would pass vacuously")
-	}
-	var pending []string
-	for _, row := range base.Signals {
-		for _, d := range row.Dispositions {
-			if d == catalog.DispPendingPanel {
-				pending = append(pending, row.Kind+" "+row.Name)
-			}
-		}
-	}
-	sort.Strings(pending)
-
-	if len(pending) > ceiling {
-		t.Errorf("the pending-panel ledger holds %d signals, above the %d ceiling:\n  %s\n\n"+
-			"A signal leaves this ledger by getting a panel. Nothing may join it.",
-			len(pending), ceiling, strings.Join(pending, "\n  "))
-	}
-	if len(pending) == 0 {
-		t.Log("the pending ledger is empty — delete DispPendingPanel, the ledger rows and " +
-			"this test; #526's coverage work is done")
-	}
 }
 
 // A structural exemption for a signal the code no longer emits is a standing

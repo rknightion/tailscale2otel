@@ -73,20 +73,22 @@ const (
 	DispAlertable Disposition = "alertable"
 	// DispRecorded means a recording rule consumes or produces it.
 	DispRecorded Disposition = "recorded"
-	// DispPendingPanel means it reaches no panel YET and is scheduled to get one
-	// under #526. TRANSITIONAL: the ledger is shrink-only
-	// (TestPendingPanelLedgerOnlyShrinks) and this constant is deleted, along with
-	// every row carrying it, once the last panel lands.
-	//
-	// It replaces raw_only and omitted, which were DELETED in #526. Those two let
-	// an awkward signal be re-classified instead of paneled — "deliberately
-	// query-only" is indistinguishable, from the outside, from "nobody got round
-	// to it", and 33 signals had accumulated under raw_only. The bar is now: every
-	// signal is on a panel, and the only exemptions are the three STRUCTURAL
-	// classes below, none of which is a judgement call about whether a signal is
-	// worth charting.
-	DispPendingPanel Disposition = "pending_panel"
 )
+
+// Every disposition is DERIVED — read off the shipped artifacts — and there is
+// deliberately no value a human may assign.
+//
+// #526 removed all three that ever existed. raw_only and omitted let an awkward
+// signal be re-labeled instead of paneled: "deliberately query-only" is
+// indistinguishable, from the outside, from "nobody got round to it", and 35
+// signals had accrued under the two of them. pending_panel replaced them as an
+// explicitly TRANSITIONAL, shrink-only ledger of signals with a panel scheduled,
+// and was deleted the moment it emptied — which is the only reason it was safe to
+// have at all.
+//
+// So a signal that reaches no panel now has exactly one remedy: give it a panel.
+// The sole escapes are the three STRUCTURAL exemption classes below, none of which
+// is a judgement call about whether a signal is worth charting.
 
 // Structural exemption classes. A signal in one of these cannot be required to
 // appear on a panel for a reason about the SHAPE of the signal, not about
@@ -129,25 +131,18 @@ type StructuralExemption struct {
 // and rule files reference, in both directions.
 var derivedDispositions = []Disposition{DispVisualized, DispAlertable, DispRecorded}
 
-// intentDispositions are the ones only a human can assign. Since #526 there is
-// exactly one, and it is transitional. It is mutually exclusive with VISUALIZED
-// alone — see validateRow.
-var intentDispositions = []Disposition{DispPendingPanel}
-
 // dispositionRank orders a disposition list for display: proven surfaces first,
-// in increasing distance from the operator's eye, then the intent values.
+// in increasing distance from the operator's eye.
 var dispositionRank = map[Disposition]int{
-	DispVisualized:   0,
-	DispAlertable:    1,
-	DispRecorded:     2,
-	DispPendingPanel: 3,
+	DispVisualized: 0,
+	DispAlertable:  1,
+	DispRecorded:   2,
 }
 
 func isDerived(d Disposition) bool {
 	return d == DispVisualized || d == DispAlertable || d == DispRecorded
 }
-func isIntent(d Disposition) bool { return d == DispPendingPanel }
-func isKnown(d Disposition) bool  { return isDerived(d) || isIntent(d) }
+func isKnown(d Disposition) bool { return isDerived(d) }
 
 // Signal is one catalog entry flattened to the identity the manifest keys on.
 // It carries no description or unit: this file is about what a signal is FOR,
@@ -295,20 +290,19 @@ var manifestDoc = []string{
 	"Regeneration records only what the deploy/grafana dashboard FAMILY (tailnet +",
 	"health) and the deploy/alerts rule manifests PROVE, and prunes signals the code",
 	"no longer emits. It",
-	"never assigns pending_panel — fill that in by hand, with a note that says",
-	"something true. An empty disposition list fails TestSignalDispositionsInSync.",
+	"assigns nothing by hand: every disposition is DERIVED from those artifacts, so an",
+	"empty disposition list means the signal is on no surface at all, and that fails",
+	"TestSignalDispositionsInSync.",
 	"surface: operational (telemetry about the tailnet) | self_obs (about the exporter)",
 	"dispositions (a set; derived ones are checked against the artifacts both ways):",
 	"  visualized - queried by >=1 panel or template variable in the generated dashboard",
 	"  alertable  - queried by >=1 alert rule expression",
 	"  recorded   - consumed by >=1 recording rule expression",
-	"  pending_panel - TRANSITIONAL (#526): reaches no panel yet, one is scheduled.",
-	"                  The note must name the dashboard and tab. This ledger is",
-	"                  shrink-only and is deleted when it empties.",
-	"pending_panel is mutually exclusive with VISUALIZED only. It coexists with",
-	"alertable/recorded on purpose: a signal an alert fires on but nothing charts is the",
-	"worst case here, not a contradiction. raw_only and omitted were DELETED in #526 -",
-	"they let an awkward signal be re-labeled instead of paneled, and 33 had accrued.",
+	"There is NO disposition meaning \"this signal does not need a panel\". raw_only and",
+	"omitted were exactly that and #526 deleted both after 35 signals had accrued under",
+	"them, unreachable by any operator; the transitional pending_panel ledger that",
+	"replaced them was deleted in turn once it emptied. The only escapes are the three",
+	"structural exemption classes in StructuralExemptions().",
 }
 
 // LoadSignalDispositions parses a manifest from raw JSON.
@@ -403,21 +397,10 @@ func MergeSignalDispositions(base *SignalDispositionBaseline, signals []Signal, 
 			row.Note = prev.Note
 		}
 
-		row.Dispositions = refs.Observed(s)
-		if known && !hasDisposition(row.Dispositions, DispVisualized) {
-			// Carry the human's intent forward while it is still true. The test is
-			// specifically "no PANEL yet", not "on no surface at all": a signal an
-			// alert rule fires on but nothing charts is exactly the shape #526 set
-			// out to eliminate — an operator paged by something they cannot then
-			// see — so pending_panel has to survive alongside alertable/recorded and
-			// only drop away once a panel appears.
-			for _, d := range prev.Dispositions {
-				if isIntent(d) {
-					row.Dispositions = append(row.Dispositions, d)
-				}
-			}
-		}
-		row.Dispositions = normalizeDispositions(row.Dispositions)
+		// Every disposition is derived, so regeneration simply restates what the
+		// artifacts show. Nothing is carried forward from the previous manifest
+		// except the human-written note.
+		row.Dispositions = normalizeDispositions(refs.Observed(s))
 		out.Signals = append(out.Signals, row)
 	}
 
@@ -552,31 +535,6 @@ func validateRow(problems SignalProblems, s Signal, row SignalDisposition, refs 
 		}
 	}
 
-	// Intent and evidence cannot coexist, and the two intent values cannot either.
-	nIntent := 0
-	for _, d := range intentDispositions {
-		if row.has(d) {
-			nIntent++
-		}
-	}
-	if nIntent > 1 {
-		problems.add(s.Surface, "%s %s: more than one intent disposition", s.Kind, s.Name)
-	}
-	if nIntent > 0 {
-		// pending_panel contradicts VISUALIZED only. It deliberately coexists with
-		// alertable and recorded: those are different surfaces, and a signal on an
-		// alert rule but on no panel is the case this whole ledger exists to drain,
-		// not a contradiction to reject.
-		if row.has(DispVisualized) {
-			problems.add(s.Surface, "%s %s: cannot be both visualized and pending a panel",
-				s.Kind, s.Name)
-		}
-		if strings.TrimSpace(row.Note) == "" {
-			problems.add(s.Surface, "%s %s: a pending_panel signal needs a note naming the "+
-				"dashboard and tab its panel is scheduled for", s.Kind, s.Name)
-		}
-	}
-
 	// Every derived disposition must match the artifacts, in BOTH directions: a
 	// claim with no reference is a lie, and a reference with no claim means the
 	// manifest under-reports coverage and would soon be trusted anyway.
@@ -685,13 +643,13 @@ func SignalCoverageReport(base *SignalDispositionBaseline) string {
 
 	b.WriteString("## Summary\n\n")
 	b.WriteString("A signal can carry more than one disposition, so the columns do not sum to the total.\n\n")
-	b.WriteString("| surface | signals | visualized | alertable | recorded | pending_panel |\n")
-	b.WriteString("| --- | ---: | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| surface | signals | visualized | alertable | recorded |\n")
+	b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
 	for _, s := range surfaceTitles {
 		c := perSurface[s.key]
-		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %d |\n",
+		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d |\n",
 			s.key, totals[s.key],
-			c[DispVisualized], c[DispAlertable], c[DispRecorded], c[DispPendingPanel])
+			c[DispVisualized], c[DispAlertable], c[DispRecorded])
 	}
 
 	for _, s := range surfaceTitles {
@@ -726,23 +684,6 @@ func SignalCoverageReport(base *SignalDispositionBaseline) string {
 }
 
 func escapePipes(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
-
-// StructuralExemptions is the complete list of signals the catalog->panel gate
-// cannot require a panel for. See the three Exempt* constants for the classes.
-//
-// It is a hand-written list rather than a derivation on purpose: "this is a
-// histogram base name" is derivable, but "and that is the only reason it has no
-// panel" is a claim about this repository that a human has to make once, in
-// writing, per signal.
-// isStructurallyExempt reports whether s is on the structural exemption list.
-func hasDisposition(ds []Disposition, want Disposition) bool {
-	for _, d := range ds {
-		if d == want {
-			return true
-		}
-	}
-	return false
-}
 
 func isStructurallyExempt(s Signal) bool {
 	for _, e := range structuralExemptions {
