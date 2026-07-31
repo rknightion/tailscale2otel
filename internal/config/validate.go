@@ -396,6 +396,59 @@ func (c *Config) Warnings() []string {
 			"flows.store.directory is set.", c.Flows.CapacityProfile, c.Flows.CapacityProfile))
 	}
 
+	// The two flow-cardinality knobs that are read by NOTHING under the wrong
+	// metrics_mode (#525). Same bug class as flows.capacity_profile above, and
+	// the same asymmetry decides whether it is worth a line: the operator asked
+	// for MORE data and silently got none.
+	//
+	// (Deliberately NOT warned about: cardinality.per_entity.* and the
+	// derp/subnet rollups when their owning collector is disabled. Those all
+	// default to true, so an advisory would fire for everyone who merely turns a
+	// collector off, about a value they never chose — and disabling a collector
+	// disabling its own knobs is the requested outcome, not a lost signal.)
+	//
+	// Both ports are read only inside the raw per-connection family in
+	// internal/flowlog/processor.go, which exists only in `all`/`both` mode. The
+	// rollup family carries no L4 ports at all, by design, so under the DEFAULT
+	// mode these are pure no-ops. One warning per key, not one combined message:
+	// advisoryKey takes the first token, so a combined message could only ever be
+	// attributed to one of the two on the status page.
+	if c.Cardinality.Flow.MetricsMode == flowMetricsModeRollup {
+		for _, p := range []struct {
+			key string
+			on  bool
+		}{
+			{"cardinality.flow.source_port", c.Cardinality.Flow.SourcePort},
+			{"cardinality.flow.destination_port", c.Cardinality.Flow.DestinationPort},
+		} {
+			if !p.on {
+				continue
+			}
+			w = append(w, fmt.Sprintf("%s=true has no effect under cardinality.flow.metrics_mode=%s "+
+				"(the default): L4 ports are carried only by the raw per-connection metric family, and "+
+				"the bounded rollup family deliberately has no port dimension, so no port will ever "+
+				"reach a metric. Flow LOGS still carry both ports. To get ports on metrics set "+
+				"cardinality.flow.metrics_mode to %q or %q — note that raises series cost sharply, "+
+				"which is why the rollup family excludes them — otherwise remove %s.",
+				p.key, flowMetricsModeRollup, flowMetricsModeAll, flowMetricsModeBoth, p.key))
+		}
+	}
+
+	// rollup_top_n is consumed only by the rollup accumulator, which
+	// internal/flowlog/processor.go builds only in rollup/both mode. Validate()
+	// still range-checks it, which makes it look meaningful under `all`.
+	// A value of 0 means "use the default" per the field doc, so it is not a
+	// tuning and warning about it would be wrong rather than merely noisy.
+	if c.Cardinality.Flow.MetricsMode == flowMetricsModeAll &&
+		c.Cardinality.Flow.RollupTopN > 0 && c.Cardinality.Flow.RollupTopN != defaultFlowRollupTopN {
+		w = append(w, fmt.Sprintf("cardinality.flow.rollup_top_n=%d has no effect under "+
+			"cardinality.flow.metrics_mode=%s: it bounds the rollup accumulator, which is only built "+
+			"in %q or %q mode, so nothing reads this value. Either switch metrics_mode to %q (bounded "+
+			"cardinality) or remove cardinality.flow.rollup_top_n.",
+			c.Cardinality.Flow.RollupTopN, flowMetricsModeAll,
+			flowMetricsModeRollup, flowMetricsModeBoth, flowMetricsModeRollup))
+	}
+
 	// The event store's only consumer is the /events page on the admin server,
 	// exactly like the flow store above (#300).
 	if c.Events.Enabled && (!c.Admin.Enabled || !c.Admin.LandingPage) {

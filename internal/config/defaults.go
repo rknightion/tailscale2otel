@@ -156,8 +156,8 @@ func Default() *Config {
 			CriticalThreshold:   8000,
 			LabelValueSampleCap: 100,
 			Flow: FlowCardinality{
-				MetricsMode:         "rollup",
-				RollupTopN:          500,
+				MetricsMode:         flowMetricsModeRollup,
+				RollupTopN:          defaultFlowRollupTopN,
 				SourcePort:          false,
 				DestinationPort:     false,
 				NodeDims:            true,
@@ -446,3 +446,20 @@ func Default() *Config {
 // boolPtr returns a pointer to b, for the *bool config fields where an
 // explicitly-set false must be distinguishable from an omitted key.
 func boolPtr(b bool) *bool { return &b }
+
+// Flow-metric shaping constants, named so the defaults above and the
+// inert-key advisories in Warnings() cannot drift apart (#525). The advisories
+// have to distinguish "the operator tuned this" from "this is the value we
+// picked", which only works while both read the same source.
+const (
+	// defaultFlowRollupTopN is cardinality.flow.rollup_top_n's default: the
+	// number of busiest source/destination node pairs the rollup keeps per flush.
+	defaultFlowRollupTopN = 500
+
+	// The cardinality.flow.metrics_mode vocabulary. Only `all` and `both` emit
+	// the raw per-connection family that carries L4 ports; only `rollup` and
+	// `both` build the accumulator that reads rollup_top_n.
+	flowMetricsModeRollup = "rollup"
+	flowMetricsModeAll    = "all"
+	flowMetricsModeBoth   = "both"
+)
