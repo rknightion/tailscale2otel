@@ -114,6 +114,17 @@ for module in "${MODULES[@]}"; do
   cd "$ROOT" || exit 1
 done
 
+# The ARTIFACT check, not a module leg. promqlcheck parses every dashboard and
+# rule expression this repo ships and resolves each `$variable` against what is
+# actually in scope where the panel sits. It lives in ci.yml's "generated
+# dashboards and rules are in sync" job, so building and unit-testing the
+# tool above — which is all the module legs do — proves nothing about the
+# artifacts. #526 landed 65 real failures on CI with every local gate green,
+# because nothing run locally executed it.
+echo
+echo "== artifacts (promqlcheck)"
+if run_leg "artifacts" "promqlcheck" go run -C tools/promqlcheck . -root "$ROOT"; then :; fi
+
 echo
 if [ "${#skips[@]}" -gt 0 ]; then
   echo "SKIPPED (${#skips[@]}):"

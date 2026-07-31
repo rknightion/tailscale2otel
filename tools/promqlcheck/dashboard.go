@@ -21,6 +21,13 @@ type dashboardDoc struct {
 				PluginID string `json:"pluginId"`
 			} `json:"spec"`
 		} `json:"variables"`
+		// Grouping levels (tabs and rows) may each declare their OWN variables, so
+		// the layout has to be walked to know what is in scope for a given panel.
+		// Kept as raw JSON and walked generically: the layout is a heterogeneous,
+		// arbitrarily nested union of TabsLayout / RowsLayout / GridLayout /
+		// AutoGridLayout, and typing all of it here would break the moment a new
+		// layout kind appears — quietly, by deserialising to nothing.
+		Layout   json.RawMessage `json:"layout"`
 		Elements map[string]struct {
 			Kind string `json:"kind"`
 			Spec struct {
@@ -79,6 +86,13 @@ func checkDashboard(rep *Report, path string, data []byte) error {
 			dsPlugin[v.Spec.Name] = v.Spec.PluginID
 		}
 	}
+	// Per-panel scope. A variable declared on a tab exists only inside that tab,
+	// so checking every panel against the dashboard-level set alone is wrong in
+	// both directions: it reports a correctly tab-scoped reference as undeclared,
+	// and it accepts a panel borrowing a SIBLING tab's variable, which resolves to
+	// nothing at render time. #526 moved ~60 variables onto tabs, so the
+	// dashboard-level set is now the minority case.
+	scopes := elementScopes(doc.Spec.Layout, declared)
 	ctx := dashboardInterpolation(declared)
 
 	// Elements is a map, so iterate it in key order: CI output must be stable
@@ -87,6 +101,10 @@ func checkDashboard(rep *Report, path string, data []byte) error {
 		el := doc.Spec.Elements[key]
 		if el.Kind != "Panel" {
 			continue
+		}
+		elCtx := ctx
+		if inScope, ok := scopes[key]; ok {
+			elCtx = dashboardInterpolation(inScope)
 		}
 		for _, q := range el.Spec.Data.Spec.Queries {
 			raw := q.Spec.Query.Spec.Expr
@@ -105,7 +123,7 @@ func checkDashboard(rep *Report, path string, data []byte) error {
 				rep.fail(e, "%v", err)
 				continue
 			}
-			checkExpr(rep, e, ctx)
+			checkExpr(rep, e, elCtx)
 		}
 	}
 	return nil
@@ -146,4 +164,64 @@ func dashboardQueryLang(group, dsType, dsName string, dsPlugin map[string]string
 	default:
 		return "", fmt.Errorf("unsupported datasource plugin %q: promqlcheck knows prometheus, loki and tempo, and refuses to silently skip anything else", plugin)
 	}
+}
+
+// elementScopes maps each element name to the set of variable names in scope
+// where it is placed: the dashboard-level set, plus the variables declared by
+// every grouping level enclosing it.
+//
+// Walks the layout generically rather than against a typed struct. The layout is
+// a union of TabsLayout / RowsLayout / GridLayout / AutoGridLayout nested up to
+// four deep, and a typed reader that did not know a kind would deserialise it to
+// an empty struct — dropping every panel underneath it from the check while
+// still reporting success. Anything with a "variables" list contributes to scope
+// and anything with an ElementReference consumes it, whatever its kind is called.
+func elementScopes(layout json.RawMessage, base map[string]bool) map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	if len(layout) == 0 {
+		return out
+	}
+	var root any
+	if err := json.Unmarshal(layout, &root); err != nil {
+		return out
+	}
+
+	var walk func(node any, inScope map[string]bool)
+	walk = func(node any, inScope map[string]bool) {
+		switch v := node.(type) {
+		case map[string]any:
+			if kind, _ := v["kind"].(string); kind == "ElementReference" {
+				if name, ok := v["name"].(string); ok {
+					out[name] = inScope
+				}
+				return
+			}
+			spec, _ := v["spec"].(map[string]any)
+			if spec != nil {
+				if declared, ok := spec["variables"].([]any); ok && len(declared) > 0 {
+					next := make(map[string]bool, len(inScope)+len(declared))
+					for k := range inScope {
+						next[k] = true
+					}
+					for _, d := range declared {
+						dm, _ := d.(map[string]any)
+						ds, _ := dm["spec"].(map[string]any)
+						if name, ok := ds["name"].(string); ok {
+							next[name] = true
+						}
+					}
+					inScope = next
+				}
+			}
+			for _, child := range v {
+				walk(child, inScope)
+			}
+		case []any:
+			for _, child := range v {
+				walk(child, inScope)
+			}
+		}
+	}
+	walk(root, base)
+	return out
 }

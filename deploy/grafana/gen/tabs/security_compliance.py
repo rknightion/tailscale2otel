@@ -118,7 +118,7 @@ def tab_security_compliance(scope):
                desc="Average encryption coverage across devices (Intune isEncrypted attribute)."), 6, 6),
         (panel("Compliance distribution", "barchart",
                [prom_t("count by (value) (%s)"
-                       % lot('tailscale_device_attribute_info_ratio{attribute=~"$posture_attr"}', WIN_FAST),
+                       % lot('tailscale_device_attribute_info_ratio', WIN_FAST),
                        legend="{{value}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
@@ -138,7 +138,7 @@ def tab_security_compliance(scope):
     attrisk = [
         (panel("Devices failing posture attr", "table",
                [prom_t("%s == 0"
-                       % lot('tailscale_device_attribute_ratio{attribute=~"$posture_attr", host_name=~"$host_name"}', WIN_FAST),
+                       % lot('tailscale_device_attribute_ratio', WIN_FAST),
                        instant=True, fmt="table")],
                transformations=[organize(exclude=_INFRA + ["Value"],
                                          rename={"host_name": "Host", "attribute": "Attribute"})],

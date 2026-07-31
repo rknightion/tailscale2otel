@@ -77,3 +77,79 @@ func TestCheckDashboardFailures(t *testing.T) {
 		})
 	}
 }
+
+// scopedDoc builds a two-tab dashboard where tab A declares `svc` and tab B does
+// not, each tab holding one panel that references $svc. Only tab B's panel is
+// wrong. Parameterised so the same shape can be built with the variable at
+// dashboard level instead, which must make BOTH panels fine.
+func scopedDoc(atDashboard bool) []byte {
+	v := `{"kind":"QueryVariable","spec":{"name":"svc"}}`
+	dashVars := `{"kind":"DatasourceVariable","spec":{"name":"ds_prometheus","pluginId":"prometheus"}}`
+	tabVars := ""
+	if atDashboard {
+		dashVars += "," + v
+	} else {
+		tabVars = `"variables":[` + v + `],`
+	}
+	panel := func(name string) string {
+		return `"` + name + `":{"kind":"Panel","spec":{"id":1,"title":"` + name + `","data":{"spec":{"queries":[` +
+			`{"spec":{"refId":"A","query":{"group":"","datasource":{"name":"${ds_prometheus}"},` +
+			`"spec":{"expr":"up{job=~\"$svc\"}"}}}}]}}}}`
+	}
+	tab := func(title, extraVars, element string) string {
+		return `{"kind":"TabsLayoutTab","spec":{"title":"` + title + `",` + extraVars +
+			`"layout":{"kind":"RowsLayout","spec":{"rows":[{"kind":"RowsLayoutRow","spec":{"title":"r",` +
+			`"layout":{"kind":"GridLayout","spec":{"items":[{"kind":"GridLayoutItem","spec":{` +
+			`"element":{"kind":"ElementReference","name":"` + element + `"}}}]}}}}]}}}}`
+	}
+	return []byte(`{"apiVersion":"dashboard.grafana.app/v2","kind":"Dashboard","spec":{` +
+		`"variables":[` + dashVars + `],` +
+		`"elements":{` + panel("panel-a") + `,` + panel("panel-b") + `},` +
+		`"layout":{"kind":"TabsLayout","spec":{"tabs":[` +
+		tab("A", tabVars, "panel-a") + `,` + tab("B", "", "panel-b") + `]}}}}`)
+}
+
+// A variable declared on a TAB is in scope for that tab's panels and nothing
+// else. Checking every panel against the dashboard-level set alone is wrong in
+// both directions, and #526 moved ~60 variables onto tabs, so the two halves of
+// this test are the common case now — not an edge case.
+func TestDashboardVariableScopeIsPerTab(t *testing.T) {
+	t.Run("a tab-scoped variable satisfies its own tab", func(t *testing.T) {
+		rep := newReport()
+		if err := checkDashboard(rep, "scoped.json", scopedDoc(false)); err != nil {
+			t.Fatalf("checkDashboard: %v", err)
+		}
+		for _, f := range rep.Failures {
+			if strings.Contains(f.Where, "panel-a") || strings.Contains(f.Reason, `"panel-a"`) {
+				t.Errorf("tab A's own variable was reported undeclared: %v", f)
+			}
+		}
+	})
+
+	// The half that matters. A walker that unioned every declaration in the
+	// document — the obvious wrong implementation — would pass the case above
+	// and silently accept this one, which renders as an unresolved $svc.
+	t.Run("a sibling tab's variable does NOT satisfy this one", func(t *testing.T) {
+		rep := newReport()
+		if err := checkDashboard(rep, "scoped.json", scopedDoc(false)); err != nil {
+			t.Fatalf("checkDashboard: %v", err)
+		}
+		if len(rep.Failures) != 1 {
+			t.Fatalf("want exactly 1 failure (tab B borrowing tab A's variable), got %d: %v",
+				len(rep.Failures), rep.Failures)
+		}
+		if !strings.Contains(rep.Failures[0].Reason, "$svc") {
+			t.Errorf("failure does not name $svc: %v", rep.Failures[0])
+		}
+	})
+
+	t.Run("the same variable at dashboard level satisfies both tabs", func(t *testing.T) {
+		rep := newReport()
+		if err := checkDashboard(rep, "scoped.json", scopedDoc(true)); err != nil {
+			t.Fatalf("checkDashboard: %v", err)
+		}
+		if len(rep.Failures) != 0 {
+			t.Fatalf("want no failures, got %d: %v", len(rep.Failures), rep.Failures)
+		}
+	})
+}

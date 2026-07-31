@@ -47,12 +47,13 @@ def tab_devices_posture(scope):
                  '(%s{category="hostnames"} == 0) and ignoring(category) (%s{category="node_ids"} == 0)'
                  % (PII, PII), scope)
 
-    # tailscale_tags=~"$device_tag" (allValue ".*") matches series that lack the label too,
-    # so untagged devices still appear under "All". $tailnet/$provider were added by #392 —
-    # without them a multi-tailnet target sums every tailnet into one fleet no matter what
-    # the dropdown says.
-    df = ("{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", "
-          "tailscale_tags=~\"$device_tag\", %s}" % TP)
+    # os_type and host_name stay explicit dropdowns (#526 decision 3): an operator picks
+    # from them constantly and a short known option list beats free-form typing. The
+    # user/tag/posture-attribute filters they used to sit beside are gone from the query
+    # entirely — they folded into the `device_filters` adhoc variable, which injects its
+    # own matchers into every query against this datasource, so naming them here as well
+    # would filter twice and pin the panel to whatever the deleted variables defaulted to.
+    df = "{os_type=~\"$os_type\", host_name=~\"$host_name\", %s}" % TP
 
     # Shared infra label exclusion list for instant-vector tables
     _infra = ["Time", "__name__", "job", "instance", "host_id",

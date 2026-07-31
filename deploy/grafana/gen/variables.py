@@ -185,11 +185,22 @@ DASHBOARD_CONTROLS = {
 # with a dashboard-level one, because the same name would then mean two
 # different things depending on which tab you were standing on.
 TAB_CONTROLS = {
+    # -- tailscale2otel-tailnet --------------------------------------------
     "Inventory & Hygiene": (_os_type, _host_name, _device_filters),
     "Posture & Security": (_os_type, _host_name, _device_filters),
     "Connectivity & Routing": (_os_type, _host_name, _device_filters),
     "Network & Flows": (_net_transport, _traffic_type),
     "Audit Trail": (_log_event,),
+    # -- tailscale2otel-health ---------------------------------------------
+    #
+    # The health dashboard keeps five controls at dashboard level. These three
+    # are read by exactly one of its tabs each, so they live there instead of
+    # widening that bar. Each arrived with a panel that #526 moved onto this
+    # dashboard from one where the variable was global — a query keeps its
+    # `$var` reference when it moves, and the variable does not follow it.
+    "Ingestion": (_provider,),          # the audit-pipeline rows, ex-Events & Logs
+    "Delivery": (_log_filter,),         # the SIEM delivery-error log panel
+    "Cost & Cardinality": (_topn,),     # the top-N series tables
 }
 
 

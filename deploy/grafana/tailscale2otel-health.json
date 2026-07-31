@@ -16101,6 +16101,39 @@
                 {
                   "kind": "QueryVariable",
                   "spec": {
+                    "name": "provider",
+                    "label": "Provider",
+                    "hide": "dontHide",
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "query": "label_values({__name__=~\"tailscale.+\", tailscale2otel_provider!=\"\"}, tailscale2otel_provider)",
+                        "refId": "provider"
+                      }
+                    },
+                    "current": {
+                      "text": "All",
+                      "value": "$__all"
+                    },
+                    "options": [],
+                    "multi": true,
+                    "includeAll": true,
+                    "allowCustomValue": true,
+                    "refresh": "onTimeRangeChanged",
+                    "regex": "",
+                    "skipUrlSync": false,
+                    "sort": "alphabeticalAsc",
+                    "allValue": ".*"
+                  }
+                },
+                {
+                  "kind": "QueryVariable",
+                  "spec": {
                     "name": "has_stream",
                     "label": "has_stream",
                     "hide": "hideVariable",
@@ -16739,6 +16772,20 @@
                 }
               },
               "variables": [
+                {
+                  "kind": "TextVariable",
+                  "spec": {
+                    "name": "log_filter",
+                    "label": "Log filter",
+                    "current": {
+                      "text": "",
+                      "value": ""
+                    },
+                    "hide": "dontHide",
+                    "query": "",
+                    "skipUrlSync": false
+                  }
+                },
                 {
                   "kind": "QueryVariable",
                   "spec": {
@@ -17567,6 +17614,50 @@
                 }
               },
               "variables": [
+                {
+                  "kind": "CustomVariable",
+                  "spec": {
+                    "name": "topn",
+                    "label": "Top N",
+                    "query": "5 : 5, 10 : 10, 15 : 15, 20 : 20, 30 : 30",
+                    "current": {
+                      "text": "10",
+                      "value": "10"
+                    },
+                    "options": [
+                      {
+                        "selected": false,
+                        "text": "5",
+                        "value": "5"
+                      },
+                      {
+                        "selected": true,
+                        "text": "10",
+                        "value": "10"
+                      },
+                      {
+                        "selected": false,
+                        "text": "15",
+                        "value": "15"
+                      },
+                      {
+                        "selected": false,
+                        "text": "20",
+                        "value": "20"
+                      },
+                      {
+                        "selected": false,
+                        "text": "30",
+                        "value": "30"
+                      }
+                    ],
+                    "multi": false,
+                    "includeAll": false,
+                    "allowCustomValue": false,
+                    "hide": "dontHide",
+                    "skipUrlSync": false
+                  }
+                },
                 {
                   "kind": "QueryVariable",
                   "spec": {

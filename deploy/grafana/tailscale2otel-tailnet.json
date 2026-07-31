@@ -2888,7 +2888,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -2967,7 +2967,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3033,7 +3033,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 0) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 0) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3099,7 +3099,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3311,7 +3311,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1)",
+                        "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "online",
@@ -3333,7 +3333,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
+                        "expr": "count(tailscale_device_online_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "total",
@@ -4863,7 +4863,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1",
+                        "expr": "last_over_time(tailscale_device_update_available_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4961,7 +4961,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_key_expiry_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time()",
+                        "expr": "last_over_time(tailscale_device_key_expiry_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time()",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5040,7 +5040,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_device_last_seen_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "time() - last_over_time(tailscale_device_last_seen_seconds{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5119,7 +5119,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5141,7 +5141,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5163,7 +5163,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5185,7 +5185,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5207,7 +5207,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5682,7 +5682,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5749,7 +5749,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5829,7 +5829,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5896,7 +5896,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5976,7 +5976,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_user=~\"$device_user\", tailscale_tags=~\"$device_tag\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -15605,7 +15605,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (value) (last_over_time(tailscale_device_attribute_info_ratio{attribute=~\"$posture_attr\"}[10m]))",
+                        "expr": "count by (value) (last_over_time(tailscale_device_attribute_info_ratio[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{value}}",
@@ -15686,7 +15686,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_attribute_ratio{attribute=~\"$posture_attr\", host_name=~\"$host_name\"}[10m]) == 0",
+                        "expr": "last_over_time(tailscale_device_attribute_ratio[10m]) == 0",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
