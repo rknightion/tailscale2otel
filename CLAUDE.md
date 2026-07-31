@@ -332,6 +332,20 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   by hand. Run `python3 scripts/verify_deployment.py` (read-only; exit 0 in sync, 1 drift, 2
   unreachable) after any push, and to find orphans. This permission covers Grafana only — it does
   NOT extend to mutating the tailnet itself.
+- **Do NOT push DASHBOARDS with `gcx` — they are delivered by GitSync.** `.github/workflows/
+  grafana-sync.yml` commits `deploy/grafana/*.json` into `rknightion/gc-gitsync-m7kni`, which is a
+  Grafana GitSync source, and Grafana writes UI saves back into that repo. A direct API push is an
+  out-of-band edit and leaves the repo and the stack disagreeing with no way to tell which is right.
+  Only RULES go via `gcx resources push`. Deleting a dashboard through the API is likewise undone by
+  the next sync, which re-creates it from whatever file is still in the GitSync repo — retire one by
+  deleting it from `deploy/grafana/`, and the workflow prunes the far side.
+- **A green `grafana-sync` run is not proof it published anything.** Its commit step used
+  `git diff --quiet`, which sees only TRACKED files. When #526 renamed the single dashboard artifact
+  into a tailnet/health pair, both new filenames were untracked, so the check read "already matches"
+  and exited 0 — **three consecutive successful runs copied two files and published neither**
+  (fixed in `f167a1c`: stage first, then diff the index). If you change what
+  `deploy/grafana/` produces, verify the far side by listing
+  `repos/rknightion/gc-gitsync-m7kni/git/trees/main`, not by the workflow's conclusion.
 - **Live-tailnet verification:** keep lab-specific names, addresses, identifiers, credentials, and
   observability captures out of tracked files. Store secrets and raw captures only in ignored local
   paths. `gcx metrics|logs query` needs BOTH `--from` and `--to`; `auto_configure` must NEVER target a

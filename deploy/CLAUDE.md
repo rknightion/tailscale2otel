@@ -41,6 +41,21 @@ consumed by operators or by the release pipelines.
   > siblings of `spec`, unlike `QueryVariable`. Getting it wrong produces a 422 whose CUE
   > disjunction error names `layout.kind` and never mentions the variable — bisect from a
   > known-valid fragment. `gen/variables.py:adhoc_var()` owns the correct shape.
+  >
+  > **A panel TITLE is the alert-link key, across the whole family.** `alerts/gen/build_rules.py`
+  > resolves each alert's `__dashboardUid__`/`__panelId__` by title and raises when a title matches
+  > zero panels OR more than one, over both artifacts. So renaming or merging a panel breaks any
+  > alert linking it (loudly, which is the point), and a title used on both dashboards fails the
+  > build outright. Where the product Overview keeps a glance copy of a panel the health dashboard
+  > owns, the copy carries a **`(summary)`** suffix and the unsuffixed title stays with the
+  > canonical detailed panel — that is the convention, not decoration.
+  >
+  > **A `panel=` that resolves is not a panel that shows the condition.** #526 found three alerts
+  > pointing at a panel charting a *different metric* — `ts2o-key-broad-scope` at the scope-COUNT
+  > panel that #415 replaced *because it inverted the answer*, and `ts2o-posture-integration-error`
+  > at the `last_sync` panel, which is the signal that alert exists because it **cannot** detect.
+  > All three passed the link gate. When adding `panel=`, check it charts the metric the expression
+  > fires on.
 - `alerts/grafana-managed/` — **Grafana-managed** alert and recording rules as
   `rules.alerting.grafana.app/v0alpha1` manifests plus a folder manifest, pushed with
   `gcx resources push`. **Generated** from `alerts/gen/build_rules.py`. See `alerts/README.md`.
